@@ -135,6 +135,7 @@
     "@types/node": "^20.19.9",
     "expo-file-system": "~56.0.7",
     "expo-font": "~56.0.5",
+    "expo-haptics": "~56.0.3",
     "expo-image": "~56.0.8",
     "expo-linear-gradient": "~56.0.4",
     "husky": "^4.3.8",
@@ -164,6 +165,7 @@
     "expo-document-picker": "~56.0.4",
     "expo-file-system": "~56.0.7",
     "expo-font": ">=13.0.0",
+    "expo-haptics": "~56.0.3",
     "expo-image": ">=2.0.0",
     "expo-image-manipulator": "~56.0.3",
     "expo-linear-gradient": "~56.0.4",
@@ -199,6 +201,9 @@
       "optional": true
     },
     "expo": {
+      "optional": true
+    },
+    "expo-haptics": {
       "optional": true
     },
     "expo-linear-gradient": {

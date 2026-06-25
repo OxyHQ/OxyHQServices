@@ -1,10 +1,10 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { join, extname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const DIST_DIR = join(__dirname, 'dist');
+const DIST_DIR = resolve(__dirname, 'dist');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const MIME_TYPES = {
@@ -30,6 +30,11 @@ const MIME_TYPES = {
 const CACHE_HASHED = 'public, max-age=31536000, immutable';
 const CACHE_HTML = 'public, max-age=0, must-revalidate';
 
+function isPathInsideDist(filePath) {
+  const relativePath = relative(DIST_DIR, filePath);
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
+
 async function serveFile(res, filePath, fallbackToIndex = true) {
   try {
     const data = await readFile(filePath);
@@ -50,7 +55,14 @@ async function serveFile(res, filePath, fallbackToIndex = true) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
-  const pathname = decodeURIComponent(url.pathname);
+
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    return res.end('Bad Request');
+  }
 
   // Health check
   if (pathname === '/health') {
@@ -59,10 +71,10 @@ const server = createServer(async (req, res) => {
   }
 
   // Try to serve the exact file from dist
-  const filePath = join(DIST_DIR, pathname === '/' ? 'index.html' : pathname);
+  const filePath = resolve(DIST_DIR, pathname === '/' ? 'index.html' : `.${pathname}`);
 
   // Prevent directory traversal
-  if (!filePath.startsWith(DIST_DIR)) {
+  if (!isPathInsideDist(filePath)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     return res.end('Forbidden');
   }

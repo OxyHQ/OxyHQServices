@@ -939,6 +939,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
         {replyMode && (
           <View style={[styles.inlineReplyWrapper, { marginTop: 16 }]}>
             <InlineReply
+              key={`${replyMode}:${replyTargetId ?? currentMessage._id}`}
               message={replyTargetId ? (sortedThread.find(m => m._id === replyTargetId) || currentMessage) : currentMessage}
               mode={replyMode}
               onClose={handleCloseReply}

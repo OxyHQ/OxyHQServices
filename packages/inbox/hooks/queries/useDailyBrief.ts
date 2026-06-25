@@ -1,5 +1,5 @@
 /**
- * Hook that generates a daily AI brief from recent emails using the Alia API.
+ * Hook that generates an opt-in daily AI brief from non-content email counts.
  *
  * Streams the response for a typing effect and caches the result
  * so it's not regenerated on every screen visit.
@@ -12,42 +12,16 @@ import { streamAliaChatCompletion, type AliaMessage } from '@/services/aliaApi';
 import type { Message } from '@/services/emailApi';
 
 const BRIEF_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
-const MAX_EMAILS_FOR_CONTEXT = 20;
+const SYSTEM_PROMPT = `You are Alia, an AI email assistant built into the Inbox app.
 
-const SYSTEM_PROMPT = `You are Alia, an autonomous AI email assistant built into the Inbox app. You work silently in the background organizing, categorizing, and analyzing the user's emails.
+Generate a concise daily brief (2-4 sentences) using only aggregate inbox counts. Do not claim to know sender names, subject lines, message contents, deadlines, or action items because those private details are not provided. Be warm but efficient — no greetings, no sign-offs, just the brief. Write in second person ("You have...").`;
 
-Generate a concise daily brief (2-4 sentences) summarizing what's in the user's inbox right now. Mention specific senders by name and highlight action items, deadlines, or anything that needs attention. Be warm but efficient — no greetings, no sign-offs, just the brief. Write in second person ("You have...", "Sarah sent you...").`;
-
-function formatRelativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function buildPrompt(messages: Message[], userName: string): AliaMessage[] {
-  const emailSummaries = messages.slice(0, MAX_EMAILS_FOR_CONTEXT).map((msg) => {
-    const from = msg.from.name || msg.from.address.split('@')[0];
-    const flags: string[] = [];
-    if (!msg.flags.seen) flags.push('UNREAD');
-    if (msg.flags.starred) flags.push('STARRED');
-    const snippet = (msg.text ?? '').slice(0, 100).replace(/\n/g, ' ').trim();
-    const time = formatRelativeTime(msg.date);
-
-    return `- From: ${from} | Subject: ${msg.subject || '(no subject)'} | ${time}${flags.length ? ` | ${flags.join(', ')}` : ''}${snippet ? ` | "${snippet}..."` : ''}`;
-  });
-
+function buildPrompt(messages: Message[]): AliaMessage[] {
   const unreadCount = messages.filter((m) => !m.flags.seen).length;
   const starredCount = messages.filter((m) => m.flags.starred).length;
+  const attachmentCount = messages.filter((m) => m.attachments.length > 0).length;
 
-  const userMessage = `The user's name is ${userName || 'there'}. Here are their recent emails (${messages.length} total, ${unreadCount} unread, ${starredCount} starred):
-
-${emailSummaries.join('\n')}
-
-Write a brief daily summary for this inbox.`;
+  const userMessage = `Recent inbox counts: ${messages.length} total emails, ${unreadCount} unread, ${starredCount} starred, ${attachmentCount} with attachments. Write a brief daily summary for this inbox using only these aggregate counts.`;
 
   return [
     { role: 'system' as const, content: SYSTEM_PROMPT },
@@ -60,7 +34,7 @@ function getBriefCacheKey(): string[] {
   return ['alia', 'daily-brief', today];
 }
 
-export function useDailyBrief(messages: Message[], userName: string) {
+export function useDailyBrief(messages: Message[]) {
   const queryClient = useQueryClient();
   const { oxyServices } = useOxy();
   const cacheKey = getBriefCacheKey();
@@ -69,14 +43,12 @@ export function useDailyBrief(messages: Message[], userName: string) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const abortRef = useRef(false);
-  const generatedRef = useRef(false);
 
   // Check cache on mount
   useEffect(() => {
     const cached = queryClient.getQueryData<string>(cacheKey);
     if (cached) {
       setBriefText(cached);
-      generatedRef.current = true;
     }
   }, []);
 
@@ -99,7 +71,7 @@ export function useDailyBrief(messages: Message[], userName: string) {
     abortRef.current = false;
 
     try {
-      const prompt = buildPrompt(messages, userName);
+      const prompt = buildPrompt(messages);
       let accumulated = '';
 
       for await (const delta of streamAliaChatCompletion({
@@ -134,15 +106,7 @@ export function useDailyBrief(messages: Message[], userName: string) {
         setIsStreaming(false);
       }
     }
-  }, [messages, userName, queryClient, cacheKey, oxyServices]);
-
-  // Auto-generate when messages arrive and no brief exists yet
-  useEffect(() => {
-    if (messages.length > 0 && !generatedRef.current && !isStreaming) {
-      generatedRef.current = true;
-      generate();
-    }
-  }, [messages.length > 0]);
+  }, [messages, queryClient, cacheKey, oxyServices]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -153,7 +117,6 @@ export function useDailyBrief(messages: Message[], userName: string) {
 
   const regenerate = useCallback(() => {
     queryClient.removeQueries({ queryKey: cacheKey });
-    generatedRef.current = true;
     generate();
   }, [generate, queryClient, cacheKey]);
 

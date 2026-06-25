@@ -168,13 +168,22 @@ function isCanvasLoadFailure(err: unknown): boolean {
     );
 }
 
+const SENSITIVE_URI_PATTERN =
+    /\b(?:file|content|ph|assets-library):\/\/\S+|\/(?:data|var|private|storage|sdcard|tmp)\/\S+/gi;
+
+function sanitizeImageErrorMessage(message: string): string {
+    return message.replace(SENSITIVE_URI_PATTERN, '[redacted-uri]');
+}
+
 function normalizeCropError(err: unknown): Error {
-    if (err instanceof Error) return err;
     if (isCanvasLoadFailure(err)) {
         return new Error('Image could not be loaded for cropping');
     }
+    if (err instanceof Error) {
+        return new Error(sanitizeImageErrorMessage(err.message || 'Failed to crop image'));
+    }
     if (typeof err === 'string' && err.trim()) {
-        return new Error(err.trim());
+        return new Error(sanitizeImageErrorMessage(err.trim()));
     }
     return new Error('Failed to crop image');
 }
@@ -382,8 +391,12 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     setMeasureError(null);
                     setNaturalSize({ width: w, height: h });
                 },
-                (err) => {
-                    logger.error('Image.getSize failed', err, { component: LOG_COMPONENT });
+                () => {
+                    logger.error(
+                        'Image.getSize failed',
+                        new Error('Image measurement failed'),
+                        { component: LOG_COMPONENT },
+                    );
                     const message = t('editProfile.toasts.cropMeasureFailed') ||
                         'Could not measure the image';
                     setMeasureError(message);

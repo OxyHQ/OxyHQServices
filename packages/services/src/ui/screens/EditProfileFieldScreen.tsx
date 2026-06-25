@@ -71,6 +71,9 @@ type EditableListItem = {
     coordinates?: { lat: number; lon: number };
 };
 
+const getLinkTitle = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+const getLinkDescription = (url: string) => `Link to ${url}`;
+
 /**
  * EditProfileFieldScreen - A dedicated screen for editing profile fields
  *
@@ -282,14 +285,16 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         ...link,
                         id: String(link.id || `link-${i}`),
                         url: String(link.url || ''),
-                        title: String(link.title || ''),
+                        title: String(link.title || getLinkTitle(String(link.url || ''))),
+                        description: String(link.description || getLinkDescription(String(link.url || ''))),
                     })));
                 } else {
                     setListItems(links.map((item, i) => {
                         return {
                             id: `link-${i}`,
                             url: item,
-                            title: item.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                            title: getLinkTitle(item),
+                            description: getLinkDescription(item),
                         };
                     }));
                 }
@@ -354,7 +359,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             const newItem = {
                 id: `link-${Date.now()}`,
                 url: newItemValue.trim(),
-                title: newItemValue.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                title: getLinkTitle(newItemValue.trim()),
+                description: getLinkDescription(newItemValue.trim()),
             };
             setListItems(prev => [...prev, newItem]);
         }
@@ -384,8 +390,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                     linksMetadata: listItems.map(item => ({
                         id: item.id,
                         url: String(item.url || ''),
-                        ...(item.title !== undefined && { title: String(item.title) }),
-                        ...(item.description !== undefined && { description: String(item.description) }),
+                        title: String(item.title || getLinkTitle(String(item.url || ''))),
+                        description: String(item.description || getLinkDescription(String(item.url || ''))),
                         ...(item.image !== undefined && { image: String(item.image) }),
                     })),
                     links: listItems.map(item => String(item.url || '')),

@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -48,21 +48,34 @@ export default function PeopleAndSharingScreen() {
   // Blocked and restricted users state
   const [blockedCount, setBlockedCount] = useState(0);
   const [restrictedCount, setRestrictedCount] = useState(0);
-  const [hasFetchedPrivacy, setHasFetchedPrivacy] = useState(false);
+  const [fetchedPrivacyUserId, setFetchedPrivacyUserId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [pendingPrivacyKey, setPendingPrivacyKey] = useState<string | null>(null);
 
+  const activePrivacyUserIdRef = useRef<string | undefined>(userId);
+
+  useEffect(() => {
+    activePrivacyUserIdRef.current = userId;
+  }, [userId]);
+
   const fetchPrivacyCounts = useCallback(async () => {
     if (!oxyServices || !userId) return;
+
+    const requestedUserId = userId;
     try {
       const [blockedUsers, restrictedUsers] = await Promise.all([
         oxyServices.getBlockedUsers(),
         oxyServices.getRestrictedUsers(),
       ]);
+
+      if (activePrivacyUserIdRef.current !== requestedUserId) return;
+
       setBlockedCount(Array.isArray(blockedUsers) ? blockedUsers.length : 0);
       setRestrictedCount(Array.isArray(restrictedUsers) ? restrictedUsers.length : 0);
     } finally {
-      setHasFetchedPrivacy(true);
+      if (activePrivacyUserIdRef.current === requestedUserId) {
+        setFetchedPrivacyUserId(requestedUserId);
+      }
     }
   }, [oxyServices, userId]);
 
@@ -238,11 +251,20 @@ export default function PeopleAndSharingScreen() {
 
   // Fetch blocked/restricted counts
   useEffect(() => {
-    if (userId && !hasFetchedPrivacy) {
+    if (!userId) {
+      setBlockedCount(0);
+      setRestrictedCount(0);
+      setFetchedPrivacyUserId(null);
+      return;
+    }
+
+    if (fetchedPrivacyUserId !== userId) {
+      setBlockedCount(0);
+      setRestrictedCount(0);
       void fetchPrivacyCounts();
       fetchUserCounts?.();
     }
-  }, [userId, hasFetchedPrivacy, fetchPrivacyCounts, fetchUserCounts]);
+  }, [userId, fetchedPrivacyUserId, fetchPrivacyCounts, fetchUserCounts]);
 
   // Contacts section items
   const contactsItems = useMemo(() => {
