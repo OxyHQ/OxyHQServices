@@ -465,6 +465,7 @@ export class AssetService {
 
       if (existingFile) {
         const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
+        let uploadUrl = '';
         if (existingFile.status === 'deleted') {
           existingFile.status = 'active';
           existingFile.ownerUserId = userId;
@@ -479,11 +480,28 @@ export class AssetService {
           fileCache.invalidate(existingFile._id.toString());
           fileCache.set(existingFile._id.toString(), existingFile);
         }
-        if (!(await this.s3Service.fileExists(storageKey))) {
+        const objectExists = await this.s3Service.fileExists(storageKey);
+        if (!objectExists && existingFile.ownerUserId === userId) {
           logger.warn('Existing asset record has no storage object; returning upload URL for the existing key', {
             fileId: existingFile._id.toString(),
             sha256: expectedSha256,
             storageKey,
+          });
+          // Only the file owner may receive a repair PUT URL for an existing
+          // record, and only when the object is missing. Signing a live
+          // deduplicated object's key would allow any authenticated user who
+          // knows the SHA-256 to overwrite another user's asset bytes.
+          uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
+            contentType: expectedMime,
+            expiresIn: 3600
+          });
+        } else if (!objectExists) {
+          logger.warn('Existing asset record has no storage object; not returning repair URL to non-owner', {
+            fileId: existingFile._id.toString(),
+            sha256: expectedSha256,
+            storageKey,
+            requesterUserId: userId,
+            ownerUserId: existingFile.ownerUserId,
           });
         }
 
@@ -492,14 +510,6 @@ export class AssetService {
           fileId: existingFile._id 
         });
         
-        // File already exists, return existing info
-        // We still need to provide an upload URL in case the client wants to verify or repair storage.
-        // Do not include metadata in the presigned URL signature; clients aren't required to send it
-        const uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
-          contentType: expectedMime,
-          expiresIn: 3600
-        });
-
         return {
           uploadUrl,
           fileId: existingFile._id.toString(),
