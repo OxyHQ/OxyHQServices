@@ -176,7 +176,7 @@ export function HomeScreen() {
   const greetingName = user?.name.displayName ?? '';
 
   // AI daily brief — uses messages from selected date
-  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, greetingName);
+  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages);
 
   // AI-powered sections: emails needing response and follow-up
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
@@ -424,7 +424,7 @@ export function HomeScreen() {
                     <View style={styles.briefLoadingRow}>
                       <Loading variant="inline" size="small" />
                       <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                        Alia is analyzing your inbox...
+                        Alia is summarizing aggregate inbox counts...
                       </Text>
                     </View>
                   ) : briefError && !briefText ? (
@@ -438,14 +438,14 @@ export function HomeScreen() {
                     </Text>
                   ) : (
                     <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                      No emails to summarize yet.
+                      Tap refresh to generate a brief from aggregate inbox counts.
                     </Text>
                   )}
                   <TouchableOpacity
                     onPress={regenerate}
                     style={styles.refreshButton}
                     activeOpacity={0.7}
-                    accessibilityLabel="Regenerate brief"
+                    accessibilityLabel={briefText ? 'Regenerate brief' : 'Generate brief'}
                     accessibilityRole="button"
                   >
                     <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
