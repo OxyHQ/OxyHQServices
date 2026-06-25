@@ -29,7 +29,7 @@
 
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Application } from '../src/models/Application';
+import { Application, type IApplication } from '../src/models/Application';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
 import { ApplicationMember } from '../src/models/ApplicationMember';
 import { Workspace } from '../src/models/Workspace';
@@ -53,6 +53,16 @@ type AppType = 'first_party' | 'internal';
 
 interface SeedAppSpec {
   name: string;
+  /**
+   * Previous official seed names that should be migrated in-place when present.
+   *
+   * The seed remains keyed by name for ordinary idempotency, but official app
+   * renames must not leave the old active app/credential trusted forever. If a
+   * legacy row exists and the new row does not, it is renamed/reconciled in
+   * place so the existing client id is preserved. If both rows already exist,
+   * the legacy row is suspended and its credentials are revoked.
+   */
+  legacyNames?: string[];
   description: string;
   websiteUrl?: string;
   type: AppType;
@@ -132,9 +142,9 @@ const SEED_APPS: SeedAppSpec[] = [
   {
     name: 'Allo',
     description: 'Official Oxy encrypted messaging app.',
-    websiteUrl: 'https://allo.you',
+    websiteUrl: 'https://allo.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://allo.you'), cb('https://allo.oxy.so')],
+    redirectUris: [cb('https://allo.oxy.so')],
   },
   {
     name: 'Alia',
@@ -180,6 +190,7 @@ const SEED_APPS: SeedAppSpec[] = [
   },
   {
     name: 'Mercaria',
+    legacyNames: ['Marketplace'],
     description: 'Official Oxy marketplace app — buy and sell new and secondhand items.',
     websiteUrl: 'https://mercaria.co',
     type: 'first_party',
@@ -220,6 +231,29 @@ interface MappingRow {
   createdApplication: boolean;
   createdMember: boolean;
   createdCredential: boolean;
+}
+
+async function retireLegacyApplication(
+  application: mongoose.Document<unknown, object, IApplication> & IApplication,
+  dryRun: boolean,
+): Promise<number> {
+  if (dryRun) {
+    return 0;
+  }
+
+  application.status = 'suspended';
+  application.redirectUris = [];
+  await application.save();
+
+  const result = await ApplicationCredential.updateMany(
+    {
+      applicationId: application._id,
+      status: { $ne: 'revoked' },
+    },
+    { $set: { status: 'revoked' } },
+  );
+
+  return result.modifiedCount ?? 0;
 }
 
 async function seed(): Promise<void> {
@@ -289,8 +323,10 @@ async function seed(): Promise<void> {
 
   let appsCreated = 0;
   let appsUpdated = 0;
+  let legacyAppsRetired = 0;
   let membersCreated = 0;
   let credentialsCreated = 0;
+  let legacyCredentialsRevoked = 0;
   let credentialsReused = 0;
 
   for (const spec of SEED_APPS) {
@@ -299,7 +335,21 @@ async function seed(): Promise<void> {
     let createdCredential = false;
 
     // ── Application: upsert keyed by (name, createdByUserId) ──
+    // Official app renames include legacyNames so a pre-existing row is
+    // reconciled in-place instead of leaving stale redirect origins trusted.
     let application = await Application.findOne({ name: spec.name, createdByUserId: oxyId });
+    const legacyApplications =
+      spec.legacyNames && spec.legacyNames.length > 0
+        ? await Application.find({
+            name: { $in: spec.legacyNames },
+            createdByUserId: oxyId,
+          })
+        : [];
+
+    if (!application && legacyApplications.length > 0) {
+      application = legacyApplications[0];
+      application.name = spec.name;
+    }
 
     const desiredAppFields = {
       description: spec.description,
@@ -341,6 +391,15 @@ async function seed(): Promise<void> {
         await application.save();
         appsUpdated += 1;
       }
+    }
+
+    for (const legacyApplication of legacyApplications) {
+      if (application && legacyApplication._id.equals(application._id)) {
+        continue;
+      }
+
+      legacyCredentialsRevoked += await retireLegacyApplication(legacyApplication, dryRun);
+      legacyAppsRetired += 1;
     }
 
     // In dry-run with a not-yet-existing app, synthesize a placeholder id.
@@ -415,6 +474,8 @@ async function seed(): Promise<void> {
     appsUpdated,
     membersCreated,
     credentialsCreated,
+    legacyAppsRetired,
+    legacyCredentialsRevoked,
     credentialsReused,
   });
 

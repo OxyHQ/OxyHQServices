@@ -28,6 +28,20 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
 const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
+function timingSafeTokenEqual(provided: string, expected: unknown): boolean {
+  if (typeof expected !== 'string' || !provided || !expected) {
+    return false;
+  }
+
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
 /**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
  * Handles edge cases and corrupted cache entries gracefully
@@ -239,6 +253,11 @@ class SessionService {
       }
 
       const { session } = result;
+
+      if (!timingSafeTokenEqual(accessToken, session.accessToken)) {
+        sessionCache.invalidate(sessionId);
+        return null;
+      }
 
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         this.updateLastActivity(sessionId).catch(() => {

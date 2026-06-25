@@ -94,10 +94,14 @@ export const DEFAULT_MAILBOXES = [
 
 /** AI auto-labeling on inbound email */
 export const AI_LABELING_CONFIG = {
-  enabled: process.env.AI_LABELING_ENABLED !== 'false',
+  // Inbound email is unauthenticated, so AI labeling must be explicitly enabled
+  // and bounded to avoid turning public SMTP traffic into unbounded AI calls.
+  enabled: getEnvBoolean('AI_LABELING_ENABLED', false),
   model: getEnvVar('AI_LABELING_MODEL', 'alia-lite'),
   timeout: getEnvNumber('AI_LABELING_TIMEOUT', 10000),
-  maxBodyChars: 1500,
+  maxBodyChars: getEnvNumber('AI_LABELING_MAX_BODY_CHARS', 1500),
+  maxConcurrent: Math.max(1, getEnvNumber('AI_LABELING_MAX_CONCURRENT', 2)),
+  maxQueueSize: Math.max(0, getEnvNumber('AI_LABELING_MAX_QUEUE_SIZE', 100)),
 };
 
 /** Encryption settings */

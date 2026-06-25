@@ -152,6 +152,8 @@ export interface IUser extends Document {
     sensitiveContent: boolean;
     autoFilter: boolean;
     muteKeywords: boolean;
+    discoverableByEmail?: boolean;
+    discoverableByPhone?: boolean;
   };
   // Avatar file ID referencing assets collection
   avatar?: string; // file id
@@ -430,6 +432,11 @@ const UserSchema: Schema = new Schema(
       sensitiveContent: { type: Boolean, default: false },
       autoFilter: { type: Boolean, default: true },
       muteKeywords: { type: Boolean, default: false },
+      // Contact discovery is opt-in. These default to false so stored email/phone
+      // hashes cannot be used as an account-enumeration oracle unless the
+      // target user explicitly chooses to be discoverable by that channel.
+      discoverableByEmail: { type: Boolean, default: false },
+      discoverableByPhone: { type: Boolean, default: false },
     },
   avatar: { type: String },
     color: {

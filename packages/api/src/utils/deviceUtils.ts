@@ -18,6 +18,10 @@ export interface DeviceFingerprint {
   ipAddress: string;
 }
 
+export type DeviceFingerprintInput = DeviceFingerprint | string;
+
+const CLIENT_FINGERPRINT_HEX_RE = /^[a-f0-9]{64}$/i;
+
 export interface DeviceInfo {
   deviceId: string;
   deviceName?: string;
@@ -162,7 +166,16 @@ export function deriveServiceDeviceId(userId: string, key: string): string {
  * Generate a device fingerprint for device identification
  * This helps identify if it's the same physical device
  */
-export const generateDeviceFingerprint = (fingerprint: DeviceFingerprint): string => {
+export const generateDeviceFingerprint = (fingerprint: DeviceFingerprintInput): string => {
+  if (typeof fingerprint === 'string') {
+    const clientFingerprint = fingerprint.trim();
+    if (CLIENT_FINGERPRINT_HEX_RE.test(clientFingerprint)) {
+      return clientFingerprint.toLowerCase();
+    }
+
+    return crypto.createHash('sha256').update(clientFingerprint).digest('hex');
+  }
+
   const fingerprintString = [
     fingerprint.userAgent,
     fingerprint.platform,

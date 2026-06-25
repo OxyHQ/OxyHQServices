@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Stripe from 'stripe';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
@@ -430,17 +431,51 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
   if (stripeSubscription.status === 'active') {
     const now = Date.now() / 1000;
     if (Math.abs(now - subscriptionItem.current_period_start) < 300) {
-      await userCredits.addCredits(plan.creditsPerMonth, 'paid');
-      await BillingTransaction.create({
-        userId: userCredits._id,
-        stripeCustomerId: customerId,
-        type: 'subscription_payment',
-        amount: plan.price,
-        currency: plan.currency,
-        credits: plan.creditsPerMonth,
-        status: 'completed',
-        description: `${plan.name} subscription credits`,
-      });
+      const periodStart = new Date(subscriptionItem.current_period_start * 1000);
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const transactionResult = await BillingTransaction.updateOne(
+            {
+              type: 'subscription_payment',
+              stripeSubscriptionId: stripeSubscription.id,
+              stripeSubscriptionPeriodStart: periodStart,
+            },
+            {
+              $setOnInsert: {
+                userId: userCredits._id,
+                stripeCustomerId: customerId,
+                stripeSubscriptionId: stripeSubscription.id,
+                stripeSubscriptionPeriodStart: periodStart,
+                type: 'subscription_payment',
+                amount: plan.price,
+                currency: plan.currency,
+                credits: plan.creditsPerMonth,
+                status: 'completed',
+                description: `${plan.name} subscription credits`,
+              },
+            },
+            { upsert: true, session }
+          );
+
+          if (transactionResult.upsertedCount === 0) {
+            logger.info('Skipping duplicate subscription credit grant', {
+              subscriptionId: stripeSubscription.id,
+              periodStart: periodStart.toISOString(),
+              userId: userCredits._id,
+            });
+            return;
+          }
+
+          await UserCredits.updateOne(
+            { _id: userCredits._id },
+            { $inc: { 'credits.paid': plan.creditsPerMonth } },
+            { session }
+          );
+        });
+      } finally {
+        await session.endSession();
+      }
     }
   }
 }

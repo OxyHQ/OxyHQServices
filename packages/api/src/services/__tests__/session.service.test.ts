@@ -381,6 +381,16 @@ describe('Session Service', () => {
 
       expect(result).toBeNull();
     });
+    it('should reject a rotated-out access token for an active session', async () => {
+      const mockSession = createMockSession({ accessToken: 'new-access-token' });
+      mockFindOneResults.push(mockSession);
+
+      const result = await sessionService.validateSession('old-access-token');
+
+      expect(result).toBeNull();
+      expect(sessionCache.invalidate).toHaveBeenCalledWith('session-123');
+    });
+
   });
 
   describe('revokeSession', () => {

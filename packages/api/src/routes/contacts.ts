@@ -5,13 +5,17 @@
  * already have Oxy accounts. Clients hash emails/phones locally with SHA-256
  * (see `utils/contactHash.ts` for the canonical algorithm) and upload only
  * those digests. The server intersects them against precomputed indexes on
- * the `User` collection and returns the matched user IDs.
+ * the `User` collection and returns matched user IDs only for users who
+ * explicitly opted in to contact discovery for that identifier type.
  *
  * Privacy invariants:
  *   - Raw email / phone never traverses this route.
- *   - The response contains no PII — only Oxy user IDs and the hash the
- *     caller supplied (so the client can map matches back to the local
- *     contact that produced them).
+ *   - The response contains no PII — only opted-in Oxy user IDs and the
+ *     hash the caller supplied (so the client can map matches back to the
+ *     local contact that produced them).
+ *   - Stored contact hashes are never queryable for users who have not
+ *     explicitly enabled `privacySettings.discoverableByEmail` or
+ *     `privacySettings.discoverableByPhone`.
  *   - No write to the database. Discovery is stateless.
  *
  * Abuse controls:
@@ -111,7 +115,8 @@ interface DiscoverMatch {
  *       to E.164 — see `utils/contactHash.ts` in `@oxyhq/core`) and upload
  *       only the resulting 64-character hex digests. The server intersects
  *       them against precomputed indexes on the `User` collection and returns
- *       matched Oxy user IDs.
+ *       matched Oxy user IDs only when the matched user has opted in to
+ *       contact discovery for that identifier type.
  *
  *       Privacy invariants:
  *         - Raw email / phone never traverses this endpoint.
@@ -234,6 +239,9 @@ router.post(
               // Federated/agent/automated accounts are not meant to surface
               // in a personal contact-sync flow.
               type: { $in: ['local', null] },
+              // Contact discovery is opt-in. Without this gate, deterministic
+              // email/phone hashes can be used as an account-enumeration oracle.
+              'privacySettings.discoverableByEmail': true,
             },
             { _id: 1, hashedEmail: 1 },
           )
@@ -246,6 +254,9 @@ router.post(
               hashedPhone: { $in: uniquePhoneHashes },
               _id: { $ne: req.user.id },
               type: { $in: ['local', null] },
+              // Contact discovery is opt-in. Without this gate, deterministic
+              // phone hashes can be used as an account-enumeration oracle.
+              'privacySettings.discoverableByPhone': true,
             },
             { _id: 1, hashedPhone: 1 },
           )

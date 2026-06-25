@@ -770,9 +770,7 @@ class EmailService {
     // Fire-and-forget AI processing (non-blocking, only for non-spam)
     if (!isSpam) {
       const msgId = message._id.toString();
-      aiLabelingService.classifyAndLabel(userId, msgId).catch((err) => {
-        logger.warn('AI labeling failed', { msgId, error: String(err) });
-      });
+      aiLabelingService.enqueueClassification(userId, msgId);
       cardExtractionService.extractAndUpdate(userId, msgId).catch((err) => {
         logger.warn('Card extraction failed', { msgId, error: String(err) });
       });
@@ -1860,9 +1858,7 @@ class EmailService {
 
         // Fire-and-forget AI processing
         const msgId = message._id.toString();
-        aiLabelingService.classifyAndLabel(userId, msgId).catch((err) => {
-          logger.warn('AI labeling failed for imported message', { msgId, error: String(err) });
-        });
+        aiLabelingService.enqueueClassification(userId, msgId);
         cardExtractionService.extractAndUpdate(userId, msgId).catch((err) => {
           logger.warn('Card extraction failed for imported message', { msgId, error: String(err) });
         });
