@@ -2,7 +2,6 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
     View,
-    Text,
     ScrollView,
     StyleSheet,
     ActivityIndicator,
@@ -13,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { H4, Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
     getAccountDisplayName,
@@ -30,10 +30,6 @@ import { useI18n } from '../hooks/useI18n';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUserSubscription } from '../hooks/queries/usePaymentQueries';
 import { useDeviceSessions } from '../hooks/queries/useServicesQueries';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
-import { screenContentStyle } from '../constants/spacing';
 
 interface DeviceSessionRow {
     sessionId: string;
@@ -44,6 +40,8 @@ interface DeviceSessionRow {
     expiresAt: string;
     isCurrent: boolean;
 }
+
+const AVATAR_SIZE = 88;
 
 const formatRelative = (dateString?: string): string => {
     if (!dateString) {
@@ -86,15 +84,9 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     onClose,
     goBack,
     navigate,
-    theme,
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
-    const colorScheme = useColorScheme();
-    const palette = useMemo(
-        () => Colors[normalizeColorScheme(colorScheme, normalizeTheme(theme))],
-        [colorScheme, theme],
-    );
     const {
         user: contextUser,
         isAuthenticated,
@@ -290,14 +282,14 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+            <View className="flex-1 bg-bg">
                 <Header
                     title={t('manageAccount.title') || 'Manage your Oxy Account'}
                     onBack={goBack || onClose}
                     elevation="subtle"
                 />
                 <View style={styles.center}>
-                    <Text style={[styles.notSignedIn, { color: bloomTheme.colors.text }]}>
+                    <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
@@ -307,7 +299,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
     if (userLoading && !user) {
         return (
-            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+            <View className="flex-1 bg-bg">
                 <Header
                     title={t('manageAccount.title') || 'Manage your Oxy Account'}
                     onBack={goBack || onClose}
@@ -324,15 +316,15 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const otherDevices = deviceRows.filter((d) => !d.isCurrent);
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('manageAccount.title') || 'Manage your Oxy Account'}
                 onBack={goBack || onClose}
                 elevation="subtle"
             />
             <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
+                className="flex-1"
+                contentContainerClassName="px-screen-margin pb-space-24"
                 refreshControl={
                     <RefreshControl
                         refreshing={deviceSessionsRefetching}
@@ -342,47 +334,32 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 }
             >
                 {/* Profile card */}
-                <View
-                    style={[
-                        styles.profileCard,
-                        { backgroundColor: bloomTheme.colors.card },
-                    ]}
-                >
+                <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
                     <TouchableOpacity
                         onPress={openAvatarPicker}
                         accessibilityRole="button"
                         accessibilityLabel={t('editProfile.changeAvatar') || 'Change avatar'}
                         style={styles.avatarTouchable}
+                        className="mb-space-12"
                     >
-                        <Avatar uri={avatarUri} name={displayName} size={88} />
+                        <Avatar uri={avatarUri} name={displayName} size={AVATAR_SIZE} />
                         <View
-                            style={[
-                                styles.avatarBadge,
-                                { backgroundColor: bloomTheme.colors.primary, borderColor: bloomTheme.colors.card },
-                            ]}
+                            style={styles.avatarBadge}
+                            className="bg-fill-brand border-border-image"
                         >
                             <Ionicons name="camera" size={14} color={bloomTheme.colors.primaryForeground} />
                         </View>
                     </TouchableOpacity>
-                    <Text
-                        style={[styles.displayName, { color: bloomTheme.colors.text }]}
-                        numberOfLines={1}
-                    >
+                    <H4 className="text-text" numberOfLines={1}>
                         {displayName}
-                    </Text>
+                    </H4>
                     {handle ? (
-                        <Text
-                            style={[styles.handle, { color: bloomTheme.colors.textSecondary }]}
-                            numberOfLines={1}
-                        >
+                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
                             {user?.username ? `@${handle}` : handle}
                         </Text>
                     ) : null}
                     {user?.email ? (
-                        <Text
-                            style={[styles.email, { color: bloomTheme.colors.textSecondary }]}
-                            numberOfLines={1}
-                        >
+                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
                             {user.email}
                         </Text>
                     ) : null}
@@ -394,7 +371,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="account-circle"
-                                color={palette.iconPersonalInfo}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={t('manageAccount.items.editProfile.title') || 'Edit profile'}
@@ -410,7 +387,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="palette"
-                                color={palette.iconData}
+                                color={bloomTheme.colors.info}
                             />
                         }
                         title={t('manageAccount.items.theme.title') || 'Theme color'}
@@ -426,7 +403,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="eye"
-                                color={palette.iconHome}
+                                color={bloomTheme.colors.success}
                             />
                         }
                         title={t('editProfile.items.previewProfile.title') || 'Preview profile'}
@@ -443,7 +420,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="check-circle"
-                                color={palette.iconPersonalInfo}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={
@@ -581,7 +558,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="shield-check"
-                                color={palette.iconSecurity}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={
@@ -597,7 +574,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="star"
-                                color={palette.iconPayments}
+                                color={bloomTheme.colors.warning}
                             />
                         }
                         title={
@@ -615,7 +592,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             icon={
                                 <SettingsIcon
                                     name="credit-card"
-                                    color={palette.iconPersonalInfo}
+                                    color={bloomTheme.colors.success}
                                 />
                             }
                             title={
@@ -636,7 +613,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 >
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="clock" color={palette.iconSecurity} />
+                            <SettingsIcon name="clock" color={bloomTheme.colors.primary} />
                         }
                         title={t('accountOverview.items.history.title') || 'History'}
                         description={
@@ -647,7 +624,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="bookmark" color={palette.iconStorage} />
+                            <SettingsIcon name="bookmark" color={bloomTheme.colors.info} />
                         }
                         title={
                             t('accountOverview.items.saves.title') || 'Saves & Collections'
@@ -660,7 +637,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="folder" color={palette.iconStorage} />
+                            <SettingsIcon name="folder" color={bloomTheme.colors.info} />
                         }
                         title={
                             t('accountCenter.items.fileManagement.title') || 'Files'
@@ -675,7 +652,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="download"
-                                color={palette.iconPersonalInfo}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={
@@ -702,7 +679,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             icon={
                                 <SettingsIcon
                                     name="account-switch"
-                                    color={palette.iconStorage}
+                                    color={bloomTheme.colors.info}
                                 />
                             }
                             title={
@@ -728,7 +705,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             icon={
                                 <SettingsIcon
                                     name="account-plus"
-                                    color={palette.iconPersonalInfo}
+                                    color={bloomTheme.colors.primary}
                                 />
                             }
                             title={
@@ -750,7 +727,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 >
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="cog" color={palette.iconData} />
+                            <SettingsIcon name="cog" color={bloomTheme.colors.info} />
                         }
                         title={t('preferences.title') || 'Preferences'}
                         description={
@@ -761,7 +738,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="bell" color={palette.iconPersonalInfo} />
+                            <SettingsIcon name="bell" color={bloomTheme.colors.primary} />
                         }
                         title={t('notifications.title') || 'Notifications'}
                         description={
@@ -772,7 +749,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="translate" color={palette.iconPersonalInfo} />
+                            <SettingsIcon name="translate" color={bloomTheme.colors.primary} />
                         }
                         title={t('language.title') || 'Language'}
                         description={
@@ -782,7 +759,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="apps" color={palette.iconData} />
+                            <SettingsIcon name="apps" color={bloomTheme.colors.info} />
                         }
                         title={t('connectedApps.title') || 'Connected apps'}
                         description={
@@ -793,7 +770,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="magnify" color={palette.iconSecurity} />
+                            <SettingsIcon name="magnify" color={bloomTheme.colors.primary} />
                         }
                         title={
                             t('accountOverview.items.searchSettings.title') || 'Search settings'
@@ -812,7 +789,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 >
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="help-circle" color={palette.iconSecurity} />
+                            <SettingsIcon name="help-circle" color={bloomTheme.colors.primary} />
                         }
                         title={t('accountOverview.items.help.title') || 'Help & support'}
                         description={
@@ -825,7 +802,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="message-text"
-                                color={palette.iconData}
+                                color={bloomTheme.colors.info}
                             />
                         }
                         title={t('feedback.title') || 'Send feedback'}
@@ -836,7 +813,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                     <SettingsListItem
                         icon={
-                            <SettingsIcon name="information" color={palette.iconHome} />
+                            <SettingsIcon name="information" color={bloomTheme.colors.success} />
                         }
                         title={t('accountOverview.items.about.title') || 'About'}
                         description={
@@ -855,7 +832,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="shield-check"
-                                color={palette.iconPersonalInfo}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={
@@ -871,7 +848,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         icon={
                             <SettingsIcon
                                 name="file-document"
-                                color={palette.iconSecurity}
+                                color={bloomTheme.colors.primary}
                             />
                         }
                         title={
@@ -930,13 +907,8 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                 </SettingsListGroup>
 
-                <View style={styles.versionContainer}>
-                    <Text
-                        style={[
-                            styles.versionText,
-                            { color: bloomTheme.colors.textTertiary },
-                        ]}
-                    >
+                <View className="items-center mt-space-12 mb-space-8">
+                    <Text className="text-text-tertiary text-xs">
                         {t('accountCenter.version', { version: packageInfo.version })
                             || `Version ${packageInfo.version}`}
                     </Text>
@@ -1032,35 +1004,18 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     );
 };
 
+// Layout-only styles: flex centering, the absolutely-positioned avatar badge,
+// and measured pixel dimensions that no token class can express. Colors,
+// spacing, radius, and typography roles live on Bloom components + NativeWind
+// token classes.
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     center: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    notSignedIn: {
-        fontSize: 16,
-    },
-    scroll: {
-        flex: 1,
-    },
-    scrollContent: {
-        ...screenContentStyle,
-        paddingTop: 0,
-    },
-    profileCard: {
-        alignItems: 'center',
-        paddingVertical: 24,
-        paddingHorizontal: 20,
-        borderRadius: 24,
-        marginBottom: 16,
-    },
     avatarTouchable: {
         position: 'relative',
-        marginBottom: 12,
     },
     avatarBadge: {
         position: 'absolute',
@@ -1073,28 +1028,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 2,
     },
-    displayName: {
-        fontSize: 22,
-        fontWeight: '700',
-        marginBottom: 4,
-    },
-    handle: {
-        fontSize: 14,
-        marginBottom: 2,
-    },
-    email: {
-        fontSize: 14,
-    },
     footerSpacer: {
         height: 24,
-    },
-    versionContainer: {
-        alignItems: 'center',
-        marginTop: 12,
-        marginBottom: 8,
-    },
-    versionText: {
-        fontSize: 12,
     },
 });
 

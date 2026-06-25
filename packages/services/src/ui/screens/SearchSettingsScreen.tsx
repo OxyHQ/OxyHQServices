@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import {
-    View,
-    StyleSheet,
-    ScrollView,
-} from 'react-native';
+import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import LoadingState from '../components/LoadingState';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
-import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { SettingsIcon } from '../components/SettingsIcon';
+import { useI18n } from '../hooks/useI18n';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
@@ -22,11 +19,11 @@ interface SearchSettings {
 
 const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
 }) => {
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
 
     // Use the existing useSettingToggles hook for toggle management
@@ -77,11 +74,9 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         loadSettings();
     }, [user?.id, oxyServices, setValues]);
 
-    const bloomTheme = useTheme();
-
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+            <View className="flex-1 bg-bg">
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
                     onBack={goBack || onClose}
@@ -94,47 +89,63 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
-
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
 
-            <ScrollView style={styles.content}>
-                {/* SafeSearch */}
-                <SettingsListGroup title={t('searchSettings.safeSearch.title') || 'SafeSearch'}>
-                    <SettingsListItem
-                        title={t('searchSettings.safeSearch.label') || 'Enable SafeSearch'}
-                        description={t('searchSettings.safeSearch.description') || 'Filter out explicit content from search results'}
-                        rightElement={<Switch value={settings.safeSearch} onValueChange={() => toggle('safeSearch')} disabled={isSaving} />}
-                    />
-                </SettingsListGroup>
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    {/* SafeSearch */}
+                    <SettingsListGroup title={t('searchSettings.safeSearch.title') || 'SafeSearch'}>
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="shield-search"
+                                    color={bloomTheme.colors.success}
+                                />
+                            }
+                            title={t('searchSettings.safeSearch.label') || 'Enable SafeSearch'}
+                            description={t('searchSettings.safeSearch.description') || 'Filter out explicit content from search results'}
+                            rightElement={
+                                <Switch
+                                    value={settings.safeSearch}
+                                    onValueChange={() => toggle('safeSearch')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
 
-                {/* Search Personalization */}
-                <SettingsListGroup title={t('searchSettings.personalization.title') || 'Search Personalization'}>
-                    <SettingsListItem
-                        title={t('searchSettings.personalization.label') || 'Personalized Search'}
-                        description={t('searchSettings.personalization.description') || 'Use your activity to improve search results'}
-                        rightElement={<Switch value={settings.searchPersonalization} onValueChange={() => toggle('searchPersonalization')} disabled={isSaving} />}
-                    />
-                </SettingsListGroup>
+                    {/* Search Personalization */}
+                    <SettingsListGroup title={t('searchSettings.personalization.title') || 'Search Personalization'}>
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="account-search"
+                                    color={bloomTheme.colors.primary}
+                                />
+                            }
+                            title={t('searchSettings.personalization.label') || 'Personalized Search'}
+                            description={t('searchSettings.personalization.description') || 'Use your activity to improve search results'}
+                            rightElement={
+                                <Switch
+                                    value={settings.searchPersonalization}
+                                    onValueChange={() => toggle('searchPersonalization')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
+                </View>
             </ScrollView>
         </View>
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-});
-
 export default React.memo(SearchSettingsScreen);
-

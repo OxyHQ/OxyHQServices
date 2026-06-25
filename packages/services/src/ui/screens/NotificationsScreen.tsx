@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -12,9 +12,6 @@ import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateNotificationPreferences } from '../hooks/mutations/useAccountMutations';
 import { useSettingToggles } from '../hooks/useSettingToggle';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 
 interface NotificationToggleValues {
     pushEnabled: boolean;
@@ -38,14 +35,9 @@ const DEFAULT_VALUES: NotificationToggleValues = {
  * from the current user's `notificationPreferences` field, defaulting to the
  * platform defaults when the field has never been set.
  */
-const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }) => {
+const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
-    const palette = useMemo(
-        () => Colors[normalizeColorScheme(colorScheme, normalizeTheme(theme))],
-        [colorScheme, theme],
-    );
     const { isAuthenticated } = useOxy();
     const { data: user } = useCurrentUser({ enabled: isAuthenticated });
     const updateMutation = useUpdateNotificationPreferences();
@@ -77,113 +69,122 @@ const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
     const isSaving = savingKeys.size > 0;
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('notifications.title') || 'Notifications'}
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                <SettingsListGroup
-                    title={t('notifications.sections.channels') || 'Channels'}
-                >
-                    <SettingsListItem
-                        icon={<SettingsIcon name="bell" color={palette.iconPersonalInfo} />}
-                        title={t('notifications.items.push.title') || 'Push notifications'}
-                        description={
-                            t('notifications.items.push.subtitle')
-                            || 'Real-time alerts on your devices'
-                        }
-                        rightElement={
-                            <Switch
-                                value={values.pushEnabled}
-                                onValueChange={() => toggle('pushEnabled')}
-                                disabled={isSaving}
-                            />
-                        }
-                        showChevron={false}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="email" color={palette.iconData} />}
-                        title={t('notifications.items.emailDigest.title') || 'Email digest'}
-                        description={
-                            t('notifications.items.emailDigest.subtitle')
-                            || 'Periodic summary of your account activity'
-                        }
-                        rightElement={
-                            <Switch
-                                value={values.emailDigest}
-                                onValueChange={() => toggle('emailDigest')}
-                                disabled={isSaving}
-                            />
-                        }
-                        showChevron={false}
-                    />
-                </SettingsListGroup>
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    <SettingsListGroup
+                        title={t('notifications.sections.channels') || 'Channels'}
+                    >
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="bell"
+                                    color={bloomTheme.colors.primary}
+                                />
+                            }
+                            title={t('notifications.items.push.title') || 'Push notifications'}
+                            description={
+                                t('notifications.items.push.subtitle')
+                                || 'Real-time alerts on your devices'
+                            }
+                            rightElement={
+                                <Switch
+                                    value={values.pushEnabled}
+                                    onValueChange={() => toggle('pushEnabled')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="email"
+                                    color={bloomTheme.colors.info}
+                                />
+                            }
+                            title={t('notifications.items.emailDigest.title') || 'Email digest'}
+                            description={
+                                t('notifications.items.emailDigest.subtitle')
+                                || 'Periodic summary of your account activity'
+                            }
+                            rightElement={
+                                <Switch
+                                    value={values.emailDigest}
+                                    onValueChange={() => toggle('emailDigest')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
 
-                <SettingsListGroup
-                    title={t('notifications.sections.alerts') || 'Alerts'}
-                >
-                    <SettingsListItem
-                        icon={<SettingsIcon name="shield-check" color={palette.iconSecurity} />}
-                        title={
-                            t('notifications.items.securityAlerts.title') || 'Security alerts'
-                        }
-                        description={
-                            t('notifications.items.securityAlerts.subtitle')
-                            || 'Sign-ins, recovery codes, and key changes'
-                        }
-                        rightElement={
-                            <Switch
-                                value={values.securityAlerts}
-                                onValueChange={() => toggle('securityAlerts')}
-                                disabled={isSaving}
-                            />
-                        }
-                        showChevron={false}
-                    />
-                </SettingsListGroup>
+                    <SettingsListGroup
+                        title={t('notifications.sections.alerts') || 'Alerts'}
+                    >
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="shield-check"
+                                    color={bloomTheme.colors.success}
+                                />
+                            }
+                            title={
+                                t('notifications.items.securityAlerts.title') || 'Security alerts'
+                            }
+                            description={
+                                t('notifications.items.securityAlerts.subtitle')
+                                || 'Sign-ins, recovery codes, and key changes'
+                            }
+                            rightElement={
+                                <Switch
+                                    value={values.securityAlerts}
+                                    onValueChange={() => toggle('securityAlerts')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
 
-                <SettingsListGroup
-                    title={t('notifications.sections.marketing') || 'Marketing'}
-                >
-                    <SettingsListItem
-                        icon={<SettingsIcon name="megaphone" color={palette.iconSharing} />}
-                        title={
-                            t('notifications.items.marketingEmails.title')
-                            || 'Marketing emails'
-                        }
-                        description={
-                            t('notifications.items.marketingEmails.subtitle')
-                            || 'Product news and occasional offers'
-                        }
-                        rightElement={
-                            <Switch
-                                value={values.marketingEmails}
-                                onValueChange={() => toggle('marketingEmails')}
-                                disabled={isSaving}
-                            />
-                        }
-                        showChevron={false}
-                    />
-                </SettingsListGroup>
+                    <SettingsListGroup
+                        title={t('notifications.sections.marketing') || 'Marketing'}
+                    >
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="megaphone"
+                                    color={bloomTheme.colors.secondary}
+                                />
+                            }
+                            title={
+                                t('notifications.items.marketingEmails.title')
+                                || 'Marketing emails'
+                            }
+                            description={
+                                t('notifications.items.marketingEmails.subtitle')
+                                || 'Product news and occasional offers'
+                            }
+                            rightElement={
+                                <Switch
+                                    value={values.marketingEmails}
+                                    onValueChange={() => toggle('marketingEmails')}
+                                    disabled={isSaving}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
+                </View>
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scroll: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingHorizontal: 16,
-        paddingBottom: 24,
-    },
-});
 
 export default React.memo(NotificationsScreen);
