@@ -5,6 +5,73 @@
  * providing CORS bypass and tracking protection.
  */
 
+const DANGEROUS_TAGS = [
+  'script',
+  'iframe',
+  'object',
+  'embed',
+  'applet',
+  'meta',
+  'base',
+  'form',
+  'input',
+  'button',
+  'textarea',
+  'select',
+];
+const DANGEROUS_URL_SCHEMES = /^(?:javascript|data|vbscript|file):/i;
+
+function escapeAttributeValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function isSafeEmailUrl(value: string): boolean {
+  const trimmed = value.trim().replace(/[\u0000-\u001f\u007f\s]+/g, '');
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('/')) return true;
+  if (DANGEROUS_URL_SCHEMES.test(trimmed)) return false;
+
+  try {
+    const parsed = new URL(trimmed);
+    return ['http:', 'https:', 'mailto:', 'tel:', 'cid:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove active content and dangerous URLs from untrusted email HTML before it is
+ * rendered in an iframe or native WebView. This is intentionally conservative:
+ * email markup should be display-only, with no scripts, forms, event handlers,
+ * or javascript/data/file navigations.
+ */
+export function sanitizeEmailHtml(html: string): string {
+  if (!html) return '';
+
+  let sanitized = html;
+
+  for (const tag of DANGEROUS_TAGS) {
+    sanitized = sanitized.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), '');
+    sanitized = sanitized.replace(new RegExp(`<${tag}\\b[^>]*\\/?>`, 'gi'), '');
+  }
+
+  sanitized = sanitized.replace(/\s+on[a-z0-9_-]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+
+  sanitized = sanitized.replace(
+    /\s+(href|src|xlink:href|action|formaction|poster)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    (_match, attr: string, _raw: string, doubleQuoted?: string, singleQuoted?: string, unquoted?: string) => {
+      const value = doubleQuoted ?? singleQuoted ?? unquoted ?? '';
+      return isSafeEmailUrl(value) ? ` ${attr}="${escapeAttributeValue(value)}"` : '';
+    },
+  );
+
+  sanitized = sanitized.replace(
+    /url\(\s*(['"]?)([^)'"]+)\1\s*\)/gi,
+    (match, _quote, url: string) => (isSafeEmailUrl(url) ? match : 'url(about:blank)'),
+  );
+
+  return sanitized;
+}
+
 const INTERNAL_DOMAINS = ['oxy.so', 'localhost', '127.0.0.1'];
 
 function isExternalUrl(url: string): boolean {

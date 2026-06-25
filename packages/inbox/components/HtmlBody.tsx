@@ -1,6 +1,6 @@
 /**
  * Cross-platform HTML email body renderer.
- * Web: sandboxed iframe with auto-height. Native: react-native-webview with auto-height.
+ * Web: sandboxed iframe with auto-height. Native: locked-down react-native-webview.
  *
  * External images and fonts are routed through our proxy to:
  * - Bypass CORS/CORP restrictions
@@ -11,7 +11,7 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { Platform, StyleSheet, Linking } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { proxyExternalImages, getProxyBaseUrl } from '../utils/htmlTransform';
+import { proxyExternalImages, getProxyBaseUrl, sanitizeEmailHtml } from '../utils/htmlTransform';
 
 interface HtmlBodyProps {
   html: string;
@@ -48,7 +48,8 @@ function wrapHtml(html: string, isDark: boolean): string {
 
   // Transform external image/font URLs to go through our proxy
   const proxyBaseUrl = getProxyBaseUrl();
-  const proxiedHtml = proxyExternalImages(html, proxyBaseUrl);
+  const sanitizedHtml = sanitizeEmailHtml(html);
+  const proxiedHtml = proxyExternalImages(sanitizedHtml, proxyBaseUrl);
 
   return `
     <!DOCTYPE html>
@@ -170,27 +171,6 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
   );
 }
 
-const HEIGHT_SCRIPT = `
-  <script>
-    (function() {
-      function postHeight() {
-        var h = document.body.scrollHeight;
-        if (h > 0) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
-      }
-      // Post height immediately and on load
-      postHeight();
-      document.addEventListener('DOMContentLoaded', postHeight);
-      window.addEventListener('load', postHeight);
-      // Watch for images loading
-      document.querySelectorAll('img').forEach(function(img) {
-        img.addEventListener('load', postHeight);
-      });
-      // Observe mutations
-      new MutationObserver(postHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
-    })();
-  </script>
-`;
-
 let HtmlBodyNative: React.ComponentType<HtmlBodyProps> | null = null;
 
 if (Platform.OS !== 'web') {
@@ -198,28 +178,16 @@ if (Platform.OS !== 'web') {
   const { WebView } = require('react-native-webview');
 
   HtmlBodyNative = function HtmlBodyNativeComponent({ html }: HtmlBodyProps) {
-    const [height, setHeight] = useState<number | null>(null);
     const { mode } = useTheme();
     const isDark = mode === 'dark';
 
-    const wrappedHtml = useMemo(() => wrapHtml(html, isDark) + HEIGHT_SCRIPT, [html, isDark]);
-
-    const handleMessage = useCallback((event: { nativeEvent: { data: string } }) => {
-      try {
-        const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === 'height' && msg.value > 0) {
-          setHeight(msg.value);
-        }
-      } catch {
-        // ignore
-      }
-    }, []);
+    const wrappedHtml = useMemo(() => wrapHtml(html, isDark), [html, isDark]);
 
     // Open links in the system browser instead of navigating the WebView
     const handleNavigation = useCallback((request: { url: string }) => {
       const { url } = request;
-      // Allow the initial HTML load (about:blank or data: URLs)
-      if (url === 'about:blank' || url.startsWith('data:') || url.startsWith('about:')) {
+      // Allow the initial HTML load only. All user-clicked navigations leave the WebView.
+      if (url === 'about:blank' || url.startsWith('about:')) {
         return true;
       }
       // Open external links in system browser
@@ -231,19 +199,20 @@ if (Platform.OS !== 'web') {
 
     return (
       <WebView
-        originWhitelist={['*']}
+        originWhitelist={['about:blank']}
         source={{ html: wrappedHtml }}
-        style={[styles.webView, height ? { height } : { minHeight: 100 }]}
+        style={styles.webView}
         scalesPageToFit={false}
-        scrollEnabled={false}
+        scrollEnabled
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
-        onMessage={handleMessage}
         onShouldStartLoadWithRequest={handleNavigation}
-        javaScriptEnabled
+        javaScriptEnabled={false}
         domStorageEnabled={false}
         startInLoadingState={false}
-        cacheEnabled
+        cacheEnabled={false}
+        mixedContentMode="never"
+        setSupportMultipleWindows={false}
       />
     );
   };
@@ -262,5 +231,6 @@ export function HtmlBody({ html }: HtmlBodyProps) {
 const styles = StyleSheet.create({
   webView: {
     backgroundColor: 'transparent',
+    minHeight: 400,
   },
 });
