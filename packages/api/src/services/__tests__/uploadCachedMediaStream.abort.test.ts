@@ -259,122 +259,34 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     source.destroy();
   });
 
-  it('revives a deleted direct-upload record and restores its missing storage', async () => {
+  it('scopes SHA de-duplication to non-deleted file records', async () => {
     const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
-    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
-    const uploadBuffer = jest.fn((key: string, buffer: Buffer, options?: UploadOptions): Promise<FileInfo> => Promise.resolve({
-      key,
-      size: buffer.length,
-      contentType: options?.contentType || 'application/octet-stream',
-    } as FileInfo));
-    const { service } = buildAssetService({ deleteFile, fileExists, uploadBuffer });
+    const { service } = buildAssetService({ deleteFile });
 
     const existingFile = {
-      _id: { toString: () => '64c000000000000000000fed' },
+      _id: { toString: () => '64c000000000000000000aaa' },
       sha256: 'deduped-sha',
       storageKey: 'content/2026/06/de/deduped-sha.jpg',
-      status: 'deleted',
-      ownerUserId: '__federation__',
+      status: 'active',
+      ownerUserId: 'owner',
       purpose: 'user',
       size: 4,
       mime: 'image/jpeg',
-      ext: '.jpg',
-      originalName: 'old-avatar.jpg',
-      visibility: 'public',
-      metadata: { old: true },
-      links: [{ app: 'old', entityType: 'profile', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
-      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
-      save: jest.fn((): Promise<void> => Promise.resolve()),
+      visibility: 'private',
     };
     mockFileFindOne.mockResolvedValueOnce(existingFile);
 
-    const result = await service.uploadFileDirect(
+    await expect(service.uploadFileDirect(
       'fresh-owner',
       Buffer.from('JPEG'),
       'image/jpeg',
-      'fresh-avatar.jpg',
-      'public',
-      { source: 'federation-avatar' }
-    );
+      'fresh-avatar.jpg'
+    )).resolves.toBe(existingFile);
 
-    expect(result).toBe(existingFile);
-    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
-    expect(uploadBuffer).toHaveBeenCalledWith(existingFile.storageKey, Buffer.from('JPEG'), { contentType: 'image/jpeg' });
-    expect(existingFile.status).toBe('active');
-    expect(existingFile.ownerUserId).toBe('fresh-owner');
-    expect(existingFile.originalName).toBe('fresh-avatar.jpg');
-    expect(existingFile.metadata).toEqual({ source: 'federation-avatar' });
-    expect(existingFile.links).toEqual([]);
-    expect(existingFile.variants).toEqual([]);
-    expect(existingFile.save).toHaveBeenCalledTimes(1);
-    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
-  });
-
-  it('revives a deleted cached-media record after deduplicating streamed media', async () => {
-    let resolveUpload: ((info: FileInfo) => void) | undefined;
-    let capturedTempKey: string | undefined;
-
-    const uploadStream = jest.fn(
-      (key: string, _body: Readable): Promise<FileInfo> => {
-        capturedTempKey = key;
-        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
-      }
-    );
-    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
-    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
-    const copyFile = jest.fn((): Promise<void> => Promise.resolve());
-    const { service } = buildAssetService({ uploadStream, deleteFile, fileExists, copyFile });
-
-    const existingFile = {
-      _id: { toString: () => '64c000000000000000000cab' },
-      sha256: 'deleted-cache-sha',
-      storageKey: 'content/2026/06/de/deleted-cache-sha.png',
-      status: 'deleted',
-      ownerUserId: '__federation__',
-      purpose: 'federation-media-cache',
-      size: 4,
-      mime: 'image/png',
-      ext: '.png',
-      originalName: 'old-cache.png',
-      visibility: 'public',
-      metadata: { old: true },
-      links: [{ app: 'mention', entityType: 'post', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
-      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
-      save: jest.fn((): Promise<void> => Promise.resolve()),
-    };
-    mockFileFindOne.mockResolvedValueOnce(existingFile);
-
-    const source = new Readable({
-      read() {
-        this.push(Buffer.from('PNG!'));
-        this.push(null);
-      },
+    expect(mockFileFindOne).toHaveBeenCalledWith({
+      sha256: 'f4dc1c96a30fbdeb2a15cb6d4229469fff36c0266dc0c346599093c24d4c0a01',
+      status: { $ne: 'deleted' },
     });
-
-    const promise = service.uploadCachedMediaStream(
-      source,
-      'image/png',
-      'federation-cache-media',
-      CACHE_MAX_BYTES
-    );
-
-    await new Promise((resolve) => setImmediate(resolve));
-    resolveUpload?.({ key: capturedTempKey || 'cache/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
-
-    await expect(promise).resolves.toBe(existingFile);
-
-    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
-    expect(copyFile).toHaveBeenCalledWith(capturedTempKey, existingFile.storageKey);
-    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
-    expect(existingFile.status).toBe('active');
-    expect(existingFile.ownerUserId).toBe('__federation_media_cache__');
-    expect(existingFile.purpose).toBe('federation-media-cache');
-    expect(existingFile.metadata).toEqual({});
-    expect(existingFile.links).toEqual([]);
-    expect(existingFile.variants).toEqual([]);
-    expect(existingFile.save).toHaveBeenCalledTimes(1);
-    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
-
-    source.destroy();
   });
+
 });
