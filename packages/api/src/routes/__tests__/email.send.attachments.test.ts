@@ -3,15 +3,15 @@
  *
  * Exercises the canonical `{ fileId, contentId?, isInline? }` attachment
  * contract introduced by the Oxy File Manager migration. The route handler
- * resolves each fileId via assetService, enforces ownership via
- * canUserAccessFile, snapshots `{name, contentType, size}` from the File
+ * resolves each fileId via assetService, enforces ownerUserId ownership,
+ * snapshots `{name, contentType, size}` from the File
  * record into the IAttachment subdocument, and links each file to the
  * stored Message under `app: 'oxy-mail'`.
  *
  * Failure modes covered:
  *   1. Happy path — valid {fileId} array sends; resolved IAttachment[]
  *      reaches smtpOutbound.send AND linkFile is called for each file.
- *   2. Foreign file (canUserAccessFile → false) → 403 ForbiddenError.
+ *   2. Foreign file (ownerUserId !== sender) → 403 ForbiddenError.
  *   3. Missing file (assetService returns no record) → 400 BadRequestError.
  *   4. Trashed file (status !== 'active') → 400 BadRequestError.
  *   5. Legacy shape (bare `s3Key`/`filename`) → 400 from Zod validation
@@ -153,13 +153,15 @@ const FILE_OWN = '64f0000000000000000000a1';
 const FILE_FOREIGN = '64f0000000000000000000a2';
 const FILE_TRASHED = '64f0000000000000000000a3';
 const FILE_MISSING = '64f0000000000000000000a4';
+const OTHER_USER_ID = '64b0000000000000000000bb';
 
-function makeFile(id: string, status: 'active' | 'trash' | 'deleted'): {
+function makeFile(id: string, status: 'active' | 'trash' | 'deleted', ownerUserId = TEST_USER_ID): {
   _id: { toString: () => string };
   status: 'active' | 'trash' | 'deleted';
   originalName: string;
   mime: string;
   size: number;
+  ownerUserId: { toString: () => string };
 } {
   return {
     _id: { toString: () => id },
@@ -167,6 +169,7 @@ function makeFile(id: string, status: 'active' | 'trash' | 'deleted'): {
     originalName: `${id}.pdf`,
     mime: 'application/pdf',
     size: 1234,
+    ownerUserId: { toString: () => ownerUserId },
   };
 }
 
@@ -202,7 +205,7 @@ describe('POST /email/messages — attachment resolution', () => {
     );
 
     expect(mockGetFilesByIds).toHaveBeenCalledWith([FILE_OWN]);
-    expect(mockCanUserAccessFile).toHaveBeenCalledWith(ownedFile, TEST_USER_ID);
+    expect(mockCanUserAccessFile).not.toHaveBeenCalled();
 
     expect(mockSmtpSend).toHaveBeenCalledTimes(1);
     const sendArg = mockSmtpSend.mock.calls[0][0] as {
@@ -226,10 +229,10 @@ describe('POST /email/messages — attachment resolution', () => {
     });
   });
 
-  it('returns 403 when the requesting user cannot access the referenced file', async () => {
-    const foreignFile = makeFile(FILE_FOREIGN, 'active');
+  it('returns 403 when the requesting user does not own the referenced file', async () => {
+    const foreignFile = makeFile(FILE_FOREIGN, 'active', OTHER_USER_ID);
     mockGetFilesByIds.mockResolvedValueOnce([foreignFile]);
-    mockCanUserAccessFile.mockResolvedValueOnce(false);
+    mockCanUserAccessFile.mockResolvedValueOnce(true);
 
     const res = await postJson(server, '/email/messages', {
       to: [{ address: 'bob@example.com' }],
@@ -241,6 +244,7 @@ describe('POST /email/messages — attachment resolution', () => {
     expect(res.body).toEqual(
       expect.objectContaining({ error: expect.stringMatching(/forbidden/i) }),
     );
+    expect(mockCanUserAccessFile).not.toHaveBeenCalled();
     expect(mockSmtpSend).not.toHaveBeenCalled();
     expect(mockLinkFile).not.toHaveBeenCalled();
   });

@@ -26,7 +26,7 @@ import type { RecipientInput, AttachmentInput } from '../schemas/email.schemas';
  * canonical IAttachment shape persisted on Message. Each fileId MUST:
  *   - exist
  *   - be in status 'active' (not trash/deleted)
- *   - be accessible to the requesting user (assetService.canUserAccessFile)
+ *   - be owned by the requesting user
  *
  * The IAttachment is built from the IFile so the Message subdocument carries
  * a stable snapshot of name/contentType/size at send time, regardless of any
@@ -53,8 +53,7 @@ async function resolveAttachmentInputs(
     if (!file) {
       throw new BadRequestError(`Attachment file not found or not active: ${input.fileId}`);
     }
-    const allowed = await assetService.canUserAccessFile(file, userId);
-    if (!allowed) {
+    if (file.ownerUserId.toString() !== userId) {
       throw new ForbiddenError(`Not authorized to attach file ${file._id}`);
     }
     resolved.push({
