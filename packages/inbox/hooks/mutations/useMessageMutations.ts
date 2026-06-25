@@ -203,7 +203,11 @@ export function useArchiveMessage() {
       // Auto-advance selected message
       const { selectedMessageId } = useEmailStore.getState();
       if (selectedMessageId === messageId) {
-        const data = queryClient.getQueryData<MessagesInfinite>(['messages', useEmailStore.getState().currentMailbox?._id]);
+        const data = queryClient
+          .getQueriesData<MessagesInfinite>({
+            queryKey: ['messages', useEmailStore.getState().currentMailbox?._id],
+          })
+          .find(([, cached]) => !!cached)?.[1];
         const messages = flatMessages(data);
         const idx = messages.findIndex((m) => m._id === messageId);
         const nextId = idx < messages.length - 1 ? messages[idx + 1]._id : idx > 0 ? messages[idx - 1]._id : null;
@@ -257,7 +261,11 @@ export function useDeleteMessage() {
       // Auto-advance selected message
       const { selectedMessageId } = useEmailStore.getState();
       if (selectedMessageId === messageId) {
-        const data = queryClient.getQueryData<MessagesInfinite>(['messages', useEmailStore.getState().currentMailbox?._id]);
+        const data = queryClient
+          .getQueriesData<MessagesInfinite>({
+            queryKey: ['messages', useEmailStore.getState().currentMailbox?._id],
+          })
+          .find(([, cached]) => !!cached)?.[1];
         const messages = flatMessages(data);
         const idx = messages.findIndex((m) => m._id === messageId);
         const nextId = idx < messages.length - 1 ? messages[idx + 1]._id : idx > 0 ? messages[idx - 1]._id : null;

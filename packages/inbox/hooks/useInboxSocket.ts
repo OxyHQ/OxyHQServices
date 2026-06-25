@@ -99,7 +99,7 @@ function prependToMessageCache(
 ) {
   queryClient.setQueriesData<MessagesInfinite>(
     {
-      // The query key shape is ['messages', mailboxId, starred, label]. We
+      // The query key shape is ['messages', mailboxId, starred, label, userId]. We
       // match by predicate so the prepend lands in every active variant
       // (including starred + label views the message also belongs to,
       // though `email:new` only carries the mailbox id, so we match on
@@ -107,7 +107,12 @@ function prependToMessageCache(
       // reconciliation invalidate below).
       predicate: (q) => {
         const key = q.queryKey;
-        return Array.isArray(key) && key[0] === 'messages' && key[1] === mailboxId;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'messages' &&
+          key[1] === mailboxId &&
+          key[4] === optimistic.userId
+        );
       },
     },
     (old) => {
@@ -129,15 +134,16 @@ function prependToMessageCache(
 }
 
 /**
- * Update the mailbox unread count in the `['mailboxes']` cache so the sidebar
+ * Update the mailbox unread count in the `['mailboxes', userId]` cache so the sidebar
  * badge re-renders without a network round-trip.
  */
 function updateMailboxUnread(
   queryClient: ReturnType<typeof useQueryClient>,
+  userId: string,
   mailboxId: string,
   unread: number,
 ) {
-  queryClient.setQueryData<Mailbox[] | undefined>(['mailboxes'], (old) => {
+  queryClient.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
     if (!old) return old;
     let mutated = false;
     const next = old.map((mb) => {
@@ -244,7 +250,7 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
           // 2. Bump the unread badge optimistically by 1; the authoritative
           //    `email:unread_count` event (emitted alongside by the server)
           //    will reconcile the exact number.
-          queryClientRef.current.setQueryData<Mailbox[] | undefined>(['mailboxes'], (old) => {
+          queryClientRef.current.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
             if (!old) return old;
             let mutated = false;
             const next = old.map((mb) => {
@@ -261,7 +267,12 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
           queryClientRef.current.invalidateQueries({
             predicate: (q) => {
               const key = q.queryKey;
-              return Array.isArray(key) && key[0] === 'messages' && key[1] === event.mailboxId;
+              return (
+                Array.isArray(key) &&
+                key[0] === 'messages' &&
+                key[1] === event.mailboxId &&
+                key[4] === userId
+              );
             },
           });
 
@@ -285,7 +296,7 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
             }
             return;
           }
-          updateMailboxUnread(queryClientRef.current, payload.mailboxId, payload.unread);
+          updateMailboxUnread(queryClientRef.current, userId, payload.mailboxId, payload.unread);
           break;
         }
       }

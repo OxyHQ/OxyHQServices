@@ -2,7 +2,7 @@ import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
@@ -23,6 +23,7 @@ import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthGate } from '@/components/AuthGate';
 import { useInboxSocket } from '@/hooks/useInboxSocket';
+import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
@@ -137,10 +138,25 @@ function BloomImageResolver({ children }: { children: ReactNode }) {
  */
 function RootEffects() {
   const { t } = useTranslation();
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
+  const previousUserIdRef = useRef<string | null>(null);
+
+  // Private email query data is scoped by user id, and cache/UI state is also
+  // cleared whenever the authenticated Oxy identity changes so a shared app
+  // instance cannot show the prior user's cached mail during account switches.
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    if (previousUserId !== userId) {
+      queryClient.clear();
+      useEmailStore.getState().resetUserState();
+      previousUserIdRef.current = userId;
+    }
+  }, [userId]);
 
   // Real-time inbox updates. The hook is a no-op until a user is signed in
-  // and tears the socket down on sign-out — react-query caches survive,
-  // so reconciling fetches happen the moment a new session is restored.
+  // and tears the socket down on sign-out or user switch; cache/state
+  // invalidation above prevents cross-user inbox data reuse.
   useInboxSocket({ baseURL: API_URL });
 
   // Register service worker on web

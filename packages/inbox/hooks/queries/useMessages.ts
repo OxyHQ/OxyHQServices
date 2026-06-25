@@ -1,4 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { Message, Pagination } from '@/services/emailApi';
 
@@ -18,11 +19,13 @@ interface UseMessagesOptions {
 export function useMessages(options: UseMessagesOptions = {}) {
   const { mailboxId, starred, label } = options;
   const api = useEmailStore((s) => s._api);
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
 
   const hasFilter = !!mailboxId || !!starred || !!label;
 
   return useInfiniteQuery<MessagesPage>({
-    queryKey: ['messages', mailboxId ?? null, starred ?? false, label ?? null],
+    queryKey: ['messages', mailboxId ?? null, starred ?? false, label ?? null, userId],
     queryFn: async ({ pageParam = 0 }) => {
       if (!api) throw new Error('Email API not initialized');
       return await api.listMessages({
@@ -36,7 +39,7 @@ export function useMessages(options: UseMessagesOptions = {}) {
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.pagination.hasMore ? lastPage.pagination.offset + lastPage.pagination.limit : undefined,
-    enabled: hasFilter && !!api,
+    enabled: hasFilter && !!api && !!userId,
     refetchInterval: 60_000, // Poll for new messages every 60 seconds
   });
 }

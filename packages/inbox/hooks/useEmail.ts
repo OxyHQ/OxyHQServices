@@ -28,6 +28,7 @@ interface EmailState {
   isSelectionMode: boolean;
   _api: EmailApiInstance | null;
   _initApi: (http: HttpService) => EmailApiInstance;
+  resetUserState: () => void;
   selectMailbox: (mailbox: Mailbox) => void;
   selectStarred: () => void;
   selectLabel: (labelId: string, labelName: string) => void;
@@ -122,5 +123,17 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   selectAll: (ids) => {
     set({ selectedMessageIds: new Set(ids), isSelectionMode: ids.length > 0 });
+  },
+
+  resetUserState: () => {
+    set({
+      currentMailbox: null,
+      viewMode: null,
+      selectedMessageId: null,
+      expandedBundles: new Set<string>(),
+      selectedMessageIds: new Set<string>(),
+      isSelectionMode: false,
+      _api: null,
+    });
   },
 }));
