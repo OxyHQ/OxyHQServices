@@ -1180,6 +1180,28 @@ function applyAssertionCors(c: AppContext): void {
 }
 
 /**
+ * FedCM assertion responses are readable by the RP origin through credentialed
+ * CORS, so the origin that receives the token MUST be the same origin signed
+ * into the JWT `aud` claim. `Sec-Fetch-Dest: webidentity` proves the browser
+ * used the FedCM API, but it does not bind the embedding RP origin to the
+ * caller-supplied `client_id`.
+ */
+function applyAssertionCorsForClient(c: AppContext, clientId: string): boolean {
+  const requestOrigin = c.req.header('origin');
+  if (!requestOrigin) return false;
+
+  const normalisedRequestOrigin = normaliseOrigin(requestOrigin);
+  const normalisedClientOrigin = normaliseOrigin(clientId);
+  if (!normalisedRequestOrigin || !normalisedClientOrigin) return false;
+  if (normalisedRequestOrigin !== normalisedClientOrigin) return false;
+
+  c.header('Access-Control-Allow-Origin', normalisedRequestOrigin);
+  c.header('Access-Control-Allow-Credentials', 'true');
+  c.header('Vary', 'Origin');
+  return true;
+}
+
+/**
  * Preflight (OPTIONS) handler for the cross-origin credentialed POST
  * endpoints `/fedcm/assertion` and `/fedcm/disconnect`.
  *
@@ -1378,10 +1400,6 @@ app.get('/fedcm/accounts', async (c) => {
 app.options('/fedcm/assertion', (c) => preflightAssertionCors(c));
 
 app.post('/fedcm/assertion', async (c) => {
-  // The browser issues this cross-origin POST with credentials. Echo the RP
-  // origin so the browser accepts the token (required by the FedCM spec).
-  applyAssertionCors(c);
-
   // CSRF protection mandated by the FedCM spec.
   if (!hasWebIdentityDest(c)) {
     return c.json({ error: 'invalid_request' }, 400);
@@ -1425,6 +1443,15 @@ app.post('/fedcm/assertion', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
+  // The browser issues this credentialed cross-origin POST from the RP origin.
+  // Only expose the signed assertion when that Origin exactly matches the
+  // requested client_id/audience; otherwise a malicious RP could ask for a
+  // token whose aud is an approved Oxy client and read it via reflected CORS.
+  const clientOrigin = normaliseOrigin(clientId);
+  if (!clientOrigin || !applyAssertionCorsForClient(c, clientOrigin)) {
+    return c.json({ error: 'invalid_client_origin' }, 400);
+  }
+
   // Verify the session is still valid and the account matches
   const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
   if (!user || user.id !== accountId) {
@@ -1436,7 +1463,7 @@ app.post('/fedcm/assertion', async (c) => {
   const payload: Record<string, unknown> = {
     iss: fedcmIssuer,
     sub: accountId,
-    aud: clientId,
+    aud: clientOrigin,
     iat: now,
     exp: now + TOKEN_LIFETIME,
   };

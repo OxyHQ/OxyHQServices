@@ -371,6 +371,25 @@ describe('POST /fedcm/assertion', () => {
     expect(payload.iss).toBe('https://auth.oxy.so');
   });
 
+  it('rejects an assertion when Origin does not match client_id and does not expose CORS', async () => {
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://evil.example',
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({ account_id: TEST_USER_ID, client_id: RP_ORIGIN, nonce: 'rp-nonce-evil' }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    const body = (await res.json()) as { error?: string; token?: string };
+    expect(body.error).toBe('invalid_client_origin');
+    expect(body.token).toBeUndefined();
+  });
+
   it('returns 401 with WWW-Authenticate when not logged in at the IdP', async () => {
     const res = await app.request('/fedcm/assertion', {
       method: 'POST',
