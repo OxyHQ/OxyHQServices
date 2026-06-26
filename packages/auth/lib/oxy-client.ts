@@ -11,13 +11,10 @@
  * Public value — safe to commit. Overridable per environment via
  * `VITE_OXY_CLIENT_ID`.
  *
- * PREREQUISITE (plan A0): the placeholder below is NOT yet a real credential.
- * Before production, register a dedicated `oxy_dk_…` `ApplicationCredential`
- * (type `public`, `active`) for the auth app in the Oxy workspace and replace
- * this value (or set `VITE_OXY_CLIENT_ID` in the auth Cloudflare Pages
- * environment). Without a real active credential the QR sign-in option is shown
- * but the session create call will be rejected.
+ * This is the real registered "Oxy Auth" `ApplicationCredential` publicKey
+ * (type `public`, `active`) in the Oxy workspace, minted via
+ * `packages/api/scripts/register-commons-clients.ts`.
  */
 export const OXY_CLIENT_ID =
   import.meta.env.VITE_OXY_CLIENT_ID ||
-  "oxy_dk_auth_placeholder_register_before_production"
+  "oxy_dk_86e915fc05782683064b255fd5bac278a5a606bd85662202"

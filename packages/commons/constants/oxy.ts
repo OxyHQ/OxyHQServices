@@ -10,13 +10,10 @@
  * Public value — safe to commit. Overridable per environment via
  * `EXPO_PUBLIC_OXY_CLIENT_ID`.
  *
- * PREREQUISITE (plan A0): the placeholder below is NOT yet a real Commons
- * credential. Before first production boot/deploy, register a dedicated
- * `oxy_dk_…` `ApplicationCredential` (type `public`, `active`) for Commons in
- * the Oxy workspace and replace this value (or set `EXPO_PUBLIC_OXY_CLIENT_ID`
- * in the Commons Cloudflare Pages / EAS environment). Without a real active
- * credential, cross-app device sign-in and SSO will not function.
+ * This is the real registered "Commons by Oxy" `ApplicationCredential` publicKey
+ * (type `public`, `active`) in the Oxy workspace, minted via
+ * `packages/api/scripts/register-commons-clients.ts`.
  */
 export const OXY_CLIENT_ID =
   process.env.EXPO_PUBLIC_OXY_CLIENT_ID ??
-  'oxy_dk_commons_placeholder_register_before_production';
+  'oxy_dk_f65326da2a0d106bf98e873ce19b0ca9094d6c0c1f845a18';
