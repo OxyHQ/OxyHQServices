@@ -816,15 +816,13 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 
 ## Pending (post-merge, PR #415)
 
-NPM publish complete (2026-06-26): `@oxyhq/contracts 0.3.0`, `@oxyhq/core 3.11.0`, `@oxyhq/auth 5.1.1`, `@oxyhq/services 11.1.0` all published. OXY custodial keys live; Commons + Oxy Auth clientIds registered.
+**All shipped (2026-06-26):** `@oxyhq/contracts 0.3.0`, `@oxyhq/core 3.11.0`, `@oxyhq/auth 5.1.1`, `@oxyhq/services 11.1.0` published. OXY custodial signing keypair in SSM + GitHub secrets, wired into oxy-api task-def (oxy-infra `b7112c3`, applied), deployed, verified live (`did:web:oxy.so` carries `#oxy-custodial-key`). Commons + Oxy Auth clientIds registered.
 
 Remaining items that require action:
 
 1. **Commons EAS project** — create a new EAS project for Commons (`so.oxy.commons`) and add its project ID to `packages/commons/app.json`. Required for native builds. Commons clientId `oxy_dk_f65326da2a0d106bf98e873ce19b0ca9094d6c0c1f845a18` is already registered and wired in `packages/commons/constants/oxy.ts`.
 
-2. **OXY signing keys** (`OXY_PUBLIC_KEY` / `OXY_PRIVATE_KEY`): add to oxy-api ECS via GitHub Actions secret → SSM `/oxy/oxy-api/OXY_PUBLIC_KEY` and `/oxy/oxy-api/OXY_PRIVATE_KEY`. Required for custodial DID attestation and the signed `GET /users/me/export` bundle. Without these the export endpoint returns a bundle with `attestation: null` and custodial DID documents lack the Oxy controller signature.
-
-3. **Infra — did:web apex proxy forwarding** (deferred): `did:web:api.oxy.so` works today. `oxy.so/u/*/did.json` forwarding to oxy-api is not yet routed. Confirm or add Cloudflare/ALB routing for `oxy.so` → `/u/*/did.json` + `/.well-known/did.json`. Fallback: anchor DID as `did:web:api.oxy.so:u:<id>` (one constant in `did.service.ts`).
+2. **Infra — did:web apex proxy forwarding** (deferred): `did:web:api.oxy.so:u:<id>` works today. `oxy.so/u/*/did.json` routing via the `oxy-federation-proxy` Worker is deferred — zero consumers today. When ready, route `oxy.so/u/*/did.json` → oxy-api.
 
 5. **Oxy Trust migration** (`scripts/migrate-karma-to-reputation.ts`): MUST be run as a one-shot ECS task — all users read 0 reputation balance until it runs. (Carried forward from pre-PR #415 pending items.)
 
