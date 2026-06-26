@@ -30,6 +30,7 @@ import { OxyServicesTopicsMixin } from './OxyServices.topics';
 import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
+import { OxyServicesCivicMixin } from './OxyServices.civic';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -64,6 +65,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesManagedAccountsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -130,6 +132,8 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesManagedAccountsMixin,
     OxyServicesContactsMixin,
     OxyServicesAppDataMixin,
+    // Civic / Commons "DNI" (public signed cards, DNI QR payload)
+    OxyServicesCivicMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,

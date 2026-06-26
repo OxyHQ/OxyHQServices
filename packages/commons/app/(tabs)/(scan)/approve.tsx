@@ -43,7 +43,7 @@ export default function ApproveSignInScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(vault)');
+      router.replace('/(tabs)/(scan)');
     }
   }, [router]);
 

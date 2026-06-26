@@ -12,15 +12,19 @@ import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
-import { parseApprovalLink } from '@/lib/commons-signin/parse-approval-link';
+import { parseScan } from '@/lib/commons-signin/parse-scan';
 
 /**
- * QR scanner for the "Sign in with Oxy" handoff (Commons / approver side).
+ * QR scanner for the Commons handoffs (approver / verifier side).
  *
- * Reads an `oxycommons://approve?...` / `commons://approve?...` payload, parses
- * out the public authorize `code`, and routes to the approval screen — which
- * re-resolves the requesting app identity server-side. The other QR-supplied
- * fields are never trusted for display.
+ * `parseScan` branches the scanned string into one of two Commons payloads:
+ *   - a "Sign in with Oxy" approval (`oxycommons://approve?code=…`) → the
+ *     `/approve` flow, which re-resolves the requesting app identity server-side
+ *   - a citizen DNI card (`oxydni://card?did=…`) → the `(civic)/card` view,
+ *     which resolves and verifies the signed card server-side
+ *
+ * The QR is never trusted for display — only the opaque `code` / `did` it
+ * carries is used, and both are re-resolved server-side.
  */
 export default function ScanSignInScreen() {
   const router = useRouter();
@@ -36,10 +40,14 @@ export default function ScanSignInScreen() {
       if (scanned) return;
       setScanned(true);
 
-      const parsed = parseApprovalLink(data);
-      if (parsed.ok) {
-        // `replace` so the hardware back button doesn't return to the camera.
-        router.replace({ pathname: '/(vault)/approve', params: { code: parsed.code } });
+      const parsed = parseScan(data);
+      // `replace` so the hardware back button doesn't return to the camera.
+      if (parsed.kind === 'approval') {
+        router.replace({ pathname: '/(tabs)/(scan)/approve', params: { code: parsed.code } });
+        return;
+      }
+      if (parsed.kind === 'dni') {
+        router.replace({ pathname: '/(tabs)/(dni)/card/[did]', params: { did: parsed.did } });
         return;
       }
       setScanError(parsed.reason);
@@ -56,7 +64,7 @@ export default function ScanSignInScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(vault)');
+      router.replace('/(tabs)/(scan)');
     }
   }, [router]);
 

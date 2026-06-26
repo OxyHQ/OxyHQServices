@@ -56,11 +56,16 @@ jest.mock('../../models/DomainVerification', () => ({
   },
 }));
 
-// Mock the SignedRecord model so the transitively-imported signedRecord.service
-// loads under the global mongoose mock (the domain routes don't use it).
+// Mock the SignedRecord + RepoHead models so the transitively-imported
+// signedRecord.service / repoLog.service load under the global mongoose mock
+// (the domain routes don't use them).
 jest.mock('../../models/SignedRecord', () => ({
   __esModule: true,
   default: { findOne: jest.fn(), create: jest.fn() },
+}));
+jest.mock('../../models/RepoHead', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
 }));
 
 jest.mock('../../utils/userCache', () => ({

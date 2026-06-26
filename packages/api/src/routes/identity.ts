@@ -42,6 +42,7 @@ import {
   getLatestRecord,
   type SignedRecordSubject,
 } from '../services/signedRecord.service';
+import { getHead } from '../services/repoLog.service';
 
 const router = Router();
 
@@ -183,6 +184,35 @@ router.post(
       envelope: result.record.envelope,
       verified: result.record.verified,
     });
+  }),
+);
+
+/**
+ * GET /identity/records/:userId/chain/head — the subject's hash-chain head
+ * (public, cacheable, CORS-open). A client fetches this before signing the next
+ * v2 record so it knows the `prev` (head `recordId`) and `seq` (`head.seq + 1`)
+ * to sign over. Response shape (F0.2 contract — F1/client agents match this):
+ *  - with a chain: `{ headRecordId: string, seq: number, recordCount: number }`
+ *  - no chain yet: `{ headRecordId: null, seq: -1, recordCount: 0 }`
+ *
+ * Registered BEFORE `/:type` so the literal `chain/head` path is unambiguous.
+ */
+router.get(
+  '/records/:userId/chain/head',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) {
+      throw new NotFoundError('Record not found');
+    }
+
+    const head = await getHead(userId);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=5');
+    res.json(
+      head
+        ? { headRecordId: head.headRecordId, seq: head.seq, recordCount: head.recordCount }
+        : { headRecordId: null, seq: -1, recordCount: 0 },
+    );
   }),
 );
 

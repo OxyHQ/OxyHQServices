@@ -126,14 +126,6 @@ describe('signedRecordEnvelopeSchema', () => {
         expect(parsed?.type).toBe('identity');
     });
 
-    it('rejects a wrong version literal', () => {
-        const parsed = safeParseContract(signedRecordEnvelopeSchema, {
-            ...envelope,
-            version: 2,
-        });
-        expect(parsed).toBeNull();
-    });
-
     it('rejects a wrong alg literal', () => {
         const parsed = safeParseContract(signedRecordEnvelopeSchema, {
             ...envelope,
@@ -145,9 +137,111 @@ describe('signedRecordEnvelopeSchema', () => {
     it('rejects a record type outside the union', () => {
         const parsed = safeParseContract(signedRecordEnvelopeSchema, {
             ...envelope,
-            type: 'app',
+            type: 'foobar',
         });
         expect(parsed).toBeNull();
+    });
+
+    it('rejects a version outside the {1,2} union', () => {
+        const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+            ...envelope,
+            version: 3,
+        });
+        expect(parsed).toBeNull();
+    });
+
+    it('rejects a v1 envelope carrying v2 chain fields', () => {
+        const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+            ...envelope,
+            seq: 0,
+            prev: null,
+            collection: 'app.oxy.identity',
+            rkey: 'self',
+        });
+        expect(parsed).toBeNull();
+    });
+
+    describe('v2 envelopes (per-subject hash chain)', () => {
+        const v2Genesis: SignedRecordEnvelope = {
+            version: 2,
+            type: 'reputation_attestation',
+            subject: 'did:web:oxy.so:u:507f1f77bcf86cd799439011',
+            issuer: 'did:web:oxy.so',
+            record: { txnId: 'rt_1', points: 25, category: 'physical' },
+            issuedAt: 1750000000000,
+            seq: 0,
+            prev: null,
+            collection: 'app.oxy.reputation',
+            rkey: 'rt_1',
+            publicKey: '03oxykey',
+            alg: 'ES256K-DER-SHA256',
+            signature: '3046...',
+        };
+
+        it('round-trips a genesis v2 record (prev: null)', () => {
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, v2Genesis);
+            expect(parsed).not.toBeNull();
+            expect(parsed).toEqual(v2Genesis);
+            expect(parsed?.version).toBe(2);
+            expect(parsed?.seq).toBe(0);
+            expect(parsed?.prev).toBeNull();
+            expect(parsed?.collection).toBe('app.oxy.reputation');
+            expect(parsed?.rkey).toBe('rt_1');
+        });
+
+        it('round-trips a non-genesis v2 record (prev points at a recordId)', () => {
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+                ...v2Genesis,
+                seq: 1,
+                prev: 'a'.repeat(64),
+                rkey: 'rt_2',
+            });
+            expect(parsed).not.toBeNull();
+            expect(parsed?.seq).toBe(1);
+            expect(parsed?.prev).toBe('a'.repeat(64));
+        });
+
+        it('accepts every widened civic record type', () => {
+            const types = [
+                'real_life_attestation',
+                'validation_verdict',
+                'personhood_vouch',
+                'credential',
+                'node',
+            ] as const;
+            for (const type of types) {
+                const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+                    ...v2Genesis,
+                    type,
+                });
+                expect(parsed).not.toBeNull();
+                expect(parsed?.type).toBe(type);
+            }
+        });
+
+        it('rejects a v2 envelope missing seq', () => {
+            const { seq: _omit, ...rest } = v2Genesis;
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, rest);
+            expect(parsed).toBeNull();
+        });
+
+        it('rejects a v2 envelope missing collection', () => {
+            const { collection: _omit, ...rest } = v2Genesis;
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, rest);
+            expect(parsed).toBeNull();
+        });
+
+        it('rejects a v2 envelope missing rkey', () => {
+            const { rkey: _omit, ...rest } = v2Genesis;
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, rest);
+            expect(parsed).toBeNull();
+        });
+
+        it('rejects a v2 envelope missing prev (genesis must use prev: null, not omit it)', () => {
+            const { prev: _omit, ...rest } = v2Genesis;
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, rest);
+            expect(parsed).toBeNull();
+        });
     });
 });
 

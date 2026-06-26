@@ -21,23 +21,56 @@ const ec = new EC('secp256k1');
  * EXCEPT the `publicKey` and `signature`. Both the client (when signing) and
  * the server (when verifying) canonicalize exactly these fields, so they agree
  * on the bytes that the signature covers.
+ *
+ * The v2 chain fields (`seq`/`prev`/`collection`/`rkey`) are optional: a v1
+ * envelope omits them and is signed over only the base fields; a v2 envelope
+ * carries them and includes them in the signed bytes.
  */
 export type SignedRecordSigningFields = Pick<
   SignedRecordEnvelope,
   'version' | 'type' | 'subject' | 'issuer' | 'record' | 'issuedAt'
->;
+> &
+  Partial<Pick<SignedRecordEnvelope, 'seq' | 'prev' | 'collection' | 'rkey'>>;
 
 /**
  * Compute the canonical signing input for a signed-record envelope.
  *
- * This is the single definition of "what the signature covers": the canonical
- * JSON of `{version, type, subject, issuer, record, issuedAt}`. `@oxyhq/core`
+ * This is the single definition of "what the signature covers". `@oxyhq/core`
  * (client signing) and `@oxyhq/api` (server verification) both call this, so a
  * record signed by a client and verified by the server cannot drift.
+ *
+ * - **v1**: the canonical JSON of `{version, type, subject, issuer, record,
+ *   issuedAt}` — BYTE-IDENTICAL to the original scheme, so every signature
+ *   already in production keeps verifying.
+ * - **v2**: the canonical JSON additionally includes the hash-chain fields
+ *   `{seq, prev, collection, rkey}`. Because {@link canonicalize} sorts keys,
+ *   the on-the-wire field order is irrelevant; the resulting canonical key
+ *   order is `collection, issuedAt, issuer, prev, record, rkey, seq, subject,
+ *   type, version`. `prev` is `null` at genesis (serialized as `null`, not
+ *   omitted), so it is always part of the signed bytes.
  */
 export function signedRecordSigningInput(fields: SignedRecordSigningFields): string {
   const { version, type, subject, issuer, record, issuedAt } = fields;
+  if (version === 2) {
+    const { seq, prev, collection, rkey } = fields;
+    return canonicalize({ version, type, subject, issuer, record, issuedAt, seq, prev, collection, rkey });
+  }
   return canonicalize({ version, type, subject, issuer, record, issuedAt });
+}
+
+/**
+ * Compute the `recordId` (content address) of a signed record: the SHA-256 hex
+ * digest of its canonical {@link signedRecordSigningInput}.
+ *
+ * Deterministic and stable across runtimes (it reuses the same canonicalization
+ * + SHA-256 the signature itself is built on). The recordId is what `prev`
+ * references in the per-subject hash chain, so `@oxyhq/core` (client) and
+ * `@oxyhq/api` (server) MUST compute it identically — both call this function.
+ * It is taken over the SIGNING input (excluding `publicKey`/`signature`), so it
+ * is a pure content address of the record's meaning, independent of who signed.
+ */
+export async function computeRecordId(fields: SignedRecordSigningFields): Promise<string> {
+  return sha256(signedRecordSigningInput(fields));
 }
 
 /**
@@ -413,6 +446,72 @@ export class SignatureService {
       issuer,
       record,
       issuedAt,
+      publicKey,
+      alg: 'ES256K-DER-SHA256',
+      signature,
+    };
+  }
+
+  /**
+   * Build a signed-record envelope (v2) carrying the per-subject hash-chain
+   * fields.
+   *
+   * Identical to {@link signRecord} (self-issued: `issuer === subject`; same
+   * `ES256K-DER-SHA256` scheme over {@link signedRecordSigningInput}) but
+   * `version` is `2` and the signed bytes additionally cover the chain fields:
+   *
+   * @param type - The record category.
+   * @param subject - The subject DID the record is about (also the issuer).
+   * @param record - The arbitrary record payload to attest to.
+   * @param chain - The hash-chain coordinates:
+   *   - `seq` — strictly-increasing sequence number for this subject's chain.
+   *   - `prev` — the `recordId` of the previous record, or `null` at genesis.
+   *   - `collection` + `rkey` — the AtProto-style record key.
+   *
+   * The caller is responsible for fetching the current chain head (so `seq` /
+   * `prev` are correct) before signing. Requires a stored identity; throws if
+   * none exists.
+   */
+  static async signRecordV2(
+    type: SignedRecordEnvelope['type'],
+    subject: string,
+    record: Record<string, unknown>,
+    chain: { seq: number; prev: string | null; collection: string; rkey: string },
+  ): Promise<SignedRecordEnvelope> {
+    const publicKey = await KeyManager.getPublicKey();
+    if (!publicKey) {
+      throw new Error('No identity found. Please create or import an identity first.');
+    }
+
+    const version = 2 as const;
+    const issuer = subject;
+    const issuedAt = Date.now();
+    const { seq, prev, collection, rkey } = chain;
+    const signingInput = signedRecordSigningInput({
+      version,
+      type,
+      subject,
+      issuer,
+      record,
+      issuedAt,
+      seq,
+      prev,
+      collection,
+      rkey,
+    });
+    const signature = await SignatureService.sign(signingInput);
+
+    return {
+      version,
+      type,
+      subject,
+      issuer,
+      record,
+      issuedAt,
+      seq,
+      prev,
+      collection,
+      rkey,
       publicKey,
       alg: 'ES256K-DER-SHA256',
       signature,

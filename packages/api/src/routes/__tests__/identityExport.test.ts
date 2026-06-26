@@ -50,6 +50,13 @@ jest.mock('../../models/SignedRecord', () => ({
   default: { find: (...args: unknown[]) => mockSignedRecordFind(...args) },
 }));
 
+// RepoHead is mocked so signedRecord.service's real model import does not load
+// under the global mongoose mock; the export path doesn't touch the chain head.
+jest.mock('../../models/RepoHead', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
+}));
+
 jest.mock('../../models/UserAppData', () => ({
   __esModule: true,
   default: { find: (...args: unknown[]) => mockAppDataFind(...args) },

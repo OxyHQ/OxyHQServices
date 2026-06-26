@@ -1,0 +1,23 @@
+import React from 'react';
+import { Stack } from 'expo-router';
+import { ErrorFallback } from '@/components/error-fallback';
+
+/**
+ * Settings tab stack: the management menu (`index`) plus the identity/vault
+ * management detail screens it pushes — about your identity, encrypted backup,
+ * and account deletion. Screens self-render their headers/back affordances.
+ */
+export default function SettingsTabLayout() {
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
+      <Stack.Screen name="about-identity" />
+      <Stack.Screen name="create-backup" />
+      <Stack.Screen name="delete-account" />
+    </Stack>
+  );
+}
+
+export function ErrorBoundary(props: { error: Error; retry: () => void }) {
+  return <ErrorFallback {...props} />;
+}

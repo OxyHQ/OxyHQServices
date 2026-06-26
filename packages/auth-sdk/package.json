@@ -75,7 +75,7 @@
     }
   },
   "dependencies": {
-    "@oxyhq/contracts": "^0.3.0",
+    "@oxyhq/contracts": "workspace:*",
     "qrcode": "^1.5.4"
   },
   "peerDependencies": {

@@ -38,6 +38,11 @@ jest.mock('../../services/signedRecord.service', () => ({
   getLatestRecord: (...args: unknown[]) => mockGetLatest(...args),
 }));
 
+// repoLog.service is mocked so its real model imports (SignedRecord + RepoHead)
+// do not load under the global mongoose mock; this suite covers the B5 record
+// endpoints, not the chain-head endpoint (see chainHead.test.ts).
+jest.mock('../../services/repoLog.service', () => ({ getHead: jest.fn() }));
+
 jest.mock('../../models/User', () => ({
   __esModule: true,
   User: { findById: (...args: unknown[]) => mockUserFindById(...args) },

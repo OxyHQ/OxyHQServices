@@ -120,35 +120,159 @@ export const didDocumentSchema: z.ZodType<DidDocument> = z.object({
 /* -------------------------------------------------------------------------- */
 
 /**
+ * The category of a signed record. v1 only ever carried `identity` / `profile`
+ * (already in production); v2 widens the union with the civic record types
+ * (reputation attestations, real-life / peer validations, personhood vouches,
+ * verifiable credentials) and the user-node registration record. The signing
+ * input includes `type`, so this union is part of the signed bytes.
+ */
+export type SignedRecordType =
+    | 'identity'
+    | 'profile'
+    | 'reputation_attestation'
+    | 'real_life_attestation'
+    | 'validation_verdict'
+    | 'personhood_vouch'
+    | 'credential'
+    | 'node';
+
+/**
  * A signed record envelope. `record` is the arbitrary payload; the signing
  * input is the canonical-JSON of every envelope field EXCEPT `publicKey` and
  * `signature`. `subject` and `issuer` are DIDs (the subject the record is about
  * and the signer's DID — equal for self-issued records, `OXY_DID` for a
  * custodial provenance attestation). `issuedAt` is epoch milliseconds.
+ *
+ * ## Versioning
+ *
+ * - **v1** is the original shape (`{version, type, subject, issuer, record,
+ *   issuedAt}` + `publicKey/alg/signature`). It carries NONE of the v2 chain
+ *   fields and remains accepted unchanged — every `identity`/`profile` record
+ *   already in production verifies byte-identically.
+ * - **v2** adds a per-subject hash-chain (an append-only "personal blockchain"
+ *   of a single signer, no consensus/mining). The four chain fields are part of
+ *   the signed bytes (so the chain cannot be forged):
+ *     - `seq` — strictly-increasing sequence number per subject.
+ *     - `prev` — the `recordId` (content address) of the previous record in this
+ *       subject's chain, or `null` at genesis.
+ *     - `collection` + `rkey` — an AtProto-style record key (e.g.
+ *       `collection: 'app.oxy.identity'`, `rkey: 'self'`) used for
+ *       materialization and last-writer-wins reconciliation.
+ *
+ * The chain fields are OPTIONAL on the interface so v1 envelopes (which omit
+ * them) still type-check; the schema enforces "present iff version === 2".
  */
 export interface SignedRecordEnvelope {
-    version: 1;
-    type: 'identity' | 'profile';
+    version: 1 | 2;
+    type: SignedRecordType;
     subject: string;
     issuer: string;
     record: Record<string, unknown>;
     issuedAt: number;
+    /** v2 only: strictly-increasing sequence number for this subject's chain. */
+    seq?: number;
+    /** v2 only: `recordId` of the previous record in the chain, `null` at genesis. */
+    prev?: string | null;
+    /** v2 only: AtProto-style collection namespace (e.g. `app.oxy.identity`). */
+    collection?: string;
+    /** v2 only: AtProto-style record key within the collection (e.g. `self`). */
+    rkey?: string;
     publicKey: string;
     alg: 'ES256K-DER-SHA256';
     signature: string;
 }
 
-export const signedRecordEnvelopeSchema: z.ZodType<SignedRecordEnvelope> = z.object({
-    version: z.literal(1),
-    type: z.enum(['identity', 'profile']),
-    subject: z.string(),
-    issuer: z.string(),
-    record: z.record(z.unknown()),
-    issuedAt: z.number(),
-    publicKey: z.string(),
-    alg: z.literal('ES256K-DER-SHA256'),
-    signature: z.string(),
-});
+export const signedRecordEnvelopeSchema: z.ZodType<SignedRecordEnvelope> = z
+    .object({
+        version: z.union([z.literal(1), z.literal(2)]),
+        type: z.enum([
+            'identity',
+            'profile',
+            'reputation_attestation',
+            'real_life_attestation',
+            'validation_verdict',
+            'personhood_vouch',
+            'credential',
+            'node',
+        ]),
+        subject: z.string(),
+        issuer: z.string(),
+        record: z.record(z.unknown()),
+        issuedAt: z.number(),
+        seq: z.number().int().nonnegative().optional(),
+        prev: z.string().nullable().optional(),
+        collection: z.string().min(1).optional(),
+        rkey: z.string().min(1).optional(),
+        publicKey: z.string(),
+        alg: z.literal('ES256K-DER-SHA256'),
+        signature: z.string(),
+    })
+    .superRefine((env, ctx) => {
+        if (env.version === 2) {
+            // v2 REQUIRES the hash-chain fields. `prev` may be `null` at genesis,
+            // but the key must be present (it is part of the signed bytes), so we
+            // reject only when it is entirely absent.
+            if (typeof env.seq !== 'number') {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v2 envelope requires `seq`',
+                    path: ['seq'],
+                });
+            }
+            if (env.prev === undefined) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v2 envelope requires `prev` (use `null` at genesis)',
+                    path: ['prev'],
+                });
+            }
+            if (typeof env.collection !== 'string') {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v2 envelope requires `collection`',
+                    path: ['collection'],
+                });
+            }
+            if (typeof env.rkey !== 'string') {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v2 envelope requires `rkey`',
+                    path: ['rkey'],
+                });
+            }
+        } else {
+            // v1 FORBIDS the v2 chain fields entirely, so a legacy envelope keeps
+            // its exact byte shape and cannot smuggle unsigned chain metadata.
+            if (env.seq !== undefined) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v1 envelope must not carry `seq`',
+                    path: ['seq'],
+                });
+            }
+            if (env.prev !== undefined) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v1 envelope must not carry `prev`',
+                    path: ['prev'],
+                });
+            }
+            if (env.collection !== undefined) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v1 envelope must not carry `collection`',
+                    path: ['collection'],
+                });
+            }
+            if (env.rkey !== undefined) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'v1 envelope must not carry `rkey`',
+                    path: ['rkey'],
+                });
+            }
+        }
+    });
 
 /* -------------------------------------------------------------------------- */
 /*  Verified domains (badge)                                                  */

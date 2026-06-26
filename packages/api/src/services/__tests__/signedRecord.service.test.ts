@@ -24,6 +24,14 @@ jest.mock('../../models/SignedRecord', () => ({
   },
 }));
 
+// RepoHead is mocked so the real model file (which needs real mongoose
+// Schema.Types) does not load under the global mongoose mock. These v1-only
+// tests never consult the chain head.
+jest.mock('../../models/RepoHead', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
+}));
+
 import { signedRecordSigningInput } from '@oxyhq/core';
 import {
   signRecordEnvelope,

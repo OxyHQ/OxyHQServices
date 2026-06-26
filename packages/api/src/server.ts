@@ -48,6 +48,7 @@ import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
+import civicRoutes from './routes/civic';
 import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
@@ -525,6 +526,9 @@ app.use('/app-signals', appSignalsRouter);
 // Mixed public/private routes (each gates its own auth); writes are
 // Bearer-authenticated, so no csrfProtection (bearer-write CSRF rule).
 app.use('/identity', identityRoutes);
+// Civic / Commons layer: public signed DNI card (more routes in Fase 2/3).
+// Public read (each route gates its own auth); no csrfProtection (public GET).
+app.use('/civic', civicRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor } from './services/federation.service';

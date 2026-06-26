@@ -33,9 +33,22 @@ import {
   REPORT_REJECTED_ACTION,
   ENDORSEMENT_RECEIVED_ACTION,
   ENDORSEMENT_RECEIVED_POINTS,
+  REAL_LIFE_ATTESTED_ACTION,
+  REAL_LIFE_ATTESTED_POINTS,
+  PEER_VALIDATED_ACTION,
+  PEER_VALIDATED_POINTS,
+  VALIDATION_CORRECT_ACTION,
+  VALIDATION_CORRECT_POINTS,
+  VALIDATION_INCORRECT_ACTION,
+  VALIDATION_INCORRECT_POINTS,
+  PERSONHOOD_VOUCHED_ACTION,
+  PERSONHOOD_VOUCHED_POINTS,
+  VOUCH_SLASHED_ACTION,
+  VOUCH_SLASHED_POINTS,
   type ReputationCategory,
   type ReputationTargetEntityType,
 } from '../utils/reputation.constants';
+import { attestAward } from './civic/attestation.service';
 import {
   computeReliability,
   deriveInfluence,
@@ -57,6 +70,20 @@ export interface AwardInput {
   reason?: string;
   createdByUserId?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * When `true`, emit an Oxy-signed `reputation_attestation` record onto the
+   * subject's hash chain after the award commits (crypto-owned reputation —
+   * Fase 1). Default `false`: the 14 existing call sites are unaffected. Civic
+   * awards pass `true`. Emission is non-fatal and never blocks the award.
+   */
+  emitAttestation?: boolean;
+  /**
+   * The `recordId`s of the user-signed envelopes that originated this award
+   * (e.g. the counterparty's real-life attestation, the jurors' verdicts) —
+   * embedded in the Oxy attestation as the proof chain. Only used when
+   * `emitAttestation` is `true`.
+   */
+  sourceEnvelopeIds?: string[];
 }
 
 /** Input for a reversal or void review action. */
@@ -182,7 +209,7 @@ class ReputationService {
       }
     }
 
-    return withTransaction(async (session) => {
+    const transaction = await withTransaction(async (session) => {
       let created: IReputationTransaction;
       try {
         const docs = await ReputationTransaction.create(
@@ -231,6 +258,24 @@ class ReputationService {
       await this.recalculateBalance(input.userId, session);
       return created;
     });
+
+    // Crypto-owned reputation (Fase 1): emit an Oxy-signed attestation onto the
+    // subject's hash chain AFTER the award commits, so a signing/chain failure
+    // can never roll back or block the award. Idempotent per txn + non-fatal.
+    if (input.emitAttestation) {
+      try {
+        await attestAward(transaction, { sourceEnvelopes: input.sourceEnvelopeIds });
+      } catch (error) {
+        logger.warn('Reputation attestation emission failed (non-fatal)', {
+          component: 'reputation.service',
+          actionType: input.actionType,
+          userId: input.userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return transaction;
   }
 
   /**
@@ -703,6 +748,56 @@ class ReputationService {
       points: ENDORSEMENT_RECEIVED_POINTS,
       category: 'social',
       description: 'Endorsed by another user in a connected app',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+
+    // Civic / Commons rules (Fase 1) — crypto-owned reputation.
+    await this.upsertRule({
+      actionType: REAL_LIFE_ATTESTED_ACTION,
+      points: REAL_LIFE_ATTESTED_POINTS,
+      category: 'physical',
+      description: 'A real-world interaction a counterparty cryptographically attested',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: PEER_VALIDATED_ACTION,
+      points: PEER_VALIDATED_POINTS,
+      category: 'trust',
+      description: 'Validated by a randomly-selected jury of peers',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: VALIDATION_CORRECT_ACTION,
+      points: VALIDATION_CORRECT_POINTS,
+      category: 'moderation',
+      description: 'Voted with the resolving majority on a peer validation',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: VALIDATION_INCORRECT_ACTION,
+      points: VALIDATION_INCORRECT_POINTS,
+      category: 'penalty',
+      description: 'Endorsed a verdict later reverted as fraud',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: PERSONHOOD_VOUCHED_ACTION,
+      points: PERSONHOOD_VOUCHED_POINTS,
+      category: 'trust',
+      description: 'Vouched for as a real person by a staking voucher',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: VOUCH_SLASHED_ACTION,
+      points: VOUCH_SLASHED_POINTS,
+      category: 'penalty',
+      description: 'Vouched for a person found to be fake (staking slash)',
       cooldownInMinutes: 0,
       isEnabled: true,
     });

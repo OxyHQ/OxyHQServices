@@ -457,7 +457,7 @@ export default function AboutIdentityScreen() {
                     iconColor: colors.iconWarning,
                     title: t('aboutIdentity.createBackupTitle'),
                     subtitle: t('aboutIdentity.createBackupSubtitle'),
-                    onPress: () => router.push('/(vault)/create-backup'),
+                    onPress: () => router.push('/(tabs)/(settings)/create-backup'),
                     showChevron: true,
                   },
                   {

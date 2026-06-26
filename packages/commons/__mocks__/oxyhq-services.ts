@@ -1,9 +1,10 @@
 /**
- * Lightweight `@oxyhq/services` stub for unit tests in the accounts package.
+ * Lightweight `@oxyhq/services` stub for unit tests in the Commons package.
  *
  * `useOxy()` is implemented with `useSyncExternalStore` so that calls to
  * `__setOxyState({...})` outside of React are immediately reflected in any
- * mounted consumer's next render.
+ * mounted consumer's next render. `useOnlineStatus()` is similarly controllable
+ * via `__setOnlineStatus(...)`.
  */
 
 import { useSyncExternalStore } from 'react';
@@ -14,10 +15,15 @@ interface MockOxyServices {
   approveCommonsSignIn?: jest.Mock;
   denyCommonsSignIn?: jest.Mock;
   getPublicKey?: jest.Mock;
+  getPublicCard?: jest.Mock;
+  getReputationBalance?: jest.Mock;
+  getFileDownloadUrl?: jest.Mock;
+  getCurrentUserId?: jest.Mock;
+  getMyDniPayload?: jest.Mock;
 }
 
 interface MockOxyState {
-  user: { username?: string; language?: string } | null;
+  user: { id?: string; username?: string; language?: string; avatar?: string | null } | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   oxyServices: MockOxyServices | null;
@@ -62,3 +68,30 @@ function getSnapshot(): MockOxyState {
 
 export const useOxy = (): MockOxyState =>
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+/** Hydration hook — a no-op in tests. */
+export const useCurrentUser = (): { data: undefined } => ({ data: undefined });
+
+/* -------------------------------------------------------------------------- */
+/*  Online status                                                             */
+/* -------------------------------------------------------------------------- */
+
+let online = true;
+const onlineListeners = new Set<() => void>();
+
+export function __setOnlineStatus(next: boolean): void {
+  online = next;
+  for (const fn of onlineListeners) fn();
+}
+
+export const useOnlineStatus = (): boolean =>
+  useSyncExternalStore(
+    (listener: () => void) => {
+      onlineListeners.add(listener);
+      return () => {
+        onlineListeners.delete(listener);
+      };
+    },
+    () => online,
+    () => online,
+  );

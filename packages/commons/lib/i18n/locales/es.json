@@ -1133,5 +1133,109 @@
       "tryAgain": "Reintentar",
       "noCode": "No se proporcionó ningún código de inicio de sesión."
     }
+  },
+  "civic": {
+    "hub": {
+      "title": "Ciudadanía",
+      "subtitle": "Tu identidad Oxy verificable: muéstrala, demuéstrala, llévala contigo.",
+      "identitySection": "Tu identidad",
+      "identitySubtitle": "DNI de autocustodia y la reputación que has ganado.",
+      "verifySection": "Verificar a alguien",
+      "actions": {
+        "dni": "Mi DNI",
+        "dniSubtitle": "Tu tarjeta de ciudadanía y QR",
+        "reputation": "Reputación",
+        "reputationSubtitle": "Cuánto se confía en ti, y por qué",
+        "scan": "Escanear un DNI",
+        "scanSubtitle": "Verifica la tarjeta de otra persona",
+        "openCitizen": "Ciudadanía / DNI",
+        "openCitizenSubtitle": "Tu tarjeta DNI, reputación y verificación"
+      }
+    },
+    "dni": {
+      "title": "Tu DNI",
+      "subtitle": "Muestra esta tarjeta para que otros verifiquen quién eres.",
+      "state": {
+        "pending": "Registro pendiente",
+        "offline": "Sin conexión",
+        "live": "En vivo"
+      },
+      "qrCaption": "Escanea para verificar con Oxy",
+      "qrPending": "Termina de configurar tu cuenta para generar tu QR.",
+      "flipHint": "Toca la tarjeta para girarla",
+      "didLabel": "ID descentralizado (DID)",
+      "pendingNote": "Este dispositivo guarda tus claves, pero tu cuenta aún no está registrada en Oxy. Tu tarjeta y QR funcionan sin conexión; completaremos el registro cuando vuelvas a estar en línea."
+    },
+    "card": {
+      "title": "Tarjeta de ciudadanía",
+      "verified": "Verificado",
+      "unverified": "Sin verificar",
+      "verifiedDesc": "Oxy firmó esta tarjeta y la firma es válida. Los datos siguientes son auténticos.",
+      "unverifiedDesc": "No se pudo verificar esta tarjeta. No confíes en los datos siguientes.",
+      "offline": "Sin conexión — última conocida",
+      "loading": "Resolviendo tarjeta…",
+      "verifiedDomains": "Dominios verificados",
+      "credentials": "Credenciales",
+      "didLabel": "ID descentralizado (DID)",
+      "error": {
+        "title": "No se pudo resolver la tarjeta",
+        "body": "No pudimos contactar con Oxy para verificar esta tarjeta y aún no hay nada en caché.",
+        "invalidTitle": "No es una tarjeta de ciudadanía",
+        "invalidBody": "Este QR no es un DNI de Oxy válido."
+      }
+    },
+    "trustTier": {
+      "restricted": "Restringido",
+      "new": "Nuevo",
+      "trusted": "De confianza",
+      "high_trust": "Muy confiable",
+      "verified": "Persona verificada"
+    },
+    "personhood": {
+      "unverified": "Sin verificar",
+      "pending": "Pendiente",
+      "verified": "Persona verificada"
+    },
+    "reputation": {
+      "title": "Reputación",
+      "subtitle": "La confianza que has ganado, ponderada por lo real que es.",
+      "loading": "Cargando reputación…",
+      "total": "Reputación total",
+      "bySource": "Por origen",
+      "bySourceSubtitle": "De dónde viene tu reputación, de mayor a menor.",
+      "offline": "Sin conexión — última conocida",
+      "footnote": "La verificación en persona cuenta más, la validación entre pares/cívica después, y la actividad en apps menos. Las penalizaciones se restan.",
+      "error": {
+        "title": "No se pudo cargar la reputación",
+        "body": "No pudimos contactar con Oxy y aún no hay nada en caché."
+      },
+      "sources": {
+        "realLife": "Vida real",
+        "realLifeDesc": "Verificado en persona: alguien escaneó tu DNI y lo firmó.",
+        "peerCivic": "Pares y cívica",
+        "peerCivicDesc": "Validado por un jurado aleatorio de ciudadanos de confianza.",
+        "apps": "Apps",
+        "appsDesc": "Ganado por tu actividad dentro de las apps de Oxy.",
+        "penalties": "Penalizaciones",
+        "penaltiesDesc": "Puntos restados por infracciones y reversiones."
+      },
+      "weight": {
+        "high": "Alta",
+        "medium": "Media",
+        "low": "Baja",
+        "penalty": "Penalización"
+      }
+    }
+  },
+  "tabs": {
+    "home": "Inicio",
+    "dni": "DNI",
+    "scan": "Escanear",
+    "reputation": "Reputación",
+    "settings": "Ajustes"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta."
   }
 }

@@ -105,6 +105,7 @@ export type {
     DidService,
     DidDocument,
     SignedRecordEnvelope,
+    SignedRecordType,
     VerifiedDomain,
     DomainVerificationRequest,
     DomainVerificationInstructions,
@@ -113,3 +114,16 @@ export type {
     ExportAttestation,
     ExportBundle,
 } from './identity';
+
+export {
+    // Schemas
+    publicCardSchema,
+    signedPublicCardSchema,
+} from './civic';
+
+export type {
+    CardTrustTier,
+    PersonhoodStatus,
+    PublicCard,
+    SignedPublicCard,
+} from './civic';

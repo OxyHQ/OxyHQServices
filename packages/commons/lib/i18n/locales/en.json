@@ -1133,5 +1133,109 @@
       "tryAgain": "Try again",
       "noCode": "No sign-in code was provided."
     }
+  },
+  "civic": {
+    "hub": {
+      "title": "Citizen",
+      "subtitle": "Your verifiable Oxy identity — show it, prove it, carry it.",
+      "identitySection": "Your identity",
+      "identitySubtitle": "Self-custody DNI and the reputation you've earned.",
+      "verifySection": "Verify someone",
+      "actions": {
+        "dni": "My DNI",
+        "dniSubtitle": "Your citizen card and QR",
+        "reputation": "Reputation",
+        "reputationSubtitle": "How much you're trusted, and why",
+        "scan": "Scan a DNI",
+        "scanSubtitle": "Verify another person's citizen card",
+        "openCitizen": "Citizen / DNI",
+        "openCitizenSubtitle": "Your DNI card, reputation and verification"
+      }
+    },
+    "dni": {
+      "title": "Your DNI",
+      "subtitle": "Show this card so others can verify who you are.",
+      "state": {
+        "pending": "Pending registration",
+        "offline": "Offline",
+        "live": "Live"
+      },
+      "qrCaption": "Scan to verify with Oxy",
+      "qrPending": "Finish setting up your account to generate your QR.",
+      "flipHint": "Tap the card to flip it",
+      "didLabel": "Decentralized ID (DID)",
+      "pendingNote": "This device holds your keys, but your account isn't registered with Oxy yet. Your card and QR work offline; we'll finish registration when you're back online."
+    },
+    "card": {
+      "title": "Citizen card",
+      "verified": "Verified",
+      "unverified": "Unverified",
+      "verifiedDesc": "Oxy signed this card and the signature checks out. The details below are authentic.",
+      "unverifiedDesc": "This card could not be verified. Do not trust the details below.",
+      "offline": "Offline — last known",
+      "loading": "Resolving card…",
+      "verifiedDomains": "Verified domains",
+      "credentials": "Credentials",
+      "didLabel": "Decentralized ID (DID)",
+      "error": {
+        "title": "Couldn't resolve card",
+        "body": "We couldn't reach Oxy to verify this card, and nothing is cached for it yet.",
+        "invalidTitle": "Not a citizen card",
+        "invalidBody": "This QR isn't a valid Oxy DNI."
+      }
+    },
+    "trustTier": {
+      "restricted": "Restricted",
+      "new": "New",
+      "trusted": "Trusted",
+      "high_trust": "Highly trusted",
+      "verified": "Verified person"
+    },
+    "personhood": {
+      "unverified": "Unverified",
+      "pending": "Pending",
+      "verified": "Verified person"
+    },
+    "reputation": {
+      "title": "Reputation",
+      "subtitle": "Trust you've earned — weighted by how real it is.",
+      "loading": "Loading reputation…",
+      "total": "Total reputation",
+      "bySource": "By source",
+      "bySourceSubtitle": "Where your reputation comes from, strongest first.",
+      "offline": "Offline — last known",
+      "footnote": "Real-life verification counts most, peer/civic validation next, and app activity least. Penalties are subtracted.",
+      "error": {
+        "title": "Couldn't load reputation",
+        "body": "We couldn't reach Oxy, and nothing is cached yet."
+      },
+      "sources": {
+        "realLife": "Real life",
+        "realLifeDesc": "Verified in person — someone scanned your DNI and signed for it.",
+        "peerCivic": "Peer & civic",
+        "peerCivicDesc": "Validated by a random jury of trusted citizens.",
+        "apps": "Apps",
+        "appsDesc": "Earned through your activity inside Oxy apps.",
+        "penalties": "Penalties",
+        "penaltiesDesc": "Points subtracted for violations and reversals."
+      },
+      "weight": {
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "penalty": "Penalty"
+      }
+    }
+  },
+  "tabs": {
+    "home": "Home",
+    "dni": "DNI",
+    "scan": "Scan",
+    "reputation": "Reputation",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your identity, backups and account."
   }
 }

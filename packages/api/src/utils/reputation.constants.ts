@@ -221,6 +221,63 @@ export const ENDORSEMENT_RECEIVED_ACTION = 'endorsement_received';
 export const ENDORSEMENT_RECEIVED_POINTS = 2;
 
 // =============================================================================
+// CIVIC / COMMONS ACTION RULES (Fase 1)
+// =============================================================================
+//
+// Crypto-owned reputation: each civic award additionally emits an Oxy-signed
+// `reputation_attestation` record (see `services/civic/attestation.service.ts`).
+// Weighting (the anti-"bring my friends" model): a real-life attestation that a
+// counterparty physically signed is HIGH; a random-jury peer validation is
+// MEDIUM; app-given signals stay LOW.
+
+/** A real-world interaction the counterparty cryptographically attested (HIGH). */
+export const REAL_LIFE_ATTESTED_ACTION = 'real_life_attested';
+export const REAL_LIFE_ATTESTED_POINTS = 25;
+
+/** Validated by a randomly-selected jury of peers (MEDIUM). */
+export const PEER_VALIDATED_ACTION = 'peer_validated';
+export const PEER_VALIDATED_POINTS = 8;
+
+/** Reward to a juror who voted with the resolving majority. */
+export const VALIDATION_CORRECT_ACTION = 'validation_correct';
+export const VALIDATION_CORRECT_POINTS = 3;
+
+/** Slash to a juror who endorsed a verdict later reverted as fraud. */
+export const VALIDATION_INCORRECT_ACTION = 'validation_incorrect';
+export const VALIDATION_INCORRECT_POINTS = -10;
+
+/** A signed personhood vouch from a staking voucher (web-of-trust). */
+export const PERSONHOOD_VOUCHED_ACTION = 'personhood_vouched';
+export const PERSONHOOD_VOUCHED_POINTS = 5;
+
+/** Slash to a voucher whose vouchee was found fake (staking penalty). */
+export const VOUCH_SLASHED_ACTION = 'vouch_slashed';
+export const VOUCH_SLASHED_POINTS = -20;
+
+/**
+ * Provenance weight class shown on the crypto-owned reputation breakdown (UI).
+ * - HIGH   — real-life, counterparty-signed (the strongest signal).
+ * - MEDIUM — peer/jury validation.
+ * - LOW    — app-given signals (endorsements, etc.).
+ */
+export const WEIGHT_CLASSES = ['HIGH', 'MEDIUM', 'LOW'] as const;
+export type WeightClass = (typeof WEIGHT_CLASSES)[number];
+
+/**
+ * Map an `actionType` to its provenance weight class. Unknown actions default to
+ * `LOW` (app-given). Used by the attestation record + later by the Commons UI.
+ */
+export const ACTION_WEIGHT_CLASS: Readonly<Record<string, WeightClass>> = {
+  [REAL_LIFE_ATTESTED_ACTION]: 'HIGH',
+  [PEER_VALIDATED_ACTION]: 'MEDIUM',
+} as const;
+
+/** The provenance weight class for an action type (`LOW` when unmapped). */
+export function weightClassForAction(actionType: string): WeightClass {
+  return ACTION_WEIGHT_CLASS[actionType] ?? 'LOW';
+}
+
+// =============================================================================
 // PAGINATION
 // =============================================================================
 

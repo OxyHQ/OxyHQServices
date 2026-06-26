@@ -184,6 +184,14 @@ export type {
 } from './mixins/OxyServices.identity';
 
 // ---------------------------------------------------------------------------
+// Civic / Commons "DNI" (public signed cards + DNI QR payload). Wire shapes
+// (PublicCard, SignedPublicCard) live in `@oxyhq/contracts` — import them from
+// there. `CivicCardResult` augments the contract with the client verdict.
+// ---------------------------------------------------------------------------
+export { parseDniPayload, verifyPublicCardAttestation } from './mixins/OxyServices.civic';
+export type { CivicCardResult, DniCardRef } from './mixins/OxyServices.civic';
+
+// ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
 export {
@@ -230,7 +238,7 @@ export {
     IdentityPersistError,
 } from './crypto/keyManager';
 export type { KeyPair } from './crypto/keyManager';
-export { SignatureService, signedRecordSigningInput } from './crypto/signatureService';
+export { SignatureService, signedRecordSigningInput, computeRecordId } from './crypto/signatureService';
 export type { SignedMessage, AuthChallenge, SignedRecordSigningFields } from './crypto/signatureService';
 export { canonicalize } from './crypto/canonicalJson';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';

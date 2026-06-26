@@ -1,4 +1,5 @@
-import { Stack, ThemeProvider } from 'expo-router';
+import { Stack } from 'expo-router';
+import { ThemeProvider } from 'expo-router/react-navigation';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -37,7 +38,7 @@ SplashScreen.preventAutoHideAsync();
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 export const unstable_settings = {
-  anchor: '(vault)',
+  anchor: '(tabs)',
 };
 
 interface SplashState {
@@ -156,7 +157,8 @@ function AppStackContent() {
               Commons legitimately OWNS the `hasIdentity` gate — it is the
               key vault. `needsAuth` is true when this device has no local
               identity yet OR has one but no username/session. We must:
-                - Redirect AWAY from `(vault)` when onboarding is incomplete.
+                - Redirect AWAY from `(tabs)` (the post-auth tab shell) when
+                  onboarding is incomplete.
                 - Redirect AWAY from `(auth)` when onboarding is complete.
 
               Expo Router resolves redirects to the first non-redirecting
@@ -166,7 +168,7 @@ function AppStackContent() {
               and there is no web build, because the key vault never leaves the
               device.
             */}
-            <Stack.Screen name="(vault)" redirect={needsAuth} options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" redirect={needsAuth} options={{ headerShown: false }} />
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />
           </Stack>
           <StatusBar style="auto" />

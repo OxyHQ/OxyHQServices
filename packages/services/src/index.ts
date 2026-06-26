@@ -166,6 +166,7 @@ export {
 // Mutation status aggregator (for "Syncing..." indicators)
 export { useMutationStatus } from './ui/hooks/useMutationStatus';
 export type { MutationStatus } from './ui/hooks/useMutationStatus';
+export { useOnlineStatus } from './ui/hooks/useOnlineStatus';
 
 // ---------------------------------------------------------------------------
 // Error handlers
