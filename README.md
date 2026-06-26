@@ -17,8 +17,9 @@ Monorepo for the OxyHQ SDK. Provides modular packages for building web, mobile, 
 
 | App | Path | Description |
 |-----|------|-------------|
-| accounts | `packages/accounts/` | Expo accounts app. |
-| auth | `packages/auth/` | Next.js auth app (standalone, FedCM IdP). |
+| accounts | `packages/accounts/` | **Accounts by Oxy** — keyless management-only Expo app (sessions, privacy, settings). Identity creation moved to Commons. |
+| commons | `packages/commons/` | **Commons by Oxy** — native-only Expo app that owns self-sovereign identity creation, signed records, domain verification, and "Sign in with Oxy" cross-device QR/deep-link handoff. |
+| auth | `packages/auth/` | Vite auth app (standalone, FedCM IdP). |
 | test-app-expo | `packages/test-app-expo/` | Expo test playground. |
 | test-app-vite | `packages/test-app-vite/` | Vite web test app (`@oxyhq/core` + `@oxyhq/auth`). |
 

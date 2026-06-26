@@ -1,6 +1,6 @@
-# Oxy Accounts
+# Accounts by Oxy
 
-Expo app for managing your Oxy identity. The equivalent of Google MyAccount — settings, security, sessions, payments, privacy.
+Expo app for managing your Oxy account — the equivalent of Google MyAccount. Covers settings, security, sessions, payments, and privacy. **Keyless by design**: identity creation and the self-sovereign identity layer (did:web, signed records, domain verification, "Sign in with Oxy") live in `Commons by Oxy` (`packages/commons`). This app manages an already-created account only.
 
 ## Development
 
@@ -24,10 +24,10 @@ bun run typecheck    # tsc --noEmit
 
 ## Web vs Native Split
 
-Identity **creation** is native-only. Web is for managing an existing account (sign-in only).
+Identity **creation** is in `Commons by Oxy` (`packages/commons`), NOT in this app. Accounts is management-only on all platforms (sign-in only; no create-identity flows).
 
 - Web sign-in screen: `app/(auth)/sign-in.tsx` — uses `signInWithFedCM()` + `handleWebSession()`.
-- Web blocks identity creation via `.web.tsx` layout redirects: `app/(auth)/create-identity/_layout.web.tsx`, `import-identity/_layout.web.tsx`, `welcome.web.tsx`, `index.web.tsx` — all redirect to `/(auth)/sign-in`.
+- Identity-creation routes (`create-identity/`, `import-identity/`, `welcome.tsx`) are removed from Accounts; they now live in Commons.
 - `useOnboardingStatus.needsAuth` is platform-agnostic — do NOT add a `Platform.OS === 'web'` clamp (causes redirect deadlock).
 
 ## Key Routes
