@@ -115,8 +115,9 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy authentication app and FedCM Identity Provider.',
     websiteUrl: 'https://auth.oxy.so',
     type: 'first_party',
-    // The auth app IS the IdP; it does not consume its own /__oxy/sso-callback.
-    redirectUris: [],
+    // The auth app is the central IdP, but it now ALSO consumes Sign-in-with-Oxy
+    // as its own Relying Party, so it registers its own origin + SSO callback.
+    redirectUris: ['https://auth.oxy.so', cb('https://auth.oxy.so')],
   },
   // ── Ecosystem first-party apps ──
   {
@@ -187,6 +188,17 @@ const SEED_APPS: SeedAppSpec[] = [
     websiteUrl: 'https://noted.oxy.so',
     type: 'first_party',
     redirectUris: [cb('https://noted.oxy.so')],
+  },
+  {
+    name: 'Commons by Oxy',
+    description:
+      'Official Oxy Commons app — self-sovereign identity wallet and Sign-in-with-Oxy approvals (native).',
+    type: 'first_party',
+    // Commons is native-only (no web). Its public client id (the credential
+    // publicKey) wires into OxyProvider; the redirect surface is the app's two
+    // deep-link schemes from packages/commons/app.json. SSO matches the RP by
+    // approved redirect-URI origin, so both schemes are listed.
+    redirectUris: ['commons://', 'oxycommons://'],
   },
   {
     name: 'Mercaria',
