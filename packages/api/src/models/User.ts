@@ -1,11 +1,25 @@
 import mongoose, { Document, Schema } from "mongoose";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 import { composeDisplayName } from "../utils/displayName";
+import { buildUserDid } from "../services/did.service";
 import {
   TRUST_TIERS,
   INFLUENCE_MIN,
   type TrustTier,
 } from "../utils/reputation.constants";
+
+/**
+ * Methods by which a user can prove ownership of a custom domain for the
+ * verified-domain badge (self-sovereign identity layer — B7).
+ */
+export type VerifiedDomainMethod = 'dns-txt' | 'well-known';
+
+/** A proven domain-ownership badge stored on the user document. */
+export interface VerifiedDomain {
+  domain: string;
+  verifiedAt: Date;
+  method: VerifiedDomainMethod;
+}
 
 /**
  * Canonical named color presets a user may pick. `oxy` is premium-gated at the
@@ -93,6 +107,19 @@ export interface IUser extends Document {
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
+  /**
+   * Self-sovereign DID — `did:web:<FEDERATION_DOMAIN>:u:<_id>`. VIRTUAL, derived
+   * from `_id` (the stable account anchor), surfaced in toJSON/toObject. Never
+   * stored; see `services/did.service.ts` for the single source of the format.
+   */
+  did?: string;
+  /**
+   * Proven custom-domain ownership badges (self-sovereign identity layer — B7).
+   * Populated only after a DNS-TXT or `/.well-known/oxy-domain` proof passes via
+   * `POST /identity/domains/:domain/verify`. Surfaced in DID `alsoKnownAs` and
+   * `formatUserResponse`. Additive — defaults to `[]`.
+   */
+  verifiedDomains?: VerifiedDomain[];
   type?: 'local' | 'federated' | 'agent' | 'automated';
   isManagedAccount?: boolean;
   managedBy?: mongoose.Types.ObjectId;
@@ -399,6 +426,17 @@ const UserSchema: Schema = new Schema(
       }],
       default: [],
     },
+    // Proven custom-domain ownership badges (self-sovereign identity layer — B7).
+    // Written ONLY by the domain-verification route after a DNS-TXT or
+    // /.well-known proof passes — never via a generic profile update.
+    verifiedDomains: {
+      type: [{
+        domain: { type: String, required: true, lowercase: true, trim: true },
+        verifiedAt: { type: Date, required: true },
+        method: { type: String, enum: ['dns-txt', 'well-known'], required: true },
+      }],
+      default: [],
+    },
     verified: {
       type: Boolean,
       default: false,
@@ -648,6 +686,14 @@ UserSchema.virtual('id').get(function() {
   return this._id?.toString();
 });
 
+// Self-sovereign DID virtual — derived from the stable account id (`_id`), NOT
+// the keypair. Single source of the format is `services/did.service.ts`.
+// Surfaced via the `virtuals: true` toJSON/toObject options below.
+UserSchema.virtual('did').get(function() {
+  const id = this._id?.toString();
+  return id ? buildUserDid(id) : undefined;
+});
+
 // Remove transforms and rely on select options
 UserSchema.set("toJSON", {
   virtuals: true,
@@ -690,6 +736,10 @@ UserSchema.index({ followers: 1 });
 // and federated/agent users may have neither field set.
 UserSchema.index({ hashedEmail: 1 }, { sparse: true });
 UserSchema.index({ hashedPhone: 1 }, { sparse: true });
+
+// Verified-domain badge lookups (self-sovereign identity layer — B7). Sparse
+// because the vast majority of accounts will never claim a custom domain.
+UserSchema.index({ "verifiedDomains.domain": 1 }, { sparse: true });
 
 /**
  * Keep `hashedEmail` and `hashedPhone` in sync with their canonical sources

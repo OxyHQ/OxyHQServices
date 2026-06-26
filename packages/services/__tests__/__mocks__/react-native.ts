@@ -43,6 +43,21 @@ export const Appearance = {
   addChangeListener: () => ({ remove: () => undefined }),
 };
 
+/**
+ * Minimal `Linking` stub. `openURL` resolves so deep-link paths
+ * (`useOxyAuthSession`'s same-device approval / native redirect handling) can be
+ * spied on without a native module. The listener/initial-URL methods are inert
+ * (the native deep-link effect is gated off on `Platform.OS === 'web'`, the mock
+ * default, so they are rarely reached).
+ */
+export const Linking = {
+  openURL: async (_url: string): Promise<void> => undefined,
+  addEventListener: (_event: string, _handler: (event: { url: string }) => void) => ({
+    remove: () => undefined,
+  }),
+  getInitialURL: async (): Promise<string | null> => null,
+};
+
 
 export const TouchableOpacity = ({ children, onPress, disabled, ...props }: any) =>
   React.createElement('button', { ...props, disabled, onClick: onPress }, children);

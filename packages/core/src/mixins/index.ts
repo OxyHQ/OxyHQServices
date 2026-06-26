@@ -12,6 +12,7 @@ import { OxyServicesSilentAuthMixin } from './OxyServices.silent';
 import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
 import { OxyServicesSsoMixin } from './OxyServices.sso';
 import { OxyServicesUserMixin } from './OxyServices.user';
+import { OxyServicesIdentityMixin } from './OxyServices.identity';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
@@ -46,6 +47,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesSsoMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesIdentityMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLanguageMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
@@ -108,6 +110,8 @@ const MIXIN_PIPELINE: MixinFunction[] = [
 
     // User management (requires auth)
     OxyServicesUserMixin,
+    // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping)
+    OxyServicesIdentityMixin,
     OxyServicesPrivacyMixin,
 
     // Feature mixins

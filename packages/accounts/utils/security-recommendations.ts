@@ -2,7 +2,6 @@ import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 
 /** Stable identifier for each security recommendation the app can surface. */
 export type SecurityRecommendationId =
-  | 'recovery-phrase-backup'
   | 'biometric'
   | 'recovery-email'
   | 'old-sessions'
@@ -20,10 +19,6 @@ export interface SecurityRecommendationDescriptor {
 
 /** Inputs that drive which security recommendations are surfaced. */
 export interface SecurityRecommendationInput {
-  /** True only on native platforms (recovery-phrase backup is native-only). */
-  isNative: boolean;
-  hasIdentity: boolean;
-  recoveryPhraseAcknowledged: boolean;
   canEnableBiometric: boolean;
   biometricEnabled: boolean;
   biometricLoading: boolean;
@@ -85,11 +80,6 @@ export function selectSecurityRecommendations(
   now: number = Date.now(),
 ): SecurityRecommendationDescriptor[] {
   const recommendations: SecurityRecommendationDescriptor[] = [];
-
-  // 0. CRITICAL: back up the recovery phrase (native only; irreversible loss).
-  if (input.isNative && input.hasIdentity && !input.recoveryPhraseAcknowledged) {
-    recommendations.push({ id: 'recovery-phrase-backup', priority: 0 });
-  }
 
   // 1. Biometric available but not enabled (high priority).
   if (input.canEnableBiometric && !input.biometricEnabled && !input.biometricLoading) {

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname, type Href } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -24,10 +24,9 @@ export interface MenuItem {
     iconColor: string;
 }
 
-const baseMenuItems: MenuItem[] = [
+export const menuItems: MenuItem[] = [
     { path: '/(tabs)', icon: 'home-variant', labelKey: 'drawer.home', iconColor: 'sidebarIconHome' },
     { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', labelKey: 'drawer.personalInfo', iconColor: 'sidebarIconPersonalInfo' },
-    { path: '/(tabs)/about-identity', icon: 'shield-key', labelKey: 'drawer.aboutIdentity', iconColor: 'sidebarIconSecurity' },
     { path: '/(tabs)/security', icon: 'lock-outline', labelKey: 'drawer.security', iconColor: 'sidebarIconSecurity' },
     { path: '/(tabs)/activity', icon: 'pulse', labelKey: 'drawer.activity', iconColor: 'sidebarIconActivity' },
     { path: '/(tabs)/devices', icon: 'desktop-classic', labelKey: 'drawer.devices', iconColor: 'sidebarIconDevices' },
@@ -38,14 +37,6 @@ const baseMenuItems: MenuItem[] = [
     { path: '/(tabs)/payments', icon: 'wallet-outline', labelKey: 'drawer.payments', iconColor: 'sidebarIconPayments' },
     { path: '/(tabs)/storage', icon: 'cloud-outline', labelKey: 'drawer.storage', iconColor: 'sidebarIconStorage' },
 ];
-
-// Filter menu items based on platform - about-identity only on native
-export const menuItems: MenuItem[] = baseMenuItems.filter(item => {
-    if (item.path === '/(tabs)/about-identity') {
-        return Platform.OS !== 'web';
-    }
-    return true;
-});
 
 interface SidebarContentProps {
     onNavigate?: () => void;

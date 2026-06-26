@@ -53,6 +53,27 @@ export interface AuthSession {
   expiresAt: number;
 }
 
+/**
+ * Extended `POST /auth/session/create` response (the "Sign in with Oxy" handoff
+ * fields, Workstream C2). Both are optional so this hook degrades gracefully
+ * when the handoff backend is not yet deployed — the legacy `oxyauth://<token>`
+ * QR (`qrData`) remains the fallback.
+ */
+interface AuthSessionCreateResponse {
+  /**
+   * Public, single-use authorize code carried in the QR / deep-link. NEVER the
+   * secret `sessionToken` — the approver resolves the requesting app's identity
+   * from this code server-side.
+   */
+  authorizeCode?: string;
+  /** Ready-to-render deep-link / universal-link string (`oxycommons://approve?...`). */
+  qrPayload?: string;
+  /** Session lifecycle status (e.g. `'pending'`). */
+  status?: string;
+  /** Server-authoritative expiry (epoch ms); the client-proposed value is the fallback. */
+  expiresAt?: number;
+}
+
 /** Real-time auth-session socket payload (also matches the poll status shape). */
 interface AuthUpdatePayload {
   status: 'authorized' | 'cancelled' | 'expired';
@@ -76,6 +97,21 @@ export interface UseOxyAuthSessionResult {
   authSession: AuthSession | null;
   /** The QR payload string (`oxyauth://<token>`), or `''` when no session. */
   qrData: string;
+  /**
+   * The PUBLIC, single-use authorize code for the "Sign in with Oxy" handoff,
+   * or `null` when the handoff backend did not return one. The approver (the
+   * Oxy identity app) resolves the requesting app's identity from this code —
+   * it is safe to display; it is NOT the secret `sessionToken`.
+   */
+  authorizeCode: string | null;
+  /**
+   * The structured "Sign in with Oxy" deep-link payload
+   * (`oxycommons://approve?...`) to render in the cross-device QR and to open on
+   * the same device, or `null` when the handoff backend did not return one.
+   * Render this (preferred over `qrData`) in the QR and pass it to
+   * `Linking.openURL` for same-device approval.
+   */
+  qrPayload: string | null;
   /** `true` while the session is being created (initial spinner). */
   isLoading: boolean;
   /** A user-facing error message, or `null`. Drives the retry UI. */
@@ -89,6 +125,13 @@ export interface UseOxyAuthSessionResult {
    * This is the action behind the platform-primary "Continue with Oxy" button.
    */
   openAuthApproval: () => Promise<void>;
+  /**
+   * Same-device "Sign in with Oxy" handoff: deep-link to `qrPayload`
+   * (`oxycommons://approve?...`) so the native Oxy identity app opens directly
+   * to approve. No-op when no `qrPayload` was returned. The socket / poll still
+   * completes the sign-in once the approval lands.
+   */
+  openSameDeviceApproval: () => Promise<void>;
   /** Tear down the current session and create a fresh one (the retry action). */
   retry: () => void;
   /** Disconnect the socket and stop polling. Idempotent. */
@@ -198,6 +241,9 @@ export function useOxyAuthSession(
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isWaiting, setIsWaiting] = useState(false);
+  // "Sign in with Oxy" handoff fields surfaced from the `create` response.
+  const [authorizeCode, setAuthorizeCode] = useState<string | null>(null);
+  const [qrPayload, setQrPayload] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -376,6 +422,9 @@ export function useOxyAuthSession(
   const generateAuthSession = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    // Reset the handoff fields for the fresh session (also clears them on retry).
+    setAuthorizeCode(null);
+    setQrPayload(null);
     isProcessingRef.current = false;
 
     // The cross-app device sign-in flow identifies the requesting app by its
@@ -393,8 +442,11 @@ export function useOxyAuthSession(
       const sessionToken = generateSessionToken();
       const expiresAt = Date.now() + AUTH_SESSION_EXPIRY_MS;
 
-      // Register the auth session with the server.
-      await oxyServices.makeRequest(
+      // Register the auth session with the server. The response carries the
+      // "Sign in with Oxy" handoff fields (public `authorizeCode` + structured
+      // `qrPayload`) when the handoff backend is deployed; both are optional, so
+      // the legacy `oxyauth://<token>` QR path keeps working without them.
+      const createResponse = await oxyServices.makeRequest<AuthSessionCreateResponse>(
         'POST',
         '/auth/session/create',
         { sessionToken, expiresAt, clientId },
@@ -402,6 +454,8 @@ export function useOxyAuthSession(
       );
 
       setAuthSession({ sessionToken, expiresAt });
+      setAuthorizeCode(createResponse?.authorizeCode ?? null);
+      setQrPayload(createResponse?.qrPayload ?? null);
       setIsWaiting(true);
 
       // Socket is the fast path; the poll is a transport-independent backstop
@@ -460,6 +514,23 @@ export function useOxyAuthSession(
       setError('Unable to open Oxy Auth. Please try again or use the QR code.');
     }
   }, [authSession, oxyServices]);
+
+  // Same-device "Sign in with Oxy" handoff: deep-link to the `qrPayload`
+  // (`oxycommons://approve?...`) so the native Oxy identity app opens directly
+  // to approve. The socket / poll already resolves the flow once the approval
+  // lands, so this only needs to launch the deep link. No-op when the handoff
+  // backend returned no `qrPayload`.
+  const openSameDeviceApproval = useCallback(async () => {
+    if (!qrPayload) {
+      return;
+    }
+    try {
+      await Linking.openURL(qrPayload);
+    } catch (err) {
+      debug.error('Unable to open the Oxy app for approval:', err);
+      setError('Unable to open the Oxy app. Scan the QR code from another device instead.');
+    }
+  }, [qrPayload]);
 
   // Tear down and recreate the session (the retry action).
   const retry = useCallback(() => {
@@ -546,10 +617,13 @@ export function useOxyAuthSession(
   return {
     authSession,
     qrData,
+    authorizeCode,
+    qrPayload,
     isLoading,
     error,
     isWaiting,
     openAuthApproval,
+    openSameDeviceApproval,
     retry,
     cleanup,
   };

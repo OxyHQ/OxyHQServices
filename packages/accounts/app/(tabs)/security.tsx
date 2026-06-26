@@ -7,8 +7,6 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
 import { type DeviceRecord } from '@/utils/device-utils';
 import { useTranslation } from '@/lib/i18n';
-import { useIdentityStore } from '@/hooks/identity/identityStore';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { SecurityRecommendationsSection } from '@/components/security/security-recommendations-section';
 import { useSecurityRecommendations } from '@/components/security/useSecurityRecommendations';
@@ -17,7 +15,6 @@ import { useSecurityActivityItems } from '@/components/security/useSecurityActiv
 import { SignInSection } from '@/components/security/sign-in-section';
 import { useSignInItems } from '@/components/security/useSignInItems';
 import { LanguageSection } from '@/components/security/language-section';
-import { AccountRecoverySection } from '@/components/security/account-recovery-section';
 import { DevicesSection } from '@/components/security/devices-section';
 import { useDeviceItems } from '@/components/security/useDeviceItems';
 import { ActiveSessionsSection } from '@/components/security/active-sessions-section';
@@ -31,10 +28,6 @@ export default function SecurityScreen() {
 
     // OxyServices integration — auth is enforced by the `(tabs)` layout.
     const { user, isLoading: oxyLoading, sessions, logoutAll } = useOxy();
-    // hasIdentity from useOxy is a function; pull the reactive boolean from
-    // the onboarding status hook instead so we can use it in dependency
-    // arrays and conditional rendering.
-    const { hasIdentity: hasIdentityBoolean } = useOnboardingStatus();
 
     // Fetch devices using TanStack Query hook — the `(tabs)` layout guarantees
     // an authenticated session by the time this hook mounts.
@@ -56,18 +49,7 @@ export default function SecurityScreen() {
         toggleBiometricLogin,
     } = useBiometricSettings();
 
-    // Whether the user has acknowledged writing down their recovery phrase.
-    // If false on native (where identity exists), we surface a high-priority
-    // backup recommendation. This is the single most important security
-    // recommendation in the entire app — without a phrase backup, account
-    // loss is irreversible.
-    const recoveryPhraseAcknowledged = useIdentityStore(
-        (state) => state.recoveryPhraseAcknowledged,
-    );
-
     const securityRecommendations = useSecurityRecommendations({
-        hasIdentity: hasIdentityBoolean,
-        recoveryPhraseAcknowledged,
         canEnableBiometric,
         biometricEnabled,
         biometricLoading,
@@ -119,8 +101,6 @@ export default function SecurityScreen() {
             <SignInSection items={signInItems} />
 
             <LanguageSection />
-
-            <AccountRecoverySection />
 
             <DevicesSection items={deviceItems} deviceCount={devices.length} />
 

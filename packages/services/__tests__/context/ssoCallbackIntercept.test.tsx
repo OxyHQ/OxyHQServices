@@ -179,7 +179,8 @@ describe('Eager SSO callback interception (services OxyContext)', () => {
     // The exchanged session is committed by the eager interception.
     await waitFor(() => expect(captured.isAuthenticated).toBe(true));
     expect(captured.userId).toBe(EXCHANGED_USER_ID);
-    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123');
+    // Core binds the validated CSRF state into the exchange: `exchangeSsoCode(code, state)`.
+    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123', 's');
 
     // Destination restored off the callback path; fragment stripped; no bounce.
     expect(window.location.pathname).toBe(DEST_PATH);

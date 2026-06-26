@@ -51,6 +51,13 @@ export type { SilentAuthOptions } from './mixins/OxyServices.silent';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
+// "Sign in with Oxy" — handoff (Workstream C)
+export type {
+    CommonsSignInHandle,
+    CommonsSignInStatus,
+    CommonsApprovalInfo,
+    CommonsSignInActionResult,
+} from './mixins/OxyServices.auth';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type {
     CreateManagedAccountInput,
@@ -160,6 +167,23 @@ export type {
 } from './mixins/OxyServices.reputation';
 
 // ---------------------------------------------------------------------------
+// Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping,
+// verified domains). Wire shapes (DidDocument, SignedRecordEnvelope,
+// AuthMethodsResponse, VerifiedDomain, DomainVerificationInstructions,
+// ExportBundle) live in `@oxyhq/contracts` — import them directly from there.
+// ---------------------------------------------------------------------------
+export { buildUserDid } from './mixins/OxyServices.identity';
+export type {
+    IdentityRecordType,
+    UnlinkableAuthMethodType,
+    LinkAuthMethodResult,
+    PublishRecordResult,
+    VerifyRecordResult,
+    VerifyDomainResult,
+    RemoveDomainResult,
+} from './mixins/OxyServices.identity';
+
+// ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
 export {
@@ -206,8 +230,9 @@ export {
     IdentityPersistError,
 } from './crypto/keyManager';
 export type { KeyPair } from './crypto/keyManager';
-export { SignatureService } from './crypto/signatureService';
-export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
+export { SignatureService, signedRecordSigningInput } from './crypto/signatureService';
+export type { SignedMessage, AuthChallenge, SignedRecordSigningFields } from './crypto/signatureService';
+export { canonicalize } from './crypto/canonicalJson';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
 export type { RecoveryPhraseResult } from './crypto/recoveryPhrase';
 

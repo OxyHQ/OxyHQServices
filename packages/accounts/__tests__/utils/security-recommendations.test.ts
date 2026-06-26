@@ -32,9 +32,6 @@ function activity(partial: Partial<SecurityActivity>): SecurityActivity {
 
 function baseInput(overrides: Partial<SecurityRecommendationInput> = {}): SecurityRecommendationInput {
   return {
-    isNative: true,
-    hasIdentity: true,
-    recoveryPhraseAcknowledged: true,
     canEnableBiometric: false,
     biometricEnabled: false,
     biometricLoading: false,
@@ -86,28 +83,8 @@ describe('countSuspiciousActivity', () => {
 });
 
 describe('selectSecurityRecommendations', () => {
-  it('returns nothing for a fully-secured native account', () => {
+  it('returns nothing for a fully-secured account', () => {
     expect(selectSecurityRecommendations(baseInput(), NOW)).toEqual([]);
-  });
-
-  it('surfaces the recovery-phrase backup only on native with an unacknowledged phrase', () => {
-    const native = selectSecurityRecommendations(
-      baseInput({ recoveryPhraseAcknowledged: false }),
-      NOW,
-    );
-    expect(native.map((r) => r.id)).toContain('recovery-phrase-backup');
-
-    const web = selectSecurityRecommendations(
-      baseInput({ isNative: false, recoveryPhraseAcknowledged: false }),
-      NOW,
-    );
-    expect(web.map((r) => r.id)).not.toContain('recovery-phrase-backup');
-
-    const noIdentity = selectSecurityRecommendations(
-      baseInput({ hasIdentity: false, recoveryPhraseAcknowledged: false }),
-      NOW,
-    );
-    expect(noIdentity.map((r) => r.id)).not.toContain('recovery-phrase-backup');
   });
 
   it('recommends biometric only when it can be enabled, is off, and is not loading', () => {
@@ -179,10 +156,9 @@ describe('selectSecurityRecommendations', () => {
     // Trigger every recommendation at once.
     const recs = selectSecurityRecommendations(
       baseInput({
-        recoveryPhraseAcknowledged: false, // priority 0, pushed first
-        canEnableBiometric: true, // priority 1, pushed second
+        canEnableBiometric: true, // priority 1, pushed first
         biometricEnabled: false,
-        hasRecoveryEmail: false, // priority 1, pushed third
+        hasRecoveryEmail: false, // priority 1, pushed second
         sessions: [session({ lastActive: daysAgo(STALE_SESSION_DAYS + 5) })], // priority 2
         deviceCount: MANY_DEVICES_THRESHOLD + 1, // priority 3
         securityActivities: [activity({ severity: 'critical' })], // priority 0, pushed last
@@ -191,13 +167,12 @@ describe('selectSecurityRecommendations', () => {
     );
 
     expect(recs.map((r) => r.id)).toEqual([
-      'recovery-phrase-backup',
       'suspicious-activity',
       'biometric',
       'recovery-email',
       'old-sessions',
       'many-devices',
     ]);
-    expect(recs.map((r) => r.priority)).toEqual([0, 0, 1, 1, 2, 3]);
+    expect(recs.map((r) => r.priority)).toEqual([0, 1, 1, 2, 3]);
   });
 });

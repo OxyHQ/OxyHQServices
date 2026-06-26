@@ -32,8 +32,27 @@ export class SignatureService {
   }
 
   /**
+   * Sign a message with a secp256k1 private key.
+   *
+   * Produces a DER-encoded (hex) signature over the SHA-256 of `message` — the
+   * exact inverse of {@link verifySignature}. Used server-side for the Oxy
+   * custodial signing key: the signed data-export attestation
+   * (`ES256K-DER-SHA256` over the canonical bundle) and custodial provenance.
+   * The private key NEVER leaves the server; it is read from env by callers.
+   *
+   * @param message - The message to sign (the canonical signing input)
+   * @param privateKey - The secp256k1 private key (hex encoded)
+   * @returns DER-encoded signature (hex)
+   */
+  static signMessage(message: string, privateKey: string): string {
+    const key = ec.keyFromPrivate(privateKey, 'hex');
+    const messageHash = SignatureService.hashMessage(message);
+    return key.sign(messageHash).toDER('hex');
+  }
+
+  /**
    * Verify an ECDSA signature
-   * 
+   *
    * @param message - The original message that was signed
    * @param signature - The signature in DER format (hex encoded)
    * @param publicKey - The public key (hex encoded, uncompressed)

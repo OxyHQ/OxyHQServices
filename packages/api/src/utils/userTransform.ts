@@ -23,9 +23,32 @@ export type UserLike = {
   locations?: unknown;
   links?: unknown;
   linksMetadata?: unknown;
+  verifiedDomains?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 } | null | undefined;
+
+/** A proven-domain badge as emitted on the user DTO (secret-free, no subdoc _id). */
+interface VerifiedDomainDto {
+  domain: string;
+  verifiedAt: Date | string;
+  method: 'dns-txt' | 'well-known';
+}
+
+function toVerifiedDomains(value: unknown): VerifiedDomainDto[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const domains: VerifiedDomainDto[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const domain = stringValue(entry.domain);
+    const method = stringValue(entry.method);
+    const verifiedAt = entry.verifiedAt;
+    if (!domain || (method !== 'dns-txt' && method !== 'well-known')) continue;
+    if (!(verifiedAt instanceof Date) && typeof verifiedAt !== 'string') continue;
+    domains.push({ domain, verifiedAt, method });
+  }
+  return domains;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -101,6 +124,7 @@ export function formatUserResponse(user: unknown) {
     locations: Array.isArray(user.locations) ? user.locations : undefined,
     links: Array.isArray(user.links) ? user.links.filter((link): link is string => typeof link === 'string') : undefined,
     linksMetadata: Array.isArray(user.linksMetadata) ? user.linksMetadata : undefined,
+    verifiedDomains: toVerifiedDomains(user.verifiedDomains),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

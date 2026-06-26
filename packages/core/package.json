@@ -98,7 +98,7 @@
     }
   },
   "dependencies": {
-    "@oxyhq/contracts": "^0.2.1",
+    "@oxyhq/contracts": "^0.3.0",
     "bip39": "^3.1.0",
     "buffer": "^6.0.3",
     "elliptic": "^6.6.1",

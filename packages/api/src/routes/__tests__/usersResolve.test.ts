@@ -47,6 +47,11 @@ jest.mock('../../services/assetServiceSingleton', () => ({
 jest.mock('../../services/user.service', () => ({
   userService: {},
 }));
+// usersRouter now imports the signed-export service (which pulls in the identity
+// model graph). Stub it — this suite does not exercise GET /users/me/export.
+jest.mock('../../services/identityExport.service', () => ({
+  buildExportBundle: jest.fn(),
+}));
 jest.mock('../../services/signature.service', () => ({
   __esModule: true,
   default: {},

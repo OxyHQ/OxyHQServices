@@ -14,9 +14,9 @@ declare global {
 
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 
-// Silence expected error logs (e.g. useOnboardingStatus catches KeyManager
-// failures and console.errors them). Tests that want to assert on these
-// can override with their own spy.
+// Silence expected error logs from paths that deliberately console.error on
+// handled failures. Tests that want to assert on these can override with their
+// own spy.
 beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);

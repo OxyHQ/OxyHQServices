@@ -31,6 +31,8 @@ const mockApplicationFindOne = jest.fn();
 const mockApplicationFindById = jest.fn();
 const mockApplicationCredentialFindOne = jest.fn();
 const mockUserFindById = jest.fn();
+const mockAuthorizeSigned = jest.fn();
+const mockEmitAuthSessionUpdate = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -59,6 +61,7 @@ jest.mock('../../models/Session', () => ({
 
 jest.mock('../../services/authSession.service', () => ({
   claimAuthSession: jest.fn(),
+  authorizeSessionWithSignedChallenge: (...args: unknown[]) => mockAuthorizeSigned(...args),
 }));
 
 jest.mock('../../models/AuthCode', () => ({
@@ -103,7 +106,7 @@ jest.mock('../../utils/userTransform', () => ({
 }));
 
 jest.mock('../../utils/authSessionSocket', () => ({
-  emitAuthSessionUpdate: jest.fn(),
+  emitAuthSessionUpdate: (...args: unknown[]) => mockEmitAuthSessionUpdate(...args),
 }));
 
 jest.mock('../../services/session.service', () => ({
@@ -482,6 +485,90 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     expect(res.status).toBe(403);
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('(h) returns a public authorizeCode + qrPayload and persists boundOrigin (C2)', async () => {
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-qr', applicationId: THIRD_PARTY_APP_ID },
+      { origin: 'https://acme.example' },
+    );
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as { sessionToken: string; authorizeCode: string; qrPayload: string; status: string };
+    expect(data.sessionToken).toBe('tok-create-qr'); // secret echoed to its originator only
+    expect(data.status).toBe('pending');
+    expect(data.authorizeCode).toMatch(/^[a-f0-9]{32}$/);
+    // QR contract: `oxycommons://approve?...&code=<authorizeCode>` — path segment
+    // `approve` + param `code` are part of Commons' deep-link router contract.
+    expect(data.qrPayload).toContain('oxycommons://approve?');
+    expect(data.qrPayload).toContain(`code=${data.authorizeCode}`);
+    expect(data.qrPayload).toContain(`app=${THIRD_PARTY_APP_ID}`);
+    expect(data.qrPayload).toContain('origin=https%3A%2F%2Facme.example');
+    // The QR carries the PUBLIC authorizeCode, never the secret sessionToken.
+    expect(data.qrPayload).not.toContain('tok-create-qr');
+
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { boundOrigin?: string; authorizeCode?: string };
+    expect(created.boundOrigin).toBe('https://acme.example');
+    expect(created.authorizeCode).toBe(data.authorizeCode);
+  });
+});
+
+describe('POST /auth/session/authorize-signed/:authorizeCode — route mapping (C2)', () => {
+  it('maps an ok outcome to 200 and notifies the originator over the socket', async () => {
+    mockAuthorizeSigned.mockResolvedValueOnce({
+      ok: true,
+      sessionToken: 'secret-token',
+      sessionId: 'sess-1',
+      userId: 'user-1',
+      username: 'nate',
+      publicKey: 'pk-1',
+    });
+
+    const res = await requestJson(server, 'POST', '/auth/session/authorize-signed/code-1', {
+      publicKey: 'pk-1',
+      challenge: 'c',
+      signature: 's',
+      timestamp: Date.now(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ success: true, sessionId: 'sess-1' });
+    expect(mockEmitAuthSessionUpdate).toHaveBeenCalledWith(
+      'secret-token',
+      expect.objectContaining({ status: 'authorized', sessionId: 'sess-1', userId: 'user-1', publicKey: 'pk-1' }),
+    );
+  });
+
+  it('maps a 401 failure outcome without emitting', async () => {
+    mockAuthorizeSigned.mockResolvedValueOnce({ ok: false, status: 401, message: 'Invalid signature' });
+
+    const res = await requestJson(server, 'POST', '/auth/session/authorize-signed/code-1', {
+      publicKey: 'pk-1',
+      challenge: 'c',
+      signature: 's',
+      timestamp: Date.now(),
+    });
+
+    expect(res.status).toBe(401);
+    expect(mockEmitAuthSessionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('maps a 404 failure outcome', async () => {
+    mockAuthorizeSigned.mockResolvedValueOnce({ ok: false, status: 404, message: 'User not found' });
+
+    const res = await requestJson(server, 'POST', '/auth/session/authorize-signed/code-1', {
+      publicKey: 'pk-1',
+      challenge: 'c',
+      signature: 's',
+      timestamp: Date.now(),
+    });
+
+    expect(res.status).toBe(404);
   });
 });
 

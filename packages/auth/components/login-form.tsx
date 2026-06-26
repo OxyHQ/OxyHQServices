@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, ShieldAlert } from "lucide-react"
+import { ArrowLeft, ShieldAlert, QrCode } from "lucide-react"
 import { OxyServices } from "@oxyhq/core"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
@@ -19,8 +19,10 @@ import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
 import { AccountChooser } from "@/components/account-chooser"
 import { SocialLoginButtons } from "@/components/social-login-buttons"
+import { CommonsSignIn } from "@/components/commons-signin"
 import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/auth-form-layout"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
+import { OXY_CLIENT_ID } from "@/lib/oxy-client"
 
 type LoginFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -41,7 +43,7 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     loginHint?: string
 }
 
-type LoginStep = "identifier" | "password" | "2fa" | "security-alert"
+type LoginStep = "identifier" | "password" | "2fa" | "security-alert" | "commons"
 
 type LookupResult = {
     username: string
@@ -490,15 +492,29 @@ export function LoginForm({
         <AuthFormLayout
             className={className}
             footer={step === "identifier" ? (
-                <SocialLoginButtons
-                    sessionToken={sessionToken}
-                    redirectUri={redirectUri}
-                    state={state}
-                    clientId={clientId}
-                    codeChallenge={codeChallenge}
-                    codeChallengeMethod={codeChallengeMethod}
-                    scope={scope}
-                />
+                <div className="flex flex-col gap-4">
+                    {/* Third option: cross-device "Sign in with Oxy" (QR). The user
+                        approves in their Oxy app on their phone — no password here. */}
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="lg"
+                        className="w-full"
+                        onClick={() => goToStep("commons", "forward")}
+                    >
+                        <QrCode className="size-4" />
+                        Sign in with Oxy
+                    </Button>
+                    <SocialLoginButtons
+                        sessionToken={sessionToken}
+                        redirectUri={redirectUri}
+                        state={state}
+                        clientId={clientId}
+                        codeChallenge={codeChallenge}
+                        codeChallengeMethod={codeChallengeMethod}
+                        scope={scope}
+                    />
+                </div>
             ) : undefined}
             {...props}
         >
@@ -634,6 +650,19 @@ export function LoginForm({
                             </Button>
                         </div>
                     </FieldGroup>
+                </div>
+            )}
+
+            {/* Step 5: "Sign in with Oxy" (QR / app-to-app handoff). Completes
+                through the SAME `completeLogin` path as the password step. */}
+            {step === "commons" && (
+                <div key="commons" className={animationClass}>
+                    <CommonsSignIn
+                        oxyServices={oxy}
+                        clientId={OXY_CLIENT_ID}
+                        onAuthorized={(sessionId) => completeLogin(sessionId)}
+                        onBack={() => goToStep("identifier", "back")}
+                    />
                 </div>
             )}
         </AuthFormLayout>

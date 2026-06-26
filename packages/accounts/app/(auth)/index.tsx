@@ -1,179 +1,324 @@
-import React, { useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
-import Animated, {
-  useSharedValue,
-  withTiming,
-  useAnimatedStyle,
-} from 'react-native-reanimated';
-import { Redirect, useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Platform, Linking, ScrollView } from 'react-native';
+import { toast } from '@oxyhq/bloom';
+import { TextFieldInput } from '@oxyhq/bloom/text-field';
+import { useOxy, LogoText, showSignInModal } from '@oxyhq/services';
+import { logger, type SessionLoginResponse } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
-import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
-import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { useTranslation } from '@/lib/i18n';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import { Button } from '@/components/ui';
+import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
+import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
 
-const humanTranslations = [
-  'Human',
-  'Humano',
-  'Humain',
-  'Mensch',
-  '人类',
-  '人間',
-  'إنسان',
-];
+/**
+ * Sign-In Screen (the only `(auth)` route)
+ *
+ * Accounts is a management-only app: a user's cryptographic identity (private
+ * keys, recovery phrase) lives in the Commons app, never here. This screen
+ * authenticates the user against an existing Oxy account and offers three
+ * paths, all under the unified "Sign in with Oxy" umbrella:
+ *
+ *   1. Username/email + password (`useOxy().signInWithPassword`) — with the
+ *      2FA challenge handled inline via `POST /security/2fa/verify-login`.
+ *   2. "Sign in with Oxy" handoff — the SDK's `SignInModal` (QR for another
+ *      device + same-device deep-link to the Oxy app + one-tap approval).
+ *   3. FedCM (web only, when the browser supports it).
+ *
+ * The root Stack (`app/_layout.tsx`) owns the `(auth)`↔`(tabs)` swap keyed on
+ * session, so this screen never navigates across that boundary itself: it
+ * renders a neutral backdrop while auth is still resolving or once the user is
+ * authenticated, and lets the root perform the swap. This avoids the
+ * render/redirect race that a child-screen cross-group navigation would cause.
+ */
 
-export default function AuthIndexScreen() {
-  const router = useRouter();
+type SignInStep = 'credentials' | 'twoFactor';
+
+export default function SignInScreen() {
   const colors = useColors();
-  const backgroundColor = colors.background;
-  const textColor = colors.text;
   const { t } = useTranslation();
-  const { status, hasIdentity } = useOnboardingStatus();
+  const {
+    oxyServices,
+    signInWithPassword,
+    handleWebSession,
+    isAuthenticated,
+    isAuthResolved,
+  } = useOxy();
 
-  // Entrance animation values
-  const helloOpacity = useSharedValue(0);
-  const helloTranslateY = useSharedValue(20);
-  const humanOpacity = useSharedValue(0);
-  const footerOpacity = useSharedValue(0);
+  const [step, setStep] = useState<SignInStep>('credentials');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [loginToken, setLoginToken] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Refs for staggered text
-  const helloRef = useRef<StaggeredTextRef>(null);
-  const tapToContinueRef = useRef<StaggeredTextRef>(null);
+  const fedCMSupported = Platform.OS === 'web' && oxyServices.isFedCMSupported();
+  const canSubmitCredentials = identifier.trim().length > 0 && password.length > 0;
 
-  const entranceHelloStyle = useAnimatedStyle(() => ({
-    opacity: helloOpacity.value,
-    transform: [{ translateY: helloTranslateY.value }],
-  }));
+  const handlePasswordSignIn = useCallback(async () => {
+    if (isSubmitting || !canSubmitCredentials) return;
+    setIsSubmitting(true);
+    try {
+      const result = await signInWithPassword(identifier.trim(), password);
+      if (result.status === '2fa_required') {
+        // The account has 2FA enabled — no session was committed. Move to the
+        // verification step and carry the short-lived loginToken forward.
+        setLoginToken(result.loginToken);
+        setStep('twoFactor');
+        return;
+      }
+      // result.status === 'ok' — the SDK committed the session. `isAuthenticated`
+      // flips and the root Stack swaps into `(tabs)`; nothing to do here.
+    } catch (error) {
+      logger.error(
+        'SignInScreen: password sign-in failed',
+        error instanceof Error ? error : new Error(String(error)),
+        { component: 'SignInScreen' },
+      );
+      toast.error(extractAuthErrorMessage(error, t('auth.signIn.errors.credentials')));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, canSubmitCredentials, signInWithPassword, identifier, password, t]);
 
-  const entranceHumanStyle = useAnimatedStyle(() => ({
-    opacity: humanOpacity.value,
-  }));
+  const handleVerifyTwoFactor = useCallback(async () => {
+    if (isSubmitting || !loginToken || code.trim().length === 0) return;
+    setIsSubmitting(true);
+    try {
+      // The 2FA endpoint creates the session and returns the same shape as a
+      // password login; commit it through the shared web-session path so auth
+      // state, persistence, and profile fetch all run identically.
+      const session = await oxyServices.makeRequest<SessionLoginResponse>(
+        'POST',
+        '/security/2fa/verify-login',
+        { loginToken, token: code.trim() },
+        { cache: false },
+      );
+      await handleWebSession(session);
+    } catch (error) {
+      logger.error(
+        'SignInScreen: 2FA verification failed',
+        error instanceof Error ? error : new Error(String(error)),
+        { component: 'SignInScreen' },
+      );
+      toast.error(extractAuthErrorMessage(error, t('auth.signIn.errors.twoFactor')));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, loginToken, code, oxyServices, handleWebSession, t]);
 
-  const footerStyle = useAnimatedStyle(() => ({
-    opacity: footerOpacity.value,
-  }));
-
-  // Initial entrance animation
-  useEffect(() => {
-    const innerHello: { current: ReturnType<typeof setTimeout> | null } = { current: null };
-    const innerTap: { current: ReturnType<typeof setTimeout> | null } = { current: null };
-
-    // "Hello" appears first
-    const t1 = setTimeout(() => {
-      helloOpacity.value = withTiming(1, { duration: 600 });
-      helloTranslateY.value = withTiming(0, { duration: 600 });
-      helloRef.current?.reset();
-      innerHello.current = setTimeout(() => helloRef.current?.animate(), 200);
-    }, 200);
-
-    // Human text appears
-    const t2 = setTimeout(() => {
-      humanOpacity.value = withTiming(1, { duration: 600 });
-    }, 800);
-
-    // Footer appears
-    const t3 = setTimeout(() => {
-      footerOpacity.value = withTiming(1, { duration: 600 });
-      tapToContinueRef.current?.reset();
-      innerTap.current = setTimeout(() => tapToContinueRef.current?.animate(), 200);
-    }, 1500);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      if (innerHello.current) clearTimeout(innerHello.current);
-      if (innerTap.current) clearTimeout(innerTap.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleBackToCredentials = useCallback(() => {
+    setStep('credentials');
+    setCode('');
+    setLoginToken(null);
   }, []);
 
-  const handlePress = useCallback(() => {
-    router.push('./welcome');
-  }, [router]);
+  const handleFedCMSignIn = useCallback(async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const session = await oxyServices.signInWithFedCM();
+      if (session) {
+        await handleWebSession(session);
+      }
+    } catch (error) {
+      logger.error(
+        'SignInScreen: FedCM sign-in failed',
+        error instanceof Error ? error : new Error(String(error)),
+        { component: 'SignInScreen' },
+      );
+      toast.error(extractAuthErrorMessage(error, t('auth.signIn.errors.generic')));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [isSubmitting, oxyServices, handleWebSession, t]);
 
-  // CRITICAL: when an identity already exists on this device but the user
-  // has no active session (e.g., they closed and re-opened the app), we
-  // MUST NOT show the marketing "Hello / Human / Tap to continue" splash
-  // — that screen looks identical to a fresh install and leads users to
-  // believe their account is lost. Redirect straight into the create-identity
-  // flow, which detects the existing identity, auto-runs syncIdentity(), and
-  // routes to the username step or `(tabs)`.
-  //
-  // This check runs AFTER all hooks above to preserve hook order across
-  // renders. We only redirect when status has settled to `'in_progress'`
-  // (which implies hasIdentity is true) — never during `'checking'`,
-  // because that would race with the identity detection effect.
-  //
-  // Fully-onboarded users should never land on the marketing splash. But we do
-  // NOT redirect to `/(tabs)` from here: the root Stack in `app/_layout.tsx`
-  // owns the `(auth)`↔`(tabs)` boundary via `redirect={!needsAuth}` and already
-  // performs that group-swap once onboarded. Navigating to `(tabs)` here would
-  // create a SECOND navigation authority racing the root swap and can land
-  // expo-router on no matching route → blank screen. Render a neutral backdrop
-  // and let the root Stack perform the single authoritative swap.
-  if (status === 'complete') {
-    return <View style={[styles.container, { backgroundColor }]} />;
-  }
+  const handleSignInWithOxy = useCallback(() => {
+    // Opens the SDK's shared sign-in surface: QR for another device, a
+    // same-device deep-link to the Oxy app, and one-tap approval. The modal is
+    // mounted by OxyProvider; this just reveals it.
+    showSignInModal();
+  }, []);
 
-  // `create-identity` is a route WITHIN the `(auth)` group, so redirecting to it
-  // does NOT race the root Stack's cross-group swap — it's safe here.
-  if (hasIdentity && status === 'in_progress') {
-    return <Redirect href="/(auth)/create-identity" />;
-  }
+  const handleGetTheApp = useCallback(() => {
+    Linking.openURL(CREATE_ACCOUNT_HELP_URL).catch((error) => {
+      logger.error(
+        'SignInScreen: failed to open get-the-app URL',
+        error instanceof Error ? error : new Error(String(error)),
+        { component: 'SignInScreen' },
+      );
+    });
+  }, []);
 
-  // While the onboarding status is still resolving on cold start, render a
-  // plain backdrop instead of the rotating-text marketing splash. Otherwise
-  // returning users see "Hello / Human / Tap to continue" for ~100ms before
-  // the Redirect fires above — visually identical to a fresh install and
-  // alarming for anyone with an existing identity.
-  if (status === 'checking') {
-    return <View style={[styles.container, { backgroundColor }]} />;
+  const containerStyle = useMemo(
+    () => [styles.container, { backgroundColor: colors.background }],
+    [colors.background],
+  );
+
+  // Neutral backdrop while the session is still resolving, or once the user is
+  // authenticated (the root Stack will swap to `(tabs)`). Rendering the form in
+  // those windows would flash sign-in UI at a returning user.
+  if (!isAuthResolved || isAuthenticated) {
+    return <View style={containerStyle} />;
   }
 
   return (
-    <Pressable
-      style={[styles.container, { backgroundColor }]}
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={t('auth.indexTapToContinue')}
+    <ScrollView
+      style={containerStyle}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.content}>
-        <View style={styles.textContainer}>
-          {/* "Hello" text with entrance animation */}
-          <Animated.View style={entranceHelloStyle}>
-            <StaggeredText
-              text={t('auth.indexHello')}
-              ref={helloRef}
-              fontSize={48}
-              textStyle={[styles.text, { color: textColor }]}
-            />
-          </Animated.View>
+        <LogoText height={40} style={styles.logo} />
 
-          {/* Rotating human text with drum effect */}
-          <Animated.View style={entranceHumanStyle}>
-            <RotatingTextAnimation
-              texts={humanTranslations}
-              fontSize={48}
-              interval={3000}
-              duration={600}
-              textStyle={{ ...styles.text, color: textColor }}
-              containerStyle={styles.rotatingContainer}
-            />
-          </Animated.View>
-        </View>
+        {step === 'credentials' ? (
+          <>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {t('auth.signIn.title')}
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              {t('auth.signIn.subtitle')}
+            </Text>
+
+            <View style={styles.form}>
+              <TextFieldInput
+                floatingLabel
+                label={t('auth.signIn.identifierLabel')}
+                value={identifier}
+                onChangeText={setIdentifier}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                textContentType="username"
+                returnKeyType="next"
+                editable={!isSubmitting}
+                testID="sign-in-identifier"
+              />
+              <TextFieldInput
+                floatingLabel
+                label={t('auth.signIn.passwordLabel')}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="password"
+                returnKeyType="go"
+                editable={!isSubmitting}
+                onSubmitEditing={handlePasswordSignIn}
+                testID="sign-in-password"
+              />
+              <Button
+                variant="primary"
+                onPress={handlePasswordSignIn}
+                loading={isSubmitting}
+                disabled={isSubmitting || !canSubmitCredentials}
+                style={styles.primaryButton}
+                testID="sign-in-submit"
+              >
+                {t('auth.signIn.submit')}
+              </Button>
+            </View>
+
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.textSecondary }]}>
+                {t('auth.signIn.or')}
+              </Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+
+            <View style={styles.actions}>
+              <Button
+                variant="secondary"
+                onPress={handleSignInWithOxy}
+                disabled={isSubmitting}
+                style={styles.secondaryButton}
+                testID="sign-in-with-oxy"
+              >
+                {t('auth.signIn.withOxy')}
+              </Button>
+
+              {Platform.OS === 'web' && (
+                fedCMSupported ? (
+                  <Button
+                    variant="ghost"
+                    onPress={handleFedCMSignIn}
+                    disabled={isSubmitting}
+                    style={styles.secondaryButton}
+                    testID="sign-in-fedcm"
+                  >
+                    {t('auth.signIn.fedcm')}
+                  </Button>
+                ) : (
+                  <Text style={[styles.unsupported, { color: colors.textSecondary }]}>
+                    {t('auth.signIn.unsupported')}
+                  </Text>
+                )
+              )}
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {t('auth.signIn.twoFactor.title')}
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              {t('auth.signIn.twoFactor.subtitle')}
+            </Text>
+
+            <View style={styles.form}>
+              <TextFieldInput
+                floatingLabel
+                label={t('auth.signIn.twoFactor.codeLabel')}
+                value={code}
+                onChangeText={setCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="number-pad"
+                textContentType="oneTimeCode"
+                returnKeyType="go"
+                editable={!isSubmitting}
+                onSubmitEditing={handleVerifyTwoFactor}
+                testID="sign-in-2fa-code"
+              />
+              <Button
+                variant="primary"
+                onPress={handleVerifyTwoFactor}
+                loading={isSubmitting}
+                disabled={isSubmitting || code.trim().length === 0}
+                style={styles.primaryButton}
+                testID="sign-in-2fa-verify"
+              >
+                {t('auth.signIn.twoFactor.verify')}
+              </Button>
+              <Button
+                variant="ghost"
+                onPress={handleBackToCredentials}
+                disabled={isSubmitting}
+                style={styles.secondaryButton}
+                testID="sign-in-2fa-back"
+              >
+                {t('auth.signIn.twoFactor.back')}
+              </Button>
+            </View>
+          </>
+        )}
       </View>
 
-      {/* Footer */}
-      <Animated.View style={[styles.footer, footerStyle]}>
-        <StaggeredText
-          text={t('auth.indexTapToContinue')}
-          ref={tapToContinueRef}
-          fontSize={16}
-          textStyle={[styles.tapText, { color: textColor }]}
-        />
-      </Animated.View>
-    </Pressable>
+      <View style={styles.footer}>
+        <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+          {t('auth.signIn.noAccount')}
+        </Text>
+        <Button
+          variant="ghost"
+          onPress={handleGetTheApp}
+          style={styles.footerButton}
+          testID="sign-in-get-app"
+        >
+          {t('auth.signIn.getTheApp')}
+        </Button>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -181,31 +326,83 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+  },
   content: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 48,
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
-  textContainer: {
-    alignItems: 'flex-start',
-    gap: -16,
+  logo: {
+    alignSelf: 'center',
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  form: {
+    width: '100%',
+    gap: 16,
+  },
+  primaryButton: {
     width: '100%',
   },
-  rotatingContainer: {
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  dividerText: {
+    fontSize: 13,
+    textTransform: 'uppercase',
+  },
+  actions: {
+    width: '100%',
+    gap: 12,
+  },
+  secondaryButton: {
     width: '100%',
   },
-  text: {
-    fontWeight: '900',
-    letterSpacing: -0.5,
+  unsupported: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   footer: {
-    padding: 42,
-    paddingBottom: 60,
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    paddingTop: 24,
     alignItems: 'center',
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
   },
-  tapText: {
-    fontWeight: '400',
-    opacity: 0.6,
+  footerText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  footerButton: {
+    minWidth: 200,
   },
 });

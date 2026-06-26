@@ -31,7 +31,7 @@ import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
-import { claimAuthSession } from '../services/authSession.service';
+import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
 import Session from '../models/Session';
 import {
   rotateRefreshToken,
@@ -63,6 +63,8 @@ import {
   authSessionCreateSchema,
   authSessionTokenParams,
   authorizeSessionBodySchema,
+  authorizeCodeParams,
+  authSessionAuthorizeSignedSchema,
   authSessionClaimSchema,
   serviceTokenSchema,
   oauthAuthorizeSchema,
@@ -1472,6 +1474,10 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     throw new ForbiddenError('Application is not available');
   }
 
+  // The browser Origin the session was created from (null for native callers).
+  // Captured for the approval UI and bound into the QR payload.
+  const boundOrigin = requestOrigin(req);
+
   // Public OAuth client IDs are routing identifiers, not authenticators. For
   // trusted first-party/internal app identities, a browser caller must prove it
   // is running on one of the app's registered redirect origins before the
@@ -1480,8 +1486,7 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   // accepted as-is — the device-flow consent screen still authorises every
   // session interactively.
   if (isTrustedApplication(resolvedApp) && hasBrowserContext(req)) {
-    const origin = requestOrigin(req);
-    if (!origin || !applicationAllowsOrigin(resolvedApp, origin)) {
+    if (!boundOrigin || !applicationAllowsOrigin(resolvedApp, boundOrigin)) {
       throw new ForbiddenError('Application origin is not allowed');
     }
   }
@@ -1492,23 +1497,43 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     throw new BadRequestError('Unable to create session');
   }
 
+  // The client-supplied `sessionToken` is the SECRET claim credential and is
+  // kept as-is (never regenerated, never echoed to observers). The
+  // `authorizeCode` is a SEPARATE public single-use handle that travels in the
+  // QR / deep link so the Commons vault can approve without ever seeing the
+  // secret sessionToken.
+  const authorizeCode = crypto.randomBytes(16).toString('hex');
+  const qrNonce = crypto.randomBytes(8).toString('hex');
+
   // Create new auth session
   const authSession = await AuthSession.create({
     sessionToken,
     applicationId: resolvedApp._id,
+    authorizeCode,
+    boundOrigin: boundOrigin ?? null,
+    challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
   });
 
+  // Deep-link / universal-link payload for the QR. Commons parses ONLY `code`
+  // from this; the `approve` path segment and `code` param name are part of its
+  // deep-link router contract and MUST NOT change.
+  const qrPayload = `oxycommons://approve?v=1&code=${authorizeCode}&app=${resolvedApp._id.toString()}` +
+    `&origin=${encodeURIComponent(boundOrigin ?? '')}&nonce=${qrNonce}&exp=${expiresAtDate.getTime()}`;
+
   logger.debug('Auth session created', {
     sessionToken: sessionToken.substring(0, 8) + '...',
+    authorizeCode: authorizeCode.substring(0, 8) + '...',
     applicationId: resolvedApp._id.toString(),
   });
 
   sendSuccess(res, {
     sessionToken: authSession.sessionToken,
+    authorizeCode: authSession.authorizeCode,
     expiresAt: authSession.expiresAt.toISOString(),
     status: authSession.status,
+    qrPayload,
   });
 }));
 
@@ -1982,6 +2007,174 @@ router.post('/session/cancel/:sessionToken', validate({ params: authSessionToken
 
   sendSuccess(res, { success: true });
 }));
+
+// ============================================
+// "Sign in with Oxy" QR / app-to-app handoff (C2)
+// ============================================
+//
+// The originating client (web RP / native app) creates a session and renders a
+// QR whose `authorizeCode` is PUBLIC; the secret `sessionToken` never leaves the
+// originator. The Commons vault scans it, fetches the server-resolved app
+// identity (so a spoofed-name QR still shows the true app), biometric-gates, and
+// approves by SIGNING a challenge with its local key — no bearer token. The
+// originator then claims the result with its secret `sessionToken` as usual.
+
+// Public — read-only resolution of the app identity behind an authorizeCode.
+const authSessionApproveInfoLimiter = rateLimit({
+  prefix: 'rl:auth:session-approve-info:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 60,
+});
+
+// Key-signed approval. Tight, like the claim limiter — a legitimate approval
+// hits this once per flow; the cap blunts brute force against the authorizeCode.
+const authSessionAuthorizeSignedLimiter = rateLimit({
+  prefix: 'rl:auth:session-authorize-signed:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * GET /auth/session/approve-info/:authorizeCode
+ *
+ * PUBLIC. Returns the server-resolved, sanitized Application identity (never the
+ * QR's self-asserted strings) plus the bound origin and status, so the Commons
+ * approval screen renders the TRUE app. Never leaks the secret `sessionToken`.
+ */
+router.get(
+  '/session/approve-info/:authorizeCode',
+  authSessionApproveInfoLimiter,
+  validate({ params: authorizeCodeParams }),
+  asyncHandler(async (req, res) => {
+    const { authorizeCode } = req.params;
+
+    const authSession = await AuthSession.findOne({ authorizeCode });
+    if (!authSession) {
+      throw new NotFoundError('Auth session not found');
+    }
+
+    if (authSession.status === 'pending' && authSession.expiresAt < new Date()) {
+      authSession.status = 'expired';
+      await authSession.save();
+    }
+
+    let application = null;
+    let scopes: string[] = [];
+    const app = await Application.findById(authSession.applicationId);
+    if (app && app.status === 'active') {
+      const developerName = await resolveDeveloperName(app);
+      application = serializePublicApplication(app, developerName);
+      scopes = Array.isArray(app.scopes) ? [...app.scopes] : [];
+    }
+
+    sendSuccess(res, {
+      application,
+      scopes,
+      boundOrigin: authSession.boundOrigin ?? null,
+      expiresAt: authSession.expiresAt.toISOString(),
+      status: authSession.status,
+    });
+  }),
+);
+
+/**
+ * POST /auth/session/authorize-signed/:authorizeCode
+ *
+ * NO bearer auth — this is the gap-filler. The Commons vault approves with its
+ * local secp256k1 key: it proves key control with a single-use challenge
+ * signature (`verifyChallengeResponse` + atomic burn), and the resolved signer
+ * becomes the authorizing user. The session is bound by `authorizeCode`. The
+ * waiting originator is notified over the socket on the row's `sessionToken`.
+ */
+router.post(
+  '/session/authorize-signed/:authorizeCode',
+  authSessionAuthorizeSignedLimiter,
+  validate({ params: authorizeCodeParams, body: authSessionAuthorizeSignedSchema }),
+  asyncHandler(async (req, res) => {
+    const { authorizeCode } = req.params;
+    const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint } = req.body as {
+      publicKey: string;
+      challenge: string;
+      signature: string;
+      timestamp: number;
+      deviceName?: string;
+      deviceFingerprint?: string;
+    };
+
+    // The challenge verify + atomic burn + session binding live in the service
+    // (mirrors claimAuthSession) so the AuthChallenge/model import chain stays
+    // out of the route module's load path.
+    const outcome = await authorizeSessionWithSignedChallenge({
+      authorizeCode,
+      publicKey,
+      challenge,
+      signature,
+      timestamp,
+      deviceName,
+      deviceFingerprint,
+      req,
+    });
+
+    if (!outcome.ok) {
+      if (outcome.status === 401) throw new UnauthorizedError(outcome.message);
+      if (outcome.status === 404) throw new NotFoundError(outcome.message);
+      throw new BadRequestError(outcome.message);
+    }
+
+    logger.info('Auth session authorized (key-signed)', {
+      authorizeCode: authorizeCode.substring(0, 8) + '...',
+      userId: outcome.userId,
+    });
+
+    // Notify the waiting originator on its secret sessionToken channel.
+    emitAuthSessionUpdate(outcome.sessionToken, {
+      status: 'authorized',
+      sessionId: outcome.sessionId,
+      publicKey: outcome.publicKey,
+      userId: outcome.userId,
+      username: outcome.username,
+    });
+
+    sendSuccess(res, {
+      success: true,
+      sessionId: outcome.sessionId,
+      user: {
+        id: outcome.userId,
+        username: outcome.username,
+        publicKey: outcome.publicKey,
+      },
+    });
+  }),
+);
+
+/**
+ * POST /auth/session/deny/:authorizeCode
+ *
+ * The Commons vault denies a pending approval. It never holds the secret
+ * `sessionToken`, so it cannot use `/session/cancel/:sessionToken`; it cancels
+ * by the public `authorizeCode` instead. Only a PENDING session can be denied
+ * (so a knower of the code cannot cancel an already-authorized session).
+ */
+router.post(
+  '/session/deny/:authorizeCode',
+  validate({ params: authorizeCodeParams }),
+  asyncHandler(async (req, res) => {
+    const { authorizeCode } = req.params;
+
+    const authSession = await AuthSession.findOne({ authorizeCode });
+    if (!authSession) {
+      throw new NotFoundError('Auth session not found');
+    }
+
+    if (authSession.status === 'pending') {
+      authSession.status = 'cancelled';
+      await authSession.save();
+      emitAuthSessionUpdate(authSession.sessionToken, { status: 'cancelled' });
+    }
+
+    sendSuccess(res, { success: true });
+  }),
+);
 
 // ============================================
 // OAuth2 Authorization Code Flow (with PKCE)

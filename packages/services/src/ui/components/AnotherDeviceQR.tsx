@@ -22,8 +22,16 @@ import { Text } from '@oxyhq/bloom/typography';
 import * as Icons from '@oxyhq/bloom/icons';
 
 export interface AnotherDeviceQRProps {
-  /** The QR payload (`oxyauth://<token>`). Empty string renders nothing. */
+  /** The legacy QR payload (`oxyauth://<token>`). Empty string renders nothing. */
   qrData: string;
+  /**
+   * The secure "Sign in with Oxy" handoff payload (`oxycommons://approve?...`).
+   * Preferred over `qrData` when present — it carries the PUBLIC authorize code
+   * (never the secret session token), so the Oxy identity app on another device
+   * can scan it to approve. Falls back to `qrData` when the handoff backend has
+   * not returned a payload.
+   */
+  qrPayload?: string | null;
 }
 
 /** Size, in px, of the rendered QR symbol. */
@@ -37,7 +45,7 @@ const QR_FOREGROUND = '#000000';
  * Collapsed disclosure that reveals a high-contrast QR for signing in on a
  * second device with the Oxy Accounts app.
  */
-const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
+const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData, qrPayload }) => {
   const bloomTheme = useTheme();
   const [expanded, setExpanded] = useState(false);
 
@@ -45,7 +53,11 @@ const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
     setExpanded((prev) => !prev);
   }, []);
 
-  if (!qrData) {
+  // Prefer the secure handoff payload (public authorize code) over the legacy
+  // token QR; fall back to `qrData` until the handoff backend is available.
+  const value = qrPayload || qrData;
+
+  if (!value) {
     return null;
   }
 
@@ -82,10 +94,10 @@ const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
         <View className="items-center mt-space-8 gap-space-12">
           {/* The QR plate is intentionally white for scan reliability. */}
           <View style={styles.qrPlate}>
-            <QRCode value={qrData} size={QR_SIZE} backgroundColor={QR_PLATE_BG} color={QR_FOREGROUND} />
+            <QRCode value={value} size={QR_SIZE} backgroundColor={QR_PLATE_BG} color={QR_FOREGROUND} />
           </View>
           <Text className="font-sans text-caption text-text-tertiary text-center">
-            Scan with the Oxy Accounts app
+            Scan with the Oxy app
           </Text>
         </View>
       )}

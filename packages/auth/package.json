@@ -39,6 +39,7 @@
     "hono": "^4.11.7",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.454.0",
+    "qrcode": "^1.5.4",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",

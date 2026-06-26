@@ -115,6 +115,24 @@ export const authorizeSessionBodySchema = z.object({
   deviceFingerprint: z.string().trim().optional(),
 });
 
+// :authorizeCode path param — the public single-use approval handle from the QR.
+export const authorizeCodeParams = z.object({
+  authorizeCode: z.string().trim().min(1).max(256),
+});
+
+// POST /auth/session/authorize-signed/:authorizeCode
+// Key-signed approval (the Commons vault approves with its local key, NOT a
+// bearer token). The challenge/signature/timestamp prove control of `publicKey`;
+// the resolved signer becomes the authorizing user. Cookieless → no CSRF.
+export const authSessionAuthorizeSignedSchema = z.object({
+  publicKey: z.string().trim().min(1),
+  challenge: z.string().trim().min(1),
+  signature: z.string().trim().min(1),
+  timestamp: z.number(),
+  deviceName: z.string().trim().optional(),
+  deviceFingerprint: z.string().trim().optional(),
+});
+
 // POST /auth/session/claim
 // Exchange a 128-bit `sessionToken` (held only by the originating client)
 // for the first access token after another authenticated device has

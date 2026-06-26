@@ -1,4 +1,4 @@
-import { Redirect, Slot, useRouter, usePathname } from 'expo-router';
+import { Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import React, { useRef, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity, type ViewStyle } from 'react-native';
@@ -140,12 +140,13 @@ export default function TabLayout() {
     };
   }, []);
 
-  // Protected zone: redirect unauthenticated users to the auth welcome
-  // screen. During the initial auth-resolution window render a neutral
-  // spinner so a freshly-launched authenticated user does not flicker
-  // through `(auth)` for a frame. `(auth)/index` handles routing for
-  // authenticated users (complete → /(tabs); in_progress → create-identity)
-  // so this is loop-safe.
+  // Protected zone. The root Stack (`app/_layout.tsx`) is the SOLE authority
+  // for the `(auth)`↔`(tabs)` swap and only mounts this group once the session
+  // is resolved AND authenticated, so in steady state the user is always
+  // signed in here. The branches below are defensive for the brief transition
+  // frame around a sign-out: render a neutral backdrop (NOT a cross-group
+  // <Redirect>) so we never compete with the root for the swap — a second
+  // authority on the same signal is the documented blank-screen race.
   if (authLoading && !isAuthenticated) {
     return (
       <Animated.View style={[styles.container, animatedBgStyle, styles.gateCenter]}>
@@ -154,7 +155,7 @@ export default function TabLayout() {
     );
   }
   if (!isAuthenticated) {
-    return <Redirect href="/(auth)" />;
+    return <Animated.View style={[styles.container, animatedBgStyle]} />;
   }
 
   if (isDesktop) {
@@ -205,7 +206,7 @@ export default function TabLayout() {
         }}
       >
         {DRAWER_SCREENS.map((screen) => {
-          // Native-only screens (e.g. about-identity) are not registered on web.
+          // Screens flagged `platform: 'native'` are not registered on web.
           if (screen.platform === 'native' && Platform.OS === 'web') {
             return null;
           }
