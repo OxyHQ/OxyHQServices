@@ -103,7 +103,7 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
     switchSession,
     clientId,
 }) => {
-    const { qrData, isLoading, error, isWaiting, openAuthApproval, retry } = useOxyAuthSession(
+    const { qrData, qrPayload, isLoading, error, isWaiting, openAuthApproval, openSameDeviceApproval, retry } = useOxyAuthSession(
         oxyServices,
         clientId,
         switchSession,
@@ -192,6 +192,20 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                                 Continue with Oxy
                             </Button>
 
+                            {/* Same-device "Sign in with Oxy" handoff — deep-links into the
+                                native Oxy app to approve. Shown only when the handoff backend
+                                returned a payload. */}
+                            {qrPayload && (
+                                <Button
+                                    variant="secondary"
+                                    onPress={openSameDeviceApproval}
+                                    icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.text} style={styles.buttonIcon} />}
+                                    style={styles.secondaryButton}
+                                >
+                                    Sign in with the Oxy app
+                                </Button>
+                            )}
+
                             {/* Waiting status */}
                             {isWaiting && (
                                 <View style={styles.statusContainer}>
@@ -204,7 +218,7 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
 
                             {/* Collapsed "sign in on another device" QR disclosure */}
                             <View style={styles.qrSection}>
-                                <AnotherDeviceQR qrData={qrData} />
+                                <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
                             </View>
                         </>
                     )}
@@ -273,6 +287,11 @@ const styles = StyleSheet.create({
     primaryButton: {
         width: '100%',
         borderRadius: 12,
+    },
+    secondaryButton: {
+        width: '100%',
+        borderRadius: 12,
+        marginTop: 12,
     },
     buttonIcon: {
         marginRight: 10,

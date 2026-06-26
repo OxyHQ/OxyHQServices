@@ -1,10 +1,9 @@
 import React, { useMemo, useCallback, useState } from 'react';
-import { View, StyleSheet, Platform, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useCurrentUser } from '@oxyhq/services';
@@ -14,18 +13,14 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { QuickActionsSection } from '@/components/quick-actions-section';
 import { AccountInfoGrid } from '@/components/account-info-grid';
-import { IdentityCardsSection } from '@/components/identity-cards-section';
 import { RecentActivitySection } from '@/components/recent-activity-section';
-import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
 import { HomeHeader } from '@/components/home/home-header';
 import { HomeBottomActions } from '@/components/home/home-bottom-actions';
 import { useTranslation } from '@/lib/i18n';
-import { useIdentitySync } from '@/hooks/identity/useIdentitySync';
 import { useHomeHandlers } from '@/hooks/home/useHomeHandlers';
 import { useHomeRecommendations } from '@/hooks/home/useHomeRecommendations';
 import { useQuickActions } from '@/hooks/home/useQuickActions';
 import { useAccountCards } from '@/hooks/home/useAccountCards';
-import { useIdentityCards } from '@/hooks/home/useIdentityCards';
 import { useRecentActivityItems } from '@/hooks/home/useRecentActivityItems';
 import { useQuickStatsCards } from '@/hooks/home/useQuickStatsCards';
 import { useSecurityOverviewItems } from '@/hooks/home/useSecurityOverviewItems';
@@ -43,15 +38,6 @@ export default function HomeScreen() {
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
   // OxyContext picks up the fresh record from the same cache key.
   useCurrentUser();
-
-  // Identity auto-sync + "username required" modal flow.
-  const {
-    showUsernameModal,
-    handleUsernameModalComplete,
-    dismissUsernameModal,
-    isSynced,
-    syncIdentity,
-  } = useIdentitySync();
 
   // Fetch devices for stats
   const { data: devicesData } = useUserDevices();
@@ -95,19 +81,15 @@ export default function HomeScreen() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      // Refresh sessions and sync identity if needed
       if (refreshSessions) {
         await refreshSessions();
-      }
-      if (syncIdentity && !isSynced) {
-        await syncIdentity();
       }
     } catch (error) {
       console.error('Failed to refresh', error);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshSessions, syncIdentity, isSynced]);
+  }, [refreshSessions]);
 
   // Section item builders — each owns its own memoization.
   const recommendations = useHomeRecommendations({
@@ -120,7 +102,6 @@ export default function HomeScreen() {
     accountCreatedDate,
     handleEditName: handlers.handleEditName,
   });
-  const identityCards = useIdentityCards(handlers.handleAboutIdentity);
   const recentActivityItems = useRecentActivityItems({
     securityActivities,
     handleSecurity: handlers.handleSecurity,
@@ -198,28 +179,8 @@ export default function HomeScreen() {
           </AccountCard>
         </Section>
       )}
-
-      {/* Self-Custody Identity Section */}
-      <Section title={t('home.sections.yourIdentity')}>
-        <ThemedText style={styles.subtitle}>{t('home.sections.yourIdentitySubtitle')}</ThemedText>
-        {Platform.OS === 'web' ? (
-          <View style={[styles.infoBanner, { backgroundColor: colors.bannerInfoBackground, borderColor: colors.bannerInfoBorder }]}>
-            <View style={styles.infoBannerContent}>
-              <MaterialCommunityIcons name="cellphone-key" size={24} color={colors.bannerInfoIcon} />
-              <View style={styles.infoBannerText}>
-                <Text style={[styles.infoBannerTitle, { color: colors.bannerInfoText }]}>{t('home.identity.webBannerTitle')}</Text>
-                <Text style={[styles.infoBannerSubtitle, { color: colors.bannerInfoSubtext }]}>
-                  {t('home.identity.webBannerSubtitle')}
-                </Text>
-              </View>
-            </View>
-          </View>
-        ) : (
-          <IdentityCardsSection cards={identityCards} onPressIn={handlePressIn} />
-        )}
-      </Section>
     </>
-  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, managedAccountItems, colors, handlePressIn, recommendations, t]);
+  ), [quickActions, accountCards, recentActivityItems, quickStatsCards, securityOverviewItems, managedAccountItems, handlePressIn, recommendations, t]);
 
   // Show loading state while OxyServices is initializing. Auth itself is
   // enforced by the `(tabs)` layout — by the time this screen mounts the
@@ -236,32 +197,25 @@ export default function HomeScreen() {
   }
 
   return (
-    <>
-      <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.content}>
-            <HomeHeader
-              displayName={displayName}
-              avatarUrl={avatarUrl}
-              onAvatarPress={handleAvatarPress}
-              onSearch={handleSearch}
-              onPressIn={handlePressIn}
-            />
-            {content}
-            <HomeBottomActions
-              onReload={handleReload}
-              onDevices={handleDevices}
-              onMenu={handleMenu}
-            />
-          </View>
+    <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.content}>
+          <HomeHeader
+            displayName={displayName}
+            avatarUrl={avatarUrl}
+            onAvatarPress={handleAvatarPress}
+            onSearch={handleSearch}
+            onPressIn={handlePressIn}
+          />
+          {content}
+          <HomeBottomActions
+            onReload={handleReload}
+            onDevices={handleDevices}
+            onMenu={handleMenu}
+          />
         </View>
-      </ScreenContentWrapper>
-      <UsernameRequiredModal
-        visible={showUsernameModal}
-        onComplete={handleUsernameModalComplete}
-        onCancel={dismissUsernameModal}
-      />
-    </>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 
@@ -286,28 +240,5 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     opacity: 0.7,
-  } as const,
-  infoBanner: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
-  } as const,
-  infoBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  } as const,
-  infoBannerText: {
-    flex: 1,
-    marginLeft: 12,
-  } as const,
-  infoBannerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  } as const,
-  infoBannerSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
   } as const,
 });

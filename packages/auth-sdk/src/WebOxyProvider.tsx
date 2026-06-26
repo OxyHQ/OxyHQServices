@@ -47,6 +47,7 @@ import type {
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, clearQueryCache, createQueryClient } from './hooks/queryClient';
 import { isWebBrowser } from './hooks/useWebSSO';
+import type { CommonsClaimResult } from './hooks/useCommonsSignIn';
 
 export interface WebAuthState {
   user: User | null;
@@ -112,6 +113,14 @@ export interface WebAuthActions {
    */
   signOutAll: () => Promise<void>;
   clearSessionState: () => Promise<void>;
+  /**
+   * Commit a session claimed out-of-band by the "Sign in with Oxy" (QR)
+   * handoff — `useCommonsSignIn` calls this after `claimSessionByToken` so the
+   * device-flow result flows through the SAME commit path as FedCM / redirect
+   * (token plant + cookie-slot restore). Surfaced on the context so the hook
+   * can default to it when used zero-config inside the provider.
+   */
+  commitClaimedSession: (claimed: CommonsClaimResult) => Promise<void>;
 }
 
 export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
@@ -415,6 +424,31 @@ export function WebOxyProvider({
     }
     syncAccountsFromManager();
   }, [authManager, syncAccountsFromManager]);
+
+  /**
+   * Commit a session claimed by the "Sign in with Oxy" QR handoff. The
+   * device-flow claim ({@link OxyServices.claimSessionByToken}) already returns
+   * a fully-hydrated session; project it into a {@link SessionLoginResponse} and
+   * funnel it through `handleAuthSuccess` so it is indistinguishable from a
+   * FedCM / redirect login (same token plant + cookie-slot restore). Tagged
+   * `credentials` like the other first-party commit paths.
+   */
+  const commitClaimedSession = useCallback(async (claimed: CommonsClaimResult) => {
+    await handleAuthSuccess(
+      {
+        sessionId: claimed.sessionId,
+        deviceId: claimed.deviceId,
+        expiresAt: claimed.expiresAt,
+        accessToken: claimed.accessToken,
+        // The full claimed `User` carries every field; the spread satisfies the
+        // narrower `MinimalUserData` boundary (it only coalesces `avatar`'s
+        // `string | null` → `string | undefined`) while preserving the rest —
+        // `handleAuthSuccess` casts it back to `User` for `setUser`.
+        user: { ...claimed.user, avatar: claimed.user.avatar ?? undefined },
+      },
+      'credentials',
+    );
+  }, [handleAuthSuccess]);
 
   // `handleAuthSuccess` routed through a ref so the eager SSO-callback
   // interception effect (registered once with deps `[]`) can commit an `ok`
@@ -1063,6 +1097,7 @@ export function WebOxyProvider({
     signOutAccount,
     signOutAll,
     clearSessionState,
+    commitClaimedSession,
   }), [
     user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
     accounts, activeAuthuser,
@@ -1070,6 +1105,7 @@ export function WebOxyProvider({
     signIn, signInWithFedCM, signInWithRedirect,
     signOut, isFedCMSupported, switchSession,
     switchAccount, signOutAccount, signOutAll, clearSessionState,
+    commitClaimedSession,
   ]);
 
   // Mirror the RN OxyProvider pattern: don't expose the QueryClient (or
@@ -1105,6 +1141,17 @@ export function useWebOxy(): WebOxyContextValue {
     throw new Error('useWebOxy must be used within WebOxyProvider');
   }
   return context;
+}
+
+/**
+ * Non-throwing variant of {@link useWebOxy}: returns the Web Oxy context when
+ * rendered inside a {@link WebOxyProvider}, or `null` otherwise. Used by hooks
+ * (e.g. `useCommonsSignIn`) that work BOTH inside the provider (zero-config) and
+ * standalone (explicit `oxyServices` / `clientId`), so they can opt into the
+ * provider's session-commit path only when one is present.
+ */
+export function useWebOxyOptional(): WebOxyContextValue | null {
+  return useContext(WebOxyContext);
 }
 
 /**

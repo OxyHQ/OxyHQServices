@@ -21,6 +21,10 @@ import { validate } from '../middleware/validate.js';
 import { linkAuthMethodSchema, unlinkTypeParams } from '../schemas/authLinking.schemas.js';
 import socialAuthService from '../services/socialAuth.service.js';
 import type { SocialProfile } from '../services/socialAuth.service.js';
+import userCache from '../utils/userCache.js';
+import { buildUserDid } from '../services/did.service.js';
+import { buildAuthMethodEntries } from '../utils/authMethodEntries.js';
+import { authMethodsResponseSchema } from '@oxyhq/contracts';
 
 const router = Router();
 
@@ -50,7 +54,10 @@ router.use(authMiddleware);
 
 /**
  * GET /api/auth/methods
- * Get all linked authentication methods for the current user
+ * Get the account DID and all linked authentication methods for the current
+ * user, shaped to the `authMethodsResponseSchema` contract. Identity methods
+ * carry their DID verification-method id (`#key-1`); password/social methods
+ * carry none.
  */
 router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
@@ -58,53 +65,25 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
     throw new BadRequestError('User not authenticated');
   }
 
-  const user = await User.findById(userId).select('authMethods publicKey email createdAt').lean();
+  const user = await User.findById(userId).select('+password authMethods publicKey email createdAt').lean();
   if (!user) {
     throw new BadRequestError('User not found');
   }
 
-  // Build methods list from user data
-  const methods: Array<{
-    type: string;
-    linkedAt: Date | null;
-    identifier: string;
-  }> = [];
+  const methods = buildAuthMethodEntries({
+    publicKey: user.publicKey,
+    email: user.email,
+    hasPassword: !!user.password,
+    authMethods: user.authMethods,
+    createdAt: user.createdAt,
+  });
 
-  // Check for identity method
-  if (user.publicKey) {
-    const identityMethod = user.authMethods?.find(m => m.type === 'identity');
-    methods.push({
-      type: 'identity',
-      linkedAt: identityMethod?.linkedAt || user.createdAt,
-      identifier: user.publicKey.substring(0, 12) + '...',
-    });
-  }
+  const response = authMethodsResponseSchema.parse({
+    did: buildUserDid(userId.toString()),
+    methods,
+  });
 
-  // Check for password method
-  const hasPassword = await User.findById(userId).select('+password').lean().then(u => !!u?.password);
-  if (hasPassword && user.email) {
-    const passwordMethod = user.authMethods?.find(m => m.type === 'password');
-    methods.push({
-      type: 'password',
-      linkedAt: passwordMethod?.linkedAt || user.createdAt,
-      identifier: user.email,
-    });
-  }
-
-  // Add any social methods from authMethods array
-  const socialMethods = user.authMethods?.filter(m =>
-    ['google', 'apple', 'github'].includes(m.type)
-  ) || [];
-
-  for (const method of socialMethods) {
-    methods.push({
-      type: method.type,
-      linkedAt: method.linkedAt,
-      identifier: method.metadata?.email || method.metadata?.providerId || 'linked',
-    });
-  }
-
-  res.json({ methods });
+  res.json(response);
 }));
 
 /**
@@ -180,6 +159,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       }
 
       await user.save();
+      userCache.invalidate(userId.toString());
       res.json({ success: true, message: 'Identity linked successfully' });
       break;
     }
@@ -223,6 +203,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       }
 
       await user.save();
+      userCache.invalidate(userId.toString());
       res.json({ success: true, message: 'Password auth linked successfully' });
       break;
     }
@@ -271,6 +252,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       }
 
       await user.save();
+      userCache.invalidate(userId.toString());
       res.json({ success: true, message: `${safeType} auth linked successfully` });
       break;
     }
@@ -345,6 +327,7 @@ router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandle
   }
 
   await user.save();
+  userCache.invalidate(userId.toString());
   res.json({ success: true, message: `${type} auth unlinked successfully` });
 }));
 

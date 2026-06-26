@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useNavigation, useRouter } from 'expo-router';
@@ -13,7 +13,6 @@ import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
 import { useTranslation } from '@/lib/i18n';
-import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, withTiming, useDerivedValue } from 'react-native-reanimated';
 
 interface DrawerNavigation {
@@ -27,21 +26,6 @@ interface HeaderProps {
 }
 
 const DOUBLE_PRESS_DELAY = 300;
-const HAPTIC_INTERVAL_MS = 40;
-const HAPTIC_START_DELAY_MS = 100;
-const HAPTIC_COMPLETION_DELAY_MS = 50;
-
-const getHapticStyle = (intensity: number): Haptics.ImpactFeedbackStyle => {
-    if (intensity <= 2) return Haptics.ImpactFeedbackStyle.Light;
-    if (intensity <= 5) return intensity % 2 === 0
-        ? Haptics.ImpactFeedbackStyle.Light
-        : Haptics.ImpactFeedbackStyle.Medium;
-    if (intensity <= 8) return Haptics.ImpactFeedbackStyle.Medium;
-    if (intensity <= 12) return intensity % 2 === 0
-        ? Haptics.ImpactFeedbackStyle.Medium
-        : Haptics.ImpactFeedbackStyle.Heavy;
-    return Haptics.ImpactFeedbackStyle.Heavy;
-};
 
 export function Header({ }: HeaderProps) {
     const navigation = useNavigation<DrawerNavigation>();
@@ -58,10 +42,6 @@ export function Header({ }: HeaderProps) {
 
     const lastPressRef = useRef<number>(0);
     const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const hapticStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const hapticIntensityRef = useRef<number>(0);
-    const isLongPressActiveRef = useRef<boolean>(false);
 
     const displayName = useMemo(() => getDisplayName(user), [user]);
     const avatarUrl = useMemo(() => {
@@ -70,20 +50,6 @@ export function Header({ }: HeaderProps) {
         }
         return undefined;
     }, [user?.avatar, oxyServices]);
-
-    const stopHapticFeedback = useCallback(() => {
-        // Clear the start timeout if it exists
-        if (hapticStartTimeoutRef.current) {
-            clearTimeout(hapticStartTimeoutRef.current);
-            hapticStartTimeoutRef.current = null;
-        }
-        // Clear the haptic interval
-        if (hapticIntervalRef.current) {
-            clearInterval(hapticIntervalRef.current);
-            hapticIntervalRef.current = null;
-        }
-        hapticIntensityRef.current = 0;
-    }, []);
 
     const clearPressTimeout = useCallback(() => {
         if (pressTimeoutRef.current) {
@@ -127,49 +93,11 @@ export function Header({ }: HeaderProps) {
         }
     }, [router, scrollToTop, refreshSessions, clearPressTimeout]);
 
-    const handleLogoLongPressStart = useCallback(() => {
-        clearPressTimeout();
-        stopHapticFeedback();
-        isLongPressActiveRef.current = true;
-
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        hapticStartTimeoutRef.current = setTimeout(() => {
-            hapticIntervalRef.current = setInterval(() => {
-                hapticIntensityRef.current += 1;
-                Haptics.impactAsync(getHapticStyle(hapticIntensityRef.current));
-            }, HAPTIC_INTERVAL_MS);
-        }, HAPTIC_START_DELAY_MS);
-    }, [clearPressTimeout, stopHapticFeedback]);
-
-    const handleLogoLongPress = useCallback(() => {
-        stopHapticFeedback();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-        setTimeout(() => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }, HAPTIC_COMPLETION_DELAY_MS);
-        router.push('/(tabs)/easter-egg');
-    }, [router, stopHapticFeedback]);
-
-    const handleLogoPressOut = useCallback(() => {
-        if (isLongPressActiveRef.current) {
-            isLongPressActiveRef.current = false;
-            handleLogoLongPress();
-        } else {
-            stopHapticFeedback();
-        }
-    }, [handleLogoLongPress, stopHapticFeedback]);
-
     const handlePressIn = useHapticPress();
 
     const handleLogoPressIn = useCallback(() => {
         handlePressIn();
-        // Don't start haptic feedback here - only start on actual long press
     }, [handlePressIn]);
-
-    useEffect(() => {
-        return stopHapticFeedback;
-    }, [stopHapticFeedback]);
 
     const headerStyle = useMemo(() => [
         styles.header,
@@ -246,8 +174,6 @@ export function Header({ }: HeaderProps) {
                             <TouchableOpacity
                                 onPressIn={handleLogoPressIn}
                                 onPress={handleLogoPress}
-                                onLongPress={handleLogoLongPressStart}
-                                onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
                                 accessibilityRole="button"
                                 accessibilityLabel={t('a11y.logo')}
@@ -263,8 +189,6 @@ export function Header({ }: HeaderProps) {
                             <TouchableOpacity
                                 onPressIn={handleLogoPressIn}
                                 onPress={handleLogoPress}
-                                onLongPress={handleLogoLongPressStart}
-                                onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
                                 accessibilityRole="button"
                                 accessibilityLabel={t('a11y.logo')}
@@ -272,6 +196,7 @@ export function Header({ }: HeaderProps) {
                             >
                                 <LogoIcon height={28} />
                             </TouchableOpacity>
+
                         </View>
                     )}
 

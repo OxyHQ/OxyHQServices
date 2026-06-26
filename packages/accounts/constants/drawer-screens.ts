@@ -21,7 +21,6 @@ export type DrawerRouteName =
   | 'personal-info'
   | 'security'
   | 'activity'
-  | 'about-identity'
   | 'devices'
   | 'data'
   | 'sharing'
@@ -32,9 +31,7 @@ export type DrawerRouteName =
   | 'sessions'
   | 'search'
   | 'authorize'
-  | 'scan-qr'
-  | 'delete-account'
-  | 'create-backup';
+  | 'scan-qr';
 
 export interface DrawerScreenConfig {
   /** Route file name under `app/(tabs)` — the `name` prop of `<Drawer.Screen>`. */
@@ -56,7 +53,6 @@ export const DRAWER_SCREENS: readonly DrawerScreenConfig[] = [
   { name: 'personal-info', labelKey: 'drawer.personalInfo', titleKey: 'drawer.personalInfo' },
   { name: 'security', labelKey: 'drawer.security', titleKey: 'drawer.security' },
   { name: 'activity', labelKey: 'drawer.activity', titleKey: 'drawer.activity' },
-  { name: 'about-identity', labelKey: 'drawer.aboutIdentity', titleKey: 'drawer.aboutIdentity', platform: 'native' },
   { name: 'devices', labelKey: 'drawer.devices', titleKey: 'drawer.devices' },
   { name: 'data', labelKey: 'drawer.data', titleKey: 'drawer.data' },
   { name: 'sharing', labelKey: 'drawer.sharing', titleKey: 'drawer.sharing' },
@@ -68,6 +64,4 @@ export const DRAWER_SCREENS: readonly DrawerScreenConfig[] = [
   { name: 'search', hidden: true },
   { name: 'authorize', hidden: true, titleKey: 'drawer.authorize' },
   { name: 'scan-qr', hidden: true, titleKey: 'drawer.scanQr', headerShown: false },
-  { name: 'delete-account', hidden: true, titleKey: 'drawer.deleteAccount' },
-  { name: 'create-backup', hidden: true, titleKey: 'drawer.createBackup' },
 ] as const;

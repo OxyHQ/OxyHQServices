@@ -40,128 +40,30 @@
     }
   },
   "auth": {
-    "indexHello": "Hello",
-    "indexTapToContinue": "Tap to continue",
     "signIn": {
       "title": "Sign in to your account",
       "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
-      "button": "Sign in with Oxy",
-      "error": "Sign-in failed. Please try again.",
+      "identifierLabel": "Email or username",
+      "passwordLabel": "Password",
+      "submit": "Sign in",
+      "or": "or",
+      "withOxy": "Sign in with Oxy",
+      "fedcm": "Continue with your browser",
       "unsupported": "Your browser doesn't support secure sign-in. Please update it or use the Oxy app.",
       "noAccount": "Don't have an Oxy account yet?",
-      "createAccount": "Create one in the app"
-    },
-    "welcome": {
-      "lead": "Oxy is your",
-      "termsAgree": "I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice",
-      "decline": "Decline",
-      "accept": "Accept",
-      "rotating": {
-        "humanId": "human ID",
-        "digitalIdentity": "digital identity",
-        "privacyAccount": "privacy-first account",
-        "secureIdentity": "secure identity",
-        "ethicalAppsGateway": "gateway to ethical apps",
-        "digitalTrustFoundation": "foundation for digital trust",
-        "ecosystemAccount": "account for the Oxy ecosystem",
-        "humanTechKey": "key to human-first technology",
-        "fairDigitalPassport": "passport to a fair digital world",
-        "noPasswordsIdentity": "identity without passwords",
-        "trustLayer": "trust layer for modern apps",
-        "humanNetworkConnection": "connection to a human network",
-        "ethicalTechAccess": "access to ethical technology",
-        "dataOwnership": "ownership over your data",
-        "uniqueAppsIdentity": "unique identity for many apps"
+      "getTheApp": "Get the app to create one",
+      "twoFactor": {
+        "title": "Two-factor authentication",
+        "subtitle": "Enter the 6-digit code from your authenticator app.",
+        "codeLabel": "Verification code",
+        "verify": "Verify",
+        "back": "Back"
+      },
+      "errors": {
+        "credentials": "Sign-in failed. Check your username and password.",
+        "generic": "Sign-in failed. Please try again.",
+        "twoFactor": "Verification failed. Check the code and try again."
       }
-    },
-    "landing": {
-      "title": "Get Started",
-      "subtitle": "Create a new Oxy identity or import an existing one",
-      "createIdentity": "Create New Identity",
-      "createIdentitySubtitle": "Generate a new self-custody identity",
-      "importIdentity": "Import Existing Identity",
-      "importIdentitySubtitle": "Use your recovery phrase or backup file",
-      "signInExisting": "Sign in to existing account",
-      "signInExistingSubtitle": "Use your username and password"
-    },
-    "creating": {
-      "messages": [
-        "Generating cryptographic keys...",
-        "Creating your identity...",
-        "Setting up your account..."
-      ],
-      "subtitle": "This may take a moment",
-      "signingIn": "Signing in...",
-      "signingInSubtitle": "Almost there!",
-      "syncing": "Syncing your identity...",
-      "syncingSubtitle": "Connecting to Oxy servers"
-    },
-    "usernameRequired": {
-      "title": "Username Required",
-      "subtitle": "You need to set a username before you can sync your identity",
-      "placeholder": "Username",
-      "hint": "You can use a-z, 0-9. Minimum length is 4 characters.",
-      "checking": "Checking availability...",
-      "available": "Username is available",
-      "errorTaken": "Username is already taken",
-      "errorInvalid": "Please enter a valid username (4+ characters, a-z and 0-9 only)",
-      "errorFormat": "You can use a-z, 0-9. Minimum length is 4 characters.",
-      "errorCheckFailed": "Failed to check username availability",
-      "errorSaveFailed": "Failed to save username",
-      "saving": "Saving...",
-      "save": "Save Username"
-    },
-    "recoveryPhrase": {
-      "title": "Save your recovery phrase",
-      "subtitle": "These 12 words are the ONLY way to restore your account if you lose this device. Write them down in order and keep them somewhere safe and offline.",
-      "warningTitle": "This is your only chance to save it",
-      "warning": "Oxy cannot recover your account for you. If you lose both this device and this phrase, your account is gone forever.",
-      "showButton": "Reveal recovery phrase",
-      "hideButton": "Hide",
-      "copyButton": "Copy to clipboard",
-      "copied": "Copied",
-      "copyWarning": "Do not screenshot or store this phrase digitally. Write it down on paper.",
-      "confirmCheckbox": "I have written down my recovery phrase and stored it in a safe place. I understand Oxy cannot recover it for me.",
-      "continueButton": "Continue",
-      "cancelButton": "Back",
-      "wordLabel": "Word {{index}}",
-      "missingTitle": "Recovery phrase unavailable",
-      "missingMessage": "We could not show your recovery phrase. Please go back and create your identity again.",
-      "backNavigationBlockedTitle": "Save your phrase first",
-      "backNavigationBlockedMessage": "You must save your recovery phrase before continuing. If you leave now, you will lose access to your account."
-    },
-    "identityExists": {
-      "title": "Identity already exists",
-      "message": "An Oxy identity already exists on this device. Continue with the existing identity or, if you have your previous recovery phrase saved, you can replace it.",
-      "continueWithExisting": "Continue with existing identity",
-      "replaceTitle": "Replace identity?",
-      "replaceWarning": "This will permanently remove the existing identity from this device. Make sure you have its recovery phrase saved first.",
-      "replaceConfirm": "Yes, replace",
-      "cancel": "Cancel"
-    },
-    "usernameStep": {
-      "title": "Choose your username",
-      "subtitleOffline": "You're offline. You can set your username later when online.",
-      "subtitle": "Your username is required. You can change this later in settings.",
-      "placeholder": "Username",
-      "hint": "You can use a-z, 0-9. Minimum length is 4 characters.",
-      "checking": "Checking availability…",
-      "available": "✓ Username is available",
-      "saving": "Saving…",
-      "confirming": "Confirming…",
-      "confirm": "Confirm",
-      "skip": "Skip for now",
-      "learnMore": "Learn more about usernames",
-      "a11y": {
-        "playAnimation": "Play animation"
-      }
-    },
-    "importStep": {
-      "title": "Import Your Identity",
-      "subtitle": "Enter your 12-word recovery phrase to restore your identity.",
-      "wordPlaceholder": "word",
-      "import": "Import Identity",
-      "createInstead": "Create a new identity instead"
     }
   },
   "home": {
@@ -183,9 +85,7 @@
       "overview": "Overview",
       "yourIdentities": "Your Identities",
       "yourIdentitiesSubtitle": "Create and manage sub-accounts for different purposes.",
-      "security": "Security",
-      "yourIdentity": "Your Identity",
-      "yourIdentitySubtitle": "Your identity is secured by cryptography. You control your keys."
+      "security": "Security"
     },
     "recommendations": {
       "setUsername": "Set your username",
@@ -244,17 +144,7 @@
       "securityStatus": "Security Status",
       "needsAttention": "Needs attention",
       "protected": "Protected"
-    },
-    "identity": {
-      "selfCustody": "Self-Custody Identity",
-      "selfCustodySubtitle": "You own your keys. No passwords needed.",
-      "publicKey": "Your Public Key",
-      "publicKeySubtitle": "View and share your unique identifier",
-      "webBannerTitle": "Identity Available on Mobile",
-      "webBannerSubtitle": "Your self-custody identity and keys are stored on your mobile device. Access your identity settings from the Oxy app on your phone or tablet."
-    },
-    "syncFailed": "Sync Failed",
-    "syncFailedMessage": "Could not sync with server. Please check your internet connection."
+    }
   },
   "security": {
     "title": "Security & sign-in",
@@ -266,8 +156,6 @@
       "recentActivity": "Recent security activity",
       "howYouSignIn": "How you sign in to Oxy",
       "howYouSignInSubtitle": "Make sure you can always access your Oxy Account by keeping this information up to date",
-      "accountRecovery": "Account recovery",
-      "accountRecoverySubtitle": "Manage your recovery options",
       "yourDevices": "Your devices",
       "yourDevicesSubtitle": "Where you're signed in ({{count}} devices total)",
       "yourDevicesSubtitle_one": "Where you're signed in ({{count}} device total)",
@@ -297,9 +185,7 @@
       "suspicious_one": "{{count}} critical security event detected",
       "suspiciousSubtitle": "Review your security activity immediately",
       "suspiciousAlertTitle": "Critical Security Events",
-      "suspiciousAlertMessage": "You have {{count}} critical security event(s). Please review your security activity below and consider changing your password or signing out of all devices if you notice any suspicious activity.",
-      "recoveryPhraseBackup": "Back up your recovery phrase",
-      "recoveryPhraseBackupSubtitle": "If you lose this device and have no backup, your account cannot be recovered. Create an encrypted backup now."
+      "suspiciousAlertMessage": "You have {{count}} critical security event(s). Please review your security activity below and consider changing your password or signing out of all devices if you notice any suspicious activity."
     },
     "activity": {
       "loading": "Loading security activity...",
@@ -330,10 +216,6 @@
       "biometricAuthTitle": "Biometric Authentication",
       "publicKeyAuth": "Public key authentication",
       "publicKeyAuthSubtitle": "Your account uses cryptographic keys for secure sign-in"
-    },
-    "recovery": {
-      "title": "Account recovery",
-      "subtitle": "Export encrypted backup and manage recovery settings"
     },
     "recoveryWarning": {
       "title": "No recovery phrase backup",
@@ -426,29 +308,9 @@
     "deleteAccount": {
       "title": "Delete account",
       "subtitle": "Permanently and irreversibly delete your Oxy account and all associated data.",
-      "permanentTitle": "This cannot be undone",
-      "permanentBody": "Deleting your account will permanently remove your profile, identity, email mailboxes, attachments, and all data linked to {{name}}. We cannot restore deleted accounts.",
-      "whatDeleted": "What will be deleted",
-      "items": {
-        "profile": "Your Oxy profile and public identity",
-        "mailboxes": "All email mailboxes, messages, and attachments",
-        "sessions": "Connected sessions and devices",
-        "settings": "Privacy and security settings"
-      },
-      "confirm": "Confirm deletion",
-      "typeUsername": "Type your username to confirm:",
-      "usernameMismatch": "Username does not match",
-      "cancel": "Cancel",
-      "deleting": "Deleting...",
-      "deleteCta": "Delete my account",
-      "identityRequiredTitle": "Identity Required",
-      "identityRequiredMessage": "Account deletion requires the device that holds your identity key. Please sign in on the device you used to create this identity.",
-      "failedTitle": "Deletion Failed",
-      "failedDefault": "Failed to delete account. Please try again.",
-      "localKeyPurgeWarning": "Your account was deleted, but the identity key could not be removed from this device. Reinstall the app to clear it fully.",
-      "signInRequired": "Please sign in to delete your account.",
-      "thisAccount": "this account",
-      "confirmInputLabel": "Type your username to confirm account deletion"
+      "commonsMessage": "Account deletion happens in the Commons app, where your identity key lives. We'll open it to finish removing your account.",
+      "openCommons": "Open Commons",
+      "commonsUnavailable": "Couldn't open the Commons app. Install it to delete your account."
     },
     "backup": {
       "title": "Create backup",
@@ -811,7 +673,6 @@
     "personalInfo": "Personal info",
     "security": "Security & sign-in",
     "activity": "Activity",
-    "aboutIdentity": "About Your Identity",
     "devices": "Your devices",
     "data": "Data & privacy",
     "sharing": "People & sharing",
@@ -820,9 +681,7 @@
     "storage": "Oxy storage",
     "yourIdentities": "Your Identities",
     "authorize": "Authorize",
-    "scanQr": "Scan QR Code",
-    "deleteAccount": "Delete account",
-    "createBackup": "Create backup"
+    "scanQr": "Scan QR Code"
   },
   "head": {
     "title": "Oxy Account",
@@ -937,125 +796,6 @@
       "loadFailed": "Failed to load authorization request",
       "noSession": "No active session. Please sign in first.",
       "authorizeFailed": "Failed to authorize"
-    }
-  },
-  "aboutIdentity": {
-    "loading": "Loading…",
-    "title": "About Your Identity",
-    "subtitle": "Self-custody identity powered by cryptography",
-    "idCard": "ID Card",
-    "copyPublicKey": "Copy Public Key",
-    "publicKeyCopied": "Public key copied to clipboard",
-    "copyFailed": "Failed to copy",
-    "importantNotice": "Your recovery phrase is the ONLY way to restore your identity if you lose access to this device. Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.",
-    "selfCustodyTitle": "Self-Custody Identity",
-    "selfCustodyDescription": "Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin. You have complete control over your identity.",
-    "items": {
-      "privateKeyTitle": "Private Key Stored Locally",
-      "privateKeySubtitle": "Your private key is encrypted and stored securely on this device. It never leaves your device.",
-      "noPasswordTitle": "No Passwords",
-      "noPasswordSubtitle": "You sign in using cryptographic proof, not passwords that can be guessed or stolen.",
-      "recoveryTitle": "Recovery Phrase Backup",
-      "recoverySubtitle": "Your 12-word recovery phrase is the only way to restore your identity on a new device.",
-      "decentralizedTitle": "Decentralized Identity",
-      "decentralizedSubtitle": "Your identity is not controlled by any company. You own it completely."
-    },
-    "securityActions": "Security Actions",
-    "createBackupTitle": "Create Encrypted Backup",
-    "createBackupSubtitle": "Generate password-protected backup file",
-    "exportKeyTitle": "Export Private Key",
-    "exporting": "Exporting…",
-    "lastExported": "Last exported {{time}}",
-    "exportKeySubtitle": "Print your private key for secure backup",
-    "accountSettings": "Account Settings",
-    "accountSettingsDescription": "Manage your account preferences and expiration settings.",
-    "accountExpiration": "Account Expiration",
-    "expiration": {
-      "never": "Never expires",
-      "days": "{{count}} days",
-      "oneYear": "1 year"
-    },
-    "expirationPicker": {
-      "title": "Account Expiration",
-      "message": "Choose when your account expires after inactivity",
-      "days30": "30 days",
-      "days90": "90 days",
-      "days180": "180 days",
-      "oneYear": "1 year",
-      "never": "Never"
-    },
-    "expirationUpdated": "Account expiration setting updated",
-    "expirationUpdateFailed": "Failed to update account expiration setting. Please try again.",
-    "securityWarning": {
-      "title": "Security Warning",
-      "message": "Exporting your private key will print it on paper. Anyone with access to this printed key can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?",
-      "continue": "Continue"
-    },
-    "export": {
-      "noPrivateKey": "No private key found on this device",
-      "sentToPrinter": "Private key has been sent to printer",
-      "failed": "Failed to export private key. Please try again."
-    },
-    "print": {
-      "documentTitle": "Oxy Identity - Private Key Export",
-      "generated": "Generated: {{date}}",
-      "warningTitle": "SECURITY WARNING",
-      "warningBody": "This document contains your private key. Anyone with access to this key can control your identity. Store this document in a secure location, such as a safe or safety deposit box. Never share this key with anyone.",
-      "publicKeyLabel": "Public Key (Your Identity):",
-      "privateKeyLabel": "Private Key (KEEP SECRET):",
-      "infoTitle": "Important Information:",
-      "info1": "This private key is used to sign transactions and prove your identity",
-      "info2": "If you lose this key and your recovery phrase, you will permanently lose access to your identity",
-      "info3": "Do not store this document digitally (screenshots, cloud storage, etc.)",
-      "info4": "Consider storing multiple copies in different secure locations",
-      "info5": "If this key is compromised, you should immediately create a new identity",
-      "footerLine1": "Oxy Identity - Self-Custody Cryptographic Identity",
-      "footerLine2": "This document was generated by the Oxy Accounts app"
-    }
-  },
-  "backup": {
-    "checkingIdentity": "Checking identity…",
-    "missingTitle": "No identity on this device",
-    "missingSubtitle": "We could not find a private key on this device. Backups encrypt the identity key stored locally, so you need to create or import your identity first.",
-    "missingBanner": "If you already have an identity on another device, sign in there and create the backup from that device.",
-    "goBack": "Go back",
-    "setupIdentity": "Set up identity",
-    "title": "Create Encrypted Backup",
-    "subtitle": "Generate a password-protected backup file that you can store securely offline.",
-    "banner": "Store this file in a secure location (safe, encrypted drive, etc.). Never share your password or backup file.",
-    "password": "Password",
-    "confirmPassword": "Confirm Password",
-    "passwordPlaceholder": "Enter password (min 12 characters)",
-    "confirmPasswordPlaceholder": "Confirm password",
-    "passwordTooShort": "Password must be at least 12 characters",
-    "passwordsDoNotMatch": "Passwords do not match",
-    "cancel": "Cancel",
-    "generating": "Generating…",
-    "generate": "Generate Backup",
-    "errors": {
-      "noPublicKey": "Public key not available",
-      "passwordMinLength": "Password must be at least 12 characters long",
-      "passwordsMismatch": "Passwords do not match",
-      "noPrivateKey": "No private key found on this device",
-      "sharingUnavailable": "Sharing is not available on this platform",
-      "generateFailed": "Failed to generate backup file"
-    },
-    "shareDialogTitle": "Share Oxy Identity Backup",
-    "shareSuccess": "Backup file ready. Save it to a secure location like your password manager, encrypted drive, or offline storage.",
-    "readme": {
-      "title": "Oxy Identity Backup",
-      "intro": "This backup file contains your encrypted identity.",
-      "restoreTitle": "To restore:",
-      "restoreStep1": "Extract this ZIP file",
-      "restoreStep2": "Use the Oxy Accounts app to import the wallet.json file",
-      "restoreStep3": "Enter your backup password when prompted",
-      "importantTitle": "IMPORTANT:",
-      "important1": "Store this file in a secure location (safe, encrypted drive, etc.)",
-      "important2": "Never share your password or backup file",
-      "important3": "Keep multiple copies in different secure locations",
-      "important4": "If this backup is compromised, create a new identity immediately",
-      "createdLabel": "Created",
-      "publicKeyLabel": "Public Key"
     }
   }
 }

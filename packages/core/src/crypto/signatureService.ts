@@ -6,13 +6,39 @@
  */
 
 import { ec as EC } from 'elliptic';
+import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { KeyManager } from './keyManager';
+import { canonicalize } from './canonicalJson';
 import { isReactNative, isNodeJS } from '../utils/platform';
 import { loadExpoCrypto, loadNodeCrypto } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
 const ec = new EC('secp256k1');
+
+/**
+ * The signing-input portion of a {@link SignedRecordEnvelope}: every field
+ * EXCEPT the `publicKey` and `signature`. Both the client (when signing) and
+ * the server (when verifying) canonicalize exactly these fields, so they agree
+ * on the bytes that the signature covers.
+ */
+export type SignedRecordSigningFields = Pick<
+  SignedRecordEnvelope,
+  'version' | 'type' | 'subject' | 'issuer' | 'record' | 'issuedAt'
+>;
+
+/**
+ * Compute the canonical signing input for a signed-record envelope.
+ *
+ * This is the single definition of "what the signature covers": the canonical
+ * JSON of `{version, type, subject, issuer, record, issuedAt}`. `@oxyhq/core`
+ * (client signing) and `@oxyhq/api` (server verification) both call this, so a
+ * record signed by a client and verified by the server cannot drift.
+ */
+export function signedRecordSigningInput(fields: SignedRecordSigningFields): string {
+  const { version, type, subject, issuer, record, issuedAt } = fields;
+  return canonicalize({ version, type, subject, issuer, record, issuedAt });
+}
 
 /**
  * Compute SHA-256 hash of a string
@@ -237,6 +263,39 @@ export class SignatureService {
   }
 
   /**
+   * Create a signed authentication challenge response using the SHARED identity
+   * key (the cross-app `group.so.oxy.shared` keychain key), not the primary
+   * device key.
+   *
+   * Mirrors {@link signChallenge} exactly — same message format
+   * (`auth:${publicKey}:${challenge}:${timestamp}`) so the server verification
+   * path is unchanged — but sources the shared public/private key from
+   * `KeyManager` and signs with `signWithKey`. Used by "Sign in with Oxy"
+   * same-device shared-keychain SSO (Mechanism A): a sibling native app proves
+   * control of the shared identity to mint its own session.
+   *
+   * Throws if no shared identity exists (native-only; the shared keychain is
+   * unavailable on web).
+   */
+  static async signChallengeWithSharedKey(challenge: string): Promise<AuthChallenge> {
+    const publicKey = await KeyManager.getSharedPublicKey();
+    const privateKey = await KeyManager.getSharedPrivateKey();
+    if (!publicKey || !privateKey) {
+      throw new Error('No shared identity found. Cannot sign with the shared key.');
+    }
+
+    const timestamp = Date.now();
+    const message = `auth:${publicKey}:${challenge}:${timestamp}`;
+    const signature = await SignatureService.signWithKey(message, privateKey);
+
+    return {
+      challenge: signature,
+      publicKey,
+      timestamp,
+    };
+  }
+
+  /**
    * Verify a challenge response
    */
   static async verifyChallengeResponse(
@@ -307,6 +366,73 @@ export class SignatureService {
       publicKey,
       timestamp,
     };
+  }
+
+  /**
+   * Build a signed-record envelope for a self-issued identity/profile record.
+   *
+   * The envelope is self-issued: `issuer` equals `subject` (the signer's DID).
+   * The signature covers the canonical JSON of every field EXCEPT `publicKey`
+   * and `signature` (see {@link signedRecordSigningInput}); `alg` is
+   * `ES256K-DER-SHA256` (secp256k1 over the SHA-256 of the canonical bytes,
+   * DER-encoded), the same scheme this service uses everywhere else.
+   *
+   * Requires a stored identity (native secure storage); throws if none exists.
+   *
+   * @param type - The record category (`'identity'` or `'profile'`).
+   * @param subject - The subject DID the record is about (also the issuer).
+   * @param record - The arbitrary record payload to attest to.
+   */
+  static async signRecord(
+    type: SignedRecordEnvelope['type'],
+    subject: string,
+    record: Record<string, unknown>,
+  ): Promise<SignedRecordEnvelope> {
+    const publicKey = await KeyManager.getPublicKey();
+    if (!publicKey) {
+      throw new Error('No identity found. Please create or import an identity first.');
+    }
+
+    const version = 1 as const;
+    const issuer = subject;
+    const issuedAt = Date.now();
+    const signingInput = signedRecordSigningInput({
+      version,
+      type,
+      subject,
+      issuer,
+      record,
+      issuedAt,
+    });
+    const signature = await SignatureService.sign(signingInput);
+
+    return {
+      version,
+      type,
+      subject,
+      issuer,
+      record,
+      issuedAt,
+      publicKey,
+      alg: 'ES256K-DER-SHA256',
+      signature,
+    };
+  }
+
+  /**
+   * Verify a signed-record envelope: recompute the canonical signing input from
+   * the envelope's own fields and check the signature against the envelope's
+   * `publicKey`.
+   *
+   * Note: this confirms the signature is internally consistent with the
+   * embedded `publicKey`. It does NOT establish that `publicKey` is an
+   * authorized verification method for `subject` — that authorization check is
+   * the server's responsibility (it asserts the key is a current verification
+   * method on the subject's DID).
+   */
+  static async verifyRecord(envelope: SignedRecordEnvelope): Promise<boolean> {
+    const signingInput = signedRecordSigningInput(envelope);
+    return SignatureService.verify(signingInput, envelope.signature, envelope.publicKey);
   }
 }
 

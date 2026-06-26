@@ -47,6 +47,8 @@ import managedAccountsRouter from './routes/managedAccounts';
 import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
+import identityRoutes from './routes/identity';
+import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
@@ -519,6 +521,10 @@ app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 // csrfProtection — Bearer-authenticated service writes are exempt (no ambient
 // cookie credentials), per the bearer-write CSRF rule.
 app.use('/app-signals', appSignalsRouter);
+// Self-sovereign identity layer: signed records + verified-domain badges.
+// Mixed public/private routes (each gates its own auth); writes are
+// Bearer-authenticated, so no csrfProtection (bearer-write CSRF rule).
+app.use('/identity', identityRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor } from './services/federation.service';
@@ -640,6 +646,11 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 // own registered domain. The legacy `GET /federation/keypair/:username` route —
 // which returned `privateKeyPem` — has been removed in favour of these.
 app.use('/federation', federationRoutes);
+
+// Self-sovereign DID documents (did:web). Public, cacheable, CORS-open, no
+// auth/CSRF — served at the API root beside the WebFinger/ActivityPub handlers
+// (the apex proxy must forward `/u/*/did.json` + `/.well-known/did.json`).
+app.use('/', didRoutes);
 
 // Swagger API documentation (non-production only)
 if (process.env.NODE_ENV !== 'production') {

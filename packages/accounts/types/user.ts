@@ -1,28 +1,17 @@
 import type { User } from '@oxyhq/core';
 
 /**
- * Extended User type for accounts app
- * Adds optional properties that may exist on user objects but aren't in the base type
+ * Extended User type for the accounts app.
+ *
+ * The base `@oxyhq/core` `User` already declares `phone`, `address`, and
+ * `birthday` (all `string | undefined`), so they are inherited as-is — an
+ * interface cannot re-widen an inherited optional field with `null`. This type
+ * only ADDS `dateOfBirth`, which the base type does not declare.
  */
 export interface ExtendedUser extends User {
   /**
-   * User's phone number
-   */
-  phone?: string | null;
-  
-  /**
-   * User's address (alternative to location)
-   */
-  address?: string | null;
-  
-  /**
-   * User's birthday
-   */
-  birthday?: string | null;
-  
-  /**
-   * User's date of birth (alternative to birthday)
+   * User's date of birth (alternative to `birthday`). Not present on the base
+   * `User` type, so it is additive here.
    */
   dateOfBirth?: string | null;
 }
-

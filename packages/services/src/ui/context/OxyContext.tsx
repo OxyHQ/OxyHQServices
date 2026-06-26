@@ -94,6 +94,24 @@ export interface OxyContextState {
   signIn: (publicKey: string, deviceName?: string) => Promise<User>;
 
   /**
+   * Sign in with a username/email + password.
+   *
+   * Commits a successful session into context state through the SAME path FedCM
+   * / SSO use (so `isAuthenticated` / `user` update and the session is persisted
+   * durably). Returns a discriminated result so the caller can branch on the
+   * two-factor-required case — which creates NO session; the caller completes
+   * the 2FA challenge with the returned `loginToken`.
+   *
+   * This is the keyless native sign-in path for the slimmed Accounts app, which
+   * no longer holds a local cryptographic identity key.
+   */
+  signInWithPassword: (
+    identifier: string,
+    password: string,
+    opts?: { deviceName?: string; deviceFingerprint?: string },
+  ) => Promise<PasswordSignInResult>;
+
+  /**
    * Handle a session returned by web SSO.
    * Updates auth state, persists session metadata to storage.
    */
@@ -145,6 +163,22 @@ export interface OxyContextState {
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
+
+/**
+ * Result of {@link OxyContextState.signInWithPassword}.
+ *
+ * `'ok'` — the password was accepted and the resulting session has been
+ * committed into context state (the SAME path FedCM / SSO sessions use), so
+ * `isAuthenticated` / `user` are updated and the session is durably persisted;
+ * the caller can proceed (e.g. navigate into the app).
+ *
+ * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
+ * created. The caller must complete the challenge with the returned short-lived
+ * `loginToken` (`POST /security/2fa/verify-login`) before a session exists.
+ */
+export type PasswordSignInResult =
+  | { status: 'ok' }
+  | { status: '2fa_required'; loginToken: string };
 
 // Active-authuser persistence helpers (web localStorage; native no-op) live in
 // `../utils/activeAuthuser` so the session-management and auth-operations hooks
@@ -236,6 +270,20 @@ const SILENT_IFRAME_TIMEOUT = 2500;
  * ample headroom for a genuine first-party `*.oxy.so` rotation round-trip.
  */
 const COOKIE_RESTORE_TIMEOUT = 3000;
+
+/**
+ * Per-step fail-fast budget (ms) for the native shared-key cold-boot step
+ * (`signInWithSharedIdentity`).
+ *
+ * That step does a challenge round-trip plus a verify against the shared
+ * cross-app identity key; if the device holds no shared identity it returns
+ * `null` quickly, but a slow/offline network must not let it block the cold
+ * boot. 8s mirrors the stored-session bearer-validation budget
+ * (`VALIDATION_TIMEOUT`) since both perform comparable bounded network work; on
+ * expiry the step resolves to `null` and cold boot falls through (native then
+ * reaches the unauthenticated backstop, web never runs this step at all).
+ */
+const SHARED_KEY_SIGNIN_TIMEOUT = 8000;
 
 /**
  * HARD overall deadline (ms) for the entire cold-boot step loop —
@@ -1210,6 +1258,56 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
+            // 2.5) Shared-key SSO (NATIVE ONLY) — same-device, no interaction.
+            //
+            // When a sibling Oxy app (the Commons identity vault) has written
+            // the cross-app shared identity into the `group.so.oxy.shared`
+            // keychain, this mints THIS app's session from it silently:
+            // `signInWithSharedIdentity()` proves control of the shared key
+            // (challenge → sign → verify, which plants the tokens server-side)
+            // and returns a `SessionLoginResponse`, which we commit through the
+            // SAME path the web SSO steps use (`handleWebSSOSession`), so state,
+            // durable persistence, profile fetch, and `markAuthResolved` all run
+            // identically. Returns `null` when no shared identity is present, so
+            // a device without Commons simply falls through.
+            //
+            // ORDERING: runs immediately AFTER `stored-session` (an already
+            // restored local bearer always wins first — `storedSessionRestored`
+            // gates this off) and BEFORE the web-only probes (which are gated
+            // off on native anyway). Native-only: `enabled` requires
+            // `!isWebBrowser()`, and the core method also returns `null` on web,
+            // so `WebOxyProvider` / the web path are entirely unaffected.
+            // Bounded by `SHARED_KEY_SIGNIN_TIMEOUT` so a slow/offline network
+            // cannot stall cold boot.
+            id: 'shared-key-signin',
+            enabled: () => !isWebBrowser() && !storedSessionRestored,
+            run: async () => {
+              if (!commitWebSession) {
+                return { kind: 'skip' };
+              }
+              let timeoutId: ReturnType<typeof setTimeout> | undefined;
+              const session = await Promise.race<SessionLoginResponse | null>([
+                oxyServices.signInWithSharedIdentity?.() ?? Promise.resolve(null),
+                new Promise<null>((resolve) => {
+                  timeoutId = setTimeout(() => resolve(null), SHARED_KEY_SIGNIN_TIMEOUT);
+                }),
+              ]).finally(() => {
+                if (timeoutId !== undefined) {
+                  clearTimeout(timeoutId);
+                }
+              });
+              if (!session) {
+                return { kind: 'skip' };
+              }
+              await commitWebSession(session);
+              // Record the win so the (web-only) probes below explicitly skip —
+              // belt-and-suspenders; `runColdBoot` already short-circuits on the
+              // first `{kind:'session'}`, and those probes are off on native.
+              storedSessionRestored = true;
+              return { kind: 'session', session: true };
+            },
+          },
+          {
             // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
             // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
             // internally; we commit the returned session via
@@ -1578,6 +1676,44 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // before the cold-boot effect (gated on `storage`/`initialized`) can fire.
   handleWebSSOSessionRef.current = handleWebSSOSession;
 
+  // Keyless native sign-in: username/email + password. The slimmed Accounts app
+  // (which no longer holds a local identity key) uses this; it commits a
+  // successful session through the SAME `handleWebSSOSession` path FedCM / SSO
+  // use, so state, durable persistence, profile fetch, and `markAuthResolved`
+  // all run identically. The API returns either a full session OR a two-factor
+  // handoff (`{ twoFactorRequired, loginToken }`) — we surface the latter as a
+  // discriminated result so the caller can run the 2FA challenge without any
+  // session being committed.
+  const signInWithPassword = useCallback(
+    async (
+      identifier: string,
+      password: string,
+      opts?: { deviceName?: string; deviceFingerprint?: string },
+    ): Promise<PasswordSignInResult> => {
+      const response = await oxyServices.signIn(
+        identifier,
+        password,
+        opts?.deviceName,
+        opts?.deviceFingerprint,
+      );
+      // Core types `signIn` as `SessionLoginResponse`, but the API may instead
+      // return a 2FA challenge handoff. Widen with optional fields (no `any`) to
+      // read them — the added members are optional, so the base type is
+      // assignable to this intersection.
+      const maybeTwoFactor: SessionLoginResponse & {
+        twoFactorRequired?: boolean;
+        loginToken?: string;
+      } = response;
+      if (maybeTwoFactor.twoFactorRequired && maybeTwoFactor.loginToken) {
+        return { status: '2fa_required', loginToken: maybeTwoFactor.loginToken };
+      }
+      // Full session — commit it through the shared web-session path.
+      await handleWebSSOSession(response);
+      return { status: 'ok' };
+    },
+    [oxyServices, handleWebSSOSession],
+  );
+
   // Cross-domain silent SSO is now owned by the `fedcm-silent` / `silent-iframe`
   // cold-boot steps above (the ordered `runColdBoot` sequence). `useWebSSO`
   // remains mounted for its module-level run-once guard and its interactive
@@ -1849,6 +1985,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     hasIdentity,
     getPublicKey,
     signIn,
+    signInWithPassword,
     handleWebSession: handleWebSSOSession,
     logout,
     logoutAll,
@@ -1875,6 +2012,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }), [
     activeSessionId,
     signIn,
+    signInWithPassword,
     handleWebSSOSession,
     currentLanguage,
     currentLanguageMetadata,
@@ -1965,6 +2103,7 @@ const LOADING_STATE: OxyContextState = {
   hasIdentity: () => Promise.resolve(false),
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),
+  signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),

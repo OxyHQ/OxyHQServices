@@ -20,11 +20,12 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
+import { useOxy } from '@oxyhq/services';
+
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
 import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
@@ -142,7 +143,20 @@ function AppHead() {
 function AppStackContent() {
   // Must be called inside OxyProvider (which wraps BloomThemeProvider)
   const navTheme = useNavigationTheme();
-  const { needsAuth } = useOnboardingStatus();
+  const { isAuthenticated, isAuthResolved } = useOxy();
+
+  // Accounts is a management-only app: identity CREATION lives in Commons, so
+  // the `(auth)` group is sign-in only. The root Stack is the SOLE authority
+  // for the `(auth)`↔`(tabs)` swap, and it keys PURELY on session — never on a
+  // local identity key (Accounts holds none).
+  //
+  // Until cold boot resolves the session (`isAuthResolved === false`) we treat
+  // the user as needing auth and render `(auth)`; the sign-in screen shows a
+  // neutral backdrop during that window so a returning user does not flash the
+  // sign-in form before their session is restored. Once resolved, the swap is
+  // driven by `isAuthenticated` alone. Expo Router resolves redirects to the
+  // first non-redirecting sibling, so exactly one group is active at any time.
+  const needsAuth = isAuthResolved ? !isAuthenticated : true;
 
   return (
     <SafeAreaProvider>
@@ -150,31 +164,6 @@ function AppStackContent() {
         <ThemeProvider value={navTheme}>
           <ActingAsBanner />
           <Stack>
-            {/*
-              Bidirectional onboarding guard.
-
-              `needsAuth` is true when the user has no identity OR an identity
-              but no username yet (e.g. they completed `register()` but skipped
-              the username step). We must:
-                - Redirect AWAY from `(tabs)` when onboarding is incomplete,
-                  otherwise the user lands on the home tab as "@unknown" and
-                  every account row shows "Unknown User".
-                - Redirect AWAY from `(auth)` when onboarding is complete.
-
-              Expo Router resolves redirects to the first non-redirecting
-              sibling, so exactly one is true at any time. `needsAuth` is
-              PLATFORM-AGNOSTIC by design: an earlier web-only clamp to `false`
-              parked unauthenticated web visitors on `(tabs)`, whose own guard
-              bounced them back to `(auth)`, deadlocking on a blank screen.
-
-              The native/web split lives INSIDE the `(auth)` group instead: the
-              native `(auth)/index.tsx` shows the create-identity welcome, while
-              the web `(auth)/index.web.tsx` routes to a SIGN-IN screen (web is
-              a management surface for an account created on native — identity
-              creation is forbidden in the browser). So for an unauthenticated
-              web visitor, `needsAuth` is true → `(auth)` renders → sign-in. No
-              loop, no blank screen.
-            */}
             <Stack.Screen name="(tabs)" redirect={needsAuth} options={{ headerShown: false }} />
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />
           </Stack>

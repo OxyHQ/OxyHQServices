@@ -28,13 +28,25 @@
 // ---------------------------------------------------------------------------
 // Provider + auth hooks
 // ---------------------------------------------------------------------------
-export { WebOxyProvider, useWebOxy, useAuth } from './WebOxyProvider';
+export { WebOxyProvider, useWebOxy, useWebOxyOptional, useAuth } from './WebOxyProvider';
 export type {
     WebOxyProviderProps,
     WebAuthState,
     WebAuthActions,
     WebOxyContextValue,
 } from './WebOxyProvider';
+
+// ---------------------------------------------------------------------------
+// "Sign in with Oxy" — cross-device QR handoff (Workstream C)
+// ---------------------------------------------------------------------------
+export { useCommonsSignIn } from './hooks/useCommonsSignIn';
+export type {
+    UseCommonsSignInOptions,
+    UseCommonsSignInResult,
+    CommonsSignInPhase,
+    CommonsClaimResult,
+} from './hooks/useCommonsSignIn';
+export { renderQrDataUrl } from './utils/qrCode';
 
 // ---------------------------------------------------------------------------
 // Zustand stores

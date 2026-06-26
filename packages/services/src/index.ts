@@ -30,6 +30,7 @@ setPlatformOS(Platform.OS as PlatformOS);
 // ---------------------------------------------------------------------------
 export { default as OxyProvider } from './ui/components/OxyProvider';
 export { useOxy } from './ui/context/OxyContext';
+export type { OxyContextState, PasswordSignInResult } from './ui/context/OxyContext';
 export { useAuth } from './ui/hooks/useAuth';
 export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 

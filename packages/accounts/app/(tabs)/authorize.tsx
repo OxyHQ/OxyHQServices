@@ -8,12 +8,11 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, Avatar } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
-import { IdentityCard } from '@/components/identity';
 import { getDisplayName } from '@/utils/date-utils';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useTranslation } from '@/lib/i18n';
@@ -198,15 +197,21 @@ export default function AuthorizeScreen() {
             </Text>
           </View>
 
-          {/* Identity Card */}
+          {/* Account summary — who you're authorizing as. */}
           <View style={styles.identityCardContainer}>
-            <IdentityCard
-              displayName={displayName}
-              username={user?.username}
-              avatarUrl={avatarUrl}
-              accountCreated={user?.createdAt}
-              publicKey={user?.publicKey}
-            />
+            <View style={[styles.accountSummary, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Avatar name={displayName} uri={avatarUrl} size={48} />
+              <View style={styles.accountSummaryText}>
+                <Text style={[styles.accountSummaryName, { color: textColor }]} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                {user?.username ? (
+                  <Text style={[styles.accountSummaryHandle, { color: textColor, opacity: 0.7 }]} numberOfLines={1}>
+                    @{user.username}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
           </View>
 
           {/* Permissions Section */}
@@ -321,6 +326,28 @@ const styles = StyleSheet.create({
   identityCardContainer: {
     alignItems: 'center',
     marginBottom: 32,
+  },
+  accountSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    width: '100%',
+    maxWidth: 360,
+  },
+  accountSummaryText: {
+    flex: 1,
+  },
+  accountSummaryName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  accountSummaryHandle: {
+    fontSize: 14,
+    marginTop: 2,
   },
   permissionsSection: {
     marginBottom: 24,

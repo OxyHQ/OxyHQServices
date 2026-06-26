@@ -1,0 +1,70 @@
+/**
+ * The login form surfaces a THIRD sign-in option — "Sign in with Oxy" (the
+ * cross-device QR handoff) — alongside the password steps and the social
+ * buttons. Switching to it renders the QR screen.
+ */
+import { describe, expect, mock, test } from "bun:test"
+import { act } from "react"
+import { createRoot, type Root } from "react-dom/client"
+import { BrowserRouter } from "react-router-dom"
+
+// No accounts on this device → the form opens on the identifier step (not the
+// chooser / loading spinner), where the third option lives.
+mock.module("@/lib/use-device-accounts", () => ({
+    useDeviceAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),
+}))
+
+// Stub the QR screen so the test stays focused on the entry option and never
+// pulls the qrcode / device-flow chain.
+mock.module("@/components/commons-signin", () => ({
+    CommonsSignIn: () => <div data-testid="commons-signin">QR screen</div>,
+}))
+
+const { LoginForm } = await import("@/components/login-form")
+
+function renderForm(): { container: HTMLDivElement; unmount: () => void } {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+    act(() => {
+        root.render(
+            <BrowserRouter>
+                <LoginForm />
+            </BrowserRouter>,
+        )
+    })
+    return {
+        container,
+        unmount: () => {
+            act(() => root.unmount())
+            container.remove()
+        },
+    }
+}
+
+function findButton(container: HTMLElement, label: RegExp): HTMLButtonElement | undefined {
+    return Array.from(container.querySelectorAll("button")).find((b) =>
+        label.test(b.textContent ?? ""),
+    )
+}
+
+describe("LoginForm — Sign in with Oxy option", () => {
+    test("shows the 'Sign in with Oxy' option on the identifier step", () => {
+        const { container, unmount } = renderForm()
+        expect(findButton(container, /sign in with oxy/i)).toBeDefined()
+        unmount()
+    })
+
+    test("selecting it switches to the QR screen", () => {
+        const { container, unmount } = renderForm()
+        const option = findButton(container, /sign in with oxy/i)
+        expect(option).toBeDefined()
+
+        act(() => {
+            option?.dispatchEvent(new (window.MouseEvent || Event)("click", { bubbles: true }))
+        })
+
+        expect(container.querySelector('[data-testid="commons-signin"]')).not.toBeNull()
+        unmount()
+    })
+})

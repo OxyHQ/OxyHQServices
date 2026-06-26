@@ -36,10 +36,14 @@ import {
   verifyRequestSchema,
   deleteAccountSchema,
   dataExportQuerySchema,
+  identityExportQuerySchema,
   updatePrivacyBodySchema,
   usersByIdsBodySchema,
 } from '../schemas/users.schemas';
 import { sanitizeHtml } from '../utils/sanitize';
+import { rateLimit } from '../middleware/rateLimiter';
+import { buildExportBundle } from '../services/identityExport.service';
+import { exportBundleSchema } from '@oxyhq/contracts';
 
 // Types
 interface AuthRequest extends Request {
@@ -941,6 +945,87 @@ router.get(
     res.send(data);
 
     logger.info('Account data exported', { userId, format });
+  })
+);
+
+/**
+ * Per-user rate limiter for the signed identity export (5/hour). The export
+ * assembles the full account snapshot and signs it — it is intentionally
+ * expensive, so it is throttled per authenticated user.
+ */
+const identityExportLimiter = rateLimit({
+  prefix: 'rl:identity:export:',
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: 'Too many export requests. Please try again later.',
+  keyGenerator: (req) => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `identity:export:${userId}` : `identity:export:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/**
+ * GET /users/me/export
+ *
+ * Signed, open-format self-sovereign data export ("credible exit"). Returns the
+ * `ExportBundle` (DID document, profile, verified domains, auth methods, signed
+ * records, app data, social graph) sealed with an Oxy provenance attestation.
+ * `?format=ndjson` streams each section as newline-delimited JSON for large
+ * accounts.
+ */
+router.get(
+  '/me/export',
+  authMiddleware,
+  identityExportLimiter,
+  validate({ query: identityExportQuerySchema }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const result = await buildExportBundle(userId);
+    if (!result) {
+      throw new NotFoundError('User not found');
+    }
+
+    const { bundle, attestationMissing } = result;
+    const format = (req.query.format as string) || 'json';
+    const stamp = Date.now();
+
+    if (format === 'ndjson') {
+      res.setHeader('Content-Type', 'application/x-ndjson');
+      res.setHeader('Content-Disposition', `attachment; filename="oxy-identity-export-${stamp}.ndjson"`);
+      const writeLine = (obj: unknown) => res.write(`${JSON.stringify(obj)}\n`);
+      writeLine({
+        kind: 'meta',
+        $schema: bundle['$schema'],
+        exportedAt: bundle.exportedAt,
+        did: bundle.did,
+        didDocument: bundle.didDocument,
+        profile: bundle.profile,
+        verifiedDomains: bundle.verifiedDomains,
+        authMethods: bundle.authMethods,
+      });
+      for (const record of bundle.signedRecords) writeLine({ kind: 'signedRecord', record });
+      for (const item of bundle.appData) writeLine({ kind: 'appData', item });
+      for (const did of bundle.social.following) writeLine({ kind: 'following', did });
+      for (const did of bundle.social.followers) writeLine({ kind: 'follower', did });
+      writeLine({ kind: 'attestation', attestation: bundle.attestation });
+      res.end();
+      logger.info('Signed identity export streamed', { userId, format, attestationMissing });
+      return;
+    }
+
+    // Validate the producer output against the published contract. Both the
+    // signed bundle and the no-key bundle (`attestation: null`, now that the
+    // contract's attestation is nullable) MUST conform.
+    exportBundleSchema.parse(bundle);
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="oxy-identity-export-${stamp}.json"`);
+    res.json(bundle);
+    logger.info('Signed identity export generated', { userId, format, attestationMissing });
   })
 );
 

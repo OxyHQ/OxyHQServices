@@ -32,6 +32,7 @@
  */
 
 import { z } from 'zod';
+import { verifiedDomainSchema } from './identity';
 
 /**
  * Structured human name subdocument. Mirrors `User.name` (`NameSchema`).
@@ -105,6 +106,17 @@ export const userResponseSchema = z
         name: userNameSchema,
         verified: z.boolean().optional(),
         language: z.string().optional(),
+        /**
+         * The account's self-sovereign identifier
+         * (`did:web:<FEDERATION_DOMAIN>:u:<userId>`). Surfaced as a `User`
+         * virtual; present on formatted DTOs once the identity layer is live.
+         */
+        did: z.string().optional(),
+        /**
+         * Proven domain-ownership badges. Each is a {@link verifiedDomainSchema}
+         * entry; present only when the account has verified at least one domain.
+         */
+        verifiedDomains: z.array(verifiedDomainSchema).optional(),
     })
     .passthrough();
 

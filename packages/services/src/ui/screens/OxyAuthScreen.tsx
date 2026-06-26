@@ -34,7 +34,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
   const bloomTheme = useTheme();
   const { oxyServices, switchSession, clientId } = useOxy();
 
-  const { qrData, isLoading, error, isWaiting, openAuthApproval, retry } = useOxyAuthSession(
+  const { qrData, qrPayload, isLoading, error, isWaiting, openAuthApproval, openSameDeviceApproval, retry } = useOxyAuthSession(
     oxyServices,
     clientId,
     switchSession,
@@ -103,6 +103,23 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
         Continue with Oxy
       </Button>
 
+      {/* Same-device "Sign in with Oxy" handoff — deep-links into the native Oxy
+          app to approve. Shown only when the handoff backend returned a payload. */}
+      {qrPayload && (
+        <Button
+          variant="secondary"
+          size="large"
+          fullWidth
+          className="w-full mt-space-12"
+          onPress={openSameDeviceApproval}
+          icon={
+            <OxyLogo variant="icon" size={20} fillColor={bloomTheme.colors.text} />
+          }
+        >
+          Sign in with the Oxy app
+        </Button>
+      )}
+
       {/* Waiting status */}
       {isWaiting && (
         <View className="flex-row items-center mt-space-16 gap-space-8">
@@ -115,7 +132,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
 
       {/* Collapsed "sign in on another device" QR disclosure */}
       <View className="w-full mt-space-24">
-        <AnotherDeviceQR qrData={qrData} />
+        <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
       </View>
 
       {/* Footer — create an account */}

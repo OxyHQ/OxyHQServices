@@ -26,9 +26,9 @@ function routeExists(name: string): boolean {
 }
 
 describe('DRAWER_SCREENS', () => {
-  it('declares at least the twelve visible primary screens', () => {
+  it('declares at least the eleven visible primary screens', () => {
     const visible = DRAWER_SCREENS.filter((s) => !s.hidden);
-    expect(visible.length).toBeGreaterThanOrEqual(12);
+    expect(visible.length).toBeGreaterThanOrEqual(11);
   });
 
   it('uses unique route names', () => {
@@ -57,11 +57,6 @@ describe('DRAWER_SCREENS', () => {
   it('gives every visible screen a drawer label', () => {
     const missingLabel = DRAWER_SCREENS.filter((s) => !s.hidden && !s.labelKey).map((s) => s.name);
     expect(missingLabel).toEqual([]);
-  });
-
-  it('marks about-identity as native-only', () => {
-    const aboutIdentity = DRAWER_SCREENS.find((s) => s.name === 'about-identity');
-    expect(aboutIdentity?.platform).toBe('native');
   });
 
   it('hides scan-qr from the drawer and disables its header', () => {

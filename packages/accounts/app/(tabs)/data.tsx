@@ -1,9 +1,9 @@
 import React, { useMemo, useCallback, useState } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, StyleSheet, Platform, useWindowDimensions, ActivityIndicator, Linking } from 'react-native';
 import { File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { logger } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
@@ -13,11 +13,11 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { useTranslation } from '@/lib/i18n';
+import { COMMONS_DELETE_ACCOUNT_URL } from '@/constants/oxy';
 
 export default function DataScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
-  const router = useRouter();
   const [isDownloading, setIsDownloading] = useState(false);
   const [pendingPrivacyKey, setPendingPrivacyKey] = useState<string | null>(null);
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -123,10 +123,32 @@ export default function DataScreen() {
     );
   }, [alert, downloadFormat, t]);
 
-  // Handle delete account — open dedicated screen with confirmation flow
+  // Handle delete account — deletion is key-gated (the API verifies a signature
+  // over the user's private key), and that key lives in the Commons app, never
+  // in this management-only app. Hand off to Commons via its deep link.
   const handleDeleteAccount = useCallback(() => {
-    router.push('/(tabs)/delete-account');
-  }, [router]);
+    alert(
+      t('data.deleteAccount.title'),
+      t('data.deleteAccount.commonsMessage'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('data.deleteAccount.openCommons'),
+          style: 'destructive',
+          onPress: () => {
+            Linking.openURL(COMMONS_DELETE_ACCOUNT_URL).catch((error) => {
+              logger.error(
+                'DataScreen: failed to open Commons delete-account deep link',
+                error instanceof Error ? error : new Error(String(error)),
+                { component: 'DataScreen' },
+              );
+              toast.error(t('data.deleteAccount.commonsUnavailable'));
+            });
+          },
+        },
+      ],
+    );
+  }, [alert, t]);
 
   // Data download section
   const dataDownloadItems = useMemo(() => [

@@ -11,6 +11,7 @@
     "packages/api",
     "packages/auth",
     "packages/accounts",
+    "packages/commons",
     "packages/inbox",
     "packages/test-app-expo",
     "packages/console"
@@ -33,6 +34,8 @@
     "accounts:build": "bun run --filter accounts build",
     "accounts:dev": "bun run --filter accounts start",
     "accounts:start": "bun run --filter accounts start",
+    "commons:dev": "bun run --filter commons start",
+    "commons:start": "bun run --filter commons start",
     "inbox:build": "bun run --filter inbox build",
     "inbox:dev": "bun run --filter inbox start",
     "inbox:start": "bun run --filter inbox start",

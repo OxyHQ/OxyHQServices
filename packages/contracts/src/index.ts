@@ -84,3 +84,32 @@ export type {
     AppInterestInput,
     AppUserSignalIngest,
 } from './recommendations';
+
+export {
+    // Schemas
+    verificationMethodSchema,
+    didServiceSchema,
+    didDocumentSchema,
+    signedRecordEnvelopeSchema,
+    verifiedDomainSchema,
+    domainVerificationRequestSchema,
+    domainVerificationInstructionsSchema,
+    authMethodEntrySchema,
+    authMethodsResponseSchema,
+    exportAttestationSchema,
+    exportBundleSchema,
+} from './identity';
+
+export type {
+    VerificationMethod,
+    DidService,
+    DidDocument,
+    SignedRecordEnvelope,
+    VerifiedDomain,
+    DomainVerificationRequest,
+    DomainVerificationInstructions,
+    AuthMethodEntry,
+    AuthMethodsResponse,
+    ExportAttestation,
+    ExportBundle,
+} from './identity';

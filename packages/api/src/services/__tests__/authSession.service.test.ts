@@ -18,6 +18,28 @@ jest.mock('../../models/AuthSession', () => ({
   },
 }));
 
+// authSession.service now also wires the key-signed approval path; stub its
+// model/service deps so the service module loads under the global mongoose mock
+// (this suite only exercises claimAuthSession).
+jest.mock('../../models/AuthChallenge', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
+}));
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  User: { findOne: jest.fn() },
+  default: { findOne: jest.fn() },
+}));
+jest.mock('../../models/Application', () => ({
+  __esModule: true,
+  Application: { findById: jest.fn() },
+  default: { findById: jest.fn() },
+}));
+jest.mock('../../services/session.service', () => ({
+  __esModule: true,
+  default: { createSession: jest.fn() },
+}));
+
 import { claimAuthSession } from '../authSession.service';
 
 beforeEach(() => {

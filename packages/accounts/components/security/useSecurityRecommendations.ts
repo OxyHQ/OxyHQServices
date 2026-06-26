@@ -12,8 +12,6 @@ import {
 } from '@/utils/security-recommendations';
 
 interface UseSecurityRecommendationsArgs {
-  hasIdentity: boolean;
-  recoveryPhraseAcknowledged: boolean;
   canEnableBiometric: boolean;
   biometricEnabled: boolean;
   biometricLoading: boolean;
@@ -34,8 +32,6 @@ interface UseSecurityRecommendationsArgs {
  * tap action). Behaviour is identical to the screen's original inline `useMemo`.
  */
 export function useSecurityRecommendations({
-  hasIdentity,
-  recoveryPhraseAcknowledged,
   canEnableBiometric,
   biometricEnabled,
   biometricLoading,
@@ -50,9 +46,6 @@ export function useSecurityRecommendations({
 
   return useMemo(() => {
     const descriptors = selectSecurityRecommendations({
-      isNative: Platform.OS !== 'web',
-      hasIdentity,
-      recoveryPhraseAcknowledged,
       canEnableBiometric,
       biometricEnabled,
       biometricLoading,
@@ -65,17 +58,6 @@ export function useSecurityRecommendations({
     const render = (descriptor: SecurityRecommendationDescriptor): PrioritizedGroupedItem => {
       const count = descriptor.count ?? 0;
       switch (descriptor.id) {
-        case 'recovery-phrase-backup':
-          return {
-            id: descriptor.id,
-            priority: descriptor.priority,
-            icon: 'shield-key-outline',
-            iconColor: colors.error,
-            title: t('security.recommendations.recoveryPhraseBackup'),
-            subtitle: t('security.recommendations.recoveryPhraseBackupSubtitle'),
-            onPress: () => router.push('/(tabs)/create-backup'),
-            showChevron: true,
-          };
         case 'biometric':
           return {
             id: descriptor.id,
@@ -170,8 +152,6 @@ export function useSecurityRecommendations({
 
     return descriptors.map(render);
   }, [
-    hasIdentity,
-    recoveryPhraseAcknowledged,
     canEnableBiometric,
     biometricEnabled,
     biometricLoading,

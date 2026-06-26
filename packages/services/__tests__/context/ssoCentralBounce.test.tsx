@@ -135,7 +135,8 @@ describe('Central SSO return (sso-return step)', () => {
 
     await waitFor(() => expect(captured.isAuthenticated).toBe(true));
     expect(captured.userId).toBe(EXCHANGED_USER_ID);
-    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123');
+    // Core binds the validated CSRF state into the exchange: `exchangeSsoCode(code, state)`.
+    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123', 'expected-state');
 
     // Fragment stripped; CSRF state + dest consumed; no NO_SESSION; no bounce.
     expect(window.location.hash).toBe('');
@@ -215,7 +216,8 @@ describe('Central SSO return (sso-return step)', () => {
 
     await waitFor(() => expect(window.sessionStorage.getItem(NO_SESSION_KEY)).toBe('1'));
 
-    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123');
+    // Core binds the validated CSRF state into the exchange: `exchangeSsoCode(code, state)`.
+    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code-123', 'expected-state');
     expect(captured.isAuthenticated).toBe(false);
     expect(assignSpy).not.toHaveBeenCalled();
   });

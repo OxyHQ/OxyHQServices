@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 
@@ -16,7 +15,6 @@ export interface HomeHandlers {
   handleStorage: () => void;
   handleFamily: () => void;
   handleSecurity: () => void;
-  handleAboutIdentity: () => void;
   handleManagedAccounts: () => void;
   handleCreateManagedAccount: () => void;
   handleSetUsername: () => void;
@@ -90,12 +88,6 @@ export function useHomeHandlers(): HomeHandlers {
     router.push('/(tabs)/security');
   }, [router]);
 
-  const handleAboutIdentity = useCallback(() => {
-    if (Platform.OS !== 'web') {
-      router.push('/(tabs)/about-identity');
-    }
-  }, [router]);
-
   const handleManagedAccounts = useCallback(() => {
     router.push('/(tabs)/managed-accounts');
   }, [router]);
@@ -124,7 +116,6 @@ export function useHomeHandlers(): HomeHandlers {
     handleStorage,
     handleFamily,
     handleSecurity,
-    handleAboutIdentity,
     handleManagedAccounts,
     handleCreateManagedAccount,
     handleSetUsername,

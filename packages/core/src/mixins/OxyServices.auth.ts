@@ -12,10 +12,20 @@ import type {
 import type { UserNameResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
+import type { PublicApplication } from './OxyServices.applications';
 import { OxyAuthenticationError } from '../OxyServices.errors';
+import { KeyManager } from '../crypto/keyManager';
+import { SignatureService } from '../crypto/signatureService';
 import { loadNodeCrypto } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
+
+/**
+ * Default lifetime of a "Sign in with Oxy" device-flow session / authorize code.
+ * Matches the authorize-code TTL the server enforces (5 minutes). The server's
+ * returned `expiresAt` is authoritative; this is only the client-proposed value.
+ */
+const COMMONS_SIGN_IN_EXPIRY_MS = 5 * 60 * 1000;
 
 export interface ChallengeResponse {
   challenge: string;
@@ -62,6 +72,79 @@ export interface ChallengeVerifyRequest {
 export interface PublicKeyCheckResponse {
   registered: boolean;
   message: string;
+}
+
+// ===========================================================================
+// "Sign in with Oxy" — cross-device QR / app-to-app handoff (Workstream C)
+// ===========================================================================
+
+/**
+ * Handle returned by {@link OxyServicesAuthMixin.startCommonsSignIn} for a
+ * relying-party app initiating a "Sign in with Oxy" flow.
+ *
+ * `sessionToken` is the SECRET, high-entropy device-flow credential — it stays
+ * on the initiating client, is exchanged once via `claimSessionByToken`, and is
+ * NEVER placed in the QR/deep-link. `authorizeCode` is the PUBLIC handle carried
+ * in `qrPayload`; the approver (Commons) resolves it via
+ * {@link OxyServicesAuthMixin.getCommonsApprovalInfo}.
+ */
+export interface CommonsSignInHandle {
+  /** Secret device-flow token (held by the initiator; exchanged via `claimSessionByToken`). */
+  sessionToken: string;
+  /** Public, single-use authorize code carried in the QR / deep-link. */
+  authorizeCode: string;
+  /** Ready-to-render deep-link / universal-link string (`oxycommons://approve?...`). */
+  qrPayload: string;
+  /** Server-authoritative expiry (epoch milliseconds). */
+  expiresAt: number;
+  /** Session lifecycle status as reported by the server (e.g. `'pending'`). */
+  status: string;
+}
+
+/** Poll result for a "Sign in with Oxy" device-flow session (`GET /auth/session/status`). */
+export interface CommonsSignInStatus {
+  /** True once an approver has authorized the session. */
+  authorized: boolean;
+  /** The authorized session id (present once `authorized`). */
+  sessionId?: string;
+  /** The approving identity's public key (present once `authorized`). */
+  publicKey?: string;
+  /** Lifecycle status (`'pending'` | `'authorized'` | `'cancelled'` | `'expired'`). */
+  status?: string;
+}
+
+/**
+ * Server-resolved approval context shown by the approver (Commons) before
+ * authorizing — the TRUSTED identity of the requesting app, resolved from the
+ * `authorizeCode` server-side (never from the QR string).
+ */
+export interface CommonsApprovalInfo {
+  /** Sanitized, display-safe identity of the requesting application. */
+  application: PublicApplication;
+  /** OAuth scopes the application is requesting. */
+  scopes: string[];
+  /** The origin the session is bound to (the RP web origin), when applicable. */
+  boundOrigin?: string;
+  /** Server-authoritative expiry (epoch milliseconds). */
+  expiresAt: number;
+  /** Session lifecycle status. */
+  status: string;
+}
+
+/** Result of approving / denying a "Sign in with Oxy" request. */
+export interface CommonsSignInActionResult {
+  success: boolean;
+}
+
+/** @internal Response shape of the extended `POST /auth/session/create`. */
+interface CommonsSessionCreateResponse {
+  authorizeCode: string;
+  qrPayload: string;
+  status: string;
+  /** Optional server-authoritative expiry; falls back to the client-proposed value. */
+  expiresAt?: number;
+  /** Optional server echo of the session token (the client-supplied value is authoritative). */
+  sessionToken?: string;
 }
 
 export interface ServiceTokenResponse {
@@ -603,6 +686,218 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         this.setTokens(res.accessToken);
 
         return res;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    // =======================================================================
+    // "Sign in with Oxy" — handoff (Workstream C)
+    //
+    // Two mechanisms share the same challenge/verify + device-flow primitives:
+    //   A. Same-device shared-keychain SSO (`signInWithSharedIdentity`): a
+    //      sibling native app silently mints its own session from the shared
+    //      identity key. No user interaction.
+    //   B. QR / app-to-app handoff: a relying party (`startCommonsSignIn` +
+    //      `pollCommonsSignIn` + the existing `claimSessionByToken`) and the
+    //      approver / Commons (`getCommonsApprovalInfo` + `approveCommonsSignIn`
+    //      / `denyCommonsSignIn`). The approver signs with its PRIMARY local
+    //      key; the RP never sees the private key.
+    // =======================================================================
+
+    /**
+     * MECHANISM A — same-device shared-keychain SSO.
+     *
+     * Native-only. If this device holds a shared identity (the cross-app
+     * `group.so.oxy.shared` keychain key), prove control of it and mint a
+     * session: `requestChallenge(sharedPublicKey)` → `signChallengeWithSharedKey`
+     * → `verifyChallenge` (which plants the tokens). Returns `null` on web or
+     * when no shared identity is present — never throws for the absent-identity
+     * case, so a cold-boot caller can fall through to the next step.
+     *
+     * The cold-boot wiring that CALLS this lives in `OxyContext`
+     * (`@oxyhq/services`); this method just performs the exchange.
+     */
+    async signInWithSharedIdentity(
+      opts: { deviceName?: string; deviceFingerprint?: string } = {}
+    ): Promise<SessionLoginResponse | null> {
+      try {
+        // `hasSharedIdentity()` already returns false on web (the shared
+        // keychain is native-only), so this short-circuits the web case without
+        // a wasted challenge round-trip.
+        if (!(await KeyManager.hasSharedIdentity())) {
+          return null;
+        }
+        const sharedPublicKey = await KeyManager.getSharedPublicKey();
+        if (!sharedPublicKey) {
+          return null;
+        }
+
+        const { challenge } = await this.requestChallenge(sharedPublicKey);
+        const signed = await SignatureService.signChallengeWithSharedKey(challenge);
+
+        // `signed.challenge` carries the SIGNATURE (mirrors `signChallenge`).
+        return await this.verifyChallenge(
+          signed.publicKey,
+          challenge,
+          signed.challenge,
+          signed.timestamp,
+          opts.deviceName,
+          opts.deviceFingerprint,
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (relying party) — begin a "Sign in with Oxy" handoff.
+     *
+     * Generates a secret device-flow `sessionToken` client-side (it never
+     * appears in the QR), registers it with `POST /auth/session/create`, and
+     * returns the server-issued public `authorizeCode` + ready-to-render
+     * `qrPayload`. Render the QR (web) / open the deep-link (same-device); the
+     * approver resolves the code and authorizes. Then poll with
+     * {@link pollCommonsSignIn} and, on `authorized`, exchange the
+     * `sessionToken` via the existing `claimSessionByToken`.
+     *
+     * @param params.clientId - The RP's registered OAuth client id
+     *   (ApplicationCredential publicKey); required so the server can resolve the
+     *   requesting application's identity.
+     */
+    async startCommonsSignIn(params: { clientId: string }): Promise<CommonsSignInHandle> {
+      try {
+        // High-entropy opaque secret token (256-bit hex). Generated client-side
+        // and held only here; the server stores it but never returns it in the
+        // QR. Reuses the platform-safe random generator.
+        const sessionToken = await SignatureService.generateChallenge();
+        const expiresAt = Date.now() + COMMONS_SIGN_IN_EXPIRY_MS;
+
+        const res = await this.makeRequest<CommonsSessionCreateResponse>(
+          'POST',
+          '/auth/session/create',
+          { sessionToken, expiresAt, clientId: params.clientId },
+          { cache: false }
+        );
+
+        return {
+          sessionToken,
+          authorizeCode: res.authorizeCode,
+          qrPayload: res.qrPayload,
+          expiresAt: res.expiresAt ?? expiresAt,
+          status: res.status,
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (relying party) — poll a device-flow session for approval.
+     *
+     * Backstop for the auth socket. On `authorized` (with a `sessionId`), the
+     * caller exchanges the secret `sessionToken` via the existing
+     * `claimSessionByToken` to mint the first access token.
+     *
+     * @param sessionToken - The secret token from {@link startCommonsSignIn}.
+     */
+    async pollCommonsSignIn(sessionToken: string): Promise<CommonsSignInStatus> {
+      try {
+        return await this.makeRequest<CommonsSignInStatus>(
+          'GET',
+          `/auth/session/status/${encodeURIComponent(sessionToken)}`,
+          undefined,
+          { cache: false, retry: false }
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (approver / Commons) — resolve the TRUSTED identity of a
+     * sign-in request from its public `authorizeCode`.
+     *
+     * The returned `application` is resolved server-side and is the only safe
+     * thing to display in the approval UI — NEVER trust the app/name/origin
+     * strings carried in the QR payload. Public (no auth required).
+     *
+     * @param authorizeCode - The public code scanned from the QR / deep-link.
+     */
+    async getCommonsApprovalInfo(authorizeCode: string): Promise<CommonsApprovalInfo> {
+      try {
+        return await this.makeRequest<CommonsApprovalInfo>(
+          'GET',
+          `/auth/session/approve-info/${encodeURIComponent(authorizeCode)}`,
+          undefined,
+          { cache: false }
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (approver / Commons) — approve a sign-in request by signing a
+     * fresh challenge with the PRIMARY local identity key.
+     *
+     * Commons holds the user's identity as its primary key (not the shared
+     * key), so this uses `signChallenge`. The signed-but-cookieless authorize
+     * endpoint resolves the user from the verified signer — the RP that started
+     * the flow then claims its session. Native-only (requires a local identity).
+     *
+     * @param params.authorizeCode - The public code being approved.
+     * @param params.deviceName - Optional human-readable device label.
+     * @param params.deviceFingerprint - Optional device fingerprint.
+     */
+    async approveCommonsSignIn(params: {
+      authorizeCode: string;
+      deviceName?: string;
+      deviceFingerprint?: string;
+    }): Promise<CommonsSignInActionResult> {
+      try {
+        const publicKey = await KeyManager.getPublicKey();
+        if (!publicKey) {
+          throw new Error('No identity found on this device. Create or import an identity first.');
+        }
+
+        const { challenge } = await this.requestChallenge(publicKey);
+        const signed = await SignatureService.signChallenge(challenge);
+
+        return await this.makeRequest<CommonsSignInActionResult>(
+          'POST',
+          `/auth/session/authorize-signed/${encodeURIComponent(params.authorizeCode)}`,
+          {
+            // `signed.challenge` carries the SIGNATURE; `challenge` is the
+            // original server-issued challenge string.
+            publicKey: signed.publicKey,
+            challenge,
+            signature: signed.challenge,
+            timestamp: signed.timestamp,
+            ...(params.deviceName ? { deviceName: params.deviceName } : {}),
+            ...(params.deviceFingerprint ? { deviceFingerprint: params.deviceFingerprint } : {}),
+          },
+          { cache: false }
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (approver / Commons) — deny a sign-in request, cancelling the
+     * device-flow session so the RP stops waiting.
+     *
+     * @param authorizeCode - The public code being denied.
+     */
+    async denyCommonsSignIn(authorizeCode: string): Promise<CommonsSignInActionResult> {
+      try {
+        return await this.makeRequest<CommonsSignInActionResult>(
+          'POST',
+          `/auth/session/deny/${encodeURIComponent(authorizeCode)}`,
+          undefined,
+          { cache: false }
+        );
       } catch (error) {
         throw this.handleError(error);
       }

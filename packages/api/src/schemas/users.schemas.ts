@@ -39,6 +39,12 @@ export const dataExportQuerySchema = z.object({
   format: z.enum(['json', 'csv']).optional(),
 });
 
+// GET /users/me/export — signed self-sovereign data export ("credible exit").
+// `ndjson` streams each section as newline-delimited JSON for large accounts.
+export const identityExportQuerySchema = z.object({
+  format: z.enum(['json', 'ndjson']).optional(),
+});
+
 // Pagination query schema
 export const paginationQuerySchema = z.object({
   limit: z.string().regex(/^\d+$/).optional(),

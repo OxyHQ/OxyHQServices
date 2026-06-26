@@ -29,6 +29,19 @@ export type AuthSessionStatus = 'pending' | 'authorized' | 'consumed' | 'expired
 
 export interface IAuthSession extends Document {
   sessionToken: string;      // Unique token for this auth session (128-bit secret held only by the originating client)
+  /**
+   * Public single-use approval handle carried in the QR / deep link
+   * (`oxycommons://approve?code=<authorizeCode>`). Unlike `sessionToken` it is
+   * SAFE to display: the Commons vault approves with it via
+   * `POST /auth/session/authorize-signed/:authorizeCode` (key-signed, no
+   * bearer), and the originating client still claims the result with the secret
+   * `sessionToken` it alone holds. 128-bit hex.
+   */
+  authorizeCode?: string;
+  /** The browser Origin the session was created from, shown in the approval UI. */
+  boundOrigin?: string;
+  /** Random nonce embedded in the QR payload (audit only; not a binding check). */
+  challengeNonce?: string;
   applicationId: mongoose.Types.ObjectId; // Canonical, required reference to a registered Application
   status: AuthSessionStatus;
   authorizedBy?: string;     // Public key of the user who authorized
@@ -47,6 +60,21 @@ const AuthSessionSchema: Schema = new Schema(
       required: true,
       unique: true,
       index: true,
+    },
+    // Public approval handle. Sparse-unique (older rows predate it and have
+    // none) — never `default: null`, or sparse uniqueness would collide.
+    authorizeCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    boundOrigin: {
+      type: String,
+      default: null,
+    },
+    challengeNonce: {
+      type: String,
+      default: null,
     },
     applicationId: {
       type: Schema.Types.ObjectId,
