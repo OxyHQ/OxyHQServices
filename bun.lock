@@ -224,7 +224,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "5.0.2",
+      "version": "5.1.1",
       "dependencies": {
         "@oxyhq/contracts": "^0.3.0",
         "qrcode": "^1.5.4",
@@ -386,7 +386,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.10.1",
+      "version": "3.11.0",
       "dependencies": {
         "@oxyhq/contracts": "^0.3.0",
         "bip39": "^3.1.0",
@@ -519,9 +519,9 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "11.0.0",
+      "version": "11.1.0",
       "dependencies": {
-        "@oxyhq/contracts": "^0.2.0",
+        "@oxyhq/contracts": "^0.3.0",
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
@@ -567,7 +567,7 @@
       "peerDependencies": {
         "@expo/vector-icons": "^15.0.3",
         "@oxyhq/bloom": ">=0.16.0",
-        "@oxyhq/core": "^3.8.0",
+        "@oxyhq/core": "^3.11.0",
         "@react-native-async-storage/async-storage": "^2.0.0",
         "@react-native-community/netinfo": "^11.4.1",
         "@tanstack/query-async-storage-persister": "^5.100",
@@ -4937,8 +4937,6 @@
     "@oxyhq/contracts/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
 
     "@oxyhq/core/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
-
-    "@oxyhq/services/@oxyhq/contracts": ["@oxyhq/contracts@0.2.1", "", { "dependencies": { "zod": "^3.25.64" } }, "sha512-is7qwrOhMvDr3FT3+c6JLz5yihhLo+db1p7NLbjNtMZQifNEIERED0oy9l8zLEb+m0N0p/YfvsFABLuykB3LsA=="],
 
     "@oxyhq/services/@types/jest": ["@types/jest@29.5.14", "", { "dependencies": { "expect": "^29.0.0", "pretty-format": "^29.0.0" } }, ""],
 
