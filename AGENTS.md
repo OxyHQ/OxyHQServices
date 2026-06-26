@@ -92,7 +92,7 @@ Use these agents for all implementation work:
 - `oxy-core` — @oxyhq/core: OxyServices client, mixins, crypto, types. NEVER import react/RN/expo.
 - `oxy-auth` — auth-sdk + auth app: FedCM, service tokens, sessions, 2FA. NEVER import RN/expo.
 - `oxy-api` — API backend: routes, models, services (email, billing, federation, S3, MongoDB)
-- `oxy-frontend` — Frontend apps: accounts (MyAccount), console (Cloud), inbox (Email), auth (FedCM IdP)
+- `oxy-frontend` — Frontend apps: accounts (MyAccount / "Accounts by Oxy"), commons (identity vault / "Commons by Oxy"), console (Cloud), inbox (Email), auth (FedCM IdP)
 - `oxy-services` — @oxyhq/services: Expo/RN components, screens, bottom sheets
 - `mention-fixer` — Cross-stack debugging (Mention ↔ Oxy)
 - `git-ops` — Git commit, push, merge operations
@@ -113,7 +113,7 @@ bun install                      # Install all workspace deps
 - `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/auth` (auth-sdk), `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
 - `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test server/__tests__ lib/__tests__ components/__tests__`.
 - THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing ~32 false failures in core and ~81 in api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
-- Per-package baselines (when run under the correct runner): core 355 (+22 reputation), api 526 (+37 reputation), auth-sdk 86, services 178, auth IdP 10 (+1 authorize application contract).
+- Per-package baselines (when run under the correct runner): core **553**, api **~861**, auth-sdk 86, services 178, auth IdP 10 (+1 authorize application contract).
 
 ## Architecture
 
@@ -126,7 +126,8 @@ packages/
   auth-sdk/       @oxyhq/auth       Web auth SDK (React hooks, zero RN/Expo)
   services/       @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
   api/            @oxyhq/api        Express.js backend API
-  accounts/                         Expo accounts app
+  accounts/                         Expo accounts app ("Accounts by Oxy" — keyless, management-only)
+  commons/                          Expo identity vault app ("Commons by Oxy" — NATIVE-ONLY, no web build)
   auth/                             Vite auth app (standalone, FedCM IdP)
   test-app/                         Expo test/playground app
   test-app-vite/                    Vite test app (web-only, uses @oxyhq/core + @oxyhq/auth)
@@ -140,6 +141,7 @@ packages/
 @oxyhq/services       dep: @oxyhq/core + @oxyhq/contracts
 @oxyhq/api            dep: @oxyhq/contracts + @oxyhq/core/server for auth middleware
 accounts              dep: @oxyhq/core + @oxyhq/services
+commons               dep: @oxyhq/core + @oxyhq/services  (NATIVE-ONLY — no web build/CF Pages)
 test-app              dep: @oxyhq/services
 test-app-vite         dep: @oxyhq/core + @oxyhq/auth
 ```
@@ -221,12 +223,13 @@ Backend APIs use `@oxyhq/core/server` for request identity and security:
 
 ## @oxyhq/contracts — Contract-First API Schemas
 
-Package: `packages/contracts` → `@oxyhq/contracts` **v0.2.1**. SINGLE SOURCE OF TRUTH for API request/response contracts.
+Package: `packages/contracts` → `@oxyhq/contracts` **v0.3.0** (built; **NOT yet published — publish held pending A0 prereqs for Commons, see "Pending (post-merge)" below**). SINGLE SOURCE OF TRUTH for API request/response contracts.
 
 **What it contains:**
-- Zod schemas: `userNameSchema`, `userResponseSchema`, `userProfileUpdateSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
+- Zod schemas: `userNameSchema`, `userResponseSchema` (now includes `did?` + `verifiedDomains?`), `userProfileUpdateSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
+- **New in 0.3.0 (`identity.ts`):** `didDocumentSchema` (+ `verificationMethodSchema`, `didServiceSchema`), `signedRecordEnvelopeSchema`, `verifiedDomainSchema` + domain-request/instructions schemas, `authMethodsResponseSchema` (extended with `did` + per-method `verificationMethodId`), `exportBundleSchema`
 - Helpers: `resolveUserId`, `safeParseContract`
-- Inferred types: `UserNameResponse` (explicit `interface` with required `displayName: string` — fixed in 0.2.1; was a `z.infer` passthrough that degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`
+- Inferred types: `UserNameResponse` (explicit `interface` with required `displayName: string` — fixed in 0.2.1; was a `z.infer` passthrough that degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`; **new 0.3.0**: `DidDocument`, `VerificationMethod`, `DidService`, `SignedRecordEnvelope`, `VerifiedDomain`, `AuthMethodsResponse`, `ExportBundle`
 
 **Build:** dual CJS+ESM+types via tsc (same pattern as core: `tsconfig.{cjs,esm,types}.json` + `scripts/fix-esm-imports.mjs`). Zero runtime deps except `zod ^3.25.64`.
 
@@ -261,6 +264,8 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/server/cors.ts` — `createOxyCors({ appOrigins, allowCredentials })` (deny-by-default allowlist, auto-allows `*.oxy.so`, NEVER wildcard+credentials)
 - `packages/core/src/server/verifySecret.ts` — `verifySecret(provided, expected)` (constant-time `crypto.timingSafeEqual` + length guard)
 - `packages/core/src/mixins/OxyServices.reputation.ts` — `reputation` mixin (14 methods, fully typed); 20 exported types (see "Oxy Trust" section)
+- `packages/core/src/crypto/canonicalJson.ts` — `canonicalize(value)` (recursive key-sort/JCS-style canonical JSON) + `signedRecordSigningInput`; used by both client signing and server verify
+- `packages/core/src/mixins/OxyServices.identity.ts` — `identity` mixin: `resolveDid`, `getMyDid`, `listAuthMethods`, `linkIdentityKey`, `unlinkAuthMethod`, `linkPassword`, `signRecord`, `publishRecord`, `getRecord`, `verifyRecord`, `exportMyData`, `requestDomainVerification`, `verifyDomain`, `listDomains`, `removeDomain`
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
 - `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
@@ -445,6 +450,8 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 - `rl:email:inbound:`, `rl:email:proxy:`
 - `rl:userdata:write:`
 - `rl:reputation:read:`, `rl:reputation:award:`, `rl:reputation:admin:`, `rl:reputation:dispute:`
+- `rl:auth:session-approve-info:`, `rl:auth:session-authorize-signed:` — Commons QR handoff endpoints
+- `rl:identity:export:` (5/hr — signed data export), `rl:identity:domainreq:`, `rl:identity:domainverify:` — domain verification
 
 **General limiter threshold** (commit `641cea67`): raised 150 → **1000 / 15min**. The 150 ceiling was below a single authenticated user's normal traffic (feed scroll + socket fallback polling + profile loads + FedCM exchanges). Per-endpoint limiters (`authRateLimiter` 300, `userRateLimiter` 200, `checkLimiter` 10/min, etc.) remain the relevant defense-in-depth. **Do NOT lower the general limiter below 1000 without measuring real production traffic.**
 
@@ -487,28 +494,129 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 - Core mixin: `oxy.contacts.discoverContacts(hashedEmails, hashedPhones)`
 - `User` model has `hashedEmail`, `hashedPhone`, `phone` fields; `hashedEmail` / `hashedPhone` auto-computed via pre-validate hook
 
-## Accounts App Patterns (packages/accounts)
+## Accounts App Patterns (packages/accounts — "Accounts by Oxy")
+
+**Post-PR #415: Accounts is KEYLESS and management-only.** All identity creation, key management, recovery phrase, backup, and key-based flows moved to `packages/commons`. Accounts signs in via password (`oxyServices.signIn(emailOrUsername, password)`), FedCM web, or "Sign in with Oxy" (Commons QR / shared-keychain). Account deletion deep-links to `commons://delete-account` — Accounts no longer owns the key-signed deletion flow.
 
 - **i18n**: `LocaleProvider` + `useTranslation` hook in `packages/accounts/lib/i18n/`; 11 locales (EN + ES fully populated); device locale via `Intl.DateTimeFormat().resolvedOptions().locale` (no `expo-localization` native module needed)
 - **Typed routes**: `typedRoutes: true` in `app.json` — all `router.push()` calls must use typed path strings, no `as any` casts
 - **Error boundaries**: at root, `(tabs)`, and `(auth)` layout levels using an `ErrorFallback` component
 - **Activity History**: `/(tabs)/activity.tsx` using `GET /security/activity` with infinite scroll
-- **Recovery phrase**: mandatory acknowledgement screen at `/(auth)/create-identity/recovery-phrase` before identity creation completes; persistent reminder in Security screen until acknowledged
-- **Delete account flow** (`packages/accounts/lib/account/delete-account-flow.ts`): after a SUCCESSFUL `oxyServices.deleteAccount(...)`, purge local identity (primary AND backup) via `KeyManager.deleteIdentity(skipBackup=true, force=true, userConfirmed=true)` BEFORE sign-out — prevents zombie identity auto-restore. Strict order: `deleteAccount` → `purgeIdentity` (success-only, never on failure) → `signOutAll`; local-purge failure is non-fatal.
 - **Font**: do NOT set `fontFamily: 'Inter-*'` — `BloomThemeProvider` sets Inter as `Text.defaultProps` globally
 - **expo-router v56**: no `@react-navigation/*` direct imports; synthesize `{ type: 'OPEN_DRAWER' }` payloads inline
-- **Test coverage**: 216 jest tests in accounts; 117 in core; 125 in services; 100 in api; 54 in auth-sdk; 9 in auth IdP. `bun run build:all` 8/8.
+- **`(auth)` routing** (session-only gate): `(auth)`↔`(tabs)` now keys **purely on session** — `needsAuth = isAuthResolved ? !isAuthenticated : true`. No `hasIdentity`/`KeyManager` in routing. `(auth)/index.tsx`: session resolved + authenticated → `/(tabs)`; not authenticated → sign-in. Always clean up timers from entrance animations.
 - **Username step**: use `useUpdateProfile().mutateAsync()`, NOT `oxyServices.updateProfile()` directly — gets optimistic update + cache invalidation. Stable initial value via lazy `useState` initializer (no `useEffect` reset on remount).
 - **`useUpdatePrivacySettings`**: do NOT call `invalidateAccountQueries(queryClient)` in `onSuccess` (defeats optimistic merge). Use `{ ...previous, ...requested, ...incoming }` merge in `onMutate`. `onError` does targeted `invalidateQueries({ queryKey: queryKeys.privacy.settings(...) })` for reconciliation.
-- **`(auth)/index.tsx` routing**: `status === 'complete'` → `/(tabs)`; `hasIdentity && status === 'in_progress'` → `/(auth)/create-identity`; blank backdrop during `status === 'checking'`. Always clean up timers from entrance animations.
-- **`useOnboardingStatus` invariant**: when `isAuthenticated && user`, status is `'complete'` or `'in_progress'` regardless of storage lookup result. Re-runs `KeyManager.hasIdentity()` on `isAuthenticated` transitions to reflect a fresh sign-in's new identity.
-- **Web vs native split (CRITICAL)**: Identity CREATION is NATIVE-ONLY; web is for managing an existing account (sign-in only). Web sign-in screen: `app/(auth)/sign-in.tsx` (uses `signInWithFedCM()` + the redirect web-session handler). Web blocks identity creation via `.web.tsx` layout redirects: `app/(auth)/create-identity/_layout.web.tsx`, `import-identity/_layout.web.tsx`, `welcome.web.tsx`, `index.web.tsx` — all redirect to `/(auth)/sign-in`.
-- **`useOnboardingStatus.needsAuth` is PLATFORM-AGNOSTIC** — do NOT reinstate a `Platform.OS === 'web'` clamp (caused a `(tabs)`↔`(auth)` redirect deadlock). The platform split lives in the `(auth)` entry/guards, not in `needsAuth`.
+- **Web sign-in**: `app/(auth)/sign-in.tsx` uses `signInWithFedCM()` + redirect web-session handler + password fallback. No web identity creation (Commons is native-only; Accounts web is management after sign-in only).
+- **Shared modules** (use these, don't re-duplicate): `utils/relative-time.ts` + `hooks/useRelativeTime.ts` (i18n-aware relative time); `utils/device-utils.ts` (getDeviceIcon, getDeviceDisplayName, DeviceRecord, groupDevicesByType); `hooks/useAvatarUrl.ts`; `hooks/useDebounce.ts`; `constants/payments.ts` (FAIRCOIN_WALLET_URL); `constants/drawer-screens.ts` (typed DrawerScreenConfig[] — lives in `constants/` NOT `app/` so expo-router doesn't register it as a route); `constants/styles.ts` (`floatingPosition`: `Platform.select({ web: 'fixed', default: 'absolute' })` for floating action bar / FAB — used by `(tabs)/_layout.tsx` + `components/ui/bottom-action-bar.tsx`).
+- **Shared UI components** (use these, don't re-duplicate): `components/ui/empty-state-card.tsx` — `EmptyStateCard` (icon + title + subtitle, optional `subtitleColor?`) — single shared empty-state used by security + payments sections; `components/ui/circle-icon-badge.tsx` — `CircleIconBadge` (36dp circular icon wrapper); `components/ui/quick-action-button.tsx` — accepts `size?` prop (default 48).
+- **God-screen decomposition**: section components under `components/sections/` (+ shared `GroupedItem`/`PrioritizedGroupedItem` types in `components/sections/types.ts`), `components/security/`, `components/home/`, `components/payments/`; hooks under `hooks/home/*`; pure helpers `utils/security-recommendations.ts`, `utils/payment-utils.ts`.
+- **`payments.tsx`**: reads `timestamp` field (NOT `createdAt`) for payment/transaction dates.
+- **Removed unused deps**: `@radix-ui/react-tabs`, `react-responsive`, `@lottiefiles/dotlottie-react-native`, `expo-symbols`. KEEP `expo-document-picker` + `expo-image-manipulator` (lazy-loaded optional peers of `@oxyhq/services`) and `@lottiefiles/dotlottie-react` (hard-required by web lottie export).
 - **Shared modules** (use these, don't re-duplicate): `utils/relative-time.ts` + `hooks/useRelativeTime.ts` (i18n-aware relative time); `utils/device-utils.ts` (getDeviceIcon, getDeviceDisplayName, DeviceRecord, groupDevicesByType); `hooks/useAvatarUrl.ts`; `hooks/useDebounce.ts`; `constants/payments.ts` (FAIRCOIN_WALLET_URL); `constants/drawer-screens.ts` (typed DrawerScreenConfig[] — lives in `constants/` NOT `app/` so expo-router doesn't register it as a route); `constants/styles.ts` (`floatingPosition`: `Platform.select({ web: 'fixed', default: 'absolute' })` for floating action bar / FAB — used by `(tabs)/_layout.tsx` + `components/ui/bottom-action-bar.tsx`).
 - **Shared UI components** (use these, don't re-duplicate): `components/ui/empty-state-card.tsx` — `EmptyStateCard` (icon + title + subtitle, optional `subtitleColor?`) — single shared empty-state used by security + payments sections (replaced 3 duplicated inline empty states); `components/ui/circle-icon-badge.tsx` — `CircleIconBadge` (36dp circular icon wrapper) — shared across identity cards, payments info, home actions; `components/ui/quick-action-button.tsx` — accepts `size?` prop (default 48) — reused by `bottom-action-bar` and `home-bottom-actions` (home footer no longer hand-rolls badge buttons).
 - **God-screen decomposition**: section components under `components/sections/` (+ shared `GroupedItem`/`PrioritizedGroupedItem` types in `components/sections/types.ts`), `components/security/`, `components/home/`, `components/payments/`; hooks under `hooks/home/*`; identity auto-sync in `hooks/identity/useIdentitySync.ts`; pure helpers `utils/security-recommendations.ts`, `utils/payment-utils.ts`.
 - **`payments.tsx`**: reads `timestamp` field (NOT `createdAt`) for payment/transaction dates.
 - **Removed unused deps**: `@radix-ui/react-tabs`, `react-responsive`, `@lottiefiles/dotlottie-react-native`, `expo-symbols`. KEEP `expo-document-picker` + `expo-image-manipulator` (lazy-loaded optional peers of `@oxyhq/services`) and `@lottiefiles/dotlottie-react` (hard-required by web lottie export).
+
+## Commons App (packages/commons — "Commons by Oxy", PR #415)
+
+**NATIVE-ONLY identity vault — no web build, no Cloudflare Pages project.** All key/identity UX from Accounts has been extracted here.
+
+- **Bundle**: `so.oxy.commons`, scheme `commons`/`oxycommons`, package name `commons`
+- **Purpose**: Hello Human onboarding, create/import identity, recovery phrase, encrypted backup, key display, biometric sign-in, QR scanner + approval screens for "Sign in with Oxy"
+- **Metro config** (MANDATORY): mirrors `packages/accounts/metro.config.js` exactly — the Bloom single-instance `resolveRequest` rewrite is required to prevent duplicate React context crashes
+- **Pinned native deps** (match accounts): `react-native-reanimated 4.3.1`, `react-native-worklets 0.8.3`, `@shopify/react-native-skia 2.6.2`, `react 19.2.3`; honor root `overrides`
+- **Routing**: bidirectional Stack guard; `useOnboardingStatus` with `hasIdentity` gate is correct here (Commons legitimately owns the identity gate). Native-only: Hello Human → welcome → create/import → vault group `(vault)`. No web entry variants or web blockers.
+- **For account management**: Commons deep-links to `accounts://` (Accounts). Accounts deep-links to `commons://` for key/backup/recovery/delete.
+- **Delete account flow**: `commons://delete-account` — key-signed deletion via `KeyManager.getPublicKey()` → sign `delete:${publicKey}:${ts}` → `DELETE /users/me`. Strict order: `deleteAccount` → `purgeIdentity` (primary AND backup, success-only) → `signOutAll`; local-purge failure is non-fatal.
+- **Recovery phrase**: mandatory acknowledgement screen at `/(auth)/create-identity/recovery-phrase` before identity creation completes; persistent reminder in Security screen until acknowledged.
+- **CI wiring**: `packages/commons` added to root bun workspaces + `commons:*` scripts. No Cloudflare Pages deploy job. Ships via EAS only.
+- **A0 prereqs (pending)**: New registered `oxy_dk_…` `ApplicationCredential` (clientId) for Commons → `packages/commons/constants/oxy.ts` (overridable via `EXPO_PUBLIC_OXY_CLIENT_ID`); new EAS project ID. See "Pending (post-merge)" below.
+
+## Self-Sovereign Identity Layer (PR #415)
+
+### DID document (`did:web:oxy.so:u:<userId>`)
+
+- DID is **account-anchored** on stable `_id`, not the keypair. Keypair = a verification method under `authMethods[]`.
+- **Custodial** (no local key): `controller: [OXY_DID]`; `verificationMethod[]` from `publicKey` field if present.
+- **Self-sovereign** (has Commons key): `controller: [did, OXY_DID]`; `verificationMethod[]` from `authMethods` (`EcdsaSecp256k1VerificationKey2019`, `publicKeyHex`, `#key-1`); `authentication`/`assertionMethod`.
+- `alsoKnownAs[]` = `acct:<username>@oxy.so` + profile URL + `https://<verifiedDomain>` for each domain.
+- `service[]` = Oxy API + profile endpoints.
+- **Fully reversible**: link identity → DID becomes self-sovereign; unlink → reverts custodial. `userCache.invalidate(userId)` called on every link/unlink (pre-existing gap — now fixed in `authLinking.ts`).
+
+**New API files:**
+- `packages/api/src/services/did.service.ts` — `buildUserDid(userId)`, `buildDidDocument(user)` (derived on-demand, not stored)
+- `packages/api/src/routes/did.ts` — `GET /u/:userId/did.json` (public; `Content-Type: application/json`; `Access-Control-Allow-Origin: *`; `Cache-Control: public, max-age=300`); `GET /.well-known/did.json` (Oxy org DID). Mounted in `server.ts` at root alongside federation handlers, **outside** the `/users` rate-limit group, no auth/CSRF.
+- **Infra requirement** (pending): apex proxy must forward `oxy.so/u/*/did.json` + `oxy.so/.well-known/did.json` to the API. Fallback: anchor `did:web:api.oxy.so:u:<id>` (zero proxy work). See "Pending (post-merge)".
+
+**New `User` model additions** (`packages/api/src/models/User.ts`):
+- `did` virtual (derived from `_id`, surfaced in `toJSON`)
+- `verifiedDomains?: [{domain, verifiedAt, method:'dns-txt'|'well-known'}]` + sparse index
+- No new verification-method state — `authMethods` remains the single source.
+
+### Signed Records
+
+Envelope schema (in `@oxyhq/contracts`): `{version, type:'identity'|'profile', subject, issuer, record, issuedAt, publicKey, alg:'ES256K-DER-SHA256', signature}`. Signing input = `canonicalize` of everything except `publicKey` + `signature`.
+
+- **`packages/core/src/crypto/canonicalJson.ts`**: `canonicalize(value)` (recursive key-sort/JCS-style; safe for nested objects unlike the flat `signRequestData` scheme). Export from `@oxyhq/core`.
+- **`SignatureService.signRecord(type, subject, record)`** — client-side signing. Custodial users: server signs with Oxy's key as provenance attestation.
+- **New API**: `packages/api/src/models/SignedRecord.ts` (append-only collection `signedrecords`); `packages/api/src/services/signedRecord.service.ts` (`verifyEnvelope`: recompute canonical input, verify sig, assert publicKey is a current VM, check freshness); `packages/api/src/routes/identity.ts`: `POST /identity/records` (auth), `GET /identity/records/:userId/:type` (public), `/verify`.
+
+### Data Export
+
+`GET /users/me/export` in `routes/identity.ts` (auth + `rl:identity:export:` 5/hr): signed open-format bundle `{$schema, exportedAt, did, didDocument, profile, verifiedDomains, authMethods (no secrets), signedRecords, appData, social, attestation}`. Oxy attestation = signature over `canonicalize(bundle)` with the Oxy key (`OXY_PRIVATE_KEY` env). No secrets leak — mirrors `formatUserResponse`.
+
+**OXY signing key** (`OXY_PUBLIC_KEY` / `OXY_PRIVATE_KEY` env): required on oxy-api ECS for custodial DID attestation + export attestation. Pending — see "Pending (post-merge)".
+
+### Domain Verification
+
+`routes/identity.ts`:
+- `POST /identity/domains` — issue token; instructions for DNS-TXT `_oxy-identity.<domain>=oxy-domain-verification=<token>` and HTTP `/.well-known/oxy-domain`
+- `POST /identity/domains/:domain/verify` — DNS via `dns.promises.resolveTxt` OR well-known via `safeFetch` (SSRF-safe, never raw fetch), then push to `verifiedDomains`, invalidate userCache
+- `DELETE /identity/domains/:domain`, `GET /identity/domains`
+- Optional `DomainVerification` model (TTL token, mirrors `AuthChallenge`)
+- Rate limits: `rl:identity:domainreq:` + `rl:identity:domainverify:`
+
+Domain verification = a **badge** only (`alsoKnownAs` in DID). NOT domain-as-handle.
+
+### Core Identity Mixin (`OxyServices.identity.ts`)
+
+Registered in `MIXIN_PIPELINE` + `AllMixinInstances`. Methods: `resolveDid`, `getMyDid`, `listAuthMethods`, `linkIdentityKey` (sign + `/auth/link`), `unlinkAuthMethod`, `linkPassword`, `signRecord`, `publishRecord`, `getRecord`, `verifyRecord`, `exportMyData`, `requestDomainVerification`, `verifyDomain`, `listDomains`, `removeDomain`. Cache-sweeps `/users/me` + DID cache after mutations. Exports new types + `canonicalize` + `buildSignedRecord`.
+
+## Sign in with Oxy — QR/Shared-Key Handoff (PR #415)
+
+**User-facing label everywhere: "Sign in with Oxy"** (one entry; presents options: QR scan / Commons handoff, username + password, social/FedCM). Never say "Sign in with Commons" — the mechanism is invisible plumbing.
+
+### Mechanism A — Same-device shared-keychain SSO (native-only)
+
+- Commons writes shared identity at creation (`createSharedIdentity` / `migrateToSharedIdentity`); optionally `storeSharedSession` for warm SSO.
+- `OxyServices.signInWithSharedIdentity()` (native-only): `requestChallenge(sharedPubKey)` → sign with shared key → `verifyChallenge` (plants tokens). Returns null on web.
+- New cold-boot step **`shared-key-signin`** added to `OxyContext` (`packages/services`) immediately after `stored-session`, before web probes, native-only, with per-step timeout. `WebOxyProvider` unchanged.
+- Each native app must declare iOS `keychain-access-groups` including `group.so.oxy.shared` (same Team ID) + Android shared-store config.
+
+### Mechanism B — Cross-device QR handoff
+
+New API endpoints (`packages/api/src/routes/auth.ts` + `authSession.service.ts`):
+
+| Endpoint | Auth | Notes |
+|----------|------|-------|
+| `POST /auth/session/create` (extended) | optional | Adds `authorizeCode` (public QR handle) + `qrPayload` (`oxycommons://approve?v=1&code=<authorizeCode>&...`); `sessionToken` stays secret and is NEVER in the QR |
+| `GET /auth/session/approve-info/:authorizeCode` | none | Returns server-resolved `Application` identity + scopes + `boundOrigin` + status; Commons renders this — never trusts raw QR strings |
+| `POST /auth/session/authorize-signed/:authorizeCode` | none (key-signed) | `{publicKey, challenge, signature, timestamp}` via `verifyChallengeResponse` + atomic burn; resolves `User` by `publicKey`; `sessionService.createSession`; emits socket on `sessionToken` row |
+| `POST /auth/session/deny/:authorizeCode` | none | Cancel + emit socket |
+
+**QR payload**: `oxycommons://approve?v=1&code=<authorizeCode>&app=<appId>&origin=<rp-origin>&nonce=<rand>&exp=<ms>`. `authorizeCode` = 128-bit single-use 5-min origin-bound; `sessionToken` stays secret. Cross-device: Commons in-app camera scanner. Same-device: `oxycommons://` custom-scheme deep link.
+
+**New rate-limit prefixes**: `rl:auth:session-approve-info:`, `rl:auth:session-authorize-signed:`
+
+**Flow**: RP `startCommonsSignIn` → `POST /auth/session/create` (gets `sessionToken` + public `authorizeCode`) → render QR (web) / deep-link (same-device) → Commons scans → `GET /auth/session/approve-info/:code` → biometric → `POST /auth/session/authorize-signed/:code` (key-signed, no bearer) → RP socket/poll → existing `claimSessionByToken` → tokens planted.
+
+### SDK methods (core + services)
+
+- `@oxyhq/core` `OxyServices.auth.ts`: `startCommonsSignIn`, poll (reuse `pollSessionStatus`), `signInWithSharedIdentity`; Commons-side `getCommonsApprovalInfo` / `approveCommonsSignIn` / `denyCommonsSignIn`.
+- `@oxyhq/services` `useOxyAuthSession.ts`: surfaces `authorizeCode` + structured `qrPayload`; Sign-in-with-Oxy added to `SignInModal.tsx` / `OxyAuthScreen.tsx`.
+- `@oxyhq/auth` `WebOxyProvider`: exposes Sign-in-with-Oxy (QR only, no shared-key).
 
 ## HttpService (services)
 
@@ -600,7 +708,7 @@ All 8 external apps + OxyHQServices internal apps bumped this session (2026-06-2
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/contracts` | **0.2.1** | `UserNameResponse` is now an explicit `interface` with required `displayName: string` (0.2.1 — was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: added recommendation*/appEndorsement*/appInterest*/appUserSignal*/fedcmTokenPayload runtime exports. |
+| `@oxyhq/contracts` | **0.3.0 (built, NOT yet published)** | **0.3.0 (unpublished — held):** new `identity.ts` (didDocumentSchema, signedRecordEnvelopeSchema, verifiedDomainSchema, authMethodsResponseSchema, exportBundleSchema — attestation nullable; `did?`+`verifiedDomains?` on userResponseSchema). Publish after A0 prereqs (Commons clientId + EAS). **0.2.1 is the last published version:** `UserNameResponse` is now an explicit `interface` with required `displayName: string` (was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: added recommendation*/appEndorsement*/appInterest*/appUserSignal*/fedcmTokenPayload runtime exports. |
 | `@oxyhq/core` | **3.10.1** | **3.10.1:** `assetUpload` materializes web `{uri}` descriptors to a Blob before upload (fixes empty web uploads). **3.10.0:** Consumes contracts 0.2.1. New `@oxyhq/core/server` exports: `safeFetch` + `assertSafePublicUrl` (SSRF-safe fetch), `createOxyCors` (deny-by-default CORS allowlist), `verifySecret` (constant-time equality). **3.9.0:** All mixin writes sweep cache. `createLinkedClient` defaults to `enableCache:false`. `express-rate-limit` is a required peer for `@oxyhq/core/server` consumers. 3.8.0: `getUsersByIds(ids)`; `User._count?:{followers?,following?}`. 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs. 3.6.0: `unfollowUsers`; 3.5.0: `followUsers`; 3.4.7: `createLinkedClient`. **GOTCHA: 3.3.0 and 3.4.0 BROKEN** (unpublished contracts dep). Pin to **^3.10.1**. |
 | `@oxyhq/auth` | **5.0.1** | **5.0.0 (BREAKING):** `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister`, `zustand` moved to `peerDependencies`; `sonner` optional peer. Consumers must declare all four. 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback`. 4.1.0: `clientId` prop. |
 | `@oxyhq/services` | **11.0.0** | **11.0.0 (BREAKING — packaging only, zero source/API changes):** `zustand`, `@react-native-async-storage/async-storage`, `socket.io-client`, `expo-font`, `expo-image`, `react-native-qrcode-svg` moved to `peerDependencies`; `react-native-keyboard-controller` optional peer; build tools to devDeps. All consumers must declare the moved peers. 10.3.3: UNFOLLOW-ALL multi-user `FollowButton` toggle. 10.0.0: `appName` removed; use `clientId`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
@@ -703,3 +811,22 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 - IdP worker MUST deploy as `_worker.js` (full `bun run build`). Static-only deploy returns 405 on all dynamic routes.
 - NEVER set `FEDCM_ISSUER` env var on the `oxy-auth` CF Pages project — pins all hosts to the same issuer, silently breaks multi-domain FAPI.
 - Changes require a redeploy of auth.oxy.so to take effect in production
+
+## Pending (post-merge, PR #415)
+
+These items are **production blockers** that require Nate's action — code is merged but these gating steps have not been completed:
+
+1. **NPM publish held** — `@oxyhq/contracts 0.3.0` built but not published. Publish order is a hard gate: `@oxyhq/contracts` → `@oxyhq/core` (identity mixin) → `@oxyhq/auth` → `@oxyhq/services`. Run `bun run publish` skill per-package after A0 completes.
+
+2. **A0 prereqs — Commons clientId + EAS** (blocks first Commons build and FedCM approval):
+   - Register a new `Application` + `ApplicationCredential` (type `public`) in the Oxy workspace in Console → put the resulting `oxy_dk_…` publicKey in `packages/commons/constants/oxy.ts` (or `EXPO_PUBLIC_OXY_CLIENT_ID` env).
+   - Create a new EAS project for Commons (`so.oxy.commons`) and add its project ID to `packages/commons/app.json`.
+   - Create a Cloudflare Pages project `oxy-commons` — **no, wait**: Commons is NATIVE-ONLY. No CF Pages needed. EAS only.
+
+3. **OXY signing keys** (`OXY_PUBLIC_KEY` / `OXY_PRIVATE_KEY`): add to oxy-api ECS via GitHub Actions secret → SSM `/oxy/oxy-api/OXY_PUBLIC_KEY` and `/oxy/oxy-api/OXY_PRIVATE_KEY`. Required for custodial DID attestation and the signed `GET /users/me/export` bundle. Without these the export endpoint returns a bundle with `attestation: null` and custodial DID documents lack the Oxy controller signature.
+
+4. **Infra — did:web apex proxy forwarding**: confirm (or add) that the Cloudflare/ALB routing for `oxy.so` forwards `/u/*/did.json` and `/.well-known/did.json` to the API (`api.oxy.so`). The webfinger/ActivityPub handlers already prove the apex forwards `/.well-known/` prefixes; confirm `/u/` is also forwarded. If not, update the CF routing rules in `oxy-infra`. Fallback if proxy cannot be confirmed quickly: anchor the DID as `did:web:api.oxy.so:u:<id>` (zero proxy work — change one constant in `did.service.ts`).
+
+5. **Oxy Trust migration** (`scripts/migrate-karma-to-reputation.ts`): MUST be run as a one-shot ECS task — all users read 0 reputation balance until it runs. (Carried forward from pre-PR #415 pending items.)
+
+6. **`REC_SCORING_V2=true`** not yet set in `oxy-api` ECS task in `app-services.tf` (recommendations scoring v2 pending). (Carried forward.)
