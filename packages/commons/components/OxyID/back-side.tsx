@@ -4,6 +4,7 @@
  */
 
 import { StyleSheet, Text, View } from 'react-native';
+import { Fonts } from '@/constants/theme';
 
 interface BackSideProps {
     publicKey?: string;
@@ -79,7 +80,8 @@ const styles = StyleSheet.create({
     },
     keyValue: {
         color: '#1C1C1E',
-        fontFamily: 'Geist Mono',
+        // Platform monospace stack (`Geist Mono` was never bundled).
+        fontFamily: Fonts?.mono,
         fontSize: 10,
         fontWeight: '400',
         letterSpacing: 0.3,

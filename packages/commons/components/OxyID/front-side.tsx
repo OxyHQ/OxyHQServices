@@ -5,6 +5,7 @@
 
 import { StyleSheet, Text, View, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Fonts } from '@/constants/theme';
 
 interface FrontSideProps {
     displayName?: string;
@@ -291,7 +292,8 @@ const styles = StyleSheet.create({
     },
     idNumber: {
         color: '#1C1C1E',
-        fontFamily: 'Geist Mono',
+        // Platform monospace stack (`Geist Mono` was never bundled).
+        fontFamily: Fonts?.mono,
         fontSize: 12,
         fontWeight: '600',
         letterSpacing: 0.8,

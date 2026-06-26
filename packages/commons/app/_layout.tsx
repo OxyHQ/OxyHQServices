@@ -79,7 +79,7 @@ function RootLayoutInner() {
   }, []);
 
   const initializeApp = useCallback(async () => {
-    const result = await AppInitializer.initializeApp(true);
+    const result = await AppInitializer.initializeApp();
     // Always mark complete (even on error) to unblock the app
     setSplashState((prev) => ({ ...prev, initializationComplete: true }));
     return result;

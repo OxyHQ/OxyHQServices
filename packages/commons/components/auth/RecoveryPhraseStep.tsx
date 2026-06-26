@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Button, ImportantBanner } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
+import { Fonts } from '@/constants/theme';
 
 interface RecoveryPhraseStepProps {
   /**
@@ -300,7 +301,9 @@ const styles = StyleSheet.create({
   word: {
     fontSize: 14,
     fontWeight: '500',
-    fontFamily: 'Geist Mono',
+    // Monospace keeps recovery words evenly aligned; `Fonts.mono` resolves to
+    // the platform monospace stack (`Geist Mono` was never bundled).
+    fontFamily: Fonts?.mono,
   },
   hideLink: {
     flexDirection: 'row',
