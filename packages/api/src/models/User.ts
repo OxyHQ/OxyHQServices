@@ -108,9 +108,11 @@ export interface IUser extends Document {
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
   /**
-   * Self-sovereign DID — `did:web:<FEDERATION_DOMAIN>:u:<_id>`. VIRTUAL, derived
-   * from `_id` (the stable account anchor), surfaced in toJSON/toObject. Never
-   * stored; see `services/did.service.ts` for the single source of the format.
+   * Self-sovereign DID — `did:web:<DID_WEB_DOMAIN || FEDERATION_DOMAIN>:u:<_id>`.
+   * VIRTUAL, derived from `_id` (the stable account anchor) via the SAME
+   * `buildUserDid` helper used by the API, so the virtual and the served DID
+   * document can never disagree. Surfaced in toJSON/toObject; never stored. See
+   * `services/did.service.ts` for the single source of the format + domain.
    */
   did?: string;
   /**

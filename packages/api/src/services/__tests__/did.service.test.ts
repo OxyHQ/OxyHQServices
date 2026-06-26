@@ -133,3 +133,86 @@ describe('buildOxyDidDocument', () => {
     expect(doc.verificationMethod[0]?.publicKeyHex).toBe(process.env.OXY_PUBLIC_KEY);
   });
 });
+
+describe('DID_WEB_DOMAIN override', () => {
+  // The DID-web domain is read at module-load time, so a fresh module registry
+  // is required to exercise a different `DID_WEB_DOMAIN`.
+  const ORIGINAL_DID_WEB_DOMAIN = process.env.DID_WEB_DOMAIN;
+
+  afterEach(() => {
+    if (ORIGINAL_DID_WEB_DOMAIN === undefined) {
+      delete process.env.DID_WEB_DOMAIN;
+    } else {
+      process.env.DID_WEB_DOMAIN = ORIGINAL_DID_WEB_DOMAIN;
+    }
+    jest.resetModules();
+  });
+
+  function loadDidServiceFresh(): typeof import('../did.service') {
+    let mod: typeof import('../did.service') | undefined;
+    jest.isolateModules(() => {
+      mod = require('../did.service') as typeof import('../did.service');
+    });
+    if (!mod) {
+      throw new Error('did.service failed to load under isolateModules');
+    }
+    return mod;
+  }
+
+  it('anchors every did:web id at DID_WEB_DOMAIN while keeping federation URLs on oxy.so', () => {
+    process.env.DID_WEB_DOMAIN = 'api.oxy.so';
+    const fresh = loadDidServiceFresh();
+
+    expect(fresh.OXY_DID).toBe('did:web:api.oxy.so');
+    expect(fresh.buildUserDid('507f1f77bcf86cd799439011')).toBe(
+      'did:web:api.oxy.so:u:507f1f77bcf86cd799439011',
+    );
+
+    const publicKey = newPublicKey();
+    const did = 'did:web:api.oxy.so:u:507f1f77bcf86cd799439011';
+    const doc = fresh.buildDidDocument({
+      _id: '507f1f77bcf86cd799439011',
+      publicKey,
+      username: 'nate',
+      authMethods: [{ type: 'identity', metadata: { publicKey } }],
+      verifiedDomains: [{ domain: 'nate.com' }],
+      type: 'local',
+    });
+
+    // DID id, controllers, verification-method ids, and service ids all follow
+    // the DID-web domain.
+    expect(doc.id).toBe(did);
+    expect(doc.controller).toEqual([did, 'did:web:api.oxy.so']);
+    expect(doc.verificationMethod[0]?.id).toBe(`${did}#key-1`);
+    expect(doc.service.map((s) => s.id)).toEqual([`${did}#oxy-api`, `${did}#profile`]);
+
+    // Federation-anchored handles/URLs/endpoints STAY on the federation apex.
+    expect(doc.alsoKnownAs).toContain('acct:nate@oxy.so');
+    expect(doc.alsoKnownAs).toContain('https://oxy.so/@nate');
+    expect(doc.service).toContainEqual({
+      id: `${did}#oxy-api`,
+      type: 'OxyApiService',
+      serviceEndpoint: 'https://api.oxy.so',
+    });
+    expect(doc.service).toContainEqual({
+      id: `${did}#profile`,
+      type: 'OxyProfileService',
+      serviceEndpoint: 'https://oxy.so/@nate',
+    });
+
+    const orgDoc = fresh.buildOxyDidDocument();
+    expect(orgDoc.id).toBe('did:web:api.oxy.so');
+    expect(orgDoc.controller).toEqual(['did:web:api.oxy.so']);
+    expect(orgDoc.service[0]?.serviceEndpoint).toBe('https://api.oxy.so');
+  });
+
+  it('defaults to did:web:oxy.so when DID_WEB_DOMAIN is unset', () => {
+    delete process.env.DID_WEB_DOMAIN;
+    const fresh = loadDidServiceFresh();
+
+    expect(fresh.OXY_DID).toBe('did:web:oxy.so');
+    expect(fresh.buildUserDid('507f1f77bcf86cd799439011')).toBe(
+      'did:web:oxy.so:u:507f1f77bcf86cd799439011',
+    );
+  });
+});

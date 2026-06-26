@@ -147,3 +147,68 @@ describe('GET /.well-known/did.json', () => {
     expect(res.body.controller).toEqual(['did:web:oxy.so']);
   });
 });
+
+describe('DID_WEB_DOMAIN override — anchored at api.oxy.so', () => {
+  // The DID-web domain is captured at module-load time, so the routes (and the
+  // did.service they depend on) must be re-required under a fresh registry with
+  // the override env set, then mounted on their own server.
+  const ORIGINAL_DID_WEB_DOMAIN = process.env.DID_WEB_DOMAIN;
+  let overrideServer: http.Server;
+
+  beforeAll((done) => {
+    process.env.DID_WEB_DOMAIN = 'api.oxy.so';
+    let freshRoutes: typeof import('../did').default | undefined;
+    jest.isolateModules(() => {
+      freshRoutes = (require('../did') as typeof import('../did')).default;
+    });
+    if (!freshRoutes) {
+      throw new Error('did routes failed to load under isolateModules');
+    }
+    const app = express();
+    app.use('/', freshRoutes);
+    overrideServer = app.listen(0, '127.0.0.1', done);
+  });
+
+  afterAll((done) => {
+    if (ORIGINAL_DID_WEB_DOMAIN === undefined) {
+      delete process.env.DID_WEB_DOMAIN;
+    } else {
+      process.env.DID_WEB_DOMAIN = ORIGINAL_DID_WEB_DOMAIN;
+    }
+    overrideServer.close(done);
+  });
+
+  it('serves a user DID document anchored at did:web:api.oxy.so with federation URLs on oxy.so', async () => {
+    mockFindById.mockReturnValueOnce(selectLean({
+      _id: USER_ID,
+      publicKey: PUBLIC_KEY,
+      username: 'nate',
+      authMethods: [{ type: 'identity', metadata: { publicKey: PUBLIC_KEY } }],
+      verifiedDomains: [],
+      type: 'local',
+    }));
+
+    const res = await get(overrideServer, `/u/${USER_ID}/did.json`);
+    const did = `did:web:api.oxy.so:u:${USER_ID}`;
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(did);
+    expect(res.body.controller).toEqual([did, 'did:web:api.oxy.so']);
+    const vms = res.body.verificationMethod as Array<{ id: string }>;
+    expect(vms[0]?.id).toBe(`${did}#key-1`);
+    const services = res.body.service as Array<{ id: string; type: string; serviceEndpoint: string }>;
+    expect(services.map((s) => s.id)).toEqual([`${did}#oxy-api`, `${did}#profile`]);
+    // Federation-anchored endpoint + handles stay on the federation apex.
+    expect(services).toContainEqual({ id: `${did}#oxy-api`, type: 'OxyApiService', serviceEndpoint: 'https://api.oxy.so' });
+    const alsoKnownAs = res.body.alsoKnownAs as string[];
+    expect(alsoKnownAs).toContain('acct:nate@oxy.so');
+    expect(alsoKnownAs).toContain('https://oxy.so/@nate');
+  });
+
+  it('serves the Oxy organisation DID document anchored at did:web:api.oxy.so', async () => {
+    const res = await get(overrideServer, '/.well-known/did.json');
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe('did:web:api.oxy.so');
+    expect(res.body.controller).toEqual(['did:web:api.oxy.so']);
+  });
+});

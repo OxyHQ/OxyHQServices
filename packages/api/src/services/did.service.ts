@@ -27,11 +27,23 @@ import {
 } from '@oxyhq/contracts';
 
 /**
- * The federation/identity domain. `did:web` method-specific ids encode any `:`
- * as `%3A` (e.g. a `host:port` dev domain); the apex `oxy.so` has none.
+ * The federation/identity domain — drives webfinger handles, profile URLs, and
+ * the published service endpoints. MUST remain the federation apex (`oxy.so`):
+ * webfinger, nodeinfo, and ActivityPub all depend on it. Kept deliberately
+ * separate from where the DID document is anchored (see `DID_DOMAIN`).
  */
-const RAW_DID_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
-const DID_DOMAIN = RAW_DID_DOMAIN.replace(/:/g, '%3A');
+const FEDERATION_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
+
+/**
+ * The domain that anchors the `did:web:` identifier strings (the DID `id`,
+ * controllers, verification-method ids, and service ids). Defaults to the
+ * federation domain, but can be pointed independently at `api.oxy.so` via
+ * `DID_WEB_DOMAIN` so the DID document is served directly by the API that owns
+ * it — zero apex / CF-proxy indirection — WITHOUT moving webfinger/AP off the
+ * federation apex. `did:web` method-specific ids encode any `:` as `%3A`
+ * (e.g. a `host:port` dev domain); a bare apex has none.
+ */
+const DID_DOMAIN = (process.env.DID_WEB_DOMAIN || FEDERATION_DOMAIN).replace(/:/g, '%3A');
 
 /** The Oxy organisation DID (controller of custodial accounts). */
 export const OXY_DID = `did:web:${DID_DOMAIN}`;
@@ -138,8 +150,8 @@ export function buildDidDocument(user: DidUserInput): DidDocument {
     federation: user.federation ?? undefined,
   });
   if (handle) {
-    alsoKnownAs.push(`acct:${handle}@${RAW_DID_DOMAIN}`);
-    alsoKnownAs.push(`https://${RAW_DID_DOMAIN}/@${handle}`);
+    alsoKnownAs.push(`acct:${handle}@${FEDERATION_DOMAIN}`);
+    alsoKnownAs.push(`https://${FEDERATION_DOMAIN}/@${handle}`);
   }
   for (const verified of user.verifiedDomains ?? []) {
     if (verified?.domain) {
@@ -148,13 +160,13 @@ export function buildDidDocument(user: DidUserInput): DidDocument {
   }
 
   const service: DidService[] = [
-    { id: `${did}#oxy-api`, type: 'OxyApiService', serviceEndpoint: `https://api.${RAW_DID_DOMAIN}` },
+    { id: `${did}#oxy-api`, type: 'OxyApiService', serviceEndpoint: `https://api.${FEDERATION_DOMAIN}` },
   ];
   if (handle) {
     service.push({
       id: `${did}#profile`,
       type: 'OxyProfileService',
-      serviceEndpoint: `https://${RAW_DID_DOMAIN}/@${handle}`,
+      serviceEndpoint: `https://${FEDERATION_DOMAIN}/@${handle}`,
     });
   }
 
@@ -188,9 +200,9 @@ export function buildOxyDidDocument(): DidDocument {
     verificationMethod,
     authentication: activeVerificationMethodIds,
     assertionMethod: activeVerificationMethodIds,
-    alsoKnownAs: [`https://${RAW_DID_DOMAIN}`],
+    alsoKnownAs: [`https://${FEDERATION_DOMAIN}`],
     service: [
-      { id: `${OXY_DID}#oxy-api`, type: 'OxyApiService', serviceEndpoint: `https://api.${RAW_DID_DOMAIN}` },
+      { id: `${OXY_DID}#oxy-api`, type: 'OxyApiService', serviceEndpoint: `https://api.${FEDERATION_DOMAIN}` },
     ],
   };
 
