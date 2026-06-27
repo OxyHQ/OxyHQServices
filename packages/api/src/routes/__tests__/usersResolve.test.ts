@@ -39,6 +39,9 @@ jest.mock('../../services/email.service', () => ({
 }));
 jest.mock('../../services/federation.service', () => ({
   federationService: { scheduleAvatarRefresh: mockScheduleAvatarRefresh },
+  // Mirror the real predicate: own apex defaults to `oxy.so`. Used by the
+  // own-domain guard in PUT /users/resolve.
+  isOwnFederationDomain: (domain: string) => domain.trim().toLowerCase() === 'oxy.so',
 }));
 jest.mock('../../services/assetServiceSingleton', () => ({
   assetService: { ensureOwnedAssetPublic: jest.fn().mockResolvedValue(undefined) },
@@ -514,5 +517,50 @@ describe('PUT /users/resolve (C4)', () => {
     expect(setFields.bio).toBe('hi &lt;script&gt;steal()&lt;/script&gt; &amp; &quot;friends&quot;');
     expect(String(setFields['name.first'])).not.toContain('<');
     expect(String(setFields.bio)).not.toContain('<script>');
+  });
+
+  // ----------------------------------------------------------------------
+  // Own-domain guard: `<localpart>@oxy.so` denotes the LOCAL user, never a
+  // remote actor. The route must resolve to the existing local user and NEVER
+  // mint a `type:'federated'` shadow row.
+  // ----------------------------------------------------------------------
+
+  it('resolves an own-domain handle to the existing local user instead of minting a federated dup', async () => {
+    const localUserDoc = { _id: 'local-nate', username: 'nate', type: 'local' };
+    const leanResult = jest.fn().mockResolvedValue(localUserDoc);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'nate@oxy.so',
+      actorUri: 'https://oxy.so/ap/users/nate',
+      domain: 'oxy.so',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual(localUserDoc);
+    // The local lookup excludes federated shadow rows...
+    expect(mockUserFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({ type: { $ne: 'federated' } }),
+    );
+    // ...and ZERO federated rows are minted.
+    expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an own-domain handle with no matching local user (no federated dup minted)', async () => {
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'ghost@oxy.so',
+      actorUri: 'https://oxy.so/ap/users/ghost',
+      domain: 'oxy.so',
+    });
+
+    expect(res.status).toBe(404);
+    expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
   });
 });

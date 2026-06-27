@@ -16,6 +16,7 @@ import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
+import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -37,6 +38,36 @@ const AP_ACCEPT_TYPES = [
 
 const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
 const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
+
+/**
+ * Oxy's OWN federation apex domain(s). The fediverse treats `oxy.so` as a
+ * remote ActivityPub origin, but it is in fact our own apex: a handle like
+ * `nate@oxy.so` denotes the LOCAL user `nate`, NOT a remote actor. Resolving
+ * such a handle must never WebFinger our own apex nor mint a `type:'federated'`
+ * shadow row — that duplicates the real local user and shadows it in search.
+ *
+ * The set is the configured {@link AP_DOMAIN} plus any extra aliases supplied
+ * via the optional comma-separated `FEDERATION_OWN_DOMAINS` env (e.g. a legacy
+ * apex). Entries are trimmed, lowercased, and de-duplicated.
+ *
+ * This is the SINGLE source of truth for the own-domain set; consumers
+ * (`routes/users.ts`, the dedupe script) import {@link isOwnFederationDomain}
+ * or {@link OWN_FEDERATION_DOMAINS} from here rather than copying the constant.
+ */
+export const OWN_FEDERATION_DOMAINS: ReadonlySet<string> = new Set(
+  [AP_DOMAIN, ...(process.env.FEDERATION_OWN_DOMAINS ?? '').split(',')]
+    .map((domain) => domain.trim().toLowerCase())
+    .filter((domain) => domain.length > 0),
+);
+
+/**
+ * True when `domain` is one of Oxy's OWN federation domains (case-insensitive).
+ * Used to short-circuit federation resolution so an own-domain handle resolves
+ * to the existing LOCAL user instead of minting a federated duplicate.
+ */
+export function isOwnFederationDomain(domain: string): boolean {
+  return OWN_FEDERATION_DOMAINS.has(domain.trim().toLowerCase());
+}
 
 /**
  * A cached federated record older than this is considered stale and triggers a
@@ -993,6 +1024,28 @@ class FederationService {
   }
 
   /**
+   * Resolve a same-apex handle (`<localpart>@<ownDomain>`) to the existing
+   * LOCAL user identified by `<localpart>`, matched case-insensitively and
+   * excluding `type:'federated'` shadow rows. Returns the local {@link IUser},
+   * or `null` when no such local user exists. NEVER creates a row — own-domain
+   * handles must never mint a federated duplicate.
+   */
+  private async resolveLocalUserByHandle(handle: string): Promise<IUser | null> {
+    const atIndex = handle.indexOf('@');
+    const localPart = atIndex > 0 ? handle.substring(0, atIndex) : '';
+    if (!localPart) return null;
+
+    const localUser = await User.findOne({
+      username: exactCaseInsensitiveUsernameRegex(localPart),
+      type: { $ne: 'federated' },
+    })
+      .select('-password -refreshToken')
+      .lean({ virtuals: true }) as IUser | null;
+
+    return localUser;
+  }
+
+  /**
    * Full pipeline: resolve a fediverse handle to an Oxy user.
    *
    * Fast + eventually-fresh (Bluesky-style):
@@ -1011,6 +1064,14 @@ class FederationService {
 
     const domain = domainFromHandle(cleaned);
     if (!domain) return null;
+
+    // Own-domain guard: a handle like `nate@oxy.so` is NOT a remote actor — it
+    // denotes the LOCAL user `nate`. Never WebFinger our own apex or upsert a
+    // `type:'federated'` shadow row (that duplicates the real local user and
+    // shadows it in search). Resolve to the existing local user instead.
+    if (isOwnFederationDomain(domain)) {
+      return this.resolveLocalUserByHandle(cleaned);
+    }
 
     // Check cache: existing federated user.
     // Fediverse usernames are case-insensitive; we store them lowercased.
