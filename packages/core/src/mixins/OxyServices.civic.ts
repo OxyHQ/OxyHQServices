@@ -49,6 +49,10 @@
  * session.
  */
 import type {
+  CredentialIssueResult,
+  CredentialListResult,
+  CredentialStatus,
+  CredentialVerifyResult,
   ExportAttestation,
   PersonhoodStatusResult,
   PublicCard,
@@ -59,6 +63,7 @@ import type {
   ValidationRequestSummary,
   ValidationVerdict,
   ValidationVoteResult,
+  VerifiableCredentialResponse,
   VouchResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
@@ -83,6 +88,31 @@ const VALIDATION_COLLECTION = 'app.oxy.validation';
 
 /** AtProto-style collection for a personhood vouch record. */
 const VOUCH_COLLECTION = 'app.oxy.vouch';
+
+/**
+ * AtProto-style collection (NSID) for a verifiable credential record — matches
+ * the server's `CREDENTIAL_COLLECTION`. Each credential is its own chain entry,
+ * so the per-credential `rkey` MUST be unique (a fresh nonce), unlike the
+ * one-per-subject vouch keyed on the subject DID.
+ */
+const CREDENTIAL_COLLECTION = 'app.oxy.credential';
+
+/**
+ * The W3C base VC type (`CREDENTIAL_BASE_TYPE` on the server) that MUST be
+ * present in every credential's `types`. The client prepends it when the caller
+ * omits it; the server rejects a credential record lacking it (`missing_base_type`).
+ */
+const CREDENTIAL_BASE_TYPE = 'VerifiableCredential';
+
+/**
+ * Cache-key prefix of every credential read — the holder list
+ * (`GET /civic/credentials/:holderUserId`) and the by-record verify
+ * (`GET /civic/credentials/by-record/:recordId/verify`) both start with it.
+ * Swept after an issue / revoke so a re-read reflects the new credential set /
+ * status instead of a stale cached one. The identity tag is a key SUFFIX, so
+ * this prefix invalidates the resource for every cached identity.
+ */
+const CREDENTIAL_CACHE_PREFIX = 'GET:/civic/credentials/';
 
 /**
  * Cache-key prefix of every personhood-status read (`GET /civic/personhood/:userId`).
@@ -327,6 +357,37 @@ export interface VouchForPersonInput {
 /** Result of {@link OxyServicesCivicMixin.withdrawVouch}. */
 export interface WithdrawVouchResult {
   withdrawn: boolean;
+}
+
+/**
+ * Input for {@link OxyServicesCivicMixin.issueCredential} — the HOLDER the
+ * caller (issuer) attests a claim about, the VC type tags, the issuer's claim
+ * set, and an optional ISO-8601 expiry.
+ */
+export interface IssueCredentialInput {
+  /** The holder's Oxy DID (`did:web:oxy.so:u:<userId>`); becomes the record's `about`. */
+  holderDid: string;
+  /**
+   * The VC type tags. `'VerifiableCredential'` is the required base type and is
+   * prepended automatically when the caller omits it; provide at least one
+   * specific type alongside (e.g. `'EmploymentCredential'`).
+   */
+  types: string[];
+  /** The arbitrary, issuer-asserted claim set about the holder (signed verbatim). */
+  claims: Record<string, unknown>;
+  /**
+   * Optional expiry as an ISO-8601 date string; absent = non-expiring. Converted
+   * to epoch milliseconds in the signed record (the wire/storage unit), so a
+   * holder cannot extend validity after the fact. Must be a parseable date and,
+   * per the server, in the future.
+   */
+  expiresAt?: string;
+}
+
+/** Result of {@link OxyServicesCivicMixin.revokeCredential} (`POST …/:id/revoke`). */
+export interface RevokeCredentialResult {
+  revoked: boolean;
+  credential: VerifiableCredentialResponse;
 }
 
 /**
@@ -657,6 +718,187 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
         throw new Error('No authenticated user — cannot resolve personhood status.');
       }
       return this.getPersonhood(userId);
+    }
+
+    // =========================================================================
+    // FASE 4 — verifiable credentials
+    // =========================================================================
+
+    /**
+     * Issue a verifiable credential as the ISSUER: sign a self-issued
+     * `credential` v2 record on the caller's own chain
+     * (`subject === issuer === issuer.did`) whose `record.about` is the HOLDER's
+     * DID (the W3C `credentialSubject`), then `POST /civic/credentials`. The
+     * server verifies the signature + the issuer's CURRENT verification method +
+     * chain continuity, stores the signed record, and projects a queryable
+     * credential row. All claim data comes from the SIGNED envelope — the issuer
+     * id is resolved server-side from the session, never from the body.
+     *
+     * `'VerifiableCredential'` is ensured present as the base type (prepended
+     * when the caller omits it; the server rejects a record missing it). An
+     * `expiresAt` ISO string is converted to the epoch-ms the signed record
+     * carries (the server rejects a past expiry).
+     *
+     * NATIVE-ONLY (signs with the on-device key; throws on web / when no identity
+     * or no authenticated user). The record is keyed
+     * `collection: 'app.oxy.credential'`, `rkey: <fresh unique nonce>` (each
+     * credential is a distinct chain entry, so the rkey must be unique per
+     * credential). After a successful issue the credential GET caches are swept.
+     *
+     * @param input - The holder DID, VC types, claims, and optional ISO expiry.
+     */
+    async issueCredential(input: IssueCredentialInput): Promise<CredentialIssueResult> {
+      try {
+        const types = input.types.includes(CREDENTIAL_BASE_TYPE)
+          ? input.types
+          : [CREDENTIAL_BASE_TYPE, ...input.types];
+
+        let expiresAtMs: number | undefined;
+        if (input.expiresAt !== undefined) {
+          const parsed = Date.parse(input.expiresAt);
+          if (Number.isNaN(parsed)) {
+            throw new Error('Invalid expiresAt — must be an ISO 8601 date string.');
+          }
+          expiresAtMs = parsed;
+        }
+
+        const record: Record<string, unknown> = {
+          about: input.holderDid,
+          types,
+          claims: input.claims,
+          ...(expiresAtMs !== undefined ? { expiresAt: expiresAtMs } : {}),
+        };
+
+        // A fresh crypto-random rkey: every credential is its own chain entry, so
+        // (unlike the one-per-subject vouch keyed on the subject DID) the rkey
+        // must be unique per credential or a second credential would collide.
+        const rkey = await SignatureService.generateChallenge();
+        const envelope = await this._signMyCivicRecordV2(
+          'credential',
+          record,
+          CREDENTIAL_COLLECTION,
+          rkey,
+        );
+        const result = await this.makeRequest<CredentialIssueResult>(
+          'POST',
+          '/civic/credentials',
+          envelope,
+          { cache: false },
+        );
+        this._sweepCredentialCaches();
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * List a holder's verifiable credentials
+     * (`GET /civic/credentials/:holderUserId`), newest first, optionally filtered
+     * by stored `status`. Public (credentials are issuer-signed attestations a
+     * holder collects to SHOW); short-TTL cached and swept after the caller's own
+     * issue / revoke. An unknown holder yields an empty list.
+     *
+     * @param holderUserId - The holder account's Mongo `_id` (NOT a DID). URL-encoded.
+     * @param opts.status - Optional `'active' | 'revoked' | 'expired'` filter.
+     */
+    async listCredentials(
+      holderUserId: string,
+      opts: { status?: CredentialStatus } = {},
+    ): Promise<CredentialListResult> {
+      try {
+        const base = `/civic/credentials/${encodeURIComponent(holderUserId)}`;
+        const url = opts.status ? `${base}?status=${encodeURIComponent(opts.status)}` : base;
+        return await this.makeRequest<CredentialListResult>(
+          'GET',
+          url,
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.SHORT },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * List the CURRENT user's verifiable credentials ({@link listCredentials} for
+     * the authenticated user's id). Throws if no user is authenticated.
+     *
+     * @param opts.status - Optional status filter.
+     */
+    async listMyCredentials(
+      opts: { status?: CredentialStatus } = {},
+    ): Promise<CredentialListResult> {
+      const userId = this.getCurrentUserId();
+      if (!userId) {
+        throw new Error('No authenticated user — cannot list credentials.');
+      }
+      return this.listCredentials(userId, opts);
+    }
+
+    /**
+     * Verify a credential by its signed-record id
+     * (`GET /civic/credentials/by-record/:recordId/verify`). The server recomputes
+     * the canonical signing input from the STORED envelope and verifies the
+     * signature against a CURRENT verification method of the ISSUER DID (so a
+     * key the issuer has since rotated away no longer verifies), then checks the
+     * credential is neither revoked nor expired. Public; short-TTL cached
+     * (matching the server's `max-age=60`) and swept after the caller's own issue
+     * / revoke.
+     *
+     * A revoked / expired / unverifiable credential yields `valid: false` (NOT a
+     * throw) so the UI can render it as untrusted; `credential` is `null` only
+     * when no credential exists for the record id. Only a transport failure (the
+     * fetch itself) rejects.
+     *
+     * @param recordId - The credential's signed-record id. URL-encoded into the path.
+     */
+    async verifyCredential(recordId: string): Promise<CredentialVerifyResult> {
+      try {
+        return await this.makeRequest<CredentialVerifyResult>(
+          'GET',
+          `/civic/credentials/by-record/${encodeURIComponent(recordId)}/verify`,
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.SHORT },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Revoke a credential the current user originally issued
+     * (`POST /civic/credentials/:id/revoke`). Only the original USER issuer may
+     * revoke; the server flips the credential to `revoked`. After a successful
+     * revoke the credential GET caches are swept.
+     *
+     * @param id - The credential's id (the projection row `_id`, NOT the signed
+     *   record id). URL-encoded into the path.
+     */
+    async revokeCredential(id: string): Promise<RevokeCredentialResult> {
+      try {
+        const result = await this.makeRequest<RevokeCredentialResult>(
+          'POST',
+          `/civic/credentials/${encodeURIComponent(id)}/revoke`,
+          undefined,
+          { cache: false },
+        );
+        this._sweepCredentialCaches();
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Sweep the credential GET caches an issue / revoke invalidates: every
+     * credential read (the holder list + the by-record verify, which share the
+     * `GET:/civic/credentials/` prefix) so a re-read reflects the new credential
+     * set / status. Public rather than `private` for the same TS4094 reason as
+     * {@link _signMyCivicRecordV2}.
+     */
+    _sweepCredentialCaches(): void {
+      this.clearCacheByPrefix(CREDENTIAL_CACHE_PREFIX);
     }
 
     /**

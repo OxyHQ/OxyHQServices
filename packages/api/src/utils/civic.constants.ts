@@ -190,3 +190,22 @@ export const PERSONHOOD_AUDIT_BATCH = 25;
 
 /** How often the background sweep opens new random personhood audits. */
 export const PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/* -------------------------------------------------------------------------- */
+/*  Verifiable Credentials (Fase 4)                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AtProto-style collection (NSID) for verifiable credentials. The signed
+ * `credential` record carries this as its `collection`; the per-credential
+ * `rkey` (chosen by the issuer client) MUST be unique per credential so multiple
+ * credentials from the same issuer do not collide on the chain's monotonic /
+ * last-writer-wins key.
+ */
+export const CREDENTIAL_COLLECTION = 'app.oxy.credential';
+
+/**
+ * The W3C base VC type that MUST be present in every credential's `types` array.
+ * At least one specific type (e.g. `EmploymentCredential`) is required alongside.
+ */
+export const CREDENTIAL_BASE_TYPE = 'VerifiableCredential';

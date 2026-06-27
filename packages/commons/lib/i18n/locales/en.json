@@ -1400,6 +1400,125 @@
         "subject_not_found": "We couldn't find this person's account.",
         "generic": "We couldn't record your vouch. Please try again."
       }
+    },
+    "credentials": {
+      "title": "Credentials",
+      "subtitle": "Verifiable claims that people and organizations have signed about you.",
+      "loading": "Loading credentials…",
+      "offline": "Offline — last known",
+      "settingsEntry": "Credentials",
+      "settingsEntrySubtitle": "Verifiable claims signed about you",
+      "issuedBy": "Issued by {{issuer}}",
+      "issuedOn": "Issued {{date}}",
+      "expiresOn": "Expires {{date}}",
+      "expiredOn": "Expired {{date}}",
+      "revokedOn": "Revoked {{date}}",
+      "noExpiry": "No expiry",
+      "unknownIssuer": "Unknown issuer",
+      "status": {
+        "active": "Active",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "empty": {
+        "title": "No credentials yet",
+        "body": "When an issuer signs a verifiable claim about you, it shows up here."
+      },
+      "error": {
+        "title": "Couldn't load credentials",
+        "body": "We couldn't reach Oxy, and nothing is cached yet."
+      },
+      "detail": {
+        "title": "Credential",
+        "claimsTitle": "Claims",
+        "issuerTitle": "Issuer",
+        "datesTitle": "Validity",
+        "recordLabel": "Record ID",
+        "noClaims": "This credential carries no readable claims.",
+        "notFoundTitle": "Credential not found",
+        "notFoundBody": "We couldn't find this credential. It may have been removed."
+      },
+      "verify": {
+        "cta": "Verify",
+        "verifying": "Verifying…",
+        "validTitle": "Valid credential",
+        "validBody": "The issuer's signature checks out and this credential is live.",
+        "invalidTitle": "Can't be trusted",
+        "errorTitle": "Couldn't verify",
+        "errorBody": "We couldn't reach Oxy to verify this credential. Try again.",
+        "reason": {
+          "bad_signature": "The signature doesn't match. This credential may have been tampered with.",
+          "issuer_key_not_current": "The issuer signed this with a key they have since rotated away.",
+          "issuer_not_found": "We couldn't find the issuer's identity.",
+          "record_missing": "The signed record for this credential is missing.",
+          "revoked": "The issuer revoked this credential.",
+          "expired": "This credential has expired.",
+          "not_found": "No credential exists for this record.",
+          "generic": "This credential could not be verified."
+        }
+      },
+      "revoke": {
+        "cta": "Revoke credential",
+        "biometricReason": "Verify it's you to revoke this credential",
+        "biometricFailed": "Confirm with your device biometrics or passcode to revoke.",
+        "confirmTitle": "Revoke this credential?",
+        "confirmBody": "It will be marked revoked and stop verifying. This can't be undone.",
+        "submitting": "Revoking…",
+        "doneTitle": "Credential revoked",
+        "doneBody": "This credential is now revoked and no longer verifies.",
+        "errorTitle": "Couldn't revoke",
+        "error": {
+          "not_issuer": "Only the issuer can revoke this credential.",
+          "already_revoked": "This credential is already revoked.",
+          "not_found": "We couldn't find this credential.",
+          "generic": "We couldn't revoke this credential. Please try again."
+        }
+      },
+      "issue": {
+        "cardCta": "Issue a credential",
+        "title": "Issue a credential",
+        "loading": "Resolving identity…",
+        "invalidTitle": "Can't issue",
+        "invalidBody": "This isn't a valid Oxy ID to issue a credential to.",
+        "unknownPerson": "this person",
+        "intro": "You're signing a verifiable claim about {{name}}.",
+        "typeTitle": "Credential type",
+        "typeHint": "What kind of claim are you making?",
+        "preset": {
+          "employment": "Employment",
+          "course": "Course",
+          "membership": "Membership",
+          "custom": "Custom"
+        },
+        "customLabel": "Credential name",
+        "customPlaceholder": "e.g. Award",
+        "statementTitle": "Your claim",
+        "statementHint": "Describe exactly what you're attesting about this person.",
+        "statementPlaceholder": "e.g. Worked as a software engineer from 2020 to 2024.",
+        "expiryTitle": "Expiry (optional)",
+        "expiryHint": "Leave blank for a credential that never expires.",
+        "expiryPlaceholder": "YYYY-MM-DD",
+        "expiryInvalid": "Enter a future date as YYYY-MM-DD, or leave it blank.",
+        "attribution": "You are signing this claim about {{name}} with your key; it's publicly verifiable and attributed to you.",
+        "cta": "Sign with biometrics",
+        "biometricReason": "Verify it's you to sign this credential",
+        "biometricFailed": "Confirm with your device biometrics or passcode to sign.",
+        "submitting": "Signing the credential…",
+        "done": {
+          "title": "Credential issued",
+          "body": "You signed a {{type}} credential for {{name}}. They can show it and anyone can verify it."
+        },
+        "error": {
+          "title": "Couldn't issue",
+          "self_credential": "You can't issue a credential about yourself.",
+          "holder_not_found": "We couldn't find this person's account.",
+          "invalid_holder": "This isn't a valid person to issue a credential to.",
+          "invalid_expiry": "The expiry date must be a valid date in the future.",
+          "invalid_claims": "Add a clear claim and a credential type, then try again.",
+          "conflict": "Something changed while signing. Please try again.",
+          "generic": "We couldn't issue this credential. Please try again."
+        }
+      }
     }
   },
   "tabs": {

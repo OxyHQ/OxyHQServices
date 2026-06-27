@@ -381,3 +381,132 @@ export const vouchResultSchema: z.ZodType<VouchResult> = z.object({
     stakeAmount: z.number(),
     points: z.number(),
 });
+
+/* -------------------------------------------------------------------------- */
+/*  Verifiable Credentials (Fase 4)                            [NEW — FLAGGED] */
+/* -------------------------------------------------------------------------- */
+//
+// A Verifiable Credential (VC) is an issuer (an employer / course / app that
+// holds a DID) cryptographically attesting a claim ABOUT a holder (e.g. "worked
+// at X 2020–2024", "completed course Y"). It is a SIGNED record (envelope
+// `type: 'credential'`, already in `SignedRecordType`) verifiable OFFLINE
+// against the issuer DID's current verification method plus a revocation check.
+//
+// Two issuance modes share this ONE wire shape (`record.about` is ALWAYS the
+// holder DID — the W3C "credentialSubject"):
+//  - user-issued: the issuer signs with their OWN key; the envelope is
+//    self-issued (`subject === issuer === issuerDid`) on the issuer's hash chain
+//    (mirrors `real_life_attestation` / `personhood_vouch`).
+//  - app/org-issued (internal seam): the Oxy custodial key signs on behalf of an
+//    Application DID (`issuer === OXY_DID`, `subject === holderDid`) on the
+//    holder's chain (mirrors `reputation_attestation`).
+//
+// Explicit-`interface` exports follow the same node-resolution rationale as the
+// rest of this file (a nested `z.infer<>` can degrade to `{}` under a consumer's
+// `moduleResolution: "node"`), so the load-bearing shapes are literal interfaces
+// and the runtime schemas are annotated `z.ZodType<Interface>`.
+
+/** The lifecycle status of a stored verifiable credential. */
+export type CredentialStatus = 'active' | 'revoked' | 'expired';
+
+/**
+ * The `record` payload of a `credential` signed envelope — the W3C-VC-flavoured
+ * claim the issuer signs.
+ *
+ * - `about` is the HOLDER's DID (`did:web:oxy.so:u:<userId>`), i.e. the W3C
+ *   `credentialSubject.id`. (Named `about` to match the sibling civic records
+ *   and to avoid colliding with the envelope's own chain `subject` field.)
+ * - `types` are the VC type tags; `'VerifiableCredential'` MUST be present as the
+ *   base type, with at least one specific type (e.g. `'EmploymentCredential'`).
+ * - `claims` is the arbitrary, issuer-asserted claim set about the holder.
+ * - `expiresAt` (optional) is epoch milliseconds; absent = non-expiring. It is
+ *   part of the signed bytes, so a holder cannot extend a credential's validity.
+ */
+export interface CredentialRecord {
+    about: string;
+    types: string[];
+    claims: Record<string, unknown>;
+    expiresAt?: number;
+}
+
+export const credentialRecordSchema: z.ZodType<CredentialRecord> = z.object({
+    about: z.string(),
+    types: z.array(z.string().min(1)).min(1),
+    claims: z.record(z.unknown()),
+    expiresAt: z.number().optional(),
+});
+
+/**
+ * The serialized verifiable credential as returned by the list + verify routes.
+ * `issuerUserId` is present only for user-issued credentials (absent for
+ * app/org-issued credentials signed by the Oxy custodial key). All timestamps
+ * are epoch milliseconds.
+ */
+export interface VerifiableCredentialResponse {
+    id: string;
+    recordId: string;
+    holderUserId: string;
+    holderDid: string;
+    issuerUserId?: string;
+    issuerDid: string;
+    types: string[];
+    claims: Record<string, unknown>;
+    status: CredentialStatus;
+    issuedAt: number;
+    expiresAt?: number;
+    revokedAt?: number;
+}
+
+export const verifiableCredentialResponseSchema: z.ZodType<VerifiableCredentialResponse> = z.object({
+    id: z.string(),
+    recordId: z.string(),
+    holderUserId: z.string(),
+    holderDid: z.string(),
+    issuerUserId: z.string().optional(),
+    issuerDid: z.string(),
+    types: z.array(z.string()),
+    claims: z.record(z.unknown()),
+    status: z.enum(['active', 'revoked', 'expired']),
+    issuedAt: z.number(),
+    expiresAt: z.number().optional(),
+    revokedAt: z.number().optional(),
+});
+
+/** The result of `POST /civic/credentials` on success. */
+export interface CredentialIssueResult {
+    accepted: true;
+    credential: VerifiableCredentialResponse;
+}
+
+export const credentialIssueResultSchema: z.ZodType<CredentialIssueResult> = z.object({
+    accepted: z.literal(true),
+    credential: verifiableCredentialResponseSchema,
+});
+
+/** The result of `GET /civic/credentials/:holderUserId` (list). */
+export interface CredentialListResult {
+    credentials: VerifiableCredentialResponse[];
+}
+
+export const credentialListResultSchema: z.ZodType<CredentialListResult> = z.object({
+    credentials: z.array(verifiableCredentialResponseSchema),
+});
+
+/**
+ * The result of `GET /civic/credentials/by-record/:recordId/verify`. `valid` is
+ * `true` ONLY when the signature verifies against a CURRENT verification method
+ * of the issuer DID AND the credential is neither revoked nor expired. `reason`
+ * is a stable, machine-readable rejection code when `valid` is `false`.
+ * `credential` is `null` when no credential exists for the record id.
+ */
+export interface CredentialVerifyResult {
+    valid: boolean;
+    reason?: string;
+    credential: VerifiableCredentialResponse | null;
+}
+
+export const credentialVerifyResultSchema: z.ZodType<CredentialVerifyResult> = z.object({
+    valid: z.boolean(),
+    reason: z.string().optional(),
+    credential: verifiableCredentialResponseSchema.nullable(),
+});

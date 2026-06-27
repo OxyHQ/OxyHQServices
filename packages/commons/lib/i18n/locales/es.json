@@ -1400,6 +1400,125 @@
         "subject_not_found": "No pudimos encontrar la cuenta de esta persona.",
         "generic": "No pudimos registrar tu aval. Inténtalo de nuevo."
       }
+    },
+    "credentials": {
+      "title": "Credenciales",
+      "subtitle": "Afirmaciones verificables que personas y organizaciones han firmado sobre ti.",
+      "loading": "Cargando credenciales…",
+      "offline": "Sin conexión — última conocida",
+      "settingsEntry": "Credenciales",
+      "settingsEntrySubtitle": "Afirmaciones verificables firmadas sobre ti",
+      "issuedBy": "Emitida por {{issuer}}",
+      "issuedOn": "Emitida el {{date}}",
+      "expiresOn": "Caduca el {{date}}",
+      "expiredOn": "Caducó el {{date}}",
+      "revokedOn": "Revocada el {{date}}",
+      "noExpiry": "Sin caducidad",
+      "unknownIssuer": "Emisor desconocido",
+      "status": {
+        "active": "Activa",
+        "revoked": "Revocada",
+        "expired": "Caducada"
+      },
+      "empty": {
+        "title": "Aún no hay credenciales",
+        "body": "Cuando un emisor firme una afirmación verificable sobre ti, aparecerá aquí."
+      },
+      "error": {
+        "title": "No se pudieron cargar las credenciales",
+        "body": "No pudimos conectar con Oxy y no hay nada en caché todavía."
+      },
+      "detail": {
+        "title": "Credencial",
+        "claimsTitle": "Afirmaciones",
+        "issuerTitle": "Emisor",
+        "datesTitle": "Validez",
+        "recordLabel": "ID del registro",
+        "noClaims": "Esta credencial no contiene afirmaciones legibles.",
+        "notFoundTitle": "Credencial no encontrada",
+        "notFoundBody": "No pudimos encontrar esta credencial. Es posible que se haya eliminado."
+      },
+      "verify": {
+        "cta": "Verificar",
+        "verifying": "Verificando…",
+        "validTitle": "Credencial válida",
+        "validBody": "La firma del emisor es correcta y esta credencial está activa.",
+        "invalidTitle": "No es de fiar",
+        "errorTitle": "No se pudo verificar",
+        "errorBody": "No pudimos conectar con Oxy para verificar esta credencial. Inténtalo de nuevo.",
+        "reason": {
+          "bad_signature": "La firma no coincide. Esta credencial puede haber sido manipulada.",
+          "issuer_key_not_current": "El emisor la firmó con una clave que ya ha rotado.",
+          "issuer_not_found": "No pudimos encontrar la identidad del emisor.",
+          "record_missing": "Falta el registro firmado de esta credencial.",
+          "revoked": "El emisor revocó esta credencial.",
+          "expired": "Esta credencial ha caducado.",
+          "not_found": "No existe ninguna credencial para este registro.",
+          "generic": "No se pudo verificar esta credencial."
+        }
+      },
+      "revoke": {
+        "cta": "Revocar credencial",
+        "biometricReason": "Verifica que eres tú para revocar esta credencial",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para revocar.",
+        "confirmTitle": "¿Revocar esta credencial?",
+        "confirmBody": "Se marcará como revocada y dejará de verificarse. Esto no se puede deshacer.",
+        "submitting": "Revocando…",
+        "doneTitle": "Credencial revocada",
+        "doneBody": "Esta credencial ahora está revocada y ya no se verifica.",
+        "errorTitle": "No se pudo revocar",
+        "error": {
+          "not_issuer": "Solo el emisor puede revocar esta credencial.",
+          "already_revoked": "Esta credencial ya está revocada.",
+          "not_found": "No pudimos encontrar esta credencial.",
+          "generic": "No pudimos revocar esta credencial. Inténtalo de nuevo."
+        }
+      },
+      "issue": {
+        "cardCta": "Emitir una credencial",
+        "title": "Emitir una credencial",
+        "loading": "Resolviendo identidad…",
+        "invalidTitle": "No se puede emitir",
+        "invalidBody": "Este no es un Oxy ID válido al que emitir una credencial.",
+        "unknownPerson": "esta persona",
+        "intro": "Estás firmando una afirmación verificable sobre {{name}}.",
+        "typeTitle": "Tipo de credencial",
+        "typeHint": "¿Qué tipo de afirmación estás haciendo?",
+        "preset": {
+          "employment": "Empleo",
+          "course": "Curso",
+          "membership": "Membresía",
+          "custom": "Personalizada"
+        },
+        "customLabel": "Nombre de la credencial",
+        "customPlaceholder": "p. ej. Premio",
+        "statementTitle": "Tu afirmación",
+        "statementHint": "Describe exactamente qué estás certificando sobre esta persona.",
+        "statementPlaceholder": "p. ej. Trabajó como ingeniero de software de 2020 a 2024.",
+        "expiryTitle": "Caducidad (opcional)",
+        "expiryHint": "Déjalo en blanco para una credencial que nunca caduca.",
+        "expiryPlaceholder": "AAAA-MM-DD",
+        "expiryInvalid": "Introduce una fecha futura como AAAA-MM-DD, o déjalo en blanco.",
+        "attribution": "Estás firmando esta afirmación sobre {{name}} con tu clave; es verificable públicamente y se te atribuye a ti.",
+        "cta": "Firmar con biometría",
+        "biometricReason": "Verifica que eres tú para firmar esta credencial",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para firmar.",
+        "submitting": "Firmando la credencial…",
+        "done": {
+          "title": "Credencial emitida",
+          "body": "Firmaste una credencial de {{type}} para {{name}}. Puede mostrarla y cualquiera puede verificarla."
+        },
+        "error": {
+          "title": "No se pudo emitir",
+          "self_credential": "No puedes emitirte una credencial a ti mismo.",
+          "holder_not_found": "No pudimos encontrar la cuenta de esta persona.",
+          "invalid_holder": "Esta no es una persona válida a la que emitir una credencial.",
+          "invalid_expiry": "La fecha de caducidad debe ser una fecha válida en el futuro.",
+          "invalid_claims": "Añade una afirmación clara y un tipo de credencial, e inténtalo de nuevo.",
+          "conflict": "Algo cambió al firmar. Inténtalo de nuevo.",
+          "generic": "No pudimos emitir esta credencial. Inténtalo de nuevo."
+        }
+      }
     }
   },
   "tabs": {

@@ -5,8 +5,8 @@ import { ErrorFallback } from '@/components/error-fallback';
 /**
  * Settings tab stack: the management menu (`index`) plus the identity/vault
  * management detail screens it pushes — about your identity, encrypted backup,
- * proof of personhood, and account deletion. Screens self-render their
- * headers/back affordances.
+ * proof of personhood, verifiable credentials, and account deletion. Screens
+ * self-render their headers/back affordances.
  */
 export default function SettingsTabLayout() {
   return (
@@ -15,6 +15,8 @@ export default function SettingsTabLayout() {
       <Stack.Screen name="about-identity" />
       <Stack.Screen name="create-backup" />
       <Stack.Screen name="personhood" />
+      <Stack.Screen name="credentials/index" />
+      <Stack.Screen name="credentials/[recordId]" />
       <Stack.Screen name="delete-account" />
     </Stack>
   );

@@ -37,6 +37,10 @@ export default function SettingsScreen() {
     router.push('/(tabs)/(settings)/personhood');
   }, [router]);
 
+  const handleCredentials = useCallback(() => {
+    router.push('/(tabs)/(settings)/credentials');
+  }, [router]);
+
   const handleDeleteAccount = useCallback(() => {
     router.push('/(tabs)/(settings)/delete-account');
   }, [router]);
@@ -85,7 +89,7 @@ export default function SettingsScreen() {
             </AccountCard>
           </Section>
 
-          {/* Proof of personhood — Fase 3 trust surface */}
+          {/* Trust & verification — Fase 3 personhood + Fase 4 credentials */}
           <Section title={t('civic.personhood.settingsSection')}>
             <AccountCard>
               <GroupedSection
@@ -97,6 +101,15 @@ export default function SettingsScreen() {
                     title: t('civic.personhood.settingsEntry'),
                     subtitle: t('civic.personhood.settingsEntrySubtitle'),
                     onPress: handlePersonhood,
+                    showChevron: true,
+                  },
+                  {
+                    id: 'credentials',
+                    icon: 'certificate',
+                    iconColor: colors.identityIconPublicKey,
+                    title: t('civic.credentials.settingsEntry'),
+                    subtitle: t('civic.credentials.settingsEntrySubtitle'),
+                    onPress: handleCredentials,
                     showChevron: true,
                   },
                 ]}

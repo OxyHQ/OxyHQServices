@@ -23,6 +23,7 @@ import {
   signedRecordEnvelopeSchema,
   validationOpenRequestSchema,
   type SignedRecordEnvelope,
+  type CredentialStatus,
 } from '@oxyhq/contracts';
 import { requireStaff } from '../middleware/requireStaff';
 import PersonhoodStatus from '../models/PersonhoodStatus';
@@ -41,6 +42,13 @@ import {
   recomputePersonhood,
   type VouchRejectionReason,
 } from '../services/civic/personhood.service';
+import {
+  issueCredential,
+  listCredentialsForHolder,
+  verifyCredential,
+  revokeCredential,
+  type CredentialIssueRejectionReason,
+} from '../services/civic/credential.service';
 
 const router = Router();
 
@@ -101,6 +109,72 @@ const personhoodAdminLimiter = rateLimit({
     return userId ? `civic:personhood:admin:${userId}` : `civic:personhood:admin:ip:${req.ip ?? 'unknown'}`;
   },
 });
+
+/** Issue a verifiable credential (the issuer signs; HIGH-value write). */
+const credentialIssueLimiter = rateLimit({
+  prefix: 'rl:civic:credential:issue:',
+  windowMs: 60 * 1000,
+  max: 20,
+  message: 'Too many credential issuance requests. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:credential:issue:${userId}` : `civic:credential:issue:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Public credential reads (a holder's credential list). */
+const credentialReadLimiter = rateLimit({
+  prefix: 'rl:civic:credential:read:',
+  windowMs: 60 * 1000,
+  max: 120,
+  message: 'Too many credential requests. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:credential:read:${userId}` : `civic:credential:read:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Public credential verification (offline-style verify by record id). */
+const credentialVerifyLimiter = rateLimit({
+  prefix: 'rl:civic:credential:verify:',
+  windowMs: 60 * 1000,
+  max: 120,
+  message: 'Too many credential verification requests. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:credential:verify:${userId}` : `civic:credential:verify:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Credential revocation (issuer-only write). */
+const credentialRevokeLimiter = rateLimit({
+  prefix: 'rl:civic:credential:revoke:',
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many credential revocation requests. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:credential:revoke:${userId}` : `civic:credential:revoke:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Map a credential-issuance rejection reason to the HTTP error to throw. */
+function throwForCredentialIssueReason(reason: CredentialIssueRejectionReason): never {
+  switch (reason) {
+    case 'holder_not_found':
+      throw new NotFoundError('Credential holder not found');
+    case 'self_credential':
+      throw new ForbiddenError(`Credential rejected: ${reason}`);
+    case 'chain_conflict':
+    case 'bad_seq':
+    case 'chain_fork':
+    case 'chain_gap':
+    case 'stale_issued_at':
+      throw new ConflictError(`Credential rejected: ${reason}`);
+    default:
+      throw new BadRequestError(`Credential rejected: ${reason}`);
+  }
+}
 
 /** Map a vote rejection reason to the HTTP error the route should throw. */
 function throwForVoteReason(reason: VoteRejectionReason): never {
@@ -480,6 +554,120 @@ router.post(
       breakdown: status.breakdown,
       updatedAt: status.updatedAt,
     });
+  }),
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Verifiable Credentials (Fase 4)                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * POST /civic/credentials — issue a verifiable credential (auth — issuer).
+ * Body is the issuer's SELF-ISSUED, signed `credential` envelope (the holder is
+ * referenced by `record.about`). The server verifies the signature + the issuer
+ * VM + chain continuity, stores the signed record, and projects a queryable
+ * credential row. All claim data comes from the SIGNED envelope — the issuer id
+ * is resolved server-side from the session, never from the body.
+ */
+router.post(
+  '/credentials',
+  authMiddleware,
+  credentialIssueLimiter,
+  validate({ body: signedRecordEnvelopeSchema }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const issuerUserId = req.user?._id?.toString();
+    if (!issuerUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const result = await issueCredential(req.body as SignedRecordEnvelope, issuerUserId);
+    if (!result.ok) {
+      throwForCredentialIssueReason(result.reason);
+    }
+
+    res.status(201).json({ accepted: true, credential: result.credential });
+  }),
+);
+
+/**
+ * GET /civic/credentials/by-record/:recordId/verify — verify a credential by the
+ * signed record id (public). Recomputes the canonical signing input and verifies
+ * the signature against the ISSUER DID's current verification method, then checks
+ * revocation/expiry. Returns `{ valid, reason?, credential }`. Registered BEFORE
+ * `/:holderUserId` so `by-record` is never captured as a holder id.
+ */
+router.get(
+  '/credentials/by-record/:recordId/verify',
+  credentialVerifyLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { recordId } = req.params;
+    if (typeof recordId !== 'string' || recordId.length === 0) {
+      throw new NotFoundError('Credential not found');
+    }
+
+    const result = await verifyCredential(recordId);
+    setPublicCardHeaders(res);
+    res.json(result);
+  }),
+);
+
+/**
+ * GET /civic/credentials/:holderUserId — list a holder's credentials (public-ish).
+ * Optional `?status=active|revoked|expired` filters by stored status. Credentials
+ * are issuer-signed attestations a holder collects to SHOW, so the list is public
+ * (mirrors the card/personhood reads); an unknown holder yields an empty list.
+ */
+router.get(
+  '/credentials/:holderUserId',
+  credentialReadLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { holderUserId } = req.params;
+    if (!isValidObjectId(holderUserId)) {
+      throw new NotFoundError('Credentials not found');
+    }
+
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    if (status && status !== 'active' && status !== 'revoked' && status !== 'expired') {
+      throw new BadRequestError('Invalid status filter');
+    }
+
+    const credentials = await listCredentialsForHolder(holderUserId, {
+      status: status as CredentialStatus | undefined,
+    });
+    setPublicCardHeaders(res);
+    res.json({ credentials });
+  }),
+);
+
+/**
+ * POST /civic/credentials/:id/revoke — revoke a credential (auth — issuer only).
+ * Only the original user issuer may revoke. Flips the credential to `revoked`.
+ */
+router.post(
+  '/credentials/:id/revoke',
+  authMiddleware,
+  credentialRevokeLimiter,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const issuerUserId = req.user?._id?.toString();
+    if (!issuerUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+    if (!isValidObjectId(req.params.id)) {
+      throw new NotFoundError('Credential not found');
+    }
+
+    const result = await revokeCredential(req.params.id, issuerUserId);
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        throw new NotFoundError('Credential not found');
+      }
+      if (result.reason === 'not_issuer') {
+        throw new ForbiddenError('Only the original issuer may revoke this credential');
+      }
+      throw new ConflictError(`Revoke rejected: ${result.reason}`);
+    }
+
+    res.json({ revoked: true, credential: result.credential });
   }),
 );
 

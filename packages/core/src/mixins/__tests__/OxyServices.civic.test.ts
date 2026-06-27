@@ -30,7 +30,12 @@
  */
 
 import { ec as EC } from 'elliptic';
-import type { ExportAttestation, PublicCard, SignedRecordEnvelope } from '@oxyhq/contracts';
+import type {
+  ExportAttestation,
+  PublicCard,
+  SignedRecordEnvelope,
+  VerifiableCredentialResponse,
+} from '@oxyhq/contracts';
 import { OxyServices } from '../../OxyServices';
 import { canonicalize } from '../../crypto/canonicalJson';
 import { SignatureService } from '../../crypto/signatureService';
@@ -757,6 +762,336 @@ describe('OxyServices.civic', () => {
       jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
       await expect(oxy.getMyPersonhood()).rejects.toThrow(/No authenticated user/);
       expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ===========================================================================
+  // FASE 4 — verifiable credentials
+  // ===========================================================================
+
+  describe('issueCredential', () => {
+    const credentialResponse: VerifiableCredentialResponse = {
+      id: 'cred-1',
+      recordId: 'rec-4',
+      holderUserId: 'holder-1',
+      holderDid: 'did:web:oxy.so:u:holder-1',
+      issuerUserId: 'user-123',
+      issuerDid: 'did:web:oxy.so:u:user-123',
+      types: ['VerifiableCredential', 'EmploymentCredential'],
+      claims: { role: 'Engineer' },
+      status: 'active',
+      issuedAt: 1700000000000,
+    };
+
+    it('prepends the base type, signs a self-issued v2 record on the caller chain and POSTs it', async () => {
+      const signedEnvelope: SignedRecordEnvelope = {
+        version: 2,
+        type: 'credential',
+        subject: 'did:web:oxy.so:u:user-123',
+        issuer: 'did:web:oxy.so:u:user-123',
+        record: {
+          about: 'did:web:oxy.so:u:holder-1',
+          types: ['VerifiableCredential', 'EmploymentCredential'],
+          claims: { role: 'Engineer' },
+        },
+        issuedAt: 1700000000000,
+        seq: 4,
+        prev: 'rec-3',
+        collection: 'app.oxy.credential',
+        rkey: 'cred-rkey-1',
+        publicKey: 'pub',
+        alg: 'ES256K-DER-SHA256',
+        signature: 'sig',
+      };
+      const signV2Spy = jest
+        .spyOn(SignatureService, 'signRecordV2')
+        .mockResolvedValue(signedEnvelope);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('cred-rkey-1');
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      // 1st makeRequest = chain head; 2nd = POST result.
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: 'rec-3', seq: 3, recordCount: 4 })
+        .mockResolvedValueOnce({ accepted: true, credential: credentialResponse });
+
+      const result = await oxy.issueCredential({
+        holderDid: 'did:web:oxy.so:u:holder-1',
+        types: ['EmploymentCredential'],
+        claims: { role: 'Engineer' },
+      });
+
+      // Fetched the caller's chain head first (uncached).
+      expect(makeRequestSpy).toHaveBeenNthCalledWith(
+        1,
+        'GET',
+        '/identity/records/user-123/chain/head',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+      // Signed a self-issued v2 record: about=holderDid, base type PREPENDED,
+      // claims verbatim, seq=head+1, prev=head id, collection app.oxy.credential,
+      // rkey=fresh nonce.
+      expect(signV2Spy).toHaveBeenCalledWith(
+        'credential',
+        'did:web:oxy.so:u:user-123',
+        {
+          about: 'did:web:oxy.so:u:holder-1',
+          types: ['VerifiableCredential', 'EmploymentCredential'],
+          claims: { role: 'Engineer' },
+        },
+        { seq: 4, prev: 'rec-3', collection: 'app.oxy.credential', rkey: 'cred-rkey-1' },
+      );
+      // POSTed the signed envelope to /civic/credentials.
+      expect(makeRequestSpy).toHaveBeenNthCalledWith(
+        2,
+        'POST',
+        '/civic/credentials',
+        signedEnvelope,
+        expect.objectContaining({ cache: false }),
+      );
+      // Swept the credential GET caches.
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/civic/credentials/');
+      expect(result).toEqual({ accepted: true, credential: credentialResponse });
+    });
+
+    it('does NOT duplicate the base type when the caller already includes it', async () => {
+      const signV2Spy = jest
+        .spyOn(SignatureService, 'signRecordV2')
+        .mockResolvedValue({} as SignedRecordEnvelope);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('rk');
+      jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockResolvedValueOnce({ accepted: true, credential: credentialResponse });
+
+      await oxy.issueCredential({
+        holderDid: 'did:web:oxy.so:u:holder-1',
+        types: ['VerifiableCredential', 'CourseCredential'],
+        claims: {},
+      });
+
+      // Genesis chain coords + the types passed through unchanged (no duplicate base).
+      expect(signV2Spy).toHaveBeenCalledWith(
+        'credential',
+        'did:web:oxy.so:u:user-123',
+        {
+          about: 'did:web:oxy.so:u:holder-1',
+          types: ['VerifiableCredential', 'CourseCredential'],
+          claims: {},
+        },
+        { seq: 0, prev: null, collection: 'app.oxy.credential', rkey: 'rk' },
+      );
+    });
+
+    it('converts an ISO expiresAt to epoch ms in the signed record', async () => {
+      const signV2Spy = jest
+        .spyOn(SignatureService, 'signRecordV2')
+        .mockResolvedValue({} as SignedRecordEnvelope);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('rk');
+      jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockResolvedValueOnce({ accepted: true, credential: credentialResponse });
+
+      await oxy.issueCredential({
+        holderDid: 'did:web:oxy.so:u:holder-1',
+        types: ['EmploymentCredential'],
+        claims: { role: 'Engineer' },
+        expiresAt: '2030-01-01T00:00:00.000Z',
+      });
+
+      expect(signV2Spy).toHaveBeenCalledWith(
+        'credential',
+        'did:web:oxy.so:u:user-123',
+        {
+          about: 'did:web:oxy.so:u:holder-1',
+          types: ['VerifiableCredential', 'EmploymentCredential'],
+          claims: { role: 'Engineer' },
+          expiresAt: Date.parse('2030-01-01T00:00:00.000Z'),
+        },
+        { seq: 0, prev: null, collection: 'app.oxy.credential', rkey: 'rk' },
+      );
+    });
+
+    it('throws on an unparseable expiresAt (before any signing or network)', async () => {
+      const signV2Spy = jest.spyOn(SignatureService, 'signRecordV2');
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('rk');
+
+      await expect(
+        oxy.issueCredential({
+          holderDid: 'did:web:oxy.so:u:holder-1',
+          types: ['EmploymentCredential'],
+          claims: {},
+          expiresAt: 'not-a-date',
+        }),
+      ).rejects.toThrow(/Invalid expiresAt/);
+      expect(signV2Spy).not.toHaveBeenCalled();
+      expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+
+    it('does NOT sweep caches when the POST fails', async () => {
+      jest.spyOn(SignatureService, 'signRecordV2').mockResolvedValue({} as SignedRecordEnvelope);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('rk');
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockRejectedValueOnce(new Error('self_credential'));
+
+      await expect(
+        oxy.issueCredential({ holderDid: 'did:web:oxy.so:u:holder-1', types: ['X'], claims: {} }),
+      ).rejects.toThrow();
+      expect(sweepSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws when no user is authenticated (before any network)', async () => {
+      jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('rk');
+      await expect(
+        oxy.issueCredential({ holderDid: 'did:web:oxy.so:u:holder-1', types: ['X'], claims: {} }),
+      ).rejects.toThrow(/No authenticated user/);
+      expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listCredentials', () => {
+    const listResult = { credentials: [] };
+
+    it('GETs /civic/credentials/:holderUserId (cached) with no status filter', async () => {
+      makeRequestSpy.mockResolvedValue(listResult);
+
+      const result = await oxy.listCredentials('holder-1');
+
+      expect(result).toEqual(listResult);
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/holder-1',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('appends the ?status= filter when provided', async () => {
+      makeRequestSpy.mockResolvedValue(listResult);
+
+      await oxy.listCredentials('holder-1', { status: 'revoked' });
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/holder-1?status=revoked',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('URL-encodes the holderUserId path segment', async () => {
+      makeRequestSpy.mockResolvedValue(listResult);
+      await oxy.listCredentials('a/b');
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/a%2Fb',
+        undefined,
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('listMyCredentials', () => {
+    it('lists the current user id, forwarding the status filter', async () => {
+      makeRequestSpy.mockResolvedValue({ credentials: [] });
+
+      await oxy.listMyCredentials({ status: 'active' });
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/user-123?status=active',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('throws when no user is authenticated (before any network)', async () => {
+      jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
+      await expect(oxy.listMyCredentials()).rejects.toThrow(/No authenticated user/);
+      expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('verifyCredential', () => {
+    it('GETs the by-record verify endpoint (cached) and returns the verdict', async () => {
+      const verdict = { valid: true, credential: null };
+      makeRequestSpy.mockResolvedValue(verdict);
+
+      const result = await oxy.verifyCredential('rec-4');
+
+      expect(result).toEqual(verdict);
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/by-record/rec-4/verify',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('URL-encodes the recordId path segment', async () => {
+      makeRequestSpy.mockResolvedValue({ valid: false, reason: 'not_found', credential: null });
+      await oxy.verifyCredential('a/b');
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/credentials/by-record/a%2Fb/verify',
+        undefined,
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('revokeCredential', () => {
+    const credentialResponse: VerifiableCredentialResponse = {
+      id: 'cred-1',
+      recordId: 'rec-4',
+      holderUserId: 'holder-1',
+      holderDid: 'did:web:oxy.so:u:holder-1',
+      issuerUserId: 'user-123',
+      issuerDid: 'did:web:oxy.so:u:user-123',
+      types: ['VerifiableCredential', 'EmploymentCredential'],
+      claims: {},
+      status: 'revoked',
+      issuedAt: 1700000000000,
+      revokedAt: 1700000600000,
+    };
+
+    it('POSTs /civic/credentials/:id/revoke and sweeps caches', async () => {
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy.mockResolvedValue({ revoked: true, credential: credentialResponse });
+
+      const result = await oxy.revokeCredential('cred-1');
+
+      expect(result).toEqual({ revoked: true, credential: credentialResponse });
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/civic/credentials/cred-1/revoke',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/civic/credentials/');
+    });
+
+    it('URL-encodes the id path segment', async () => {
+      jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy.mockResolvedValue({ revoked: true, credential: credentialResponse });
+      await oxy.revokeCredential('a/b');
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/civic/credentials/a%2Fb/revoke',
+        undefined,
+        expect.anything(),
+      );
+    });
+
+    it('does NOT sweep caches when the POST fails', async () => {
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy.mockRejectedValue(new Error('not_issuer'));
+
+      await expect(oxy.revokeCredential('cred-1')).rejects.toThrow();
+      expect(sweepSpy).not.toHaveBeenCalled();
     });
   });
 });

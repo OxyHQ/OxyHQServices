@@ -205,6 +205,8 @@ export type {
     DenyValidationResult,
     VouchForPersonInput,
     WithdrawVouchResult,
+    IssueCredentialInput,
+    RevokeCredentialResult,
 } from './mixins/OxyServices.civic';
 
 // ---------------------------------------------------------------------------

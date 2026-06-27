@@ -5,9 +5,10 @@ import { ErrorFallback } from '@/components/error-fallback';
 /**
  * Oxy ID tab stack: the landing/home + citizen ID card (`index`), the
  * scanned-person view (`card/[did]`) the QR scanner deep-links into, the
- * "confirm you met me IRL" QR screen (`attest-me`), and the vouch confirm screen
- * (`vouch/[did]`) the scanned card pushes. Screens self-render their headers, so
- * the stack headers stay hidden.
+ * "confirm you met me IRL" QR screen (`attest-me`), the vouch confirm screen
+ * (`vouch/[did]`), and the issue-a-credential form (`credential/[did]`) the
+ * scanned card pushes. Screens self-render their headers, so the stack headers
+ * stay hidden.
  */
 export default function IdTabLayout() {
   return (
@@ -16,6 +17,7 @@ export default function IdTabLayout() {
       <Stack.Screen name="card/[did]" />
       <Stack.Screen name="attest-me" />
       <Stack.Screen name="vouch/[did]" />
+      <Stack.Screen name="credential/[did]" />
     </Stack>
   );
 }

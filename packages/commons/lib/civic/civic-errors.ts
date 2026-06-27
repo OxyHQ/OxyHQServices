@@ -37,6 +37,40 @@ export type VouchErrorCode =
   | 'subject_not_found'
   | 'generic';
 
+/**
+ * Recognized rejection reasons for a credential VERIFY (`valid: false`).
+ *
+ * `verifyCredential` resolves to `{ valid, reason?, credential }` (it does NOT
+ * throw on an untrusted credential), so this maps the stable server `reason`
+ * string — not a thrown `Error.message`.
+ */
+export type CredentialVerifyReasonCode =
+  | 'bad_signature'
+  | 'issuer_key_not_current'
+  | 'issuer_not_found'
+  | 'record_missing'
+  | 'revoked'
+  | 'expired'
+  | 'not_found'
+  | 'generic';
+
+/** Recognized rejection codes for a credential ISSUE submit. */
+export type CredentialIssueErrorCode =
+  | 'self_credential'
+  | 'holder_not_found'
+  | 'invalid_holder'
+  | 'invalid_expiry'
+  | 'invalid_claims'
+  | 'conflict'
+  | 'generic';
+
+/** Recognized rejection codes for a credential REVOKE. */
+export type CredentialRevokeErrorCode =
+  | 'not_issuer'
+  | 'already_revoked'
+  | 'not_found'
+  | 'generic';
+
 const ATTEST_REASONS: readonly Exclude<AttestErrorCode, 'generic'>[] = [
   'expired',
   'nonce_used',
@@ -89,5 +123,71 @@ export function vouchErrorCode(error: unknown): VouchErrorCode {
   if (msg.includes('subject not found') || msg.includes('subject_not_found')) {
     return 'subject_not_found';
   }
+  return 'generic';
+}
+
+/** The credential-verify reasons we have localized copy for, longest-first so a
+ *  more specific code is matched before a substring of it. */
+const CREDENTIAL_VERIFY_REASONS: readonly Exclude<CredentialVerifyReasonCode, 'generic'>[] = [
+  'issuer_key_not_current',
+  'issuer_not_found',
+  'record_missing',
+  'bad_signature',
+  'not_found',
+  'revoked',
+  'expired',
+];
+
+/**
+ * Classify the stable `reason` from a `verifyCredential` result
+ * (`valid: false`). `verifyCredential` never throws on an untrusted credential,
+ * so this maps the machine-readable `reason` string directly. Anything
+ * unmodelled (or a missing reason) collapses to `'generic'`, so a screen can
+ * always do `t('civic.credentials.verify.reason.' + code)`.
+ */
+export function credentialVerifyReason(reason: string | undefined): CredentialVerifyReasonCode {
+  if (!reason) return 'generic';
+  const normalized = reason.toLowerCase();
+  return CREDENTIAL_VERIFY_REASONS.find((code) => normalized === code || normalized.includes(code)) ?? 'generic';
+}
+
+/**
+ * Classify a credential-issuance submit error. The API rejects with
+ * `"Credential rejected: <reason>"` (or the sentences `"Credential holder not
+ * found"`), and the SDK can throw a client-side `"Invalid expiresAt …"` before
+ * the request. The modelled reasons collapse into the friendly codes above;
+ * anything else is `'generic'`.
+ */
+export function credentialIssueErrorCode(error: unknown): CredentialIssueErrorCode {
+  const msg = messageOf(error);
+  if (msg.includes('self_credential')) return 'self_credential';
+  if (msg.includes('holder not found') || msg.includes('holder_not_found')) return 'holder_not_found';
+  if (msg.includes('invalid_holder')) return 'invalid_holder';
+  if (msg.includes('invalid_expiry') || msg.includes('invalid expiresat')) return 'invalid_expiry';
+  if (
+    msg.includes('missing_base_type') ||
+    msg.includes('invalid_type') ||
+    msg.includes('invalid_record')
+  ) {
+    return 'invalid_claims';
+  }
+  if (
+    msg.includes('chain_conflict') ||
+    msg.includes('chain_fork') ||
+    msg.includes('chain_gap') ||
+    msg.includes('bad_seq') ||
+    msg.includes('stale_issued_at')
+  ) {
+    return 'conflict';
+  }
+  return 'generic';
+}
+
+/** Classify a credential-revoke error. */
+export function credentialRevokeErrorCode(error: unknown): CredentialRevokeErrorCode {
+  const msg = messageOf(error);
+  if (msg.includes('original issuer') || msg.includes('not_issuer')) return 'not_issuer';
+  if (msg.includes('already_revoked')) return 'already_revoked';
+  if (msg.includes('credential not found') || msg.includes('not_found')) return 'not_found';
   return 'generic';
 }

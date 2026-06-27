@@ -130,6 +130,12 @@ export {
     personhoodBreakdownSchema,
     personhoodStatusResultSchema,
     vouchResultSchema,
+    // Verifiable Credentials (Fase 4 — NEW)
+    credentialRecordSchema,
+    verifiableCredentialResponseSchema,
+    credentialIssueResultSchema,
+    credentialListResultSchema,
+    credentialVerifyResultSchema,
 } from './civic';
 
 export type {
@@ -150,4 +156,11 @@ export type {
     PersonhoodBreakdown,
     PersonhoodStatusResult,
     VouchResult,
+    // Verifiable Credentials (Fase 4 — NEW)
+    CredentialStatus,
+    CredentialRecord,
+    VerifiableCredentialResponse,
+    CredentialIssueResult,
+    CredentialListResult,
+    CredentialVerifyResult,
 } from './civic';

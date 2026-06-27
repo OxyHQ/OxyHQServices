@@ -67,6 +67,11 @@ export default function ScannedCardScreen() {
     router.push({ pathname: '/(tabs)/(id)/vouch/[did]', params: { did } });
   }, [router, did]);
 
+  const handleIssueCredential = useCallback(() => {
+    if (!did) return;
+    router.push({ pathname: '/(tabs)/(id)/credential/[did]', params: { did } });
+  }, [router, did]);
+
   const renderBody = () => {
     // The DID could not be parsed into a user id — not a valid Oxy ID.
     if (!userId) {
@@ -192,16 +197,26 @@ export default function ScannedCardScreen() {
           </View>
         )}
 
-        {/* Vouch CTA — only for a card whose signature verified. */}
+        {/* Vouch + issue-credential CTAs — only for a card whose signature verified. */}
         {verified && (
-          <TouchableOpacity
-            style={[styles.vouchCta, { backgroundColor: colors.tint }]}
-            onPress={handleVouch}
-            accessibilityRole="button"
-          >
-            <MaterialCommunityIcons name="account-multiple-check-outline" size={20} color="#fff" />
-            <Text style={styles.vouchCtaText}>{t('civic.vouch.cta')}</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[styles.vouchCta, { backgroundColor: colors.tint }]}
+              onPress={handleVouch}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="account-multiple-check-outline" size={20} color="#fff" />
+              <Text style={styles.vouchCtaText}>{t('civic.vouch.cta')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.issueCta, { borderColor: colors.tint }]}
+              onPress={handleIssueCredential}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="certificate-outline" size={20} color={colors.tint} />
+              <Text style={[styles.issueCtaText, { color: colors.tint }]}>{t('civic.credentials.issue.cardCta')}</Text>
+            </TouchableOpacity>
+          </>
         )}
 
         {card.verifiedDomains.length > 0 && (
@@ -378,6 +393,21 @@ const styles = StyleSheet.create({
   },
   vouchCtaText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  issueCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: -4,
+    marginBottom: 16,
+  },
+  issueCtaText: {
     fontSize: 16,
     fontWeight: '600',
   },

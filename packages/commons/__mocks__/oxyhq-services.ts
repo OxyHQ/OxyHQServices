@@ -29,6 +29,11 @@ interface MockOxyServices {
   getPersonhood?: jest.Mock;
   vouchForPerson?: jest.Mock;
   withdrawVouch?: jest.Mock;
+  listMyCredentials?: jest.Mock;
+  listCredentials?: jest.Mock;
+  verifyCredential?: jest.Mock;
+  issueCredential?: jest.Mock;
+  revokeCredential?: jest.Mock;
 }
 
 interface MockOxyState {

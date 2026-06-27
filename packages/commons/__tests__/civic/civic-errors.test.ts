@@ -1,4 +1,11 @@
-import { attestErrorCode, voteErrorCode, vouchErrorCode } from '@/lib/civic/civic-errors';
+import {
+  attestErrorCode,
+  voteErrorCode,
+  vouchErrorCode,
+  credentialVerifyReason,
+  credentialIssueErrorCode,
+  credentialRevokeErrorCode,
+} from '@/lib/civic/civic-errors';
 
 describe('attestErrorCode', () => {
   it.each([
@@ -52,5 +59,65 @@ describe('vouchErrorCode', () => {
   it('falls back to generic for an unmodelled reason or transport error', () => {
     expect(vouchErrorCode(new Error('Network request failed'))).toBe('generic');
     expect(vouchErrorCode(null)).toBe('generic');
+  });
+});
+
+describe('credentialVerifyReason', () => {
+  it.each([
+    ['bad_signature', 'bad_signature'],
+    ['issuer_key_not_current', 'issuer_key_not_current'],
+    ['issuer_not_found', 'issuer_not_found'],
+    ['record_missing', 'record_missing'],
+    ['revoked', 'revoked'],
+    ['expired', 'expired'],
+    ['not_found', 'not_found'],
+  ])('maps the "%s" reason → %s', (reason, code) => {
+    expect(credentialVerifyReason(reason)).toBe(code);
+  });
+
+  it('falls back to generic for a missing or unmodelled reason', () => {
+    expect(credentialVerifyReason(undefined)).toBe('generic');
+    expect(credentialVerifyReason('something_else')).toBe('generic');
+  });
+
+  it('does not confuse issuer_not_found with not_found (longest-match wins)', () => {
+    expect(credentialVerifyReason('issuer_not_found')).toBe('issuer_not_found');
+  });
+});
+
+describe('credentialIssueErrorCode', () => {
+  it.each([
+    ['Credential rejected: self_credential', 'self_credential'],
+    ['Credential holder not found', 'holder_not_found'],
+    ['Credential rejected: invalid_holder', 'invalid_holder'],
+    ['Credential rejected: invalid_expiry', 'invalid_expiry'],
+    ['Invalid expiresAt — must be an ISO 8601 date string.', 'invalid_expiry'],
+    ['Credential rejected: missing_base_type', 'invalid_claims'],
+    ['Credential rejected: invalid_type', 'invalid_claims'],
+    ['Credential rejected: chain_conflict', 'conflict'],
+    ['Credential rejected: stale_issued_at', 'conflict'],
+  ])('maps "%s" → %s', (message, code) => {
+    expect(credentialIssueErrorCode(new Error(message))).toBe(code);
+  });
+
+  it('falls back to generic for an unmodelled reason or transport error', () => {
+    expect(credentialIssueErrorCode(new Error('Credential rejected: not_self_issued'))).toBe('generic');
+    expect(credentialIssueErrorCode(new Error('Network request failed'))).toBe('generic');
+    expect(credentialIssueErrorCode(null)).toBe('generic');
+  });
+});
+
+describe('credentialRevokeErrorCode', () => {
+  it.each([
+    ['Only the original issuer may revoke this credential', 'not_issuer'],
+    ['Revoke rejected: already_revoked', 'already_revoked'],
+    ['Credential not found', 'not_found'],
+  ])('maps "%s" → %s', (message, code) => {
+    expect(credentialRevokeErrorCode(new Error(message))).toBe(code);
+  });
+
+  it('falls back to generic otherwise', () => {
+    expect(credentialRevokeErrorCode(new Error('boom'))).toBe('generic');
+    expect(credentialRevokeErrorCode(null)).toBe('generic');
   });
 });
