@@ -155,18 +155,20 @@ describe('DID_WEB_DOMAIN override — anchored at api.oxy.so', () => {
   const ORIGINAL_DID_WEB_DOMAIN = process.env.DID_WEB_DOMAIN;
   let overrideServer: http.Server;
 
-  beforeAll((done) => {
+  beforeAll(async () => {
     process.env.DID_WEB_DOMAIN = 'api.oxy.so';
     let freshRoutes: typeof import('../did').default | undefined;
-    jest.isolateModules(() => {
-      freshRoutes = (require('../did') as typeof import('../did')).default;
+    await jest.isolateModulesAsync(async () => {
+      freshRoutes = (await import('../did')).default;
     });
     if (!freshRoutes) {
       throw new Error('did routes failed to load under isolateModules');
     }
     const app = express();
     app.use('/', freshRoutes);
-    overrideServer = app.listen(0, '127.0.0.1', done);
+    await new Promise<void>((resolve) => {
+      overrideServer = app.listen(0, '127.0.0.1', () => resolve());
+    });
   });
 
   afterAll((done) => {

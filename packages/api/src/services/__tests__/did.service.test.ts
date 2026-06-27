@@ -148,10 +148,10 @@ describe('DID_WEB_DOMAIN override', () => {
     jest.resetModules();
   });
 
-  function loadDidServiceFresh(): typeof import('../did.service') {
+  async function loadDidServiceFresh(): Promise<typeof import('../did.service')> {
     let mod: typeof import('../did.service') | undefined;
-    jest.isolateModules(() => {
-      mod = require('../did.service') as typeof import('../did.service');
+    await jest.isolateModulesAsync(async () => {
+      mod = await import('../did.service');
     });
     if (!mod) {
       throw new Error('did.service failed to load under isolateModules');
@@ -159,9 +159,9 @@ describe('DID_WEB_DOMAIN override', () => {
     return mod;
   }
 
-  it('anchors every did:web id at DID_WEB_DOMAIN while keeping federation URLs on oxy.so', () => {
+  it('anchors every did:web id at DID_WEB_DOMAIN while keeping federation URLs on oxy.so', async () => {
     process.env.DID_WEB_DOMAIN = 'api.oxy.so';
-    const fresh = loadDidServiceFresh();
+    const fresh = await loadDidServiceFresh();
 
     expect(fresh.OXY_DID).toBe('did:web:api.oxy.so');
     expect(fresh.buildUserDid('507f1f77bcf86cd799439011')).toBe(
@@ -206,9 +206,9 @@ describe('DID_WEB_DOMAIN override', () => {
     expect(orgDoc.service[0]?.serviceEndpoint).toBe('https://api.oxy.so');
   });
 
-  it('defaults to did:web:oxy.so when DID_WEB_DOMAIN is unset', () => {
+  it('defaults to did:web:oxy.so when DID_WEB_DOMAIN is unset', async () => {
     delete process.env.DID_WEB_DOMAIN;
-    const fresh = loadDidServiceFresh();
+    const fresh = await loadDidServiceFresh();
 
     expect(fresh.OXY_DID).toBe('did:web:oxy.so');
     expect(fresh.buildUserDid('507f1f77bcf86cd799439011')).toBe(
