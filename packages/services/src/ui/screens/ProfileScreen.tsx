@@ -12,24 +12,14 @@ import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
-import { getAccountDisplayName, logger } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
+import { getAccountDisplayName, logger, normalizeProfileLinks } from '@oxyhq/core';
+import type { User, ProfileLink } from '@oxyhq/core';
 import { extractErrorMessage } from '../utils/errorHandlers';
 
 interface ProfileScreenProps extends BaseScreenProps {
     userId: string;
     username?: string;
 }
-
-interface LinkMetadata {
-    id?: string;
-    url: string;
-    title?: string;
-    description?: string;
-    image?: string;
-}
-
-type ProfileLink = string | { link: string } | LinkMetadata;
 
 const AVATAR_SIZE = 96;
 const BANNER_HEIGHT = 160;
@@ -45,13 +35,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     const [commentsCount, setCommentsCount] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [links, setLinks] = useState<Array<{
-        url: string;
-        title?: string;
-        description?: string;
-        image?: string;
-        id: string;
-    }>>([]);
+    const [links, setLinks] = useState<ProfileLink[]>([]);
 
     // Use the follow hook for real follower data
     const {
@@ -114,34 +98,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 setProfile(profileRes);
                 setReputationTotal(typeof reputationRes.total === 'number' ? reputationRes.total : null);
 
-                // Extract links from profile data
-                if (profileRes.linksMetadata && Array.isArray(profileRes.linksMetadata)) {
-                    const linksWithIds = profileRes.linksMetadata.map((link: LinkMetadata, index: number) => ({
-                        ...link,
-                        id: link.id || `existing-${index}`
-                    }));
-                    setLinks(linksWithIds);
-                } else if (Array.isArray(profileRes.links)) {
-                    const simpleLinks = profileRes.links.map((l: ProfileLink) => typeof l === 'string' ? l : (typeof l === 'object' && 'link' in l ? l.link : '')).filter(Boolean);
-                    const linksWithMetadata = simpleLinks.map((url: string, index: number) => ({
-                        url,
-                        title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                        description: `Link to ${url}`,
-                        image: undefined,
-                        id: `existing-${index}`
-                    }));
-                    setLinks(linksWithMetadata);
-                } else if (profileRes.website) {
-                    setLinks([{
-                        url: profileRes.website,
-                        title: profileRes.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                        description: `Link to ${profileRes.website}`,
-                        image: undefined,
-                        id: 'existing-0'
-                    }]);
-                } else {
-                    setLinks([]);
-                }
+                // Normalize profile links via the shared @oxyhq/core helper.
+                setLinks(normalizeProfileLinks(profileRes.linksMetadata, profileRes.links));
 
                 // Follower/following counts are managed by the `useFollow` hook.
 
