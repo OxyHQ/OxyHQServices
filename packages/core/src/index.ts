@@ -89,6 +89,8 @@ export {
     getNormalizedUserHandle,
 } from './utils/userHandle';
 export type { CanonicalUserHandleInput, UserHandleInput } from './utils/userHandle';
+export { normalizeProfileLinks } from './utils/profileLinks';
+export type { ProfileLink, ProfileLinkMetadata } from './utils/profileLinks';
 
 // ---------------------------------------------------------------------------
 // Applications (multi-user apps: membership, roles, credentials)

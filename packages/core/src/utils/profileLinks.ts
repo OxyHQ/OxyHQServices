@@ -1,0 +1,74 @@
+/**
+ * Normalized profile link shape for display.
+ *
+ * `id` is a stable key for list rendering (the source entry's id when present,
+ * otherwise the source index as a string). `url` is always a non-empty string.
+ */
+export interface ProfileLink {
+  id: string;
+  title?: string;
+  url: string;
+}
+
+/** Source shape of a single `User.linksMetadata` entry. */
+export interface ProfileLinkMetadata {
+  url: string;
+  title?: string;
+  description?: string;
+  image?: string;
+  id?: string;
+}
+
+function cleanUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Normalizes a user's profile links into a clean display shape.
+ *
+ * Pure, no side effects, no I/O.
+ *
+ * - Prefers `linksMetadata` when it is a non-empty array: maps each entry to
+ *   `{ id, title, url }`, using `entry.id` when present and falling back to the
+ *   entry index. Entries without a non-empty string `url` are dropped.
+ * - Otherwise falls back to the legacy `links` string array: maps each string to
+ *   `{ id: <index>, url }` (no title). Empty/non-string values are dropped.
+ * - Returns `[]` when both are absent or empty (including when `linksMetadata`
+ *   is present but every entry is dropped — it does NOT fall back to `links`).
+ *
+ * URLs are trimmed and blanks are filtered out. This does NOT add a scheme such
+ * as `https://`; prefixing is a display concern left to the caller.
+ */
+export function normalizeProfileLinks(
+  linksMetadata?: ProfileLinkMetadata[],
+  links?: string[],
+): ProfileLink[] {
+  if (Array.isArray(linksMetadata) && linksMetadata.length > 0) {
+    const result: ProfileLink[] = [];
+    linksMetadata.forEach((entry, index) => {
+      const url = cleanUrl(entry?.url);
+      if (!url) return;
+      const id =
+        typeof entry?.id === 'string' && entry.id.trim().length > 0
+          ? entry.id
+          : String(index);
+      const title = typeof entry?.title === 'string' ? entry.title : undefined;
+      result.push({ id, url, ...(title !== undefined ? { title } : {}) });
+    });
+    return result;
+  }
+
+  if (Array.isArray(links) && links.length > 0) {
+    const result: ProfileLink[] = [];
+    links.forEach((value, index) => {
+      const url = cleanUrl(value);
+      if (!url) return;
+      result.push({ id: String(index), url });
+    });
+    return result;
+  }
+
+  return [];
+}
