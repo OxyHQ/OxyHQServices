@@ -1,47 +1,30 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Section } from '@/components/section';
-import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { CivicBadge } from '@/components/civic/CivicBadge';
+import { StandingHero } from '@/components/reputation/StandingHero';
+import { CompositionCard } from '@/components/reputation/CompositionCard';
+import { CivicDutyCard } from '@/components/reputation/CivicDutyCard';
+import { ActivityList } from '@/components/reputation/ActivityList';
 import { useCivicReputation, useReputationSources } from '@/hooks/useCivicReputation';
+import { useReputationActivity } from '@/hooks/useReputationActivity';
 import { useValidatorInbox } from '@/hooks/useValidatorInbox';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
-import { getTrustTierMeta } from '@/lib/civic/card-presentation';
-import type { CivicTone } from '@/lib/civic/card-presentation';
-import type {
-  ReputationSourceKey,
-  ReputationSourceWeight,
-} from '@/lib/civic/reputation-sources';
 import { useTranslation } from '@/lib/i18n';
 
-const SOURCE_ICON: Record<ReputationSourceKey, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
-  realLife: 'handshake-outline',
-  peerCivic: 'account-group-outline',
-  apps: 'apps',
-  penalties: 'alert-octagon-outline',
-};
-
-const WEIGHT_TONE: Record<ReputationSourceWeight, CivicTone> = {
-  high: 'positive',
-  medium: 'positive',
-  low: 'neutral',
-  penalty: 'danger',
-};
-
 /**
- * Reputation breakdown by SOURCE.
+ * Reputation — the "engine room".
  *
- * The canonical lifetime total + trust tier come straight from the balance; the
- * four civic sources (Real life / Peer-civic / Apps / Penalties) are derived
- * client-side from `breakdown` via `deriveReputationSources`. Offline-first via
- * the same `civic`-namespaced React Query cache.
+ * A single prioritized vertical scroll: the standing hero (tier + progress +
+ * influence/reliability), the composition donut (where reputation comes from),
+ * the civic-duty call to action (validator inbox), and the recent activity feed.
+ * The canonical balance comes from `useCivicReputation`; the four civic sources
+ * are derived client-side; recent ledger entries come from `useReputationActivity`.
+ * Offline-first via the shared `civic`-namespaced React Query cache.
  */
 export default function ReputationScreen() {
   const colors = useColors();
@@ -55,17 +38,13 @@ export default function ReputationScreen() {
   const balance = balanceQuery.data;
   const sources = useReputationSources(balance);
 
+  const activityQuery = useReputationActivity(userId);
   const inboxQuery = useValidatorInbox();
   const pendingValidations = inboxQuery.data?.length ?? 0;
 
   const handleOpenInbox = useCallback(() => {
     router.push('/(tabs)/(reputation)/validate');
   }, [router]);
-
-  const trustMeta = useMemo(
-    () => (balance ? getTrustTierMeta(balance.trustTier) : null),
-    [balance],
-  );
 
   const renderBody = () => {
     if (balanceQuery.isPending && !balance) {
@@ -100,92 +79,14 @@ export default function ReputationScreen() {
 
     return (
       <View style={styles.content}>
-        {!isOnline && (
-          <View style={styles.offlineRow}>
-            <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.reputation.offline')} />
-          </View>
-        )}
-
-        {/* Headline total + trust tier */}
-        <AccountCard>
-          <View style={[styles.totalCard, { backgroundColor: colors.card }]}>
-            <ThemedText style={[styles.totalValue, { color: colors.text }]}>{balance.total}</ThemedText>
-            <ThemedText style={[styles.totalLabel, { color: colors.textSecondary }]}>
-              {t('civic.reputation.total')}
-            </ThemedText>
-            {trustMeta && (
-              <View style={styles.totalBadge}>
-                <CivicBadge
-                  tone={trustMeta.tone}
-                  icon="shield-star-outline"
-                  label={t(`civic.trustTier.${trustMeta.labelKey}`)}
-                />
-              </View>
-            )}
-          </View>
-        </AccountCard>
-
-        {/* Civic duty — validator jury inbox */}
-        <Section title={t('civic.validate.dutyTitle')}>
-          <AccountCard>
-            <GroupedSection
-              items={[
-                {
-                  id: 'validation-inbox',
-                  icon: 'scale-balance',
-                  iconColor: colors.identityIconPublicKey,
-                  title: t('civic.validate.inboxEntry'),
-                  subtitle:
-                    pendingValidations > 0
-                      ? t('civic.validate.inboxEntryCount', { count: pendingValidations })
-                      : t('civic.validate.inboxEntryEmpty'),
-                  onPress: handleOpenInbox,
-                  showChevron: true,
-                },
-              ]}
-            />
-          </AccountCard>
-        </Section>
-
-        {/* By source */}
-        <Section title={t('civic.reputation.bySource')}>
-          <ThemedText style={styles.subtitle}>{t('civic.reputation.bySourceSubtitle')}</ThemedText>
-          <AccountCard>
-            <View style={styles.sourceList}>
-              {sources.map((source) => (
-                <View key={source.key} style={styles.sourceRow}>
-                  <View style={[styles.sourceIcon, { backgroundColor: colors.background }]}>
-                    <MaterialCommunityIcons
-                      name={SOURCE_ICON[source.key]}
-                      size={20}
-                      color={source.weight === 'penalty' ? colors.error : colors.tint}
-                    />
-                  </View>
-                  <View style={styles.sourceText}>
-                    <ThemedText style={styles.sourceTitle}>
-                      {t(`civic.reputation.sources.${source.key}`)}
-                    </ThemedText>
-                    <ThemedText style={[styles.sourceDesc, { color: colors.textSecondary }]}>
-                      {t(`civic.reputation.sources.${source.key}Desc`)}
-                    </ThemedText>
-                    <View style={styles.sourceBadgeRow}>
-                      <CivicBadge tone={WEIGHT_TONE[source.weight]} label={t(`civic.reputation.weight.${source.weight}`)} />
-                    </View>
-                  </View>
-                  <ThemedText
-                    style={[
-                      styles.sourcePoints,
-                      { color: source.weight === 'penalty' ? colors.error : colors.text },
-                    ]}
-                  >
-                    {source.weight === 'penalty' ? `-${source.points}` : source.points}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          </AccountCard>
-        </Section>
-
+        <StandingHero balance={balance} isOffline={!isOnline} />
+        <CompositionCard sources={sources} />
+        <CivicDutyCard pendingCount={pendingValidations} onPress={handleOpenInbox} />
+        <ActivityList
+          transactions={activityQuery.data}
+          isLoading={activityQuery.isPending}
+          isError={activityQuery.isError}
+        />
         <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
           {t('civic.reputation.footnote')}
         </ThemedText>
@@ -195,12 +96,7 @@ export default function ReputationScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.headerWrap}>
-          <ScreenHeader title={t('civic.reputation.title')} subtitle={t('civic.reputation.subtitle')} />
-        </View>
-        {renderBody()}
-      </View>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>{renderBody()}</View>
     </ScreenContentWrapper>
   );
 }
@@ -209,82 +105,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerWrap: {
-    paddingHorizontal: 16,
-  },
   content: {
     paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 120,
-  },
-  offlineRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  totalCard: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  totalValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  totalLabel: {
-    fontSize: 14,
-    marginTop: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  totalBadge: {
-    marginTop: 12,
-  },
-  subtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginBottom: 12,
-  },
-  sourceList: {
-    paddingVertical: 4,
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 12,
-    gap: 12,
-  },
-  sourceIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sourceText: {
-    flex: 1,
-    gap: 4,
-  },
-  sourceTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sourceDesc: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  sourceBadgeRow: {
-    flexDirection: 'row',
-    marginTop: 2,
-  },
-  sourcePoints: {
-    fontSize: 20,
-    fontWeight: '700',
-    minWidth: 44,
-    textAlign: 'right',
   },
   footnote: {
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 16,
+    marginTop: 4,
   },
   centered: {
     flex: 1,

@@ -1261,6 +1261,57 @@
         "medium": "Media",
         "low": "Baja",
         "penalty": "Penalización"
+      },
+      "weightShort": {
+        "high": "ALTA",
+        "medium": "MED",
+        "low": "BAJA",
+        "penalty": "PEN"
+      },
+      "standing": {
+        "totalLine": "{{total}} de reputación total",
+        "verifiedMax": "Persona verificada: el nivel más alto en Oxy.",
+        "restricted": "Reputación restringida: resuelve los problemas pendientes para recuperarla."
+      },
+      "progress": {
+        "label": "{{current}} → {{target}} · faltan {{remaining}} para {{tier}}",
+        "topTier": "Estás en el nivel ganado más alto. Verifica tu prueba de personalidad para llegar a la cima."
+      },
+      "stats": {
+        "influence": "Influencia",
+        "influenceCaption": "Cuánto cuentan tus acciones en Oxy, con un tope para que nadie domine.",
+        "reliability": "Fiabilidad",
+        "reliabilityCaption": "Con qué frecuencia tus reportes y juicios se sostienen."
+      },
+      "composition": {
+        "earned": "Ganado",
+        "empty": "Aún no has ganado reputación: tus acciones verificadas la construirán."
+      },
+      "duty": {
+        "secondary": "Valida solicitudes · Avala a personas"
+      },
+      "activity": {
+        "title": "Actividad reciente",
+        "loading": "Cargando actividad…",
+        "error": "No se pudo cargar la actividad reciente.",
+        "empty": "Aún no hay actividad de reputación: tus acciones verificadas aparecerán aquí.",
+        "signed": "Firmado criptográficamente",
+        "actions": {
+          "realLife": "Confirmación en persona",
+          "peerValidated": "Validado por pares",
+          "validationCorrect": "Veredicto correcto",
+          "validationIncorrect": "Veredicto incorrecto",
+          "vouched": "Avalado como real",
+          "vouchSlashed": "Aval penalizado",
+          "endorsement": "Respaldo de app",
+          "content": "Actividad en apps",
+          "social": "Actividad social",
+          "trust": "Señal de confianza",
+          "moderation": "Moderación",
+          "physical": "Señal del mundo real",
+          "penalty": "Penalización",
+          "other": "Ajuste"
+        }
       }
     },
     "attest": {

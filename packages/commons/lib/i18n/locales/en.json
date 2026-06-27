@@ -1261,6 +1261,57 @@
         "medium": "Medium",
         "low": "Low",
         "penalty": "Penalty"
+      },
+      "weightShort": {
+        "high": "HIGH",
+        "medium": "MED",
+        "low": "LOW",
+        "penalty": "PEN"
+      },
+      "standing": {
+        "totalLine": "{{total}} total reputation",
+        "verifiedMax": "Verified human — the highest standing on Oxy.",
+        "restricted": "Standing restricted — resolve outstanding issues to recover."
+      },
+      "progress": {
+        "label": "{{current}} → {{target}} · {{remaining}} to {{tier}}",
+        "topTier": "You're at the highest earned tier. Verify your personhood to reach the top."
+      },
+      "stats": {
+        "influence": "Influence",
+        "influenceCaption": "How much your actions count across Oxy — capped so no one can dominate.",
+        "reliability": "Reliability",
+        "reliabilityCaption": "How often your reports and judgments hold up."
+      },
+      "composition": {
+        "earned": "Earned",
+        "empty": "No reputation earned yet — your verified actions will build it."
+      },
+      "duty": {
+        "secondary": "Validate requests · Vouch for people"
+      },
+      "activity": {
+        "title": "Recent activity",
+        "loading": "Loading activity…",
+        "error": "Couldn't load recent activity.",
+        "empty": "No reputation activity yet — your verified actions will appear here.",
+        "signed": "Cryptographically signed",
+        "actions": {
+          "realLife": "Real-life confirmation",
+          "peerValidated": "Peer-validated",
+          "validationCorrect": "Correct verdict",
+          "validationIncorrect": "Incorrect verdict",
+          "vouched": "Vouched as real",
+          "vouchSlashed": "Vouch slashed",
+          "endorsement": "App endorsement",
+          "content": "App activity",
+          "social": "Social activity",
+          "trust": "Trust signal",
+          "moderation": "Moderation",
+          "physical": "Real-world signal",
+          "penalty": "Penalty",
+          "other": "Adjustment"
+        }
       }
     },
     "attest": {

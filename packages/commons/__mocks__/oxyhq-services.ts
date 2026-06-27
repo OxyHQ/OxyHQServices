@@ -17,6 +17,7 @@ interface MockOxyServices {
   getPublicKey?: jest.Mock;
   getPublicCard?: jest.Mock;
   getReputationBalance?: jest.Mock;
+  getReputationTransactions?: jest.Mock;
   getFileDownloadUrl?: jest.Mock;
   getCurrentUserId?: jest.Mock;
   getMyIdPayload?: jest.Mock;
