@@ -19,12 +19,16 @@ interface MockOxyServices {
   getReputationBalance?: jest.Mock;
   getFileDownloadUrl?: jest.Mock;
   getCurrentUserId?: jest.Mock;
-  getMyDniPayload?: jest.Mock;
+  getMyIdPayload?: jest.Mock;
   buildAttestQrPayload?: jest.Mock;
   submitRealLifeAttestation?: jest.Mock;
   getValidatorInbox?: jest.Mock;
   submitValidationVote?: jest.Mock;
   denyValidation?: jest.Mock;
+  getMyPersonhood?: jest.Mock;
+  getPersonhood?: jest.Mock;
+  vouchForPerson?: jest.Mock;
+  withdrawVouch?: jest.Mock;
 }
 
 interface MockOxyState {

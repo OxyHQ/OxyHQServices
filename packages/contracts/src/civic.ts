@@ -260,3 +260,124 @@ export const validationVoteResultSchema: z.ZodType<ValidationVoteResult> = z.obj
     verdict: z.enum(['valid', 'invalid', 'abstain']),
     status: z.enum(['pending', 'quorum_met', 'validated', 'rejected', 'expired']),
 });
+
+/* -------------------------------------------------------------------------- */
+/*  Proof-of-personhood web-of-trust (Fase 3)                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `record` payload of a `personhood_vouch` signed envelope. The VOUCHER (B)
+ * signs this with their OWN key as a self-issued v2 record on THEIR chain
+ * (`subject === issuer === B.did`); the person being vouched for (A) is
+ * referenced by `about` (A's DID). The server resolves `about` → A's account,
+ * stakes the voucher, awards A the `personhood_vouched` points, and recomputes
+ * A's personhood.
+ *
+ * - `about` is A's DID (`did:web:oxy.so:u:<userId>`).
+ * - `context` (optional) is an opaque note from the vouching UI.
+ * - `stake` (optional) is the voucher's chosen stake; the server clamps it into
+ *   `[PERSONHOOD_VOUCH_MIN_STAKE, PERSONHOOD_VOUCH_MAX_STAKE]` and defaults it
+ *   when omitted. (Note: the wire field is `stake`, NOT `stakeAmount` — the
+ *   latter is the server's clamped, awarded value echoed in {@link VouchResult}.)
+ */
+export interface PersonhoodVouchRecord {
+    about: string;
+    context?: string;
+    stake?: number;
+}
+
+export const personhoodVouchRecordSchema: z.ZodType<PersonhoodVouchRecord> = z.object({
+    about: z.string(),
+    context: z.string().optional(),
+    stake: z.number().optional(),
+});
+
+/**
+ * The signal sub-scores behind a personhood score (audit / UI breakdown),
+ * mirroring the API `PersonhoodStatus` model's embedded `breakdown`.
+ */
+export interface PersonhoodBreakdown {
+    /** Saturated [0,1] vouch signal from the weighted vouch sum. */
+    vouchSignal: number;
+    /** Saturated [0,1] real-life-attestation signal. */
+    realLifeSignal: number;
+    /** 1 when the account is biometric-bound, else 0. */
+    biometricSignal: number;
+    /** Weighted blend of the three signals before the sybil penalty. */
+    evidence: number;
+    /** The [0,1] sybil penalty subtracted from the evidence. */
+    sybilPenalty: number;
+    /** True when the score came from the seed-verifier genesis short-circuit. */
+    seed: boolean;
+}
+
+export const personhoodBreakdownSchema: z.ZodType<PersonhoodBreakdown> = z.object({
+    vouchSignal: z.number(),
+    realLifeSignal: z.number(),
+    biometricSignal: z.number(),
+    evidence: z.number(),
+    sybilPenalty: z.number(),
+    seed: z.boolean(),
+});
+
+/**
+ * The public personhood status snapshot returned by
+ * `GET /civic/personhood/:userId` (and `POST /civic/personhood/:userId/recompute`).
+ * Mirrors the API `PersonhoodStatus` model's serialized response exactly — a
+ * cached, recomputable proof-of-personhood snapshot.
+ *
+ * - `score` is in `[0,1]`; `isRealPerson` is `score >= θ`.
+ * - `breakdown` is `null` ONLY on a public read of a user who has no status
+ *   document yet (the zeroed `unverified` shape); otherwise it is the full
+ *   {@link PersonhoodBreakdown}.
+ * - `updatedAt` is the ISO-8601 timestamp of the last recompute, or `null` when
+ *   no status document exists yet. (Distinct from the card's coarse
+ *   {@link PersonhoodStatus} enum, which is `'unverified' | 'pending' |
+ *   'verified'`.)
+ */
+export interface PersonhoodStatusResult {
+    userId: string;
+    score: number;
+    isRealPerson: boolean;
+    vouchCount: number;
+    realLifeCount: number;
+    biometricBound: boolean;
+    sybilPenalty: number;
+    breakdown: PersonhoodBreakdown | null;
+    updatedAt: string | null;
+}
+
+export const personhoodStatusResultSchema: z.ZodType<PersonhoodStatusResult> = z.object({
+    userId: z.string(),
+    score: z.number(),
+    isRealPerson: z.boolean(),
+    vouchCount: z.number(),
+    realLifeCount: z.number(),
+    biometricBound: z.boolean(),
+    sybilPenalty: z.number(),
+    breakdown: personhoodBreakdownSchema.nullable(),
+    updatedAt: z.string().nullable(),
+});
+
+/**
+ * The result of `POST /civic/personhood/vouch` on success: the stored vouch
+ * record id (the voucher's envelope), the subject + voucher account ids, the
+ * clamped stake the server recorded, and the points awarded to the subject.
+ */
+export interface VouchResult {
+    accepted: true;
+    recordId: string;
+    subjectUserId: string;
+    voucherUserId: string;
+    stakeAmount: number;
+    points: number;
+}
+
+export const vouchResultSchema: z.ZodType<VouchResult> = z.object({
+    accepted: z.literal(true),
+    recordId: z.string(),
+    subjectUserId: z.string(),
+    voucherUserId: z.string(),
+    stakeAmount: z.number(),
+    points: z.number(),
+});

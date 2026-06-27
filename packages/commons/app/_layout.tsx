@@ -170,6 +170,22 @@ function AppStackContent() {
             */}
             <Stack.Screen name="(tabs)" redirect={needsAuth} options={{ headerShown: false }} />
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />
+            {/*
+              The QR scanner is an ACTION, not a tab. It lives at the root as a
+              full-screen presented modal (pushed from the ID landing FAB via
+              `router.push('/(scan)')`) so the CameraView covers the tab bar.
+              Declared LAST and guarded by the same `needsAuth` redirect as
+              `(tabs)`: only an authenticated user can open it, and an
+              unauthenticated `oxycommons://approve` / `oxycommons://attest`
+              deep link (which resolve to `(scan)/approve` / `(scan)/attest`) is
+              bounced to onboarding. Route groups are URL-transparent, so the
+              `/approve` and `/attest` deep-link paths are unchanged by this move.
+            */}
+            <Stack.Screen
+              name="(scan)"
+              redirect={needsAuth}
+              options={{ headerShown: false, presentation: 'fullScreenModal' }}
+            />
           </Stack>
           <StatusBar style="auto" />
         </ThemeProvider>

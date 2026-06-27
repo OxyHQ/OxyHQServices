@@ -29,6 +29,12 @@ jest.mock('../../services/civic/validator.service', () => ({
   denyValidation: jest.fn(),
   getValidatorInbox: jest.fn(),
 }));
+jest.mock('../../services/civic/personhood.service', () => ({
+  vouchForPerson: jest.fn(),
+  withdrawVouch: jest.fn(),
+  recomputePersonhood: jest.fn(),
+}));
+jest.mock('../../models/PersonhoodStatus', () => ({ __esModule: true, default: { findOne: jest.fn() } }));
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   serviceAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),

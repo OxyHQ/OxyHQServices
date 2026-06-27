@@ -11,7 +11,7 @@ import { useTranslation } from '@/lib/i18n';
 /**
  * Confirm-someone screen (the scanner's / B's side of a real-life attestation).
  *
- * Reached from the QR scanner after it parses an `oxydni://attest?…` payload.
+ * Reached from the QR scanner after it parses an `oxycommons://attest?…` payload.
  * Resolves the subject (A) server-side from the DID, gates the signed
  * attestation behind the device biometric, then submits it. The subject identity
  * shown comes ONLY from the resolved card — never from the scanned QR.
@@ -35,7 +35,8 @@ export default function AttestConfirmScreen() {
 
   const handleClose = useCallback(() => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/(scan)');
+    // Cold deep link with no history — land on the ID home, not the scanner.
+    else router.replace('/(tabs)/(id)');
   }, [router]);
 
   const card = subject?.card;

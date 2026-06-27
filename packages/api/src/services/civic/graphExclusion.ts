@@ -78,8 +78,10 @@ export async function areGraphRelated(a: string, b: string, hops = 1): Promise<b
   return false;
 }
 
-/** Collect a user's active-session device + IP fingerprints. */
-async function sessionFingerprints(
+/** Collect a user's active-session device + IP fingerprints. Exported so the
+ * Fase 3 sybil heuristics can cluster accounts by shared fingerprints without
+ * re-implementing the (deviceId / fingerprint / IP) extraction. */
+export async function sessionFingerprints(
   userId: string,
 ): Promise<{ devices: Set<string>; ips: Set<string> }> {
   const sessions = await Session.find({ userId, isActive: true })

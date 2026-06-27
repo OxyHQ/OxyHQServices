@@ -132,7 +132,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesManagedAccountsMixin,
     OxyServicesContactsMixin,
     OxyServicesAppDataMixin,
-    // Civic / Commons "DNI" (public signed cards, DNI QR payload)
+    // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)
     OxyServicesCivicMixin,
 
     // Utility (last, can use all above)

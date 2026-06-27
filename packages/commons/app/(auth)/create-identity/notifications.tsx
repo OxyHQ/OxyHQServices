@@ -51,7 +51,7 @@ export default function CreateIdentityNotificationsScreen() {
     // Skip notification requests in Expo Go (push notifications not available)
     if (isExpoGo()) {
       // Navigate directly to tabs (user already authenticated)
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
       return;
     }
 
@@ -63,17 +63,17 @@ export default function CreateIdentityNotificationsScreen() {
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
       if (existingStatus === 'granted') {
-        router.push('/(tabs)/(home)');
+        router.push('/(tabs)/(id)');
         return;
       }
 
       await Notifications.requestPermissionsAsync();
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
     } catch (err: unknown) {
       if (__DEV__) {
         console.warn('Notification permission request failed:', err);
       }
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
     } finally {
       setIsRequestingNotifications(false);
     }

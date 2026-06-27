@@ -5,7 +5,7 @@
  *
  *   did:web:<apex>:u:<userId>   (e.g. `did:web:oxy.so:u:65f0…`)
  *
- * The DNI QR encodes ONLY this DID (`oxydni://card?did=…`), so the scanner
+ * The Oxy ID QR encodes ONLY this DID (`oxycommons://card?did=…`), so the scanner
  * must recover the `userId` from it before resolving the signed public card via
  * `oxyServices.getPublicCard(userId)`. `@oxyhq/core` owns the inverse
  * (`buildUserDid`); the parser lives here because the scanner is a Commons-only
@@ -21,7 +21,7 @@ const USER_SEGMENT = ':u:';
 /**
  * Extract the stable `userId` from an Oxy DID (`did:web:<apex>:u:<userId>`).
  *
- * @param did - The DID string (exactly as carried in a DNI payload).
+ * @param did - The DID string (exactly as carried in an Oxy ID payload).
  * @returns The `userId` when the DID is a well-formed Oxy `did:web` with a
  *   non-empty user segment; `null` for anything else (wrong method, missing
  *   `:u:` segment, empty/malformed id, or non-string input).

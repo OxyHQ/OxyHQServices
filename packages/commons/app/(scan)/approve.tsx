@@ -19,7 +19,7 @@ import { useCommonsApproval } from '@/hooks/commons-signin/useCommonsApproval';
  * "Sign in with Oxy" approval screen (Commons / approver side).
  *
  * Reachable two ways, both carrying the public `code`:
- *   - the in-app QR scanner (`/(vault)/scan`) pushes here after parsing
+ *   - the in-app QR scanner (`/(scan)`) replaces into here after parsing
  *   - a same-device deep link `oxycommons://approve?...` / `commons://approve?...`
  *
  * Renders ONLY the server-resolved application identity (anti-phishing) and
@@ -43,7 +43,8 @@ export default function ApproveSignInScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(tabs)/(scan)');
+      // Cold deep link with no history — land on the ID home, not the scanner.
+      router.replace('/(tabs)/(id)');
     }
   }, [router]);
 

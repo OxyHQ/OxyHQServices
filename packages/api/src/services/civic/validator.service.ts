@@ -47,6 +47,7 @@ import {
   VALIDATION_TTL_MS,
   AFFINITY_MAX_COVOTES,
   VALIDATOR_POOL_CAP,
+  PERSONHOOD_AUDIT_ACTION,
 } from '../../utils/civic.constants';
 import { logger } from '../../utils/logger';
 
@@ -386,7 +387,20 @@ export async function tallyAndResolve(requestId: string): Promise<IValidationReq
   }
 
   const winners = outcome === 'validated' ? valid : invalid;
-  await resolveAwards(claimed, outcome, valid, votes);
+  // The jury mechanism is generic; the RESOLUTION is action-specific. A
+  // `personhood_audit` does not award `peer_validated` — instead it rewards the
+  // majority and, on `rejected`, runs the staking slash cascade. Dynamically
+  // imported to avoid a validator↔audit module cycle.
+  if (claimed.actionType === PERSONHOOD_AUDIT_ACTION) {
+    const { resolvePersonhoodAuditOutcome } = await import('./personhoodAudit.service.js');
+    await resolvePersonhoodAuditOutcome(
+      claimed,
+      outcome,
+      winners.map((v) => v.validatorUserId.toString()),
+    );
+  } else {
+    await resolveAwards(claimed, outcome, valid, votes);
+  }
   await bumpAffinity(winners.map((v) => v.validatorUserId.toString()));
 
   logger.info('Validation request resolved', {

@@ -22,6 +22,7 @@ import ValidationVote, { type IValidationVote } from '../../models/ValidationVot
 import {
   PEER_VALIDATED_ACTION,
   REAL_LIFE_ATTESTED_ACTION,
+  PERSONHOOD_VOUCHED_ACTION,
   VALIDATION_INCORRECT_ACTION,
 } from '../../utils/reputation.constants';
 import { logger } from '../../utils/logger';
@@ -30,6 +31,8 @@ import { logger } from '../../utils/logger';
 export interface SlashableTransaction {
   _id: unknown;
   actionType: string;
+  /** The subject of the reversed award (for personhood: the proven-fake user). */
+  userId?: unknown;
   createdByUserId?: unknown;
 }
 
@@ -88,6 +91,18 @@ export async function slashForReversedTransaction(txn: SlashableTransaction): Pr
       'Real-life attestation of an action later reverted as fraud',
     );
     return 1;
+  }
+
+  // A reversed personhood award means the subject was proven fake — slash every
+  // active voucher who staked on them (Fase 3 staking loop). Dynamically imported
+  // to avoid a reputation↔personhood module cycle; the cascade is self-contained
+  // (awards `vouch_slashed`, marks vouches slashed, recomputes).
+  if (txn.actionType === PERSONHOOD_VOUCHED_ACTION && txn.userId) {
+    const { slashVouchersForFakeSubject } = await import('./personhood.service.js');
+    return slashVouchersForFakeSubject(
+      String(txn.userId),
+      'Vouched for a person whose personhood award was reverted as fraud',
+    );
   }
 
   return 0;

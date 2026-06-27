@@ -1,4 +1,4 @@
-import { attestErrorCode, voteErrorCode } from '@/lib/civic/civic-errors';
+import { attestErrorCode, voteErrorCode, vouchErrorCode } from '@/lib/civic/civic-errors';
 
 describe('attestErrorCode', () => {
   it.each([
@@ -30,5 +30,27 @@ describe('voteErrorCode', () => {
 
   it('falls back to generic otherwise', () => {
     expect(voteErrorCode(new Error('boom'))).toBe('generic');
+  });
+});
+
+describe('vouchErrorCode', () => {
+  it.each([
+    ['Vouch rejected: self_vouch', 'self_vouch'],
+    ['Vouch rejected: already_vouched', 'already_vouched'],
+    ['Vouch rejected: voucher_below_threshold', 'voucher_below_threshold'],
+    ['Vouch rejected: excluded_graph_neighbor', 'excluded_graph_neighbor'],
+    ['Vouch rejected: excluded_shared_device', 'excluded_shared_device'],
+    ['Vouch rejected: excluded_shared_ip', 'excluded_shared_ip'],
+  ])('maps "%s" → %s', (message, code) => {
+    expect(vouchErrorCode(new Error(message))).toBe(code);
+  });
+
+  it('maps the "Vouch subject not found" sentence to subject_not_found', () => {
+    expect(vouchErrorCode(new Error('Vouch subject not found'))).toBe('subject_not_found');
+  });
+
+  it('falls back to generic for an unmodelled reason or transport error', () => {
+    expect(vouchErrorCode(new Error('Network request failed'))).toBe('generic');
+    expect(vouchErrorCode(null)).toBe('generic');
   });
 });

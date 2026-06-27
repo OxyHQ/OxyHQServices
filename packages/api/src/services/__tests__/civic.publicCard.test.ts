@@ -29,6 +29,11 @@ jest.mock('../../models/ReputationBalance', () => ({
   __esModule: true,
   ReputationBalance: { findOne: (...a: unknown[]) => mockBalanceFindOne(...a) },
 }));
+const mockPersonhoodFindOne = jest.fn();
+jest.mock('../../models/PersonhoodStatus', () => ({
+  __esModule: true,
+  default: { findOne: (...a: unknown[]) => mockPersonhoodFindOne(...a) },
+}));
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
@@ -62,6 +67,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockUserFindById.mockReturnValue({ select: () => ({ lean: async () => userDoc() }) });
   mockBalanceFindOne.mockReturnValue({ lean: async () => ({ trustTier: 'trusted' }) });
+  mockPersonhoodFindOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
 });
 
 describe('buildSignedPublicCard', () => {
@@ -83,6 +89,18 @@ describe('buildSignedPublicCard', () => {
     expect(card.verifiedDomains).toEqual(['oxy.so']);
     expect(card.credentialBadges).toEqual([]);
     expect(typeof card.issuedAt).toBe('number');
+  });
+
+  it('surfaces a confirmed real person as personhoodStatus "verified" (Fase 3)', async () => {
+    mockPersonhoodFindOne.mockReturnValue({ select: () => ({ lean: async () => ({ isRealPerson: true }) }) });
+    const signed = await buildSignedPublicCard(USER_ID);
+    expect(signed?.card.personhoodStatus).toBe('verified');
+  });
+
+  it('surfaces an in-progress (sub-θ) personhood row as "pending"', async () => {
+    mockPersonhoodFindOne.mockReturnValue({ select: () => ({ lean: async () => ({ isRealPerson: false }) }) });
+    const signed = await buildSignedPublicCard(USER_ID);
+    expect(signed?.card.personhoodStatus).toBe('pending');
   });
 
   it('seals the card with an Oxy attestation that verifies over the canonical card', async () => {

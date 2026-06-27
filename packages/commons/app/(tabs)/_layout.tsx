@@ -8,16 +8,18 @@ import { useTranslation } from '@/lib/i18n';
  * Native bottom tab bar — the post-auth navigation shell for Commons.
  *
  * Uses expo-router's native tab bar (`NativeTabs`, Expo SDK 56) so the tab bar
- * is a real platform UITabBar / BottomNavigationView, not a JS component. Five
- * static tabs (Android's max), each backed by its own route group + nested
- * `<Stack>` (native tabs render no headers, so each group owns its titles and
- * detail-screen pushes):
+ * is a real platform UITabBar / BottomNavigationView, not a JS component. Three
+ * static tabs (well under Android's max of 5), each backed by its own route
+ * group + nested `<Stack>` (native tabs render no headers, so each group owns
+ * its titles and detail-screen pushes):
  *
- *   (home)       Inicio       — identity overview
- *   (dni)        DNI          — citizen card + scanned-card view
- *   (scan)       Escanear     — QR scanner + sign-in approval
+ *   (id)         ID           — Oxy ID card + identity overview + scanned-card view
  *   (reputation) Reputación   — reputation breakdown
  *   (settings)   Ajustes      — identity/vault management
+ *
+ * `(id)` is the first trigger, so the native tab bar lands there on cold start.
+ * The QR scanner is NOT a tab — it is an action opened from the ID landing's
+ * Bloom FAB as a root-level full-screen modal (`app/(scan)`).
  *
  * `name` MUST match each route-group folder name INCLUDING parentheses. The
  * trigger set is static (no conditional/loop rendering) per the native-tabs
@@ -25,17 +27,16 @@ import { useTranslation } from '@/lib/i18n';
  *
  * The native tab bar is themed from Bloom tokens via `useColors()` (the same
  * resolver every Commons screen uses, which wraps `@oxyhq/bloom/theme`'s
- * `useTheme()`): `primary` tints the active icon + label; the Android active
- * indicator pill AND the Android tap ripple use the SOFT `primarySubtle`
- * (Bloom's Material-3 "primary container") so the purple icon reads clearly on
- * the pill (a solid `primary` pill would hide the equally-purple active icon)
- * and the touch ripple feels on-brand instead of the bright system default.
- * `card`/`textSecondary` drive the bar background and inactive icon/label. Since
- * `useColors()` is a hook, the
- * layout re-renders on a light/dark flip and the bar re-tints — no hardcoded
- * colors, no native config (Fast-Refresh-safe). The surrounding navigation
- * chrome already inherits Bloom via the root layout's
- * `ThemeProvider value={useNavigationTheme()}`.
+ * `useTheme()`): the active icon + label use the normal `text` color (white in
+ * dark / black in light) sitting on the SOFT `primarySubtle` active-indicator
+ * pill (Bloom's Material-3 "primary container"), so the active item reads as a
+ * high-contrast glyph on a tinted pill. The Android tap ripple also uses
+ * `primarySubtle` so the touch feedback feels on-brand instead of the bright
+ * system default. `card`/`textSecondary` drive the bar background and the
+ * inactive icon/label. Since `useColors()` is a hook, the layout re-renders on a
+ * light/dark flip and the bar re-tints — no hardcoded colors, no native config
+ * (Fast-Refresh-safe). The surrounding navigation chrome already inherits Bloom
+ * via the root layout's `ThemeProvider value={useNavigationTheme()}`.
  */
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -43,26 +44,16 @@ export default function TabsLayout() {
 
   return (
     <NativeTabs
-      tintColor={colors.primary}
+      tintColor={colors.text}
       backgroundColor={colors.card}
       iconColor={colors.textSecondary}
       indicatorColor={colors.primarySubtle}
       rippleColor={colors.primarySubtle}
       labelStyle={{ color: colors.textSecondary }}
     >
-      <NativeTabs.Trigger name="(home)">
-        <NativeTabs.Trigger.Icon sf="house.fill" md="home" />
-        <NativeTabs.Trigger.Label>{t('tabs.home')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="(dni)">
+      <NativeTabs.Trigger name="(id)">
         <NativeTabs.Trigger.Icon sf="person.text.rectangle" md="badge" />
-        <NativeTabs.Trigger.Label>{t('tabs.dni')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="(scan)">
-        <NativeTabs.Trigger.Icon sf="qrcode.viewfinder" md="qr_code_scanner" />
-        <NativeTabs.Trigger.Label>{t('tabs.scan')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('tabs.id')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="(reputation)">

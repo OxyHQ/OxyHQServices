@@ -24,6 +24,8 @@ import {
   validationOpenRequestSchema,
   type SignedRecordEnvelope,
 } from '@oxyhq/contracts';
+import { requireStaff } from '../middleware/requireStaff';
+import PersonhoodStatus from '../models/PersonhoodStatus';
 import { buildSignedPublicCard } from '../services/civic/publicCard.service';
 import { submitRealLifeAttestation, type RealLifeRejectionReason } from '../services/civic/realLife.service';
 import {
@@ -33,6 +35,12 @@ import {
   getValidatorInbox,
   type VoteRejectionReason,
 } from '../services/civic/validator.service';
+import {
+  vouchForPerson,
+  withdrawVouch,
+  recomputePersonhood,
+  type VouchRejectionReason,
+} from '../services/civic/personhood.service';
 
 const router = Router();
 
@@ -55,6 +63,42 @@ const validationLimiter = rateLimit({
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
     return userId ? `civic:validate:${userId}` : `civic:validate:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Personhood vouch + withdraw — the staked web-of-trust writes. */
+const vouchLimiter = rateLimit({
+  prefix: 'rl:civic:vouch:',
+  windowMs: 60 * 1000,
+  max: 20,
+  message: 'Too many vouch operations. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:vouch:${userId}` : `civic:vouch:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Public personhood-status reads. */
+const personhoodReadLimiter = rateLimit({
+  prefix: 'rl:civic:personhood:read:',
+  windowMs: 60 * 1000,
+  max: 120,
+  message: 'Too many personhood status requests. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:personhood:read:${userId}` : `civic:personhood:read:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/** Staff-only personhood recompute. */
+const personhoodAdminLimiter = rateLimit({
+  prefix: 'rl:civic:personhood:admin:',
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many personhood admin operations. Please slow down.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `civic:personhood:admin:${userId}` : `civic:personhood:admin:ip:${req.ip ?? 'unknown'}`;
   },
 });
 
@@ -91,6 +135,30 @@ function throwForRealLifeReason(reason: RealLifeRejectionReason): never {
       throw new ForbiddenError(`Attestation rejected: ${reason}`);
     default:
       throw new BadRequestError(`Attestation rejected: ${reason}`);
+  }
+}
+
+/** Map a personhood-vouch rejection reason to the HTTP error the route throws. */
+function throwForVouchReason(reason: VouchRejectionReason): never {
+  switch (reason) {
+    case 'subject_not_found':
+      throw new NotFoundError('Vouch subject not found');
+    case 'already_vouched':
+    case 'chain_conflict':
+    case 'bad_seq':
+    case 'chain_fork':
+    case 'chain_gap':
+    case 'stale_issued_at':
+      throw new ConflictError(`Vouch rejected: ${reason}`);
+    case 'self_vouch':
+    case 'voucher_below_threshold':
+    case 'excluded_self':
+    case 'excluded_graph_neighbor':
+    case 'excluded_shared_device':
+    case 'excluded_shared_ip':
+      throw new ForbiddenError(`Vouch rejected: ${reason}`);
+    default:
+      throw new BadRequestError(`Vouch rejected: ${reason}`);
   }
 }
 
@@ -283,6 +351,135 @@ router.post(
     }
 
     res.json({ denied: true });
+  }),
+);
+
+/* -------------------------------------------------------------------------- */
+/*  Proof-of-personhood web-of-trust (Fase 3)                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * POST /civic/personhood/vouch — vouch that another user is a real person (auth).
+ * Body is the caller's signed, self-issued `personhood_vouch` envelope (the
+ * subject is referenced by `record.about`). The server verifies it, enforces the
+ * voucher-eligibility (personhood ≥ τ) + graph-exclusion gates, stakes the
+ * voucher, awards the subject `personhood_vouched`, and recomputes the subject's
+ * personhood. The voucher id is resolved server-side from the session — never
+ * from the body.
+ */
+router.post(
+  '/personhood/vouch',
+  authMiddleware,
+  vouchLimiter,
+  validate({ body: signedRecordEnvelopeSchema }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const voucherUserId = req.user?._id?.toString();
+    if (!voucherUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const result = await vouchForPerson(req.body as SignedRecordEnvelope, voucherUserId);
+    if (!result.ok) {
+      throwForVouchReason(result.reason);
+    }
+
+    res.status(201).json({
+      accepted: true,
+      recordId: result.recordId,
+      subjectUserId: result.subjectUserId,
+      voucherUserId: result.voucherUserId,
+      stakeAmount: result.stakeAmount,
+      points: result.points,
+    });
+  }),
+);
+
+/**
+ * DELETE /civic/personhood/vouch/:subjectUserId — withdraw the caller's active
+ * vouch for a subject (auth). The vouch flips to `withdrawn` and the subject is
+ * recomputed (which may demote them below θ).
+ */
+router.delete(
+  '/personhood/vouch/:subjectUserId',
+  authMiddleware,
+  vouchLimiter,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const voucherUserId = req.user?._id?.toString();
+    if (!voucherUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+    const { subjectUserId } = req.params;
+    if (!isValidObjectId(subjectUserId)) {
+      throw new NotFoundError('Vouch not found');
+    }
+
+    const result = await withdrawVouch(voucherUserId, subjectUserId);
+    if (!result.ok) {
+      throw new NotFoundError('No active vouch found for this subject');
+    }
+
+    res.json({ withdrawn: true });
+  }),
+);
+
+/**
+ * GET /civic/personhood/:userId — a user's public personhood status. Read-only:
+ * returns the cached snapshot, or a zeroed `unverified` shape when none exists
+ * yet (never persists / recomputes on a public read). Unknown / invalid id → 404.
+ */
+router.get(
+  '/personhood/:userId',
+  personhoodReadLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) {
+      throw new NotFoundError('Personhood status not found');
+    }
+
+    const status = await PersonhoodStatus.findOne({ userId }).lean();
+    setPublicCardHeaders(res);
+    res.json({
+      userId,
+      score: status?.score ?? 0,
+      isRealPerson: status?.isRealPerson ?? false,
+      vouchCount: status?.vouchCount ?? 0,
+      realLifeCount: status?.realLifeCount ?? 0,
+      biometricBound: status?.biometricBound ?? false,
+      sybilPenalty: status?.sybilPenalty ?? 0,
+      breakdown: status?.breakdown ?? null,
+      updatedAt: status?.updatedAt ?? null,
+    });
+  }),
+);
+
+/**
+ * POST /civic/personhood/:userId/recompute — force a personhood recompute for a
+ * user (staff only). Re-aggregates vouches/real-life/biometric − sybil and
+ * re-mirrors `User.verified`.
+ */
+router.post(
+  '/personhood/:userId/recompute',
+  authMiddleware,
+  requireStaff,
+  personhoodAdminLimiter,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) {
+      throw new NotFoundError('User not found');
+    }
+
+    const status = await recomputePersonhood(userId);
+    res.json({
+      userId,
+      score: status.score,
+      isRealPerson: status.isRealPerson,
+      vouchCount: status.vouchCount,
+      realLifeCount: status.realLifeCount,
+      biometricBound: status.biometricBound,
+      sybilPenalty: status.sybilPenalty,
+      breakdown: status.breakdown,
+      updatedAt: status.updatedAt,
+    });
   }),
 );
 

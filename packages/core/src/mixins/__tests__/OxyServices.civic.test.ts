@@ -1,13 +1,20 @@
 /**
- * Civic Mixin tests (Commons "DNI" — Fase 1; anti-gaming — Fase 2).
+ * Civic Mixin tests (Commons "Oxy ID" — Fase 1; anti-gaming — Fase 2;
+ * proof-of-personhood web-of-trust — Fase 3).
+ *
+ * Fase 3 covers the staked vouch: `vouchForPerson` fetches the caller's chain
+ * head, signs a self-issued `personhood_vouch` v2 envelope (about=subjectDid,
+ * stake from `stakeAmount`, collection `app.oxy.vouch`, rkey=subjectDid), POSTs
+ * it, and sweeps the personhood + `/users/me` GET caches; `withdrawVouch` DELETEs
+ * + sweeps; `getPersonhood`/`getMyPersonhood` shape the right cached GET.
  *
  * Stubs `makeRequest` so the tests run with no network, then asserts:
  *  - Fase 1: `getPublicCard` shapes the request (GET `/civic/:userId/card`,
  *    cached) and verifies a GENUINE Oxy signature over `canonicalize(card)` →
  *    `verified:true`; a tampered card / wrong key → `verified:false` (NO throw);
  *    a `null` attestation → `verified:false`; a transport failure still rejects;
- *    `getMyDniPayload` builds the exact `oxydni://card?did=…&v=1` string and
- *    round-trips through `parseDniPayload`, which rejects garbage.
+ *    `getMyIdPayload` builds the exact `oxycommons://card?did=…&v=1` string and
+ *    round-trips through `parseIdPayload`, which rejects garbage.
  *  - Fase 2: `buildAttestQrPayload` mints a fresh nonce + 10-min exp and encodes
  *    the context safely; `parseAttestPayload` round-trips + rejects garbage;
  *    `submitRealLifeAttestation` fetches the caller's chain head, signs a
@@ -27,7 +34,7 @@ import type { ExportAttestation, PublicCard, SignedRecordEnvelope } from '@oxyhq
 import { OxyServices } from '../../OxyServices';
 import { canonicalize } from '../../crypto/canonicalJson';
 import { SignatureService } from '../../crypto/signatureService';
-import { parseAttestPayload, parseDniPayload, verifyPublicCardAttestation } from '../OxyServices.civic';
+import { parseAttestPayload, parseIdPayload, verifyPublicCardAttestation } from '../OxyServices.civic';
 
 const ec = new EC('secp256k1');
 
@@ -178,51 +185,52 @@ describe('OxyServices.civic', () => {
     });
   });
 
-  describe('getMyDniPayload', () => {
-    it('builds oxydni://card?did=<did>&v=1 for the current user', () => {
-      expect(oxy.getMyDniPayload()).toBe('oxydni://card?did=did:web:oxy.so:u:user-123&v=1');
+  describe('getMyIdPayload', () => {
+    it('builds oxycommons://card?did=<did>&v=1 for the current user', () => {
+      expect(oxy.getMyIdPayload()).toBe('oxycommons://card?did=did:web:oxy.so:u:user-123&v=1');
     });
 
     it('throws when no user is authenticated', () => {
       jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
-      expect(() => oxy.getMyDniPayload()).toThrow(/No authenticated user/);
+      expect(() => oxy.getMyIdPayload()).toThrow(/No authenticated user/);
     });
   });
 
-  describe('parseDniPayload', () => {
-    it('round-trips the payload getMyDniPayload produces', () => {
-      const payload = oxy.getMyDniPayload();
-      expect(parseDniPayload(payload)).toEqual({ did: 'did:web:oxy.so:u:user-123' });
+  describe('parseIdPayload', () => {
+    it('round-trips the payload getMyIdPayload produces', () => {
+      const payload = oxy.getMyIdPayload();
+      expect(parseIdPayload(payload)).toEqual({ did: 'did:web:oxy.so:u:user-123' });
     });
 
     it('parses a percent-encoded DID', () => {
-      const payload = 'oxydni://card?did=did%3Aweb%3Aoxy.so%3Au%3A42&v=1';
-      expect(parseDniPayload(payload)).toEqual({ did: 'did:web:oxy.so:u:42' });
+      const payload = 'oxycommons://card?did=did%3Aweb%3Aoxy.so%3Au%3A42&v=1';
+      expect(parseIdPayload(payload)).toEqual({ did: 'did:web:oxy.so:u:42' });
     });
 
     it('tolerates a trailing slash before the query', () => {
-      expect(parseDniPayload('oxydni://card/?did=did:web:oxy.so:u:7')).toEqual({
+      expect(parseIdPayload('oxycommons://card/?did=did:web:oxy.so:u:7')).toEqual({
         did: 'did:web:oxy.so:u:7',
       });
     });
 
-    it('rejects a non-DNI scheme', () => {
-      expect(parseDniPayload('https://evil.example/card?did=did:web:oxy.so:u:1')).toBeNull();
-      expect(parseDniPayload('oxycommons://approve?did=did:web:oxy.so:u:1')).toBeNull();
+    it('rejects a non-card scheme', () => {
+      expect(parseIdPayload('https://evil.example/card?did=did:web:oxy.so:u:1')).toBeNull();
+      expect(parseIdPayload('oxycommons://approve?did=did:web:oxy.so:u:1')).toBeNull();
+      expect(parseIdPayload('oxycommons://attest?did=did:web:oxy.so:u:1')).toBeNull();
     });
 
-    it('rejects a DNI payload with no did', () => {
-      expect(parseDniPayload('oxydni://card?v=1')).toBeNull();
-      expect(parseDniPayload('oxydni://card')).toBeNull();
+    it('rejects a card payload with no did', () => {
+      expect(parseIdPayload('oxycommons://card?v=1')).toBeNull();
+      expect(parseIdPayload('oxycommons://card')).toBeNull();
     });
 
     it('rejects empty / non-string input', () => {
-      expect(parseDniPayload('')).toBeNull();
-      expect(parseDniPayload('   ')).toBeNull();
+      expect(parseIdPayload('')).toBeNull();
+      expect(parseIdPayload('   ')).toBeNull();
       // Exercise the runtime guard for non-string callers (JS callers / scanners
       // can pass anything) without an `as any` cast or a ts-ignore directive.
       const notAString: unknown = undefined;
-      expect(parseDniPayload(notAString as string)).toBeNull();
+      expect(parseIdPayload(notAString as string)).toBeNull();
     });
   });
 
@@ -231,7 +239,7 @@ describe('OxyServices.civic', () => {
   // ===========================================================================
 
   describe('buildAttestQrPayload', () => {
-    it('builds oxydni://attest with a fresh nonce + 10-min exp for the current user', async () => {
+    it('builds oxycommons://attest with a fresh nonce + 10-min exp for the current user', async () => {
       jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
       jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('deadbeefnonce');
 
@@ -240,7 +248,7 @@ describe('OxyServices.civic', () => {
       expect(result.nonce).toBe('deadbeefnonce');
       expect(result.exp).toBe(1700000000000 + 10 * 60 * 1000);
       expect(result.payload).toBe(
-        'oxydni://attest?subject=did:web:oxy.so:u:user-123&ctx=payment-42&nonce=deadbeefnonce&exp=1700000600000',
+        'oxycommons://attest?subject=did:web:oxy.so:u:user-123&ctx=payment-42&nonce=deadbeefnonce&exp=1700000600000',
       );
     });
 
@@ -276,7 +284,7 @@ describe('OxyServices.civic', () => {
     });
 
     it('defaults context to "" when ctx is omitted', () => {
-      expect(parseAttestPayload('oxydni://attest?subject=did:web:oxy.so:u:7&nonce=n&exp=123')).toEqual({
+      expect(parseAttestPayload('oxycommons://attest?subject=did:web:oxy.so:u:7&nonce=n&exp=123')).toEqual({
         subjectDid: 'did:web:oxy.so:u:7',
         context: '',
         nonce: 'n',
@@ -285,11 +293,11 @@ describe('OxyServices.civic', () => {
     });
 
     it('rejects a non-attest scheme, missing fields, and a bad exp', () => {
-      expect(parseAttestPayload('oxydni://card?did=did:web:oxy.so:u:1')).toBeNull();
-      expect(parseAttestPayload('oxydni://attest?subject=did:web:oxy.so:u:1&exp=1')).toBeNull(); // no nonce
-      expect(parseAttestPayload('oxydni://attest?nonce=n&exp=1')).toBeNull(); // no subject
-      expect(parseAttestPayload('oxydni://attest?subject=d&nonce=n')).toBeNull(); // no exp
-      expect(parseAttestPayload('oxydni://attest?subject=d&nonce=n&exp=notnum')).toBeNull();
+      expect(parseAttestPayload('oxycommons://card?did=did:web:oxy.so:u:1')).toBeNull();
+      expect(parseAttestPayload('oxycommons://attest?subject=did:web:oxy.so:u:1&exp=1')).toBeNull(); // no nonce
+      expect(parseAttestPayload('oxycommons://attest?nonce=n&exp=1')).toBeNull(); // no subject
+      expect(parseAttestPayload('oxycommons://attest?subject=d&nonce=n')).toBeNull(); // no exp
+      expect(parseAttestPayload('oxycommons://attest?subject=d&nonce=n&exp=notnum')).toBeNull();
       expect(parseAttestPayload('')).toBeNull();
     });
   });
@@ -501,6 +509,254 @@ describe('OxyServices.civic', () => {
         undefined,
         expect.objectContaining({ cache: false }),
       );
+    });
+  });
+
+  // ===========================================================================
+  // FASE 3 — proof-of-personhood web-of-trust (staked vouch)
+  // ===========================================================================
+
+  describe('vouchForPerson', () => {
+    it('signs a self-issued v2 vouch envelope (about=subjectDid, stake) on the caller chain and POSTs it', async () => {
+      const signedEnvelope: SignedRecordEnvelope = {
+        version: 2,
+        type: 'personhood_vouch',
+        subject: 'did:web:oxy.so:u:user-123',
+        issuer: 'did:web:oxy.so:u:user-123',
+        record: { about: 'did:web:oxy.so:u:subject-1', stake: 5, biometricOk: true },
+        issuedAt: 1700000000000,
+        seq: 4,
+        prev: 'rec-3',
+        collection: 'app.oxy.vouch',
+        rkey: 'did:web:oxy.so:u:subject-1',
+        publicKey: 'pub',
+        alg: 'ES256K-DER-SHA256',
+        signature: 'sig',
+      };
+      const signV2Spy = jest
+        .spyOn(SignatureService, 'signRecordV2')
+        .mockResolvedValue(signedEnvelope);
+      // 1st makeRequest = chain head; 2nd = POST result.
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: 'rec-3', seq: 3, recordCount: 4 })
+        .mockResolvedValueOnce({
+          accepted: true,
+          recordId: 'rec-4',
+          subjectUserId: 'subject-1',
+          voucherUserId: 'user-123',
+          stakeAmount: 5,
+          points: 30,
+        });
+
+      const result = await oxy.vouchForPerson({
+        subjectDid: 'did:web:oxy.so:u:subject-1',
+        stakeAmount: 5,
+        biometricOk: true,
+      });
+
+      // Fetched the caller's chain head first (uncached).
+      expect(makeRequestSpy).toHaveBeenNthCalledWith(
+        1,
+        'GET',
+        '/identity/records/user-123/chain/head',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+      // Signed a self-issued v2 record: about=subjectDid, stake=stakeAmount, seq=head+1,
+      // prev=head id, collection app.oxy.vouch, rkey=subjectDid.
+      expect(signV2Spy).toHaveBeenCalledWith(
+        'personhood_vouch',
+        'did:web:oxy.so:u:user-123',
+        { about: 'did:web:oxy.so:u:subject-1', stake: 5, biometricOk: true },
+        { seq: 4, prev: 'rec-3', collection: 'app.oxy.vouch', rkey: 'did:web:oxy.so:u:subject-1' },
+      );
+      // POSTed the signed envelope to /civic/personhood/vouch.
+      expect(makeRequestSpy).toHaveBeenNthCalledWith(
+        2,
+        'POST',
+        '/civic/personhood/vouch',
+        signedEnvelope,
+        expect.objectContaining({ cache: false }),
+      );
+      expect(result.stakeAmount).toBe(5);
+      expect(result.subjectUserId).toBe('subject-1');
+      expect(result.points).toBe(30);
+    });
+
+    it('omits the optional stake/biometricOk record keys when not provided', async () => {
+      const signV2Spy = jest
+        .spyOn(SignatureService, 'signRecordV2')
+        .mockResolvedValue({} as SignedRecordEnvelope);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockResolvedValueOnce({
+          accepted: true,
+          recordId: 'r',
+          subjectUserId: 's',
+          voucherUserId: 'user-123',
+          stakeAmount: 10,
+          points: 30,
+        });
+
+      await oxy.vouchForPerson({ subjectDid: 'did:web:oxy.so:u:s' });
+
+      // Genesis chain coords (no head yet) + a record with ONLY `about`.
+      expect(signV2Spy).toHaveBeenCalledWith(
+        'personhood_vouch',
+        'did:web:oxy.so:u:user-123',
+        { about: 'did:web:oxy.so:u:s' },
+        { seq: 0, prev: null, collection: 'app.oxy.vouch', rkey: 'did:web:oxy.so:u:s' },
+      );
+    });
+
+    it('sweeps the personhood + /users/me GET caches after a successful vouch', async () => {
+      jest.spyOn(SignatureService, 'signRecordV2').mockResolvedValue({} as SignedRecordEnvelope);
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockResolvedValueOnce({
+          accepted: true,
+          recordId: 'r',
+          subjectUserId: 's',
+          voucherUserId: 'user-123',
+          stakeAmount: 10,
+          points: 30,
+        });
+
+      await oxy.vouchForPerson({ subjectDid: 'did:web:oxy.so:u:s' });
+
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/civic/personhood/');
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/users/me');
+    });
+
+    it('does NOT sweep caches when the POST fails', async () => {
+      jest.spyOn(SignatureService, 'signRecordV2').mockResolvedValue({} as SignedRecordEnvelope);
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy
+        .mockResolvedValueOnce({ headRecordId: null, seq: -1, recordCount: 0 })
+        .mockRejectedValueOnce(new Error('already_vouched'));
+
+      await expect(oxy.vouchForPerson({ subjectDid: 'did:web:oxy.so:u:s' })).rejects.toThrow();
+      expect(sweepSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws when no user is authenticated (before any network)', async () => {
+      jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
+      await expect(oxy.vouchForPerson({ subjectDid: 'did:web:oxy.so:u:s' })).rejects.toThrow(
+        /No authenticated user/,
+      );
+      expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('withdrawVouch', () => {
+    it('DELETEs /civic/personhood/vouch/:subjectUserId and sweeps caches', async () => {
+      const sweepSpy = jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy.mockResolvedValue({ withdrawn: true });
+
+      const result = await oxy.withdrawVouch('subject-1');
+
+      expect(result).toEqual({ withdrawn: true });
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'DELETE',
+        '/civic/personhood/vouch/subject-1',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/civic/personhood/');
+      expect(sweepSpy).toHaveBeenCalledWith('GET:/users/me');
+    });
+
+    it('URL-encodes the subjectUserId path segment', async () => {
+      jest.spyOn(oxy, 'clearCacheByPrefix').mockReturnValue(0);
+      makeRequestSpy.mockResolvedValue({ withdrawn: true });
+
+      await oxy.withdrawVouch('a/b');
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'DELETE',
+        '/civic/personhood/vouch/a%2Fb',
+        undefined,
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('getPersonhood', () => {
+    const status = {
+      userId: 'subject-1',
+      score: 0.82,
+      isRealPerson: true,
+      vouchCount: 3,
+      realLifeCount: 1,
+      biometricBound: true,
+      sybilPenalty: 0,
+      breakdown: {
+        vouchSignal: 0.7,
+        realLifeSignal: 0.5,
+        biometricSignal: 1,
+        evidence: 0.82,
+        sybilPenalty: 0,
+        seed: false,
+      },
+      updatedAt: '2026-06-27T00:00:00.000Z',
+    };
+
+    it('GETs /civic/personhood/:userId (cached) and returns the snapshot', async () => {
+      makeRequestSpy.mockResolvedValue(status);
+
+      const result = await oxy.getPersonhood('subject-1');
+
+      expect(result).toEqual(status);
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/personhood/subject-1',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('URL-encodes the userId path segment', async () => {
+      makeRequestSpy.mockResolvedValue(status);
+      await oxy.getPersonhood('a/b');
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/personhood/a%2Fb',
+        undefined,
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('getMyPersonhood', () => {
+    it('GETs the current user id', async () => {
+      makeRequestSpy.mockResolvedValue({
+        userId: 'user-123',
+        score: 0,
+        isRealPerson: false,
+        vouchCount: 0,
+        realLifeCount: 0,
+        biometricBound: false,
+        sybilPenalty: 0,
+        breakdown: null,
+        updatedAt: null,
+      });
+
+      const result = await oxy.getMyPersonhood();
+
+      expect(result.userId).toBe('user-123');
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'GET',
+        '/civic/personhood/user-123',
+        undefined,
+        expect.objectContaining({ cache: true }),
+      );
+    });
+
+    it('throws when no user is authenticated (before any network)', async () => {
+      jest.spyOn(oxy, 'getCurrentUserId').mockReturnValue(null);
+      await expect(oxy.getMyPersonhood()).rejects.toThrow(/No authenticated user/);
+      expect(makeRequestSpy).not.toHaveBeenCalled();
     });
   });
 });

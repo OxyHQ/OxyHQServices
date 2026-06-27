@@ -187,6 +187,14 @@ export interface IUser extends Document {
    */
   isStaff?: boolean;
   /**
+   * Proof-of-personhood seed verifier (civic / Commons — Fase 3). A hand-picked
+   * genesis node of the web-of-trust: a seed verifier is treated as personhood
+   * score = 1 (a known real, unique human) without needing vouches, so they can
+   * bootstrap the network by vouching for others. Set in the DB by a platform
+   * administrator only — never via any self-service API route.
+   */
+  isSeedVerifier?: boolean;
+  /**
    * Account-level sensitivity flag. Marks the WHOLE account as NSFW/adult/
    * sensitive (e.g. an adult-content creator or a porn-bot caught by
    * moderation), as distinct from `privacySettings.sensitiveContent`, which is
@@ -458,6 +466,12 @@ const UserSchema: Schema = new Schema(
       index: true,
     },
     isStaff: {
+      type: Boolean,
+      default: false,
+    },
+    // Proof-of-personhood seed verifier (Fase 3) — genesis node of the
+    // web-of-trust, treated as score = 1. Administrator-set only.
+    isSeedVerifier: {
       type: Boolean,
       default: false,
     },

@@ -126,6 +126,10 @@ export {
     validationOpenResultSchema,
     validationRequestSummarySchema,
     validationVoteResultSchema,
+    personhoodVouchRecordSchema,
+    personhoodBreakdownSchema,
+    personhoodStatusResultSchema,
+    vouchResultSchema,
 } from './civic';
 
 export type {
@@ -142,4 +146,8 @@ export type {
     ValidationOpenResult,
     ValidationRequestSummary,
     ValidationVoteResult,
+    PersonhoodVouchRecord,
+    PersonhoodBreakdown,
+    PersonhoodStatusResult,
+    VouchResult,
 } from './civic';

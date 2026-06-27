@@ -1,16 +1,16 @@
 /**
- * Civic Methods Mixin (Commons "DNI" — Fase 1; anti-gaming — Fase 2)
+ * Civic Methods Mixin (Commons "Oxy ID" — Fase 1; anti-gaming — Fase 2)
  *
- * Provides typed access to the public, verifiable citizen-identity ("DNI") card
- * a Commons user shows and others scan, plus the Fase 2 anti-gaming surfaces
+ * Provides typed access to the public, verifiable citizen-identity ("Oxy ID")
+ * card a Commons user shows and others scan, plus the Fase 2 anti-gaming surfaces
  * (real-life counterparty attestation + the validator/jury flow):
  *
  *  - {@link OxyServicesCivicMixin.getPublicCard} fetches a user's signed card
  *    (`GET /civic/:userId/card`) and verifies the Oxy custodial attestation
  *    CLIENT-SIDE, so a scanner can trust the card OFFLINE (e.g. a cached card
  *    replayed without network) instead of re-trusting the transport.
- *  - {@link OxyServicesCivicMixin.getMyDniPayload} builds the QR payload the user
- *    displays. The QR encodes ONLY the DID (`oxydni://card?did=…&v=1`) — never
+ *  - {@link OxyServicesCivicMixin.getMyIdPayload} builds the QR payload the user
+ *    displays. The QR encodes ONLY the DID (`oxycommons://card?did=…&v=1`) — never
  *    trust data — so the card cannot be spoofed by crafting a QR; the scanner
  *    resolves the signed card server-side and re-verifies it.
  *  - {@link OxyServicesCivicMixin.buildAttestQrPayload} builds the high-value
@@ -27,7 +27,7 @@
  * `RealLifeAttestationResult`, `ValidationRequestSummary`, `ValidationVoteResult`,
  * `SignedRecordEnvelope`) come from `@oxyhq/contracts` — the single source of
  * truth the API validates its output against — so producer and consumer cannot
- * drift. The public DNI card's attestation is an `ES256K-DER-SHA256` signature
+ * drift. The public Oxy ID card's attestation is an `ES256K-DER-SHA256` signature
  * over `canonicalize(card)` (the exact bytes the server signed, with ONLY the
  * present keys), so a consumer re-canonicalizes the `card` it received and checks
  * the signature against `attestation.publicKey`.
@@ -50,6 +50,7 @@
  */
 import type {
   ExportAttestation,
+  PersonhoodStatusResult,
   PublicCard,
   RealLifeAttestationResult,
   SignedPublicCard,
@@ -58,6 +59,7 @@ import type {
   ValidationRequestSummary,
   ValidationVerdict,
   ValidationVoteResult,
+  VouchResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { canonicalize } from '../crypto/canonicalJson';
@@ -66,7 +68,7 @@ import { buildUserDid } from './OxyServices.identity';
 import { CACHE_TIMES } from './mixinHelpers';
 
 /**
- * Validity window of a real-life-attestation QR (`oxydni://attest?…exp=…`),
+ * Validity window of a real-life-attestation QR (`oxycommons://attest?…exp=…`),
  * matching the server's `REAL_LIFE_NONCE_MAX_AGE_MS` ceiling: the QR must be
  * scanned and submitted within this window. The server is authoritative on
  * freshness; this is the client-issued `exp`.
@@ -78,6 +80,24 @@ const ATTEST_COLLECTION = 'app.oxy.attestation';
 
 /** AtProto-style collection for a validator's signed verdict record. */
 const VALIDATION_COLLECTION = 'app.oxy.validation';
+
+/** AtProto-style collection for a personhood vouch record. */
+const VOUCH_COLLECTION = 'app.oxy.vouch';
+
+/**
+ * Cache-key prefix of every personhood-status read (`GET /civic/personhood/:userId`).
+ * Swept after a vouch / withdraw so a re-read reflects the recomputed snapshot
+ * instead of a stale cached one. The identity tag is a key SUFFIX, so this
+ * prefix invalidates the resource for every cached identity.
+ */
+const PERSONHOOD_CACHE_PREFIX = 'GET:/civic/personhood/';
+
+/**
+ * Cache-key prefix of the current user's `GET /users/me`. Swept after a vouch /
+ * withdraw because a subject crossing the personhood threshold flips their
+ * mirrored `User.verified` flag.
+ */
+const USERS_ME_CACHE_PREFIX = 'GET:/users/me';
 
 /**
  * A {@link SignedPublicCard} augmented with the client's verification verdict.
@@ -99,25 +119,25 @@ export interface CivicCardResult extends SignedPublicCard {
   verified: boolean;
 }
 
-/** The DID extracted from a scanned `oxydni://card?did=…` DNI payload. */
-export interface DniCardRef {
+/** The DID extracted from a scanned `oxycommons://card?did=…` Oxy ID payload. */
+export interface IdCardRef {
   /** The subject's Oxy DID (`did:web:oxy.so:u:<userId>`). */
   did: string;
 }
 
-/** URI scheme/host that introduces a Commons DNI card payload. */
-const DNI_MATCHER = /^oxydni:\/\/card(?:[/?#]|$)/i;
+/** URI scheme/host that introduces a Commons Oxy ID card payload. */
+const CARD_MATCHER = /^oxycommons:\/\/card(?:[/?#]|$)/i;
 
 /** URI scheme/host that introduces a real-life counterparty attestation payload. */
-const ATTEST_MATCHER = /^oxydni:\/\/attest(?:[/?#]|$)/i;
+const ATTEST_MATCHER = /^oxycommons:\/\/attest(?:[/?#]|$)/i;
 
 /**
  * Minimal, allocation-light query-string parser (no `URL` / `URLSearchParams`)
  * so it runs identically under Hermes and jsdom — mirrors the robustness of the
- * "Sign in with Oxy" approval-link parser. Shared by every `oxydni://…` payload
- * parser in this module.
+ * "Sign in with Oxy" approval-link parser. Shared by every `oxycommons://…`
+ * payload parser in this module.
  */
-function parseOxydniQuery(raw: string): Map<string, string> {
+function parseCommonsQuery(raw: string): Map<string, string> {
   const params = new Map<string, string>();
   const qIndex = raw.indexOf('?');
   if (qIndex < 0) return params;
@@ -146,23 +166,23 @@ function parseOxydniQuery(raw: string): Map<string, string> {
 }
 
 /**
- * Parse a scanned / deep-linked DNI payload (`oxydni://card?did=…`) into the
- * referenced DID. Pure + dependency-free (Hermes-safe, no `URL` global) so
+ * Parse a scanned / deep-linked Oxy ID payload (`oxycommons://card?did=…`) into
+ * the referenced DID. Pure + dependency-free (Hermes-safe, no `URL` global) so
  * Commons (and any scanner) can reuse it without an OxyServices instance.
  *
  * @param raw - The raw scanned string or deep-link URL.
  * @returns `{ did }` when a usable DID is present; `null` for anything else (a
- *   non-DNI scheme, a missing/empty `did`, or non-string input).
+ *   non-card scheme, a missing/empty `did`, or non-string input).
  */
-export function parseDniPayload(raw: string): DniCardRef | null {
+export function parseIdPayload(raw: string): IdCardRef | null {
   if (typeof raw !== 'string' || raw.trim().length === 0) {
     return null;
   }
   const value = raw.trim();
-  if (!DNI_MATCHER.test(value)) {
+  if (!CARD_MATCHER.test(value)) {
     return null;
   }
-  const did = parseOxydniQuery(value).get('did');
+  const did = parseCommonsQuery(value).get('did');
   if (!did || did.length === 0) {
     return null;
   }
@@ -171,8 +191,8 @@ export function parseDniPayload(raw: string): DniCardRef | null {
 
 /**
  * The fields decoded from a scanned real-life-attestation QR
- * (`oxydni://attest?subject=…&ctx=…&nonce=…&exp=…`). The SCANNER feeds these to
- * {@link OxyServicesCivicMixin.submitRealLifeAttestation}.
+ * (`oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…`). The SCANNER feeds these
+ * to {@link OxyServicesCivicMixin.submitRealLifeAttestation}.
  */
 export interface ParsedAttestPayload {
   /** The DID of the person being attested (A) — becomes the record's `about`. */
@@ -190,7 +210,7 @@ export interface ParsedAttestPayload {
  * embeds so the displaying app can track which scan completed it.
  */
 export interface AttestQrPayload {
-  /** The `oxydni://attest?subject=…&ctx=…&nonce=…&exp=…` string to encode as a QR. */
+  /** The `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` string to encode as a QR. */
   payload: string;
   /** The single-use nonce embedded in the payload. */
   nonce: string;
@@ -200,8 +220,8 @@ export interface AttestQrPayload {
 
 /**
  * Parse a scanned / deep-linked real-life-attestation payload
- * (`oxydni://attest?subject=…&ctx=…&nonce=…&exp=…`). Pure + dependency-free
- * (Hermes-safe, no `URL` global), mirroring {@link parseDniPayload}, so Commons
+ * (`oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…`). Pure + dependency-free
+ * (Hermes-safe, no `URL` global), mirroring {@link parseIdPayload}, so Commons
  * (and any scanner) can reuse it without an OxyServices instance.
  *
  * @param raw - The raw scanned string or deep-link URL.
@@ -218,7 +238,7 @@ export function parseAttestPayload(raw: string): ParsedAttestPayload | null {
   if (!ATTEST_MATCHER.test(value)) {
     return null;
   }
-  const params = parseOxydniQuery(value);
+  const params = parseCommonsQuery(value);
   const subjectDid = params.get('subject');
   const nonce = params.get('nonce');
   const expRaw = params.get('exp');
@@ -287,6 +307,29 @@ export interface DenyValidationResult {
 }
 
 /**
+ * Input for {@link OxyServicesCivicMixin.vouchForPerson} — the SUBJECT (A) the
+ * current user (B) is vouching for, plus B's optional stake and biometric
+ * support signal.
+ */
+export interface VouchForPersonInput {
+  /** A's DID (`did:web:oxy.so:u:<userId>`); becomes the vouch record's `about`. */
+  subjectDid: string;
+  /**
+   * B's chosen stake (the `stake` wire field). Omitted ⇒ the server applies its
+   * default; the server clamps any value into its `[min, max]` and echoes the
+   * recorded amount back as `VouchResult.stakeAmount`.
+   */
+  stakeAmount?: number;
+  /** Whether B's device biometric gate fired before signing (optional signal). */
+  biometricOk?: boolean;
+}
+
+/** Result of {@link OxyServicesCivicMixin.withdrawVouch}. */
+export interface WithdrawVouchResult {
+  withdrawn: boolean;
+}
+
+/**
  * The current chain head as returned by `GET /identity/records/:userId/chain/head`.
  * `headRecordId` is `null` and `seq` is `-1` when the subject has no chain yet,
  * so the next record's coordinates are always `seq: head.seq + 1` (genesis = 0)
@@ -305,7 +348,7 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
     }
 
     /**
-     * Fetch a user's signed public DNI card and verify the Oxy attestation
+     * Fetch a user's signed public Oxy ID card and verify the Oxy attestation
      * client-side. Public (no auth required); short-TTL cached.
      *
      * Resolves to `{ card, attestation, verified }`. A bad/absent signature does
@@ -330,20 +373,20 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
     }
 
     /**
-     * Build the DNI QR payload for the current user: `oxydni://card?did=<did>&v=1`,
-     * where `<did>` is the user's Oxy DID (`did:web:oxy.so:u:<userId>`). The QR
-     * encodes ONLY the DID (anti-spoof — no trust data); a scanner resolves the
-     * signed card via {@link getPublicCard}. Round-trips through
-     * {@link parseDniPayload}.
+     * Build the Oxy ID QR payload for the current user:
+     * `oxycommons://card?did=<did>&v=1`, where `<did>` is the user's Oxy DID
+     * (`did:web:oxy.so:u:<userId>`). The QR encodes ONLY the DID (anti-spoof — no
+     * trust data); a scanner resolves the signed card via {@link getPublicCard}.
+     * Round-trips through {@link parseIdPayload}.
      *
      * Throws if no user is authenticated (no DID to derive).
      */
-    getMyDniPayload(): string {
+    getMyIdPayload(): string {
       const userId = this.getCurrentUserId();
       if (!userId) {
-        throw new Error('No authenticated user — cannot build a DNI payload.');
+        throw new Error('No authenticated user — cannot build an Oxy ID payload.');
       }
-      return `oxydni://card?did=${buildUserDid(userId)}&v=1`;
+      return `oxycommons://card?did=${buildUserDid(userId)}&v=1`;
     }
 
     // =========================================================================
@@ -353,7 +396,7 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
     /**
      * Build the real-life-attestation QR the current user (A) shows to be
      * attested by a counterparty (B):
-     * `oxydni://attest?subject=<A.did>&ctx=<context>&nonce=<fresh>&exp=<now+10m>`.
+     * `oxycommons://attest?subject=<A.did>&ctx=<context>&nonce=<fresh>&exp=<now+10m>`.
      *
      * A fresh crypto-random nonce is minted per call (single-use replay guard);
      * `exp` is `now + 10min` (matching the server ceiling — scan promptly). The
@@ -374,7 +417,7 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
       const nonce = await SignatureService.generateChallenge();
       const exp = Date.now() + ATTEST_QR_TTL_MS;
       const payload =
-        `oxydni://attest?subject=${subject}` +
+        `oxycommons://attest?subject=${subject}` +
         `&ctx=${encodeURIComponent(input.context)}` +
         `&nonce=${nonce}&exp=${exp}`;
       return { payload, nonce, exp };
@@ -503,6 +546,128 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    // =========================================================================
+    // FASE 3 — proof-of-personhood web-of-trust (staked vouch)
+    // =========================================================================
+
+    /**
+     * Vouch that another user is a real person as the VOUCHER (B): sign a
+     * self-issued `personhood_vouch` v2 record on B's own chain
+     * (`subject === issuer === B.did`), referencing the subject (A) via
+     * `record.about`, then `POST /civic/personhood/vouch`. The server verifies
+     * it, enforces the voucher-eligibility (personhood ≥ τ) + graph-exclusion
+     * gates, stakes B, awards A `personhood_vouched`, and recomputes A's
+     * personhood. The voucher id is resolved server-side from the session — never
+     * from the body.
+     *
+     * The signed record matches the API schema: `{ about, stake?, … }` — note the
+     * wire field is `stake` (the caller's `stakeAmount` request), distinct from
+     * the server-clamped `VouchResult.stakeAmount` it returns. The optional
+     * `biometricOk` is carried as a signed support signal.
+     *
+     * NATIVE-ONLY (signs with the on-device key; throws on web / when no identity
+     * or no authenticated user). The record is keyed
+     * `collection: 'app.oxy.vouch'`, `rkey: <subjectDid>` (one vouch per subject
+     * on the voucher's chain — last-writer-wins). After a successful vouch the
+     * personhood + `/users/me` GET caches are swept.
+     *
+     * @param input - The subject DID plus B's optional stake / biometric signal.
+     */
+    async vouchForPerson(input: VouchForPersonInput): Promise<VouchResult> {
+      try {
+        const envelope = await this._signMyCivicRecordV2(
+          'personhood_vouch',
+          {
+            about: input.subjectDid,
+            ...(input.stakeAmount !== undefined ? { stake: input.stakeAmount } : {}),
+            ...(input.biometricOk !== undefined ? { biometricOk: input.biometricOk } : {}),
+          },
+          VOUCH_COLLECTION,
+          input.subjectDid,
+        );
+        const result = await this.makeRequest<VouchResult>(
+          'POST',
+          '/civic/personhood/vouch',
+          envelope,
+          { cache: false },
+        );
+        this._sweepPersonhoodCaches();
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Withdraw the current user's active vouch for a subject
+     * (`DELETE /civic/personhood/vouch/:subjectUserId`). The vouch flips to
+     * `withdrawn` server-side and the subject is recomputed (which may demote
+     * them below θ). Auth required; no signed record (withdrawal is not an
+     * attestation). After a successful withdraw the personhood + `/users/me` GET
+     * caches are swept.
+     *
+     * @param subjectUserId - The subject account's Mongo `_id` (NOT a DID) — the
+     *   id the server keys the vouch on. URL-encoded into the path.
+     */
+    async withdrawVouch(subjectUserId: string): Promise<WithdrawVouchResult> {
+      try {
+        const result = await this.makeRequest<WithdrawVouchResult>(
+          'DELETE',
+          `/civic/personhood/vouch/${encodeURIComponent(subjectUserId)}`,
+          undefined,
+          { cache: false },
+        );
+        this._sweepPersonhoodCaches();
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Fetch a user's public personhood status snapshot
+     * (`GET /civic/personhood/:userId`). Read-only: the server returns the cached
+     * snapshot, or a zeroed `unverified` shape (`breakdown`/`updatedAt` null) when
+     * none exists yet. Public (no auth required); short-TTL cached.
+     *
+     * @param userId - The subject account's Mongo `_id`. URL-encoded into the path.
+     */
+    async getPersonhood(userId: string): Promise<PersonhoodStatusResult> {
+      try {
+        return await this.makeRequest<PersonhoodStatusResult>(
+          'GET',
+          `/civic/personhood/${encodeURIComponent(userId)}`,
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.SHORT },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Fetch the CURRENT user's personhood status ({@link getPersonhood} for the
+     * authenticated user's id). Throws if no user is authenticated.
+     */
+    async getMyPersonhood(): Promise<PersonhoodStatusResult> {
+      const userId = this.getCurrentUserId();
+      if (!userId) {
+        throw new Error('No authenticated user — cannot resolve personhood status.');
+      }
+      return this.getPersonhood(userId);
+    }
+
+    /**
+     * Sweep the GET caches a vouch / withdraw can invalidate: every personhood
+     * status read (the subject's snapshot changed) and `/users/me` (a subject
+     * crossing the threshold flips their mirrored `User.verified`). Public rather
+     * than `private` for the same TS4094 reason as {@link _signMyCivicRecordV2}.
+     */
+    _sweepPersonhoodCaches(): void {
+      this.clearCacheByPrefix(PERSONHOOD_CACHE_PREFIX);
+      this.clearCacheByPrefix(USERS_ME_CACHE_PREFIX);
     }
 
     /**

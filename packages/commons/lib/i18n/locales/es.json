@@ -1139,27 +1139,21 @@
       "title": "Ciudadanía",
       "subtitle": "Tu identidad Oxy verificable: muéstrala, demuéstrala, llévala contigo.",
       "identitySection": "Tu identidad",
-      "identitySubtitle": "DNI de autocustodia y la reputación que has ganado.",
+      "identitySubtitle": "Oxy ID de autocustodia y la reputación que has ganado.",
       "verifySection": "Verificar a alguien",
       "actions": {
-        "dni": "Mi DNI",
-        "dniSubtitle": "Tu tarjeta de ciudadanía y QR",
+        "id": "Mi Oxy ID",
+        "idSubtitle": "Tu tarjeta de ID y QR",
         "reputation": "Reputación",
         "reputationSubtitle": "Cuánto se confía en ti, y por qué",
-        "scan": "Escanear un DNI",
+        "scan": "Escanear un Oxy ID",
         "scanSubtitle": "Verifica la tarjeta de otra persona",
-        "openCitizen": "Ciudadanía / DNI",
-        "openCitizenSubtitle": "Tu tarjeta DNI, reputación y verificación"
+        "openCitizen": "Ciudadanía / ID",
+        "openCitizenSubtitle": "Tu tarjeta Oxy ID, reputación y verificación"
       }
     },
-    "dni": {
-      "title": "Tu DNI",
-      "subtitle": "Muestra esta tarjeta para que otros verifiquen quién eres.",
-      "state": {
-        "pending": "Registro pendiente",
-        "offline": "Sin conexión",
-        "live": "En vivo"
-      },
+    "id": {
+      "scanAction": "Escanear un código QR",
       "qrCaption": "Escanea para verificar con Oxy",
       "qrPending": "Termina de configurar tu cuenta para generar tu QR.",
       "flipHint": "Toca la tarjeta para girarla",
@@ -1181,7 +1175,7 @@
         "title": "No se pudo resolver la tarjeta",
         "body": "No pudimos contactar con Oxy para verificar esta tarjeta y aún no hay nada en caché.",
         "invalidTitle": "No es una tarjeta de ciudadanía",
-        "invalidBody": "Este QR no es un DNI de Oxy válido."
+        "invalidBody": "Este QR no es un Oxy ID válido."
       }
     },
     "trustTier": {
@@ -1194,7 +1188,50 @@
     "personhood": {
       "unverified": "Sin verificar",
       "pending": "Pendiente",
-      "verified": "Persona verificada"
+      "verified": "Persona verificada",
+      "title": "Prueba de persona real",
+      "loading": "Comprobando tu estado…",
+      "offline": "Sin conexión — última versión conocida",
+      "verifiedBadge": "Persona real verificada",
+      "buildingBadge": "Generando confianza",
+      "scoreValue": "{{pct}}%",
+      "scoreLabel": "Puntuación de persona",
+      "thresholdLabel": "Verificado al {{pct}}%",
+      "verifiedDesc": "Oxy confía en que eres una persona real y única. Esto protege tu reputación y desbloquea la máxima confianza en las apps de Oxy.",
+      "buildingDesc": "Todavía estás generando pruebas de que eres una persona real. Alcanza el umbral reuniendo las señales de abajo.",
+      "penaltyNote": "Una penalización por sibilas está bajando tu puntuación. Se reduce a medida que reúnes señales genuinas e independientes con el tiempo.",
+      "footnote": "Tu puntuación se recalcula a partir de señales reales e independientes — avales de personas de confianza, confirmaciones en persona y vínculo biométrico — menos cualquier penalización por sibilas. Ninguna señal por sí sola puede falsearla.",
+      "settingsSection": "Confianza y verificación",
+      "settingsEntry": "Prueba de persona real",
+      "settingsEntrySubtitle": "Demuestra que eres una persona real y descubre cómo subir tu puntuación",
+      "signals": {
+        "title": "Tus señales",
+        "subtitle": "La evidencia independiente detrás de tu puntuación.",
+        "vouches": "Avales",
+        "vouchesDesc": "Personas de confianza que apostaron su reputación a que eres real.",
+        "vouchesCount": "{{count}} avales",
+        "realLife": "Confirmaciones en persona",
+        "realLifeDesc": "Personas que confirmaron que te conocieron en persona.",
+        "realLifeCount": "{{count}} confirmaciones",
+        "biometric": "Vínculo biométrico",
+        "biometricDesc": "Tu identidad está vinculada a la biometría de este dispositivo.",
+        "biometricBound": "Vinculado",
+        "biometricUnbound": "Sin vincular"
+      },
+      "improve": {
+        "title": "Cómo aumentarla",
+        "subtitle": "Acumula señales genuinas — cada una es difícil de falsear.",
+        "getVouched": "Consigue avales de personas de confianza",
+        "getVouchedDesc": "Pide a personas que ya confían en ti que avalen que eres una persona real.",
+        "doRealLife": "Confirma encuentros en persona",
+        "doRealLifeDesc": "Muestra tu Oxy ID en persona para que otros confirmen que te conocieron.",
+        "bindBiometric": "Vincula tu biometría",
+        "bindBiometricDesc": "Protege tu identidad con el Face ID, Touch ID o huella de este dispositivo."
+      },
+      "error": {
+        "title": "No se pudo cargar tu estado",
+        "body": "No pudimos contactar con Oxy y aún no hay nada en caché."
+      }
     },
     "reputation": {
       "title": "Reputación",
@@ -1211,7 +1248,7 @@
       },
       "sources": {
         "realLife": "Vida real",
-        "realLifeDesc": "Verificado en persona: alguien escaneó tu DNI y lo firmó.",
+        "realLifeDesc": "Verificado en persona: alguien escaneó tu Oxy ID y lo firmó.",
         "peerCivic": "Pares y cívica",
         "peerCivicDesc": "Validado por un jurado aleatorio de ciudadanos de confianza.",
         "apps": "Apps",
@@ -1316,12 +1353,57 @@
         "not_selected": "No formas parte de este jurado de validación.",
         "generic": "No pudimos enviar tu veredicto. Inténtalo de nuevo."
       }
+    },
+    "vouch": {
+      "cta": "Avalar a esta persona",
+      "statusLine": {
+        "verified": "Persona real verificada",
+        "building": "Generando confianza ({{pct}}%)"
+      },
+      "confirm": {
+        "title": "Avalar a esta persona",
+        "biometricReason": "Verifica que eres tú para firmar tu aval",
+        "loading": "Resolviendo identidad…",
+        "invalidTitle": "No se puede avalar",
+        "invalidBody": "Este no es un Oxy ID válido para avalar.",
+        "unknownPerson": "esta persona",
+        "intro": "Estás avalando que {{name}} es una persona real y única que conoces personalmente y en quien confías.",
+        "stakeTitle": "Tu apuesta",
+        "stakeHint": "Apuesta reputación para respaldar tu aval. Una apuesta mayor cuenta más — y arriesga más si te equivocas.",
+        "stakeLabel": "Cantidad apostada",
+        "slashWarning": "Avalar pone en juego tu reputación. Si esta persona resulta no ser real, tu aval puede ser penalizado y perderás la apuesta. Avala solo a personas que conozcas de verdad.",
+        "cta": "Avalar con biometría",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para avalar.",
+        "submitting": "Firmando tu aval…",
+        "withdraw": "Retirar aval",
+        "withdrawing": "Retirando…",
+        "done": {
+          "title": "Aval registrado",
+          "body": "Avalaste a {{name}}. Ganó {{points}} para su prueba de persona real.",
+          "staked": "Apostado {{stake}}"
+        },
+        "withdrawn": {
+          "title": "Aval retirado",
+          "body": "Retiraste tu aval para {{name}}."
+        },
+        "error": {
+          "title": "No se pudo avalar"
+        }
+      },
+      "error": {
+        "self_vouch": "No puedes avalarte a ti mismo.",
+        "already_vouched": "Ya has avalado a esta persona.",
+        "voucher_below_threshold": "Tu propia confianza aún no es suficiente para avalar. Genera más reputación primero.",
+        "excluded_graph_neighbor": "Estás demasiado conectado para avalar a esta persona.",
+        "excluded_shared_device": "Esta cuenta comparte dispositivo con la tuya, así que no puedes avalarla.",
+        "excluded_shared_ip": "Esta cuenta comparte red con la tuya, así que no puedes avalarla.",
+        "subject_not_found": "No pudimos encontrar la cuenta de esta persona.",
+        "generic": "No pudimos registrar tu aval. Inténtalo de nuevo."
+      }
     }
   },
   "tabs": {
-    "home": "Inicio",
-    "dni": "DNI",
-    "scan": "Escanear",
+    "id": "ID",
     "reputation": "Reputación",
     "settings": "Ajustes"
   },

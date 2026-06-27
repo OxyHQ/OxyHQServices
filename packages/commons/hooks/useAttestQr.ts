@@ -7,7 +7,7 @@ export type AttestQrState = 'loading' | 'ready' | 'error';
 
 export interface UseAttestQr {
   state: AttestQrState;
-  /** The `oxydni://attest?…` string to encode as a QR; `null` until ready. */
+  /** The `oxycommons://attest?…` string to encode as a QR; `null` until ready. */
   payload: string | null;
   /** The single-use nonce embedded in the payload. */
   nonce: string | null;

@@ -14,7 +14,7 @@ describe('parseScan', () => {
       expect(parseScan('commons://approve?code=XYZ')).toEqual({ kind: 'approval', code: 'XYZ' });
     });
 
-    it('surfaces an expired approval link as expired (not invalid, not dni)', () => {
+    it('surfaces an expired approval link as expired (not invalid, not id)', () => {
       expect(parseScan(`oxycommons://approve?code=ABC&exp=${past()}`)).toEqual({
         kind: 'invalid',
         reason: 'expired',
@@ -26,22 +26,22 @@ describe('parseScan', () => {
     });
   });
 
-  describe('DNI cards', () => {
-    it('branches a valid DNI payload to { kind: dni } carrying the DID', () => {
+  describe('Oxy ID cards', () => {
+    it('branches a valid Oxy ID payload to { kind: id } carrying the DID', () => {
       const did = 'did:web:oxy.so:u:65f0abc123';
-      expect(parseScan(`oxydni://card?did=${did}&v=1`)).toEqual({ kind: 'dni', did });
+      expect(parseScan(`oxycommons://card?did=${did}&v=1`)).toEqual({ kind: 'id', did });
     });
 
     it('url-decodes a percent-encoded DID', () => {
       const encoded = encodeURIComponent('did:web:oxy.so:u:65f0abc123');
-      expect(parseScan(`oxydni://card?did=${encoded}`)).toEqual({
-        kind: 'dni',
+      expect(parseScan(`oxycommons://card?did=${encoded}`)).toEqual({
+        kind: 'id',
         did: 'did:web:oxy.so:u:65f0abc123',
       });
     });
 
-    it('treats a DNI card with no did as invalid', () => {
-      expect(parseScan('oxydni://card?v=1')).toEqual({ kind: 'invalid', reason: 'invalid' });
+    it('treats an Oxy ID card with no did as invalid', () => {
+      expect(parseScan('oxycommons://card?v=1')).toEqual({ kind: 'invalid', reason: 'invalid' });
     });
   });
 
@@ -51,7 +51,7 @@ describe('parseScan', () => {
     it('branches a valid attest payload to { kind: attest } carrying the fields', () => {
       const exp = future();
       const did = 'did:web:oxy.so:u:65f0abc123';
-      expect(parseScan(`oxydni://attest?subject=${did}&ctx=meet&nonce=n1&exp=${exp}`)).toEqual({
+      expect(parseScan(`oxycommons://attest?subject=${did}&ctx=meet&nonce=n1&exp=${exp}`)).toEqual({
         kind: 'attest',
         subjectDid: did,
         context: 'meet',
@@ -62,7 +62,7 @@ describe('parseScan', () => {
 
     it('defaults context to empty string when ctx is omitted', () => {
       const exp = future();
-      const result = parseScan(`oxydni://attest?subject=did:web:oxy.so:u:x&nonce=n2&exp=${exp}`);
+      const result = parseScan(`oxycommons://attest?subject=did:web:oxy.so:u:x&nonce=n2&exp=${exp}`);
       expect(result).toEqual({
         kind: 'attest',
         subjectDid: 'did:web:oxy.so:u:x',
@@ -73,14 +73,14 @@ describe('parseScan', () => {
     });
 
     it('treats an attest payload missing nonce/exp as invalid', () => {
-      expect(parseScan('oxydni://attest?subject=did:web:oxy.so:u:x')).toEqual({
+      expect(parseScan('oxycommons://attest?subject=did:web:oxy.so:u:x')).toEqual({
         kind: 'invalid',
         reason: 'invalid',
       });
     });
 
-    it('does not confuse a DNI card with an attest request', () => {
-      expect(parseScan('oxydni://card?did=did:web:oxy.so:u:x').kind).toBe('dni');
+    it('does not confuse an Oxy ID card with an attest request', () => {
+      expect(parseScan('oxycommons://card?did=did:web:oxy.so:u:x').kind).toBe('id');
     });
   });
 

@@ -38,6 +38,12 @@ jest.mock('../../services/civic/realLife.service', () => ({
   submitRealLifeAttestation: (...a: unknown[]) => mockSubmit(...a),
 }));
 jest.mock('../../services/civic/publicCard.service', () => ({ buildSignedPublicCard: jest.fn() }));
+jest.mock('../../services/civic/personhood.service', () => ({
+  vouchForPerson: jest.fn(),
+  withdrawVouch: jest.fn(),
+  recomputePersonhood: jest.fn(),
+}));
+jest.mock('../../models/PersonhoodStatus', () => ({ __esModule: true, default: { findOne: jest.fn() } }));
 jest.mock('../../utils/validation', () => ({ isValidObjectId: (id: string) => /^[a-f0-9]{24}$/i.test(id) }));
 
 import civicRoutes from '../civic';

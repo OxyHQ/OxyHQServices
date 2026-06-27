@@ -1,6 +1,6 @@
 /**
- * Offline-first state machine for a civic profile surface (the DNI card and the
- * scanned-card view).
+ * Offline-first state machine for a civic profile surface (the Oxy ID card and
+ * the scanned-card view).
  *
  * Three states, per the Commons offline guarantee:
  *
@@ -23,7 +23,7 @@ import { useOnlineStatus } from '@oxyhq/services';
 /** The offline-first state of a civic profile surface. */
 export type CivicProfileState = 'pending' | 'cache-first' | 'live';
 
-/** Whose card a surface renders: the user's own DNI, or a scanned remote card. */
+/** Whose card a surface renders: the user's own Oxy ID, or a scanned remote card. */
 export type CivicProfileSubject = 'self' | 'remote';
 
 interface DeriveCivicProfileStateInput {

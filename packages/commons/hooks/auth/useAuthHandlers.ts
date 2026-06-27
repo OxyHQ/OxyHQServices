@@ -192,7 +192,7 @@ export function useAuthHandlers({
     await new Promise(resolve => requestAnimationFrame(resolve));
 
     // Navigate to the post-auth tab shell - use push as per Expo Router standard
-    router.push('/(tabs)/(home)');
+    router.push('/(tabs)/(id)');
   }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
 
   /**
@@ -206,7 +206,7 @@ export function useAuthHandlers({
     }
 
     if (isExpoGo()) {
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
       return;
     }
 
@@ -218,15 +218,15 @@ export function useAuthHandlers({
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
       if (existingStatus === 'granted') {
-        router.push('/(tabs)/(home)');
+        router.push('/(tabs)/(id)');
         return;
       }
 
       await Notifications.requestPermissionsAsync();
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
     } catch (err: unknown) {
       handleAuthError(err, 'requestNotifications');
-      router.push('/(tabs)/(home)');
+      router.push('/(tabs)/(id)');
     } finally {
       setIsRequestingNotifications(false);
     }

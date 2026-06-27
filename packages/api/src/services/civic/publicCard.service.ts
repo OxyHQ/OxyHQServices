@@ -16,11 +16,12 @@
  * pre-prod); in production it is always present — exactly like the export bundle.
  */
 
-import type { PublicCard, SignedPublicCard, ExportAttestation } from '@oxyhq/contracts';
+import type { PublicCard, SignedPublicCard, ExportAttestation, PersonhoodStatus as PersonhoodStatusValue } from '@oxyhq/contracts';
 import { signedPublicCardSchema } from '@oxyhq/contracts';
 import { canonicalize } from '@oxyhq/core';
 import { User } from '../../models/User';
 import { ReputationBalance } from '../../models/ReputationBalance';
+import PersonhoodStatusModel from '../../models/PersonhoodStatus';
 import SignatureService from '../signature.service';
 import { buildUserDid, OXY_DID } from '../did.service';
 import { formatUserResponse } from '../../utils/userTransform';
@@ -71,8 +72,20 @@ export async function buildSignedPublicCard(userId: string): Promise<SignedPubli
   const username = formatted?.username;
   const avatarId = formatted?.avatar;
 
-  const balance = await ReputationBalance.findOne({ userId }).lean();
+  const [balance, personhood] = await Promise.all([
+    ReputationBalance.findOne({ userId }).lean(),
+    PersonhoodStatusModel.findOne({ userId }).select('isRealPerson').lean<{ isRealPerson?: boolean } | null>(),
+  ]);
   const trustTier = balance?.trustTier ?? 'new';
+
+  // Personhood (Fase 3): a confirmed real person is `verified`; a user who has a
+  // status row but has not yet crossed θ is `pending`; no row at all is
+  // `unverified`.
+  const personhoodStatus: PersonhoodStatusValue = !personhood
+    ? 'unverified'
+    : personhood.isRealPerson
+      ? 'verified'
+      : 'pending';
 
   const verifiedDomains = (user.verifiedDomains ?? []).map((domain) => domain.domain);
 
@@ -81,7 +94,7 @@ export async function buildSignedPublicCard(userId: string): Promise<SignedPubli
     userId,
     name: displayName,
     trustTier,
-    personhoodStatus: 'unverified',
+    personhoodStatus,
     verifiedDomains,
     credentialBadges: [],
     issuedAt: Date.now(),

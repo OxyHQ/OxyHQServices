@@ -54,6 +54,10 @@ jest.mock('../../models/ValidationVote', () => ({
 jest.mock('../../models/User', () => ({ __esModule: true, User: { findById: jest.fn() } }));
 jest.mock('../signedRecord.service', () => ({ verifyEnvelopeSignature: jest.fn(), verifyAndStoreRecord: jest.fn() }));
 jest.mock('../reputation.service', () => ({ reputationService: { award: (...a: unknown[]) => mockAward(...a) } }));
+const mockResolveAudit = jest.fn();
+jest.mock('../civic/personhoodAudit.service', () => ({
+  resolvePersonhoodAuditOutcome: (...a: unknown[]) => mockResolveAudit(...a),
+}));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
 import { selectValidators, tallyAndResolve } from '../civic/validator.service';
@@ -182,5 +186,22 @@ describe('tallyAndResolve', () => {
 
     expect(status).toBe('rejected');
     expect(mockAward).not.toHaveBeenCalled();
+  });
+
+  it('dispatches a personhood_audit resolution to the audit resolver (not peer_validated)', async () => {
+    mockResolveAudit.mockResolvedValue(undefined);
+    mockReqFindById.mockResolvedValue(makeRequest({ actionType: 'personhood_audit' }));
+    mockVoteFind.mockReturnValue({ lean: async () => votes(['invalid', 'invalid', 'invalid']) });
+    mockReqFindOneAndUpdate.mockResolvedValue(
+      makeRequest({ status: 'rejected', outcome: 'rejected', actionType: 'personhood_audit' }),
+    );
+
+    const status = await tallyAndResolve('req1');
+
+    expect(status).toBe('rejected');
+    expect(mockResolveAudit).toHaveBeenCalledTimes(1);
+    expect(mockResolveAudit.mock.calls[0][1]).toBe('rejected');
+    // The audit path does NOT award peer_validated.
+    expect(mockAward.mock.calls.find((c) => c[0].actionType === 'peer_validated')).toBeUndefined();
   });
 });

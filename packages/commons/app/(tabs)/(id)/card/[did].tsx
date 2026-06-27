@@ -16,6 +16,7 @@ import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useCivicCard } from '@/hooks/useCivicCard';
+import { usePersonhood } from '@/hooks/usePersonhood';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import { userIdFromDid } from '@/lib/civic/did';
 import {
@@ -26,10 +27,10 @@ import {
 import { useTranslation } from '@/lib/i18n';
 
 /**
- * Scanned-person view — resolves and renders another citizen's signed DNI card.
+ * Scanned-person view — resolves and renders another person's signed Oxy ID card.
  *
- * The `did` route param comes from a scanned `oxydni://card?did=…` payload; the
- * subject's `userId` is recovered from it and the signed card resolved +
+ * The `did` route param comes from a scanned `oxycommons://card?did=…` payload;
+ * the subject's `userId` is recovered from it and the signed card resolved +
  * verified client-side via `useCivicCard`. The verdict drives an explicit
  * VERIFIED ✓ / UNVERIFIED ⚠ indicator — a `verified: false` card (forged,
  * unsigned, or tampered) is surfaced as untrusted, never silently trusted.
@@ -46,21 +47,28 @@ export default function ScannedCardScreen() {
   const userId = useMemo(() => (did ? userIdFromDid(did) : null), [did]);
 
   const cardQuery = useCivicCard(userId);
+  const personhoodQuery = usePersonhood(userId);
   const { isOnline } = useCivicProfileState({ subject: 'remote' });
 
   const card = cardQuery.data?.card;
   const verified = cardQuery.data?.verified ?? false;
+  const personhood = personhoodQuery.data;
 
   const handleClose = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(tabs)/(dni)');
+      router.replace('/(tabs)/(id)');
     }
   }, [router]);
 
+  const handleVouch = useCallback(() => {
+    if (!did) return;
+    router.push({ pathname: '/(tabs)/(id)/vouch/[did]', params: { did } });
+  }, [router, did]);
+
   const renderBody = () => {
-    // The DID could not be parsed into a user id — not a valid Oxy DNI.
+    // The DID could not be parsed into a user id — not a valid Oxy ID.
     if (!userId) {
       return (
         <EmptyState
@@ -107,7 +115,7 @@ export default function ScannedCardScreen() {
 
     const verification = getVerificationMeta(verified);
     const trust = getTrustTierMeta(card.trustTier);
-    const personhood = getPersonhoodMeta(card.personhoodStatus);
+    const personhoodMeta = getPersonhoodMeta(card.personhoodStatus);
 
     return (
       <View style={styles.content}>
@@ -160,11 +168,41 @@ export default function ScannedCardScreen() {
             label={t(`civic.trustTier.${trust.labelKey}`)}
           />
           <CivicBadge
-            tone={personhood.tone}
+            tone={personhoodMeta.tone}
             icon="account-check-outline"
-            label={t(`civic.personhood.${personhood.labelKey}`)}
+            label={t(`civic.personhood.${personhoodMeta.labelKey}`)}
           />
         </View>
+
+        {/* Precise proof-of-personhood status (from getPersonhood). */}
+        {personhood && (
+          <View style={styles.personhoodLine}>
+            <MaterialCommunityIcons
+              name={personhood.isRealPerson ? 'account-check' : 'account-clock-outline'}
+              size={16}
+              color={personhood.isRealPerson ? colors.success : colors.warning}
+            />
+            <ThemedText style={[styles.personhoodLineText, { color: colors.textSecondary }]}>
+              {personhood.isRealPerson
+                ? t('civic.vouch.statusLine.verified')
+                : t('civic.vouch.statusLine.building', {
+                    pct: Math.max(0, Math.min(100, Math.round(personhood.score * 100))),
+                  })}
+            </ThemedText>
+          </View>
+        )}
+
+        {/* Vouch CTA — only for a card whose signature verified. */}
+        {verified && (
+          <TouchableOpacity
+            style={[styles.vouchCta, { backgroundColor: colors.tint }]}
+            onPress={handleVouch}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="account-multiple-check-outline" size={20} color="#fff" />
+            <Text style={styles.vouchCtaText}>{t('civic.vouch.cta')}</Text>
+          </TouchableOpacity>
+        )}
 
         {card.verifiedDomains.length > 0 && (
           <Section title={t('civic.card.verifiedDomains')}>
@@ -319,6 +357,29 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 8,
+  },
+  personhoodLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  personhoodLineText: {
+    fontSize: 13,
+  },
+  vouchCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  vouchCtaText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   listCard: {
     padding: 12,

@@ -1,5 +1,5 @@
 /**
- * Pure presentation mappers for the civic DNI card.
+ * Pure presentation mappers for the civic Oxy ID card.
  *
  * These translate the wire-level enums (`CardTrustTier`, `PersonhoodStatus`)
  * and the client-side attestation verdict into a small, render-agnostic "tone"

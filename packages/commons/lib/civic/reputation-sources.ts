@@ -6,7 +6,7 @@
  * citizen cares about, ordered strongest → weakest:
  *
  *   - `realLife`  (HIGH)    ← `physical`            — a counterpart scanned your
- *                                                     DNI and signed for it
+ *                                                     Oxy ID and signed for it
  *   - `peerCivic` (MEDIUM)  ← `trust`               — validated by a random jury
  *   - `apps`      (LOW)     ← `content` + `social`  — earned inside apps
  *   - `penalties` (PENALTY) ← `penalties`           — the absolute sum of debits

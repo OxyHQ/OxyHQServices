@@ -1139,27 +1139,21 @@
       "title": "Citizen",
       "subtitle": "Your verifiable Oxy identity — show it, prove it, carry it.",
       "identitySection": "Your identity",
-      "identitySubtitle": "Self-custody DNI and the reputation you've earned.",
+      "identitySubtitle": "Self-custody Oxy ID and the reputation you've earned.",
       "verifySection": "Verify someone",
       "actions": {
-        "dni": "My DNI",
-        "dniSubtitle": "Your citizen card and QR",
+        "id": "My Oxy ID",
+        "idSubtitle": "Your ID card and QR",
         "reputation": "Reputation",
         "reputationSubtitle": "How much you're trusted, and why",
-        "scan": "Scan a DNI",
-        "scanSubtitle": "Verify another person's citizen card",
-        "openCitizen": "Citizen / DNI",
-        "openCitizenSubtitle": "Your DNI card, reputation and verification"
+        "scan": "Scan an Oxy ID",
+        "scanSubtitle": "Verify another person's ID card",
+        "openCitizen": "Citizen / ID",
+        "openCitizenSubtitle": "Your Oxy ID card, reputation and verification"
       }
     },
-    "dni": {
-      "title": "Your DNI",
-      "subtitle": "Show this card so others can verify who you are.",
-      "state": {
-        "pending": "Pending registration",
-        "offline": "Offline",
-        "live": "Live"
-      },
+    "id": {
+      "scanAction": "Scan a QR code",
       "qrCaption": "Scan to verify with Oxy",
       "qrPending": "Finish setting up your account to generate your QR.",
       "flipHint": "Tap the card to flip it",
@@ -1181,7 +1175,7 @@
         "title": "Couldn't resolve card",
         "body": "We couldn't reach Oxy to verify this card, and nothing is cached for it yet.",
         "invalidTitle": "Not a citizen card",
-        "invalidBody": "This QR isn't a valid Oxy DNI."
+        "invalidBody": "This QR isn't a valid Oxy ID."
       }
     },
     "trustTier": {
@@ -1194,7 +1188,50 @@
     "personhood": {
       "unverified": "Unverified",
       "pending": "Pending",
-      "verified": "Verified person"
+      "verified": "Verified person",
+      "title": "Proof of personhood",
+      "loading": "Checking your status…",
+      "offline": "Offline — last known",
+      "verifiedBadge": "Verified real person",
+      "buildingBadge": "Building trust",
+      "scoreValue": "{{pct}}%",
+      "scoreLabel": "Personhood score",
+      "thresholdLabel": "Verified at {{pct}}%",
+      "verifiedDesc": "Oxy is confident you're a real, unique person. This protects your reputation and unlocks the highest trust across Oxy apps.",
+      "buildingDesc": "You're still building proof that you're a real person. Reach the threshold by collecting the signals below.",
+      "penaltyNote": "A sybil penalty is lowering your score. It eases as you gather genuine, independent signals over time.",
+      "footnote": "Your score is recomputed from real, independent signals — vouches from trusted people, in-person confirmations, and biometric binding — minus any sybil penalty. No single signal can fake it.",
+      "settingsSection": "Trust & verification",
+      "settingsEntry": "Proof of personhood",
+      "settingsEntrySubtitle": "Show you're a real person and see how to raise your score",
+      "signals": {
+        "title": "Your signals",
+        "subtitle": "The independent evidence behind your score.",
+        "vouches": "Vouches",
+        "vouchesDesc": "Trusted people who staked their reputation that you're real.",
+        "vouchesCount": "{{count}} vouches",
+        "realLife": "Real-life confirmations",
+        "realLifeDesc": "People who confirmed they met you in person.",
+        "realLifeCount": "{{count}} confirmations",
+        "biometric": "Biometric binding",
+        "biometricDesc": "Your identity is bound to this device's biometrics.",
+        "biometricBound": "Bound",
+        "biometricUnbound": "Not bound"
+      },
+      "improve": {
+        "title": "How to increase it",
+        "subtitle": "Stack genuine signals — each one is hard to fake.",
+        "getVouched": "Get vouched by trusted people",
+        "getVouchedDesc": "Ask people who already trust you to vouch you're a real person.",
+        "doRealLife": "Confirm meetings in real life",
+        "doRealLifeDesc": "Show your Oxy ID in person so others can confirm they met you.",
+        "bindBiometric": "Bind your biometrics",
+        "bindBiometricDesc": "Protect your identity with this device's Face ID, Touch ID or fingerprint."
+      },
+      "error": {
+        "title": "Couldn't load your status",
+        "body": "We couldn't reach Oxy, and nothing is cached yet."
+      }
     },
     "reputation": {
       "title": "Reputation",
@@ -1211,7 +1248,7 @@
       },
       "sources": {
         "realLife": "Real life",
-        "realLifeDesc": "Verified in person — someone scanned your DNI and signed for it.",
+        "realLifeDesc": "Verified in person — someone scanned your Oxy ID and signed for it.",
         "peerCivic": "Peer & civic",
         "peerCivicDesc": "Validated by a random jury of trusted citizens.",
         "apps": "Apps",
@@ -1316,12 +1353,57 @@
         "not_selected": "You're not on this validation jury.",
         "generic": "We couldn't submit your verdict. Please try again."
       }
+    },
+    "vouch": {
+      "cta": "Vouch for this person",
+      "statusLine": {
+        "verified": "Verified real person",
+        "building": "Building trust ({{pct}}%)"
+      },
+      "confirm": {
+        "title": "Vouch for this person",
+        "biometricReason": "Verify it's you to sign your vouch",
+        "loading": "Resolving identity…",
+        "invalidTitle": "Can't vouch",
+        "invalidBody": "This isn't a valid Oxy ID to vouch for.",
+        "unknownPerson": "this person",
+        "intro": "You're vouching that {{name}} is a real, unique person you personally know and trust.",
+        "stakeTitle": "Your stake",
+        "stakeHint": "Stake reputation to back your vouch. A bigger stake counts for more — and risks more if you're wrong.",
+        "stakeLabel": "Stake amount",
+        "slashWarning": "Vouching puts your reputation on the line. If this person turns out not to be real, your vouch can be slashed and you'll lose the stake. Only vouch for people you truly know.",
+        "cta": "Vouch with biometrics",
+        "biometricFailed": "Confirm with your device biometrics or passcode to vouch.",
+        "submitting": "Signing your vouch…",
+        "withdraw": "Withdraw vouch",
+        "withdrawing": "Withdrawing…",
+        "done": {
+          "title": "Vouch recorded",
+          "body": "You vouched for {{name}}. They earned {{points}} toward proof of personhood.",
+          "staked": "Staked {{stake}}"
+        },
+        "withdrawn": {
+          "title": "Vouch withdrawn",
+          "body": "You withdrew your vouch for {{name}}."
+        },
+        "error": {
+          "title": "Couldn't vouch"
+        }
+      },
+      "error": {
+        "self_vouch": "You can't vouch for yourself.",
+        "already_vouched": "You've already vouched for this person.",
+        "voucher_below_threshold": "Your own trust isn't high enough to vouch yet. Build more reputation first.",
+        "excluded_graph_neighbor": "You're too closely connected to vouch for this person.",
+        "excluded_shared_device": "This account shares a device with yours, so you can't vouch for it.",
+        "excluded_shared_ip": "This account shares a network with yours, so you can't vouch for it.",
+        "subject_not_found": "We couldn't find this person's account.",
+        "generic": "We couldn't record your vouch. Please try again."
+      }
     }
   },
   "tabs": {
-    "home": "Home",
-    "dni": "DNI",
-    "scan": "Scan",
+    "id": "ID",
     "reputation": "Reputation",
     "settings": "Settings"
   },

@@ -2,22 +2,22 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-interface DniQrBackProps {
-  /** The DNI QR payload (`oxydni://card?did=…&v=1`) to encode. */
+interface IdQrBackProps {
+  /** The Oxy ID QR payload (`oxycommons://card?did=…&v=1`) to encode. */
   payload: string;
   /** Localized caption shown under the QR (e.g. "Scan to verify with Oxy"). */
   caption: string;
 }
 
 /**
- * Back side of the flippable DNI card: a QR code of the user's DNI payload.
+ * Back side of the flippable Oxy ID card: a QR code of the user's ID payload.
  *
  * The payload encodes ONLY the DID (no trust data) — a scanner resolves and
  * re-verifies the signed card server-side. Rendered on a light card face to
  * match the OxyID front; the parent `Ticket` already compensates for the 180°
  * flip (`scaleX: -1`) so the QR reads in the correct orientation.
  */
-export function DniQrBack({ payload, caption }: DniQrBackProps) {
+export function IdQrBack({ payload, caption }: IdQrBackProps) {
   return (
     <View style={styles.container}>
       <View style={styles.qrWrapper}>

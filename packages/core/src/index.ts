@@ -184,7 +184,7 @@ export type {
 } from './mixins/OxyServices.identity';
 
 // ---------------------------------------------------------------------------
-// Civic / Commons "DNI" (public signed cards + DNI QR payload) and Fase 2
+// Civic / Commons "Oxy ID" (public signed cards + Oxy ID QR payload) and Fase 2
 // anti-gaming (real-life attestation QR + validator/jury). Wire shapes
 // (PublicCard, SignedPublicCard, RealLifeAttestationResult,
 // ValidationRequestSummary, ValidationVoteResult, ValidationVerdict, …) live in
@@ -192,17 +192,19 @@ export type {
 // wrapper, the QR payload parsers/builders, and the submit inputs/results.
 // ---------------------------------------------------------------------------
 export {
-    parseDniPayload,
+    parseIdPayload,
     parseAttestPayload,
     verifyPublicCardAttestation,
 } from './mixins/OxyServices.civic';
 export type {
     CivicCardResult,
-    DniCardRef,
+    IdCardRef,
     AttestQrPayload,
     ParsedAttestPayload,
     SubmitRealLifeAttestationInput,
     DenyValidationResult,
+    VouchForPersonInput,
+    WithdrawVouchResult,
 } from './mixins/OxyServices.civic';
 
 // ---------------------------------------------------------------------------

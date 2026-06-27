@@ -20,7 +20,7 @@ import { parseScan } from '@/lib/commons-signin/parse-scan';
  * `parseScan` branches the scanned string into one of two Commons payloads:
  *   - a "Sign in with Oxy" approval (`oxycommons://approve?code=…`) → the
  *     `/approve` flow, which re-resolves the requesting app identity server-side
- *   - a citizen DNI card (`oxydni://card?did=…`) → the `(civic)/card` view,
+ *   - a citizen Oxy ID card (`oxycommons://card?did=…`) → the `(id)/card` view,
  *     which resolves and verifies the signed card server-side
  *
  * The QR is never trusted for display — only the opaque `code` / `did` it
@@ -43,16 +43,16 @@ export default function ScanSignInScreen() {
       const parsed = parseScan(data);
       // `replace` so the hardware back button doesn't return to the camera.
       if (parsed.kind === 'approval') {
-        router.replace({ pathname: '/(tabs)/(scan)/approve', params: { code: parsed.code } });
+        router.replace({ pathname: '/(scan)/approve', params: { code: parsed.code } });
         return;
       }
-      if (parsed.kind === 'dni') {
-        router.replace({ pathname: '/(tabs)/(dni)/card/[did]', params: { did: parsed.did } });
+      if (parsed.kind === 'id') {
+        router.replace({ pathname: '/(tabs)/(id)/card/[did]', params: { did: parsed.did } });
         return;
       }
       if (parsed.kind === 'attest') {
         router.replace({
-          pathname: '/(tabs)/(scan)/attest',
+          pathname: '/(scan)/attest',
           params: {
             subjectDid: parsed.subjectDid,
             context: parsed.context,
@@ -74,9 +74,11 @@ export default function ScanSignInScreen() {
 
   const handleClose = useCallback(() => {
     if (router.canGoBack()) {
+      // Dismiss the scanner modal back to whatever presented it (the ID tab).
       router.back();
     } else {
-      router.replace('/(tabs)/(scan)');
+      // No history (e.g. cold deep link) — land on the ID home, not the camera.
+      router.replace('/(tabs)/(id)');
     }
   }, [router]);
 

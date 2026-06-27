@@ -1,5 +1,5 @@
 /**
- * React Query wrapper around a user's signed public DNI card.
+ * React Query wrapper around a user's signed public Oxy ID card.
  *
  * `oxyServices.getPublicCard(userId)` fetches the card AND verifies the Oxy
  * custodial attestation client-side, returning `{ card, attestation, verified }`

@@ -4,29 +4,29 @@
  * A scanned string can be one of three unrelated Commons payloads:
  *
  *   - a "Sign in with Oxy" approval link    (`oxycommons://approve?code=…`)
- *   - a citizen DNI card                     (`oxydni://card?did=…`)
- *   - a real-life attestation request (F2)   (`oxydni://attest?subject=…&nonce=…&exp=…`)
+ *   - a citizen Oxy ID card                  (`oxycommons://card?did=…`)
+ *   - a real-life attestation request (F2)   (`oxycommons://attest?subject=…&nonce=…&exp=…`)
  *
  * `parseScan` branches a raw scanned string into a discriminated result so the
- * scanner can route once (`approval` → the sign-in approval flow; `dni` → the
- * civic card view; `attest` → the real-life confirmation flow) without each call
+ * scanner can route once (`approval` → the sign-in approval flow; `id` → the
+ * Oxy ID card view; `attest` → the real-life confirmation flow) without each call
  * site re-implementing the matching.
  *
  * It delegates to the pure, already-tested parsers — `parseApprovalLink` (here)
- * and `parseDniPayload` / `parseAttestPayload` (from `@oxyhq/core`) — and never
+ * and `parseIdPayload` / `parseAttestPayload` (from `@oxyhq/core`) — and never
  * trusts the QR for anything beyond the opaque fields it carries: all are
  * re-resolved / re-verified server-side.
  */
 
-import { parseDniPayload, parseAttestPayload } from '@oxyhq/core';
+import { parseIdPayload, parseAttestPayload } from '@oxyhq/core';
 import { parseApprovalLink } from './parse-approval-link';
 
 /** The branch a scanned string resolves to. */
 export type ScanResult =
   /** A "Sign in with Oxy" approval link carrying a usable authorize code. */
   | { kind: 'approval'; code: string }
-  /** A citizen DNI card carrying the subject's DID. */
-  | { kind: 'dni'; did: string }
+  /** A citizen Oxy ID card carrying the subject's DID. */
+  | { kind: 'id'; did: string }
   /**
    * A real-life attestation request shown by the person being attested (A). The
    * scanner (B) confirms it after a biometric gate. Carries A's DID plus the
@@ -47,8 +47,8 @@ export type ScanResult =
  * Approval links are matched first: an approve-scheme link that fails ONLY
  * because it is expired surfaces as `{ kind: 'invalid', reason: 'expired' }`
  * rather than falling through to the other matchers (the schemes never overlap,
- * so this only affects the error message shown). The two `oxydni://` payloads
- * are disambiguated by their host (`card` vs `attest`).
+ * so this only affects the error message shown). The two `oxycommons://` card /
+ * attest payloads are disambiguated by their host (`card` vs `attest`).
  *
  * @param raw - The raw scanned string or deep-link URL.
  */
@@ -63,9 +63,9 @@ export function parseScan(raw: string): ScanResult {
     return { kind: 'invalid', reason: 'expired' };
   }
 
-  const dni = parseDniPayload(raw);
-  if (dni) {
-    return { kind: 'dni', did: dni.did };
+  const id = parseIdPayload(raw);
+  if (id) {
+    return { kind: 'id', did: id.did };
   }
 
   const attest = parseAttestPayload(raw);

@@ -33,6 +33,10 @@ export default function SettingsScreen() {
     router.push('/(tabs)/(settings)/create-backup');
   }, [router]);
 
+  const handlePersonhood = useCallback(() => {
+    router.push('/(tabs)/(settings)/personhood');
+  }, [router]);
+
   const handleDeleteAccount = useCallback(() => {
     router.push('/(tabs)/(settings)/delete-account');
   }, [router]);
@@ -74,6 +78,25 @@ export default function SettingsScreen() {
                     title: t('vault.home.actions.createBackup'),
                     subtitle: t('vault.home.actions.createBackupSubtitle'),
                     onPress: handleCreateBackup,
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </AccountCard>
+          </Section>
+
+          {/* Proof of personhood — Fase 3 trust surface */}
+          <Section title={t('civic.personhood.settingsSection')}>
+            <AccountCard>
+              <GroupedSection
+                items={[
+                  {
+                    id: 'personhood',
+                    icon: 'account-check',
+                    iconColor: colors.identityIconSelfCustody,
+                    title: t('civic.personhood.settingsEntry'),
+                    subtitle: t('civic.personhood.settingsEntrySubtitle'),
+                    onPress: handlePersonhood,
                     showChevron: true,
                   },
                 ]}

@@ -10,6 +10,7 @@
 const mockReqFindOne = jest.fn();
 const mockVoteFind = jest.fn();
 const mockAward = jest.fn();
+const mockSlashVouchers = jest.fn();
 
 jest.mock('../../models/ValidationRequest', () => ({
   __esModule: true,
@@ -20,6 +21,9 @@ jest.mock('../../models/ValidationVote', () => ({
   default: { find: (...a: unknown[]) => mockVoteFind(...a) },
 }));
 jest.mock('../reputation.service', () => ({ reputationService: { award: (...a: unknown[]) => mockAward(...a) } }));
+jest.mock('../civic/personhood.service', () => ({
+  slashVouchersForFakeSubject: (...a: unknown[]) => mockSlashVouchers(...a),
+}));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
 import { slashForReversedTransaction } from '../civic/slash.service';
@@ -27,6 +31,7 @@ import { slashForReversedTransaction } from '../civic/slash.service';
 beforeEach(() => {
   jest.clearAllMocks();
   mockAward.mockResolvedValue({});
+  mockSlashVouchers.mockResolvedValue(3);
 });
 
 describe('slashForReversedTransaction', () => {
@@ -64,10 +69,24 @@ describe('slashForReversedTransaction', () => {
     expect(mockAward.mock.calls[0][0]).toMatchObject({ userId: 'attestorB', actionType: 'validation_incorrect' });
   });
 
+  it('slashes every active voucher of a reversed personhood_vouched (proven-fake subject)', async () => {
+    const slashed = await slashForReversedTransaction({
+      _id: { toString: () => 'txn5' },
+      actionType: 'personhood_vouched',
+      userId: { toString: () => 'subjectFake' },
+    });
+
+    expect(slashed).toBe(3);
+    expect(mockSlashVouchers).toHaveBeenCalledWith('subjectFake', expect.any(String));
+    // The cascade owns the vouch_slashed awards — slash.service does not award directly here.
+    expect(mockAward).not.toHaveBeenCalled();
+  });
+
   it('slashes no one for a non-civic reversal', async () => {
     const slashed = await slashForReversedTransaction({ _id: { toString: () => 'txn3' }, actionType: 'endorsement_received' });
     expect(slashed).toBe(0);
     expect(mockAward).not.toHaveBeenCalled();
+    expect(mockSlashVouchers).not.toHaveBeenCalled();
   });
 
   it('slashes no one when the originating request is gone', async () => {

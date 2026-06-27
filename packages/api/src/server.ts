@@ -50,7 +50,8 @@ import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
 import civicRoutes from './routes/civic';
 import { sweepValidations } from './services/civic/validator.service';
-import { VALIDATION_SWEEP_INTERVAL_MS } from './utils/civic.constants';
+import { sweepPersonhoodAudits } from './services/civic/personhoodAudit.service';
+import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
 import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
@@ -701,6 +702,17 @@ if (require.main === module) {
         );
       }, VALIDATION_SWEEP_INTERVAL_MS);
       validationSweep.unref();
+
+      // Periodically open random personhood audits (Fase 3) for a sample of
+      // confirmed real persons — REUSES the validator jury; a failed audit
+      // triggers the staking slash cascade. Unref'd + failures logged, like the
+      // validation sweep above.
+      const personhoodAuditSweep = setInterval(() => {
+        sweepPersonhoodAudits().catch((err) =>
+          logger.error('Civic personhood audit sweep failed', err instanceof Error ? err : new Error(String(err))),
+        );
+      }, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS);
+      personhoodAuditSweep.unref();
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {
