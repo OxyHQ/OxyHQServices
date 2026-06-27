@@ -44,10 +44,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from '../models/User.js';
 import userCache from '../utils/userCache.js';
-import {
-  OWN_FEDERATION_DOMAINS,
-  isOwnFederationDomain,
-} from '../services/federation.service.js';
+import { OWN_FEDERATION_DOMAINS } from '../services/federation.service.js';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier.js';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
@@ -91,8 +88,6 @@ async function run(): Promise<Summary> {
 
   for (const candidate of candidates) {
     const fedDomain = candidate.federation?.domain ?? '';
-    // Defensive re-check in case any stored domain wasn't lowercased on write.
-    if (!isOwnFederationDomain(fedDomain)) continue;
     summary.scanned += 1;
 
     const fedId = candidate._id.toString();

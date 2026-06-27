@@ -60,9 +60,9 @@ export const OWN_FEDERATION_DOMAINS: ReadonlySet<string> = new Set(
 );
 
 /**
- * True when `domain` is one of Oxy's OWN federation domains (case-insensitive).
- * Used to short-circuit federation resolution so an own-domain handle resolves
- * to the existing LOCAL user instead of minting a federated duplicate.
+ * True when `domain` is one of Oxy's own federation domains (case-insensitive).
+ * Callers short-circuit resolution for own-domain handles (return null / reject
+ * 400) so they never mint a `type:'federated'` shadow row.
  */
 export function isOwnFederationDomain(domain: string): boolean {
   return OWN_FEDERATION_DOMAINS.has(domain.trim().toLowerCase());
