@@ -16,7 +16,6 @@ import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
-import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -1024,28 +1023,6 @@ class FederationService {
   }
 
   /**
-   * Resolve a same-apex handle (`<localpart>@<ownDomain>`) to the existing
-   * LOCAL user identified by `<localpart>`, matched case-insensitively and
-   * excluding `type:'federated'` shadow rows. Returns the local {@link IUser},
-   * or `null` when no such local user exists. NEVER creates a row — own-domain
-   * handles must never mint a federated duplicate.
-   */
-  private async resolveLocalUserByHandle(handle: string): Promise<IUser | null> {
-    const atIndex = handle.indexOf('@');
-    const localPart = atIndex > 0 ? handle.substring(0, atIndex) : '';
-    if (!localPart) return null;
-
-    const localUser = await User.findOne({
-      username: exactCaseInsensitiveUsernameRegex(localPart),
-      type: { $ne: 'federated' },
-    })
-      .select('-password -refreshToken')
-      .lean({ virtuals: true }) as IUser | null;
-
-    return localUser;
-  }
-
-  /**
    * Full pipeline: resolve a fediverse handle to an Oxy user.
    *
    * Fast + eventually-fresh (Bluesky-style):
@@ -1065,12 +1042,14 @@ class FederationService {
     const domain = domainFromHandle(cleaned);
     if (!domain) return null;
 
-    // Own-domain guard: a handle like `nate@oxy.so` is NOT a remote actor — it
-    // denotes the LOCAL user `nate`. Never WebFinger our own apex or upsert a
-    // `type:'federated'` shadow row (that duplicates the real local user and
-    // shadows it in search). Resolve to the existing local user instead.
+    // Own-domain guard: a handle like `nate@oxy.so` is a NON-ENTITY. On Oxy's
+    // own apex the only valid identity is the bare local handle `@nate`; the
+    // domain-qualified form `@nate@oxy.so` must never resolve or be surfaced, so
+    // it can't even look like a second representation of the same user. Return
+    // null immediately — never WebFinger our own apex, never touch the DB, and
+    // never upsert a `type:'federated'` shadow row.
     if (isOwnFederationDomain(domain)) {
-      return this.resolveLocalUserByHandle(cleaned);
+      return null;
     }
 
     // Check cache: existing federated user.

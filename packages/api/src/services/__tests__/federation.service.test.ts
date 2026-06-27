@@ -544,54 +544,31 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
   });
 
   // ----------------------------------------------------------------------
-  // Own-domain guard: `<localpart>@oxy.so` is the LOCAL user, never a remote
-  // actor. Resolution must return the existing local user and NEVER WebFinger
-  // our own apex or mint a `type:'federated'` shadow row.
+  // Own-domain guard: `<localpart>@oxy.so` is a NON-ENTITY. On Oxy's own apex
+  // the only valid identity is the bare local handle (`nate`); the
+  // domain-qualified form `@nate@oxy.so` must never resolve and must never be
+  // surfaced, so it can't look like a second representation of the local user.
+  // Resolution short-circuits to null BEFORE any DB lookup, WebFinger/actor
+  // fetch, or upsert.
   // ----------------------------------------------------------------------
 
-  it('resolves an own-domain handle to the existing local user without WebFinger or upsert', async () => {
-    const localUser = {
-      _id: { toString: () => 'local-nate' },
-      type: 'local',
-      username: 'nate',
-    };
-    // Single local lookup — no cached-federated lookup, no WebFinger, no upsert.
-    // If WebFinger were reached the spy assertions below would fail.
-    mockFindOneReturning(localUser);
-
+  it('returns null for an own-domain handle without any DB lookup, WebFinger, or upsert', async () => {
+    // No findOne mock is primed: the guard must short-circuit before touching
+    // the DB. If any DB/network work ran, these assertions would fail.
     const result = await federationService.resolveAndUpsert('nate@oxy.so');
 
-    expect(result).toBe(localUser);
-    expect(mockUserFindOne).toHaveBeenCalledTimes(1);
-    expect(mockUserFindOne).toHaveBeenCalledWith({
-      username: expect.any(RegExp),
-      type: { $ne: 'federated' },
-    });
+    expect(result).toBeNull();
+    expect(mockUserFindOne).not.toHaveBeenCalled();
     expect(webfingerSpy).not.toHaveBeenCalled();
     expect(actorSpy).not.toHaveBeenCalled();
     expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('matches the local user case-insensitively for an own-domain handle', async () => {
-    const localUser = { _id: { toString: () => 'local-nate' }, type: 'local', username: 'Nate' };
-    mockFindOneReturning(localUser);
-
+  it('short-circuits an own-domain handle regardless of a leading @ or letter case', async () => {
     const result = await federationService.resolveAndUpsert('@NATE@oxy.so');
 
-    expect(result).toBe(localUser);
-    const [filter] = mockUserFindOne.mock.calls[0];
-    // Anchored, case-insensitive — matches the stored mixed-case username.
-    expect((filter.username as RegExp).test('Nate')).toBe(true);
-    expect(webfingerSpy).not.toHaveBeenCalled();
-    expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
-  });
-
-  it('returns null for an own-domain handle with no matching local user (no federated row minted)', async () => {
-    mockFindOneReturning(null);
-
-    const result = await federationService.resolveAndUpsert('ghost@oxy.so');
-
     expect(result).toBeNull();
+    expect(mockUserFindOne).not.toHaveBeenCalled();
     expect(webfingerSpy).not.toHaveBeenCalled();
     expect(actorSpy).not.toHaveBeenCalled();
     expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();

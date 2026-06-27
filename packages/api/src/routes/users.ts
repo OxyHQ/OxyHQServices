@@ -70,7 +70,6 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 
 import { PAGINATION } from '../utils/constants';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
-import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
 // Initialize router and controller
 const router = Router();
@@ -1333,30 +1332,14 @@ router.put(
         throw new BadRequestError('username domain does not match domain');
       }
 
-      // Own-domain guard: a handle like `nate@oxy.so` is NOT a remote actor —
-      // it denotes the LOCAL user `nate`. Never mint a `type:'federated'` shadow
-      // row for our own apex (that duplicates the real local user and shadows it
-      // in search). Resolve to the existing local user so the caller (e.g.
-      // Mention's ActorService) binds its FederatedActor.oxyUserId to the REAL
-      // user instead of a duplicate.
+      // Own-domain guard: a handle like `nate@oxy.so` is a NON-ENTITY. On Oxy's
+      // own apex the only valid identity is the bare local handle (`nate`); the
+      // domain-qualified form must never be created or returned through the
+      // federated resolve path, so it can't masquerade as a second
+      // representation of the local user. Reject — never mint a
+      // `type:'federated'` shadow row and never resolve to the local user.
       if (isOwnFederationDomain(normalisedDomain)) {
-        const localPart = normalisedUsername.substring(0, normalisedUsername.indexOf('@'));
-        const localUser = await User.findOne({
-          username: exactCaseInsensitiveUsernameRegex(localPart),
-          type: { $ne: 'federated' },
-        })
-          .select('-password -refreshToken')
-          .lean({ virtuals: true });
-        if (!localUser) {
-          throw new NotFoundError(
-            `No local user "${localPart}" exists for own federation domain ${normalisedDomain}`,
-          );
-        }
-        logger.info('Resolved own-domain handle to local user', {
-          username: normalisedUsername,
-          localUserId: localUser._id,
-        });
-        return sendSuccess(res, localUser);
+        throw new BadRequestError('Cannot resolve a user on an own federation domain');
       }
 
       if (
