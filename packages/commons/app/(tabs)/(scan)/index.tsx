@@ -50,6 +50,18 @@ export default function ScanSignInScreen() {
         router.replace({ pathname: '/(tabs)/(dni)/card/[did]', params: { did: parsed.did } });
         return;
       }
+      if (parsed.kind === 'attest') {
+        router.replace({
+          pathname: '/(tabs)/(scan)/attest',
+          params: {
+            subjectDid: parsed.subjectDid,
+            context: parsed.context,
+            nonce: parsed.nonce,
+            exp: String(parsed.exp),
+          },
+        });
+        return;
+      }
       setScanError(parsed.reason);
     },
     [scanned, router],

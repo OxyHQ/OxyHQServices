@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useOxy, useCurrentUser } from '@oxyhq/services';
 import { buildUserDid } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
-import { ScreenHeader } from '@/components/ui';
+import { GroupedSection } from '@/components/grouped-section';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
@@ -38,6 +40,7 @@ const CARD_HEIGHT = 214;
  */
 export default function DniScreen() {
   const colors = useColors();
+  const router = useRouter();
   const { t } = useTranslation();
   const { user, oxyServices } = useOxy();
   // Hydrate the user record (createdAt + fields missing from a cached signIn).
@@ -92,6 +95,10 @@ export default function DniScreen() {
     if (publicKey.length <= 16) return publicKey;
     return `${publicKey.substring(0, 8)}...${publicKey.substring(publicKey.length - 8)}`;
   }, [publicKey]);
+
+  const handleAttestMe = useCallback(() => {
+    router.push('/(tabs)/(dni)/attest-me');
+  }, [router]);
 
   const renderStateChip = useCallback(() => {
     if (state === 'pending') {
@@ -151,6 +158,26 @@ export default function DniScreen() {
 
           <ThemedText style={styles.flipHint}>{t('civic.dni.flipHint')}</ThemedText>
 
+          {/* Real-life attestation — A shows a QR for B to confirm they met IRL */}
+          <Section title={t('civic.attest.section.title')}>
+            <ThemedText style={styles.sectionSubtitle}>{t('civic.attest.section.subtitle')}</ThemedText>
+            <AccountCard>
+              <GroupedSection
+                items={[
+                  {
+                    id: 'attest-me',
+                    icon: 'handshake-outline',
+                    iconColor: colors.identityIconSelfCustody,
+                    title: t('civic.attest.section.action'),
+                    subtitle: t('civic.attest.section.actionSubtitle'),
+                    onPress: handleAttestMe,
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </AccountCard>
+          </Section>
+
           {did && (
             <Section title={t('civic.dni.didLabel')}>
               <ThemedText style={styles.didValue} selectable numberOfLines={2}>
@@ -181,6 +208,11 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: 'row',
     marginBottom: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginBottom: 12,
   },
   cardContainer: {
     alignItems: 'center',

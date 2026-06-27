@@ -45,6 +45,45 @@ describe('parseScan', () => {
     });
   });
 
+  describe('attest requests', () => {
+    const future = () => Date.now() + 5 * 60 * 1000;
+
+    it('branches a valid attest payload to { kind: attest } carrying the fields', () => {
+      const exp = future();
+      const did = 'did:web:oxy.so:u:65f0abc123';
+      expect(parseScan(`oxydni://attest?subject=${did}&ctx=meet&nonce=n1&exp=${exp}`)).toEqual({
+        kind: 'attest',
+        subjectDid: did,
+        context: 'meet',
+        nonce: 'n1',
+        exp,
+      });
+    });
+
+    it('defaults context to empty string when ctx is omitted', () => {
+      const exp = future();
+      const result = parseScan(`oxydni://attest?subject=did:web:oxy.so:u:x&nonce=n2&exp=${exp}`);
+      expect(result).toEqual({
+        kind: 'attest',
+        subjectDid: 'did:web:oxy.so:u:x',
+        context: '',
+        nonce: 'n2',
+        exp,
+      });
+    });
+
+    it('treats an attest payload missing nonce/exp as invalid', () => {
+      expect(parseScan('oxydni://attest?subject=did:web:oxy.so:u:x')).toEqual({
+        kind: 'invalid',
+        reason: 'invalid',
+      });
+    });
+
+    it('does not confuse a DNI card with an attest request', () => {
+      expect(parseScan('oxydni://card?did=did:web:oxy.so:u:x').kind).toBe('dni');
+    });
+  });
+
   describe('unrelated input', () => {
     it('rejects an empty string', () => {
       expect(parseScan('')).toEqual({ kind: 'invalid', reason: 'invalid' });

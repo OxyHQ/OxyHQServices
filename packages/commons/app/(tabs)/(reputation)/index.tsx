@@ -1,14 +1,17 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useCivicReputation, useReputationSources } from '@/hooks/useCivicReputation';
+import { useValidatorInbox } from '@/hooks/useValidatorInbox';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import { getTrustTierMeta } from '@/lib/civic/card-presentation';
 import type { CivicTone } from '@/lib/civic/card-presentation';
@@ -42,6 +45,7 @@ const WEIGHT_TONE: Record<ReputationSourceWeight, CivicTone> = {
  */
 export default function ReputationScreen() {
   const colors = useColors();
+  const router = useRouter();
   const { t } = useTranslation();
   const { user, oxyServices } = useOxy();
   const { isOnline } = useCivicProfileState({ subject: 'remote' });
@@ -50,6 +54,13 @@ export default function ReputationScreen() {
   const balanceQuery = useCivicReputation(userId);
   const balance = balanceQuery.data;
   const sources = useReputationSources(balance);
+
+  const inboxQuery = useValidatorInbox();
+  const pendingValidations = inboxQuery.data?.length ?? 0;
+
+  const handleOpenInbox = useCallback(() => {
+    router.push('/(tabs)/(reputation)/validate');
+  }, [router]);
 
   const trustMeta = useMemo(
     () => (balance ? getTrustTierMeta(balance.trustTier) : null),
@@ -113,6 +124,28 @@ export default function ReputationScreen() {
             )}
           </View>
         </AccountCard>
+
+        {/* Civic duty — validator jury inbox */}
+        <Section title={t('civic.validate.dutyTitle')}>
+          <AccountCard>
+            <GroupedSection
+              items={[
+                {
+                  id: 'validation-inbox',
+                  icon: 'scale-balance',
+                  iconColor: colors.identityIconPublicKey,
+                  title: t('civic.validate.inboxEntry'),
+                  subtitle:
+                    pendingValidations > 0
+                      ? t('civic.validate.inboxEntryCount', { count: pendingValidations })
+                      : t('civic.validate.inboxEntryEmpty'),
+                  onPress: handleOpenInbox,
+                  showChevron: true,
+                },
+              ]}
+            />
+          </AccountCard>
+        </Section>
 
         {/* By source */}
         <Section title={t('civic.reputation.bySource')}>

@@ -80,6 +80,25 @@ export function buildUserDid(userId: string): string {
 }
 
 /**
+ * Parse the stable account id out of a canonical user DID
+ * (`did:web:<domain>:u:<userId>`). Returns the `<userId>` segment, or `null`
+ * when the input is not a well-formed user DID for THIS issuer's domain. The
+ * caller still validates the id (e.g. `isValidObjectId`) before use.
+ */
+export function parseUserDid(did: string): string | null {
+  const prefix = `did:web:${DID_DOMAIN}:u:`;
+  if (!did.startsWith(prefix)) {
+    return null;
+  }
+  const userId = did.slice(prefix.length);
+  // A user DID has exactly one id segment after `:u:` (no further `:`).
+  if (userId.length === 0 || userId.includes(':')) {
+    return null;
+  }
+  return userId;
+}
+
+/**
  * Collect the distinct secp256k1 identity public keys for an account: the
  * primary `publicKey` first, then any `identity` auth-method keys not already
  * present. The ordering makes `#key-1` deterministically the primary key.

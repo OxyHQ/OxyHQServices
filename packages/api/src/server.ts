@@ -49,6 +49,8 @@ import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
 import civicRoutes from './routes/civic';
+import { sweepValidations } from './services/civic/validator.service';
+import { VALIDATION_SWEEP_INTERVAL_MS } from './utils/civic.constants';
 import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
@@ -690,6 +692,15 @@ if (require.main === module) {
       // Seed platform-default reputation rules (idempotent) — currently the
       // cross-app `endorsement_received` rule awarded by /app-signals/ingest.
       await reputationService.seedDefaultRules();
+
+      // Periodically re-tally / expire stale civic validation requests. Unref'd
+      // so it never keeps the process alive; failures are logged, never thrown.
+      const validationSweep = setInterval(() => {
+        sweepValidations().catch((err) =>
+          logger.error('Civic validation sweep failed', err instanceof Error ? err : new Error(String(err))),
+        );
+      }, VALIDATION_SWEEP_INTERVAL_MS);
+      validationSweep.unref();
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {

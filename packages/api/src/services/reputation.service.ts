@@ -311,7 +311,7 @@ class ReputationService {
       throw new ConflictError('A voided transaction cannot be reversed');
     }
 
-    return withTransaction(async (session) => {
+    const result = await withTransaction(async (session) => {
       original.status = 'reversed';
       original.reviewedByUserId = reviewedByUserId;
       original.reviewedAt = new Date();
@@ -346,6 +346,22 @@ class ReputationService {
       await this.recalculateBalance(original.userId.toString(), session);
       return { original, reversal: reversalDocs[0] };
     });
+
+    // Staking slash (Fase 2): a reversed civic award slashes the jurors /
+    // attestor who vouched for it. Non-fatal + dynamically imported to avoid a
+    // reputation↔slash module cycle; never blocks or rolls back the reversal.
+    try {
+      const { slashForReversedTransaction } = await import('./civic/slash.service.js');
+      await slashForReversedTransaction(result.original);
+    } catch (error) {
+      logger.warn('Reputation slash hook failed (non-fatal)', {
+        component: 'reputation.service',
+        transactionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return result;
   }
 
   /**

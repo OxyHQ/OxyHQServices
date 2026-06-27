@@ -1225,6 +1225,97 @@
         "low": "Baja",
         "penalty": "Penalización"
       }
+    },
+    "attest": {
+      "section": {
+        "title": "Confirmación en persona",
+        "subtitle": "La reputación más fuerte viene de quienes te conocieron en persona.",
+        "action": "Confirma que me conociste en persona",
+        "actionSubtitle": "Muestra un QR para que alguien lo confirme en persona"
+      },
+      "request": {
+        "title": "Confirma que me conociste",
+        "subtitle": "Pide a la otra persona que escanee esto en su app de Oxy para confirmar que te conoció en persona.",
+        "buildError": "No se pudo generar tu código. Inténtalo de nuevo.",
+        "expired": "Este código caducó",
+        "expiresIn": "Caduca en {{time}}",
+        "hint": "El código solo lleva tu ID y un token de un solo uso; la otra persona lo refirma y Oxy lo verifica.",
+        "regenerate": "Generar un código nuevo"
+      },
+      "confirm": {
+        "title": "Confirmar en persona",
+        "biometricReason": "Verifica que eres tú para confirmar que conociste a esta persona",
+        "loading": "Resolviendo identidad…",
+        "prompt": "¿Conociste a {{name}} en persona?",
+        "weight": "Las confirmaciones en persona tienen el mayor peso de reputación.",
+        "cta": "Sí, la conocí",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para continuar.",
+        "error": {
+          "title": "No se pudo confirmar"
+        },
+        "done": {
+          "title": "Confirmado",
+          "body": "Confirmaste haber conocido a {{name}}. Ganó {{points}} de reputación."
+        }
+      },
+      "error": {
+        "expired": "Este código de confirmación caducó. Pídele que genere uno nuevo.",
+        "nonce_used": "Este código ya se usó. Pídele que genere uno nuevo.",
+        "pair_cooldown": "Ya confirmaste a esta persona hace poco. Inténtalo más tarde.",
+        "excluded_graph_neighbor": "Estás demasiado conectado para confirmar a esta persona.",
+        "generic": "No pudimos registrar esta confirmación. Inténtalo de nuevo."
+      }
+    },
+    "validate": {
+      "dutyTitle": "Deber cívico",
+      "inboxEntry": "Solicitudes de validación",
+      "inboxEntryCount": "{{count}} esperando tu criterio",
+      "inboxEntryEmpty": "No hay solicitudes ahora mismo",
+      "highValue": "Alto valor",
+      "inbox": {
+        "title": "Solicitudes de validación",
+        "subtitle": "Fuiste elegido al azar para ayudar a juzgarlas.",
+        "loading": "Cargando solicitudes…",
+        "requestSubtitle": "Toca para revisar y votar",
+        "error": {
+          "title": "No se pudieron cargar las solicitudes",
+          "body": "No pudimos contactar con Oxy y aún no hay nada en caché."
+        },
+        "empty": {
+          "title": "Nada que juzgar",
+          "body": "Cuando seas elegido para un jurado, las solicitudes aparecerán aquí."
+        }
+      },
+      "vote": {
+        "title": "Emite tu veredicto",
+        "biometricReason": "Verifica que eres tú para firmar tu veredicto",
+        "prompt": "Revisa la solicitud y decide si es válida.",
+        "detailsTitle": "Detalles",
+        "noDetails": "Sin detalles adicionales.",
+        "valid": "Válida",
+        "invalid": "Inválida",
+        "abstain": "Abstenerme",
+        "recuse": "Recusarme",
+        "submitting": "Enviando…",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para votar.",
+        "done": {
+          "title": "Veredicto registrado",
+          "body": "Gracias por cumplir tu deber cívico."
+        },
+        "error": {
+          "title": "No se pudo enviar"
+        },
+        "gone": {
+          "title": "Ya no está disponible",
+          "body": "Esta solicitud ya se resolvió o ya votaste."
+        }
+      },
+      "error": {
+        "request_closed": "Esta solicitud ya está cerrada.",
+        "already_voted": "Ya votaste en esta solicitud.",
+        "not_selected": "No formas parte de este jurado de validación.",
+        "generic": "No pudimos enviar tu veredicto. Inténtalo de nuevo."
+      }
     }
   },
   "tabs": {

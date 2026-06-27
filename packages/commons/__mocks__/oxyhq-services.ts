@@ -20,6 +20,11 @@ interface MockOxyServices {
   getFileDownloadUrl?: jest.Mock;
   getCurrentUserId?: jest.Mock;
   getMyDniPayload?: jest.Mock;
+  buildAttestQrPayload?: jest.Mock;
+  submitRealLifeAttestation?: jest.Mock;
+  getValidatorInbox?: jest.Mock;
+  submitValidationVote?: jest.Mock;
+  denyValidation?: jest.Mock;
 }
 
 interface MockOxyState {

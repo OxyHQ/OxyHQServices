@@ -110,3 +110,153 @@ export const signedPublicCardSchema: z.ZodType<SignedPublicCard> = z.object({
     card: publicCardSchema,
     attestation: exportAttestationSchema.nullable(),
 });
+
+/* -------------------------------------------------------------------------- */
+/*  Real-life counterparty attestation (Fase 2 — Part A)                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `record` payload of a `real_life_attestation` signed envelope. The
+ * COUNTERPARTY (B) signs this with their OWN key as a self-issued v2 record on
+ * THEIR chain (`subject === issuer === B.did`); the subject being attested (A)
+ * is referenced by `about` (A's DID). The server resolves `about` → A's account
+ * and awards A the HIGH-weight `real_life_attested` points, recording B as the
+ * attestor (so B can be slashed if A's action is later found fraudulent).
+ *
+ * - `context` is an opaque interaction id from the QR (`oxydni://attest?ctx=…`).
+ * - `nonce` is the single-use replay guard from the QR; `exp` is its expiry
+ *   (epoch ms) — both are part of the signed bytes.
+ * - `geohash` (optional) is a coarse co-location proof; `biometricOk` (optional)
+ *   signals B's device biometric gate fired before signing (a support signal,
+ *   never sufficient alone).
+ */
+export interface RealLifeAttestationRecord {
+    about: string;
+    context: string;
+    nonce: string;
+    exp: number;
+    geohash?: string;
+    biometricOk?: boolean;
+}
+
+export const realLifeAttestationRecordSchema: z.ZodType<RealLifeAttestationRecord> = z.object({
+    about: z.string(),
+    context: z.string(),
+    nonce: z.string(),
+    exp: z.number(),
+    geohash: z.string().optional(),
+    biometricOk: z.boolean().optional(),
+});
+
+/**
+ * The result of `POST /civic/attestations` on success: the stored attestation
+ * record id (B's envelope), the subject + attestor account ids, and the points
+ * awarded to the subject.
+ */
+export interface RealLifeAttestationResult {
+    accepted: true;
+    recordId: string;
+    subjectUserId: string;
+    attestorUserId: string;
+    points: number;
+}
+
+export const realLifeAttestationResultSchema: z.ZodType<RealLifeAttestationResult> = z.object({
+    accepted: z.literal(true),
+    recordId: z.string(),
+    subjectUserId: z.string(),
+    attestorUserId: z.string(),
+    points: z.number(),
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Validator jury (Fase 2 — Part B)                                          */
+/* -------------------------------------------------------------------------- */
+
+/** A juror's verdict on a validation request. */
+export type ValidationVerdict = 'valid' | 'invalid' | 'abstain';
+
+/** The lifecycle status of a validation request. */
+export type ValidationRequestStatus = 'pending' | 'quorum_met' | 'validated' | 'rejected' | 'expired';
+
+/**
+ * The `record` payload of a `validation_verdict` signed envelope — a juror's
+ * SELF-ISSUED verdict, bound to the request id + the canonical payload hash (so
+ * a verdict cannot be replayed onto a different request or an altered payload).
+ */
+export interface ValidationVerdictRecord {
+    requestId: string;
+    payloadHash: string;
+    verdict: ValidationVerdict;
+}
+
+export const validationVerdictRecordSchema: z.ZodType<ValidationVerdictRecord> = z.object({
+    requestId: z.string(),
+    payloadHash: z.string(),
+    verdict: z.enum(['valid', 'invalid', 'abstain']),
+});
+
+/** Request body for opening a validation request (`POST /civic/validations`). */
+export const validationOpenRequestSchema = z.object({
+    subjectUserId: z.string(),
+    actionType: z.string().min(1),
+    sourceActionId: z.string().min(1),
+    payload: z.record(z.unknown()),
+    highValue: z.boolean().optional(),
+});
+
+export type ValidationOpenRequest = z.infer<typeof validationOpenRequestSchema>;
+
+/** The result of opening a validation request (`POST /civic/validations`). */
+export interface ValidationOpenResult {
+    requestId: string;
+    selectedValidatorCount: number;
+    expiresAt: string;
+}
+
+export const validationOpenResultSchema: z.ZodType<ValidationOpenResult> = z.object({
+    requestId: z.string(),
+    selectedValidatorCount: z.number(),
+    expiresAt: z.string(),
+});
+
+/**
+ * A pending validation request as shown in a juror's inbox. `payload` is the
+ * claim the juror inspects; `payloadHash` is what their verdict must bind to.
+ */
+export interface ValidationRequestSummary {
+    id: string;
+    subjectUserId: string;
+    actionType: string;
+    payload: Record<string, unknown>;
+    payloadHash: string;
+    status: ValidationRequestStatus;
+    highValue: boolean;
+    expiresAt: string;
+}
+
+export const validationRequestSummarySchema: z.ZodType<ValidationRequestSummary> = z.object({
+    id: z.string(),
+    subjectUserId: z.string(),
+    actionType: z.string(),
+    payload: z.record(z.unknown()),
+    payloadHash: z.string(),
+    status: z.enum(['pending', 'quorum_met', 'validated', 'rejected', 'expired']),
+    highValue: z.boolean(),
+    expiresAt: z.string(),
+});
+
+/** The result of casting a vote (`POST /civic/validations/:id/vote`). */
+export interface ValidationVoteResult {
+    recorded: true;
+    requestId: string;
+    verdict: ValidationVerdict;
+    status: ValidationRequestStatus;
+}
+
+export const validationVoteResultSchema: z.ZodType<ValidationVoteResult> = z.object({
+    recorded: z.literal(true),
+    requestId: z.string(),
+    verdict: z.enum(['valid', 'invalid', 'abstain']),
+    status: z.enum(['pending', 'quorum_met', 'validated', 'rejected', 'expired']),
+});

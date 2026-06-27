@@ -184,12 +184,26 @@ export type {
 } from './mixins/OxyServices.identity';
 
 // ---------------------------------------------------------------------------
-// Civic / Commons "DNI" (public signed cards + DNI QR payload). Wire shapes
-// (PublicCard, SignedPublicCard) live in `@oxyhq/contracts` — import them from
-// there. `CivicCardResult` augments the contract with the client verdict.
+// Civic / Commons "DNI" (public signed cards + DNI QR payload) and Fase 2
+// anti-gaming (real-life attestation QR + validator/jury). Wire shapes
+// (PublicCard, SignedPublicCard, RealLifeAttestationResult,
+// ValidationRequestSummary, ValidationVoteResult, ValidationVerdict, …) live in
+// `@oxyhq/contracts` — import them from there. The SDK adds the client verdict
+// wrapper, the QR payload parsers/builders, and the submit inputs/results.
 // ---------------------------------------------------------------------------
-export { parseDniPayload, verifyPublicCardAttestation } from './mixins/OxyServices.civic';
-export type { CivicCardResult, DniCardRef } from './mixins/OxyServices.civic';
+export {
+    parseDniPayload,
+    parseAttestPayload,
+    verifyPublicCardAttestation,
+} from './mixins/OxyServices.civic';
+export type {
+    CivicCardResult,
+    DniCardRef,
+    AttestQrPayload,
+    ParsedAttestPayload,
+    SubmitRealLifeAttestationInput,
+    DenyValidationResult,
+} from './mixins/OxyServices.civic';
 
 // ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)

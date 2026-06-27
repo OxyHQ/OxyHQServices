@@ -119,6 +119,13 @@ export {
     // Schemas
     publicCardSchema,
     signedPublicCardSchema,
+    realLifeAttestationRecordSchema,
+    realLifeAttestationResultSchema,
+    validationVerdictRecordSchema,
+    validationOpenRequestSchema,
+    validationOpenResultSchema,
+    validationRequestSummarySchema,
+    validationVoteResultSchema,
 } from './civic';
 
 export type {
@@ -126,4 +133,13 @@ export type {
     PersonhoodStatus,
     PublicCard,
     SignedPublicCard,
+    RealLifeAttestationRecord,
+    RealLifeAttestationResult,
+    ValidationVerdict,
+    ValidationRequestStatus,
+    ValidationVerdictRecord,
+    ValidationOpenRequest,
+    ValidationOpenResult,
+    ValidationRequestSummary,
+    ValidationVoteResult,
 } from './civic';

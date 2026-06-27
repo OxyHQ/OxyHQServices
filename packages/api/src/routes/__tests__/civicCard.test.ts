@@ -20,6 +20,25 @@ const mockBuild = jest.fn();
 jest.mock('../../services/civic/publicCard.service', () => ({
   buildSignedPublicCard: (...args: unknown[]) => mockBuild(...args),
 }));
+// The civic route also wires POST /attestations; mock its deps so this card-only
+// suite does not transitively load the real service + model chain.
+jest.mock('../../services/civic/realLife.service', () => ({ submitRealLifeAttestation: jest.fn() }));
+jest.mock('../../services/civic/validator.service', () => ({
+  openValidationRequest: jest.fn(),
+  submitVote: jest.fn(),
+  denyValidation: jest.fn(),
+  getValidatorInbox: jest.fn(),
+}));
+jest.mock('../../middleware/auth', () => ({
+  authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
+  serviceAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+jest.mock('../../middleware/rateLimiter', () => ({
+  rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+jest.mock('../../middleware/validate', () => ({
+  validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 jest.mock('../../utils/validation', () => ({ isValidObjectId: (id: string) => /^[a-f0-9]{24}$/i.test(id) }));
 
 import civicRoutes from '../civic';
