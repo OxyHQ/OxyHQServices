@@ -30,6 +30,53 @@ describe('normalizeProfileLinks', () => {
       expect(result[0]).not.toHaveProperty('title');
     });
 
+    it('carries through description and image when present', () => {
+      const result = normalizeProfileLinks([
+        {
+          url: 'https://oxy.so',
+          title: 'Oxy',
+          description: 'The Oxy ecosystem',
+          image: 'https://cdn.example/oxy.png',
+          id: 'abc',
+        },
+      ]);
+      expect(result).toEqual<ProfileLink[]>([
+        {
+          id: 'abc',
+          title: 'Oxy',
+          url: 'https://oxy.so',
+          description: 'The Oxy ecosystem',
+          image: 'https://cdn.example/oxy.png',
+        },
+      ]);
+    });
+
+    it('omits description and image when absent', () => {
+      const result = normalizeProfileLinks([
+        { url: 'https://min.example', title: 'Min' },
+      ]);
+      expect(result).toEqual<ProfileLink[]>([
+        { id: '0', title: 'Min', url: 'https://min.example' },
+      ]);
+      expect(result[0]).not.toHaveProperty('description');
+      expect(result[0]).not.toHaveProperty('image');
+    });
+
+    it('carries description and image independently of title', () => {
+      const result = normalizeProfileLinks([
+        { url: 'https://only-image.example', image: 'https://cdn.example/i.png' },
+        { url: 'https://only-desc.example', description: 'Just a description' },
+      ]);
+      expect(result).toEqual<ProfileLink[]>([
+        { id: '0', url: 'https://only-image.example', image: 'https://cdn.example/i.png' },
+        { id: '1', url: 'https://only-desc.example', description: 'Just a description' },
+      ]);
+      expect(result[0]).not.toHaveProperty('title');
+      expect(result[0]).not.toHaveProperty('description');
+      expect(result[1]).not.toHaveProperty('title');
+      expect(result[1]).not.toHaveProperty('image');
+    });
+
     it('drops entries with missing or empty url and keeps stable index ids', () => {
       const result = normalizeProfileLinks([
         { url: 'https://keep.example', title: 'Keep', id: 'keep' },
@@ -60,7 +107,7 @@ describe('normalizeProfileLinks', () => {
   });
 
   describe('legacy links path (no linksMetadata)', () => {
-    it('maps strings to { id, url } without titles', () => {
+    it('maps strings to { id, url } without title/description/image', () => {
       const result = normalizeProfileLinks(undefined, [
         'https://a.example',
         'https://b.example',
@@ -69,7 +116,14 @@ describe('normalizeProfileLinks', () => {
         { id: '0', url: 'https://a.example' },
         { id: '1', url: 'https://b.example' },
       ]);
-      expect(result.every((link) => !('title' in link))).toBe(true);
+      expect(
+        result.every(
+          (link) =>
+            !('title' in link) &&
+            !('description' in link) &&
+            !('image' in link),
+        ),
+      ).toBe(true);
     });
 
     it('drops empty and whitespace-only strings, preserving source index ids', () => {

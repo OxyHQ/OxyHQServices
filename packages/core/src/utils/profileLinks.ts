@@ -3,11 +3,16 @@
  *
  * `id` is a stable key for list rendering (the source entry's id when present,
  * otherwise the source index as a string). `url` is always a non-empty string.
+ * `title`, `description`, and `image` are carried through from `linksMetadata`
+ * only when present; the legacy `links: string[]` path produces just
+ * `{ id, url }`.
  */
 export interface ProfileLink {
   id: string;
   title?: string;
   url: string;
+  description?: string;
+  image?: string;
 }
 
 /** Source shape of a single `User.linksMetadata` entry. */
@@ -31,10 +36,13 @@ function cleanUrl(value: unknown): string | null {
  * Pure, no side effects, no I/O.
  *
  * - Prefers `linksMetadata` when it is a non-empty array: maps each entry to
- *   `{ id, title, url }`, using `entry.id` when present and falling back to the
- *   entry index. Entries without a non-empty string `url` are dropped.
+ *   `{ id, title, url, description, image }`, using `entry.id` when present and
+ *   falling back to the entry index. `title`, `description`, and `image` are
+ *   carried through only when they are present strings. Entries without a
+ *   non-empty string `url` are dropped.
  * - Otherwise falls back to the legacy `links` string array: maps each string to
- *   `{ id: <index>, url }` (no title). Empty/non-string values are dropped.
+ *   `{ id: <index>, url }` (no title/description/image). Empty/non-string values
+ *   are dropped.
  * - Returns `[]` when both are absent or empty (including when `linksMetadata`
  *   is present but every entry is dropped — it does NOT fall back to `links`).
  *
@@ -55,7 +63,16 @@ export function normalizeProfileLinks(
           ? entry.id
           : String(index);
       const title = typeof entry?.title === 'string' ? entry.title : undefined;
-      result.push({ id, url, ...(title !== undefined ? { title } : {}) });
+      const description =
+        typeof entry?.description === 'string' ? entry.description : undefined;
+      const image = typeof entry?.image === 'string' ? entry.image : undefined;
+      result.push({
+        id,
+        url,
+        ...(title !== undefined ? { title } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(image !== undefined ? { image } : {}),
+      });
     });
     return result;
   }
