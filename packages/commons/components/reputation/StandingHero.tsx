@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { CivicBadge } from '@/components/civic/CivicBadge';
@@ -11,7 +10,6 @@ import {
 } from '@/lib/civic/reputation-standing';
 import type { AppColors } from '@/hooks/useColors';
 import type { ReputationBalance, TrustTier } from '@oxyhq/core';
-import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
 
 interface StandingHeroProps {
@@ -19,15 +17,6 @@ interface StandingHeroProps {
   /** Whether the surface is rendering cached data while offline. */
   isOffline: boolean;
 }
-
-/** The shield variant that best conveys each tier. */
-const TIER_ICON: Record<TrustTier, MaterialCommunityIconName> = {
-  new: 'shield-outline',
-  trusted: 'shield-check-outline',
-  high_trust: 'shield-star-outline',
-  verified: 'shield-crown-outline',
-  restricted: 'shield-alert-outline',
-};
 
 /**
  * The headline colour for a trust tier — `new` reads neutral (still earning),
@@ -50,10 +39,12 @@ function tierColor(tier: TrustTier, colors: AppColors): string {
 }
 
 /**
- * The "engine room" hero: the trust TIER is the headline (in its tier colour,
- * behind a shield), with a progress bar toward the next tier, two explained
- * stat chips (Influence / Reliability), and the raw lifetime total as quiet
- * secondary text. The bare number is intentionally NOT the headline.
+ * The "engine room" hero — deliberately FLAT (no card, no chrome) so the trust
+ * TIER stands alone as the single focal point. The tier name is the confident
+ * headline in its tier colour; the raw lifetime total is quiet secondary text; a
+ * single thin progress bar with one calm line shows the climb to the next tier;
+ * and the two explained stats (Influence / Reliability) sit as two roomy columns
+ * split by a hairline. Verified/restricted states swap the bar for a calm line.
  */
 export function StandingHero({ balance, isOffline }: StandingHeroProps) {
   const colors = useColors();
@@ -66,27 +57,24 @@ export function StandingHero({ balance, isOffline }: StandingHeroProps) {
   );
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
-      <View style={styles.headerRow}>
-        <View style={[styles.shield, { backgroundColor: `${accent}1A` }]}>
-          <MaterialCommunityIcons name={TIER_ICON[balance.trustTier]} size={26} color={accent} />
-        </View>
-        <View style={styles.headerText}>
+    <View style={styles.hero}>
+      <View style={styles.identity}>
+        <View style={styles.headlineRow}>
           <ThemedText style={[styles.tier, { color: accent }]} numberOfLines={1}>
             {t(`civic.trustTier.${balance.trustTier}`)}
           </ThemedText>
-          <ThemedText style={[styles.totalLine, { color: colors.textSecondary }]} numberOfLines={1}>
-            {t('civic.reputation.standing.totalLine', { total: balance.total })}
-          </ThemedText>
+          {isOffline && (
+            <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.reputation.offline')} />
+          )}
         </View>
-        {isOffline && (
-          <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.reputation.offline')} />
-        )}
+        <ThemedText style={[styles.totalLine, { color: colors.textSecondary }]} numberOfLines={1}>
+          {t('civic.reputation.standing.totalLine', { total: balance.total })}
+        </ThemedText>
       </View>
 
       {progress.kind === 'progress' && (
         <View style={styles.progressBlock}>
-          <View style={[styles.track, { backgroundColor: `${accent}26` }]}>
+          <View style={[styles.track, { backgroundColor: `${accent}1F` }]}>
             <View
               style={[
                 styles.fill,
@@ -127,26 +115,21 @@ export function StandingHero({ balance, isOffline }: StandingHeroProps) {
       )}
 
       <View style={styles.statsRow}>
-        <View style={[styles.stat, { borderColor: colors.border }]}>
+        <View style={styles.stat}>
+          <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>
+            {t('civic.reputation.stats.influence')}
+          </ThemedText>
           <ThemedText style={[styles.statValue, { color: colors.text }]}>
             {formatInfluenceMultiplier(balance.influence)}
           </ThemedText>
-          <ThemedText style={[styles.statLabel, { color: colors.text }]}>
-            {t('civic.reputation.stats.influence')}
-          </ThemedText>
-          <ThemedText style={[styles.statCaption, { color: colors.textSecondary }]}>
-            {t('civic.reputation.stats.influenceCaption')}
-          </ThemedText>
         </View>
-        <View style={[styles.stat, { borderColor: colors.border }]}>
-          <ThemedText style={[styles.statValue, { color: colors.text }]}>
-            {formatReliabilityPercent(balance.reliability)}
-          </ThemedText>
-          <ThemedText style={[styles.statLabel, { color: colors.text }]}>
+        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.stat}>
+          <ThemedText style={[styles.statLabel, { color: colors.textSecondary }]}>
             {t('civic.reputation.stats.reliability')}
           </ThemedText>
-          <ThemedText style={[styles.statCaption, { color: colors.textSecondary }]}>
-            {t('civic.reputation.stats.reliabilityCaption')}
+          <ThemedText style={[styles.statValue, { color: colors.text }]}>
+            {formatReliabilityPercent(balance.reliability)}
           </ThemedText>
         </View>
       </View>
@@ -155,51 +138,46 @@ export function StandingHero({ balance, isOffline }: StandingHeroProps) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 28,
-    padding: 20,
-    gap: 16,
-    marginBottom: 16,
+  hero: {
+    gap: 24,
+    paddingTop: 4,
   },
-  headerRow: {
+  identity: {
+    gap: 6,
+  },
+  headlineRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 12,
   },
-  shield: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
   tier: {
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    flex: 1,
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+    lineHeight: 36,
   },
   totalLine: {
-    fontSize: 13,
+    fontSize: 15,
+    fontVariant: ['tabular-nums'],
   },
   progressBlock: {
-    gap: 8,
+    gap: 10,
   },
   track: {
-    height: 10,
+    height: 7,
     borderRadius: 999,
     overflow: 'hidden',
   },
   fill: {
-    height: 10,
+    height: 7,
     borderRadius: 999,
   },
   progressCopy: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
   },
   stateRow: {
     flexDirection: 'row',
@@ -208,30 +186,31 @@ const styles = StyleSheet.create({
   },
   stateCopy: {
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
   },
   stat: {
     flex: 1,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 12,
-    gap: 2,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    gap: 7,
   },
   statLabel: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
-  statCaption: {
-    fontSize: 11,
-    lineHeight: 15,
+  statValue: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 40,
+    marginHorizontal: 22,
   },
 });

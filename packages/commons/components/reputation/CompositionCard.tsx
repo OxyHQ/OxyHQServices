@@ -1,31 +1,20 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ReputationDonut, type DonutSegment } from '@/components/reputation/ReputationDonut';
 import type { AppColors } from '@/hooks/useColors';
 import type {
   ReputationSource,
-  ReputationSourceKey,
   ReputationSourceWeight,
 } from '@/lib/civic/reputation-sources';
-import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
 
 interface CompositionCardProps {
   sources: ReputationSource[];
 }
 
-/** Leading icon per reputation source (carried over from the old screen). */
-const SOURCE_ICON: Record<ReputationSourceKey, MaterialCommunityIconName> = {
-  realLife: 'handshake-outline',
-  peerCivic: 'account-group-outline',
-  apps: 'apps',
-  penalties: 'alert-octagon-outline',
-};
-
-/** Colour of a compact source-weight tag — distinct per weight, scannable. */
+/** Calm dot colour per source weight — distinct enough to read the ring share. */
 function weightColor(weight: ReputationSourceWeight, colors: AppColors): string {
   switch (weight) {
     case 'high':
@@ -40,14 +29,50 @@ function weightColor(weight: ReputationSourceWeight, colors: AppColors): string 
   }
 }
 
-const DONUT_SIZE = 132;
-const DONUT_STROKE = 18;
+const DONUT_SIZE = 150;
+const DONUT_STROKE = 12;
+
+/** One calm legend line: a coloured dot, the source label, a muted weight
+ *  caption, and the right-aligned points — no boxes, hairline-separated. */
+function LegendRow({
+  source,
+  colors,
+  first,
+}: {
+  source: ReputationSource;
+  colors: AppColors;
+  first: boolean;
+}) {
+  const { t } = useTranslation();
+  const isPenalty = source.weight === 'penalty';
+  const tone = weightColor(source.weight, colors);
+
+  return (
+    <View
+      style={[
+        styles.legendRow,
+        !first && [styles.legendDivider, { borderTopColor: colors.border }],
+      ]}
+    >
+      <View style={[styles.dot, { backgroundColor: tone }]} />
+      <ThemedText style={[styles.legendLabel, { color: colors.text }]} numberOfLines={1}>
+        {t(`civic.reputation.sources.${source.key}`)}
+      </ThemedText>
+      <ThemedText style={[styles.legendWeight, { color: colors.textSecondary }]}>
+        {t(`civic.reputation.weightShort.${source.weight}`)}
+      </ThemedText>
+      <ThemedText style={[styles.legendPoints, { color: isPenalty ? colors.error : colors.text }]}>
+        {isPenalty ? `-${source.points}` : source.points}
+      </ThemedText>
+    </View>
+  );
+}
 
 /**
- * Reputation composition: a Skia donut of the POSITIVE sources (real-life /
- * peer-civic / apps) with a legend, plus penalties broken out separately below
- * the ring (penalties are subtracted, never part of the proportion). Each
- * legend row carries a compact HIGH / MED / LOW / PEN weight tag.
+ * Reputation composition: a clean, thin Skia ring of the POSITIVE sources
+ * centred with generous air above and below, the earned total light-weighted in
+ * its hole, and a calm legend list below. Penalties are broken out as their own
+ * subtracted line (never part of the ring proportion).
  */
 export function CompositionCard({ sources }: CompositionCardProps) {
   const colors = useColors();
@@ -71,15 +96,20 @@ export function CompositionCard({ sources }: CompositionCardProps) {
     [positive],
   );
   const isEmpty = earned === 0 && (!penalty || penalty.points === 0);
+  const showPenalty = !!penalty && penalty.points > 0;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
-      <ThemedText style={styles.title}>{t('civic.reputation.bySource')}</ThemedText>
-      <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
-        {t('civic.reputation.bySourceSubtitle')}
-      </ThemedText>
+    <View style={styles.section}>
+      <View style={styles.header}>
+        <ThemedText style={[styles.title, { color: colors.text }]}>
+          {t('civic.reputation.bySource')}
+        </ThemedText>
+        <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
+          {t('civic.reputation.bySourceSubtitle')}
+        </ThemedText>
+      </View>
 
-      <View style={styles.body}>
+      <View style={styles.donutWrap}>
         <ReputationDonut
           size={DONUT_SIZE}
           strokeWidth={DONUT_STROKE}
@@ -91,43 +121,16 @@ export function CompositionCard({ sources }: CompositionCardProps) {
             {t('civic.reputation.composition.earned')}
           </ThemedText>
         </ReputationDonut>
-
-        <View style={styles.legend}>
-          {positive.map((source) => (
-            <View key={source.key} style={styles.legendRow}>
-              <View style={[styles.dot, { backgroundColor: weightColor(source.weight, colors) }]} />
-              <MaterialCommunityIcons
-                name={SOURCE_ICON[source.key]}
-                size={16}
-                color={colors.textSecondary}
-              />
-              <ThemedText style={styles.legendLabel} numberOfLines={1}>
-                {t(`civic.reputation.sources.${source.key}`)}
-              </ThemedText>
-              <ThemedText style={[styles.legendPoints, { color: colors.text }]}>
-                {source.points}
-              </ThemedText>
-              <View style={[styles.weightTag, { backgroundColor: `${weightColor(source.weight, colors)}1A` }]}>
-                <ThemedText style={[styles.weightTagText, { color: weightColor(source.weight, colors) }]}>
-                  {t(`civic.reputation.weightShort.${source.weight}`)}
-                </ThemedText>
-              </View>
-            </View>
-          ))}
-        </View>
       </View>
 
-      {penalty && penalty.points > 0 && (
-        <View style={[styles.penaltyRow, { borderTopColor: colors.border }]}>
-          <MaterialCommunityIcons name={SOURCE_ICON.penalties} size={16} color={colors.error} />
-          <ThemedText style={[styles.penaltyLabel, { color: colors.text }]}>
-            {t('civic.reputation.sources.penalties')}
-          </ThemedText>
-          <ThemedText style={[styles.penaltyPoints, { color: colors.error }]}>
-            {`-${penalty.points}`}
-          </ThemedText>
-        </View>
-      )}
+      <View style={styles.legend}>
+        {positive.map((source, index) => (
+          <LegendRow key={source.key} source={source} colors={colors} first={index === 0} />
+        ))}
+        {showPenalty && penalty && (
+          <LegendRow source={penalty} colors={colors} first={positive.length === 0} />
+        )}
+      </View>
 
       {isEmpty && (
         <ThemedText style={[styles.empty, { color: colors.textSecondary }]}>
@@ -139,91 +142,75 @@ export function CompositionCard({ sources }: CompositionCardProps) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 16,
+  section: {
+    gap: 12,
+  },
+  header: {
     gap: 4,
   },
   title: {
     fontSize: 17,
     fontWeight: '700',
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 13,
     lineHeight: 18,
   },
-  body: {
-    flexDirection: 'row',
+  donutWrap: {
     alignItems: 'center',
-    gap: 16,
-    marginTop: 12,
+    paddingVertical: 16,
   },
   donutValue: {
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 30,
+    fontWeight: '500',
     letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
   },
   donutCaption: {
     fontSize: 11,
+    fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    marginTop: 2,
   },
   legend: {
-    flex: 1,
-    gap: 12,
+    marginTop: 2,
   },
   legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    paddingVertical: 14,
+  },
+  legendDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   legendLabel: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  legendWeight: {
+    fontSize: 11,
     fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   legendPoints: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  weightTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    minWidth: 38,
-    alignItems: 'center',
-  },
-  weightTagText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  penaltyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  penaltyLabel: {
-    flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
-  },
-  penaltyPoints: {
-    fontSize: 14,
-    fontWeight: '700',
+    minWidth: 40,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   empty: {
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 12,
   },
 });

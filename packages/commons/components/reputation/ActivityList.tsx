@@ -71,23 +71,23 @@ export function ActivityList({ transactions, isLoading, isError }: ActivityListP
   };
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
-      <ThemedText style={styles.title}>{t('civic.reputation.activity.title')}</ThemedText>
+    <View style={styles.section}>
+      <ThemedText style={[styles.title, { color: colors.text }]}>
+        {t('civic.reputation.activity.title')}
+      </ThemedText>
       {renderInner()}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 28,
-    padding: 20,
-    paddingTop: 16,
-    marginBottom: 16,
+  section: {
+    gap: 4,
   },
   title: {
     fontSize: 17,
     fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
   divider: {
@@ -96,8 +96,8 @@ const styles = StyleSheet.create({
   stateBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 28,
-    gap: 10,
+    paddingVertical: 36,
+    gap: 12,
   },
   stateText: {
     fontSize: 14,

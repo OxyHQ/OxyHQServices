@@ -106,22 +106,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: 22,
+    paddingTop: 16,
     paddingBottom: 120,
+    gap: 32,
   },
   footnote: {
     fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
+    lineHeight: 18,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
-    gap: 12,
-    minHeight: 320,
+    gap: 14,
+    minHeight: 360,
   },
   loadingText: {
     fontSize: 15,
@@ -139,9 +139,10 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 30,
+    borderRadius: 16,
+    borderCurve: 'continuous',
   },
   retryText: {
     color: '#fff',

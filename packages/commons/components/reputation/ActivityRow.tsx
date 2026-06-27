@@ -28,13 +28,11 @@ export function ActivityRow({ transaction }: ActivityRowProps) {
 
   return (
     <View style={styles.row}>
-      <View style={[styles.icon, { backgroundColor: colors.background }]}>
-        <MaterialCommunityIcons name={meta.icon} size={18} color={colors.textSecondary} />
-      </View>
+      <MaterialCommunityIcons name={meta.icon} size={20} color={colors.textTertiary} />
 
       <View style={styles.text}>
         <View style={styles.labelRow}>
-          <ThemedText style={styles.label} numberOfLines={1}>
+          <ThemedText style={[styles.label, { color: colors.text }]} numberOfLines={1}>
             {t(`civic.reputation.activity.actions.${meta.labelKey}`)}
           </ThemedText>
           {meta.signed && (
@@ -62,19 +60,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-  },
-  icon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 14,
+    paddingVertical: 16,
   },
   text: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   labelRow: {
     flexDirection: 'row',
@@ -83,16 +74,17 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '500',
     flexShrink: 1,
   },
   time: {
-    fontSize: 12,
+    fontSize: 13,
   },
   delta: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '600',
     minWidth: 44,
     textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
 });

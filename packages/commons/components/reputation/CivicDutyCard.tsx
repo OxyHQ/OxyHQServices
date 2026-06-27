@@ -12,9 +12,10 @@ interface CivicDutyCardProps {
 }
 
 /**
- * The civic-duty call to action — a deliberately DISTINCT accent-tinted, accent-
- * bordered card (not a buried list row) that opens the validator inbox. Shows a
- * live pending-count badge when the juror has requests waiting.
+ * The civic-duty call to action — ONE calm full-width row on a soft
+ * `primarySubtle` fill (no loud border): a restrained accent icon, the title +
+ * muted subtitle, an optional count pill when requests are waiting, and a quiet
+ * chevron. The single accent moment on an otherwise flat screen.
  */
 export function CivicDutyCard({ pendingCount, onPress }: CivicDutyCardProps) {
   const colors = useColors();
@@ -27,24 +28,14 @@ export function CivicDutyCard({ pendingCount, onPress }: CivicDutyCardProps) {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={t('civic.validate.dutyTitle')}
-      style={[
-        styles.card,
-        { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}40` },
-      ]}
+      style={[styles.card, { backgroundColor: colors.primarySubtle }]}
     >
-      <View style={[styles.icon, { backgroundColor: `${colors.primary}1F` }]}>
-        <MaterialCommunityIcons name="scale-balance" size={24} color={colors.primary} />
-      </View>
+      <MaterialCommunityIcons name="scale-balance" size={22} color={colors.primary} />
 
       <View style={styles.text}>
-        <View style={styles.titleRow}>
-          <ThemedText style={styles.title}>{t('civic.validate.dutyTitle')}</ThemedText>
-          {hasPending && (
-            <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-              <ThemedText style={styles.badgeText}>{pendingCount}</ThemedText>
-            </View>
-          )}
-        </View>
+        <ThemedText style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+          {t('civic.validate.dutyTitle')}
+        </ThemedText>
         <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={1}>
           {hasPending
             ? t('civic.validate.inboxEntryCount', { count: pendingCount })
@@ -52,7 +43,13 @@ export function CivicDutyCard({ pendingCount, onPress }: CivicDutyCardProps) {
         </ThemedText>
       </View>
 
-      <MaterialCommunityIcons name="chevron-right" size={22} color={colors.primary} />
+      {hasPending && (
+        <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+          <ThemedText style={styles.badgeText}>{pendingCount}</ThemedText>
+        </View>
+      )}
+
+      <MaterialCommunityIcons name="chevron-right" size={20} color={colors.textTertiary} />
     </TouchableOpacity>
   );
 }
@@ -62,36 +59,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    padding: 16,
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 16,
-  },
-  icon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 18,
+    minHeight: 64,
+    borderRadius: 24,
+    borderCurve: 'continuous',
   },
   text: {
     flex: 1,
     gap: 3,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   title: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 13,
+    fontVariant: ['tabular-nums'],
   },
   badge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 7,
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -99,8 +89,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
-  },
-  subtitle: {
-    fontSize: 13,
+    fontVariant: ['tabular-nums'],
   },
 });
