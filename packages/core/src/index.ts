@@ -211,6 +211,7 @@ export type {
     IssueCredentialInput,
     RevokeCredentialResult,
 } from './mixins/OxyServices.civic';
+export type { UserNodeStatus, UserNodeMode, UserNodeController, UserNodeLivenessStatus, RegisterNodeInput, RemoveNodeResult } from './mixins/OxyServices.nodes';
 
 // ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)

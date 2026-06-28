@@ -31,6 +31,7 @@ import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
+import { OxyServicesNodesMixin } from './OxyServices.nodes';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -66,6 +67,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -134,6 +136,9 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesAppDataMixin,
     // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)
     OxyServicesCivicMixin,
+    // User nodes / decentralization (Fase 5): register/read/revoke/manage the
+    // caller's personal data node + ingest hint.
+    OxyServicesNodesMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,
