@@ -35,7 +35,24 @@ Reputation screen redesign. **Only `F5` (user nodes / decentralization) remains.
 | — | Rename **DNI→"Oxy ID"** (clean cut, zero "dni" anywhere) + Commons nav (Home merged into **ID** tab, scan = Bloom **FAB** → fullScreenModal, **3 tabs**, active tab tint = text color) | ✅ shipped (6780ad55) |
 | — | **Reputation screen redesign** (engine-room: standing hero + Skia composition donut + civic-duty CTA + signed activity ledger) | ✅ shipped (0a82e78e) |
 | — | CI lint fix (pre-existing `require()` in DID tests) | ✅ shipped (9aaa3875) |
-| **F5** | **User nodes (decentralization)** — node publishes signed, Oxy ingests; reads NEVER touch a node | ⛔ **NOT STARTED — next phase** |
+| — | App-wide clean UI pass (shared `components/ui` primitives, 13 Commons screens) | ✅ shipped (705dc4d7) |
+| **F5-5a** | User-node **API foundation** (UserNode model, node-as-signed-record registration, public `/identity/log`+`/identity/head`, liveness `safeFetch`, `#oxy-node` DID entry, `/nodes/me`) | ✅ shipped (89ce0422) |
+| **F5-node** | **`packages/node`** — self-hostable data-node server (Express + better-sqlite3 log/blobs, reuses `@oxyhq/core` verify, Docker+Caddy) | ✅ shipped (d9c74692) |
+| **F5-5b** | **node→Oxy ingest** (background `nodeSync`: verify each record + owner-DID check + LWW per `(nsid,rkey)` + fork keeps both + OXY counter-sign witness; `POST /nodes/ingest/notify`; BullMQ/interval worker) | ✅ shipped (c6fb8a86) |
+| **F5-5c** | **Managed vault** API (`POST /nodes/managed` → OXY-custodial-signs the node record, `controller:'oxy'`) | ⚠️ **PARTIAL + UNVERIFIED in working tree** — see §0.1 |
+
+## 0.1 In-flight state (as of this handoff — pick up here)
+
+**F5-5c (managed vault) is PARTIAL and UNVERIFIED** — the agent hit a session limit mid-task. Uncommitted in `packages/api` (do NOT trust until verified):
+`models/UserNode.ts`, `routes/nodes.ts`, `services/nodeRegistry.service.ts`, `utils/nodes.constants.ts` (modified) + `services/__tests__/managedVault.test.ts` (new).
+**To finish:** run `bun run --filter @oxyhq/api test` + `bunx tsc --noEmit` in api; if green, path-scope-commit ONLY those 5 files on `main` (message: `feat(nodes): Fase 5c — managed vault (OXY-custodial node provisioning)`); if red/incomplete, finish `provisionManagedVault` per the §7 5c brief. **Verify isolation:** the api test run resolves `@oxyhq/core` from source, and core has concurrent uncommitted edits (below) — a failure may be theirs, not 5c's.
+
+**⚠️ A concurrent Claude session has LARGE uncommitted work in the tree — DO NOT touch/commit/stash it** (it's their SSO/auth refactor): `AGENTS.md`, `packages/auth-sdk/src/WebOxyProvider.tsx` (+test), `packages/core/src/index.ts`, `packages/core/src/utils/ssoBounce.ts` (+test), `packages/services/src/ui/context/OxyContext.tsx`, `packages/services/src/ui/context/hooks/useAuthOperations.ts` (+tests). Always path-scope `git add`; never `git add -A`.
+
+**F5 remaining after 5c lands (all deferred):**
+- **Managed-vault container/storage orchestration** = INFRA (spin up per-user node instances on the Oxy-operated endpoint). Not code; goes in `oxy-infra`. 5c only does the registration + custodial-sign; the endpoint is env `MANAGED_NODE_BASE_URL`.
+- **Commons UI** for nodes: a "Connect your node" / "Create your vault" surface in Settings calling `oxyServices` node methods (needs new `@oxyhq/core` node SDK methods first: register/getMyNode/provisionManagedVault/revoke wrapping `/nodes/*`). Not started.
+- **`@oxyhq/core` node SDK mixin** — wrap the `/nodes/*` + `/identity/log|head` endpoints. Not started.
 
 Test baselines (per-package, correct runner): **core 623**, **api 997**, **commons 336**, **contracts 81**.
 
