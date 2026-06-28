@@ -59,6 +59,7 @@ import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
+import { startNodeIngestJobs, stopNodeIngestJobs } from './queue/nodeIngest.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
@@ -375,6 +376,7 @@ async function gracefulShutdown(signal: string) {
   });
 
   await stopBackgroundJobs();
+  await stopNodeIngestJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -753,6 +755,12 @@ if (require.main === module) {
       // Start background jobs: durable BullMQ scheduling when REDIS_URL is set,
       // otherwise the in-process cron fallback. Never throws.
       await startBackgroundJobs();
+
+      // Start the F5b node-ingest subsystem (node → Oxy two-way sync): a
+      // fleet-wide pull sweep + on-demand per-user ingests, BullMQ when REDIS_URL
+      // is set else an in-process interval. All node I/O is background-only —
+      // never in a request's read path. Never throws.
+      await startNodeIngestJobs();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {

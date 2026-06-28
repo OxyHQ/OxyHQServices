@@ -42,3 +42,60 @@ export const NODE_LIVENESS_SWEEP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 /** Max nodes re-probed per sweep (bounds the background work). */
 export const NODE_LIVENESS_SWEEP_BATCH = 100;
+
+/* -------------------------------------------------------------------------- */
+/*  F5b — bidirectional sync (node → Oxy ingest)                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The node-facing log + head paths a node exposes for Oxy to PULL its authentic
+ * signed chain back in. Mirrors the Oxy→node export shapes (`/identity/log` +
+ * `/identity/head`) so a record signed on the node verifies in Oxy unchanged.
+ * Both are fetched ONLY in the background via `safeFetch` (SSRF-safe) — never in
+ * a request's read path.
+ */
+export const NODE_OXY_LOG_PATH = '/oxy/log';
+export const NODE_OXY_HEAD_PATH = '/oxy/head';
+
+/** Records pulled per `/oxy/log` page (bounds a single fetch's working set). */
+export const NODE_INGEST_BATCH = 100;
+
+/**
+ * Hard cap on log pages processed in one `ingestFromNode` run. The batch × this
+ * bounds how many records a single ingest can append (`100 × 50 = 5000`) so a
+ * very long chain is caught up across several scheduled runs, never one
+ * unbounded loop.
+ */
+export const NODE_INGEST_MAX_ITERATIONS = 50;
+
+/** Time-to-first-byte deadline for a node head/log fetch (kept short). */
+export const NODE_INGEST_FETCH_TIMEOUT_MS = 8_000;
+
+/** Max bytes read from a single `/oxy/log` response before the stream is cut. */
+export const NODE_INGEST_MAX_BYTES = 2 * 1024 * 1024; // 2 MiB
+
+/** How often the background sweep pulls `mode:'pull'` active nodes. */
+export const NODE_INGEST_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Max `mode:'pull'` nodes enqueued for ingest per sweep (bounds the work). */
+export const NODE_INGEST_SWEEP_BATCH = 100;
+
+/**
+ * BullMQ queue name for node ingest. MUST NOT contain `:` (BullMQ throws on it)
+ * — the `oxy-api-` prefix keeps the key distinct from cache keys on the shared
+ * Valkey instance and uses `-`, never `:`.
+ */
+export const NODE_INGEST_QUEUE_NAME = 'oxy-api-node-ingest';
+
+/**
+ * Stable repeatable-scheduler id for the pull sweep. Constant across boots and
+ * replicas so BullMQ's `upsertJobScheduler` converges on ONE fleet-wide schedule
+ * (the "leader-gated" effect) rather than accumulating duplicates.
+ */
+export const NODE_INGEST_SWEEP_SCHEDULER_ID = 'node-ingest-pull-sweep';
+
+/** Job name for the repeatable pull-sweep tick. */
+export const NODE_INGEST_SWEEP_JOB = 'node-ingest-pull-sweep';
+
+/** Job name for an on-demand per-user ingest (carries `{ userId }`). */
+export const NODE_INGEST_USER_JOB = 'node-ingest-user';

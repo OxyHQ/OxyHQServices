@@ -52,13 +52,19 @@ export interface IUserNode extends Document {
   lastSeenAt?: Date;
   /** Last time a probe ran (success or failure). */
   lastProbeAt?: Date;
-  /** Human-readable reason the last probe failed (cleared on success). */
+  /** Human-readable reason the last probe OR ingest failed (cleared on success). */
   lastError?: string;
   /**
-   * Last synced chain `seq` for the (future, F5b) two-way sync — how far Oxy and
-   * the node have reconciled. Unused by F5a beyond being persisted.
+   * Last synced chain `seq` for the F5b two-way sync — how far Oxy has mirrored
+   * the node's authentic chain back in (the `seq` of Oxy's local chain head after
+   * the last successful ingest). Advanced ONLY by the background ingest worker.
    */
   cursor?: number;
+  /**
+   * Last time the F5b ingest worker ran a pull for this node (success OR a
+   * caught-up no-op). Maintained only in the background — never a read handler.
+   */
+  lastSyncedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -75,6 +81,7 @@ const UserNodeSchema = new Schema<IUserNode>(
     lastProbeAt: { type: Date },
     lastError: { type: String },
     cursor: { type: Number },
+    lastSyncedAt: { type: Date },
   },
   {
     timestamps: { createdAt: true, updatedAt: true },

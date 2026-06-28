@@ -14,13 +14,15 @@
  * cache write — the read-path invariant holds).
  */
 
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';
+import { isValidObjectId } from '../utils/validation';
 import { getUserNode, removeNode } from '../services/nodeRegistry.service';
-import type { IUserNode } from '../models/UserNode';
+import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
+import UserNode, { type IUserNode } from '../models/UserNode';
 
 const router = Router();
 
@@ -48,6 +50,21 @@ const nodeAdminLimiter = rateLimit({
   keyGenerator: userScopedKey('nodes:admin'),
 });
 
+/**
+ * Ingest-notify limiter (F5b). The endpoint is an unauthenticated HINT, so it is
+ * keyed by IP and held to a HARD ceiling — a notify only triggers a re-pull of
+ * the named user's OWN node, which the worker then fully re-verifies, but the
+ * enqueue itself must be cheap to throttle. Per-user dedup in the queue prevents
+ * a flood from one target stacking work.
+ */
+const nodeIngestNotifyLimiter = rateLimit({
+  prefix: 'rl:nodes:ingest:',
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many ingest notifications. Please slow down.',
+  keyGenerator: (req: Request): string => `nodes:ingest:ip:${req.ip ?? 'unknown'}`,
+});
+
 /** Public projection of a node row (drops Mongo internals). */
 function serializeNode(node: IUserNode): Record<string, unknown> {
   return {
@@ -60,6 +77,7 @@ function serializeNode(node: IUserNode): Record<string, unknown> {
     lastProbeAt: node.lastProbeAt,
     lastError: node.lastError,
     cursor: node.cursor,
+    lastSyncedAt: node.lastSyncedAt,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
   };
@@ -98,6 +116,33 @@ router.delete(
     }
 
     res.json({ success: true });
+  }),
+);
+
+/**
+ * POST /nodes/ingest/notify/:userId — a HINT (no authority) that a user's node
+ * has new records. The target is resolved server-side from the path param ONLY;
+ * the request body is never read or trusted. If the named user has a registered
+ * (non-revoked) node, a background ingest is enqueued — deduped per user, then
+ * fully re-verified by the worker (a notify can never inject data). Always
+ * answers 202: it is a fire-and-forget hint, not a probe.
+ *
+ * Unauthenticated by design (it only re-pulls the user's OWN node and changes
+ * nothing without cryptographic verification), but rate-limited hard by IP. The
+ * read path is untouched — this only schedules background work.
+ */
+router.post(
+  '/ingest/notify/:userId',
+  nodeIngestNotifyLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    if (isValidObjectId(userId)) {
+      const hasNode = await UserNode.exists({ userId, status: { $ne: 'revoked' } });
+      if (hasNode) {
+        enqueueNodeIngest(userId);
+      }
+    }
+    res.status(202).json({ accepted: true });
   }),
 );
 
