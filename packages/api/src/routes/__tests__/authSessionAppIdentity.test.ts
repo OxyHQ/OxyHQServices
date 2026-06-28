@@ -529,6 +529,53 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(created.boundOrigin).toBe('https://acme.example');
     expect(created.authorizeCode).toBe(data.authorizeCode);
   });
+
+  it('(i1) persists originVerified=true for a trusted app on its own registered origin', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-verified', clientId: 'oxy_dk_client' },
+      { origin: 'https://accounts.oxy.so' },
+    );
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { originVerified?: boolean };
+    expect(created.originVerified).toBe(true);
+  });
+
+  it('(i2) persists originVerified=false for a trusted app from a native client (no Origin)', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-native-unverified',
+      clientId: 'oxy_dk_client',
+    });
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { originVerified?: boolean };
+    expect(created.originVerified).toBe(false);
+  });
+
+  it('(i3) persists originVerified=false for a third-party app even with a present Origin', async () => {
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-thirdparty-unverified', applicationId: THIRD_PARTY_APP_ID },
+      { origin: 'https://acme.example' },
+    );
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { originVerified?: boolean };
+    expect(created.originVerified).toBe(false);
+  });
 });
 
 describe('POST /auth/session/authorize-signed/:authorizeCode — route mapping (C2)', () => {

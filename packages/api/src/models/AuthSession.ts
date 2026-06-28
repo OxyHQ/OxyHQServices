@@ -40,6 +40,16 @@ export interface IAuthSession extends Document {
   authorizeCode?: string;
   /** The browser Origin the session was created from, shown in the approval UI. */
   boundOrigin?: string;
+  /**
+   * Authoritative anti-phishing flag computed at create time: true ONLY when a
+   * platform-trusted Application was started from one of its OWN registered
+   * redirect origins (proven via the browser `Origin` header). Native callers
+   * (no Origin) and untrusted/third-party apps are always `false`. The Commons
+   * approval UI uses this to warn the user when a device-flow sign-in was begun
+   * from an unverifiable source (the consent-phishing defense). It is NEVER a
+   * gate by itself — every device-flow session is still approved interactively.
+   */
+  originVerified: boolean;
   /** Random nonce embedded in the QR payload (audit only; not a binding check). */
   challengeNonce?: string;
   applicationId: mongoose.Types.ObjectId; // Canonical, required reference to a registered Application
@@ -71,6 +81,12 @@ const AuthSessionSchema: Schema = new Schema(
     boundOrigin: {
       type: String,
       default: null,
+    },
+    // Anti-phishing: trusted app started from its own registered origin.
+    // Defaults false so legacy rows and native callers read as unverified.
+    originVerified: {
+      type: Boolean,
+      default: false,
     },
     challengeNonce: {
       type: String,

@@ -152,6 +152,46 @@ describe('GET /auth/session/approve-info/:authorizeCode', () => {
     expect(JSON.stringify(res.body)).not.toContain('SECRET-do-not-leak');
   });
 
+  it('surfaces the persisted originVerified flag (anti-phishing signal)', async () => {
+    mockAuthSessionFindOne.mockResolvedValueOnce({
+      sessionToken: 'SECRET-do-not-leak',
+      authorizeCode: 'code-verified',
+      applicationId: { toString: () => THIRD_PARTY_APP_ID },
+      boundOrigin: 'https://acme.example',
+      originVerified: true,
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60_000),
+      save: jest.fn(),
+    });
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+    mockUserFindById.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve(null) }) });
+
+    const res = await get(server, '/auth/session/approve-info/code-verified');
+
+    expect(res.status).toBe(200);
+    expect((res.body.data as { originVerified: boolean }).originVerified).toBe(true);
+  });
+
+  it('defaults originVerified to false when the persisted row lacks it (legacy/native rows)', async () => {
+    mockAuthSessionFindOne.mockResolvedValueOnce({
+      sessionToken: 'SECRET-do-not-leak',
+      authorizeCode: 'code-native',
+      applicationId: { toString: () => THIRD_PARTY_APP_ID },
+      boundOrigin: null,
+      // originVerified intentionally absent (mirrors a pre-migration row).
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 60_000),
+      save: jest.fn(),
+    });
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+    mockUserFindById.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve(null) }) });
+
+    const res = await get(server, '/auth/session/approve-info/code-native');
+
+    expect(res.status).toBe(200);
+    expect((res.body.data as { originVerified: boolean }).originVerified).toBe(false);
+  });
+
   it('returns 404 for an unknown authorizeCode', async () => {
     mockAuthSessionFindOne.mockResolvedValueOnce(null);
     const res = await get(server, '/auth/session/approve-info/nope');
