@@ -68,6 +68,7 @@ const DEST_KEY_PREFIX = 'oxy_sso_dest:';
 const NO_SESSION_KEY_PREFIX = 'oxy_sso_no_session:';
 const ATTEMPTED_KEY_PREFIX = 'oxy_sso_attempted:';
 const CALLBACK_BOOTSTRAP_KEY_PREFIX = 'oxy_sso_callback_bootstrap:';
+const PRIOR_SESSION_KEY_PREFIX = 'oxy_sso_prior_session:';
 
 /** Per-origin CSRF state key (matched on return to defeat fragment forgery). */
 export function ssoStateKey(origin: string): string {
@@ -104,6 +105,24 @@ export function ssoNoSessionKey(origin: string): string {
  */
 export function ssoAttemptedKey(origin: string): string {
   return `${ATTEMPTED_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Per-origin DURABLE "this device/origin has had a signed-in Oxy session
+ * before" hint.
+ *
+ * Unlike every other key in this module — which lives in per-tab
+ * `sessionStorage` — this hint is written to DURABLE storage (web
+ * `localStorage`; the services provider uses its own `storageKeyPrefix`-scoped
+ * key in `@oxyhq/services`). It is set whenever a session is established or
+ * restored and survives a session expiring; it is cleared ONLY on an explicit
+ * full sign-out. It exists purely to drive {@link allowSsoBounce}: a returning
+ * visitor (hint present) whose local session has lapsed still gets ONE terminal
+ * `/sso` establish bounce to recover a session that lives only at the central
+ * IdP, while a truly first-time anonymous visitor is never force-bounced.
+ */
+export function ssoPriorSessionKey(origin: string): string {
+  return `${PRIOR_SESSION_KEY_PREFIX}${origin}`;
 }
 
 /**
@@ -246,4 +265,54 @@ export function guardActive(
     return false;
   }
   return now - ts < SSO_GUARD_TTL_MS;
+}
+
+/**
+ * Inputs to the smart {@link allowSsoBounce} gate.
+ */
+export interface SsoBounceGate {
+  /**
+   * Whether this device/origin has had a signed-in Oxy session before (the
+   * durable {@link ssoPriorSessionKey} hint). Set whenever a session is
+   * established or restored; survives session expiry; cleared only on explicit
+   * full sign-out. `true` ⇒ a returning visitor.
+   */
+  readonly hasPriorSession: boolean;
+  /**
+   * Whether a local/stored session was recovered earlier this cold boot. At the
+   * terminal bounce gate this is effectively always `false` (an earlier step
+   * would have won and short-circuited), but it is part of the contract — "no
+   * prior hint AND no local session" — so it is passed explicitly for fidelity
+   * and robustness.
+   */
+  readonly hasLocalSession: boolean;
+}
+
+/**
+ * Decide whether the terminal `/sso` establish-bounce is ALLOWED for this
+ * visitor (the smart `enabled` gate for the `sso-bounce` cold-boot step).
+ *
+ * The terminal bounce is the ONLY cold-boot step that can recover a session
+ * that lives SOLELY at the central IdP — the cross-apex Relying-Party case
+ * (e.g. `mention.earth`, a different apex from `oxy.so`) whose device-local
+ * session has expired and whose `Domain=oxy.so` refresh cookie never reaches
+ * `api.<apex>`. It is also what plants the first-party per-apex `fedcm_session`
+ * cookie that the EARLIER `silent-iframe` step later relies on. So it must fire
+ * for a RETURNING user, yet it must NOT force a truly first-time anonymous
+ * visitor off to the IdP.
+ *
+ *   - ALLOW when there is a prior-signed-in hint OR a local session was
+ *     recovered this boot (a returning user) — so a central-only cross-domain
+ *     session recovers via ONE bounce, after which the per-apex cookie is
+ *     planted and subsequent loads restore silently with no bounce.
+ *   - else (no hint, no local session) SUPPRESS — a first-time anonymous
+ *     visitor browses without a forced redirect.
+ *
+ * This is the smart DEFAULT and the ONLY behaviour: apps never configure it.
+ * It is also the GATE DECISION ONLY — callers still apply the per-tab loop
+ * guards (`ssoAttemptedKey`, `ssoNoSessionKey`, {@link guardActive}) so an
+ * allowed bounce still fires at most once per cold boot.
+ */
+export function allowSsoBounce(gate: SsoBounceGate): boolean {
+  return gate.hasPriorSession || gate.hasLocalSession;
 }

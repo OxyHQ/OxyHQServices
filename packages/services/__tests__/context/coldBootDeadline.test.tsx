@@ -79,6 +79,10 @@ describe('Cold-boot overall deadline (production hang regression)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // The terminal `sso-bounce` is SMART-gated: only a RETURNING visitor (durable
+    // prior-session hint) is bounced. This deadline test models a returning user
+    // whose local session lapsed, so seed the hint.
+    window.localStorage.setItem('oxy_session_prior_session', '1');
     captured = { isAuthResolved: false, isTokenReady: false, isAuthenticated: false };
     useAuthStore.getState().logout();
     assignSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);

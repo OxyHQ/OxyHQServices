@@ -128,6 +128,10 @@ describe('Cold-boot per-apex silent iframe (durable cross-domain reload restore)
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // The terminal `sso-bounce` is SMART-gated: only a RETURNING visitor (durable
+    // prior-session hint) is bounced. These iframe-restore tests model a returning
+    // user, so seed the hint (the "iframe wins → no bounce" cases are unaffected).
+    window.localStorage.setItem('oxy_session_prior_session', '1');
     captured = { isAuthenticated: false, userId: undefined };
     setTokensSpy.mockClear();
     silentSignInSpy.mockReset();

@@ -28,6 +28,7 @@ import {
   ssoAttemptedKey,
   isCentralIdPOrigin,
   guardActive,
+  allowSsoBounce,
   ssoNavigate,
   buildSsoBounceUrl,
   consumeSsoReturn,
@@ -196,16 +197,6 @@ export interface OxyContextProviderProps {
    * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
    */
   clientId?: string;
-  /**
-   * When `true`, skips ONLY the terminal `sso-bounce` cold-boot step — the
-   * force-redirect to `auth.<apex>/sso?prompt=none` that fires for a visitor
-   * with no recoverable local session. Every other cold-boot step still runs
-   * (callback consume, FedCM silent, `/auth/silent` iframe, stored-session,
-   * cookie-restore), so a returning signed-in user is still silently
-   * restored; only the bounce for a truly anonymous visitor is suppressed.
-   * Default `false`.
-   */
-  disableAutoSso?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
@@ -462,7 +453,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
-  disableAutoSso = false,
   onAuthStateChange,
   onError,
 }) => {
@@ -631,6 +621,25 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return storageReady.promise;
   }, [storageReady]);
 
+  // Clear the durable "had a signed-in Oxy session before" hint.
+  //
+  // The hint (`storageKeys.priorSession`) is WRITTEN whenever a session is
+  // established/restored — every commit funnels through `persistSessionDurably`,
+  // and the stored-session reload winner sets it directly to backfill
+  // pre-existing installs. It lives in the SAME `storageKeyPrefix`-scoped
+  // durable store as the session ids, so it SURVIVES a session expiring; it is
+  // cleared ONLY here, on EXPLICIT full sign-out (wired into `clearAllAccountData`
+  // and the `useAuthOperations` logout paths — never the passive token-expiry
+  // path). At cold boot the hint is read into `hadPriorSession` and feeds
+  // `allowSsoBounce`: a RETURNING visitor (hint present) whose local session has
+  // lapsed still gets ONE terminal `/sso` establish bounce so a central-only
+  // cross-domain session recovers, while a truly first-time anonymous visitor is
+  // never force-redirected.
+  const clearPriorSessionHint = useCallback(async (): Promise<void> => {
+    const readyStorage = await getReadyStorage();
+    await readyStorage.removeItem(storageKeys.priorSession);
+  }, [getReadyStorage, storageKeys.priorSession]);
+
   useEffect(() => {
     let mounted = true;
     createPlatformStorage()
@@ -717,6 +726,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     updateSessions,
     saveActiveSessionId,
     clearSessionState,
+    clearPriorSessionHint,
     switchSession,
     applyLanguagePreference,
     onAuthStateChange,
@@ -745,12 +755,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Clear session state (sessions, activeSessionId, storage)
     await clearSessionState();
 
+    // Explicit FULL sign-out: drop the durable returning-user hint so the next
+    // cold boot treats this device as a first-time anonymous visitor (no forced
+    // `/sso` bounce). NOT done on the passive token-expiry path, so an expired
+    // session still recovers via a returning-user bounce.
+    await clearPriorSessionHint();
+
     // Reset account store
     useAccountStore.getState().reset();
 
     // Clear HTTP service cache
     oxyServices.clearCache();
-  }, [queryClient, storage, clearSessionState, logger, oxyServices]);
+  }, [queryClient, storage, clearSessionState, clearPriorSessionHint, logger, oxyServices]);
 
   const { getDeviceSessions, logoutAllDeviceSessions, updateDeviceName } = useDeviceManagement({
     oxyServices,
@@ -831,7 +847,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       sessionIds.push(sessionId);
       await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
     }
-  }, [getReadyStorage, logger, storageKeys.activeSessionId, storageKeys.sessionIds]);
+    // A session is now durably committed — set the returning-user hint so a
+    // future cold boot whose local session has lapsed still gets ONE `/sso`
+    // establish bounce (see `markPriorSessionHint`). Every web commit path
+    // (FedCM / silent iframe / SSO return / password / cookie restore) funnels
+    // through here, so this is the single chokepoint for the hint.
+    await readyStorage.setItem(storageKeys.priorSession, '1');
+  }, [getReadyStorage, logger, storageKeys.activeSessionId, storageKeys.sessionIds, storageKeys.priorSession]);
 
   // Refs so the cold-boot restore can plant session state without widening its
   // dependency array (mirrors the existing ref pattern above).
@@ -1073,6 +1095,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         // immediately so the loading screen clears without waiting for the
         // remaining cold-boot steps to be evaluated/short-circuited (idempotent).
         markAuthResolvedRef.current();
+        // Backfill the returning-user hint. A reload winner already had the hint
+        // set at original sign-in, but pre-existing installs (signed in before
+        // this hint shipped) get it set here so their NEXT lapse-and-return still
+        // earns one `/sso` establish bounce. `storage` is non-null (guarded at
+        // the top of this callback); best-effort, never blocks restore.
+        await storage.setItem(storageKeys.priorSession, '1');
         return true;
       } catch (switchError) {
         // Silently handle expected errors (invalid sessions, timeouts, network issues)
@@ -1102,6 +1130,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storage,
     storageKeys.activeSessionId,
     storageKeys.sessionIds,
+    storageKeys.priorSession,
   ]);
 
   // Shared in-flight `runSsoReturn` promise — see the CONCURRENCY note on
@@ -1212,6 +1241,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // intent explicit and is redundant-safe. On a first-visit-no-local-session,
     // `stored-session` skips, this stays false, and the probes run as before.
     let storedSessionRestored = false;
+
+    // FIX-B smart-gate input: has this device/app EVER had a signed-in Oxy
+    // session (the durable `priorSession` hint, set on every commit, cleared
+    // only on explicit full sign-out)? Read ONCE here — synchronously usable by
+    // the terminal `sso-bounce` `enabled` gate below — so a RETURNING visitor
+    // whose local session has lapsed still earns one `/sso` establish bounce,
+    // while a truly first-time anonymous visitor is never force-redirected.
+    // `storage` is non-null (guarded above); a read failure is treated as "no
+    // prior session" (fail safe toward anonymous-browse).
+    let hadPriorSession = false;
+    try {
+      hadPriorSession = (await storage.getItem(storageKeys.priorSession)) === '1';
+    } catch (priorSessionReadError) {
+      if (__DEV__) {
+        loggerUtil.debug(
+          'Failed to read prior-session hint (treating as first-time visitor)',
+          { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
+          priorSessionReadError as unknown,
+        );
+      }
+    }
 
     try {
       const outcome = await runColdBoot<true>({
@@ -1400,11 +1450,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // still active (loop + self-heal protection).
             id: 'sso-bounce',
             enabled: () => {
-              // Opt-out: when the consumer disabled auto-SSO, never bounce a
-              // truly-anonymous visitor to the central IdP. All other restore
-              // steps already ran above, so a signed-in user is still
-              // recovered; only this terminal force-bounce is suppressed.
-              if (disableAutoSso) {
+              // Smart gate (SDK-owned, shared with `WebOxyProvider` via core's
+              // `allowSsoBounce`). The terminal `/sso` establish-bounce is the
+              // ONLY cold-boot step that can recover a session living SOLELY at
+              // the central IdP (a cross-apex RP whose local session expired),
+              // and it is what plants the per-apex `fedcm_session` cookie the
+              // earlier silent-iframe step relies on. So it is allowed iff a
+              // prior-signed-in hint exists OR a local session was recovered this
+              // boot (`storedSessionRestored`, always false here — an earlier step
+              // would have won — but passed for spec fidelity): a RETURNING user
+              // still gets ONE bounce, while a truly first-time anonymous visitor
+              // does NOT (anonymous browse). The per-tab loop guards below
+              // (`ssoNoSessionKey`, `ssoAttemptedKey`, `guardActive`) still cap an
+              // allowed bounce at one per cold boot.
+              if (!allowSsoBounce({
+                hasPriorSession: hadPriorSession,
+                hasLocalSession: storedSessionRestored,
+              })) {
                 return false;
               }
               if (!isWebBrowser() || window.top !== window.self) {
@@ -1497,11 +1559,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [
     oxyServices,
     storage,
+    storageKeys.priorSession,
     restoreViaRefreshCookie,
     restoreStoredSession,
     runSsoReturn,
     markAuthResolved,
-    disableAutoSso,
   ]);
 
   useEffect(() => {

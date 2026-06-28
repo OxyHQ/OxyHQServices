@@ -105,6 +105,7 @@ const setup = (opts: SetupOpts = {}) => {
   const updateSessions = jest.fn();
   const saveActiveSessionId = jest.fn(async () => undefined);
   const clearSessionState = jest.fn(async () => undefined);
+  const clearPriorSessionHint = jest.fn(async () => undefined);
   const switchSession = jest.fn(async () => ({
     id: 'user-1',
     username: 'alice',
@@ -133,6 +134,7 @@ const setup = (opts: SetupOpts = {}) => {
       updateSessions,
       saveActiveSessionId,
       clearSessionState,
+      clearPriorSessionHint,
       switchSession,
       applyLanguagePreference,
       onAuthStateChange,
@@ -152,6 +154,7 @@ const setup = (opts: SetupOpts = {}) => {
     updateSessions,
     saveActiveSessionId,
     clearSessionState,
+    clearPriorSessionHint,
     switchSession,
     applyLanguagePreference,
     onAuthStateChange,
@@ -350,6 +353,9 @@ describe('useAuthOperations.logout', () => {
     });
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
     expect(helpers.switchSession).not.toHaveBeenCalled();
+    // Genuine FULL sign-out → the durable returning-user hint is dropped so the
+    // next cold boot is treated as a first-time anonymous visitor.
+    expect(helpers.clearPriorSessionHint).toHaveBeenCalledTimes(1);
   });
 
   it('logs out a specific non-active session without disturbing the active one', async () => {
@@ -360,6 +366,9 @@ describe('useAuthOperations.logout', () => {
     expect(helpers.oxyServices.logoutSession).toHaveBeenCalledWith('session-1', 'session-2');
     expect(helpers.switchSession).not.toHaveBeenCalled();
     expect(helpers.clearSessionState).not.toHaveBeenCalled();
+    // A partial sign-out (other sessions remain) must NOT clear the hint — the
+    // user is still a returning user on this device.
+    expect(helpers.clearPriorSessionHint).not.toHaveBeenCalled();
     expect(helpers.updateSessions).toHaveBeenCalledWith(
       [expect.objectContaining({ sessionId: 'session-1' })],
       { merge: false },
@@ -456,6 +465,9 @@ describe('useAuthOperations.logoutAll', () => {
     expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
     expect(helpers.oxyServices.logoutAllSessionsViaCookie).toHaveBeenCalledTimes(1);
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
+    // logoutAll is ALWAYS a full sign-out → the durable returning-user hint is
+    // dropped (no forced `/sso` bounce on the next cold boot).
+    expect(helpers.clearPriorSessionHint).toHaveBeenCalledTimes(1);
     // The persisted active-authuser slot is cleared so the next cold boot
     // starts from a clean slate.
     expect(window.localStorage.getItem('oxy_active_authuser')).toBeNull();

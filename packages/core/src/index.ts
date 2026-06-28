@@ -533,13 +533,16 @@ export {
     ssoDestKey,
     ssoNoSessionKey,
     ssoAttemptedKey,
+    ssoPriorSessionKey,
     ssoCallbackBootstrapKey,
     ssoNavigate,
     getSsoCallbackBootstrapScript,
     buildSsoBounceUrl,
     isCentralIdPOrigin,
     guardActive,
+    allowSsoBounce,
 } from './utils/ssoBounce';
+export type { SsoBounceGate } from './utils/ssoBounce';
 
 export { runColdBoot } from './utils/coldBoot';
 export type {

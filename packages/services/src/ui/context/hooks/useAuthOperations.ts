@@ -20,6 +20,14 @@ export interface UseAuthOperationsOptions {
   updateSessions: (sessions: ClientSession[], options?: { merge?: boolean }) => void;
   saveActiveSessionId: (sessionId: string) => Promise<void>;
   clearSessionState: () => Promise<void>;
+  /**
+   * Clear the durable returning-user hint (`storageKeys.priorSession`). Called
+   * ONLY on EXPLICIT full sign-out — alongside `clearSsoBounceState()` — so the
+   * next cold boot treats this device as a first-time anonymous visitor (no
+   * forced `/sso` bounce). NEVER called on the passive token-expiry path, so an
+   * expired session still recovers via a returning-user bounce. Best-effort.
+   */
+  clearPriorSessionHint: () => Promise<void>;
   switchSession: (sessionId: string) => Promise<User>;
   applyLanguagePreference: (user: User) => Promise<void>;
   onAuthStateChange?: (user: User | null) => void;
@@ -45,6 +53,24 @@ const LOGOUT_ERROR_CODE = 'LOGOUT_ERROR';
 const LOGOUT_ALL_ERROR_CODE = 'LOGOUT_ALL_ERROR';
 
 /**
+ * Fire-and-forget the durable returning-user hint clear on explicit sign-out.
+ *
+ * Mirrors the synchronous, non-blocking nature of the sibling
+ * `clearSsoBounceState()`: sign-out must NEVER block on (or fail because of) a
+ * best-effort storage write. The clear is invoked synchronously (so unit tests
+ * can assert it ran) but its async settle is detached; any rejection is logged,
+ * never thrown.
+ */
+function clearPriorSessionHintSafe(
+  clearPriorSessionHint: () => Promise<void>,
+  logger?: (message: string, error?: unknown) => void,
+): void {
+  clearPriorSessionHint().catch((hintError) => {
+    logger?.('Failed to clear prior-session hint on sign-out', hintError);
+  });
+}
+
+/**
  * Authentication operations using public key cryptography.
  * Accepts public key as parameter - identity management is handled by the app layer.
  */
@@ -56,6 +82,7 @@ export const useAuthOperations = ({
   updateSessions,
   saveActiveSessionId,
   clearSessionState,
+  clearPriorSessionHint,
   switchSession,
   applyLanguagePreference,
   onAuthStateChange,
@@ -227,6 +254,7 @@ export const useAuthOperations = ({
             // Genuine FULL sign-out (no sessions remain): clear the per-origin
             // SSO bounce state so a fresh deliberate sign-in can re-probe.
             clearSsoBounceState();
+            clearPriorSessionHintSafe(clearPriorSessionHint, logger);
             await clearSessionState();
             return;
           }
@@ -237,6 +265,7 @@ export const useAuthOperations = ({
         if (isInvalid && targetSessionId === activeSessionId) {
           // The active session is invalid → full sign-out; clear SSO state too.
           clearSsoBounceState();
+          clearPriorSessionHintSafe(clearPriorSessionHint, logger);
           await clearSessionState();
           return;
         }
@@ -254,6 +283,7 @@ export const useAuthOperations = ({
     [
       activeSessionId,
       clearSessionState,
+      clearPriorSessionHint,
       logger,
       onError,
       oxyServices,
@@ -286,8 +316,11 @@ export const useAuthOperations = ({
         clearActiveAuthuser();
       }
       // logoutAll is ALWAYS a full sign-out: clear the per-origin SSO bounce
-      // state (web-guarded internally) so a fresh sign-in can re-probe.
+      // state (web-guarded internally) so a fresh sign-in can re-probe, and drop
+      // the durable returning-user hint so the next cold boot is treated as a
+      // first-time anonymous visitor (no forced `/sso` bounce after sign-out).
       clearSsoBounceState();
+      clearPriorSessionHintSafe(clearPriorSessionHint, logger);
       await clearSessionState();
     } catch (error) {
       handleAuthError(error, {
@@ -299,7 +332,7 @@ export const useAuthOperations = ({
       });
       throw error instanceof Error ? error : new Error('Logout all failed');
     }
-  }, [activeSessionId, clearSessionState, logger, onError, oxyServices, setAuthState]);
+  }, [activeSessionId, clearSessionState, clearPriorSessionHint, logger, onError, oxyServices, setAuthState]);
 
   return {
     signIn,

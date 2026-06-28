@@ -140,6 +140,11 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // The terminal `sso-bounce` is SMART-gated: only a RETURNING visitor (durable
+    // prior-session hint) is bounced. The ordering tests that reach the terminal
+    // bounce model a returning user; the stored-session/FedCM-win cases are
+    // unaffected by the hint (an earlier step short-circuits first).
+    window.localStorage.setItem('oxy_session_prior_session', '1');
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     setTokensSpy.mockClear();
     useAuthStore.getState().logout();

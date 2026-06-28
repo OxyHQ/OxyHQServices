@@ -30,8 +30,10 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoAttemptedKey,
+  ssoPriorSessionKey,
   isCentralIdPOrigin,
   guardActive,
+  allowSsoBounce,
   buildSsoBounceUrl,
   consumeSsoReturn,
 } from '@oxyhq/core';
@@ -227,6 +229,52 @@ function clearSsoBounceStateWeb(): void {
   }
 }
 
+/**
+ * Read the DURABLE "this origin has had a signed-in Oxy session before" hint
+ * from `localStorage`. Drives the smart {@link allowSsoBounce} gate: a returning
+ * visitor (hint present) whose cookie restore came back empty cross-domain
+ * still earns ONE terminal `/sso` establish bounce, while a truly first-time
+ * anonymous visitor is never force-redirected. Returns `false` off-web and on
+ * any storage error (fail safe toward anonymous-browse).
+ */
+function hasPriorSessionWeb(): boolean {
+  if (!isWebBrowser()) return false;
+  try {
+    return window.localStorage.getItem(ssoPriorSessionKey(window.location.origin)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Set the durable prior-session hint. Called whenever a session is established
+ * or restored. Best-effort; no-ops off-web and swallows storage errors.
+ */
+function markPriorSessionWeb(): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.localStorage.setItem(ssoPriorSessionKey(window.location.origin), '1');
+  } catch {
+    // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
+  }
+}
+
+/**
+ * Clear the durable prior-session hint. Called ONLY on EXPLICIT full sign-out
+ * (`signOut` / `clearSessionState`) — never on a cold-boot failure path — so the
+ * next cold boot treats this device as a first-time anonymous visitor. The
+ * passive cookie-expiry path leaves it intact so an expired session still
+ * recovers via a returning-user bounce. No-ops off-web / on storage failure.
+ */
+function clearPriorSessionWeb(): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.localStorage.removeItem(ssoPriorSessionKey(window.location.origin));
+  } catch {
+    // Best-effort.
+  }
+}
+
 function isOnSsoCallbackPath(): boolean {
   return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
 }
@@ -257,17 +305,6 @@ export interface WebOxyProviderProps {
   onError?: (error: Error) => void;
   preferredAuthMethod?: 'auto' | 'fedcm' | 'redirect';
   skipAutoCheck?: boolean;
-  /**
-   * When `true`, skips ONLY the terminal `sso-bounce` cold-boot step — the
-   * force-redirect to `auth.<apex>/sso?prompt=none` that fires for a visitor
-   * with no recoverable local session. Every other cold-boot step still runs
-   * (callback consume, FedCM silent, `/auth/silent` iframe, stored-session,
-   * cookie-restore), so a returning signed-in user is still silently
-   * restored; only the bounce for a truly anonymous visitor is suppressed.
-   * This lets an app allow anonymous browsing instead of force-redirecting to
-   * the central IdP. Default `false`.
-   */
-  disableAutoSso?: boolean;
 }
 
 /**
@@ -298,7 +335,6 @@ export function WebOxyProvider({
   onError,
   preferredAuthMethod = 'auto',
   skipAutoCheck = false,
-  disableAutoSso = false,
 }: WebOxyProviderProps) {
   // Normalize the app's OAuth client id to a trimmed non-empty string, or
   // `null` when the consumer did not configure one. Surfaced on the web
@@ -410,6 +446,13 @@ export function WebOxyProvider({
     setUser(session.user as User);
     setError(null);
     setIsLoading(false);
+
+    // A session is now established — set the durable returning-user hint so a
+    // future cold boot whose cross-domain cookie restore comes back empty still
+    // earns ONE `/sso` establish bounce. Every first-party commit path
+    // (FedCM / redirect / SSO return / claimed device-flow) funnels through
+    // here, so this is the single chokepoint for the hint.
+    markPriorSessionWeb();
 
     // A fresh login appends a new device-local slot server-side (via
     // `Set-Cookie: oxy_rt_${n}`). Pull the canonical snapshot so the
@@ -546,6 +589,9 @@ export function WebOxyProvider({
    *
    * Only bounce when:
    *   - we are a top-level web document (never inside an iframe), AND
+   *   - the smart gate allows it: a RETURNING visitor (durable prior-session
+   *     hint) — a truly first-time anonymous visitor browses without a forced
+   *     redirect, AND
    *   - we are NOT sitting on the central IdP itself (never loop it), AND
    *   - the NO_SESSION flag is not set (a prior `none`/`error`/mismatch this
    *     page-session already proved there is no central session), AND
@@ -553,19 +599,27 @@ export function WebOxyProvider({
    *     in flight; a stale one self-heals).
    */
   const evaluateSsoBounce = useCallback((): boolean => {
-    // Opt-out: when the consumer disabled auto-SSO, never bounce a
-    // truly-anonymous visitor to the central IdP. All other restore steps
-    // already ran, so a signed-in user is still recovered; only this
-    // terminal force-bounce is suppressed.
-    if (disableAutoSso) return false;
     if (!isWebBrowser() || window.top !== window.self) return false;
     const origin = window.location.origin;
+    // Smart gate (SDK-owned, shared with the services `OxyContext` via core's
+    // `allowSsoBounce`): allow ONLY a returning visitor (durable prior-session
+    // hint) — a truly first-time anonymous visitor browses without a forced
+    // redirect. WebOxyProvider has no stored-bearer step, so `hasLocalSession`
+    // is always `false` here (a cookie restore that succeeded would have won an
+    // earlier cold-boot step). The per-tab guards below still cap an allowed
+    // bounce at one per cold boot.
+    if (!allowSsoBounce({
+      hasPriorSession: hasPriorSessionWeb(),
+      hasLocalSession: false,
+    })) {
+      return false;
+    }
     if (isCentralIdPOrigin(origin)) return false;
     if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') return false;
     if (window.sessionStorage.getItem(ssoAttemptedKey(origin)) === '1') return false;
     if (guardActive(window.sessionStorage, origin)) return false;
     return true;
-  }, [disableAutoSso]);
+  }, []);
 
   /**
    * SSO bounce (cold-boot step 5 `run`). TERMINAL: navigates the top-level
@@ -769,6 +823,9 @@ export function WebOxyProvider({
           }
           setUser(outcome.session.user);
           setIsLoading(false);
+          // Cookie restore committed a real session — record the returning-user
+          // hint (this branch does not pass through `handleAuthSuccess`).
+          markPriorSessionWeb();
           return;
         }
       }
@@ -799,7 +856,7 @@ export function WebOxyProvider({
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, disableAutoSso, handleAuthSuccess, handleAuthError, syncAccountsFromManager, evaluateSsoBounce, runSsoBounce]);
+  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess, handleAuthError, syncAccountsFromManager, evaluateSsoBounce, runSsoBounce]);
 
   // bfcache restore handler — registered ONCE, OUTSIDE the cold boot.
   //
@@ -977,6 +1034,11 @@ export function WebOxyProvider({
       // deliberate sign-in can re-probe the central IdP. Never done on a
       // cold-boot failure path (that would reintroduce the redirect loop).
       clearSsoBounceStateWeb();
+      // Also drop the durable returning-user hint so the next cold boot treats
+      // this device as a first-time anonymous visitor (no forced `/sso` bounce
+      // after an explicit sign-out). The passive cookie-expiry path leaves it
+      // intact so an expired session still recovers via a returning-user bounce.
+      clearPriorSessionWeb();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign out failed';
       setError(errorMessage);
@@ -1066,8 +1128,10 @@ export function WebOxyProvider({
     clearQueryCache(queryClient);
     // EXPLICIT user sign-out (this provider has no cold-boot path that calls
     // this): clear the per-origin SSO bounce state so a fresh deliberate
-    // sign-in can re-probe the central IdP.
+    // sign-in can re-probe the central IdP, and drop the durable returning-user
+    // hint so the next cold boot is treated as first-time anonymous.
     clearSsoBounceStateWeb();
+    clearPriorSessionWeb();
   }, [authManager, syncAccountsFromManager, queryClient]);
 
   useEffect(() => {

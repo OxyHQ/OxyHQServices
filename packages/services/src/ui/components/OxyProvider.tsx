@@ -113,7 +113,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
     baseURL,
     authWebUrl,
     authRedirectUri,
-    disableAutoSso,
     queryClient: providedQueryClient,
 }) => {
 
@@ -309,7 +308,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     authRedirectUri={authRedirectUri}
                     storageKeyPrefix={storageKeyPrefix}
                     clientId={clientId}
-                    disableAutoSso={disableAutoSso}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
                     {children}

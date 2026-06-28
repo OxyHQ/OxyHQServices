@@ -128,6 +128,11 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // The terminal `sso-bounce` is SMART-gated: only a RETURNING visitor (durable
+    // prior-session hint) is bounced. These cross-domain tests model a returning
+    // user whose cookie restore comes back empty; the cookie-restore-wins cases
+    // are unaffected (an earlier step short-circuits before the bounce gate).
+    window.localStorage.setItem('oxy_session_prior_session', '1');
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     setTokensSpy.mockClear();
     isFedCMSupportedSpy.mockClear();

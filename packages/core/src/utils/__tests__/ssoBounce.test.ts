@@ -15,9 +15,11 @@ import {
   ssoDestKey,
   ssoNoSessionKey,
   ssoAttemptedKey,
+  ssoPriorSessionKey,
   buildSsoBounceUrl,
   isCentralIdPOrigin,
   guardActive,
+  allowSsoBounce,
 } from '../ssoBounce';
 import { CENTRAL_AUTH_URL } from '../authWebUrl';
 
@@ -37,10 +39,36 @@ describe('per-origin key builders', () => {
     expect(ssoDestKey(origin)).toBe('oxy_sso_dest:https://mention.earth');
     expect(ssoNoSessionKey(origin)).toBe('oxy_sso_no_session:https://mention.earth');
     expect(ssoAttemptedKey(origin)).toBe('oxy_sso_attempted:https://mention.earth');
+    expect(ssoPriorSessionKey(origin)).toBe('oxy_sso_prior_session:https://mention.earth');
   });
 
   it('namespaces keys per origin so two RPs never collide', () => {
     expect(ssoStateKey('https://a.test')).not.toBe(ssoStateKey('https://b.test'));
+    expect(ssoPriorSessionKey('https://a.test')).not.toBe(ssoPriorSessionKey('https://b.test'));
+  });
+});
+
+describe('allowSsoBounce (smart returning-visitor gate)', () => {
+  it('ALLOWS a returning visitor (prior-session hint) with no local session', () => {
+    // The core of fix B: a returning user whose local session has expired still
+    // gets ONE establish bounce so a central-only cross-domain session recovers.
+    expect(
+      allowSsoBounce({ hasPriorSession: true, hasLocalSession: false }),
+    ).toBe(true);
+  });
+
+  it('SUPPRESSES a truly first-time anonymous visitor (no hint, no local session)', () => {
+    // The smart default (the ONLY behaviour): a first-time visitor browses
+    // anonymously instead of being force-redirected to the central IdP.
+    expect(
+      allowSsoBounce({ hasPriorSession: false, hasLocalSession: false }),
+    ).toBe(false);
+  });
+
+  it('ALLOWS when a local session was recovered this boot (spec fidelity)', () => {
+    expect(
+      allowSsoBounce({ hasPriorSession: false, hasLocalSession: true }),
+    ).toBe(true);
   });
 });
 

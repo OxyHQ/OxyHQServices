@@ -9,6 +9,17 @@ export interface SessionStorageKeys {
   activeSessionId: string;
   sessionIds: string;
   language: string;
+  /**
+   * DURABLE "this device/app has had a signed-in Oxy session before" hint.
+   *
+   * Lives in the SAME `storageKeyPrefix`-scoped durable store as the stored
+   * session ids, so it survives a session expiring (cleared only on explicit
+   * full sign-out). Read at cold boot to drive the smart `sso-bounce` gate:
+   * a returning visitor still gets ONE establish bounce so a central-only
+   * cross-domain session recovers, while a first-time anonymous visitor is
+   * never force-redirected. See `allowSsoBounce` in `@oxyhq/core`.
+   */
+  priorSession: string;
 }
 
 /**
@@ -125,6 +136,7 @@ export const getStorageKeys = (prefix: string = STORAGE_KEY_PREFIX): SessionStor
   activeSessionId: `${prefix}_active_session_id`,
   sessionIds: `${prefix}_session_ids`,
   language: `${prefix}_language`,
+  priorSession: `${prefix}_prior_session`,
 });
 
 

@@ -99,8 +99,10 @@ jest.mock('@oxyhq/core', () => {
     ssoGuardKey: actual.ssoGuardKey,
     ssoDestKey: actual.ssoDestKey,
     ssoAttemptedKey: actual.ssoAttemptedKey,
+    ssoPriorSessionKey: actual.ssoPriorSessionKey,
     isCentralIdPOrigin: actual.isCentralIdPOrigin,
     guardActive: actual.guardActive,
+    allowSsoBounce: actual.allowSsoBounce,
     buildSsoBounceUrl: actual.buildSsoBounceUrl,
     logger: actual.logger,
     // Stubbed service / auth surfaces.
@@ -153,6 +155,7 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoAttemptedKey,
+  ssoPriorSessionKey,
   SSO_CALLBACK_PATH,
   buildSsoBounceUrl,
 } from '@oxyhq/core';
@@ -216,6 +219,12 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // The terminal `sso-bounce` is now SMART-gated (`allowSsoBounce`): a truly
+    // first-time anonymous visitor is NOT bounced. Every loop-proof test below
+    // models a RETURNING user (the realistic case where the cross-domain bounce
+    // matters), so seed the durable prior-session hint by default. The dedicated
+    // "first-time" and "hard opt-out" tests override this explicitly.
+    window.localStorage.setItem(ssoPriorSessionKey(ORIGIN), '1');
     // Reset the URL/hash to the bare RP origin between tests.
     setLocation(`${ORIGIN}/`);
   });
@@ -407,6 +416,36 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
 
     await waitFor(() => expect(latest.isLoading).toBe(false));
     expect(bounced()).toBe(false);
+  });
+
+  it('12) SMART GATE: a truly first-time anonymous visitor (no prior-session hint) does NOT bounce', async () => {
+    resetStubs('https://api.test-12');
+    // Override the beforeEach default: NO prior-signed-in hint → first-time
+    // visitor. Everything else skips (no redirect, fragment, FedCM, cookie).
+    window.localStorage.removeItem(ssoPriorSessionKey(ORIGIN));
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    // Smart default: no forced redirect to the central IdP — anonymous browse.
+    await waitFor(() => expect(latest.isLoading).toBe(false));
+    expect(bounced()).toBe(false);
+    expect(latest.isAuthenticated).toBe(false);
+    // No probe state was stamped because the step never ran.
+    expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBeNull();
+  });
+
+  it('13) SMART GATE: a returning visitor (prior-session hint) DOES bounce once', async () => {
+    resetStubs('https://api.test-13');
+    // The beforeEach already seeded the prior-session hint; make it explicit so
+    // the contract is readable: hint present → returning user → one bounce.
+    expect(window.localStorage.getItem(ssoPriorSessionKey(ORIGIN))).toBe('1');
+
+    renderProvider(stubs.baseURL, () => undefined);
+
+    await waitFor(() => expect(bounced()).toBe(true));
+    expect(stubs.generateSsoState).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   it('10) fedcm-silent fires AT MOST ONCE across remounts (origin|baseURL guard)', async () => {

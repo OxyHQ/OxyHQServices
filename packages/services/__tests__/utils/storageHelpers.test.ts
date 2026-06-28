@@ -27,6 +27,7 @@ describe('getStorageKeys', () => {
       activeSessionId: 'oxy_session_active_session_id',
       sessionIds: 'oxy_session_session_ids',
       language: 'oxy_session_language',
+      priorSession: 'oxy_session_prior_session',
     });
   });
 
@@ -35,6 +36,7 @@ describe('getStorageKeys', () => {
     expect(keys.activeSessionId).toBe('staging_oxy_active_session_id');
     expect(keys.sessionIds).toBe('staging_oxy_session_ids');
     expect(keys.language).toBe('staging_oxy_language');
+    expect(keys.priorSession).toBe('staging_oxy_prior_session');
   });
 
   it('uses the default prefix when called with no argument', () => {
@@ -42,6 +44,7 @@ describe('getStorageKeys', () => {
       activeSessionId: 'oxy_session_active_session_id',
       sessionIds: 'oxy_session_session_ids',
       language: 'oxy_session_language',
+      priorSession: 'oxy_session_prior_session',
     });
   });
 });

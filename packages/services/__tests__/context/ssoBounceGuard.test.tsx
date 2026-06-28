@@ -24,6 +24,10 @@ const ORIGIN = 'https://app.mention.earth';
 const GUARD_KEY = `oxy_sso_guard:${ORIGIN}`;
 const NO_SESSION_KEY = `oxy_sso_no_session:${ORIGIN}`;
 const ATTEMPTED_KEY = `oxy_sso_attempted:${ORIGIN}`;
+// Durable returning-user hint (default `oxy_session` storage prefix). The
+// terminal `sso-bounce` is now SMART-gated: only a RETURNING visitor (hint set)
+// is bounced. Every guard/loop-proof case below models a returning user.
+const PRIOR_SESSION_KEY = 'oxy_session_prior_session';
 
 interface CapturedState {
   isTokenReady: boolean;
@@ -77,6 +81,10 @@ describe('SSO bounce guard (loop prevention + self-heal)', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    // Seed the returning-user hint so the smart `sso-bounce` gate is satisfied;
+    // these tests isolate the per-tab loop guards (NO_SESSION / guard / attempted),
+    // not the first-time-visitor suppression (covered by its own test below).
+    window.localStorage.setItem(PRIOR_SESSION_KEY, '1');
     captured = { isTokenReady: false };
     useAuthStore.getState().logout();
     window.history.replaceState(null, '', '/');
@@ -86,6 +94,22 @@ describe('SSO bounce guard (loop prevention + self-heal)', () => {
   afterEach(() => {
     assignSpy.mockRestore();
     nowSpy?.mockRestore();
+  });
+
+  it('does NOT bounce a truly first-time anonymous visitor (no prior-session hint)', async () => {
+    // Override the returning-user default: a device with NO prior-session hint
+    // and no local session is a first-time visitor → smart gate suppresses the
+    // forced redirect so it can browse anonymously.
+    window.localStorage.removeItem(PRIOR_SESSION_KEY);
+    const stub = buildStub('https://api.mention.earth/guard-first-time');
+
+    renderProvider(stub, 'https://api.mention.earth/guard-first-time');
+
+    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(assignSpy).not.toHaveBeenCalled();
+    // The step never ran, so no probe state was stamped.
+    expect(window.sessionStorage.getItem(ATTEMPTED_KEY)).toBeNull();
   });
 
   it('does NOT bounce when NO_SESSION is already set', async () => {
