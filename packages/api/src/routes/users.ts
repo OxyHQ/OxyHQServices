@@ -30,7 +30,11 @@ import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
 import { validate } from '../middleware/validate';
-import { optionalUserOrServiceAuth } from '../middleware/optionalAuth';
+import {
+  optionalUserOrServiceAuth,
+  resolveViewerId,
+  type OptionalUserOrServiceRequest,
+} from '../middleware/optionalAuth';
 import {
   searchUsersBodySchema,
   verifyRequestSchema,
@@ -647,10 +651,64 @@ router.get(
 );
 
 /**
+ * GET /users/:userId/mutuals
+ *
+ * "Followers you know" — the MUTUAL followers between the authenticated viewer
+ * and the target user: users U such that the VIEWER follows U AND U follows
+ * :userId.
+ *
+ * The viewer is derived SERVER-SIDE from the auth token (never a client-supplied
+ * param) via `resolveViewerId`, the same dual-auth viewer resolution the
+ * recommendation surfaces use. OPTIONAL semantics — the request is never
+ * rejected: an anonymous caller (or a service token with no user context) has no
+ * "you follow" set, so the response is an empty page; a self-target
+ * (`:userId === viewer`) is likewise empty. The empty/self guards live in the
+ * service so the route stays thin.
+ *
+ * @param {string} userId - Target user ID (ObjectId or publicKey; resolved first)
+ * @query {number} limit - Number of results (max 100, default 50)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {PaginatedResponse<UserProfile>} Paginated list of mutual followers
+ */
+router.get(
+  '/:userId/mutuals',
+  optionalUserOrServiceAuth,
+  resolveUserId,
+  validatePagination,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    const { userId } = req.params;
+    const { limit, offset } = req.query as PaginationQuery;
+
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    const result = await userService.getUserMutuals(viewerId, userId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
+    });
+
+    logger.debug('GET /users/:userId/mutuals', {
+      viewerId,
+      userId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total: result.total,
+    });
+
+    sendPaginated(res, result.data, result.total, result.limit, result.offset);
+  })
+);
+
+/**
  * GET /users/:userId/follow-status
- * 
+ *
  * Check if current user is following target user
- * 
+ *
  * @param {string} userId - Target user ID
  * @returns {boolean} Following status
  */

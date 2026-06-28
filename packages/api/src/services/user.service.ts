@@ -27,6 +27,7 @@ import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
+import { MAX_FOLLOWING_FOR_MUTUALS } from '../utils/recommendationWeights';
 
 interface UserWithCount {
   _count?: {
@@ -440,6 +441,115 @@ export class UserService {
 
     return {
       data: orderedFollowing,
+      total,
+      hasMore: offset + limit < total,
+      limit,
+      offset,
+    };
+  }
+
+  /**
+   * Get the MUTUAL followers between a viewer and a target user — "followers you
+   * know": users U such that the VIEWER follows U AND U follows `targetUserId`.
+   *
+   * Optional-viewer semantics (the viewer id is always derived server-side from
+   * the auth token by the route, never from a client param):
+   * - No viewer (anonymous caller, or a service token with no user context) ⇒
+   *   there is no "you follow" set, so the result is an empty page.
+   * - A self-target (`viewerId === targetUserId`) has no mutuals with itself ⇒
+   *   empty page.
+   *
+   * The viewer's following set is bounded to the same window the recommendation
+   * pipeline uses (`MAX_FOLLOWING_FOR_MUTUALS`) so the `$in` stays small. The
+   * returned page mirrors `getUserFollowers`: most-recent mutual first, public
+   * DTOs via `formatUserResponse`, and the same `{ data, total, hasMore, limit,
+   * offset }` shape.
+   */
+  async getUserMutuals(
+    viewerId: string | undefined,
+    targetUserId: string,
+    params: PaginationParams = {}
+  ): Promise<PaginatedResponse<PublicUserProfile>> {
+    const limit = Math.min(
+      params.limit || PAGINATION.DEFAULT_LIMIT,
+      PAGINATION.MAX_LIMIT
+    );
+    const offset = params.offset || 0;
+
+    const empty = (): PaginatedResponse<PublicUserProfile> => ({
+      data: [],
+      total: 0,
+      hasMore: false,
+      limit,
+      offset,
+    });
+
+    // No viewer ⇒ no "you follow" set; self ⇒ no mutuals with yourself.
+    if (!viewerId || viewerId === targetUserId) {
+      return empty();
+    }
+
+    // 1. The viewer's following set V (bounded — mirrors the recommendations
+    //    mutual-overlap window so the `$in` below stays small).
+    const viewerFollowing = await Follow.find({
+      followerUserId: viewerId,
+      followType: FollowType.USER,
+    })
+      .select('followedId')
+      .limit(MAX_FOLLOWING_FOR_MUTUALS)
+      .lean();
+
+    const followingIds = viewerFollowing
+      .map((follow) => follow.followedId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+
+    if (followingIds.length === 0) {
+      return empty();
+    }
+
+    // 2. Mutuals = the target's followers who are also in V.
+    const mutualFilter = {
+      followedId: targetUserId,
+      followType: FollowType.USER,
+      followerUserId: { $in: followingIds },
+    };
+
+    const total = await Follow.countDocuments(mutualFilter);
+    if (total === 0) {
+      return empty();
+    }
+
+    const mutualFollows = await Follow.find(mutualFilter)
+      .select('followerUserId')
+      .limit(limit)
+      .skip(offset)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const mutualIds = mutualFollows
+      .map((follow) => follow.followerUserId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+      .map((id) => id.toString());
+
+    // Fetch users directly (returns plain objects, not Mongoose documents)
+    const mutuals = await User.find({
+      _id: { $in: mutualIds },
+    })
+      .select('username name avatar color -email')
+      .lean()
+      .exec() as UserProfile[];
+
+    // Maintain order from the original follow relationships (most-recent first)
+    const mutualsMap = new Map(
+      mutuals.map((user) => [user._id.toString(), user])
+    );
+    const orderedMutuals = mutualIds
+      .map((id) => mutualsMap.get(id))
+      .filter((user): user is UserProfile => user !== undefined)
+      .map((user) => this.formatUserResponse(user));
+
+    return {
+      data: orderedMutuals,
       total,
       hasMore: offset + limit < total,
       limit,
