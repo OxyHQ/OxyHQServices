@@ -7,10 +7,9 @@
  *   - PUBLIC (no access token planted, no `expiresIn`) → the clean CDN form
  *     `${cloudURL}/<id>[?variant=...]` (default `https://cloud.oxy.so/<id>`),
  *     which CloudFront resolves against the public media origin.
- *   - SIGNED / PRIVATE (an access token is present OR `expiresIn` is passed) →
- *     the authenticated API origin form
- *     `${baseURL}/assets/<id>/stream?...&token=...` — private assets are not on
- *     the public CDN.
+ *   - EXPIRING ORIGIN FALLBACK (`expiresIn` is passed) → the API origin
+ *     stream form without a bearer token in the query string. Callers that need
+ *     private access should use `getFileDownloadUrlAsync()` for a scoped URL.
  */
 
 import { OxyServices } from '../../OxyServices';
@@ -50,37 +49,23 @@ describe('OxyServices.getFileDownloadUrl', () => {
       );
     });
 
-    it('can omit the token for persisted public image URLs while authenticated', () => {
-      const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-      oxy.setTokens('access-token-abc');
-
-      const url = oxy.getFileDownloadUrl('file123', 'thumb', undefined, {
-        omitToken: true,
-      });
-
-      expect(url).toBe('https://cloud.oxy.so/file123?variant=thumb');
-      expect(url).not.toContain('access-token-abc');
-      expect(url).not.toContain('token=');
-    });
   });
 
-  describe('signed / private assets → authenticated API origin', () => {
-    it('returns the stream endpoint with the token when an access token is present', () => {
+  describe('token-safe URL generation', () => {
+    it('does not include the in-memory access token in synchronous image URLs', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
       oxy.setTokens('access-token-abc');
 
       const url = oxy.getFileDownloadUrl('file123', 'thumb');
 
-      expect(url.startsWith('https://api.oxy.so/assets/file123/stream?')).toBe(true);
-      const params = new URLSearchParams(url.split('?')[1]);
-      expect(params.get('variant')).toBe('thumb');
-      expect(params.get('token')).toBe('access-token-abc');
-      expect(params.get('fallback')).toBe('placeholderVisible');
-      expect(url).not.toContain('cloud.oxy.so');
+      expect(url).toBe('https://cloud.oxy.so/file123?variant=thumb');
+      expect(url).not.toContain('access-token-abc');
+      expect(url).not.toContain('token=');
     });
 
-    it('routes through the stream endpoint when expiresIn is requested even without a token', () => {
+    it('routes through the stream endpoint when expiresIn is requested without embedding a token', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+      oxy.setTokens('access-token-abc');
 
       const url = oxy.getFileDownloadUrl('file123', 'thumb', 3600);
 
@@ -90,6 +75,7 @@ describe('OxyServices.getFileDownloadUrl', () => {
       expect(params.get('variant')).toBe('thumb');
       expect(params.get('fallback')).toBe('placeholderVisible');
       expect(params.get('token')).toBeNull();
+      expect(url).not.toContain('access-token-abc');
       expect(url).not.toContain('cloud.oxy.so');
     });
   });
