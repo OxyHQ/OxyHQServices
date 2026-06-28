@@ -1,106 +1,90 @@
-# OxyHQ Services Documentation
+# OxyHQServices — Platform Documentation
 
-Complete documentation for the Oxy ecosystem: identity, authentication, and services.
+Comprehensive developer documentation for the Oxy platform: the identity
+provider, the SDK, the "Oxy ID" self-sovereign identity + civic layer, and the
+decentralization (user data nodes) layer.
 
-## Documentation Index
+---
 
-### Architecture (Start Here)
-- **[Architecture Overview](ARCHITECTURE.md)** - System architecture, identity vs auth, user linking
+## What Oxy is, on one screen
 
-### Infrastructure & Deployment
-- **[Infrastructure](INFRASTRUCTURE.md)** - AWS resources (ECS, ALB, ECR, ElastiCache, MongoDB on EC2)
-- **[Deployment](DEPLOYMENT.md)** - GitHub OIDC, ECS Fargate, environment variables, Cloudflare Pages
-- **[Redis & Valkey](REDIS.md)** - ElastiCache Valkey: rate limiting, Socket.IO adapter, caching strategy
+OxyHQServices (`@oxyhq/sdk`) is the platform layer for the whole Oxy ecosystem. It
+is four things in one Bun-workspaces monorepo:
 
-### Authentication
-- **[Authentication Guide](AUTHENTICATION.md)** - Full auth integration (Expo, Web, Node.js, WebSockets)
-- **[Cross-Domain Authentication](CROSS_DOMAIN_AUTH.md)** - Web SSO using FedCM, popup, and redirect flows
-- **[Service Tokens](SERVICE_TOKENS.md)** - Internal service-to-service auth (OAuth2 Client Credentials)
-- **[Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md)** - Cryptographic identity system
+1. **An identity provider + API.** `auth.oxy.so` is the single FedCM IdP; every
+   other web/native app is a Relying Party that restores its session through the
+   shared SDK (cold boot → FedCM silent → `/auth/silent` iframe → cookie →
+   stored-session → `/sso` bounce). `api.oxy.so` mints sessions, exchanges SSO
+   codes, and serves the platform data model.
 
-### Getting Started
-- **[Main README](../README.md)** - Project overview and quick start
-- **[Services Package](../packages/services/README.md)** - @oxyhq/services package docs (React Native / Expo)
+2. **A client SDK.** `@oxyhq/core` (platform-agnostic client + `/server`
+   middleware), `@oxyhq/auth` (web `WebOxyProvider`), `@oxyhq/services` (Expo/RN
+   `OxyProvider`), and `@oxyhq/contracts` (Zod API contracts). Every Oxy app
+   (Mention, Allo, Homiio, Syra, accounts, console, inbox) consumes these for
+   auth, profiles, payments, and media — zero per-app SSO code.
 
-### Platform Guides
-- **[Expo 54 Universal Guide](EXPO_54_GUIDE.md)** - Building universal apps (iOS, Android, Web) with Expo 54
-- **[Platform Guide](../packages/services/PLATFORM_GUIDE.md)** - Platform-specific usage
+3. **Oxy ID — self-sovereign identity.** Account-anchored `did:web` documents,
+   cryptographically signed records on a per-user hash chain, verifiable
+   credentials, proof-of-personhood, and signed data export. Surfaced through the
+   native-only **Commons by Oxy** vault app.
 
-### Email
-- **[Email Server](EMAIL.md)** - Native email system (username@oxy.so), setup, API reference, DKIM/SPF/DMARC
+4. **Decentralization — user data nodes.** A user can run their own
+   `@oxyhq/node` server that *owns* their signed records; Oxy keeps a fast,
+   always-available read copy and re-verifies everything it ingests. Reads never
+   touch a node.
 
-### API & Backend
-- **[API Package](../packages/api/README.md)** - Backend API documentation
+The unifying thesis: **ownership comes from cryptography, not from Oxy granting
+it.** A record signed in Commons verifies identically on Oxy, on a personal node,
+and in any third-party verifier — using the exact same `@oxyhq/core` code.
 
-## Quick Links by Use Case
+---
 
-### Understanding the Architecture
-1. Start with [Architecture Overview](ARCHITECTURE.md) to understand:
-   - Identity vs Authentication separation
-   - How the phone IS the password
-   - User linking (multiple auth methods to one account)
-   - The 3-package SDK: `@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`
+## Table of contents (this doc set)
 
-### Building a New App
-1. Read [Architecture Overview](ARCHITECTURE.md) for system design
-2. Follow [Expo 54 Guide](EXPO_54_GUIDE.md) for universal apps
-3. Check [Services Package](../packages/services/README.md) for API usage
+| Doc | What it covers |
+|---|---|
+| [architecture/overview.md](architecture/overview.md) | Monorepo packages, dependency graph, build order, package boundaries, end-to-end request flow |
+| [auth/README.md](auth/README.md) | IdP vs RPs, FedCM, cross-domain SSO "Option A", web/native cold boot, the central-issuer rule, service tokens, linked clients, `@oxyhq/core/server` middleware |
+| [identity/README.md](identity/README.md) | `did:web` documents (custodial ↔ self-sovereign), signed records (envelope v2, hash chain, `verifyEnvelope`), signed export, domain verification, "Sign in with Oxy" |
+| [reputation/README.md](reputation/README.md) | Oxy Trust ledger (tiers/influence), crypto-owned reputation, F2 real-life attestation + validator jury, F3 proof-of-personhood, F4 verifiable credentials |
+| [nodes/README.md](nodes/README.md) | The data-node model, `@oxyhq/node` server, registration, Oxy→node export, node→Oxy ingest (verify/LWW/fork/counter-sign), managed vault |
+| [CHANGELOG.md](CHANGELOG.md) | Chronological "what changed and why" for the whole F0→F5 + Oxy ID rename + Commons/Reputation UI initiative, with commit SHAs |
 
-### Adding SSO to Existing Web App
-1. Read [Cross-Domain Auth](CROSS_DOMAIN_AUTH.md)
-2. Install `@oxyhq/auth`
-3. Use `<WebOxyProvider>` for pure React/Next.js apps
+### Reading paths
 
-### Implementing Identity (Accounts App Only)
-1. Read [Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md)
-2. Use `@oxyhq/core` for KeyManager, SignatureService
-3. Store identity using expo-secure-store (native only)
+- **New to the platform?** Start with [architecture/overview.md](architecture/overview.md),
+  then [auth/README.md](auth/README.md).
+- **Integrating auth/SSO into an app?** [auth/README.md](auth/README.md) is the
+  full reference; RPs use the SDK providers and are zero-config.
+- **Working on Oxy ID / Commons / civic features?** Read
+  [identity/README.md](identity/README.md) → [reputation/README.md](reputation/README.md)
+  → [nodes/README.md](nodes/README.md), in that order — each builds on the prior.
+- **Want the history?** [CHANGELOG.md](CHANGELOG.md) maps every phase to its
+  commits.
 
-## Documentation Structure
+---
 
-```
-OxyHQServices/
-├── README.md                          # Main project readme
-├── CLAUDE.md                          # Dev instructions and build commands
-├── docs/                              # Central documentation
-│   ├── README.md                      # This file (documentation index)
-│   ├── ARCHITECTURE.md               # Complete architecture guide
-│   ├── AUTHENTICATION.md             # Auth integration guide
-│   ├── CROSS_DOMAIN_AUTH.md          # Cross-domain SSO guide
-│   ├── DEPLOYMENT.md                 # Docker, CI/CD, env vars
-│   ├── EMAIL.md                      # Email server setup & API reference
-│   ├── EXPO_54_GUIDE.md              # Expo 54 universal app guide
-│   ├── FONT_MIGRATION.md             # Font migration summary
-│   ├── INFRASTRUCTURE.md             # AWS resources (ECS, ALB, ElastiCache, EC2)
-│   ├── REDIS.md                      # Redis/Valkey implementation
-│   └── SERVICE_TOKENS.md             # Service-to-service auth
-├── packages/
-│   ├── core/                          # @oxyhq/core (platform-agnostic foundation)
-│   ├── auth-sdk/                      # @oxyhq/auth (web auth SDK, React hooks)
-│   ├── services/                      # @oxyhq/services (Expo/React Native SDK)
-│   │   ├── README.md                  # Package documentation
-│   │   └── docs/                      # Detailed package docs
-│   ├── api/                           # @oxyhq/api (Express.js backend)
-│   ├── auth/                          # Next.js auth app (FedCM IdP)
-│   ├── accounts/                      # Expo accounts app
-│   ├── test-app-expo/                 # Expo test playground
-│   └── test-app-vite/                 # Vite web test app
-```
+## Reference docs (existing, deployment/ops focused)
 
-## Key Concepts
+These pre-existing documents cover infrastructure, email, and platform-specific
+topics and remain authoritative for their areas:
 
-| Concept | Location | Description |
-|---------|----------|-------------|
-| Identity | accounts app only | Private key storage (device = password) |
-| AuthManager | @oxyhq/core | Token management, session handling |
-| SignatureService | @oxyhq/core | Sign/verify (NOT key storage) |
-| User Linking | api.oxy.so | Multiple auth methods to one account |
-| FedCM | @oxyhq/auth | Browser-native SSO |
-| Email | @oxyhq/api | Native email (username@oxy.so), SMTP in/out |
+- [ARCHITECTURE.md](ARCHITECTURE.md) — original system architecture / identity vs auth
+- [AUTHENTICATION.md](AUTHENTICATION.md) — auth integration guide (Expo, Web, Node, WebSockets)
+- [CROSS_DOMAIN_AUTH.md](CROSS_DOMAIN_AUTH.md) — cross-domain SSO (FedCM, popup, redirect)
+- [SESSION-ARCHITECTURE.md](SESSION-ARCHITECTURE.md) — session architecture notes
+- [SERVICE_TOKENS.md](SERVICE_TOKENS.md) — service-to-service auth (OAuth2 client credentials)
+- [INFRASTRUCTURE.md](INFRASTRUCTURE.md) — AWS resources (ECS, ALB, ECR, ElastiCache, MongoDB)
+- [DEPLOYMENT.md](DEPLOYMENT.md) — GitHub OIDC, ECS Fargate, env vars, Cloudflare Pages
+- [REDIS.md](REDIS.md) — ElastiCache Valkey: rate limiting, Socket.IO adapter, caching
+- [EMAIL.md](EMAIL.md) — native email (`username@oxy.so`), DKIM/SPF/DMARC, inbound webhook
+- [EXPO_54_GUIDE.md](EXPO_54_GUIDE.md) — building universal apps with Expo
 
-## Contributing
+For the authoritative rules and version matrix, see the repo
+[`AGENTS.md`](../AGENTS.md); for the F5 handoff, see
+[`CONTINUATION.md`](../CONTINUATION.md).
 
-See individual package READMEs for contribution guidelines.
+---
 
 ## License
 
