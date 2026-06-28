@@ -41,7 +41,17 @@ jest.mock('../../services/signedRecord.service', () => ({
 // repoLog.service is mocked so its real model imports (SignedRecord + RepoHead)
 // do not load under the global mongoose mock; this suite covers the B5 record
 // endpoints, not the chain-head endpoint (see chainHead.test.ts).
-jest.mock('../../services/repoLog.service', () => ({ getHead: jest.fn() }));
+jest.mock('../../services/repoLog.service', () => ({ getHead: jest.fn(), getLogSince: jest.fn(), resolveCursorSeq: jest.fn() }));
+
+// nodeRegistry.service is transitively imported by the identity routes (F5a);
+// mock it so the real UserNode model never loads under the global mongoose mock.
+jest.mock('../../services/nodeRegistry.service', () => ({
+  materializeNodeFromRecord: jest.fn(),
+  getUserNode: jest.fn(() => Promise.resolve(null)),
+  removeNode: jest.fn(),
+  probeLiveness: jest.fn(),
+  sweepNodeLiveness: jest.fn(),
+}));
 
 jest.mock('../../models/User', () => ({
   __esModule: true,

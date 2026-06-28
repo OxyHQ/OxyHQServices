@@ -42,7 +42,8 @@ import {
   getLatestRecord,
   type SignedRecordSubject,
 } from '../services/signedRecord.service';
-import { getHead } from '../services/repoLog.service';
+import { getHead, getLogSince, resolveCursorSeq } from '../services/repoLog.service';
+import { materializeNodeFromRecord } from '../services/nodeRegistry.service';
 
 const router = Router();
 
@@ -72,6 +73,26 @@ const domainVerifyLimiter = rateLimit({
   max: 20,
   message: 'Too many domain verification attempts. Please try again later.',
   keyGenerator: userScopedKey('identity:domainverify'),
+});
+
+/**
+ * Public node-log read limiters (F5a). Keyed by IP — these endpoints are public
+ * (a node, or anyone, re-reads the user's authentic signed chain to re-verify it
+ * independently). Generous, since this is Oxy→node export of already-public
+ * signed records. Both are pure Oxy-DB reads — they NEVER touch a node.
+ */
+const nodeLogLimiter = rateLimit({
+  prefix: 'rl:nodes:log:',
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many log requests. Please slow down.',
+});
+
+const nodeHeadLimiter = rateLimit({
+  prefix: 'rl:nodes:head:',
+  windowMs: 60 * 1000,
+  max: 240,
+  message: 'Too many head requests. Please slow down.',
 });
 
 const DNS_PREFIX = '_oxy-identity.';
@@ -180,6 +201,14 @@ router.post(
       throw new BadRequestError(`Signed record rejected: ${result.reason}`);
     }
 
+    // F5a: a verified `node` record registers the user's personal data node.
+    // Project it into the operational cache (upsert + fire a background liveness
+    // probe). Best-effort and non-throwing — the signed record is already stored
+    // on the chain; the request never awaits the node itself.
+    if (envelope.type === 'node') {
+      await materializeNodeFromRecord(userId, envelope.record);
+    }
+
     res.status(201).json({
       envelope: result.record.envelope,
       verified: result.record.verified,
@@ -212,6 +241,72 @@ router.get(
       head
         ? { headRecordId: head.headRecordId, seq: head.seq, recordCount: head.recordCount }
         : { headRecordId: null, seq: -1, recordCount: 0 },
+    );
+  }),
+);
+
+/**
+ * GET /identity/log/:userId?since=<seq|recordId>&limit= — the ordered slice of a
+ * subject's verified signed-record chain (the FULL envelopes, so a node or any
+ * verifier re-checks them independently). This is the Oxy→node export of the
+ * authentic chain. Public, CORS-open, short-cached. A pure Oxy-DB read — it
+ * touches ONLY Oxy's own copy of the chain, never a node. `since` is a chain
+ * `seq` (exclusive) or the last-ingested `recordId`; absent → from genesis.
+ */
+router.get(
+  '/log/:userId',
+  nodeLogLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) {
+      throw new NotFoundError('User not found');
+    }
+
+    let sinceSeq = -1;
+    const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+    if (sinceRaw.length > 0) {
+      if (/^\d+$/.test(sinceRaw)) {
+        sinceSeq = Number.parseInt(sinceRaw, 10);
+      } else {
+        const resolved = await resolveCursorSeq(userId, sinceRaw);
+        if (resolved === null) {
+          throw new BadRequestError('Unknown `since` cursor');
+        }
+        sinceSeq = resolved;
+      }
+    }
+
+    const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : Number.NaN;
+    const records = await getLogSince(userId, sinceSeq, Number.isFinite(limitRaw) ? limitRaw : undefined);
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=5');
+    res.json({ records, count: records.length });
+  }),
+);
+
+/**
+ * GET /identity/head/:userId — the subject's chain head from {@link RepoHead}
+ * (O(1)): `{ seq, headRecordId, recordCount }`, or the empty form when the user
+ * has no chain yet. Node-facing alias of the chain head; public, CORS-open,
+ * short-cached, never touches a node.
+ */
+router.get(
+  '/head/:userId',
+  nodeHeadLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    if (!isValidObjectId(userId)) {
+      throw new NotFoundError('User not found');
+    }
+
+    const head = await getHead(userId);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=5');
+    res.json(
+      head
+        ? { seq: head.seq, headRecordId: head.headRecordId, recordCount: head.recordCount }
+        : { seq: -1, headRecordId: null, recordCount: 0 },
     );
   }),
 );

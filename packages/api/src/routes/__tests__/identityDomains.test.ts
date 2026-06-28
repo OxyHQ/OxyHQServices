@@ -67,6 +67,15 @@ jest.mock('../../models/RepoHead', () => ({
   __esModule: true,
   default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
 }));
+// nodeRegistry.service is transitively imported by the identity routes (F5a);
+// mock it so the real UserNode model never loads under the global mongoose mock.
+jest.mock('../../services/nodeRegistry.service', () => ({
+  materializeNodeFromRecord: jest.fn(),
+  getUserNode: jest.fn(() => Promise.resolve(null)),
+  removeNode: jest.fn(),
+  probeLiveness: jest.fn(),
+  sweepNodeLiveness: jest.fn(),
+}));
 
 jest.mock('../../utils/userCache', () => ({
   __esModule: true,

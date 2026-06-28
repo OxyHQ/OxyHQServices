@@ -49,9 +49,12 @@ import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
 import civicRoutes from './routes/civic';
+import nodeRoutes from './routes/nodes';
 import { sweepValidations } from './services/civic/validator.service';
 import { sweepPersonhoodAudits } from './services/civic/personhoodAudit.service';
+import { sweepNodeLiveness } from './services/nodeRegistry.service';
 import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
+import { NODE_LIVENESS_SWEEP_INTERVAL_MS } from './utils/nodes.constants';
 import didRoutes from './routes/did';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
@@ -532,6 +535,10 @@ app.use('/identity', identityRoutes);
 // Civic / Commons layer: public signed DNI card (more routes in Fase 2/3).
 // Public read (each route gates its own auth); no csrfProtection (public GET).
 app.use('/civic', civicRoutes);
+// User nodes (F5a decentralization): the caller's node status + revoke. Bearer-
+// authenticated (each route gates its own auth); no csrfProtection (bearer-write
+// rule). Node registration itself flows through POST /identity/records.
+app.use('/nodes', nodeRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor } from './services/federation.service';
@@ -713,6 +720,17 @@ if (require.main === module) {
         );
       }, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS);
       personhoodAuditSweep.unref();
+
+      // Periodically re-probe registered user nodes (F5a) so the cached liveness
+      // badge stays current WITHOUT any request ever touching a node. All probes
+      // are SSRF-safe `safeFetch`es. Unref'd + failures logged, like the sweeps
+      // above.
+      const nodeLivenessSweep = setInterval(() => {
+        sweepNodeLiveness().catch((err) =>
+          logger.error('User-node liveness sweep failed', err instanceof Error ? err : new Error(String(err))),
+        );
+      }, NODE_LIVENESS_SWEEP_INTERVAL_MS);
+      nodeLivenessSweep.unref();
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {

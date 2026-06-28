@@ -24,6 +24,17 @@ jest.mock('../../utils/validation', () => ({
   isValidObjectId: (id: string) => /^[a-f0-9]{24}$/i.test(id),
 }));
 
+// The DID route reads the active UserNode (F5a) to derive its #oxy-node service
+// entry. Mock the service so no node is active here and the real UserNode model
+// never loads under the global mongoose mock.
+jest.mock('../../services/nodeRegistry.service', () => ({
+  getUserNode: jest.fn(() => Promise.resolve(null)),
+  materializeNodeFromRecord: jest.fn(),
+  removeNode: jest.fn(),
+  probeLiveness: jest.fn(),
+  sweepNodeLiveness: jest.fn(),
+}));
+
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));

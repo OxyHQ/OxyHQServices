@@ -216,3 +216,36 @@ describe('DID_WEB_DOMAIN override', () => {
     );
   });
 });
+
+describe('buildDidDocument — personal data node (F5a)', () => {
+  const publicKey = newPublicKey();
+  const base = {
+    _id: '507f1f77bcf86cd799439011',
+    publicKey,
+    username: 'nate',
+    authMethods: [{ type: 'identity', metadata: { publicKey } }],
+    type: 'local',
+  };
+
+  it('adds the #oxy-node service when an ACTIVE node endpoint is supplied', () => {
+    const doc = buildDidDocument({ ...base, node: { endpoint: 'https://node.nate.com' } });
+    const did = buildUserDid(base._id);
+
+    expect(() => didDocumentSchema.parse(doc)).not.toThrow();
+    expect(doc.service).toContainEqual({
+      id: `${did}#oxy-node`,
+      type: 'OxyPersonalDataNode',
+      serviceEndpoint: 'https://node.nate.com',
+    });
+  });
+
+  it('omits the #oxy-node service when no node is supplied', () => {
+    const doc = buildDidDocument(base);
+    expect(doc.service.some((s) => s.id.endsWith('#oxy-node'))).toBe(false);
+  });
+
+  it('omits the #oxy-node service when the node is null (revoked / inactive)', () => {
+    const doc = buildDidDocument({ ...base, node: null });
+    expect(doc.service.some((s) => s.id.endsWith('#oxy-node'))).toBe(false);
+  });
+});

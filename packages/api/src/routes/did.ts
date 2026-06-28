@@ -20,6 +20,7 @@ import { Router, Request, Response } from 'express';
 import { User } from '../models/User';
 import { isValidObjectId } from '../utils/validation';
 import { buildDidDocument, buildOxyDidDocument } from '../services/did.service';
+import { getUserNode } from '../services/nodeRegistry.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -53,6 +54,12 @@ router.get('/u/:userId/did.json', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'DID not found' });
     }
 
+    // F5a: announce the user's personal data node when one is ACTIVE. This reads
+    // Oxy's own UserNode cache (an Oxy-DB read) — it does NOT reach the node, so
+    // the read-path invariant holds even if the node is down.
+    const node = await getUserNode(userId);
+    const activeNode = node && node.status === 'active' ? { endpoint: node.endpoint } : null;
+
     const document = buildDidDocument({
       _id: user._id,
       publicKey: user.publicKey,
@@ -61,6 +68,7 @@ router.get('/u/:userId/did.json', async (req: Request, res: Response) => {
       verifiedDomains: user.verifiedDomains,
       type: user.type,
       federation: user.federation,
+      node: activeNode,
     });
 
     setDidHeaders(res);

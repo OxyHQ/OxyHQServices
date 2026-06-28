@@ -45,6 +45,20 @@ export async function getLogSince(
   return rows.map((row) => row.envelope);
 }
 
+/**
+ * Resolve a `recordId` cursor to its chain `seq` for the public node log. A node
+ * resumes a pull by passing the last `recordId` it ingested; this maps that
+ * content address back to its `seq` so {@link getLogSince} continues from there.
+ * Returns `null` when no such (v2) record exists for the user. A pure Oxy-DB
+ * read — never touches a node.
+ */
+export async function resolveCursorSeq(userId: string, recordId: string): Promise<number | null> {
+  const row = await SignedRecord.findOne({ userId, recordId })
+    .select('seq')
+    .lean<{ seq?: number } | null>();
+  return typeof row?.seq === 'number' ? row.seq : null;
+}
+
 /** The subject's chain head, or `null` when the user has no chain yet. */
 export async function getHead(userId: string): Promise<ChainHead | null> {
   const head = await RepoHead.findOne({ userId })

@@ -25,6 +25,7 @@ import {
   type VerificationMethod,
   type DidService,
 } from '@oxyhq/contracts';
+import { OXY_NODE_SERVICE_TYPE, OXY_NODE_SERVICE_FRAGMENT } from '../utils/nodes.constants';
 
 /**
  * The federation/identity domain — drives webfinger handles, profile URLs, and
@@ -68,6 +69,13 @@ export interface DidUserInput {
   verifiedDomains?: Array<{ domain?: string | null } | null> | null;
   type?: string | null;
   federation?: { domain?: string | null } | null;
+  /**
+   * F5a: the user's ACTIVE personal data node, when one is registered. Supplied
+   * by the caller (which reads the `UserNode` cache — an Oxy-DB read, never the
+   * node itself), so this builder stays pure. When present its `endpoint` is
+   * announced as an `OxyPersonalDataNode` service entry; absent/null → omitted.
+   */
+  node?: { endpoint?: string | null } | null;
 }
 
 function stringifyId(id: string | { toString(): string }): string {
@@ -186,6 +194,16 @@ export function buildDidDocument(user: DidUserInput): DidDocument {
       id: `${did}#profile`,
       type: 'OxyProfileService',
       serviceEndpoint: `https://${FEDERATION_DOMAIN}/@${handle}`,
+    });
+  }
+  // F5a: announce the user's personal data node so a resolver can discover where
+  // their self-authored records live. Derived on demand from the supplied active
+  // UserNode; never stored in the document.
+  if (user.node?.endpoint) {
+    service.push({
+      id: `${did}${OXY_NODE_SERVICE_FRAGMENT}`,
+      type: OXY_NODE_SERVICE_TYPE,
+      serviceEndpoint: user.node.endpoint,
     });
   }
 
