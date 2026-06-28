@@ -37,34 +37,40 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Sync API deployment secrets -> SSM (GitHub is the source of truth)
+        # Synced secrets use a SYNC_ prefix so they never collide with the AWS
+        # CLI's reserved credential env vars (AWS_ACCESS_KEY_ID /
+        # AWS_SECRET_ACCESS_KEY / AWS_ENDPOINT_URL). secrets.AWS_ACCESS_KEY_ID is
+        # the DO Spaces key, not an AWS IAM key; exporting it under its raw name
+        # shadows the OIDC role assumed above and makes `aws ssm put-parameter`
+        # fail with UnrecognizedClientException.
         env:
-          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
-          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
-          FEDCM_TOKEN_SECRET: ${{ secrets.FEDCM_TOKEN_SECRET }}
-          SSO_INTERNAL_SECRET: ${{ secrets.SSO_INTERNAL_SECRET }}
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
-          REDIS_URL: ${{ secrets.REDIS_URL }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
-          ALIA_API_KEY: ${{ secrets.ALIA_API_KEY }}
-          SMTP_TLS_KEY: ${{ secrets.SMTP_TLS_KEY }}
-          SMTP_TLS_CERT: ${{ secrets.SMTP_TLS_CERT }}
-          SMTP_RELAY_USER: ${{ secrets.SMTP_RELAY_USER }}
-          SMTP_RELAY_PASS: ${{ secrets.SMTP_RELAY_PASS }}
-          EMAIL_INBOUND_WEBHOOK_SECRET: ${{ secrets.EMAIL_INBOUND_WEBHOOK_SECRET }}
-          DKIM_PRIVATE_KEY: ${{ secrets.DKIM_PRIVATE_KEY }}
-          EMAIL_S3_ACCESS_KEY_ID: ${{ secrets.EMAIL_S3_ACCESS_KEY_ID }}
-          EMAIL_S3_SECRET_ACCESS_KEY: ${{ secrets.EMAIL_S3_SECRET_ACCESS_KEY }}
-          DEVICE_ID_SALT: ${{ secrets.DEVICE_ID_SALT }}
-          OXY_PUBLIC_KEY: ${{ secrets.OXY_PUBLIC_KEY }}
-          OXY_PRIVATE_KEY: ${{ secrets.OXY_PRIVATE_KEY }}
-          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
-          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          SYNC_ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          SYNC_REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
+          SYNC_FEDCM_TOKEN_SECRET: ${{ secrets.FEDCM_TOKEN_SECRET }}
+          SYNC_SSO_INTERNAL_SECRET: ${{ secrets.SSO_INTERNAL_SECRET }}
+          SYNC_MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SYNC_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          SYNC_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          SYNC_AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          SYNC_AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          SYNC_REDIS_URL: ${{ secrets.REDIS_URL }}
+          SYNC_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          SYNC_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          SYNC_GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          SYNC_ALIA_API_KEY: ${{ secrets.ALIA_API_KEY }}
+          SYNC_SMTP_TLS_KEY: ${{ secrets.SMTP_TLS_KEY }}
+          SYNC_SMTP_TLS_CERT: ${{ secrets.SMTP_TLS_CERT }}
+          SYNC_SMTP_RELAY_USER: ${{ secrets.SMTP_RELAY_USER }}
+          SYNC_SMTP_RELAY_PASS: ${{ secrets.SMTP_RELAY_PASS }}
+          SYNC_EMAIL_INBOUND_WEBHOOK_SECRET: ${{ secrets.EMAIL_INBOUND_WEBHOOK_SECRET }}
+          SYNC_DKIM_PRIVATE_KEY: ${{ secrets.DKIM_PRIVATE_KEY }}
+          SYNC_EMAIL_S3_ACCESS_KEY_ID: ${{ secrets.EMAIL_S3_ACCESS_KEY_ID }}
+          SYNC_EMAIL_S3_SECRET_ACCESS_KEY: ${{ secrets.EMAIL_S3_SECRET_ACCESS_KEY }}
+          SYNC_DEVICE_ID_SALT: ${{ secrets.DEVICE_ID_SALT }}
+          SYNC_OXY_PUBLIC_KEY: ${{ secrets.OXY_PUBLIC_KEY }}
+          SYNC_OXY_PRIVATE_KEY: ${{ secrets.OXY_PRIVATE_KEY }}
+          SYNC_LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          SYNC_LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
         run: |
           # Only sync secrets that the oxy-api ECS task is expected to consume.
           # Do not iterate over the entire GitHub secrets context: this repository also contains
@@ -74,7 +80,7 @@ jobs:
           API_SECRETS="ACCESS_TOKEN_SECRET REFRESH_TOKEN_SECRET FEDCM_TOKEN_SECRET SSO_INTERNAL_SECRET MONGODB_URI AWS_S3_BUCKET AWS_ENDPOINT_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET GITHUB_CLIENT_SECRET ALIA_API_KEY SMTP_TLS_KEY SMTP_TLS_CERT SMTP_RELAY_USER SMTP_RELAY_PASS EMAIL_INBOUND_WEBHOOK_SECRET DKIM_PRIVATE_KEY EMAIL_S3_ACCESS_KEY_ID EMAIL_S3_SECRET_ACCESS_KEY DEVICE_ID_SALT OXY_PUBLIC_KEY OXY_PRIVATE_KEY"
 
           for k in $SHARED_SECRETS $API_SECRETS; do
-            v=$(printenv "$k" || true)
+            v=$(printenv "SYNC_$k" || true)
             # Defence in depth: a secret left as an empty string or a single
             # dash placeholder is almost always a mistake (forgot to set a
             # value, or scripted with `gh secret set REDIS_URL --body '-'`).
