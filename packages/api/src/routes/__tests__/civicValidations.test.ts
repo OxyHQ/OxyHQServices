@@ -17,6 +17,7 @@ const mockOpen = jest.fn();
 const mockVote = jest.fn();
 const mockDeny = jest.fn();
 const mockInbox = jest.fn();
+let mockServiceScopes = ['reputation:write'];
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (req: { user?: unknown }, _res: unknown, next: () => void) => {
@@ -24,7 +25,7 @@ jest.mock('../../middleware/auth', () => ({
     next();
   },
   serviceAuthMiddleware: (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
-    req.serviceApp = { appId: 'app1', scopes: [] };
+    req.serviceApp = { appId: 'app1', scopes: mockServiceScopes };
     next();
   },
 }));
@@ -89,9 +90,23 @@ beforeAll((done) => {
   server = app.listen(0, '127.0.0.1', done);
 });
 afterAll((done) => { server.close(done); });
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockServiceScopes = ['reputation:write'];
+});
 
 describe('POST /civic/validations', () => {
+  it('rejects service tokens without reputation write scope', async () => {
+    mockServiceScopes = [];
+
+    const res = await send(server, 'POST', '/civic/validations', {
+      subjectUserId: 'b'.repeat(24), actionType: 'claim', sourceActionId: 'src1', payload: { x: 1 },
+    });
+
+    expect(res.status).toBe(403);
+    expect(mockOpen).not.toHaveBeenCalled();
+  });
+
   it('returns 201 with the open result', async () => {
     mockOpen.mockResolvedValueOnce({
       _id: { toString: () => REQ_ID },
