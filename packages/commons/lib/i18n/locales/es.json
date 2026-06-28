@@ -1570,6 +1570,130 @@
           "generic": "No pudimos emitir esta credencial. Inténtalo de nuevo."
         }
       }
+    },
+    "nodes": {
+      "title": "Tu nodo de datos",
+      "settingsEntry": "Tu nodo de datos",
+      "settingsEntrySubtitle": "Donde viven tu identidad firmada y tus registros",
+      "loading": "Cargando tu nodo…",
+      "error": {
+        "title": "No se pudo cargar tu nodo",
+        "body": "No pudimos contactar con Oxy para comprobar tu nodo de datos. Revisa tu conexión e inténtalo de nuevo."
+      },
+      "intro": {
+        "title": "Tus datos son tuyos",
+        "body": "Tu identidad firmada, tu perfil y tus registros viven en un nodo que TÚ controlas. Oxy mantiene una copia rápida y verificada: las lecturas siempre son instantáneas, pero tu nodo es la fuente de la verdad."
+      },
+      "how": {
+        "title": "Cómo funciona",
+        "sourceOfTruth": "Tú tienes el original",
+        "sourceOfTruthDesc": "Tus registros firmados viven en tu nodo: nadie puede cambiarlos salvo tú.",
+        "fastCopy": "Oxy guarda una copia verificada",
+        "fastCopyDesc": "Para que las lecturas en las apps de Oxy sigan siendo instantáneas, incluso cuando tu nodo está en reposo.",
+        "portable": "Vete cuando quieras",
+        "portableDesc": "Desconéctate o múdate a tu propio nodo: tus datos se van contigo."
+      },
+      "choose": {
+        "title": "Configura tu nodo",
+        "subtitle": "La mayoría elige una bóveda gestionada. Puedes pasar a tu propio nodo más adelante."
+      },
+      "managed": {
+        "cta": "Crear una bóveda gestionada",
+        "ctaSubtitle": "Oxy opera un nodo seguro por ti. Recomendado.",
+        "note": "Una bóveda gestionada es la opción fácil: Oxy opera el nodo, tú mantienes el control total de tus claves y puedes mudarte a tu propio nodo cuando quieras."
+      },
+      "selfHost": {
+        "cta": "Conectar mi propio nodo",
+        "ctaSubtitle": "Avanzado: indica a Oxy un nodo que tú operas."
+      },
+      "form": {
+        "title": "Conecta tu nodo",
+        "subtitle": "Introduce la dirección de tu nodo y la clave pública con la que firma los registros.",
+        "endpointLabel": "URL del nodo",
+        "endpointPlaceholder": "https://nodo.ejemplo.com",
+        "endpointHint": "Debe ser una dirección HTTPS pública.",
+        "endpointInvalid": "Introduce una URL HTTPS válida.",
+        "publicKeyLabel": "Clave pública del nodo",
+        "publicKeyPlaceholder": "Clave pública en hexadecimal",
+        "publicKeyHint": "La clave secp256k1 con la que firma tu nodo (en hexadecimal).",
+        "publicKeyInvalid": "Introduce la clave pública del nodo en hexadecimal.",
+        "modeLabel": "Modo de sincronización",
+        "modePull": "Extracción",
+        "modePullDesc": "Tu nodo obtiene las actualizaciones de Oxy según su propia agenda.",
+        "modePush": "Envío",
+        "modePushDesc": "Oxy envía las actualizaciones a tu nodo a medida que ocurren.",
+        "cta": "Conectar nodo",
+        "submitting": "Conectando tu nodo…",
+        "cancel": "Volver a las opciones",
+        "biometricReason": "Confirma para conectar tu nodo",
+        "biometricFailed": "La confirmación falló. Tu nodo no se conectó."
+      },
+      "provision": {
+        "submitting": "Creando tu bóveda gestionada…",
+        "biometricReason": "Confirma para crear tu bóveda gestionada",
+        "biometricFailed": "La confirmación falló. Tu bóveda no se creó.",
+        "done": {
+          "title": "Tu bóveda está lista",
+          "body": "Oxy ya está operando tu nodo de datos. Tu identidad y tus registros son tuyos: verificados y portables."
+        }
+      },
+      "register": {
+        "done": {
+          "title": "Tu nodo está conectado",
+          "body": "A partir de ahora, Oxy mantendrá una copia verificada sincronizada con tu nodo."
+        }
+      },
+      "status": {
+        "active": "Activo",
+        "unreachable": "Inaccesible",
+        "revoked": "Desconectado"
+      },
+      "type": {
+        "managed": "Bóveda gestionada",
+        "managedDesc": "Operado por Oxy en tu nombre",
+        "selfHosted": "Nodo autoalojado",
+        "selfHostedDesc": "Un nodo que tú mismo operas"
+      },
+      "details": {
+        "title": "Detalles",
+        "endpoint": "Dirección",
+        "mode": "Modo de sincronización",
+        "lastSeen": "Última vez visto",
+        "lastSynced": "Última sincronización",
+        "never": "Nunca"
+      },
+      "mode": {
+        "pull": "Extracción",
+        "push": "Envío"
+      },
+      "unreachableNote": "Oxy no pudo contactar con tu nodo en la última comprobación: {{reason}}",
+      "unreachableNoteGeneric": "Oxy no pudo contactar con tu nodo en la última comprobación. Tus últimos datos conocidos siguen disponibles.",
+      "revokedNote": "Este nodo está desconectado. Crea una bóveda gestionada o conecta un nodo para que tus registros vuelvan a ser portables.",
+      "actions": {
+        "title": "Acciones",
+        "sync": "Sincronizar ahora",
+        "syncDesc": "Pide a Oxy que extraiga los registros más recientes de tu nodo.",
+        "syncing": "Sincronizando…",
+        "synced": "Sincronización solicitada",
+        "syncFailed": "No se pudo solicitar la sincronización. Inténtalo de nuevo.",
+        "disconnect": "Desconectar nodo",
+        "disconnectDesc": "Deja de sincronizar y quita este nodo de tu identidad."
+      },
+      "disconnect": {
+        "confirmTitle": "¿Desconectar este nodo?",
+        "confirmBody": "Oxy dejará de sincronizarse con él y lo quitará de tu identidad. Tus datos actuales se conservan, pero ya no estarán respaldados por tu nodo.",
+        "confirmCta": "Desconectar",
+        "cancel": "Conservar nodo",
+        "biometricReason": "Confirma para desconectar tu nodo",
+        "biometricFailed": "La confirmación falló. Tu nodo no se desconectó."
+      },
+      "errors": {
+        "not_authenticated": "Debes iniciar sesión para gestionar tu nodo.",
+        "managed_unavailable": "Las bóvedas gestionadas no están disponibles ahora mismo. Inténtalo de nuevo más tarde.",
+        "invalid_endpoint": "Oxy no pudo usar esa dirección de nodo. Comprueba que la URL sea un endpoint HTTPS público e inténtalo de nuevo.",
+        "user_not_found": "No pudimos encontrar tu cuenta. Vuelve a iniciar sesión.",
+        "generic": "No pudimos completarlo. Revisa tu conexión e inténtalo de nuevo."
+      }
     }
   },
   "tabs": {

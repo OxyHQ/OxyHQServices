@@ -35,6 +35,11 @@ interface MockOxyServices {
   verifyCredential?: jest.Mock;
   issueCredential?: jest.Mock;
   revokeCredential?: jest.Mock;
+  getMyNode?: jest.Mock;
+  registerNode?: jest.Mock;
+  provisionManagedVault?: jest.Mock;
+  removeMyNode?: jest.Mock;
+  notifyNodeIngest?: jest.Mock;
 }
 
 interface MockOxyState {

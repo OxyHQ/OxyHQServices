@@ -1570,6 +1570,130 @@
           "generic": "We couldn't issue this credential. Please try again."
         }
       }
+    },
+    "nodes": {
+      "title": "Your data node",
+      "settingsEntry": "Your data node",
+      "settingsEntrySubtitle": "Where your signed identity and records live",
+      "loading": "Loading your node…",
+      "error": {
+        "title": "Couldn't load your node",
+        "body": "We couldn't reach Oxy to check your data node. Check your connection and try again."
+      },
+      "intro": {
+        "title": "Own your data",
+        "body": "Your signed identity, profile, and records live on a node YOU control. Oxy keeps a fast, verified copy — reads are always instant, but your node is the source of truth."
+      },
+      "how": {
+        "title": "How it works",
+        "sourceOfTruth": "You hold the original",
+        "sourceOfTruthDesc": "Your signed records live on your node — nobody can change them but you.",
+        "fastCopy": "Oxy keeps a verified copy",
+        "fastCopyDesc": "So reads across Oxy apps stay instant, even when your node is asleep.",
+        "portable": "Leave anytime",
+        "portableDesc": "Disconnect or move to your own node — your data goes with you."
+      },
+      "choose": {
+        "title": "Set up your node",
+        "subtitle": "Most people pick a managed vault. You can switch to your own node later."
+      },
+      "managed": {
+        "cta": "Create a managed vault",
+        "ctaSubtitle": "Oxy runs a secure node for you. Recommended.",
+        "note": "A managed vault is the easy path — Oxy operates the node, you keep full control of your keys, and you can move to your own node anytime."
+      },
+      "selfHost": {
+        "cta": "Connect my own node",
+        "ctaSubtitle": "Advanced — point Oxy at a node you run."
+      },
+      "form": {
+        "title": "Connect your node",
+        "subtitle": "Enter your node's address and the public key it signs records with.",
+        "endpointLabel": "Node URL",
+        "endpointPlaceholder": "https://node.example.com",
+        "endpointHint": "Must be a public HTTPS address.",
+        "endpointInvalid": "Enter a valid HTTPS URL.",
+        "publicKeyLabel": "Node public key",
+        "publicKeyPlaceholder": "Hex-encoded public key",
+        "publicKeyHint": "The secp256k1 key your node signs with (hex).",
+        "publicKeyInvalid": "Enter the node's public key in hex.",
+        "modeLabel": "Sync mode",
+        "modePull": "Pull",
+        "modePullDesc": "Your node fetches updates from Oxy on its own schedule.",
+        "modePush": "Push",
+        "modePushDesc": "Oxy pushes updates to your node as they happen.",
+        "cta": "Connect node",
+        "submitting": "Connecting your node…",
+        "cancel": "Back to options",
+        "biometricReason": "Confirm to connect your node",
+        "biometricFailed": "Confirmation failed. Your node was not connected."
+      },
+      "provision": {
+        "submitting": "Creating your managed vault…",
+        "biometricReason": "Confirm to create your managed vault",
+        "biometricFailed": "Confirmation failed. Your vault was not created.",
+        "done": {
+          "title": "Your vault is ready",
+          "body": "Oxy is now operating your data node. Your identity and records are yours — verified and portable."
+        }
+      },
+      "register": {
+        "done": {
+          "title": "Your node is connected",
+          "body": "Oxy will keep a verified copy in sync with your node from now on."
+        }
+      },
+      "status": {
+        "active": "Active",
+        "unreachable": "Unreachable",
+        "revoked": "Disconnected"
+      },
+      "type": {
+        "managed": "Managed vault",
+        "managedDesc": "Operated by Oxy on your behalf",
+        "selfHosted": "Self-hosted node",
+        "selfHostedDesc": "A node you run yourself"
+      },
+      "details": {
+        "title": "Details",
+        "endpoint": "Endpoint",
+        "mode": "Sync mode",
+        "lastSeen": "Last seen",
+        "lastSynced": "Last synced",
+        "never": "Never"
+      },
+      "mode": {
+        "pull": "Pull",
+        "push": "Push"
+      },
+      "unreachableNote": "Oxy couldn't reach your node on the last check: {{reason}}",
+      "unreachableNoteGeneric": "Oxy couldn't reach your node on the last check. Your last known data is still served.",
+      "revokedNote": "This node is disconnected. Create a managed vault or connect a node to make your records portable again.",
+      "actions": {
+        "title": "Actions",
+        "sync": "Sync now",
+        "syncDesc": "Ask Oxy to pull the latest records from your node.",
+        "syncing": "Syncing…",
+        "synced": "Sync requested",
+        "syncFailed": "Couldn't request a sync. Try again.",
+        "disconnect": "Disconnect node",
+        "disconnectDesc": "Stop syncing and remove this node from your identity."
+      },
+      "disconnect": {
+        "confirmTitle": "Disconnect this node?",
+        "confirmBody": "Oxy will stop syncing with it and remove it from your identity. Your existing data stays, but it's no longer backed by your node.",
+        "confirmCta": "Disconnect",
+        "cancel": "Keep node",
+        "biometricReason": "Confirm to disconnect your node",
+        "biometricFailed": "Confirmation failed. Your node was not disconnected."
+      },
+      "errors": {
+        "not_authenticated": "You need to be signed in to manage your node.",
+        "managed_unavailable": "Managed vaults aren't available right now. Please try again later.",
+        "invalid_endpoint": "Oxy couldn't use that node address. Check the URL is a public HTTPS endpoint and try again.",
+        "user_not_found": "We couldn't find your account. Please sign in again.",
+        "generic": "We couldn't complete that. Check your connection and try again."
+      }
     }
   },
   "tabs": {

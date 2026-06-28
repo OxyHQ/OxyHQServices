@@ -17,6 +17,7 @@ export default function SettingsTabLayout() {
       <Stack.Screen name="personhood" />
       <Stack.Screen name="credentials/index" />
       <Stack.Screen name="credentials/[recordId]" />
+      <Stack.Screen name="node" />
       <Stack.Screen name="delete-account" />
     </Stack>
   );

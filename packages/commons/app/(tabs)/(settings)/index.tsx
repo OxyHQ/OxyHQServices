@@ -35,6 +35,10 @@ export default function SettingsScreen() {
     router.push('/(tabs)/(settings)/credentials');
   }, [router]);
 
+  const handleNode = useCallback(() => {
+    router.push('/(tabs)/(settings)/node');
+  }, [router]);
+
   const handleDeleteAccount = useCallback(() => {
     router.push('/(tabs)/(settings)/delete-account');
   }, [router]);
@@ -88,6 +92,13 @@ export default function SettingsScreen() {
             title={t('civic.credentials.settingsEntry')}
             subtitle={t('civic.credentials.settingsEntrySubtitle')}
             onPress={handleCredentials}
+            showChevron
+          />
+          <ListRow
+            icon="server-network"
+            title={t('civic.nodes.settingsEntry')}
+            subtitle={t('civic.nodes.settingsEntrySubtitle')}
+            onPress={handleNode}
             showChevron
           />
         </GroupedList>
