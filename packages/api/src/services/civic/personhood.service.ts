@@ -315,12 +315,12 @@ export async function vouchForPerson(
     return { ok: false, reason: exclusionReason(relation.reason) };
   }
 
-  // Reject an existing active vouch BEFORE appending a signed record (the unique
-  // partial index is the concurrency backstop).
+  // Reject any existing vouch for this pair BEFORE appending a signed record.
+  // Withdrawn/slashed vouches remain audit history and must not make the pair
+  // eligible for a fresh reputation award.
   const existing = await PersonhoodVouch.findOne({
     voucherUserId,
     subjectUserId,
-    status: 'active',
   })
     .select('_id')
     .lean();
@@ -387,8 +387,9 @@ export type WithdrawResult = { ok: true } | { ok: false; reason: 'not_found' };
  * Withdraw the caller's active vouch for `subjectUserId`. The vouch flips to
  * `withdrawn` (kept for audit) so it no longer contributes to the subject's
  * personhood; the subject is recomputed (which may demote them below θ). The
- * already-awarded `personhood_vouched` reputation points are NOT clawed back —
- * withdrawal only removes the web-of-trust signal.
+ * already-awarded `personhood_vouched` reputation points are NOT clawed back,
+ * and the historical vouch still prevents re-vouching the same pair to avoid
+ * farming reputation through withdraw/re-vouch loops.
  */
 export async function withdrawVouch(voucherUserId: string, subjectUserId: string): Promise<WithdrawResult> {
   const vouch = await PersonhoodVouch.findOneAndUpdate(
