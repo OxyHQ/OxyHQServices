@@ -8,6 +8,7 @@ import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
 import User, { IUser } from "./models/User";
+import { ensureFileSha256LiveUniqueIndex } from "./models/File";
 import searchRoutes from "./routes/search";
 import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
@@ -333,7 +334,8 @@ const mongoOptions = {
 };
 
 mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
-.then(() => {
+.then(async () => {
+  await ensureFileSha256LiveUniqueIndex();
   logger.info("Connected to MongoDB successfully", {
     maxPoolSize: mongoOptions.maxPoolSize,
     minPoolSize: mongoOptions.minPoolSize,

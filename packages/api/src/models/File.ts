@@ -66,6 +66,8 @@ export interface IFile extends Omit<Document, '_id'> {
  */
 export type FilePurpose = 'user' | 'federation-media-cache';
 
+const LIVE_FILE_STATUSES = ['active', 'trash'] as const;
+
 const FileLinkSchema = new Schema<IFileLink>({
   app: { type: String, required: true, index: true },
   entityType: { type: String, required: true, index: true },
@@ -86,11 +88,10 @@ const FileVariantSchema = new Schema<IFileVariant>({
 }, { _id: false });
 
 const FileSchema = new Schema<IFile>({
-  sha256: { 
-    type: String, 
-    required: true, 
-    unique: true,
-    index: true 
+  sha256: {
+    type: String,
+    required: true,
+    index: true
   },
   size: { type: Number, required: true },
   mime: { type: String, required: true, index: true },
@@ -135,6 +136,18 @@ FileSchema.virtual('usageCount').get(function() {
 });
 
 // Compound indexes for efficient queries
+// Keep content-addressed deduplication unique only for live records. Deleted
+// tombstones intentionally remain invisible to upload deduplication, so they
+// must not reserve their sha256 forever and block future uploads of the same
+// bytes by another user or a federation cache flow.
+FileSchema.index(
+  { sha256: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: { $in: [...LIVE_FILE_STATUSES] } },
+    name: 'sha256_live_unique'
+  }
+);
 FileSchema.index({ ownerUserId: 1, status: 1 });
 FileSchema.index({ ownerUserId: 1, visibility: 1, status: 1 });
 FileSchema.index({ visibility: 1, status: 1 }); // For public file queries
@@ -152,3 +165,33 @@ FileSchema.index({
 });
 
 export const File = mongoose.model<IFile>('File', FileSchema);
+
+/**
+ * Migrate the legacy global sha256 unique index to the live-record-only unique
+ * index declared above. Auto-indexing can create the new index, but it will not
+ * remove the old `sha256_1` index; leaving that global index in place would let
+ * deleted tombstones keep blocking future uploads of identical content.
+ */
+export async function ensureFileSha256LiveUniqueIndex(): Promise<void> {
+  const indexes = await File.collection.indexes();
+  const legacyGlobalShaIndexName = indexes.find((index) => {
+    const key = index.key as Record<string, unknown> | undefined;
+    return index.name === 'sha256_1'
+      && index.unique === true
+      && key?.sha256 === 1
+      && !index.partialFilterExpression;
+  })?.name;
+
+  if (legacyGlobalShaIndexName) {
+    await File.collection.dropIndex(legacyGlobalShaIndexName);
+  }
+
+  await File.collection.createIndex(
+    { sha256: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { status: { $in: [...LIVE_FILE_STATUSES] } },
+      name: 'sha256_live_unique'
+    }
+  );
+}

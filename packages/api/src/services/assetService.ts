@@ -77,9 +77,9 @@ export class AssetService {
    * tombstone and reassigning its ownership to the next uploader was a
    * cross-tenant ownership-takeover vector (any user who can produce content
    * whose SHA-256 collides with a victim's deleted file could revive that
-   * record under their own ownership). With the `status: { $ne: 'deleted' }`
-   * filter a fresh upload whose content matches only a tombstone simply inserts
-   * a brand-new record owned by the uploader.
+   * record under their own ownership). The File model's sha256 uniqueness is
+   * scoped to live records, so a fresh upload whose content matches only a
+   * tombstone can insert a brand-new record owned by the uploader.
    */
   private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
     return File.findOne({ sha256, status: { $ne: 'deleted' } });
