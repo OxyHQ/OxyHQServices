@@ -10,9 +10,10 @@
  *      thumb URL, not the original).
  *   2. A PRIVATE file resolves to 404 — `getPublicCdnUrl` returns null and no
  *      bytes are ever streamed here.
- *   3. A missing/unknown id resolves to 404.
- *   4. A public file with no CDN-reachable copy (probe returns null) → 404.
- *   5. A throwing CDN probe degrades to 404, never 500.
+ *   3. A non-active file resolves to 404 before any CDN probe.
+ *   4. A missing/unknown id resolves to 404.
+ *   5. A public file with no CDN-reachable copy (probe returns null) → 404.
+ *   6. A throwing CDN probe degrades to 404, never 500.
  *
  * The asset service singleton, validate middleware, and logger are stubbed at
  * the module boundary so the router runs over real `node:http` round-trips with
@@ -25,6 +26,7 @@ import { AddressInfo } from 'net';
 
 const PUBLIC_FILE_ID = '64c0000000000000000000b1';
 const PRIVATE_FILE_ID = '64c0000000000000000000b2';
+const TRASHED_FILE_ID = '64c0000000000000000000b5';
 const NO_COPY_FILE_ID = '64c0000000000000000000b3';
 const PROBE_THROWS_FILE_ID = '64c0000000000000000000b4';
 
@@ -103,6 +105,7 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
   it('302s a public CDN-backed file to its cloud.oxy.so URL with Cache-Control', async () => {
     mockGetFile.mockResolvedValue({
       _id: PUBLIC_FILE_ID,
+      status: 'active',
       visibility: 'public',
       storageKey: 'public/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png',
     });
@@ -120,6 +123,7 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
   it('is variant-aware: ?variant=thumb resolves the thumb CDN URL', async () => {
     mockGetFile.mockResolvedValue({
       _id: PUBLIC_FILE_ID,
+      status: 'active',
       visibility: 'public',
       storageKey: 'public/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png',
     });
@@ -135,6 +139,7 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
   it('404s a private file (never streams private bytes, never redirects)', async () => {
     mockGetFile.mockResolvedValue({
       _id: PRIVATE_FILE_ID,
+      status: 'active',
       visibility: 'private',
       storageKey: 'content/2026/06/cc/secret.png',
     });
@@ -145,6 +150,22 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
 
     expect(res.status).toBe(404);
     expect(res.location).toBeUndefined();
+  });
+
+  it('404s a trashed public CDN-backed file before consulting the CDN probe', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: TRASHED_FILE_ID,
+      status: 'trash',
+      visibility: 'public',
+      storageKey: 'public/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png',
+    });
+    mockGetPublicCdnUrl.mockResolvedValue(ORIGINAL_CDN_URL);
+
+    const res = await requestNoFollow(server, `/cdn/${TRASHED_FILE_ID}`);
+
+    expect(res.status).toBe(404);
+    expect(res.location).toBeUndefined();
+    expect(mockGetPublicCdnUrl).not.toHaveBeenCalled();
   });
 
   it('404s a missing/unknown id (no probe consulted)', async () => {
@@ -160,6 +181,7 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
   it('404s a public file with no CDN-reachable copy (probe returns null)', async () => {
     mockGetFile.mockResolvedValue({
       _id: NO_COPY_FILE_ID,
+      status: 'active',
       visibility: 'public',
       storageKey: 'content/2026/03/dd/legacy.png',
     });
@@ -174,6 +196,7 @@ describe('GET /cdn/:id — public CDN origin resolver', () => {
   it('404s (never 500s) when the CDN probe throws', async () => {
     mockGetFile.mockResolvedValue({
       _id: PROBE_THROWS_FILE_ID,
+      status: 'active',
       visibility: 'public',
       storageKey: 'public/content/2026/03/ee/x.png',
     });

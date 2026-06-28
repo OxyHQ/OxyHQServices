@@ -1386,11 +1386,12 @@ export class AssetService {
    * when the asset is NOT servable via the public CDN.
    *
    * Returns a `cloud.oxy.so` URL only when BOTH hold:
-   *   1. the file's visibility is `public`, AND
-   *   2. the servable object physically lives under the CDN-reachable `public/`
+   *   1. the file's lifecycle status is `active`,
+   *   2. the file's visibility is `public`, AND
+   *   3. the servable object physically lives under the CDN-reachable `public/`
    *      prefix in S3.
    *
-   * Private/unlisted assets always return `null` so they can never leak through
+   * Trashed/deleted/private/unlisted assets always return `null` so they can never leak through
    * the public CDN. A public asset whose bytes are not yet under `public/`
    * (legacy objects awaiting the S3 backfill) also returns `null`, so the caller
    * falls back to streaming through our own origin — never to a raw S3 URL.
