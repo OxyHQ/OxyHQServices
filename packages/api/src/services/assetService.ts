@@ -20,6 +20,7 @@ import {
   storageKeyForVisibility,
 } from '../config/cdn';
 import { logger } from '../utils/logger';
+import { ConflictError } from '../utils/error';
 import path from 'path';
 import {
   AssetInitResponse,
@@ -52,6 +53,7 @@ interface StreamedMediaOptions {
   metadata: Record<string, any>;
   tempPrefix: string;
   logLabel: string;
+  dedupeScope?: 'any' | 'federation-cache';
 }
 
 const FEDERATION_AVATAR_OWNER_ID = '__federation__';
@@ -328,32 +330,36 @@ export class AssetService {
     return file;
   }
 
+  private assertStreamedDedupeAllowed(file: IFile, options: StreamedMediaOptions): void {
+    if (options.dedupeScope !== 'federation-cache') {
+      return;
+    }
+
+    if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+      return;
+    }
+
+    throw new ConflictError('Federated media content already exists outside the federation cache');
+  }
+
   private async prepareExistingStreamedMediaFile(file: IFile, options: StreamedMediaOptions): Promise<IFile> {
     if (options.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
       return file;
     }
 
-    let changed = false;
     const wasCacheFile = file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
-    if (wasCacheFile) {
-      file.ownerUserId = options.ownerUserId;
-      file.purpose = options.purpose;
-      changed = true;
+    if (!wasCacheFile) {
+      return file;
     }
-    if (file.visibility !== options.visibility) {
-      file.visibility = options.visibility;
-      changed = true;
-    }
+
+    file.ownerUserId = options.ownerUserId;
+    file.purpose = options.purpose;
+    file.visibility = options.visibility;
     file.metadata = {
       ...(file.metadata || {}),
       ...options.metadata,
-      ...(wasCacheFile ? { promotedFromFederationCache: true } : {}),
+      promotedFromFederationCache: true,
     };
-    changed = true;
-
-    if (!changed) {
-      return file;
-    }
 
     await file.save();
     fileCache.invalidate(file._id.toString());
@@ -708,6 +714,7 @@ export class AssetService {
       },
       tempPrefix: 'federation/incoming',
       logLabel: 'Federated media',
+      dedupeScope: 'federation-cache',
     });
   }
 
@@ -798,6 +805,12 @@ export class AssetService {
     // never revived.
     const existingFile = await this.findActiveFileBySha(sha256);
     if (existingFile) {
+      try {
+        this.assertStreamedDedupeAllowed(existingFile, options);
+      } catch (error) {
+        await deleteTempKey(`Failed to clean up rejected ${options.logLabel.toLowerCase()} upload`);
+        throw error;
+      }
       let restored = false;
       try {
         restored = await this.restoreMissingStreamedMediaContent(
@@ -857,6 +870,21 @@ export class AssetService {
       if (this.isDuplicateKeyError(error)) {
         const racedFile = await this.findActiveFileBySha(sha256);
         if (racedFile) {
+          try {
+            this.assertStreamedDedupeAllowed(racedFile, options);
+          } catch (dedupeError) {
+            if (racedFile.storageKey !== storageKey) {
+              try {
+                await this.s3Service.deleteFile(storageKey);
+              } catch (cleanupError) {
+                logger.warn(`Failed to clean up rejected duplicate ${options.logLabel.toLowerCase()} storage object`, {
+                  storageKey,
+                  error: cleanupError,
+                });
+              }
+            }
+            throw dedupeError;
+          }
           let restored = false;
           try {
             restored = await this.restoreMissingStreamedMediaContent(
