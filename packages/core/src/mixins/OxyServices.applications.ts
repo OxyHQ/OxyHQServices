@@ -164,6 +164,32 @@ export interface PublicApplication {
   developerName?: string;
 }
 
+/**
+ * A connected (OAuth-authorized) application from the current user's point of
+ * view: an application the user has granted access to via the consent flow.
+ *
+ * Returned by `GET /auth/grants` and rendered in the user-facing "Connected
+ * apps" management surface. Keyed by `applicationId` (the application's Mongo
+ * `_id`) rather than a credential/client id, so the grant — and a subsequent
+ * {@link OxyServicesApplicationsMixin.revokeAppGrant} — survive credential
+ * rotation. This is a display shape: it carries the application's name/logo and
+ * the granted scopes, never any membership or credential material.
+ */
+export interface ConnectedApp {
+  /** The connected application's Mongo `_id`. Use this to revoke the grant. */
+  applicationId: string;
+  /** Human-readable application name shown to the user. */
+  name: string;
+  /** Optional logo URL for the application. */
+  logoUrl?: string;
+  /** OAuth scopes the user has granted to the application. */
+  scopes: string[];
+  /** ISO timestamp of when the user first authorized the application. */
+  firstGrantedAt: string;
+  /** ISO timestamp of when the grant was last exercised. */
+  lastUsedAt: string;
+}
+
 /** Input accepted by `createApplication`. Staff-only fields are not settable here. */
 export interface CreateApplicationInput {
   name: string;
@@ -304,6 +330,59 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
           { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
         );
         return res.application;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * List the OAuth-authorized applications the current user has connected —
+     * the third-party apps the user granted access to via the consent flow.
+     * Each entry is a {@link ConnectedApp} carrying the application's display
+     * identity, the granted scopes, and when the grant was first made and last
+     * exercised. Requires an authenticated session.
+     *
+     * Backed by `GET /auth/grants`. The response is briefly cached
+     * (identity-scoped); {@link revokeAppGrant} busts that cache so a revoke is
+     * reflected on the next read.
+     */
+    async listConnectedApps(): Promise<ConnectedApp[]> {
+      try {
+        return await this.makeRequest<ConnectedApp[]>(
+          'GET',
+          '/auth/grants',
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.SHORT },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Revoke the current user's grant for a connected application, identified by
+     * its application `_id` (a {@link ConnectedApp.applicationId}, NOT a
+     * credential/client id — keyed by application so the revocation survives
+     * credential rotation). After this the application can no longer act on the
+     * user's behalf until it is re-authorized.
+     *
+     * Backed by `DELETE /auth/grants/:applicationId`. On success the cached
+     * connected-apps list (`GET:/auth/grants`) is invalidated so the next
+     * {@link listConnectedApps} read reflects the removal.
+     *
+     * @param applicationId - The connected application's Mongo `_id`.
+     */
+    async revokeAppGrant(applicationId: string): Promise<void> {
+      try {
+        await this.makeRequest<{ revoked: boolean }>(
+          'DELETE',
+          `/auth/grants/${applicationId}`,
+          undefined,
+          { cache: false },
+        );
+        // A revoke removes an entry from the user's connected-apps list; bust
+        // the cached `GET /auth/grants` so the next read re-fetches.
+        this.clearCacheEntry('GET:/auth/grants');
       } catch (error) {
         throw this.handleError(error);
       }

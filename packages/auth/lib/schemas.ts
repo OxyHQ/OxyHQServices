@@ -91,6 +91,44 @@ export const oauthStateSchema = z.object({
 })
 
 /**
+ * Response contract for `GET /auth/oauth/consent` — the server-authoritative
+ * decision on whether the OAuth consent screen must be shown for this
+ * `(user, application, scope)` tuple. The API wraps it as `{ data: { ... } }`.
+ *
+ *   - `trusted`       — official/first-party app: never asks for consent.
+ *   - `granted`       — a stored grant already covers the requested scopes.
+ *   - `new`           — no grant yet; show the ConsentCard.
+ *   - `scope_changed` — grant exists but the request adds scopes; re-consent.
+ *
+ * SECURITY: any response the schema rejects MUST fail safe to
+ * `consentRequired: true` (see `consentRequiredFromBody`) — a parse/transport
+ * failure must never silently auto-approve.
+ */
+export const consentDecisionSchema = z.object({
+    consentRequired: z.boolean(),
+    reason: z.enum(["trusted", "granted", "new", "scope_changed"]),
+})
+
+export type ConsentDecisionResponse = z.infer<typeof consentDecisionSchema>
+
+/**
+ * Decide whether the OAuth consent screen must be shown, from the raw
+ * `GET /auth/oauth/consent` response body. Accepts either the API's wrapped
+ * `{ data: { ... } }` envelope or a bare decision object. Fails safe: any body
+ * the schema cannot validate (malformed, missing fields, unknown `reason`,
+ * `null`) returns `true` so the caller renders the ConsentCard rather than
+ * auto-approving on a parse error.
+ */
+export function consentRequiredFromBody(body: unknown): boolean {
+    const inner =
+        body && typeof body === "object" && "data" in body
+            ? (body as { data: unknown }).data
+            : body
+    const parsed = safeParse(consentDecisionSchema, inner)
+    return parsed ? parsed.consentRequired : true
+}
+
+/**
  * Safely parse a JSON response with a Zod schema. Returns the parsed data or
  * `null` if validation fails. Delegates to the contracts package's
  * `safeParseContract` so there is exactly one parse helper across the ecosystem.

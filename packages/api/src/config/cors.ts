@@ -1,20 +1,28 @@
 /**
  * CORS (Cross-Origin Resource Sharing) Configuration
  *
- * Strict Origin allowlist (MED-1 CSRF hardening, Phase A). Only first-party
- * Oxy ecosystem origins (and their https subdomains) receive
- * `Access-Control-Allow-Origin` — and ALWAYS with the specific origin echoed
- * back, NEVER `*`, because responses carry `Access-Control-Allow-Credentials:
- * true`. Non-allowlisted origins get no ACAO header at all, so the browser
- * fails the preflight/response check and never delivers a credentialed
- * cross-origin response.
+ * Two-lane Origin policy derived from the Application registry
+ * (`./dynamicOriginRegistry`):
+ *  - TRUSTED origins (first-party / internal / system / official apps, the
+ *    bootstrap-core seed, and `OXY_EXTRA_ALLOWED_ORIGINS`) get the credentialed
+ *    lane: `Access-Control-Allow-Origin: <origin>` + `Access-Control-Allow-
+ *    Credentials: true`. The origin is ALWAYS echoed back, NEVER `*`, because
+ *    the response carries credentials.
+ *  - THIRD-PARTY active apps get a NON-credentialed lane: an
+ *    `Access-Control-Allow-Origin: <origin>` echo WITHOUT credentials — exactly
+ *    what a public PKCE/bearer client needs, and it never drags `oxy.so`
+ *    cookies. This lane never widens the credentialed/CSRF boundary.
+ *  - Unknown origins get no ACAO header at all, so the browser fails the
+ *    preflight/response check.
  *
- * The allowlist itself lives in `./allowedOrigins` and is shared with the
- * Origin guard middleware (single source of truth).
+ * Socket.IO stays TRUSTED-only via `isAllowedOrigin` (it always uses
+ * credentials). The registry is the single source of truth, shared with the
+ * Origin guard middleware via `./allowedOrigins`.
  */
 
 import { Request, Response, NextFunction } from 'express';
 import { isAllowedOrigin } from './allowedOrigins';
+import { getCorsDecision } from './dynamicOriginRegistry';
 
 /**
  * Standard HTTP methods allowed for CORS
@@ -74,11 +82,12 @@ export const PREFLIGHT_MAX_AGE = 86400;
 /**
  * CORS middleware factory.
  *
- * Echoes the request origin in `Access-Control-Allow-Origin` ONLY when it
- * passes the strict allowlist. Disallowed origins receive no ACAO header
- * (the preflight fails; the browser will not send the credentialed request).
- * `Vary: Origin` is always set so caches never serve one origin's headers
- * to another.
+ * Echoes the request origin in `Access-Control-Allow-Origin` when the registry
+ * allows it, and additionally sends `Access-Control-Allow-Credentials: true`
+ * ONLY for TRUSTED origins. Third-party origins get the ACAO echo without
+ * credentials; unknown origins get no ACAO header at all (the preflight fails;
+ * the browser will not deliver the cross-origin response). `Vary: Origin` is
+ * always set so caches never serve one origin's headers to another.
  */
 export function createCorsMiddleware() {
   const allowedMethodsStr = ALLOWED_METHODS.join(', ');
@@ -88,9 +97,14 @@ export function createCorsMiddleware() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin;
 
-    if (origin && isAllowedOrigin(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (origin) {
+      const decision = getCorsDecision(origin);
+      if (decision.allow) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        if (decision.credentials) {
+          res.setHeader('Access-Control-Allow-Credentials', 'true');
+        }
+      }
     }
 
     res.setHeader('Access-Control-Allow-Methods', allowedMethodsStr);

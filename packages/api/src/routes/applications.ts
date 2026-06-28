@@ -28,6 +28,7 @@ import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import approvedClientsCache from '../utils/approvedClientsCache';
+import { refreshOriginRegistry } from '../config/dynamicOriginRegistry';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { isTrustedApplication } from '../utils/trustedApplication';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
@@ -95,6 +96,21 @@ const WEBHOOK_SECRET_RANDOM_BYTES = 24;
 const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const router = express.Router();
+
+/**
+ * Rebuild the dynamic CORS origin snapshot after an Application
+ * create/update/delete. A change to an app's `redirectUris` or `status` changes
+ * the registry-derived CORS allowlist, so refresh now instead of waiting for
+ * the 60s background tick. Fire-and-forget — never blocks the response; a
+ * failure just means the change lands on the next tick.
+ */
+function refreshDynamicCorsOrigins(): void {
+  void refreshOriginRegistry().catch((err) =>
+    logger.warn('dynamicOriginRegistry refresh after application change failed', {
+      err: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
 
 // All application routes require an authenticated user.
 router.use(authMiddleware);
@@ -688,6 +704,7 @@ router.post(
     // so those origins are honoured on the next read instead of after the TTL.
     if (application.status === 'active' && (application.redirectUris?.length ?? 0) > 0) {
       approvedClientsCache.invalidate();
+      refreshDynamicCorsOrigins();
     }
 
     logger.info('Application created', {
@@ -802,6 +819,7 @@ router.patch(
     // redirect origin stays approved (or a newly-added one stays unapproved)
     // for up to the 60s TTL.
     approvedClientsCache.invalidate();
+    refreshDynamicCorsOrigins();
 
     logger.info('Application updated', {
       userId: requireUserId(req),
@@ -837,6 +855,7 @@ router.delete(
     // Likewise drop the FedCM/SSO approved-clients origin set: a deleted app's
     // redirect origins must stop being approved without waiting out the TTL.
     approvedClientsCache.invalidate();
+    refreshDynamicCorsOrigins();
 
     logger.info('Application deleted', {
       userId: requireUserId(req),

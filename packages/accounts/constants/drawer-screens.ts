@@ -29,6 +29,7 @@ export type DrawerRouteName =
   | 'storage'
   | 'managed-accounts'
   | 'sessions'
+  | 'connected-apps'
   | 'search'
   | 'authorize'
   | 'scan-qr';
@@ -61,6 +62,7 @@ export const DRAWER_SCREENS: readonly DrawerScreenConfig[] = [
   { name: 'storage', labelKey: 'drawer.storage', titleKey: 'drawer.storage' },
   { name: 'managed-accounts', labelKey: 'drawer.yourIdentities', titleKey: 'drawer.yourIdentities' },
   { name: 'sessions', hidden: true },
+  { name: 'connected-apps', hidden: true, titleKey: 'connectedApps.title' },
   { name: 'search', hidden: true },
   { name: 'authorize', hidden: true, titleKey: 'drawer.authorize' },
   { name: 'scan-qr', hidden: true, titleKey: 'drawer.scanQr', headerShown: false },

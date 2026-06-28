@@ -109,6 +109,7 @@ const es: LocaleDict = {
     disclaimer:
       'Al continuar, {{app}} podrá iniciar sesión con tu cuenta de Oxy. Puedes gestionar las apps conectadas cuando quieras en los ajustes de tu cuenta de Oxy.',
     expiresAt: 'La solicitud caduca a las {{time}}.',
+    signingIn: 'Iniciando sesión…',
     requestTitle: 'Solicitud de autorización',
     requestUnavailable: 'No pudimos cargar los detalles de esta solicitud.',
     completeTitle: 'Autorización completada',

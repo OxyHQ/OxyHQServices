@@ -7,6 +7,7 @@
  */
 
 import express from 'express';
+import mongoose from 'mongoose';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
@@ -70,7 +71,12 @@ import {
   oauthAuthorizeSchema,
   oauthTokenSchema,
   oauthClientParams,
+  oauthConsentQuerySchema,
+  grantApplicationIdParams,
 } from '../schemas/auth.schemas';
+import { AppGrant } from '../models/AppGrant';
+import { FedCMGrant } from '../models/FedCMGrant';
+import { normaliseOrigin } from '../utils/origin';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
 import { formatUserNameResponse } from '../utils/displayName';
@@ -2309,6 +2315,24 @@ const oauthClientLookupLimiter = rateLimit({
   max: process.env.NODE_ENV === 'development' ? 200 : 60,
 });
 
+const oauthConsentLimiter = rateLimit({
+  prefix: 'rl:auth:oauth-consent:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
+});
+
+const grantsReadLimiter = rateLimit({
+  prefix: 'rl:auth:grants:read:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
+});
+
+const grantsRevokeLimiter = rateLimit({
+  prefix: 'rl:auth:grants:revoke:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
 /**
  * @openapi
  * /auth/oauth/authorize:
@@ -2416,6 +2440,8 @@ router.post(
       throw new ForbiddenError('redirect_uri is not registered for this client');
     }
 
+    const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
+
     // Mint a single-use opaque code. The service persists a hash, never
     // the raw value, so leakage of the AuthCode collection would not
     // allow an attacker to redeem outstanding codes.
@@ -2425,8 +2451,33 @@ router.post(
       redirectUri,
       codeChallenge,
       codeChallengeMethod: codeChallenge ? 'S256' : undefined,
-      scopes: scope ? scope.split(/\s+/).filter(Boolean) : [],
+      scopes: requestedScopes,
     });
+
+    // Record (or refresh) the user's consent so a returning user skips the
+    // consent screen while the granted scopes still cover the request — the
+    // standard OAuth returning-user model. TRUSTED apps are auto-approved and
+    // never prompt, so we DON'T persist a (revocable) grant for them; only
+    // third-party grants belong in the "Connected apps" management surface.
+    // Best-effort: a failure here must never block the issued code.
+    if (!isTrustedApplication(app)) {
+      try {
+        const now = new Date();
+        await AppGrant.findOneAndUpdate(
+          { userId: user._id, applicationId: app._id },
+          {
+            $set: { lastUsedAt: now },
+            $addToSet: { scopes: { $each: requestedScopes } },
+            $setOnInsert: { firstGrantedAt: now },
+          },
+          { upsert: true, new: true }
+        );
+      } catch (error) {
+        logger.warn('[OAuth] Failed to record AppGrant', {
+          err: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     logger.info('[OAuth] Authorization code issued', {
       clientId: clientId.substring(0, 12) + '...',
@@ -2440,6 +2491,259 @@ router.post(
       redirectUri,
       expiresIn: Math.floor(AUTH_CODE_TTL_MS / 1000),
     });
+  })
+);
+
+/**
+ * @openapi
+ * /auth/oauth/consent:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Server-authoritative decision on whether OAuth consent is needed
+ *     description: >
+ *       Called by the auth UI before rendering the consent screen. Resolves the
+ *       `clientId` to an Application (validating the `redirectUri` exactly like
+ *       `POST /auth/oauth/authorize`) and decides whether the user must consent:
+ *
+ *       - TRUSTED apps (first-party / internal / system / official) are
+ *         auto-approved → `consentRequired: false, reason: 'trusted'`.
+ *       - A prior grant whose scopes cover the requested `scope` →
+ *         `consentRequired: false, reason: 'granted'`.
+ *       - A prior grant missing some requested scope →
+ *         `consentRequired: true, reason: 'scope_changed'`.
+ *       - No prior grant → `consentRequired: true, reason: 'new'`.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: clientId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: redirectUri
+ *         required: true
+ *         schema: { type: string, format: uri }
+ *       - in: query
+ *         name: scope
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Consent decision.
+ *       400:
+ *         description: Invalid client.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       403:
+ *         description: Redirect URI is not registered for this client.
+ */
+router.get(
+  '/oauth/consent',
+  authMiddleware,
+  oauthConsentLimiter,
+  validate({ query: oauthConsentQuerySchema }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const user = req.user;
+    if (!user?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { clientId, redirectUri, scope } = req.query as unknown as {
+      clientId: string;
+      redirectUri: string;
+      scope?: string;
+    };
+
+    // Resolve credential → app EXACTLY like POST /oauth/authorize: a usable
+    // (active or in-grace) credential pointing at an active application, with
+    // the redirect_uri matched exactly (RFC 6749 §3.1.2).
+    const credential = await resolveUsableCredential(clientId);
+    if (!credential) {
+      throw new BadRequestError('Invalid client');
+    }
+    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    if (!app) {
+      throw new BadRequestError('Invalid client');
+    }
+    if (!isAllowedRedirectUri(app, redirectUri)) {
+      throw new ForbiddenError('redirect_uri is not registered for this client');
+    }
+
+    // Trusted apps are auto-approved — full first-party trust, regardless of
+    // scope (the Google-with-its-own-apps model).
+    if (isTrustedApplication(app)) {
+      sendSuccess(res, { consentRequired: false, reason: 'trusted' });
+      return;
+    }
+
+    const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
+    const grant = await AppGrant.findOne({ userId: user._id, applicationId: app._id })
+      .select('scopes')
+      .lean<{ scopes?: string[] } | null>();
+
+    if (grant) {
+      const granted = new Set(grant.scopes ?? []);
+      const covered = requestedScopes.every((s) => granted.has(s));
+      if (covered) {
+        sendSuccess(res, { consentRequired: false, reason: 'granted' });
+        return;
+      }
+      sendSuccess(res, { consentRequired: true, reason: 'scope_changed' });
+      return;
+    }
+
+    sendSuccess(res, { consentRequired: true, reason: 'new' });
+  })
+);
+
+/**
+ * Public summary of an application the user has connected via OAuth — what the
+ * "Connected apps" management UI consumes. Built from AppGrant rows joined with
+ * Application metadata.
+ */
+interface ConnectedAppSummary {
+  applicationId: string;
+  name: string;
+  logoUrl?: string;
+  scopes: string[];
+  firstGrantedAt: string;
+  lastUsedAt: string;
+}
+
+/**
+ * @openapi
+ * /auth/grants:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: List the third-party apps the user has authorized (Connected apps)
+ *     description: >
+ *       Returns the user's revocable OAuth grants joined with the application's
+ *       name + logo + granted scopes + timestamps. Trusted (auto-approved) apps
+ *       are never recorded as grants, so they never appear here.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The user's connected applications.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.get(
+  '/grants',
+  authMiddleware,
+  grantsReadLimiter,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const user = req.user;
+    if (!user?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const grants = await AppGrant.find({ userId: user._id })
+      .select('applicationId scopes firstGrantedAt lastUsedAt')
+      .sort({ lastUsedAt: -1 })
+      .lean<
+        Array<{
+          applicationId: mongoose.Types.ObjectId;
+          scopes?: string[];
+          firstGrantedAt: Date;
+          lastUsedAt: Date;
+        }>
+      >();
+
+    const applicationIds = grants.map((grant) => grant.applicationId);
+    const apps = await Application.find({ _id: { $in: applicationIds } })
+      .select('name icon')
+      .lean<Array<{ _id: mongoose.Types.ObjectId; name: string; icon?: string }>>();
+
+    const appById = new Map(apps.map((app) => [app._id.toString(), app]));
+
+    const data: ConnectedAppSummary[] = [];
+    for (const grant of grants) {
+      const app = appById.get(grant.applicationId.toString());
+      // Skip grants whose application no longer exists — effectively revoked.
+      if (!app) continue;
+      data.push({
+        applicationId: grant.applicationId.toString(),
+        name: app.name,
+        logoUrl: app.icon ?? undefined,
+        scopes: grant.scopes ?? [],
+        firstGrantedAt: grant.firstGrantedAt.toISOString(),
+        lastUsedAt: grant.lastUsedAt.toISOString(),
+      });
+    }
+
+    sendSuccess(res, data);
+  })
+);
+
+/**
+ * @openapi
+ * /auth/grants/{applicationId}:
+ *   delete:
+ *     tags:
+ *       - Authentication
+ *     summary: Revoke a connected app's OAuth grant
+ *     description: >
+ *       Deletes the user's AppGrant for the application so the next sign-in
+ *       prompts for consent again. ALSO deletes any FedCMGrant rows for the
+ *       user whose origin matches one of the app's registered redirect origins,
+ *       so silent FedCM/SSO stops resolving for that app too.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: applicationId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Grant revoked (idempotent).
+ *       400:
+ *         description: Invalid applicationId.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.delete(
+  '/grants/:applicationId',
+  authMiddleware,
+  grantsRevokeLimiter,
+  validate({ params: grantApplicationIdParams }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const user = req.user;
+    if (!user?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { applicationId } = req.params;
+    if (!isValidObjectId(applicationId)) {
+      throw new BadRequestError('Invalid applicationId');
+    }
+
+    // Drop the OAuth grant — the next authorize for this app re-prompts consent.
+    await AppGrant.deleteOne({ userId: user._id, applicationId });
+
+    // Also revoke any FedCM grants for this app's origins so silent SSO stops
+    // resolving too (consistency: revoking an app should stop ALL of its
+    // silent-restore paths, not just the OAuth one).
+    const app = await Application.findById(applicationId)
+      .select('redirectUris')
+      .lean<{ redirectUris?: string[] } | null>();
+    if (app) {
+      const origins = new Set<string>();
+      for (const uri of app.redirectUris ?? []) {
+        const origin = normaliseOrigin(uri);
+        if (origin) origins.add(origin);
+      }
+      if (origins.size > 0) {
+        await FedCMGrant.deleteMany({
+          userId: user._id,
+          clientOrigin: { $in: Array.from(origins) },
+        });
+      }
+    }
+
+    sendSuccess(res, { revoked: true });
   })
 );
 

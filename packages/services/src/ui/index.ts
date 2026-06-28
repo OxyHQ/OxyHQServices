@@ -12,6 +12,8 @@
  * cannot contain `require()` per CLAUDE.md) and (b) defeated tree-shaking.
  */
 
+/// <reference path="../types/react-native-classname.d.ts" />
+
 // Components
 export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';

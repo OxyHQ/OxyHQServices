@@ -110,6 +110,7 @@ const en: LocaleDict = {
     disclaimer:
       'By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings.',
     expiresAt: 'Request expires at {{time}}.',
+    signingIn: 'Signing you in…',
     requestTitle: 'Authorization request',
     requestUnavailable: "We couldn't load the details of this request.",
     completeTitle: 'Authorization complete',

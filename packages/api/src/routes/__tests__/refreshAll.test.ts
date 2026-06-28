@@ -207,6 +207,19 @@ jest.mock('../socialAuth', () => ({
 }));
 
 import cookieParser from 'cookie-parser';
+// auth.ts statically imports the AppGrant + FedCMGrant models (OAuth consent
+// grants); mock them so the real Mongoose schema does not run under the global
+// mongoose mock (which lacks Schema.Types).
+jest.mock('../../models/AppGrant', () => ({
+  __esModule: true,
+  AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
+  default: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
+}));
+jest.mock('../../models/FedCMGrant', () => ({
+  __esModule: true,
+  FedCMGrant: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
+  default: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
+}));
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
 import { sha256Hex } from '../../services/oauthCode.service';

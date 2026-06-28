@@ -21,6 +21,8 @@
  * ```
  */
 
+/// <reference path="./types/react-native-classname.d.ts" />
+
 import { setPlatformOS, type PlatformOS } from '@oxyhq/core';
 import { Platform } from 'react-native';
 setPlatformOS(Platform.OS as PlatformOS);

@@ -98,6 +98,7 @@ export type { ProfileLink, ProfileLinkMetadata } from './utils/profileLinks';
 export type {
     Application,
     PublicApplication,
+    ConnectedApp,
     ApplicationMember,
     ApplicationCredential,
     ApplicationRole,

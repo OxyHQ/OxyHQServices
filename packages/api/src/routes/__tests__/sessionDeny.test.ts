@@ -56,6 +56,19 @@ jest.mock('../../controllers/session.controller', () => ({
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 jest.mock('../socialAuth', () => ({ __esModule: true, default: express.Router() }));
 
+// auth.ts statically imports the AppGrant + FedCMGrant models (OAuth consent
+// grants); mock them so the real Mongoose schema does not run under the global
+// mongoose mock (which lacks Schema.Types).
+jest.mock('../../models/AppGrant', () => ({
+  __esModule: true,
+  AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
+  default: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
+}));
+jest.mock('../../models/FedCMGrant', () => ({
+  __esModule: true,
+  FedCMGrant: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
+  default: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
+}));
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
 

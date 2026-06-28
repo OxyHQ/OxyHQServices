@@ -162,7 +162,8 @@
       "activeSessions": "Active sessions",
       "activeSessionsSubtitle": "Manage your active sign-in sessions across all devices",
       "language": "Language",
-      "languageSubtitle": "Change the language used by this app"
+      "languageSubtitle": "Change the language used by this app",
+      "connectedApps": "Connected apps"
     },
     "recommendations": {
       "biometric": "Enable biometric authentication",
@@ -555,6 +556,30 @@
     "signInRequired": "Please sign in to manage your third-party connections.",
     "emptyTitle": "No connected apps yet",
     "emptySubtitle": "When you grant third-party apps access to your Oxy account, they will appear here."
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Third-party apps you've granted access to your Oxy account.",
+    "loading": "Loading connected apps...",
+    "empty": "No connected apps",
+    "emptySubtitle": "Apps you authorize to access your Oxy account will appear here.",
+    "lastUsed": "Last used {{time}}",
+    "noScopes": "No specific permissions",
+    "revoke": "Revoke",
+    "revokeA11y": "Revoke access for {{name}}",
+    "revokeConfirmTitle": "Revoke access to {{name}}?",
+    "revokeConfirmMessage": "{{name}} will no longer be able to access your Oxy account. You can authorize it again at any time.",
+    "revokeConfirmAction": "Revoke access",
+    "revokeSuccess": "Access revoked",
+    "revokeFailed": "Couldn't revoke access. Please try again.",
+    "loadFailed": "Couldn't load connected apps.",
+    "retry": "Retry",
+    "summary": "{{count}} apps have access",
+    "summary_one": "{{count}} app has access",
+    "summary_zero": "No apps have access",
+    "summaryPending": "Apps you've authorized to access your account",
+    "manageRow": "Manage connected apps",
+    "manageRowSubtitle": "Review and revoke app access"
   },
   "sharing": {
     "title": "People & sharing",

@@ -14,7 +14,11 @@ import { AccountChooser } from "@/components/account-chooser";
 import { ConsentCard } from "@/components/consent-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import { sessionStatusSchema, safeParse } from "@/lib/schemas";
+import {
+  sessionStatusSchema,
+  safeParse,
+  consentRequiredFromBody,
+} from "@/lib/schemas";
 import type { DeviceAccount } from "@/lib/types";
 import {
   buildRelativeUrl,
@@ -148,6 +152,11 @@ export function AuthorizePage() {
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // OAuth code path only: when the server says consent isn't required (trusted
+  // app, or a stored grant already covers the requested scopes) we authorize
+  // and redirect WITHOUT rendering the ConsentCard. While that POST + redirect
+  // is in flight we show a neutral "Signing you in…" backdrop.
+  const [autoApproving, setAutoApproving] = useState(false);
 
   // Google-style account chooser shown as an additive front screen before the
   // consent UI. Detect accounts signed in on this device; selecting the active
@@ -363,6 +372,9 @@ export function AuthorizePage() {
     setChooserPendingSessionId(entry.sessionId);
     try {
       applyChosenAccount(entry);
+      // Selecting an account plants its bearer; with a token in hand the OAuth
+      // path can skip the ConsentCard when consent isn't required.
+      await maybeAutoApprove(entry.accessToken);
     } catch {
       gotoLoginWithHint(entry.account.username || entry.account.email);
     } finally {
@@ -386,6 +398,9 @@ export function AuthorizePage() {
     );
     if (target) {
       applyChosenAccount(target);
+      // The `authuser` hint silently selects the account; mirror the chooser
+      // path and auto-approve when the OAuth request needs no consent.
+      void maybeAutoApprove(target.accessToken);
     }
   }, [
     deviceAccounts,
@@ -395,6 +410,119 @@ export function AuthorizePage() {
     data.error,
     data.sessionStatus,
   ]);
+
+  // Mint a single-use OAuth code and redirect to `redirect_uri` with
+  // `?code=&state=`. Shared by the explicit "Allow" button (`handleDecision`)
+  // and the trusted/already-granted auto-approval path so the fetch + redirect
+  // logic exists exactly once. PKCE + `state` are passed through untouched.
+  async function runOAuthAuthorize(
+    accessToken: string,
+    safeRedirect: string
+  ): Promise<void> {
+    if (!clientId) return;
+
+    const body: Record<string, string> = {
+      clientId,
+      redirectUri: safeRedirect,
+    };
+    if (codeChallenge) {
+      body.codeChallenge = codeChallenge;
+      body.codeChallengeMethod = codeChallengeMethod || "S256";
+    }
+    if (scope) body.scope = scope;
+    if (state) body.state = state;
+
+    const codeResponse = await fetch(buildApiUrl("/auth/oauth/authorize"), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (codeResponse.status === 401) {
+      navigate(
+        buildRelativeUrl("/login", {
+          token: token || undefined,
+          redirect_uri: redirectUri || undefined,
+          state: state || undefined,
+          client_id: clientId || undefined,
+          code_challenge: codeChallenge || undefined,
+          code_challenge_method: codeChallengeMethod || undefined,
+          scope: scope || undefined,
+          error: "Session expired. Please sign in again.",
+        })
+      );
+      return;
+    }
+
+    if (!codeResponse.ok) {
+      const errPayload = await codeResponse.json().catch(() => ({}));
+      const message =
+        typeof errPayload?.message === "string"
+          ? errPayload.message
+          : "Authorization failed";
+      // Surface the error and drop both in-flight flags so the page falls back
+      // to the ConsentCard (auto-approve) or re-enables the button (manual).
+      setAutoApproving(false);
+      setSubmitting(false);
+      setData((prev) => ({ ...prev, error: message }));
+      return;
+    }
+
+    const codeResult = await codeResponse.json();
+    const codeData = codeResult.data || codeResult;
+    const url = new URL(safeRedirect);
+    url.searchParams.set("code", codeData.code);
+    if (state) url.searchParams.set("state", state);
+    window.location.href = url.toString();
+  }
+
+  // Ask the server whether the OAuth consent screen must be shown for this
+  // (user, application, scope) tuple. A trusted app or a covering stored grant
+  // returns `consentRequired: false` → we auto-approve and redirect, no
+  // ConsentCard. SECURITY: any transport/parse failure fails safe to "show the
+  // ConsentCard" (`consentRequiredFromBody`) — we never silently auto-approve
+  // on an error. Only runs on the OAuth code path; the device-flow handoff
+  // (no client_id) always shows the ConsentCard.
+  async function maybeAutoApprove(accessToken: string | null): Promise<void> {
+    const safeRedirect = safeRedirectUrl(redirectUri);
+    if (!clientId || !safeRedirect || !accessToken) return;
+
+    // Show the neutral backdrop for the whole decision so the ConsentCard never
+    // flashes while the check is in flight. If consent turns out to be required
+    // we drop the backdrop below and render the ConsentCard instead.
+    setAutoApproving(true);
+
+    let body: unknown = null;
+    try {
+      const params = new URLSearchParams();
+      params.set("clientId", clientId);
+      params.set("redirectUri", safeRedirect);
+      if (scope) params.set("scope", scope);
+      const response = await fetch(
+        buildApiUrl(`/auth/oauth/consent?${params.toString()}`),
+        {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      // A non-OK response leaves `body` null → `consentRequiredFromBody`
+      // fails safe to true (ConsentCard shown).
+      body = response.ok ? await response.json().catch(() => null) : null;
+    } catch {
+      body = null;
+    }
+
+    if (consentRequiredFromBody(body)) {
+      setAutoApproving(false);
+      return;
+    }
+
+    await runOAuthAuthorize(accessToken, safeRedirect);
+  }
 
   async function handleDecision(decision: "approve" | "deny") {
     if (!token && !clientId) return;
@@ -454,60 +582,7 @@ export function AuthorizePage() {
 
       // ---- OAuth2 authorization code flow ----
       if (clientId && safeRedirect) {
-        const body: Record<string, string> = {
-          clientId,
-          redirectUri: safeRedirect,
-        };
-        if (codeChallenge) {
-          body.codeChallenge = codeChallenge;
-          body.codeChallengeMethod = codeChallengeMethod || "S256";
-        }
-        if (scope) body.scope = scope;
-        if (state) body.state = state;
-
-        const codeResponse = await fetch(buildApiUrl("/auth/oauth/authorize"), {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "content-type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (codeResponse.status === 401) {
-          navigate(
-            buildRelativeUrl("/login", {
-              token: token || undefined,
-              redirect_uri: redirectUri || undefined,
-              state: state || undefined,
-              client_id: clientId || undefined,
-              code_challenge: codeChallenge || undefined,
-              code_challenge_method: codeChallengeMethod || undefined,
-              scope: scope || undefined,
-              error: "Session expired. Please sign in again.",
-            })
-          );
-          return;
-        }
-
-        if (!codeResponse.ok) {
-          const errPayload = await codeResponse.json().catch(() => ({}));
-          const message =
-            typeof errPayload?.message === "string"
-              ? errPayload.message
-              : "Authorization failed";
-          setData((prev) => ({ ...prev, error: message }));
-          setSubmitting(false);
-          return;
-        }
-
-        const codeResult = await codeResponse.json();
-        const codeData = codeResult.data || codeResult;
-        const url = new URL(safeRedirect);
-        url.searchParams.set("code", codeData.code);
-        if (state) url.searchParams.set("state", state);
-        window.location.href = url.toString();
+        await runOAuthAuthorize(accessToken, safeRedirect);
         return;
       }
 
@@ -589,6 +664,17 @@ export function AuthorizePage() {
 
   if (loading || deviceAccountsLoading) {
     return <LoadingSpinner />;
+  }
+
+  // Trusted / already-granted OAuth request: authorizing + redirecting without
+  // ever showing the ConsentCard. Neutral backdrop while that completes.
+  if (autoApproving) {
+    return (
+      <AuthFormLayout>
+        <AuthFormHeader title={t("authorize.signingIn")} />
+        <LoadingSpinner />
+      </AuthFormLayout>
+    );
   }
 
   if (!token && !clientId) {

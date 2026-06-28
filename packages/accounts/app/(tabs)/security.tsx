@@ -19,6 +19,7 @@ import { DevicesSection } from '@/components/security/devices-section';
 import { useDeviceItems } from '@/components/security/useDeviceItems';
 import { ActiveSessionsSection } from '@/components/security/active-sessions-section';
 import { useActiveSessions } from '@/components/security/useActiveSessions';
+import { ConnectedAppsSection } from '@/components/security/connected-apps-section';
 
 export default function SecurityScreen() {
     const colors = useColors();
@@ -105,6 +106,8 @@ export default function SecurityScreen() {
             <DevicesSection items={deviceItems} deviceCount={devices.length} />
 
             <ActiveSessionsSection items={activeSessionsItems} />
+
+            <ConnectedAppsSection />
         </>
     );
 

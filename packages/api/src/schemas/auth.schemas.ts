@@ -186,3 +186,19 @@ export const oauthTokenSchema = z.object({
 export const oauthClientParams = z.object({
   clientId: z.string().trim().min(1),
 });
+
+// GET /auth/oauth/consent
+// Server-authoritative decision on whether the consent screen must be shown for
+// (user, app, scopes). `clientId` + `redirectUri` are resolved/validated exactly
+// like POST /auth/oauth/authorize; `scope` is the optional space-separated set.
+export const oauthConsentQuerySchema = z.object({
+  clientId: z.string().trim().min(1),
+  redirectUri: z.string().trim().url(),
+  scope: z.string().trim().max(512).optional(),
+});
+
+// DELETE /auth/grants/:applicationId
+// Revoke the user's OAuth grant for a connected third-party application.
+export const grantApplicationIdParams = z.object({
+  applicationId: z.string().trim().min(1),
+});

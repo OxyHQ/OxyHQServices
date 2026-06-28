@@ -1,129 +1,46 @@
 /**
- * Allowed Origins — single source of truth (MED-1 CSRF hardening, Phase A)
+ * Allowed Origins — TRUSTED (credentialed) allowlist (MED-1 CSRF hardening).
  *
- * Shared by the CORS middleware (config/cors.ts) and the Origin guard
- * (middleware/originGuard.ts) so both layers enforce the exact same policy.
+ * `isAllowedOrigin` is the single SYNCHRONOUS trusted-origin check shared by:
+ *  - the credentialed CORS lane (config/cors.ts),
+ *  - the CSRF Origin guard (middleware/originGuard.ts),
+ *  - the Socket.IO CORS config (config/cors.ts).
  *
- * Policy:
- *  - Exact first-party apex origins and explicitly registered first-party app
- *    origins (https only).
- *  - No wildcard subdomain trust: same-site tenant/user subdomains must not be
- *    able to make credentialed CORS requests to bearer-minting endpoints.
- *  - `http://localhost[:port]` / `http://127.0.0.1[:port]` ONLY outside
- *    production.
- *  - Optional emergency escape hatch via `OXY_EXTRA_ALLOWED_ORIGINS`
- *    (comma-separated `https://<hostname>` entries, each hostname validated
- *    with the same strict `isValidHostname` used for cookie domains).
+ * It is TRUSTED-ONLY and never widens to third-party app origins — that is the
+ * exact CSRF / token-leak boundary we close. The trusted set is now sourced
+ * from {@link dynamicOriginRegistry}: it is the union of
+ *  - {@link BOOTSTRAP_CORE_ORIGINS} (fail-safe first-party seed),
+ *  - active first-party / internal / system / official Applications'
+ *    `redirectUris` origins (auto-authorized by registering the app in Console),
+ *  - validated `OXY_EXTRA_ALLOWED_ORIGINS` (emergency escape hatch),
+ * with `http://localhost[:port]` / `http://127.0.0.1[:port]` ONLY outside
+ * production.
  *
- * This is an EXPLICIT enumeration: every first-party frontend that calls
- * api.oxy.so with credentials must be listed here. The previous wildcard
- * `*.oxy.so` (etc.) trust let any same-site subdomain — including untrusted
- * user/tenant subdomains — make credentialed CORS requests to bearer-minting
- * endpoints, which is the exact CSRF/token-leak boundary we are closing. When
- * onboarding a new first-party frontend, add its exact origin here (and to the
- * application registry's redirectUris) rather than re-introducing a wildcard.
+ * Registering a NEW first-party frontend now authorizes its origin
+ * automatically via the Application registry — no code edit here. The bootstrap
+ * core remains as a fail-safe so the migration can never drop an origin that
+ * already works. THIRD-PARTY app origins are handled by `getCorsDecision`
+ * (non-credentialed lane) in the registry — they are intentionally NOT visible
+ * to `isAllowedOrigin`.
  */
 
-import { isValidHostname } from './env';
-import { logger } from '../utils/logger';
-
-const EXACT_ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
-  // ── oxy.so first-party frontends (Cloudflare Pages) + apex + CDN ──
-  'https://oxy.so',
-  'https://api.oxy.so',
-  'https://accounts.oxy.so',
-  'https://allo.oxy.so',
-  'https://auth.oxy.so',
-  'https://cloud.oxy.so',
-  'https://console.oxy.so',
-  'https://inbox.oxy.so',
-  'https://noted.oxy.so',
-  'https://os.oxy.so',
-  'https://pay.oxy.so',
-  'https://syra.oxy.so',
-  // ── Oxy Website FairCoin redirect ──
-  'https://fairco.in',
-  // ── Mention ──
-  'https://mention.earth',
-  'https://api.mention.earth',
-  'https://auth.mention.earth',
-  // ── Homiio ──
-  'https://homiio.com',
-  'https://app.homiio.com',
-  'https://auth.homiio.com',
-  // ── Alia ──
-  'https://alia.onl',
-  'https://api.alia.onl',
-  'https://auth.alia.onl',
-  // ── Syra ──
-  'https://syra.fm',
-  // ── Allo ──
-  'https://allo.you',
-  // ── TNP ──
-  'https://tnp.network',
-  // ── Moovo (storefront + first-party admin surfaces) ──
-  'https://moovo.now',
-  'https://go.moovo.now',
-  'https://hub.moovo.now',
-  // ── Mercaria (storefront + dashboard + point-of-sale) ──
-  'https://mercaria.co',
-  'https://dashboard.mercaria.co',
-  'https://pos.mercaria.co',
-]);
+import { isTrustedOrigin, getExtraAllowedOrigins } from './dynamicOriginRegistry';
 
 const DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/;
 
-const HTTPS_PREFIX = 'https://';
-
 /**
- * Parse + validate `OXY_EXTRA_ALLOWED_ORIGINS`. Each entry must be an
- * `https://<hostname>` origin whose hostname passes the strict
- * `isValidHostname` check. Invalid entries are logged and dropped — they
- * never widen the allowlist.
+ * Strict TRUSTED Origin allowlist check. Comparison is case-sensitive on
+ * purpose: browsers always send lowercase scheme + host, so anything else
+ * (`https://EVIL.oxy.so`, homograph hosts) is not a legitimate browser origin
+ * for our zones.
  *
- * Memoized on the raw env value so per-request lookups stay O(1) while
- * still picking up changes (tests, hot reconfiguration).
- */
-let extraOriginsCacheKey: string | undefined;
-let extraOriginsCache: ReadonlySet<string> = new Set();
-
-function getExtraAllowedOrigins(): ReadonlySet<string> {
-  const raw = process.env.OXY_EXTRA_ALLOWED_ORIGINS ?? '';
-  if (raw === extraOriginsCacheKey) {
-    return extraOriginsCache;
-  }
-
-  const parsed = new Set<string>();
-  for (const entry of raw.split(',')) {
-    const candidate = entry.trim();
-    if (candidate.length === 0) {
-      continue;
-    }
-    if (!candidate.startsWith(HTTPS_PREFIX)) {
-      logger.warn('OXY_EXTRA_ALLOWED_ORIGINS entry rejected: not https', { entry: candidate });
-      continue;
-    }
-    const hostname = candidate.slice(HTTPS_PREFIX.length);
-    if (!isValidHostname(hostname)) {
-      logger.warn('OXY_EXTRA_ALLOWED_ORIGINS entry rejected: invalid hostname', { entry: candidate });
-      continue;
-    }
-    parsed.add(candidate);
-  }
-
-  extraOriginsCacheKey = raw;
-  extraOriginsCache = parsed;
-  return parsed;
-}
-
-/**
- * Strict Origin allowlist check. Comparison is case-sensitive on purpose:
- * browsers always send lowercase scheme + host, so anything else
- * (`https://EVIL.oxy.so`, homograph hosts) is not a legitimate browser
- * origin for our zones.
+ * Reads the trusted snapshot from {@link dynamicOriginRegistry}; also honours
+ * dev-localhost (outside production) and the `OXY_EXTRA_ALLOWED_ORIGINS`
+ * escape hatch synchronously, so an env change is reflected immediately rather
+ * than only after the next background refresh.
  */
 export function isAllowedOrigin(origin: string): boolean {
-  if (EXACT_ALLOWED_ORIGINS.has(origin)) {
+  if (isTrustedOrigin(origin)) {
     return true;
   }
 
