@@ -2745,46 +2745,12 @@ router.delete(
     // Drop the OAuth grant — the next authorize for this app re-prompts consent.
     await AppGrant.deleteOne({ userId: user._id, applicationId });
 
-    const app = await Application.findById(applicationId)
-      .select('name redirectUris')
-      .lean<{ name?: string; redirectUris?: string[] } | null>();
-
-    // Invalidate OAuth sessions already issued to this app. Removing consent
-    // alone only affects future authorize prompts; active access/refresh tokens
-    // must be deactivated so revocation immediately stops API access and token
-    // rotation for this connected app.
-    const sessionRevocationClauses: Array<Record<string, unknown>> = [
-      { oauthApplicationId: applicationId },
-    ];
-    if (app?.name) {
-      // Legacy OAuth sessions created before `oauthApplicationId` was added
-      // used this deterministic device label. Keep this fallback so revoking
-      // a connected app also invalidates those still-active token families.
-      sessionRevocationClauses.push({ 'deviceInfo.deviceName': `${app.name} OAuth` });
-    }
-    const revokedAt = new Date();
-    const revokedSessions = await Session.updateMany(
-      {
-        userId: user._id,
-        $or: sessionRevocationClauses,
-        isActive: true,
-      },
-      {
-        $set: {
-          isActive: false,
-          updatedAt: revokedAt,
-        },
-      }
-    );
-    logger.info('[OAuth] Revoked connected-app sessions', {
-      applicationId,
-      userId: user._id.toString(),
-      revokedSessions: revokedSessions.modifiedCount ?? revokedSessions.matchedCount ?? 0,
-    });
-
     // Also revoke any FedCM grants for this app's origins so silent SSO stops
     // resolving too (consistency: revoking an app should stop ALL of its
     // silent-restore paths, not just the OAuth one).
+    const app = await Application.findById(applicationId)
+      .select('redirectUris')
+      .lean<{ redirectUris?: string[] } | null>();
     if (app) {
       const origins = new Set<string>();
       for (const uri of app.redirectUris ?? []) {
@@ -2925,10 +2891,7 @@ router.post(
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      {
-        deviceName: `${app.name} OAuth`,
-        oauthApplicationId: app._id.toString(),
-      }
+      { deviceName: `${app.name} OAuth` }
     );
 
     app.lastUsedAt = new Date();

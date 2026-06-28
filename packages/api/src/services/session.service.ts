@@ -347,7 +347,7 @@ class SessionService {
     options: SessionCreateOptions = {}
   ): Promise<ISession> {
     try {
-      const { deviceName, deviceFingerprint, stableDeviceKey, oauthApplicationId } = options;
+      const { deviceName, deviceFingerprint, stableDeviceKey } = options;
       // For IdP/FedCM-issued sessions the request is a server-to-server call
       // from the IdP (UA = 'unknown', egress IP varies per call), so the
       // UA/IP-derived deviceId would be random every time and sprawl a new
@@ -397,7 +397,6 @@ class SessionService {
       const existingSession = await Session.findOne({
         userId,
         deviceId: deviceInfo.deviceId,
-        oauthApplicationId: oauthApplicationId ?? null,
         isActive: true,
         expiresAt: { $gt: new Date() }
       }).select('_id sessionId deviceInfo accessToken refreshToken').lean();
@@ -423,7 +422,6 @@ class SessionService {
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
               'deviceInfo.ipAddress': deviceInfo.ipAddress,
               'deviceInfo.userAgent': deviceInfo.userAgent,
-              oauthApplicationId: oauthApplicationId ?? null,
               updatedAt: now
             }
           },
@@ -459,7 +457,6 @@ class SessionService {
         },
         accessToken,
         refreshToken,
-        oauthApplicationId: oauthApplicationId ?? null,
         isActive: true,
         expiresAt,
         lastRefresh: now
@@ -796,3 +793,4 @@ class SessionService {
 // Export singleton instance
 const sessionService = new SessionService();
 export default sessionService;
+
