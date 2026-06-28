@@ -1479,13 +1479,12 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const boundOrigin = requestOrigin(req);
 
   // Public OAuth client IDs are routing identifiers, not authenticators. For
-  // trusted first-party/internal app identities, a browser caller must prove it
-  // is running on one of the app's registered redirect origins before the
-  // device-consent UI shows official branding. Native clients attach no Origin /
-  // Referer header (no browser context) and cannot prove an origin, so they are
-  // accepted as-is — the device-flow consent screen still authorises every
-  // session interactively.
-  if (isTrustedApplication(resolvedApp) && hasBrowserContext(req)) {
+  // trusted first-party/internal app identities, the caller must prove it is
+  // running on one of the app's registered redirect origins before the
+  // device-consent UI shows official branding. Absence of Origin/Referer is not
+  // proof of a native client; server-side scripts can also omit both headers, so
+  // trusted public clients must not start an unbound no-origin device flow.
+  if (isTrustedApplication(resolvedApp)) {
     if (!boundOrigin || !applicationAllowsOrigin(resolvedApp, boundOrigin)) {
       throw new ForbiddenError('Application origin is not allowed');
     }
@@ -2252,16 +2251,6 @@ function firstHeaderValue(value: string | string[] | undefined): string | null {
 /** The browser-attached `Origin` of the request, or null when absent. */
 function requestOrigin(req: express.Request): string | null {
   return firstHeaderValue(req.headers.origin);
-}
-
-/**
- * A browser/web context is detectable when the user agent attached an `Origin`
- * or `Referer` header. Native clients (Expo `deviceFlowSignIn`) attach neither,
- * so the absence of BOTH signals a genuine native sign-in that cannot prove an
- * origin and must not be rejected for lacking one.
- */
-function hasBrowserContext(req: express.Request): boolean {
-  return Boolean(requestOrigin(req) || firstHeaderValue(req.headers.referer));
 }
 
 /** True when `origin` is the origin of one of the app's registered redirect URIs. */

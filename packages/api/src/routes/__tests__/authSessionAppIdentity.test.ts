@@ -387,10 +387,10 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
-  it('(b4) accepts an official app from a native client that carries no Origin/Referer', async () => {
-    // Native (Expo deviceFlowSignIn) requests attach neither Origin nor Referer.
-    // They cannot prove an origin and must NOT be rejected for lacking one — the
-    // device-flow consent screen still authorises every session interactively.
+  it('(b4) rejects an official app from a no-Origin/no-Referer request', async () => {
+    // Absence of browser headers is not a client authenticator. Server-side
+    // scripts can omit both Origin and Referer, so official public client IDs
+    // must still prove a registered origin before receiving official branding.
     mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
     mockApplicationFindById.mockResolvedValueOnce(officialApp());
 
@@ -399,9 +399,8 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
       clientId: 'oxy_dk_client',
     });
 
-    expect(res.status).toBe(200);
-    const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string } };
-    expect(created.applicationId.toString()).toBe(OFFICIAL_APP_ID);
+    expect(res.status).toBe(403);
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
   it('(c0) returns 400 when NEITHER clientId nor applicationId is supplied', async () => {
