@@ -109,15 +109,16 @@ app.use(compression());
 // Cookie parser middleware (before CSRF and body parsing)
 app.use(cookieParser());
 
-// The service-token federation media upload routes read the raw request as a
-// stream and pipe it straight to S3. The global JSON/urlencoded body parsers
-// (and their 1 MiB limit) must NOT touch them. The `/api/` prefix-strip
-// middleware runs AFTER body parsing, so at parse time the path may still carry
-// the prefix — guard against BOTH the stripped and prefixed forms.
+// Some routes need their raw request body before the global JSON/urlencoded
+// parsers run. The `/api/` prefix-strip middleware runs AFTER body parsing, so
+// at parse time the path may still carry the prefix — guard against BOTH the
+// stripped and prefixed forms.
 const CACHE_UPLOAD_PATH = '/assets/service/cache';
 const CACHE_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/cache';
 const FEDERATION_UPLOAD_PATH = '/assets/service/federation';
 const FEDERATION_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/federation';
+const EMAIL_INBOUND_PATH = '/email/inbound';
+const EMAIL_INBOUND_PATH_API_PREFIXED = '/api/email/inbound';
 
 /**
  * True only for the service-token media stream-upload requests. Uses `req.path`
@@ -135,6 +136,13 @@ function isCacheUploadRequest(req: express.Request): boolean {
   );
 }
 
+function isEmailInboundWebhookRequest(req: express.Request): boolean {
+  return (
+    req.method === 'POST' &&
+    (req.path === EMAIL_INBOUND_PATH || req.path === EMAIL_INBOUND_PATH_API_PREFIXED)
+  );
+}
+
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
@@ -142,17 +150,21 @@ app.use('/billing/webhook', express.raw({ type: 'application/json' }));
 // Authenticate and rate-limit before raw parsing so unauthenticated clients
 // cannot force 25 MiB body buffering or consume the Cloudflare Worker quota.
 app.use(
-  '/email/inbound',
+  [EMAIL_INBOUND_PATH, EMAIL_INBOUND_PATH_API_PREFIXED],
   verifyEmailInboundWebhookSecret,
   inboundRateLimit,
   express.raw({ type: '*/*', limit: '25mb' })
 );
-// Skip the global body parsers for the cache stream-upload so the raw request
-// reaches the route as an untouched readable stream.
+// Skip the global body parsers for routes that require raw bodies so their
+// handlers receive the request in the expected format.
 const jsonParser = express.json({ limit: '1mb' });
 const urlencodedParser = express.urlencoded({ extended: true, limit: '1mb' });
-app.use((req, res, next) => (isCacheUploadRequest(req) ? next() : jsonParser(req, res, next)));
-app.use((req, res, next) => (isCacheUploadRequest(req) ? next() : urlencodedParser(req, res, next)));
+app.use((req, res, next) =>
+  isCacheUploadRequest(req) || isEmailInboundWebhookRequest(req) ? next() : jsonParser(req, res, next)
+);
+app.use((req, res, next) =>
+  isCacheUploadRequest(req) || isEmailInboundWebhookRequest(req) ? next() : urlencodedParser(req, res, next)
+);
 
 // Request timeout to prevent slow clients holding connections. The cache
 // stream-upload legitimately takes longer than a normal request (it pipes up
