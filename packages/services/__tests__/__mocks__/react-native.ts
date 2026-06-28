@@ -58,12 +58,25 @@ export const Linking = {
   getInitialURL: async (): Promise<string | null> => null,
 };
 
+export const TouchableOpacity = ({
+  children,
+  onPress,
+  disabled,
+  ...props
+}: {
+  children?: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+  [key: string]: unknown;
+}) => React.createElement('button', { ...props, disabled, onClick: onPress }, children);
 
-export const TouchableOpacity = ({ children, onPress, disabled, ...props }: any) =>
-  React.createElement('button', { ...props, disabled, onClick: onPress }, children);
+export const Text = ({
+  children,
+  ...props
+}: {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => React.createElement('span', props, children);
 
-export const Text = ({ children, ...props }: any) =>
-  React.createElement('span', props, children);
-
-export const ActivityIndicator = (props: any) =>
+export const ActivityIndicator = (props: Record<string, unknown>) =>
   React.createElement('span', { ...props, role: 'status' });

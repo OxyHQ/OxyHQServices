@@ -28,4 +28,27 @@ export const toast: {
   },
 );
 
+/**
+ * Stub for `@oxyhq/bloom/theme`'s `useTheme`. Components under test
+ * (`FollowButton`, etc.) only read `colors.*`; return the canonical key set so
+ * any themed component renders without dragging in the real theme provider.
+ */
+export const useTheme = (): { isDark: boolean; colors: Record<string, string> } => ({
+  isDark: false,
+  colors: {
+    primary: '#5e3bff',
+    primaryForeground: '#ffffff',
+    secondary: '#eeeeee',
+    background: '#ffffff',
+    text: '#000000',
+    textSecondary: '#666666',
+    card: '#ffffff',
+    border: '#e0e0e0',
+    success: '#22c55e',
+    error: '#ef4444',
+    warning: '#f59e0b',
+    info: '#3b82f6',
+  },
+});
+
 export default toast;
