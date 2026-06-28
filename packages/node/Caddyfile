@@ -1,0 +1,34 @@
+# Caddy reverse proxy for an Oxy personal data node.
+#
+# Caddy terminates TLS (automatic Let's Encrypt certs) and forwards to the node
+# listening on localhost. Oxy reaches the node over HTTPS at the public domain;
+# the node binds only to localhost behind Caddy.
+#
+# Usage:
+#   1. Point an A/AAAA record for oxy-node.example.com at this host.
+#   2. Replace oxy-node.example.com below with your domain.
+#   3. caddy run --config ./Caddyfile
+#
+# The node's port is configured via OXY_NODE_PORT (default 4000).
+
+oxy-node.example.com {
+	encode zstd gzip
+
+	# Forward everything to the node. The node is content-addressed and
+	# self-authenticating (signed records + signed blob-pin headers), so no
+	# extra auth layer is added here.
+	reverse_proxy 127.0.0.1:4000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	# Liveness probe target for upstream monitors.
+	handle /health {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	log {
+		output file /var/log/caddy/oxy-node.log
+		format json
+	}
+}

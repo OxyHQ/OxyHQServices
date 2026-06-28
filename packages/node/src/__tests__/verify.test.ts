@@ -1,0 +1,89 @@
+/**
+ * verify.ts tests — the cross-package verification proof.
+ *
+ * Envelopes are SIGNED with `@oxyhq/core` (`KeyManager` + `SignatureService`,
+ * the same primitives the Commons vault uses) and VERIFIED with the node's
+ * `verifyRecordEnvelope` (which reuses `signedRecordSigningInput` /
+ * `computeRecordId` / `SignatureService.verify` from `@oxyhq/core`). A record
+ * signed elsewhere therefore verifies on the node with no node-local crypto.
+ */
+
+import { computeRecordId, signedRecordSigningInput } from '@oxyhq/core';
+import { verifyRecordEnvelope } from '../verify';
+import { buildSignedEnvelope, generateTestKeyPair } from './helpers/signEnvelope';
+
+describe('verifyRecordEnvelope', () => {
+  it('verifies a real owner-signed envelope and returns the matching recordId', async () => {
+    const owner = generateTestKeyPair();
+    const envelope = await buildSignedEnvelope({
+      privateKey: owner.privateKey,
+      publicKey: owner.publicKey,
+      seq: 0,
+      prev: null,
+      record: { displayName: 'Ada' },
+    });
+
+    const result = await verifyRecordEnvelope(envelope);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The recordId is the SHA-256 of the canonical signing input — recomputed
+      // independently here to prove the node derives the same content address.
+      expect(result.recordId).toBe(await computeRecordId(envelope));
+      expect(result.envelope.publicKey).toBe(owner.publicKey);
+    }
+  });
+
+  it('rejects a structurally invalid envelope', async () => {
+    const result = await verifyRecordEnvelope({ not: 'an envelope' });
+    expect(result).toEqual({ ok: false, reason: 'invalid_envelope' });
+  });
+
+  it('rejects a v1 envelope (the node is a v2 hash chain)', async () => {
+    const owner = generateTestKeyPair();
+    const v1 = {
+      version: 1 as const,
+      type: 'identity' as const,
+      subject: 'did:web:api.oxy.so:u:test-owner',
+      issuer: 'did:web:api.oxy.so:u:test-owner',
+      record: { hello: 'world' },
+      issuedAt: Date.now(),
+      publicKey: owner.publicKey,
+      alg: 'ES256K-DER-SHA256' as const,
+      signature: 'deadbeef',
+    };
+    const result = await verifyRecordEnvelope(v1);
+    expect(result).toEqual({ ok: false, reason: 'not_v2' });
+  });
+
+  it('rejects an envelope whose signature does not match the public key', async () => {
+    const owner = generateTestKeyPair();
+    const attacker = generateTestKeyPair();
+    const envelope = await buildSignedEnvelope({
+      privateKey: attacker.privateKey, // signed by the attacker...
+      publicKey: owner.publicKey, // ...but claims the owner's key
+      seq: 0,
+      prev: null,
+    });
+
+    const result = await verifyRecordEnvelope(envelope);
+    expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+
+  it('rejects a tampered record body (signature no longer covers the bytes)', async () => {
+    const owner = generateTestKeyPair();
+    const envelope = await buildSignedEnvelope({
+      privateKey: owner.privateKey,
+      publicKey: owner.publicKey,
+      seq: 0,
+      prev: null,
+      record: { amount: 1 },
+    });
+
+    const tampered = { ...envelope, record: { amount: 1_000_000 } };
+    // Sanity: the signing input genuinely changed.
+    expect(signedRecordSigningInput(tampered)).not.toBe(signedRecordSigningInput(envelope));
+
+    const result = await verifyRecordEnvelope(tampered);
+    expect(result).toEqual({ ok: false, reason: 'bad_signature' });
+  });
+});

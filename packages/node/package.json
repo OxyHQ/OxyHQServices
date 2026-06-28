@@ -1,0 +1,46 @@
+{
+  "name": "@oxyhq/node",
+  "version": "0.1.0",
+  "description": "Oxy personal data node — a self-hostable server that stores and serves a user's own signed records (their personal repo) for Oxy to ingest/mirror (Fase 5 decentralization)",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/core build && tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "test": "jest"
+  },
+  "keywords": [
+    "oxyhq",
+    "node",
+    "decentralization",
+    "signed-records",
+    "did",
+    "self-sovereign-identity"
+  ],
+  "author": "OxyHQ",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@oxyhq/contracts": "workspace:*",
+    "@oxyhq/core": "workspace:*",
+    "better-sqlite3": "^12.11.1",
+    "express": "^4.21.2",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.9.2"
+  }
+}

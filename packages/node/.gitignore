@@ -1,0 +1,8 @@
+# Build output (also covered by the root .gitignore)
+dist/
+
+# Local runtime data: the SQLite database + WAL/SHM sidecars created by a dev run
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

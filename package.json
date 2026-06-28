@@ -4,7 +4,8 @@
   "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
   "private": true,
   "trustedDependencies": [
-    "@shopify/react-native-skia"
+    "@shopify/react-native-skia",
+    "better-sqlite3"
   ],
   "workspaces": [
     "packages/contracts",
@@ -12,6 +13,7 @@
     "packages/auth-sdk",
     "packages/services",
     "packages/api",
+    "packages/node",
     "packages/auth",
     "packages/accounts",
     "packages/commons",
