@@ -102,32 +102,57 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
   });
 
   describe('getCommonsApprovalInfo (approver)', () => {
-    it('GETs the server-resolved approval info by authorizeCode', async () => {
-      const info = {
-        application: {
-          id: 'app1',
-          name: 'Mention',
-          type: 'first_party' as const,
-          isOfficial: true,
-          isInternal: false,
-          scopes: ['profile'],
-        },
+    const baseInfo = {
+      application: {
+        id: 'app1',
+        name: 'Mention',
+        type: 'first_party' as const,
+        isOfficial: true,
+        isInternal: false,
         scopes: ['profile'],
-        boundOrigin: 'https://mention.earth',
-        expiresAt: 1700000300000,
-        status: 'pending',
-      };
-      makeRequestSpy.mockResolvedValue(info);
+      },
+      scopes: ['profile'],
+      boundOrigin: 'https://mention.earth',
+      expiresAt: 1700000300000,
+      status: 'pending',
+    };
+
+    it('GETs the server-resolved approval info by authorizeCode', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, originVerified: true });
 
       const result = await oxy.getCommonsApprovalInfo('code-1');
 
-      expect(result).toEqual(info);
+      expect(result).toEqual({ ...baseInfo, originVerified: true });
       expect(makeRequestSpy).toHaveBeenCalledWith(
         'GET',
         '/auth/session/approve-info/code-1',
         undefined,
         expect.objectContaining({ cache: false }),
       );
+    });
+
+    it('coerces a missing originVerified to false (fail-safe to "not verified")', async () => {
+      makeRequestSpy.mockResolvedValue(baseInfo);
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.originVerified).toBe(false);
+    });
+
+    it('coerces a non-boolean originVerified to false', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, originVerified: 'yes' });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.originVerified).toBe(false);
+    });
+
+    it('passes through a server originVerified:false unchanged', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, originVerified: false });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.originVerified).toBe(false);
     });
   });
 

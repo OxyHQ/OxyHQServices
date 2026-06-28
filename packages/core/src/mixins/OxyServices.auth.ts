@@ -125,9 +125,32 @@ export interface CommonsApprovalInfo {
   scopes: string[];
   /** The origin the session is bound to (the RP web origin), when applicable. */
   boundOrigin?: string;
+  /**
+   * Server-authoritative anti-phishing flag: `true` only when this device-flow
+   * sign-in was started from a verified, registered origin of a trusted app.
+   * The approver (Commons) shows a warning when this is `false`. Always present
+   * — a missing/non-boolean server value is coerced to `false` (fail-safe to
+   * "not verified") by {@link OxyServicesAuthMixin.getCommonsApprovalInfo}.
+   */
+  originVerified: boolean;
   /** Server-authoritative expiry (epoch milliseconds). */
   expiresAt: number;
   /** Session lifecycle status. */
+  status: string;
+}
+
+/**
+ * @internal Raw server response of `GET /auth/session/approve-info/:code`.
+ * `originVerified` is typed loosely here because older servers may omit it (or
+ * send a non-boolean); the SDK coerces it to a strict `boolean` when mapping
+ * into {@link CommonsApprovalInfo}.
+ */
+interface CommonsApprovalInfoResponse {
+  application: PublicApplication;
+  scopes: string[];
+  boundOrigin?: string;
+  originVerified?: unknown;
+  expiresAt: number;
   status: string;
 }
 
@@ -826,12 +849,23 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getCommonsApprovalInfo(authorizeCode: string): Promise<CommonsApprovalInfo> {
       try {
-        return await this.makeRequest<CommonsApprovalInfo>(
+        const raw = await this.makeRequest<CommonsApprovalInfoResponse>(
           'GET',
           `/auth/session/approve-info/${encodeURIComponent(authorizeCode)}`,
           undefined,
           { cache: false }
         );
+        return {
+          application: raw.application,
+          scopes: raw.scopes,
+          boundOrigin: raw.boundOrigin,
+          // Fail-safe: only a literal boolean `true` counts as verified. A
+          // missing or non-boolean value (older server, malformed response)
+          // coerces to `false` so a stale server can never imply trust.
+          originVerified: raw.originVerified === true,
+          expiresAt: raw.expiresAt,
+          status: raw.status,
+        };
       } catch (error) {
         throw this.handleError(error);
       }
