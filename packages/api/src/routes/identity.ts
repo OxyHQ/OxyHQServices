@@ -42,7 +42,7 @@ import {
   getLatestRecord,
   type SignedRecordSubject,
 } from '../services/signedRecord.service';
-import { getHead, getLogSince, resolveCursorSeq } from '../services/repoLog.service';
+import { getHead, getPublicLogSince, resolveCursorSeq } from '../services/repoLog.service';
 import { materializeNodeFromRecord } from '../services/nodeRegistry.service';
 
 const router = Router();
@@ -247,9 +247,10 @@ router.get(
 
 /**
  * GET /identity/log/:userId?since=<seq|recordId>&limit= — the ordered slice of a
- * subject's verified signed-record chain (the FULL envelopes, so a node or any
- * verifier re-checks them independently). This is the Oxy→node export of the
- * authentic chain. Public, CORS-open, short-cached. A pure Oxy-DB read — it
+ * subject's public-safe verified signed-record chain (identity/profile/node
+ * records only; the FULL envelopes, so a node or any verifier re-checks them
+ * independently). This is the Oxy→node export of the public bootstrap chain.
+ * Public, CORS-open, short-cached. A pure Oxy-DB read — it
  * touches ONLY Oxy's own copy of the chain, never a node. `since` is a chain
  * `seq` (exclusive) or the last-ingested `recordId`; absent → from genesis.
  */
@@ -277,7 +278,7 @@ router.get(
     }
 
     const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : Number.NaN;
-    const records = await getLogSince(userId, sinceSeq, Number.isFinite(limitRaw) ? limitRaw : undefined);
+    const records = await getPublicLogSince(userId, sinceSeq, Number.isFinite(limitRaw) ? limitRaw : undefined);
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=5');

@@ -13,6 +13,10 @@
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import SignedRecord from '../models/SignedRecord';
 import RepoHead from '../models/RepoHead';
+import { NODE_COLLECTION } from '../utils/nodes.constants';
+
+/** Public-safe NSIDs that unauthenticated node bootstrap may export. */
+export const PUBLIC_LOG_COLLECTIONS = ['app.oxy.identity', 'app.oxy.profile', NODE_COLLECTION] as const;
 
 /** Default page size for {@link getLogSince}. */
 const DEFAULT_LOG_LIMIT = 100;
@@ -32,13 +36,42 @@ export interface ChainHead {
  * records have a `seq`, so v1 rows are naturally excluded. Pass `sinceSeq = -1`
  * to start from genesis (`seq === 0`).
  */
+function clampLogLimit(limit: number): number {
+  return Math.max(1, Math.min(Math.trunc(limit) || DEFAULT_LOG_LIMIT, MAX_LOG_LIMIT));
+}
+
 export async function getLogSince(
   userId: string,
   sinceSeq: number,
   limit: number = DEFAULT_LOG_LIMIT,
 ): Promise<SignedRecordEnvelope[]> {
-  const capped = Math.max(1, Math.min(Math.trunc(limit) || DEFAULT_LOG_LIMIT, MAX_LOG_LIMIT));
+  const capped = clampLogLimit(limit);
   const rows = await SignedRecord.find({ userId, seq: { $gt: sinceSeq } })
+    .sort({ seq: 1 })
+    .limit(capped)
+    .lean<Array<{ envelope: SignedRecordEnvelope }>>();
+  return rows.map((row) => row.envelope);
+}
+
+/**
+ * Public node-bootstrap log export. Unlike the internal full-chain helper, this
+ * returns only verified records whose collections are safe to expose to
+ * unauthenticated readers: public identity/profile material plus the user's node
+ * registration. Civic attestations, credentials, reputation provenance, and any
+ * future private record collections stay out of the CORS-open log.
+ */
+export async function getPublicLogSince(
+  userId: string,
+  sinceSeq: number,
+  limit: number = DEFAULT_LOG_LIMIT,
+): Promise<SignedRecordEnvelope[]> {
+  const capped = clampLogLimit(limit);
+  const rows = await SignedRecord.find({
+    userId,
+    seq: { $gt: sinceSeq },
+    verified: true,
+    nsid: { $in: [...PUBLIC_LOG_COLLECTIONS] },
+  })
     .sort({ seq: 1 })
     .limit(capped)
     .lean<Array<{ envelope: SignedRecordEnvelope }>>();

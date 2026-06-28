@@ -2,7 +2,7 @@
  * Route-shape tests for the public node-log endpoints (F5a Oxy→node export).
  *
  *  - GET /identity/log/:userId?since=<seq|recordId>&limit= → { records, count }
- *    forwarding the resolved `since` seq + limit to `getLogSince`.
+ *    forwarding the resolved `since` seq + limit to `getPublicLogSince`.
  *  - GET /identity/head/:userId → { seq, headRecordId, recordCount } (or empty).
  *
  * The repoLog service is mocked (its ordering/capping is covered in
@@ -11,7 +11,7 @@
 
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 
-const mockGetLogSince = jest.fn();
+const mockGetPublicLogSince = jest.fn();
 const mockGetHead = jest.fn();
 const mockResolveCursorSeq = jest.fn();
 
@@ -29,7 +29,7 @@ jest.mock('../../services/signedRecord.service', () => ({
 
 jest.mock('../../services/repoLog.service', () => ({
   getHead: (...args: unknown[]) => mockGetHead(...args),
-  getLogSince: (...args: unknown[]) => mockGetLogSince(...args),
+  getPublicLogSince: (...args: unknown[]) => mockGetPublicLogSince(...args),
   resolveCursorSeq: (...args: unknown[]) => mockResolveCursorSeq(...args),
 }));
 
@@ -99,43 +99,43 @@ beforeEach(() => { jest.clearAllMocks(); });
 
 describe('GET /identity/log/:userId', () => {
   it('returns { records, count } from genesis when no since is given', async () => {
-    mockGetLogSince.mockResolvedValueOnce([envelope(0), envelope(1)]);
+    mockGetPublicLogSince.mockResolvedValueOnce([envelope(0), envelope(1)]);
 
     const res = await request(server, 'GET', `/identity/log/${USER_ID}`);
 
     expect(res.status).toBe(200);
-    expect(mockGetLogSince).toHaveBeenCalledWith(USER_ID, -1, undefined);
+    expect(mockGetPublicLogSince).toHaveBeenCalledWith(USER_ID, -1, undefined);
     expect(res.body.count).toBe(2);
     expect(Array.isArray(res.body.records)).toBe(true);
     expect((res.body.records as unknown[]).length).toBe(2);
   });
 
   it('forwards a numeric since (exclusive) and the limit', async () => {
-    mockGetLogSince.mockResolvedValueOnce([envelope(4)]);
+    mockGetPublicLogSince.mockResolvedValueOnce([envelope(4)]);
 
     const res = await request(server, 'GET', `/identity/log/${USER_ID}?since=3&limit=10`);
 
     expect(res.status).toBe(200);
-    expect(mockGetLogSince).toHaveBeenCalledWith(USER_ID, 3, 10);
+    expect(mockGetPublicLogSince).toHaveBeenCalledWith(USER_ID, 3, 10);
   });
 
   it('resolves a recordId cursor to its seq', async () => {
     mockResolveCursorSeq.mockResolvedValueOnce(9);
-    mockGetLogSince.mockResolvedValueOnce([envelope(10)]);
+    mockGetPublicLogSince.mockResolvedValueOnce([envelope(10)]);
 
     const recordId = 'r'.repeat(64);
     const res = await request(server, 'GET', `/identity/log/${USER_ID}?since=${recordId}`);
 
     expect(res.status).toBe(200);
     expect(mockResolveCursorSeq).toHaveBeenCalledWith(USER_ID, recordId);
-    expect(mockGetLogSince).toHaveBeenCalledWith(USER_ID, 9, undefined);
+    expect(mockGetPublicLogSince).toHaveBeenCalledWith(USER_ID, 9, undefined);
   });
 
   it('returns 400 for an unknown recordId cursor', async () => {
     mockResolveCursorSeq.mockResolvedValueOnce(null);
     const res = await request(server, 'GET', `/identity/log/${USER_ID}?since=${'r'.repeat(64)}`);
     expect(res.status).toBe(400);
-    expect(mockGetLogSince).not.toHaveBeenCalled();
+    expect(mockGetPublicLogSince).not.toHaveBeenCalled();
   });
 
   it('returns 404 for an invalid user id', async () => {
