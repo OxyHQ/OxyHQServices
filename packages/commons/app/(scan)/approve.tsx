@@ -10,6 +10,7 @@ import {
   Section,
   Callout,
   CenteredState,
+  ImportantBanner,
   PrimaryButton,
   SecondaryButton,
 } from '@/components/ui';
@@ -51,6 +52,11 @@ export default function ApproveSignInScreen() {
 
   const appName = info?.application.name ?? '';
   const scopes = useMemo(() => info?.scopes ?? [], [info?.scopes]);
+  // Anti-phishing: treat anything other than an explicit `true` as unverified
+  // (false OR a missing field → warn). The reassuring "official Oxy app"
+  // treatment is withheld in this state so it can't lend false legitimacy to a
+  // consent-phishing lure that reuses a trusted app's branding.
+  const originVerified = info?.originVerified === true;
 
   // --- Terminal states (approved / denied) ---
   if (state === 'approved' || state === 'denied') {
@@ -106,6 +112,16 @@ export default function ApproveSignInScreen() {
   // --- Ready: render the server-resolved identity + actions ---
   return (
     <Screen gap={24}>
+      {!originVerified ? (
+        <ImportantBanner
+          icon="alert"
+          title={t('signInApproval.approve.unverifiedTitle')}
+          style={styles.warningBanner}
+        >
+          {t('signInApproval.approve.unverifiedBody')}
+        </ImportantBanner>
+      ) : null}
+
       <View style={styles.brandBlock}>
         <ThemedText style={[styles.heading, { color: colors.textSecondary }]}>
           {t('signInApproval.approve.heading')}
@@ -122,7 +138,7 @@ export default function ApproveSignInScreen() {
         )}
         <ThemedText style={[styles.appName, { color: colors.text }]}>{appName}</ThemedText>
 
-        {info.application.isOfficial ? (
+        {originVerified && info.application.isOfficial ? (
           <View style={[styles.officialBadge, { backgroundColor: colors.primarySubtle }]}>
             <MaterialCommunityIcons name="check-decagram" size={14} color={colors.tint} />
             <ThemedText style={[styles.officialText, { color: colors.tint }]}>
@@ -194,6 +210,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginTop: 4,
+  },
+  warningBanner: {
+    // The Screen column already supplies vertical rhythm via `gap`.
+    marginBottom: 0,
   },
   brandBlock: {
     alignItems: 'center',

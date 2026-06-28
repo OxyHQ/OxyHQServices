@@ -1131,7 +1131,9 @@
       "biometricFailedBody": "Approve with your device biometrics or passcode to continue.",
       "done": "Done",
       "tryAgain": "Try again",
-      "noCode": "No sign-in code was provided."
+      "noCode": "No sign-in code was provided.",
+      "unverifiedTitle": "We couldn't verify this sign-in",
+      "unverifiedBody": "We couldn't confirm where this sign-in request started. Only approve if you JUST started it yourself on a device you trust. If you didn't, deny it."
     }
   },
   "civic": {
