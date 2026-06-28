@@ -447,7 +447,12 @@ router.post('/recover/verify', validate({ body: recoverVerifySchema }), SessionC
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/recover/reset', validate({ body: recoverResetSchema }), SessionController.resetPassword);
+router.post(
+  '/recover/reset',
+  requireSameSiteOrigin,
+  validate({ body: recoverResetSchema }),
+  SessionController.resetPassword
+);
 
 // ============================================
 // Social OAuth Sign-In Routes
