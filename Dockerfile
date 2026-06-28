@@ -11,26 +11,25 @@
 
 FROM node:20-alpine AS builder
 
-RUN npm install -g bun@1.3.14
+RUN npm install -g bun
 
 WORKDIR /app
 
 # Copy workspace root and override workspaces to only include api + core + contracts.
 # `@oxyhq/api` depends on `@oxyhq/contracts` (workspace:*); core is retained for the
 # admin scripts that import packages/core/src/* at runtime.
-# Use the committed API-subset lockfile so Docker builds do not resolve mutable
-# semver ranges from the registry during production deploys.
+# Remove bun.lock since the workspace change invalidates it — bun will
+# resolve fresh dependencies (still deterministic from package.json versions).
 COPY package.json ./
-COPY docker/api-bun.lock ./bun.lock
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; delete p.dependencies; delete p.devDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # Copy package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 COPY packages/contracts/package.json packages/contracts/
 
-# Install dependencies from the committed API-subset lockfile.
-RUN bun install --frozen-lockfile
+# Install dependencies (no lockfile — workspace subset doesn't match the full monorepo lock)
+RUN bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -47,20 +46,19 @@ RUN bun run --filter @oxyhq/api build
 FROM node:20-alpine
 
 RUN apk add --no-cache python3 make g++ ffmpeg curl
-RUN npm install -g bun@1.3.14
+RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root and override workspaces.
+# Copy workspace root and override workspaces
 COPY package.json ./
-COPY docker/api-bun.lock ./bun.lock
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; delete p.dependencies; delete p.devDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 COPY packages/contracts/package.json packages/contracts/
 
-# Install production dependencies from the committed API-subset lockfile.
-RUN bun install --production --frozen-lockfile
+# Install production dependencies
+RUN bun install --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
