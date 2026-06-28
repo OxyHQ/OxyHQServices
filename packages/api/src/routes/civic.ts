@@ -52,6 +52,8 @@ import {
 
 const router = Router();
 
+const REQUIRED_VALIDATION_SCOPE = 'reputation:write';
+
 const attestationLimiter = rateLimit({
   prefix: 'rl:civic:attest:',
   windowMs: 60 * 1000,
@@ -173,6 +175,14 @@ function throwForCredentialIssueReason(reason: CredentialIssueRejectionReason): 
       throw new ConflictError(`Credential rejected: ${reason}`);
     default:
       throw new BadRequestError(`Credential rejected: ${reason}`);
+  }
+}
+
+/** Assert the service credential can open reputation-mutating validation workflows. */
+function assertValidationScope(req: ServiceAuthRequest): void {
+  const scopes = req.serviceApp?.scopes ?? [];
+  if (!scopes.includes(REQUIRED_VALIDATION_SCOPE)) {
+    throw new ForbiddenError(`Missing required scope: ${REQUIRED_VALIDATION_SCOPE}`);
   }
 }
 
@@ -313,6 +323,8 @@ router.post(
   validationLimiter,
   validate({ body: validationOpenRequestSchema }),
   asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertValidationScope(req);
+
     const { subjectUserId, actionType, sourceActionId, payload, highValue } = req.body;
     if (!isValidObjectId(subjectUserId)) {
       throw new BadRequestError('Invalid subjectUserId');
