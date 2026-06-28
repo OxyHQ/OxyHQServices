@@ -290,6 +290,17 @@ describe('Session Service', () => {
       expect(second.sessionId).toBe(firstSessionId);
       expect(second.accessToken).toBe('refreshed-access-token');
       expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
+        { _id: 'mongo-id-123' },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            previousAccessToken: 'mock-access-token',
+            previousRefreshToken: 'mock-refresh-token',
+            tokenRotatedAt: expect.any(Date),
+          }),
+        }),
+        { new: true }
+      );
       expect(mockSave).toHaveBeenCalledTimes(1);
 
       // Both exchanges keyed the reuse lookup on the SAME derived deviceId
@@ -356,6 +367,33 @@ describe('Session Service', () => {
       expect(result!.user).toBeDefined();
       expect(result!.payload).toBeDefined();
       expect(result!.payload.sessionId).toBe('session-123');
+    });
+
+    it('should accept recently rotated previous access token within grace window', async () => {
+      const mockSession = createMockSession({
+        accessToken: 'new-access-token',
+        previousAccessToken: 'old-access-token',
+        tokenRotatedAt: new Date(),
+      });
+      mockFindOneResults.push(mockSession);
+
+      const result = await sessionService.validateSession('old-access-token');
+
+      expect(result).toBeDefined();
+      expect(result!.session.sessionId).toBe('session-123');
+    });
+
+    it('should reject rotated-out access token after grace window', async () => {
+      const mockSession = createMockSession({
+        accessToken: 'new-access-token',
+        previousAccessToken: 'old-access-token',
+        tokenRotatedAt: new Date(Date.now() - 31_000),
+      });
+      mockFindOneResults.push(mockSession);
+
+      const result = await sessionService.validateSession('old-access-token');
+
+      expect(result).toBeNull();
     });
 
     it('should reject expired session', async () => {
