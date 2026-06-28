@@ -220,9 +220,10 @@ describe('vouchForPerson', () => {
     expect(await vouchForPerson(envelope(), VOUCHER)).toEqual({ ok: false, reason: 'excluded_shared_device' });
   });
 
-  it('rejects a duplicate active vouch before appending a record', async () => {
-    mockVouchFindOne.mockReturnValue(selectLean({ _id: 'existing' }));
+  it('rejects a duplicate historical vouch before appending a record', async () => {
+    mockVouchFindOne.mockReturnValue(selectLean({ _id: 'existing', status: 'withdrawn' }));
     expect(await vouchForPerson(envelope(), VOUCHER)).toEqual({ ok: false, reason: 'already_vouched' });
+    expect(mockVouchFindOne).toHaveBeenCalledWith({ voucherUserId: VOUCHER, subjectUserId: SUBJECT });
     expect(mockVerifyAndStore).not.toHaveBeenCalled();
   });
 

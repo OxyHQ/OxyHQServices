@@ -12,8 +12,10 @@ import mongoose, { Document, Schema } from 'mongoose';
  * flips to `slashed` (see `slash.service` / `personhood.service`).
  *
  * Exactly one ACTIVE vouch per (voucher, subject) pair — the unique compound
- * index is the dedup backstop. The `{subjectUserId, status}` index drives the
- * recompute aggregation (the subject's active vouchers).
+ * index is the concurrency backstop. Service-level checks reject any historical
+ * vouch for the same pair (including withdrawn/slashed) before issuing a new
+ * signed record or reputation award. The `{subjectUserId, status}` index drives
+ * the recompute aggregation (the subject's active vouchers).
  */
 export type PersonhoodVouchStatus = 'active' | 'slashed' | 'withdrawn';
 
@@ -48,9 +50,9 @@ const PersonhoodVouchSchema = new Schema<IPersonhoodVouch>(
   { timestamps: true, strict: true },
 );
 
-// One ACTIVE vouch per (voucher, subject) pair — the dedup backstop. Partial on
-// `status: 'active'` so a withdrawn/slashed vouch leaves history yet the pair can
-// be vouched for again later.
+// One ACTIVE vouch per (voucher, subject) pair — the concurrency backstop.
+// Withdrawn/slashed vouches remain audit history; service code still rejects
+// re-vouching a historical pair before a new signed record or award is created.
 PersonhoodVouchSchema.index(
   { voucherUserId: 1, subjectUserId: 1 },
   { unique: true, partialFilterExpression: { status: 'active' } },
