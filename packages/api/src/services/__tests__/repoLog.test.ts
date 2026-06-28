@@ -25,7 +25,7 @@ jest.mock('../../models/RepoHead', () => ({
   default: { findOne: (...args: unknown[]) => mockHeadFindOne(...args) },
 }));
 
-import { getLogSince, getHead, resolveCursorSeq } from '../repoLog.service';
+import { getLogSince, getPublicLogSince, getHead, resolveCursorSeq, PUBLIC_LOG_COLLECTIONS } from '../repoLog.service';
 
 const USER_ID = '507f1f77bcf86cd799439011';
 
@@ -73,6 +73,35 @@ describe('getLogSince', () => {
 
     await getLogSince(USER_ID, -1);
     expect(capturedLimit).toBe(100);
+  });
+});
+
+
+describe('getPublicLogSince', () => {
+  it('filters to verified public-safe collections only', async () => {
+    let capturedLimit = -1;
+    mockSrFind.mockReturnValue({
+      sort: (sortArg: unknown) => {
+        expect(sortArg).toEqual({ seq: 1 });
+        return {
+          limit: (n: number) => {
+            capturedLimit = n;
+            return { lean: () => Promise.resolve([{ envelope: { seq: 1, type: 'identity' } }]) };
+          },
+        };
+      },
+    });
+
+    const envelopes = await getPublicLogSince(USER_ID, 0, 25);
+
+    expect(mockSrFind).toHaveBeenCalledWith({
+      userId: USER_ID,
+      seq: { $gt: 0 },
+      verified: true,
+      nsid: { $in: [...PUBLIC_LOG_COLLECTIONS] },
+    });
+    expect(capturedLimit).toBe(25);
+    expect(envelopes).toEqual([{ seq: 1, type: 'identity' }]);
   });
 });
 
