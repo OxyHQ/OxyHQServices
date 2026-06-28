@@ -741,6 +741,30 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Get user mutuals ("followers you know" — users the authenticated viewer
+     * follows who also follow `userId`). The viewer is derived server-side from auth.
+     */
+    async getUserMutuals(
+      userId: string,
+      pagination?: PaginationParams
+    ): Promise<{ mutuals: User[]; total: number; hasMore: boolean }> {
+      try {
+        const params = buildPaginationParams(pagination || {});
+        const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/mutuals`, params, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        return {
+          mutuals: response.data || [],
+          total: response.pagination.total,
+          hasMore: response.pagination.hasMore,
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Get notifications
      */
     async getNotifications(): Promise<Notification[]> {
