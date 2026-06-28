@@ -1,10 +1,9 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Image, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Screen, StackHeader, CenteredState, PrimaryButton, SecondaryButton } from '@/components/ui';
 import { useRealLifeAttest, type RealLifeAttestParams } from '@/hooks/useRealLifeAttest';
 import { useTranslation } from '@/lib/i18n';
 
@@ -44,55 +43,48 @@ export default function AttestConfirmScreen() {
 
   const renderBody = () => {
     if (state === 'loading') {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={styles.muted}>{t('civic.attest.confirm.loading')}</ThemedText>
-        </View>
-      );
+      return <CenteredState loading body={t('civic.attest.confirm.loading')} />;
     }
 
     if (state === 'error') {
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={56} color={colors.error} />
-          <ThemedText style={styles.title}>{t('civic.attest.confirm.error.title')}</ThemedText>
-          <ThemedText style={[styles.muted, styles.centerText]}>
-            {t(`civic.attest.error.${errorCode ?? 'generic'}`)}
-          </ThemedText>
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: colors.border }]} onPress={handleClose}>
-              <Text style={[styles.secondaryText, { color: colors.text }]}>{t('common.close')}</Text>
-            </TouchableOpacity>
-            {errorCode === 'generic' && (
-              <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.tint }]} onPress={reload}>
-                <Text style={styles.primaryText}>{t('common.retry')}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        <CenteredState
+          icon="alert-circle-outline"
+          iconColor={colors.error}
+          title={t('civic.attest.confirm.error.title')}
+          body={t(`civic.attest.error.${errorCode ?? 'generic'}`)}
+          action={
+            <View style={styles.errorActions}>
+              <SecondaryButton label={t('common.close')} onPress={handleClose} fullWidth={false} />
+              {errorCode === 'generic' && (
+                <PrimaryButton label={t('common.retry')} onPress={reload} fullWidth={false} />
+              )}
+            </View>
+          }
+        />
       );
     }
 
     if (state === 'done' && result) {
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="check-decagram" size={64} color={colors.success} />
-          <ThemedText style={styles.title}>{t('civic.attest.confirm.done.title')}</ThemedText>
-          <ThemedText style={[styles.muted, styles.centerText]}>
-            {t('civic.attest.confirm.done.body', { name, points: result.points })}
-          </ThemedText>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.tint }]} onPress={handleClose}>
-            <Text style={styles.primaryText}>{t('common.done')}</Text>
-          </TouchableOpacity>
-        </View>
+        <CenteredState
+          icon="check-decagram"
+          iconColor={colors.success}
+          title={t('civic.attest.confirm.done.title')}
+          body={t('civic.attest.confirm.done.body', { name, points: result.points })}
+          action={
+            <View style={styles.action}>
+              <PrimaryButton label={t('common.done')} onPress={handleClose} fullWidth={false} />
+            </View>
+          }
+        />
       );
     }
 
     // ready / confirming
     return (
       <View style={styles.confirmBody}>
-        <View style={styles.identityRow}>
+        <View style={styles.identity}>
           {card?.avatarUrl ? (
             <Image source={{ uri: card.avatarUrl }} style={styles.avatar} resizeMode="cover" />
           ) : (
@@ -112,107 +104,103 @@ export default function AttestConfirmScreen() {
           )}
         </View>
 
-        <ThemedText style={[styles.prompt, styles.centerText]}>
+        <ThemedText style={[styles.prompt, { color: colors.text }]}>
           {t('civic.attest.confirm.prompt', { name })}
         </ThemedText>
-        <ThemedText style={[styles.muted, styles.centerText]}>{t('civic.attest.confirm.weight')}</ThemedText>
+        <ThemedText style={[styles.weight, { color: colors.textSecondary }]}>
+          {t('civic.attest.confirm.weight')}
+        </ThemedText>
 
         {biometricFailed && (
-          <ThemedText style={[styles.biometricWarn, { color: colors.warning }]}>
+          <ThemedText style={[styles.inlineWarn, { color: colors.warning }]}>
             {t('civic.attest.confirm.biometricFailed')}
           </ThemedText>
         )}
 
-        <TouchableOpacity
-          style={[styles.primaryBtn, styles.fullBtn, { backgroundColor: colors.success }]}
-          onPress={confirm}
-          disabled={state === 'confirming'}
-          accessibilityRole="button"
-        >
-          {state === 'confirming' ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryText}>{t('civic.attest.confirm.cta')}</Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.linkBtn} onPress={handleClose} disabled={state === 'confirming'}>
-          <Text style={[styles.linkText, { color: colors.textSecondary }]}>{t('common.cancel')}</Text>
-        </TouchableOpacity>
+        <View style={styles.actions}>
+          <PrimaryButton
+            tone="success"
+            label={t('civic.attest.confirm.cta')}
+            loading={state === 'confirming'}
+            onPress={confirm}
+          />
+          <SecondaryButton label={t('common.cancel')} onPress={handleClose} disabled={state === 'confirming'} />
+        </View>
       </View>
     );
   };
 
   return (
-    <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <ThemedText style={styles.topTitle}>{t('civic.attest.confirm.title')}</ThemedText>
-          <TouchableOpacity
-            onPress={handleClose}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.close')}
-            style={styles.closeButton}
-          >
-            <MaterialCommunityIcons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-        {renderBody()}
-      </View>
-    </ScreenContentWrapper>
+    <Screen gap={24}>
+      <StackHeader
+        title={t('civic.attest.confirm.title')}
+        onClose={handleClose}
+        closeAccessibilityLabel={t('common.close')}
+      />
+      {renderBody()}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
+  action: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  errorActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    gap: 12,
+    marginTop: 4,
   },
-  topTitle: { fontSize: 20, fontWeight: '700' },
-  closeButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  centered: {
-    flex: 1,
+  confirmBody: {
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
     gap: 14,
-    minHeight: 360,
+    paddingTop: 12,
   },
-  confirmBody: { padding: 24, alignItems: 'center', gap: 12 },
-  identityRow: { alignItems: 'center', gap: 8, marginBottom: 8 },
-  avatar: { width: 88, height: 88, borderRadius: 44 },
-  avatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 36, fontWeight: '600' },
-  name: { fontSize: 24, fontWeight: '700', textAlign: 'center' },
-  username: { fontSize: 15 },
-  prompt: { fontSize: 17, fontWeight: '600', lineHeight: 24 },
-  muted: { fontSize: 14, opacity: 0.7, lineHeight: 20 },
-  centerText: { textAlign: 'center' },
-  title: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
-  biometricWarn: { fontSize: 13, textAlign: 'center', marginTop: 4 },
-  primaryBtn: {
-    marginTop: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
+  identity: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  avatar: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+  },
+  avatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fullBtn: { alignSelf: 'stretch' },
-  primaryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  secondaryBtn: {
-    marginTop: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+  avatarInitial: {
+    fontSize: 36,
+    fontWeight: '600',
   },
-  secondaryText: { fontSize: 16, fontWeight: '600' },
-  linkBtn: { paddingVertical: 12 },
-  linkText: { fontSize: 15 },
-  actionsRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+  name: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  username: {
+    fontSize: 15,
+  },
+  prompt: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  weight: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  inlineWarn: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  actions: {
+    alignSelf: 'stretch',
+    gap: 12,
+    marginTop: 8,
+  },
 });

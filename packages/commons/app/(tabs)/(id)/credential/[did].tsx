@@ -1,20 +1,9 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  ActivityIndicator,
-  TextInput,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, Image, TextInput, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Section } from '@/components/section';
-import { AccountCard } from '@/components/ui';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Screen, StackHeader, Section, Callout, CenteredState, PrimaryButton } from '@/components/ui';
 import { useCivicCard } from '@/hooks/useCivicCard';
 import { useIssueCredential } from '@/hooks/useIssueCredential';
 import { userIdFromDid } from '@/lib/civic/did';
@@ -47,8 +36,7 @@ function parseExpiry(text: string): { iso?: string; valid: boolean; empty: boole
  * avatar, then collects a credential type (a small preset list + a free-form
  * custom label), a free-text claim statement, and an optional expiry. The issue
  * is gated behind the device biometric (it signs a `credential` record on the
- * issuer's chain); server rejections (self-credential, bad params, holder not
- * found) map to friendly copy via `useIssueCredential`.
+ * issuer's chain).
  *
  * NATIVE-ONLY (the credential signs with the on-device key).
  */
@@ -87,8 +75,7 @@ export default function IssueCredentialScreen() {
   const trimmedStatement = statement.trim();
 
   const busy = state === 'issuing';
-  const canSubmit =
-    !busy && typeTag !== null && trimmedStatement.length > 0 && expiry.valid;
+  const canSubmit = !busy && typeTag !== null && trimmedStatement.length > 0 && expiry.valid;
 
   const handleIssue = useCallback(() => {
     if (!typeTag || trimmedStatement.length === 0 || !expiry.valid) return;
@@ -102,11 +89,10 @@ export default function IssueCredentialScreen() {
   const renderBody = () => {
     if (!userId || !did) {
       return (
-        <EmptyState
+        <CenteredState
           icon="account-alert-outline"
           title={t('civic.credentials.issue.invalidTitle')}
           body={t('civic.credentials.issue.invalidBody')}
-          colors={colors}
         />
       );
     }
@@ -114,45 +100,42 @@ export default function IssueCredentialScreen() {
     if (state === 'done') {
       const issuedTypeLabel = typeTag ? humanizeTypeTag(typeTag) : '';
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="certificate" size={64} color={colors.success} />
-          <ThemedText style={styles.resultTitle}>{t('civic.credentials.issue.done.title')}</ThemedText>
-          <ThemedText style={[styles.muted, styles.centerText]}>
-            {t('civic.credentials.issue.done.body', { type: issuedTypeLabel, name: displayName })}
-          </ThemedText>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.tint }]} onPress={handleClose}>
-            <Text style={styles.primaryText}>{t('common.done')}</Text>
-          </TouchableOpacity>
-        </View>
+        <CenteredState
+          icon="certificate"
+          iconColor={colors.success}
+          title={t('civic.credentials.issue.done.title')}
+          body={t('civic.credentials.issue.done.body', { type: issuedTypeLabel, name: displayName })}
+          action={
+            <View style={styles.action}>
+              <PrimaryButton label={t('common.done')} onPress={handleClose} fullWidth={false} />
+            </View>
+          }
+        />
       );
     }
 
     if (state === 'error') {
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={56} color={colors.error} />
-          <ThemedText style={styles.resultTitle}>{t('civic.credentials.issue.error.title')}</ThemedText>
-          <ThemedText style={[styles.muted, styles.centerText]}>
-            {t(`civic.credentials.issue.error.${errorCode ?? 'generic'}`)}
-          </ThemedText>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.tint }]} onPress={handleClose}>
-            <Text style={styles.primaryText}>{t('common.close')}</Text>
-          </TouchableOpacity>
-        </View>
+        <CenteredState
+          icon="alert-circle-outline"
+          iconColor={colors.error}
+          title={t('civic.credentials.issue.error.title')}
+          body={t(`civic.credentials.issue.error.${errorCode ?? 'generic'}`)}
+          action={
+            <View style={styles.action}>
+              <PrimaryButton label={t('common.close')} onPress={handleClose} fullWidth={false} />
+            </View>
+          }
+        />
       );
     }
 
     if (cardQuery.isPending && !card) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={styles.muted}>{t('civic.credentials.issue.loading')}</ThemedText>
-        </View>
-      );
+      return <CenteredState loading body={t('civic.credentials.issue.loading')} />;
     }
 
     return (
-      <View style={styles.content}>
+      <>
         {/* Subject identity */}
         <View style={styles.identityRow}>
           {card?.avatarUrl ? (
@@ -181,8 +164,7 @@ export default function IssueCredentialScreen() {
         </ThemedText>
 
         {/* Credential type */}
-        <Section title={t('civic.credentials.issue.typeTitle')}>
-          <ThemedText style={styles.sectionSubtitle}>{t('civic.credentials.issue.typeHint')}</ThemedText>
+        <Section title={t('civic.credentials.issue.typeTitle')} subtitle={t('civic.credentials.issue.typeHint')}>
           <View style={styles.presetRow}>
             {CREDENTIAL_PRESETS.map((preset) => {
               const selected = preset.id === presetId;
@@ -195,7 +177,7 @@ export default function IssueCredentialScreen() {
                   style={[
                     styles.presetChip,
                     { borderColor: selected ? colors.tint : colors.border },
-                    selected && { backgroundColor: `${colors.tint}1A` },
+                    selected && { backgroundColor: colors.primarySubtle },
                   ]}
                 >
                   <Text style={[styles.presetText, { color: selected ? colors.tint : colors.text }]}>
@@ -206,64 +188,52 @@ export default function IssueCredentialScreen() {
             })}
           </View>
           {presetId === 'custom' && (
-            <AccountCard>
-              <View style={styles.fieldCard}>
-                <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-                  {t('civic.credentials.issue.customLabel')}
-                </ThemedText>
-                <TextInput
-                  value={customLabel}
-                  onChangeText={setCustomLabel}
-                  editable={!busy}
-                  placeholder={t('civic.credentials.issue.customPlaceholder')}
-                  placeholderTextColor={colors.textSecondary}
-                  accessibilityLabel={t('civic.credentials.issue.customLabel')}
-                  style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-                />
-              </View>
-            </AccountCard>
+            <View style={styles.field}>
+              <ThemedText style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+                {t('civic.credentials.issue.customLabel')}
+              </ThemedText>
+              <TextInput
+                value={customLabel}
+                onChangeText={setCustomLabel}
+                editable={!busy}
+                placeholder={t('civic.credentials.issue.customPlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                accessibilityLabel={t('civic.credentials.issue.customLabel')}
+                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+              />
+            </View>
           )}
         </Section>
 
         {/* Claim statement */}
-        <Section title={t('civic.credentials.issue.statementTitle')}>
-          <ThemedText style={styles.sectionSubtitle}>{t('civic.credentials.issue.statementHint')}</ThemedText>
-          <AccountCard>
-            <View style={styles.fieldCard}>
-              <TextInput
-                value={statement}
-                onChangeText={setStatement}
-                editable={!busy}
-                multiline
-                numberOfLines={4}
-                placeholder={t('civic.credentials.issue.statementPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                accessibilityLabel={t('civic.credentials.issue.statementTitle')}
-                style={[styles.input, styles.multiline, { color: colors.text, borderColor: colors.border }]}
-              />
-            </View>
-          </AccountCard>
+        <Section title={t('civic.credentials.issue.statementTitle')} subtitle={t('civic.credentials.issue.statementHint')}>
+          <TextInput
+            value={statement}
+            onChangeText={setStatement}
+            editable={!busy}
+            multiline
+            numberOfLines={4}
+            placeholder={t('civic.credentials.issue.statementPlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            accessibilityLabel={t('civic.credentials.issue.statementTitle')}
+            style={[styles.input, styles.multiline, { color: colors.text, borderColor: colors.border }]}
+          />
         </Section>
 
         {/* Optional expiry */}
-        <Section title={t('civic.credentials.issue.expiryTitle')}>
-          <ThemedText style={styles.sectionSubtitle}>{t('civic.credentials.issue.expiryHint')}</ThemedText>
-          <AccountCard>
-            <View style={styles.fieldCard}>
-              <TextInput
-                value={expiryText}
-                onChangeText={setExpiryText}
-                editable={!busy}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="numbers-and-punctuation"
-                placeholder={t('civic.credentials.issue.expiryPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                accessibilityLabel={t('civic.credentials.issue.expiryTitle')}
-                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
-              />
-            </View>
-          </AccountCard>
+        <Section title={t('civic.credentials.issue.expiryTitle')} subtitle={t('civic.credentials.issue.expiryHint')}>
+          <TextInput
+            value={expiryText}
+            onChangeText={setExpiryText}
+            editable={!busy}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
+            placeholder={t('civic.credentials.issue.expiryPlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            accessibilityLabel={t('civic.credentials.issue.expiryTitle')}
+            style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+          />
           {!expiry.valid && (
             <ThemedText style={[styles.fieldError, { color: colors.warning }]}>
               {t('civic.credentials.issue.expiryInvalid')}
@@ -272,145 +242,133 @@ export default function IssueCredentialScreen() {
         </Section>
 
         {/* Attribution warning */}
-        <View style={[styles.warningCard, { backgroundColor: `${colors.identityIconPublicKey}14`, borderColor: `${colors.identityIconPublicKey}44` }]}>
-          <MaterialCommunityIcons name="draw-pen" size={20} color={colors.identityIconPublicKey} />
-          <ThemedText style={[styles.warningText, { color: colors.text }]}>
-            {t('civic.credentials.issue.attribution', { name: displayName })}
-          </ThemedText>
-        </View>
+        <Callout tone="info" icon="draw-pen">
+          {t('civic.credentials.issue.attribution', { name: displayName })}
+        </Callout>
 
         {biometricFailed && (
-          <ThemedText style={[styles.biometricWarn, { color: colors.warning }]}>
+          <ThemedText style={[styles.inlineWarn, { color: colors.warning }]}>
             {t('civic.credentials.issue.biometricFailed')}
           </ThemedText>
         )}
 
-        <TouchableOpacity
-          style={[styles.issueBtn, { backgroundColor: colors.tint }, !canSubmit && styles.btnDisabled]}
-          onPress={handleIssue}
+        <PrimaryButton
+          icon="fingerprint"
+          label={t('civic.credentials.issue.cta')}
+          loading={busy}
           disabled={!canSubmit}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons name="fingerprint" size={20} color="#fff" />
-          <Text style={styles.issueText}>{t('civic.credentials.issue.cta')}</Text>
-        </TouchableOpacity>
+          onPress={handleIssue}
+        />
 
         {busy && (
-          <View style={styles.busyRow}>
-            <ActivityIndicator color={colors.tint} />
-            <ThemedText style={styles.muted}>{t('civic.credentials.issue.submitting')}</ThemedText>
-          </View>
+          <ThemedText style={[styles.muted, styles.centerText, { color: colors.textSecondary }]}>
+            {t('civic.credentials.issue.submitting')}
+          </ThemedText>
         )}
-      </View>
+      </>
     );
   };
 
   return (
-    <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={handleClose} accessibilityRole="button" style={styles.backBtn}>
-            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.text} />
-          </TouchableOpacity>
-          <ThemedText style={styles.topTitle}>{t('civic.credentials.issue.title')}</ThemedText>
-        </View>
-        {renderBody()}
-      </View>
-    </ScreenContentWrapper>
-  );
-}
-
-interface EmptyStateProps {
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  title: string;
-  body: string;
-  colors: ReturnType<typeof useColors>;
-}
-
-function EmptyState({ icon, title, body, colors }: EmptyStateProps) {
-  return (
-    <View style={styles.centered}>
-      <MaterialCommunityIcons name={icon} size={56} color={colors.textSecondary} />
-      <ThemedText style={styles.resultTitle}>{title}</ThemedText>
-      <ThemedText style={[styles.muted, styles.centerText]}>{body}</ThemedText>
-    </View>
+    <Screen gap={20}>
+      <StackHeader
+        title={t('civic.credentials.issue.title')}
+        onBack={handleClose}
+        backAccessibilityLabel={t('common.back')}
+      />
+      {renderBody()}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
+  action: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  identityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    gap: 14,
   },
-  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
-  topTitle: { fontSize: 20, fontWeight: '700' },
-  content: { padding: 16, paddingBottom: 120 },
-  identityRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  avatar: { width: 56, height: 56, borderRadius: 28 },
-  avatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 24, fontWeight: '600' },
-  identityText: { flex: 1, marginLeft: 14 },
-  name: { fontSize: 20, fontWeight: '700' },
-  username: { fontSize: 14, marginTop: 2 },
-  intro: { fontSize: 15, lineHeight: 21, marginBottom: 8 },
-  sectionSubtitle: { fontSize: 14, opacity: 0.7, marginBottom: 12 },
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  avatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontSize: 24,
+    fontWeight: '600',
+  },
+  identityText: {
+    flex: 1,
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  username: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  intro: {
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   presetChip: {
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 999,
+    borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
   },
-  presetText: { fontSize: 14, fontWeight: '600' },
-  fieldCard: { padding: 12, gap: 8 },
-  fieldLabel: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
+  presetText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  field: {
+    gap: 8,
+    marginTop: 4,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   input: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 15,
   },
-  multiline: { minHeight: 96, textAlignVertical: 'top' },
-  fieldError: { fontSize: 13, marginTop: 8 },
-  warningCard: {
-    flexDirection: 'row',
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 8,
+  multiline: {
+    minHeight: 96,
+    textAlignVertical: 'top',
   },
-  warningText: { flex: 1, fontSize: 13, lineHeight: 19 },
-  biometricWarn: { fontSize: 13, marginTop: 12 },
-  issueBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 15,
-    borderRadius: 12,
-    marginTop: 20,
+  fieldError: {
+    fontSize: 13,
   },
-  btnDisabled: { opacity: 0.5 },
-  issueText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  busyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 14 },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 14,
-    minHeight: 360,
+  inlineWarn: {
+    fontSize: 13,
+    lineHeight: 18,
   },
-  muted: { fontSize: 14, opacity: 0.7, lineHeight: 20 },
-  centerText: { textAlign: 'center' },
-  resultTitle: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
-  primaryBtn: { marginTop: 4, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 12, alignItems: 'center' },
-  primaryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  muted: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  centerText: {
+    textAlign: 'center',
+  },
 });

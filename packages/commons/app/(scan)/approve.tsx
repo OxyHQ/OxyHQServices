@@ -1,17 +1,18 @@
 import React, { useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  Image,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Image, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
+import { ThemedText } from '@/components/themed-text';
+import {
+  Screen,
+  Section,
+  Callout,
+  CenteredState,
+  PrimaryButton,
+  SecondaryButton,
+} from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useCommonsApproval } from '@/hooks/commons-signin/useCommonsApproval';
 
@@ -49,80 +50,54 @@ export default function ApproveSignInScreen() {
   }, [router]);
 
   const appName = info?.application.name ?? '';
-
   const scopes = useMemo(() => info?.scopes ?? [], [info?.scopes]);
 
   // --- Terminal states (approved / denied) ---
   if (state === 'approved' || state === 'denied') {
     const approved = state === 'approved';
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <MaterialCommunityIcons
-          name={approved ? 'check-circle-outline' : 'close-circle-outline'}
-          size={64}
-          color={approved ? colors.success : colors.textSecondary}
+      <Screen>
+        <CenteredState
+          icon={approved ? 'check-circle-outline' : 'close-circle-outline'}
+          iconColor={approved ? colors.success : colors.textSecondary}
+          title={approved ? t('signInApproval.approve.approvedTitle') : t('signInApproval.approve.deniedTitle')}
+          body={approved ? t('signInApproval.approve.approvedBody') : t('signInApproval.approve.deniedBody')}
+          action={
+            <View style={styles.action}>
+              <PrimaryButton label={t('signInApproval.approve.done')} onPress={handleClose} fullWidth={false} />
+            </View>
+          }
         />
-        <Text style={[styles.title, { color: colors.text }]}>
-          {approved ? t('signInApproval.approve.approvedTitle') : t('signInApproval.approve.deniedTitle')}
-        </Text>
-        <Text style={[styles.body, { color: colors.textSecondary }]}>
-          {approved ? t('signInApproval.approve.approvedBody') : t('signInApproval.approve.deniedBody')}
-        </Text>
-        <TouchableOpacity
-          style={[styles.primaryButton, { backgroundColor: colors.tint }]}
-          onPress={handleClose}
-          accessibilityRole="button"
-        >
-          <Text style={styles.primaryButtonText}>{t('signInApproval.approve.done')}</Text>
-        </TouchableOpacity>
-      </View>
+      </Screen>
     );
   }
 
   // --- Error state ---
   if (state === 'error') {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={64} color={colors.error} />
-        <Text style={[styles.title, { color: colors.text }]}>
-          {t('signInApproval.approve.errorTitle')}
-        </Text>
-        <Text style={[styles.body, { color: colors.textSecondary }]}>
-          {code ? t('signInApproval.approve.errorBody') : t('signInApproval.approve.noCode')}
-        </Text>
-        <View style={styles.errorActions}>
-          {code ? (
-            <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: colors.border }]}
-              onPress={reload}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                {t('signInApproval.approve.tryAgain')}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.tint }]}
-            onPress={handleClose}
-            accessibilityRole="button"
-          >
-            <Text style={styles.primaryButtonText}>{t('signInApproval.approve.done')}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <Screen>
+        <CenteredState
+          icon="alert-circle-outline"
+          iconColor={colors.error}
+          title={t('signInApproval.approve.errorTitle')}
+          body={code ? t('signInApproval.approve.errorBody') : t('signInApproval.approve.noCode')}
+          action={
+            <View style={styles.errorActions}>
+              {code ? <SecondaryButton label={t('signInApproval.approve.tryAgain')} onPress={reload} fullWidth={false} /> : null}
+              <PrimaryButton label={t('signInApproval.approve.done')} onPress={handleClose} fullWidth={false} />
+            </View>
+          }
+        />
+      </Screen>
     );
   }
 
   // --- Loading ---
   if (state === 'loading' || !info) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.body, { color: colors.textSecondary }]}>
-          {t('signInApproval.approve.loading')}
-        </Text>
-      </View>
+      <Screen>
+        <CenteredState loading body={t('signInApproval.approve.loading')} />
+      </Screen>
     );
   }
 
@@ -130,118 +105,100 @@ export default function ApproveSignInScreen() {
 
   // --- Ready: render the server-resolved identity + actions ---
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
-    >
-      <Text style={[styles.heading, { color: colors.textSecondary }]}>
-        {t('signInApproval.approve.heading')}
-      </Text>
+    <Screen gap={24}>
+      <View style={styles.brandBlock}>
+        <ThemedText style={[styles.heading, { color: colors.textSecondary }]}>
+          {t('signInApproval.approve.heading')}
+        </ThemedText>
 
-      <View style={styles.appHeader}>
         {info.application.icon ? (
           <Image source={{ uri: info.application.icon }} style={styles.appIcon} />
         ) : (
           <View style={[styles.appIcon, styles.appIconFallback, { backgroundColor: colors.card }]}>
-            <Text style={[styles.appIconLetter, { color: colors.text }]}>
+            <ThemedText style={[styles.appIconLetter, { color: colors.text }]}>
               {appName.charAt(0).toUpperCase() || '?'}
-            </Text>
+            </ThemedText>
           </View>
         )}
-        <Text style={[styles.appName, { color: colors.text }]}>{appName}</Text>
+        <ThemedText style={[styles.appName, { color: colors.text }]}>{appName}</ThemedText>
 
         {info.application.isOfficial ? (
-          <View style={[styles.badge, { backgroundColor: colors.card }]}>
+          <View style={[styles.officialBadge, { backgroundColor: colors.primarySubtle }]}>
             <MaterialCommunityIcons name="check-decagram" size={14} color={colors.tint} />
-            <Text style={[styles.badgeText, { color: colors.tint }]}>
+            <ThemedText style={[styles.officialText, { color: colors.tint }]}>
               {t('signInApproval.approve.officialBadge')}
-            </Text>
+            </ThemedText>
           </View>
         ) : info.application.developerName ? (
-          <Text style={[styles.developer, { color: colors.textSecondary }]}>
+          <ThemedText style={[styles.developer, { color: colors.textSecondary }]}>
             {t('signInApproval.approve.developerBy', { developer: info.application.developerName })}
-          </Text>
+          </ThemedText>
         ) : null}
+
+        <ThemedText style={[styles.prompt, { color: colors.text }]}>
+          {t('signInApproval.approve.wantsToSignIn', { app: appName, user: username })}
+        </ThemedText>
       </View>
 
-      <Text style={[styles.prompt, { color: colors.text }]}>
-        {t('signInApproval.approve.wantsToSignIn', { app: appName, user: username })}
-      </Text>
-
       {info.boundOrigin ? (
-        <View style={[styles.metaRow, { borderColor: colors.border }]}>
-          <Text style={[styles.metaLabel, { color: colors.textSecondary }]}>
-            {t('signInApproval.approve.originLabel')}
-          </Text>
-          <Text style={[styles.metaValue, { color: colors.text }]} numberOfLines={1}>
+        <Section title={t('signInApproval.approve.originLabel')}>
+          <ThemedText style={[styles.origin, { color: colors.text }]} numberOfLines={1}>
             {info.boundOrigin}
-          </Text>
-        </View>
+          </ThemedText>
+        </Section>
       ) : null}
 
       {scopes.length > 0 ? (
-        <View style={styles.scopes}>
-          <Text style={[styles.scopesTitle, { color: colors.textSecondary }]}>
-            {t('signInApproval.approve.scopesTitle')}
-          </Text>
-          {scopes.map((scope) => (
-            <View key={scope} style={styles.scopeRow}>
-              <MaterialCommunityIcons name="circle-small" size={20} color={colors.textSecondary} />
-              <Text style={[styles.scopeText, { color: colors.text }]}>{scope}</Text>
-            </View>
-          ))}
-        </View>
+        <Section title={t('signInApproval.approve.scopesTitle')}>
+          <View style={styles.scopes}>
+            {scopes.map((scope) => (
+              <View key={scope} style={styles.scopeRow}>
+                <MaterialCommunityIcons name="check" size={18} color={colors.success} />
+                <ThemedText style={[styles.scopeText, { color: colors.text }]}>{scope}</ThemedText>
+              </View>
+            ))}
+          </View>
+        </Section>
       ) : null}
 
       {biometricFailed ? (
-        <View style={[styles.biometricBanner, { backgroundColor: colors.card }]}>
-          <MaterialCommunityIcons name="fingerprint" size={18} color={colors.error} />
-          <Text style={[styles.biometricText, { color: colors.error }]}>
-            {t('signInApproval.approve.biometricFailedBody')}
-          </Text>
-        </View>
+        <Callout tone="danger" icon="fingerprint">
+          {t('signInApproval.approve.biometricFailedBody')}
+        </Callout>
       ) : null}
 
       <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.secondaryButton, { borderColor: colors.border }]}
+        <SecondaryButton
+          label={state === 'denying' ? t('signInApproval.approve.denying') : t('signInApproval.approve.deny')}
           onPress={deny}
           disabled={busy}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-            {state === 'denying' ? t('signInApproval.approve.denying') : t('signInApproval.approve.deny')}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.primaryButton, styles.actionFlex, { backgroundColor: colors.tint }]}
+          fullWidth={false}
+        />
+        <PrimaryButton
+          label={state === 'approving' ? t('signInApproval.approve.approving') : t('signInApproval.approve.approve')}
           onPress={approve}
           disabled={busy}
-          accessibilityRole="button"
-        >
-          <Text style={styles.primaryButtonText}>
-            {state === 'approving' ? t('signInApproval.approve.approving') : t('signInApproval.approve.approve')}
-          </Text>
-        </TouchableOpacity>
+          style={styles.approveFlex}
+        />
       </View>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 24,
-    paddingTop: 48,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
+  action: {
     alignItems: 'center',
-    padding: 24,
-    gap: 16,
+    marginTop: 4,
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  brandBlock: {
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 16,
   },
   heading: {
     fontSize: 13,
@@ -250,20 +207,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textAlign: 'center',
   },
-  appHeader: {
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 20,
-    marginBottom: 24,
-  },
   appIcon: {
     width: 72,
     height: 72,
     borderRadius: 18,
+    borderCurve: 'continuous',
+    marginTop: 10,
   },
   appIconFallback: {
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   appIconLetter: {
     fontSize: 32,
@@ -272,17 +225,19 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 22,
     fontWeight: '700',
+    letterSpacing: -0.3,
     textAlign: 'center',
   },
-  badge: {
+  officialBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+    borderCurve: 'continuous',
   },
-  badgeText: {
+  officialText: {
     fontSize: 12,
     fontWeight: '600',
   },
@@ -292,100 +247,32 @@ const styles = StyleSheet.create({
   prompt: {
     fontSize: 17,
     fontWeight: '500',
-    textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
+    textAlign: 'center',
+    marginTop: 8,
   },
-  metaRow: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 16,
-  },
-  metaLabel: {
-    fontSize: 11,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  metaValue: {
+  origin: {
     fontSize: 14,
     fontWeight: '500',
   },
   scopes: {
-    marginBottom: 24,
-  },
-  scopesTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
+    gap: 10,
   },
   scopeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
   scopeText: {
-    fontSize: 14,
     flex: 1,
-  },
-  biometricBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  biometricText: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 15,
   },
   actions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
+    marginTop: 4,
   },
-  errorActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  actionFlex: {
+  approveFlex: {
     flex: 1,
-  },
-  primaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  body: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
   },
 });

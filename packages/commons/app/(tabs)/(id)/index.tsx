@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useOxy, useCurrentUser } from '@oxyhq/services';
@@ -7,16 +7,11 @@ import { buildUserDid } from '@oxyhq/core';
 import { Fab } from '@oxyhq/bloom/fab';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Section } from '@/components/section';
-import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Screen, Section, GroupedList, ListRow, Callout } from '@/components/ui';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
 import { IdQrBack } from '@/components/civic/IdQrBack';
 import { CivicBadge } from '@/components/civic/CivicBadge';
-import { IdentityCardsSection } from '@/components/identity-cards-section';
-import { useIdentityCards } from '@/hooks/home/useIdentityCards';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
@@ -38,16 +33,15 @@ const CARD_HEIGHT = 214;
  *     identity card (name, @username, public-key ID, trust-tier badge); the BACK
  *     renders a QR of `oxyServices.getMyIdPayload()` — the DID-only payload a
  *     counterpart scans to resolve and verify the signed card server-side.
- *   - Below the card: the self-custody identity quick-cards (the home hub
- *     actions, deep-linking into the Settings "about your identity" detail), the
- *     real-life attestation entry, and the raw DID.
+ *   - Below the card: the self-custody identity actions (deep-linking into the
+ *     Settings "about your identity" detail), the real-life attestation entry,
+ *     and the raw DID.
  *   - A Bloom FAB (bottom-right) opens the QR scanner, which lives at the root as
  *     a full-screen modal (`app/(scan)`) so its camera covers the tab bar.
  *
  * No in-screen title/subtitle/status chip: the tab bar already labels this "ID"
- * and the card stands on its own. `useCivicProfileState` stays wired (it tracks
- * the cache-first vs live state of the signed card and the not-yet-registered
- * `pending` case) — only its visible status chip was dropped.
+ * and the card stands on its own. The single accent moment is the card itself;
+ * everything below it is flat, hairline-separated rows.
  *
  * Offline-first: the card front (identity + key + QR) is ALWAYS rendered from
  * the LOCAL identity and never gated on the network. The live trust tier is
@@ -126,95 +120,99 @@ export default function IdScreen() {
     router.push('/(tabs)/(settings)/about-identity');
   }, [router]);
 
-  const identityCards = useIdentityCards(handleAboutIdentity);
+  const isNative = Platform.OS !== 'web';
 
   return (
     <View style={styles.screen}>
-      <ScreenContentWrapper>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.content}>
-            <View style={styles.cardContainer}>
-              <OxyID
-                width={CARD_WIDTH}
-                height={CARD_HEIGHT}
-                frontSide={
-                  <View style={StyleSheet.absoluteFill}>
-                    <FrontSide
-                      displayName={displayName}
-                      username={user?.username}
-                      avatarUrl={avatarUrl}
-                      accountCreated={user?.createdAt}
-                      publicKeyShort={publicKeyShort}
-                    />
-                    {trustTier && (
-                      <View style={styles.cardBadgeOverlay} pointerEvents="none">
-                        <CivicBadge
-                          tone={getTrustTierMeta(trustTier).tone}
-                          icon="shield-check"
-                          label={t(`civic.trustTier.${trustTier}`)}
-                        />
-                      </View>
-                    )}
-                  </View>
-                }
-                backSide={
-                  qrPayload ? (
-                    <IdQrBack payload={qrPayload} caption={t('civic.id.qrCaption')} />
-                  ) : (
-                    <View style={styles.qrPlaceholder}>
-                      <ThemedText style={styles.qrPlaceholderText}>
-                        {t('civic.id.qrPending')}
-                      </ThemedText>
-                    </View>
-                  )
-                }
-              />
-            </View>
-
-            <ThemedText style={styles.flipHint}>{t('civic.id.flipHint')}</ThemedText>
-
-            {/* Self-custody identity quick-cards (the home hub actions) */}
-            <Section title={t('vault.home.yourIdentity')}>
-              <ThemedText style={styles.sectionSubtitle}>{t('vault.home.yourIdentitySubtitle')}</ThemedText>
-              <IdentityCardsSection cards={identityCards} />
-            </Section>
-
-            {/* Real-life attestation — A shows a QR for B to confirm they met IRL */}
-            <Section title={t('civic.attest.section.title')}>
-              <ThemedText style={styles.sectionSubtitle}>{t('civic.attest.section.subtitle')}</ThemedText>
-              <AccountCard>
-                <GroupedSection
-                  items={[
-                    {
-                      id: 'attest-me',
-                      icon: 'handshake-outline',
-                      iconColor: colors.identityIconSelfCustody,
-                      title: t('civic.attest.section.action'),
-                      subtitle: t('civic.attest.section.actionSubtitle'),
-                      onPress: handleAttestMe,
-                      showChevron: true,
-                    },
-                  ]}
+      <Screen>
+        <View style={styles.hero}>
+          <OxyID
+            width={CARD_WIDTH}
+            height={CARD_HEIGHT}
+            frontSide={
+              <View style={StyleSheet.absoluteFill}>
+                <FrontSide
+                  displayName={displayName}
+                  username={user?.username}
+                  avatarUrl={avatarUrl}
+                  accountCreated={user?.createdAt}
+                  publicKeyShort={publicKeyShort}
                 />
-              </AccountCard>
-            </Section>
-
-            {did && (
-              <Section title={t('civic.id.didLabel')}>
-                <ThemedText style={styles.didValue} selectable numberOfLines={2}>
-                  {did}
-                </ThemedText>
-              </Section>
-            )}
-
-            {state === 'pending' && (
-              <ThemedText style={[styles.pendingNote, { color: colors.warning }]}>
-                {t('civic.id.pendingNote')}
-              </ThemedText>
-            )}
-          </View>
+                {trustTier && (
+                  <View style={styles.cardBadgeOverlay} pointerEvents="none">
+                    <CivicBadge
+                      tone={getTrustTierMeta(trustTier).tone}
+                      icon="shield-check"
+                      label={t(`civic.trustTier.${trustTier}`)}
+                    />
+                  </View>
+                )}
+              </View>
+            }
+            backSide={
+              qrPayload ? (
+                <IdQrBack payload={qrPayload} caption={t('civic.id.qrCaption')} />
+              ) : (
+                <View style={styles.qrPlaceholder}>
+                  <ThemedText style={styles.qrPlaceholderText}>{t('civic.id.qrPending')}</ThemedText>
+                </View>
+              )
+            }
+          />
+          <ThemedText style={[styles.flipHint, { color: colors.textSecondary }]}>
+            {t('civic.id.flipHint')}
+          </ThemedText>
         </View>
-      </ScreenContentWrapper>
+
+        {/* Self-custody identity actions (native only). */}
+        {isNative && (
+          <Section title={t('vault.home.yourIdentity')} subtitle={t('vault.home.yourIdentitySubtitle')}>
+            <GroupedList>
+              <ListRow
+                icon="shield-key"
+                title={t('home.identity.selfCustody')}
+                subtitle={t('home.identity.selfCustodySubtitle')}
+                onPress={handleAboutIdentity}
+                showChevron
+              />
+              <ListRow
+                icon="key-variant"
+                title={t('home.identity.publicKey')}
+                subtitle={t('home.identity.publicKeySubtitle')}
+                onPress={handleAboutIdentity}
+                showChevron
+              />
+            </GroupedList>
+          </Section>
+        )}
+
+        {/* Real-life attestation — A shows a QR for B to confirm they met IRL */}
+        <Section title={t('civic.attest.section.title')} subtitle={t('civic.attest.section.subtitle')}>
+          <GroupedList>
+            <ListRow
+              icon="handshake-outline"
+              title={t('civic.attest.section.action')}
+              subtitle={t('civic.attest.section.actionSubtitle')}
+              onPress={handleAttestMe}
+              showChevron
+            />
+          </GroupedList>
+        </Section>
+
+        {did && (
+          <Section title={t('civic.id.didLabel')}>
+            <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
+              {did}
+            </ThemedText>
+          </Section>
+        )}
+
+        {state === 'pending' && (
+          <Callout tone="warning" icon="clock-outline">
+            {t('civic.id.pendingNote')}
+          </Callout>
+        )}
+      </Screen>
 
       {/* QR scanner is an action, not a tab — opens the root full-screen modal. */}
       <Fab
@@ -232,21 +230,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 120,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    opacity: 0.7,
-    marginBottom: 12,
-  },
-  cardContainer: {
+  hero: {
     alignItems: 'center',
-    marginBottom: 12,
+    gap: 16,
+    paddingTop: 8,
   },
   cardBadgeOverlay: {
     position: 'absolute',
@@ -266,17 +253,10 @@ const styles = StyleSheet.create({
   },
   flipHint: {
     fontSize: 13,
-    opacity: 0.6,
     textAlign: 'center',
-    marginBottom: 16,
   },
   didValue: {
     fontSize: 13,
-    opacity: 0.85,
-  },
-  pendingNote: {
-    fontSize: 13,
     lineHeight: 19,
-    marginTop: 4,
   },
 });

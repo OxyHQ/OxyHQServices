@@ -1,13 +1,12 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { AccountCard } from '@/components/ui';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Screen, StackHeader, Section, GroupedList, CenteredState } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useMyCredentials } from '@/hooks/useCredentials';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import {
@@ -43,11 +42,11 @@ function truncateMiddle(value: string, head = 6, tail = 4): string {
  * "My credentials" — the verifiable credentials the current user holds.
  *
  * Reads the holder list via `listMyCredentials()` (offline-first, like the other
- * civic surfaces). Each credential renders as a card: the specific type (the
- * generic `VerifiableCredential` base is dropped), a preview of the signed
- * claims, a compact issuer reference, the issued date, and a status pill
- * (active / revoked / expired). Tapping a card opens its detail + verify screen.
- * Loading / empty / error states are all handled; pull-to-refresh re-reads.
+ * civic surfaces). Each credential is a flat, hairline-separated row: the
+ * specific type, a preview of the signed claims, a compact issuer reference + the
+ * issued date, and a status pill (active / revoked / expired). Tapping a row
+ * opens its detail + verify screen. Loading / empty / error states are all
+ * handled; pull-to-refresh re-reads.
  */
 export default function CredentialsScreen() {
   const colors = useColors();
@@ -75,58 +74,49 @@ export default function CredentialsScreen() {
 
   const renderBody = () => {
     if (query.isPending && !credentials) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={styles.muted}>{t('civic.credentials.loading')}</ThemedText>
-        </View>
-      );
+      return <CenteredState loading body={t('civic.credentials.loading')} />;
     }
 
     if (query.isError && !credentials) {
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="cloud-alert" size={56} color={colors.textSecondary} />
-          <ThemedText style={styles.emptyTitle}>{t('civic.credentials.error.title')}</ThemedText>
-          <ThemedText style={[styles.emptyBody, { color: colors.textSecondary }]}>
-            {t('civic.credentials.error.body')}
-          </ThemedText>
-          <TouchableOpacity
-            style={[styles.retryButton, { backgroundColor: colors.tint }]}
-            onPress={() => query.refetch()}
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>{t('common.retry')}</Text>
-          </TouchableOpacity>
-        </View>
+        <CenteredState
+          icon="cloud-alert"
+          title={t('civic.credentials.error.title')}
+          body={t('civic.credentials.error.body')}
+          action={
+            <TouchableOpacity
+              style={[styles.retry, { backgroundColor: colors.tint }]}
+              onPress={() => query.refetch()}
+              accessibilityRole="button"
+            >
+              <ThemedText style={styles.retryText}>{t('common.retry')}</ThemedText>
+            </TouchableOpacity>
+          }
+        />
       );
     }
 
     if (!credentials || credentials.length === 0) {
       return (
-        <View style={styles.centered}>
-          <MaterialCommunityIcons name="certificate-outline" size={56} color={colors.textSecondary} />
-          <ThemedText style={styles.emptyTitle}>{t('civic.credentials.empty.title')}</ThemedText>
-          <ThemedText style={[styles.emptyBody, { color: colors.textSecondary }]}>
-            {t('civic.credentials.empty.body')}
-          </ThemedText>
-        </View>
+        <CenteredState
+          icon="certificate-outline"
+          title={t('civic.credentials.empty.title')}
+          body={t('civic.credentials.empty.body')}
+        />
       );
     }
 
     return (
-      <View style={styles.content}>
+      <>
         <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
           {t('civic.credentials.subtitle')}
         </ThemedText>
 
         {!isOnline && (
-          <View style={styles.offlineRow}>
-            <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.credentials.offline')} />
-          </View>
+          <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.credentials.offline')} />
         )}
 
-        <View style={styles.list}>
+        <GroupedList>
           {credentials.map((credential) => (
             <CredentialRow
               key={credential.recordId}
@@ -136,28 +126,24 @@ export default function CredentialsScreen() {
               onPress={() => openDetail(credential.recordId)}
             />
           ))}
-        </View>
-      </View>
+        </GroupedList>
+      </>
     );
   };
 
   return (
-    <ScreenContentWrapper refreshing={query.isRefetching} onRefresh={() => query.refetch()}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            onPress={handleBack}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-            style={styles.backBtn}
-          >
-            <MaterialCommunityIcons name="chevron-left" size={26} color={colors.text} />
-          </TouchableOpacity>
-          <ThemedText style={styles.topTitle}>{t('civic.credentials.title')}</ThemedText>
-        </View>
-        {renderBody()}
-      </View>
-    </ScreenContentWrapper>
+    <Screen
+      gap={20}
+      refreshing={query.isRefetching}
+      onRefresh={() => query.refetch()}
+    >
+      <StackHeader
+        title={t('civic.credentials.title')}
+        onBack={handleBack}
+        backAccessibilityLabel={t('common.back')}
+      />
+      {renderBody()}
+    </Screen>
   );
 }
 
@@ -169,6 +155,7 @@ interface CredentialRowProps {
 }
 
 function CredentialRow({ credential, colors, t, onPress }: CredentialRowProps) {
+  const handlePressIn = useHapticPress();
   const primary = primaryCredentialType(credential.types);
   const typeLabel = primary ? humanizeTypeTag(primary) : t('civic.credentials.detail.title');
   const statusMeta = getCredentialStatusMeta(credential.status);
@@ -179,75 +166,85 @@ function CredentialRow({ credential, colors, t, onPress }: CredentialRowProps) {
   const issuedOn = formatMs(credential.issuedAt);
 
   return (
-    <TouchableOpacity onPress={onPress} accessibilityRole="button" activeOpacity={0.7}>
-      <AccountCard>
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <ThemedText style={styles.cardTitle} numberOfLines={1}>
-              {typeLabel}
-            </ThemedText>
-            <CivicBadge
-              tone={statusMeta.tone}
-              icon={STATUS_ICON[credential.status]}
-              label={t(`civic.credentials.status.${statusMeta.labelKey}`)}
-            />
-          </View>
+    <TouchableOpacity onPress={onPress} onPressIn={handlePressIn} accessibilityRole="button" activeOpacity={0.6}>
+      <View style={styles.row}>
+        <View style={styles.rowHeader}>
+          <ThemedText style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+            {typeLabel}
+          </ThemedText>
+          <CivicBadge
+            tone={statusMeta.tone}
+            icon={STATUS_ICON[credential.status]}
+            label={t(`civic.credentials.status.${statusMeta.labelKey}`)}
+          />
+        </View>
 
-          {preview.length > 0 && (
-            <ThemedText style={[styles.cardPreview, { color: colors.textSecondary }]} numberOfLines={2}>
-              {preview}
+        {preview.length > 0 && (
+          <ThemedText style={[styles.rowPreview, { color: colors.textSecondary }]} numberOfLines={2}>
+            {preview}
+          </ThemedText>
+        )}
+
+        <View style={styles.rowMeta}>
+          <ThemedText style={[styles.rowMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
+            {t('civic.credentials.issuedBy', { issuer: issuerRef })}
+          </ThemedText>
+          {issuedOn.length > 0 && (
+            <ThemedText style={[styles.rowMetaText, { color: colors.textSecondary }]} numberOfLines={1}>
+              {t('civic.credentials.issuedOn', { date: issuedOn })}
             </ThemedText>
           )}
-
-          <View style={styles.cardFooter}>
-            <ThemedText style={[styles.cardMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-              {t('civic.credentials.issuedBy', { issuer: issuerRef })}
-            </ThemedText>
-            {issuedOn.length > 0 && (
-              <ThemedText style={[styles.cardMeta, { color: colors.textSecondary }]} numberOfLines={1}>
-                {t('civic.credentials.issuedOn', { date: issuedOn })}
-              </ThemedText>
-            )}
-          </View>
         </View>
-      </AccountCard>
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
+  subtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  row: {
+    paddingVertical: 16,
+    gap: 8,
+  },
+  rowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    justifyContent: 'space-between',
+    gap: 10,
   },
-  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginLeft: -6 },
-  topTitle: { fontSize: 20, fontWeight: '700' },
-  content: { paddingHorizontal: 16, paddingBottom: 120 },
-  subtitle: { fontSize: 14, lineHeight: 20, marginBottom: 16 },
-  offlineRow: { flexDirection: 'row', marginBottom: 16 },
-  list: { gap: 12 },
-  card: { padding: 14, gap: 8 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  cardTitle: { flex: 1, fontSize: 17, fontWeight: '700' },
-  cardPreview: { fontSize: 14, lineHeight: 19 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 2 },
-  cardMeta: { fontSize: 12, flexShrink: 1 },
-  centered: {
+  rowTitle: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 12,
-    minHeight: 320,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
-  muted: { fontSize: 15, opacity: 0.7 },
-  emptyTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
-  emptyBody: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  retryButton: { marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 12 },
-  retryText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  rowPreview: {
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  rowMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  rowMetaText: {
+    fontSize: 12,
+    flexShrink: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  retry: {
+    marginTop: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+  },
+  retryText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });

@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Screen, StackHeader, PrimaryButton } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useAttestQr } from '@/hooks/useAttestQr';
 import { useTranslation } from '@/lib/i18n';
@@ -44,123 +44,95 @@ export default function AttestMeScreen() {
   }, [remainingMs]);
 
   return (
-    <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <ThemedText style={styles.topTitle}>{t('civic.attest.request.title')}</ThemedText>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.close')}
-            style={styles.closeButton}
-          >
-            <MaterialCommunityIcons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+    <Screen gap={24}>
+      <StackHeader
+        title={t('civic.attest.request.title')}
+        onClose={() => router.back()}
+        closeAccessibilityLabel={t('common.close')}
+      />
 
-        <View style={styles.content}>
-          <ThemedText style={styles.subtitle}>{t('civic.attest.request.subtitle')}</ThemedText>
+      <View style={styles.body}>
+        <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
+          {t('civic.attest.request.subtitle')}
+        </ThemedText>
 
-          <View style={[styles.qrCard, { backgroundColor: colors.card }]}>
-            {state === 'loading' && <ActivityIndicator size="large" color={colors.tint} />}
+        <View style={[styles.qrSurface, { backgroundColor: colors.card }]}>
+          {state === 'loading' && <ActivityIndicator size="large" color={colors.tint} />}
 
-            {state === 'error' && (
-              <View style={styles.centered}>
-                <MaterialCommunityIcons name="alert-circle-outline" size={40} color={colors.error} />
-                <ThemedText style={styles.errorText}>{t('civic.attest.request.buildError')}</ThemedText>
-              </View>
-            )}
-
-            {state === 'ready' && payload && !expired && (
-              <View style={styles.qrWrapper}>
-                <QRCode value={payload} size={216} color="#1C1C1E" backgroundColor="transparent" />
-              </View>
-            )}
-
-            {state === 'ready' && expired && (
-              <View style={styles.centered}>
-                <MaterialCommunityIcons name="timer-off-outline" size={40} color={colors.textSecondary} />
-                <ThemedText style={styles.expiredText}>{t('civic.attest.request.expired')}</ThemedText>
-              </View>
-            )}
-          </View>
-
-          {state === 'ready' && !expired && (
-            <View style={styles.chipRow}>
-              <CivicBadge tone="caution" icon="timer-outline" label={t('civic.attest.request.expiresIn', { time: mmss })} />
+          {state === 'error' && (
+            <View style={styles.qrState}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={40} color={colors.error} />
+              <ThemedText style={styles.qrStateText}>{t('civic.attest.request.buildError')}</ThemedText>
             </View>
           )}
 
-          <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
-            {t('civic.attest.request.hint')}
-          </ThemedText>
+          {state === 'ready' && payload && !expired && (
+            <View style={styles.qrWrapper}>
+              <QRCode value={payload} size={216} color="#1C1C1E" backgroundColor="transparent" />
+            </View>
+          )}
 
-          {(expired || state === 'error') && (
-            <TouchableOpacity
-              style={[styles.regenButton, { backgroundColor: colors.tint }]}
-              onPress={regenerate}
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="refresh" size={20} color="#fff" />
-              <Text style={styles.regenText}>{t('civic.attest.request.regenerate')}</Text>
-            </TouchableOpacity>
+          {state === 'ready' && expired && (
+            <View style={styles.qrState}>
+              <MaterialCommunityIcons name="timer-off-outline" size={40} color={colors.textSecondary} />
+              <ThemedText style={[styles.qrStateText, { color: colors.textSecondary }]}>
+                {t('civic.attest.request.expired')}
+              </ThemedText>
+            </View>
           )}
         </View>
+
+        {state === 'ready' && !expired && (
+          <CivicBadge tone="caution" icon="timer-outline" label={t('civic.attest.request.expiresIn', { time: mmss })} />
+        )}
+
+        <ThemedText style={[styles.hint, { color: colors.textSecondary }]}>
+          {t('civic.attest.request.hint')}
+        </ThemedText>
+
+        {(expired || state === 'error') && (
+          <View style={styles.regen}>
+            <PrimaryButton icon="refresh" label={t('civic.attest.request.regenerate')} onPress={regenerate} />
+          </View>
+        )}
       </View>
-    </ScreenContentWrapper>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
+  body: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  topTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 120,
-    alignItems: 'center',
+    gap: 20,
+    paddingTop: 8,
   },
   subtitle: {
     fontSize: 15,
-    opacity: 0.8,
     textAlign: 'center',
     lineHeight: 21,
-    marginBottom: 20,
   },
-  qrCard: {
+  qrSurface: {
     width: 264,
     height: 264,
-    borderRadius: 20,
+    borderRadius: 28,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
   qrWrapper: {
     padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
-  chipRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
+  qrState: {
+    alignItems: 'center',
+    gap: 10,
+    padding: 16,
+  },
+  qrStateText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
   hint: {
     fontSize: 13,
@@ -168,32 +140,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     paddingHorizontal: 8,
   },
-  centered: {
-    alignItems: 'center',
-    gap: 10,
-    padding: 16,
-  },
-  errorText: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  expiredText: {
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.8,
-  },
-  regenButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-  },
-  regenText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
+  regen: {
+    alignSelf: 'stretch',
+    marginTop: 4,
   },
 });

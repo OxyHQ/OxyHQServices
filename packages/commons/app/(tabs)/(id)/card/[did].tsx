@@ -1,19 +1,19 @@
 import React, { useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Section } from '@/components/section';
-import { AccountCard } from '@/components/ui';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import {
+  Screen,
+  StackHeader,
+  Section,
+  GroupedList,
+  ListRow,
+  PrimaryButton,
+  SecondaryButton,
+  CenteredState,
+} from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useCivicCard } from '@/hooks/useCivicCard';
 import { usePersonhood } from '@/hooks/usePersonhood';
@@ -76,41 +76,30 @@ export default function ScannedCardScreen() {
     // The DID could not be parsed into a user id — not a valid Oxy ID.
     if (!userId) {
       return (
-        <EmptyState
+        <CenteredState
           icon="qrcode-remove"
           title={t('civic.card.error.invalidTitle')}
           body={t('civic.card.error.invalidBody')}
-          colors={colors}
         />
       );
     }
 
     // First resolve with nothing cached yet.
     if (cardQuery.isPending && !card) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={styles.loadingText}>{t('civic.card.loading')}</ThemedText>
-        </View>
-      );
+      return <CenteredState loading body={t('civic.card.loading')} />;
     }
 
     // Failed to resolve and we have no cached card to fall back to.
     if (cardQuery.isError && !card) {
       return (
-        <EmptyState
+        <CenteredState
           icon="cloud-alert"
           title={t('civic.card.error.title')}
           body={t('civic.card.error.body')}
-          colors={colors}
           action={
-            <TouchableOpacity
-              style={[styles.retryButton, { backgroundColor: colors.tint }]}
-              onPress={() => cardQuery.refetch()}
-              accessibilityRole="button"
-            >
-              <Text style={styles.retryText}>{t('common.retry')}</Text>
-            </TouchableOpacity>
+            <View style={styles.action}>
+              <PrimaryButton label={t('common.retry')} onPress={() => cardQuery.refetch()} fullWidth={false} />
+            </View>
           }
         />
       );
@@ -123,224 +112,157 @@ export default function ScannedCardScreen() {
     const personhoodMeta = getPersonhoodMeta(card.personhoodStatus);
 
     return (
-      <View style={styles.content}>
+      <>
         {/* Trust verdict — the load-bearing indicator. */}
-        <View style={styles.verdictRow}>
+        <View style={styles.verdict}>
           <CivicBadge
             emphasis
             tone={verification.tone}
             icon={verified ? 'check-decagram' : 'alert-decagram'}
             label={t(`civic.card.${verification.labelKey}`)}
           />
-        </View>
-        <ThemedText style={styles.verdictDesc}>
-          {t(`civic.card.${verification.labelKey}Desc`)}
-        </ThemedText>
-
-        {!isOnline && (
-          <View style={styles.offlineRow}>
+          <ThemedText style={[styles.verdictDesc, { color: colors.textSecondary }]}>
+            {t(`civic.card.${verification.labelKey}Desc`)}
+          </ThemedText>
+          {!isOnline && (
             <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.card.offline')} />
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Identity */}
-        <View style={styles.identityRow}>
-          {card.avatarUrl ? (
-            <Image source={{ uri: card.avatarUrl }} style={styles.avatar} resizeMode="cover" />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
-              <Text style={[styles.avatarInitial, { color: colors.textSecondary }]}>
-                {card.name?.charAt(0)?.toUpperCase() || '?'}
-              </Text>
+        <View style={styles.identity}>
+          <View style={styles.identityRow}>
+            {card.avatarUrl ? (
+              <Image source={{ uri: card.avatarUrl }} style={styles.avatar} resizeMode="cover" />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
+                <Text style={[styles.avatarInitial, { color: colors.textSecondary }]}>
+                  {card.name?.charAt(0)?.toUpperCase() || '?'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.identityText}>
+              <ThemedText style={styles.name} numberOfLines={2}>
+                {card.name}
+              </ThemedText>
+              {card.username && (
+                <ThemedText style={[styles.username, { color: colors.textSecondary }]} numberOfLines={1}>
+                  @{card.username}
+                </ThemedText>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.badgeRow}>
+            <CivicBadge tone={trust.tone} icon="shield-check" label={t(`civic.trustTier.${trust.labelKey}`)} />
+            <CivicBadge
+              tone={personhoodMeta.tone}
+              icon="account-check-outline"
+              label={t(`civic.personhood.${personhoodMeta.labelKey}`)}
+            />
+          </View>
+
+          {/* Precise proof-of-personhood status (from getPersonhood). */}
+          {personhood && (
+            <View style={styles.personhoodLine}>
+              <MaterialCommunityIcons
+                name={personhood.isRealPerson ? 'account-check' : 'account-clock-outline'}
+                size={16}
+                color={personhood.isRealPerson ? colors.success : colors.warning}
+              />
+              <ThemedText style={[styles.personhoodLineText, { color: colors.textSecondary }]}>
+                {personhood.isRealPerson
+                  ? t('civic.vouch.statusLine.verified')
+                  : t('civic.vouch.statusLine.building', {
+                      pct: Math.max(0, Math.min(100, Math.round(personhood.score * 100))),
+                    })}
+              </ThemedText>
             </View>
           )}
-          <View style={styles.identityText}>
-            <ThemedText style={styles.name} numberOfLines={2}>
-              {card.name}
-            </ThemedText>
-            {card.username && (
-              <ThemedText style={[styles.username, { color: colors.textSecondary }]} numberOfLines={1}>
-                @{card.username}
-              </ThemedText>
-            )}
-          </View>
         </View>
-
-        <View style={styles.badgeRow}>
-          <CivicBadge
-            tone={trust.tone}
-            icon="shield-check"
-            label={t(`civic.trustTier.${trust.labelKey}`)}
-          />
-          <CivicBadge
-            tone={personhoodMeta.tone}
-            icon="account-check-outline"
-            label={t(`civic.personhood.${personhoodMeta.labelKey}`)}
-          />
-        </View>
-
-        {/* Precise proof-of-personhood status (from getPersonhood). */}
-        {personhood && (
-          <View style={styles.personhoodLine}>
-            <MaterialCommunityIcons
-              name={personhood.isRealPerson ? 'account-check' : 'account-clock-outline'}
-              size={16}
-              color={personhood.isRealPerson ? colors.success : colors.warning}
-            />
-            <ThemedText style={[styles.personhoodLineText, { color: colors.textSecondary }]}>
-              {personhood.isRealPerson
-                ? t('civic.vouch.statusLine.verified')
-                : t('civic.vouch.statusLine.building', {
-                    pct: Math.max(0, Math.min(100, Math.round(personhood.score * 100))),
-                  })}
-            </ThemedText>
-          </View>
-        )}
 
         {/* Vouch + issue-credential CTAs — only for a card whose signature verified. */}
         {verified && (
-          <>
-            <TouchableOpacity
-              style={[styles.vouchCta, { backgroundColor: colors.tint }]}
+          <View style={styles.ctas}>
+            <PrimaryButton
+              icon="account-multiple-check-outline"
+              label={t('civic.vouch.cta')}
               onPress={handleVouch}
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="account-multiple-check-outline" size={20} color="#fff" />
-              <Text style={styles.vouchCtaText}>{t('civic.vouch.cta')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.issueCta, { borderColor: colors.tint }]}
+            />
+            <SecondaryButton
+              icon="certificate-outline"
+              label={t('civic.credentials.issue.cardCta')}
               onPress={handleIssueCredential}
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="certificate-outline" size={20} color={colors.tint} />
-              <Text style={[styles.issueCtaText, { color: colors.tint }]}>{t('civic.credentials.issue.cardCta')}</Text>
-            </TouchableOpacity>
-          </>
+            />
+          </View>
         )}
 
         {card.verifiedDomains.length > 0 && (
           <Section title={t('civic.card.verifiedDomains')}>
-            <AccountCard>
-              <View style={styles.listCard}>
-                {card.verifiedDomains.map((domain) => (
-                  <View key={domain} style={styles.listItem}>
-                    <MaterialCommunityIcons name="web-check" size={18} color={colors.success} />
-                    <ThemedText style={styles.listItemText}>{domain}</ThemedText>
-                  </View>
-                ))}
-              </View>
-            </AccountCard>
+            <GroupedList>
+              {card.verifiedDomains.map((domain) => (
+                <ListRow key={domain} icon="web-check" iconColor={colors.success} title={domain} />
+              ))}
+            </GroupedList>
           </Section>
         )}
 
         {card.credentialBadges.length > 0 && (
           <Section title={t('civic.card.credentials')}>
-            <AccountCard>
-              <View style={styles.listCard}>
-                {card.credentialBadges.map((badge) => (
-                  <View key={badge} style={styles.listItem}>
-                    <MaterialCommunityIcons name="certificate-outline" size={18} color={colors.identityIconPublicKey} />
-                    <ThemedText style={styles.listItemText}>{badge}</ThemedText>
-                  </View>
-                ))}
-              </View>
-            </AccountCard>
+            <GroupedList>
+              {card.credentialBadges.map((badge) => (
+                <ListRow
+                  key={badge}
+                  icon="certificate-outline"
+                  iconColor={colors.identityIconPublicKey}
+                  title={badge}
+                />
+              ))}
+            </GroupedList>
           </Section>
         )}
 
         <Section title={t('civic.card.didLabel')}>
-          <ThemedText style={styles.didValue} selectable numberOfLines={2}>
+          <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
             {card.did}
           </ThemedText>
         </Section>
-      </View>
+      </>
     );
   };
 
   return (
-    <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <ThemedText style={styles.topTitle}>{t('civic.card.title')}</ThemedText>
-          <TouchableOpacity
-            onPress={handleClose}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.close')}
-            style={styles.closeButton}
-          >
-            <MaterialCommunityIcons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-        {renderBody()}
-      </View>
-    </ScreenContentWrapper>
-  );
-}
-
-interface EmptyStateProps {
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  title: string;
-  body: string;
-  colors: ReturnType<typeof useColors>;
-  action?: React.ReactNode;
-}
-
-function EmptyState({ icon, title, body, colors, action }: EmptyStateProps) {
-  return (
-    <View style={styles.centered}>
-      <MaterialCommunityIcons name={icon} size={56} color={colors.textSecondary} style={styles.emptyIcon} />
-      <ThemedText style={styles.emptyTitle}>{title}</ThemedText>
-      <ThemedText style={[styles.emptyBody, { color: colors.textSecondary }]}>{body}</ThemedText>
-      {action}
-    </View>
+    <Screen gap={24}>
+      <StackHeader
+        title={t('civic.card.title')}
+        onClose={handleClose}
+        closeAccessibilityLabel={t('common.close')}
+      />
+      {renderBody()}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
+  action: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
+    marginTop: 4,
   },
-  topTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 120,
-  },
-  verdictRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
+  verdict: {
+    gap: 12,
+    alignItems: 'flex-start',
   },
   verdictDesc: {
-    fontSize: 13,
-    opacity: 0.7,
-    lineHeight: 19,
-    marginBottom: 16,
+    fontSize: 14,
+    lineHeight: 20,
   },
-  offlineRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
+  identity: {
+    gap: 12,
   },
   identityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    gap: 16,
   },
   avatar: {
     width: 64,
@@ -357,11 +279,11 @@ const styles = StyleSheet.create({
   },
   identityText: {
     flex: 1,
-    marginLeft: 16,
   },
   name: {
     fontSize: 22,
     fontWeight: '700',
+    letterSpacing: -0.3,
   },
   username: {
     fontSize: 15,
@@ -371,96 +293,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 8,
   },
   personhoodLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 12,
   },
   personhoodLineText: {
     fontSize: 13,
   },
-  vouchCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  vouchCtaText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  issueCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: -4,
-    marginBottom: 16,
-  },
-  issueCtaText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  listCard: {
-    padding: 12,
-    gap: 10,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  listItemText: {
-    fontSize: 15,
+  ctas: {
+    gap: 12,
   },
   didValue: {
     fontSize: 13,
-    opacity: 0.85,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    gap: 12,
-    minHeight: 320,
-  },
-  loadingText: {
-    fontSize: 15,
-    opacity: 0.7,
-  },
-  emptyIcon: {
-    marginBottom: 4,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  emptyBody: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  retryButton: {
-    marginTop: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-  },
-  retryText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
+    lineHeight: 19,
   },
 });

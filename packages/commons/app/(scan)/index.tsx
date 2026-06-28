@@ -317,7 +317,8 @@ const styles = StyleSheet.create({
   button: {
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 12,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     marginBottom: 16,
   },
   buttonText: {
