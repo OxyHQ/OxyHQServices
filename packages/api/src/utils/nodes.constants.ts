@@ -99,3 +99,37 @@ export const NODE_INGEST_SWEEP_JOB = 'node-ingest-pull-sweep';
 
 /** Job name for an on-demand per-user ingest (carries `{ userId }`). */
 export const NODE_INGEST_USER_JOB = 'node-ingest-user';
+
+/* -------------------------------------------------------------------------- */
+/*  F5c — managed vault (Oxy operates a node on behalf of a user)             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Env var naming the HTTPS base URL of the Oxy-operated managed-node fleet. A
+ * managed vault's endpoint is derived as
+ * `${MANAGED_NODE_BASE_URL}${MANAGED_NODE_USER_PATH_PREFIX}${userId}` (e.g.
+ * `https://nodes.oxy.so/u/<userId>`) — NEVER hardcoded. When unset (or not a
+ * valid credential-free HTTPS base) managed-vault provisioning FAILS CLOSED: a
+ * managed vault must have a real place to live, so Oxy never creates a broken one.
+ */
+export const MANAGED_NODE_BASE_URL_ENV = 'MANAGED_NODE_BASE_URL';
+
+/** Per-user path segment appended under the managed-node base URL. */
+export const MANAGED_NODE_USER_PATH_PREFIX = '/u/';
+
+/**
+ * Env var optionally overriding the managed node's signing public key (hex
+ * secp256k1). Oxy operates a managed node with the CUSTODIAL key
+ * (`controller:[OXY_DID]`), so this DEFAULTS to `OXY_PUBLIC_KEY` when unset —
+ * records a managed node signs verify against the Oxy custodial key exactly like
+ * any other custodial (`issuer = OXY_DID`) record. Set it only when the managed
+ * fleet runs a dedicated keypair distinct from the org custodial key.
+ */
+export const MANAGED_NODE_PUBLIC_KEY_ENV = 'MANAGED_NODE_PUBLIC_KEY';
+
+/**
+ * Transport mode for a managed vault. Oxy operates both sides, but the node still
+ * PULLS its own chain (the node paces sync) — identical to the self-hosted
+ * default — so nothing in a read path ever waits on it.
+ */
+export const MANAGED_NODE_MODE = 'pull' as const;

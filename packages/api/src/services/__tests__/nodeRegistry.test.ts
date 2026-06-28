@@ -32,6 +32,22 @@ jest.mock('../../models/UserNode', () => ({
 }));
 
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...args: unknown[]) => mockSafeFetch(...args) }));
+jest.mock('@oxyhq/core', () => ({ signedRecordSigningInput: jest.fn() }));
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  User: { findById: jest.fn() },
+  default: { findById: jest.fn() },
+}));
+jest.mock('../../services/signature.service', () => ({
+  __esModule: true,
+  default: { signWithKey: jest.fn(), verify: jest.fn() },
+}));
+jest.mock('../../services/did.service', () => ({
+  buildUserDid: jest.fn((id: string) => `did:web:api.oxy.so:u:${id}`),
+  OXY_DID: 'did:web:api.oxy.so',
+}));
+jest.mock('../../services/repoLog.service', () => ({ getHead: jest.fn() }));
+jest.mock('../../services/signedRecord.service', () => ({ verifyAndStoreRecord: jest.fn() }));
 jest.mock('../../utils/userCache', () => ({ __esModule: true, default: { invalidate: (...args: unknown[]) => mockInvalidate(...args) } }));
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },

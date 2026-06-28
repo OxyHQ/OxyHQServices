@@ -17,10 +17,10 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
-import { NotFoundError, UnauthorizedError } from '../utils/error';
+import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';
 import { isValidObjectId } from '../utils/validation';
-import { getUserNode, removeNode } from '../services/nodeRegistry.service';
+import { getUserNode, removeNode, provisionManagedVault } from '../services/nodeRegistry.service';
 import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
 import UserNode, { type IUserNode } from '../models/UserNode';
 
@@ -51,6 +51,20 @@ const nodeAdminLimiter = rateLimit({
 });
 
 /**
+ * Managed-vault provisioning limiter (F5c). Provisioning custodial-signs a chain
+ * record + materializes a node, so it is deliberately rarer than the admin path —
+ * a low per-user ceiling is plenty for the "Create your vault" action and blunts
+ * any attempt to spam chain writes.
+ */
+const nodeManagedLimiter = rateLimit({
+  prefix: 'rl:nodes:managed:',
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many managed vault requests. Please slow down.',
+  keyGenerator: userScopedKey('nodes:managed'),
+});
+
+/**
  * Ingest-notify limiter (F5b). The endpoint is an unauthenticated HINT, so it is
  * keyed by IP and held to a HARD ceiling — a notify only triggers a re-pull of
  * the named user's OWN node, which the worker then fully re-verifies, but the
@@ -72,6 +86,8 @@ function serializeNode(node: IUserNode): Record<string, unknown> {
     endpoint: node.endpoint,
     nodePublicKey: node.nodePublicKey,
     mode: node.mode,
+    managed: node.managed,
+    controller: node.controller,
     status: node.status,
     lastSeenAt: node.lastSeenAt,
     lastProbeAt: node.lastProbeAt,
@@ -116,6 +132,43 @@ router.delete(
     }
 
     res.json({ success: true });
+  }),
+);
+
+/**
+ * POST /nodes/managed — provision an Oxy-operated MANAGED vault for the caller
+ * (F5c "Create your vault"). The owner id is resolved from the session ONLY (the
+ * request body is never read), Oxy custodial-signs the node registration onto the
+ * caller's chain, and the materialized node is returned. Idempotent: an existing
+ * active managed vault is refreshed in place, not duplicated.
+ *
+ * A missing Oxy custodial key or unconfigured managed-node fleet is server config,
+ * so it answers 503 (try later) — never a silent broken vault.
+ */
+router.post(
+  '/managed',
+  nodeManagedLimiter,
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?._id?.toString();
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const result = await provisionManagedVault(userId);
+    if (!result.ok) {
+      switch (result.reason) {
+        case 'oxy_key_unconfigured':
+        case 'managed_endpoint_unconfigured':
+          throw new ApiError(503, 'Managed vaults are not available right now', ErrorCodes.SERVICE_UNAVAILABLE);
+        case 'user_not_found':
+          throw new NotFoundError('User not found');
+        default:
+          throw new InternalServerError('Failed to provision managed vault');
+      }
+    }
+
+    res.status(201).json({ node: serializeNode(result.node) });
   }),
 );
 

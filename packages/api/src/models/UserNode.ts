@@ -26,6 +26,16 @@ import mongoose, { Document, Schema } from 'mongoose';
 export type UserNodeMode = 'pull' | 'push';
 
 /**
+ * Who operates the node (F5c managed vault):
+ *  - `self` — the user self-hosts the node (the default; registered by a
+ *    client-signed `type:'node'` record the user published themselves).
+ *  - `oxy`  — Oxy operates the node ON BEHALF of a non-technical user, using the
+ *    custodial key (`controller:[OXY_DID]` model). Registered by a custodial-signed
+ *    `type:'node'` record (issuer = `OXY_DID`) via `provisionManagedVault`.
+ */
+export type UserNodeController = 'self' | 'oxy';
+
+/**
  * Liveness state of the node:
  *  - `active`      — last probe reached the node's `/.well-known/oxy-node.json`.
  *  - `unreachable` — last probe failed (DNS/connect/timeout/non-2xx). The row is
@@ -46,6 +56,18 @@ export interface IUserNode extends Document {
   nodePublicKey: string;
   /** Transport direction. Defaults to `pull` (the node paces its own sync). */
   mode: UserNodeMode;
+  /**
+   * Whether Oxy operates this node on the user's behalf (F5c managed vault) vs.
+   * the user self-hosting it. A managed node is `managed:true, controller:'oxy'`,
+   * registered by a custodial-signed `type:'node'` record (issuer = `OXY_DID`).
+   */
+  managed: boolean;
+  /**
+   * Operator of the node — `self` (user self-hosts) or `oxy` (managed vault).
+   * Mirrors the DID controller model: a managed account's DID is controlled by
+   * `[OXY_DID]` and its data node is likewise Oxy-operated. Defaults to `self`.
+   */
+  controller: UserNodeController;
   /** Liveness badge — maintained only by background probes, never a read handler. */
   status: UserNodeStatus;
   /** Last time a probe reached the node successfully. */
@@ -76,6 +98,8 @@ const UserNodeSchema = new Schema<IUserNode>(
     endpoint: { type: String, required: true },
     nodePublicKey: { type: String, required: true },
     mode: { type: String, enum: ['pull', 'push'], required: true, default: 'pull' },
+    managed: { type: Boolean, required: true, default: false },
+    controller: { type: String, enum: ['self', 'oxy'], required: true, default: 'self' },
     status: { type: String, enum: ['active', 'unreachable', 'revoked'], required: true, default: 'active' },
     lastSeenAt: { type: Date },
     lastProbeAt: { type: Date },
