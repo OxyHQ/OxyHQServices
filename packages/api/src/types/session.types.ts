@@ -24,6 +24,12 @@ export interface SessionCreateOptions {
    * logins (no stableDeviceKey) are unaffected.
    */
   stableDeviceKey?: string;
+  /**
+   * Application that an OAuth token exchange issued this session to. This lets
+   * connected-app revocation invalidate only that app's token family without
+   * logging the user out of their own Oxy sessions or other OAuth clients.
+   */
+  oauthApplicationId?: string;
 }
 
 export interface SessionRefreshResult {
@@ -31,4 +37,3 @@ export interface SessionRefreshResult {
   refreshToken: string;
   session: ISession;
 }
-

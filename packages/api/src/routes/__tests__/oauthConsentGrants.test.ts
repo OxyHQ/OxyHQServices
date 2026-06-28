@@ -23,6 +23,7 @@ const mockAppGrantFind = jest.fn();
 const mockAppGrantFindOneAndUpdate = jest.fn();
 const mockAppGrantDeleteOne = jest.fn();
 const mockFedCMGrantDeleteMany = jest.fn();
+const mockSessionUpdateMany = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -50,7 +51,7 @@ jest.mock('../../models/AuthSession', () => ({
 
 jest.mock('../../models/Session', () => ({
   __esModule: true,
-  default: { findOne: jest.fn() },
+  default: { findOne: jest.fn(), updateMany: mockSessionUpdateMany },
 }));
 
 jest.mock('../../services/authSession.service', () => ({
@@ -414,10 +415,11 @@ describe('DELETE /auth/grants/:applicationId', () => {
 
   it('revokes the AppGrant and matching FedCMGrant origins', async () => {
     mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 1 });
+    mockSessionUpdateMany.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
     mockApplicationFindById.mockReturnValue({
       select: () => ({
         lean: () =>
-          Promise.resolve({ redirectUris: ['https://app.example.com/cb', 'https://app.example.com/cb2'] }),
+          Promise.resolve({ name: 'Third Party', redirectUris: ['https://app.example.com/cb', 'https://app.example.com/cb2'] }),
       }),
     });
     mockFedCMGrantDeleteMany.mockResolvedValue({ deletedCount: 2 });
@@ -429,6 +431,18 @@ describe('DELETE /auth/grants/:applicationId', () => {
     expect(mockAppGrantDeleteOne).toHaveBeenCalledWith(
       expect.objectContaining({ applicationId: APP_ID })
     );
+    expect(mockSessionUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isActive: true,
+        $or: [
+          { oauthApplicationId: APP_ID },
+          { 'deviceInfo.deviceName': 'Third Party OAuth' },
+        ],
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ isActive: false }),
+      })
+    );
     // Only ONE deduped origin is derived from the two redirectUris.
     expect(mockFedCMGrantDeleteMany).toHaveBeenCalledWith(
       expect.objectContaining({ clientOrigin: { $in: ['https://app.example.com'] } })
@@ -437,6 +451,7 @@ describe('DELETE /auth/grants/:applicationId', () => {
 
   it('is idempotent when no grant exists and the app has no redirect origins', async () => {
     mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 0 });
+    mockSessionUpdateMany.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
     mockApplicationFindById.mockReturnValue({
       select: () => ({ lean: () => Promise.resolve(null) }),
     });
@@ -445,6 +460,7 @@ describe('DELETE /auth/grants/:applicationId', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ revoked: true });
+    expect(mockSessionUpdateMany).toHaveBeenCalled();
     expect(mockFedCMGrantDeleteMany).not.toHaveBeenCalled();
   });
 

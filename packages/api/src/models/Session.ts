@@ -21,6 +21,7 @@ export interface ISession extends Document {
   refreshToken: string; // Refresh token for this session
   previousRefreshToken?: string; // Previous refresh token kept for grace period after rotation
   tokenRotatedAt?: Date; // When the refresh token was last rotated
+  oauthApplicationId?: mongoose.Types.ObjectId; // OAuth app this session was issued to, if any
   isActive: boolean;
   expiresAt: Date; // When this session expires
   lastRefresh: Date; // Last time tokens were refreshed
@@ -75,6 +76,11 @@ const SessionSchema: Schema = new Schema(
       type: Date,
       default: null,
     },
+    oauthApplicationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Application",
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -103,6 +109,7 @@ SessionSchema.index({ accessToken: 1 }, { unique: true, sparse: true }); // Toke
 SessionSchema.index({ refreshToken: 1 }, { unique: true, sparse: true }); // Refresh token lookups (sparse for performance)
 SessionSchema.index({ previousAccessToken: 1, tokenRotatedAt: 1 }, { sparse: true }); // Access-token grace validation after rotation/re-issue
 SessionSchema.index({ previousRefreshToken: 1, tokenRotatedAt: 1 }, { sparse: true }); // Grace period lookups for concurrent tab refreshes
+SessionSchema.index({ userId: 1, oauthApplicationId: 1, isActive: 1, expiresAt: 1 }); // Active OAuth sessions by connected app
 SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-cleanup expired sessions
 SessionSchema.index({ 'deviceInfo.fingerprint': 1, isActive: 1, expiresAt: 1 }); // Optimized for findExistingDeviceId queries
 
@@ -123,4 +130,4 @@ SessionSchema.methods.deactivate = async function() {
   await this.save();
 };
 
-export default mongoose.model<ISession>("Session", SessionSchema); 
+export default mongoose.model<ISession>("Session", SessionSchema);
