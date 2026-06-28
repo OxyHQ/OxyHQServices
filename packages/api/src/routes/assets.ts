@@ -1078,7 +1078,7 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
   // `<img src>` cannot send an Authorization header, so resolve the viewer from
   // the `?token=` query (SDK-issued) when no session user is present, so owners
   // can render their own private media. Access is still gated by canUserAccessFile.
-  const userId = getMediaViewerUserId(req);
+  const userId = await getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
@@ -1288,7 +1288,7 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
   // Resolve viewer from the `?token=` query for direct-download links that
   // cannot carry an Authorization header (owners downloading their own private
   // files). Access is still gated by canUserAccessFile below.
-  const userId = getMediaViewerUserId(req);
+  const userId = await getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant, expiresIn } = req.query;
 
