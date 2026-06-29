@@ -65,7 +65,7 @@ export const lookupResponseSchema = z.object({
     username: z.string(),
     color: z.string().nullable(),
     avatar: z.string().nullable(),
-    displayName: z.string(),
+    displayName: z.string().optional(),
 })
 
 export const tokenResponseSchema = z.object({

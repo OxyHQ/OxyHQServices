@@ -196,7 +196,9 @@ export function LoginForm({
             const result = await oxy.lookupUsername(username)
             setLookupResult({
                 username: result.username,
-                displayName: result.name.displayName,
+                // `name.displayName` is optional on the contract — fall back to
+                // the username handle when the account has no display name.
+                displayName: result.name.displayName ?? result.username,
                 avatar: result.avatar,
                 color: result.color,
             })

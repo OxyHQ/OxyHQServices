@@ -30,7 +30,13 @@ export interface NameResponse extends Record<string, unknown> {
   first?: string;
   last?: string;
   full?: string;
-  displayName: string;
+  /**
+   * Optional to match the `@oxyhq/contracts` `UserNameResponse` contract.
+   * NOTE: the serializers in this module (`formatUserNameResponse`) STILL
+   * always synthesize a string today — only the type was relaxed. The runtime
+   * synthesis change is a later stage.
+   */
+  displayName?: string;
 }
 
 /**

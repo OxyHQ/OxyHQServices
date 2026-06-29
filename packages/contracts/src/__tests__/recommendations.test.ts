@@ -142,14 +142,15 @@ describe('recommendationItemSchema / recommendationResponseSchema', () => {
         expect(parsed?.score).toBeUndefined();
     });
 
-    it('rejects an item missing name.displayName', () => {
+    it('accepts an item missing name.displayName (displayName is now optional)', () => {
         const parsed = safeParseContract(recommendationItemSchema, {
             id: 'x',
             name: { first: 'Bob' },
             mutualCount: 0,
             _count: { followers: 0, following: 0 },
         });
-        expect(parsed).toBeNull();
+        expect(parsed).not.toBeNull();
+        expect(parsed?.name.displayName).toBeUndefined();
     });
 
     it('parses an array response', () => {
