@@ -311,6 +311,31 @@ export class OxyServicesBase {
   }
 
   /**
+   * Decode the current access token and return its `exp` claim in SECONDS since
+   * the Unix epoch (the raw JWT `exp` unit), or `null` when there is no token,
+   * the token is opaque/undecodable, or it carries no numeric `exp`.
+   *
+   * Exposed so `@oxyhq/services` can schedule a PROACTIVE in-session refresh a
+   * fixed lead before expiry without re-importing a JWT decoder (and without
+   * duplicating the `jwt-decode` dependency in the RN bundle). HttpService keeps
+   * the per-request preflight refresh; this powers the idle/background timer.
+   */
+  public getAccessTokenExpiry(): number | null {
+    const token = this.httpService.getAccessToken();
+    if (!token) {
+      return null;
+    }
+    try {
+      const decoded = jwtDecode<JwtPayload>(token);
+      return typeof decoded.exp === 'number' ? decoded.exp : null;
+    } catch {
+      // A malformed / non-JWT token has no usable expiry — fall back to the
+      // reactive 401 refresh path instead of a scheduled one.
+      return null;
+    }
+  }
+
+  /**
    * Set the acting-as identity for managed accounts.
    *
    * When set, all subsequent API requests will include the `X-Acting-As` header,

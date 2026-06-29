@@ -54,6 +54,8 @@ import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
 import { buildSilentGuardKey } from '../../utils/silentGuardKey';
+import { createInSessionRefreshHandler, startTokenRefreshScheduler } from './inSessionTokenRefresh';
+import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silentSessionRestore';
 
 export interface OxyContextState {
   user: User | null;
@@ -823,6 +825,34 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return oxyServices.onTokensChanged(handleTokenChange);
   }, [logger, oxyServices]);
 
+  // In-session access-token refresh (SDK-owned; every Expo RP inherits it).
+  //
+  // The services path never installed an `authRefreshHandler`, so the owner
+  // `HttpService.refreshAccessToken` short-circuited to null and a 15-minute
+  // access token expired with the app open while `isAuthenticated` stayed true —
+  // a zombie logged-in state whose cross-apex feed calls 401-looped. Here we (1)
+  // install a handler that re-mints a fresh token WITHOUT a reload using the SAME
+  // durable silent-restore arms cold boot uses, and (2) start a proactive
+  // scheduler that refreshes ~60s before expiry (and on tab-focus / app-
+  // foreground) so the common case never even hits the reactive 401 path. The
+  // linked client (`createLinkedClient`) delegates its refresh back to this owner
+  // handler, so it is fixed for free.
+  //
+  // Runs once per `oxyServices` instance (stable, ref-constructed), and BEFORE
+  // any cold-boot request can 401: cold boot is gated on async storage init, so
+  // this synchronous mount effect installs the handler first. On cleanup the
+  // handler is detached and the scheduler torn down (timer + foreground listener)
+  // so nothing leaks across a provider remount. `setAuthRefreshHandler` is
+  // optional-chained to tolerate partial test stubs.
+  useEffect(() => {
+    oxyServices.httpService.setAuthRefreshHandler?.(createInSessionRefreshHandler(oxyServices));
+    const scheduler = startTokenRefreshScheduler(oxyServices);
+    return () => {
+      scheduler.dispose();
+      oxyServices.httpService.setAuthRefreshHandler?.(null);
+    };
+  }, [oxyServices]);
+
   // Durable, navigation-safe session persistence.
   //
   // Writes the active-session id and appends the session id to the durable
@@ -932,11 +962,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Pick the active account: persisted authuser if it still matches a returned
     // account, otherwise the lowest authuser (deterministic). The server has
     // already sorted ascending so [0] is the lowest.
-    const persistedAuthuser = readActiveAuthuser();
-    const matched = persistedAuthuser !== null
-      ? snapshot.accounts.find((a) => a.authuser === persistedAuthuser)
-      : undefined;
-    const activeAccount = matched ?? snapshot.accounts[0];
+    const activeAccount = selectActiveRefreshAccount(snapshot.accounts, readActiveAuthuser());
 
     // Plant the active access token. Sibling accounts' access tokens stay in
     // the snapshot (the chooser can drive a per-account refresh via

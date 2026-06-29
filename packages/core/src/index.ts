@@ -26,6 +26,10 @@ import './crypto/polyfill';
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 export type { LinkedHttpClient } from './OxyServices.base';
+// Auth-refresh handler surface — consumed by `@oxyhq/services`'s OxyContext to
+// install an in-session access-token refresh handler on the owner HttpService
+// (the linked-client refresh path delegates back to it).
+export type { AuthRefreshReason, AuthRefreshHandler } from './HttpService';
 
 // ---------------------------------------------------------------------------
 // Authentication

@@ -524,7 +524,14 @@ export class HttpService {
           if (response.status === 401 && !config._isAuthRetry) {
             const refreshed = await this.refreshAccessToken('response-401');
             if (refreshed) {
-              return this.request<T>({ ...config, _isAuthRetry: true, retry: false });
+              // `deduplicate: false` is REQUIRED on the retry (mirrors the 403
+              // CSRF retry below). This re-issue runs while the ORIGINAL request
+              // is still in-flight under its dedupe key; the refreshed token is
+              // for the SAME user, so the identity-scoped key is UNCHANGED — a
+              // deduplicated retry would resolve to the still-pending original
+              // and await itself (deadlock). Opting the retry out of dedupe makes
+              // it a fresh request.
+              return this.request<T>({ ...config, _isAuthRetry: true, retry: false, deduplicate: false });
             }
             // Refresh failed or no token — clear tokens and stale CSRF
             this.tokenStore.clearTokens();

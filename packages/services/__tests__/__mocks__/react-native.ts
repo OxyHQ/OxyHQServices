@@ -44,6 +44,23 @@ export const Appearance = {
 };
 
 /**
+ * Minimal `AppState` stub. The in-session token-refresh scheduler subscribes to
+ * `AppState.addEventListener('change', …)` on the NATIVE branch to refresh on
+ * app-foreground; tests that force the native branch (mocking `isWebBrowser` →
+ * false) need this present so the subscription + `.remove()` cleanup work.
+ */
+export const AppState: {
+  currentState: string;
+  addEventListener: (
+    type: string,
+    handler: (state: string) => void,
+  ) => { remove: () => void };
+} = {
+  currentState: 'active',
+  addEventListener: () => ({ remove: () => undefined }),
+};
+
+/**
  * Minimal `Linking` stub. `openURL` resolves so deep-link paths
  * (`useOxyAuthSession`'s same-device approval / native redirect handling) can be
  * spied on without a native module. The listener/initial-URL methods are inert
