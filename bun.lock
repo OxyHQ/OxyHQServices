@@ -374,7 +374,7 @@
     },
     "packages/contracts": {
       "name": "@oxyhq/contracts",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "zod": "^3.25.64",
       },
@@ -387,7 +387,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.14.0",
+      "version": "3.16.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "bip39": "^3.1.0",
