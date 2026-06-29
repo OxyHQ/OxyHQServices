@@ -38,9 +38,15 @@ interface LinkPreviewWarmJobData {
   url: string;
 }
 
-/** Stable per-URL job id so a URL already queued/active is never enqueued twice. */
-function jobIdFor(url: string): string {
-  return `warm:${createHash('sha256').update(url).digest('hex')}`;
+/**
+ * Stable per-URL job id so a URL already queued/active is never enqueued twice.
+ *
+ * BullMQ custom job ids MUST NOT contain `:` (same family as the queue-name
+ * rule) — a `:` throws "Custom Id cannot contain :" and the enqueue fails, so the
+ * warm never runs. The id is therefore the colon-free `lp-<sha256hex>`.
+ */
+export function linkPreviewWarmJobId(url: string): string {
+  return `lp-${createHash('sha256').update(url).digest('hex')}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -109,7 +115,7 @@ export function enqueueLinkPreviewWarm(url: string): void {
         LINK_PREVIEW_WARM_JOB,
         { url },
         {
-          jobId: jobIdFor(url),
+          jobId: linkPreviewWarmJobId(url),
           removeOnComplete: COMPLETED_JOBS_RETENTION,
           removeOnFail: FAILED_JOBS_RETENTION,
         },

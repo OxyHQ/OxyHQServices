@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { LinkPreview } from '@oxyhq/contracts';
+import { type LinkPreview, linkPreviewSchema } from '@oxyhq/contracts';
 import { getRedisClient } from '../../config/redis';
 import { logger } from '../../utils/logger';
 import {
@@ -94,11 +94,24 @@ async function getHotPreview(url: string): Promise<LinkPreview | 'negative' | nu
       redis.exists(keyFor(NEG_PREFIX, url)),
     ]);
     if (hit) {
+      let parsed: unknown;
       try {
-        return JSON.parse(hit) as LinkPreview;
+        parsed = JSON.parse(hit);
       } catch {
-        return null; // corrupt → re-warm
+        return null; // corrupt JSON → treat as a miss and re-warm
       }
+      // VALIDATE the cached entry against the contract before returning it. A
+      // cache read is the one consumer-facing value that does NOT pass through
+      // the serializer, so an entry written by an older/buggy deploy (e.g. one
+      // missing `status`) would otherwise be returned verbatim and 500 the
+      // route's output validation. An invalid entry is treated as a MISS so it
+      // is re-resolved and overwritten — the cache self-heals.
+      const validated = linkPreviewSchema.safeParse(parsed);
+      if (!validated.success) {
+        logger.debug('[linkPreviewCache] discarding invalid cached preview (re-warming)');
+        return null;
+      }
+      return validated.data;
     }
     if (neg === 1) return 'negative';
     return null;
