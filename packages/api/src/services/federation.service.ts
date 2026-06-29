@@ -1088,8 +1088,9 @@ class FederationService {
     };
 
     if (profile.bio) {
-      setFields.bio = sanitizeHtml(profile.bio);
-      setFields.description = sanitizeHtml(profile.bio);
+      const safeBio = sanitizeHtml(profile.bio);
+      setFields.bio = safeBio;
+      setFields.description = safeBio;
     }
 
     const user = await User.findOneAndUpdate(
@@ -1344,8 +1345,9 @@ class FederationService {
       }
       setFields['federation.lastResolvedAt'] = new Date();
       if (profile.bio) {
-        setFields.bio = sanitizeHtml(profile.bio);
-        setFields.description = sanitizeHtml(profile.bio);
+        const safeBio = sanitizeHtml(profile.bio);
+        setFields.bio = safeBio;
+        setFields.description = safeBio;
       }
 
       // Download the latest avatar and replace the old stored file, replaying any
