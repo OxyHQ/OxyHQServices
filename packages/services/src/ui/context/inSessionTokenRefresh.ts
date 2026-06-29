@@ -15,10 +15,10 @@
  *
  *  1. {@link createInSessionRefreshHandler} — an `AuthRefreshHandler` installed
  *     on the owner client. It re-mints a fresh access token WITHOUT a page
- *     reload by reusing the SAME durable per-apex silent-restore arms cold boot
- *     uses (in order; first that yields a token wins). The linked client
- *     (`createLinkedClient`) inherits the fix for free — its refresh delegates
- *     back to the owner's `refreshAccessToken`.
+ *     reload by composing the SAME silent-restore primitives cold boot uses
+ *     ({@link mintSessionViaPerApexIframe}, {@link selectActiveRefreshAccount}) —
+ *     not a copy. The linked client (`createLinkedClient`) inherits the fix for
+ *     free: its refresh delegates back to the owner's `refreshAccessToken`.
  *
  *  2. {@link startTokenRefreshScheduler} — a proactive scheduler that refreshes
  *     ~{@link TOKEN_REFRESH_LEAD_MS} before expiry (and on web tab-focus / native
@@ -35,10 +35,11 @@ import type {
   AuthRefreshHandler,
   AuthRefreshReason,
 } from '@oxyhq/core';
-import { autoDetectAuthWebUrl, logger as loggerUtil } from '@oxyhq/core';
+import { logger as loggerUtil } from '@oxyhq/core';
 import { AppState, type AppStateStatus } from 'react-native';
 import { isWebBrowser } from '../hooks/useWebSSO';
 import { readActiveAuthuser } from '../utils/activeAuthuser';
+import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silentSessionRestore';
 
 /**
  * Per-arm fail-fast budget (ms) for the web first-party `/auth/silent` iframe
@@ -67,114 +68,97 @@ const COOKIE_REFRESH_TIMEOUT = 4000;
  */
 export const TOKEN_REFRESH_LEAD_MS = 60_000;
 
-function debugRefresh(message: string, reason: AuthRefreshReason, error?: unknown): void {
-  if (__DEV__) {
-    loggerUtil.debug(
-      message,
-      { component: 'inSessionTokenRefresh', method: 'authRefreshHandler', reason },
-      error,
-    );
-  }
-}
+/**
+ * A single refresh arm: attempts one silent-restore mechanism and resolves to
+ * the freshly planted access token, or `null` to fall through to the next arm.
+ */
+type RefreshArm = () => Promise<string | null>;
 
 /**
  * Build the in-session `AuthRefreshHandler` for the owner client.
  *
- * Arms (first to yield a fresh token wins; each is bounded and falls through on
- * failure). Every arm plants the fresh token internally, so on success we read
- * it back via `getAccessToken()`:
+ * Arms run in an explicit order; the first to plant a token wins. Each arm
+ * resolves to the planted token (read back via `getAccessToken()` — the
+ * underlying SDK call plants it internally) or `null`. A throw in one arm is
+ * logged and treated as `null` so the chain continues.
  *
  *   NATIVE (Expo): shared cross-app identity key re-mint
  *     (`signInWithSharedIdentity` → challenge→sign→verify plants the tokens).
  *     The ONLY silent native arm (mirrors cold boot's `shared-key-signin`); the
- *     `/auth/silent` web iframe is NEVER attempted on native. Returns `null`
+ *     `/auth/silent` web iframe is NEVER attempted on native. Resolves to `null`
  *     when the device holds no shared identity (e.g. a password-only native
  *     sign-in) so a genuinely dead session reconciles to logged-out rather than
  *     staying a zombie.
  *
  *   WEB, in order:
- *     1. First-party `/auth/silent` iframe at the per-apex IdP
- *        (`silentSignIn` with `authWebUrlOverride = autoDetectAuthWebUrl()`).
- *        The durable cross-apex path: the iframe reads the first-party
- *        `fedcm_session` cookie on `auth.<apex>` and mints a fresh Oxy token. No
- *        top-level navigation → works in a backgrounded tab. On a `*.oxy.so`
- *        app the per-apex host IS the central host, so this also covers
- *        same-apex.
+ *     1. Per-apex `/auth/silent` iframe — {@link mintSessionViaPerApexIframe}
+ *        (shared verbatim with cold boot). The durable cross-apex path; also
+ *        covers `*.oxy.so` (the per-apex host IS the central host there).
  *     2. FedCM silent re-auth (Chrome) — `silentSignInWithFedCM`.
- *     3. Same-apex refresh cookie — `refreshAllSessions`. On `*.oxy.so` the
- *        httpOnly `oxy_rt_${n}` cookies ride along; we plant the active
- *        account's rotated token. On a cross-apex RP it returns `{accounts:[]}`
- *        and is a clean no-op. Unlike the cold-boot cookie restore this does NOT
- *        rebuild multi-session state — an in-session refresh only needs a fresh
- *        bearer.
+ *     3. Same-apex refresh cookie — `refreshAllSessions` + the shared
+ *        {@link selectActiveRefreshAccount}; plant the active account's rotated
+ *        token. On a cross-apex RP it returns `{accounts:[]}` (clean no-op).
+ *        Unlike the cold-boot cookie restore this does NOT rebuild multi-session
+ *        state — an in-session refresh only needs a fresh bearer.
  *
- * NO RECURSION: none of these arms issue requests through the authed client's
+ * NO RECURSION: no arm issues a request through the authed client's
  * `refreshAccessToken` path. The iframe/FedCM transports are postMessage /
  * credential APIs; the follow-up `/session/user` fetch inside `silentSignIn`
  * runs against the just-planted FULL-TTL token (≫ the preflight lead), so it
- * never re-enters the refresh path; `refreshAllSessions` uses a raw `fetch` with
- * `credentials:'include'`.
+ * never re-enters the refresh path; `refreshAllSessions` uses a raw `fetch`.
  */
 export function createInSessionRefreshHandler(oxyServices: OxyServices): AuthRefreshHandler {
-  return async (reason: AuthRefreshReason): Promise<string | null> => {
-    if (!isWebBrowser()) {
-      try {
-        const session = await oxyServices.signInWithSharedIdentity?.();
-        if (session) {
-          // `verifyChallenge` inside `signInWithSharedIdentity` already planted
-          // the fresh tokens; read the planted access token back out.
-          return oxyServices.getAccessToken();
-        }
-      } catch (error) {
-        debugRefresh('Native shared-key in-session refresh failed', reason, error);
+  const runArm = async (label: string, reason: AuthRefreshReason, arm: RefreshArm): Promise<string | null> => {
+    try {
+      return await arm();
+    } catch (error) {
+      if (__DEV__) {
+        loggerUtil.debug(
+          `In-session refresh arm "${label}" failed (falling through)`,
+          { component: 'inSessionTokenRefresh', method: 'authRefreshHandler', reason },
+          error,
+        );
       }
       return null;
     }
+  };
 
-    // WEB arm 1 — first-party silent iframe at the per-apex IdP.
-    try {
-      const perApexAuthUrl = autoDetectAuthWebUrl();
-      if (perApexAuthUrl) {
-        const session = await oxyServices.silentSignIn?.({
-          authWebUrlOverride: perApexAuthUrl,
-          timeout: SILENT_IFRAME_REFRESH_TIMEOUT,
-        });
-        if (session) {
-          return oxyServices.getAccessToken();
-        }
+  const webArms: Array<[string, RefreshArm]> = [
+    ['silent-iframe', async () =>
+      (await mintSessionViaPerApexIframe(oxyServices, SILENT_IFRAME_REFRESH_TIMEOUT))
+        ? oxyServices.getAccessToken()
+        : null,
+    ],
+    ['fedcm-silent', async () => {
+      if (oxyServices.isFedCMSupported?.() !== true) {
+        return null;
       }
-    } catch (error) {
-      debugRefresh('Silent-iframe in-session refresh failed', reason, error);
-    }
-
-    // WEB arm 2 — FedCM silent re-auth (Chrome).
-    try {
-      if (oxyServices.isFedCMSupported?.() === true) {
-        const session = await oxyServices.silentSignInWithFedCM?.();
-        if (session) {
-          return oxyServices.getAccessToken();
-        }
-      }
-    } catch (error) {
-      debugRefresh('FedCM-silent in-session refresh failed', reason, error);
-    }
-
-    // WEB arm 3 — same-apex refresh cookie.
-    try {
+      return (await oxyServices.silentSignInWithFedCM?.()) ? oxyServices.getAccessToken() : null;
+    }],
+    ['refresh-cookie', async () => {
       const snapshot = await oxyServices.refreshAllSessions({ timeout: COOKIE_REFRESH_TIMEOUT });
-      if (snapshot.accounts.length > 0) {
-        const persistedAuthuser = readActiveAuthuser();
-        const active =
-          (persistedAuthuser !== null
-            ? snapshot.accounts.find((account) => account.authuser === persistedAuthuser)
-            : undefined) ?? snapshot.accounts[0];
-        oxyServices.httpService.setTokens(active.accessToken);
-        return oxyServices.getAccessToken();
+      if (snapshot.accounts.length === 0) {
+        return null;
       }
-    } catch (error) {
-      debugRefresh('Refresh-cookie in-session refresh failed', reason, error);
+      const active = selectActiveRefreshAccount(snapshot.accounts, readActiveAuthuser());
+      oxyServices.httpService.setTokens(active.accessToken);
+      return oxyServices.getAccessToken();
+    }],
+  ];
+
+  return async (reason: AuthRefreshReason): Promise<string | null> => {
+    if (!isWebBrowser()) {
+      return runArm('native-shared-key', reason, async () =>
+        (await oxyServices.signInWithSharedIdentity?.()) ? oxyServices.getAccessToken() : null,
+      );
     }
 
+    for (const [label, arm] of webArms) {
+      const token = await runArm(label, reason, arm);
+      if (token) {
+        return token;
+      }
+    }
     return null;
   };
 }
@@ -194,14 +178,15 @@ export interface TokenRefreshSchedulerHandle {
  * current access token's `exp`, calling `httpService.refreshAccessToken`
  * ('preflight') — which runs the installed handler and is deduped + cooldown-
  * guarded. After every attempt it reschedules from the (possibly rotated) token.
- * It also reschedules whenever the token changes (`onTokensChanged`) and, on
- * web tab-focus / native app-foreground, refreshes immediately if already inside
- * the lead window (a long-hidden tab throttles timers, so the token can be
- * expired on return).
+ * It also reschedules whenever the token changes (`onTokensChanged` — so a
+ * sign-out that clears the token cancels the timer) and, on web tab-focus /
+ * native app-foreground, refreshes immediately if already inside the lead window
+ * (a long-hidden tab throttles timers, so the token can be expired on return).
  *
- * No-ops cleanly when there is no token, an opaque/no-`exp` token, or the host
- * lacks `getAccessTokenExpiry` (older stubs) — in those cases the reactive 401
- * path remains the only refresh trigger.
+ * The `exp` is derived directly from the JWT via `getAccessTokenExpiry()`. No-ops
+ * cleanly when there is no token, an opaque/no-`exp` token, or the host lacks
+ * `getAccessTokenExpiry` (older stubs) — the reactive 401 path stays the only
+ * refresh trigger in those cases.
  */
 export function startTokenRefreshScheduler(oxyServices: OxyServices): TokenRefreshSchedulerHandle {
   let disposed = false;

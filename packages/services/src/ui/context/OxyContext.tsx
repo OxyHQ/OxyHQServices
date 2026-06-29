@@ -18,7 +18,6 @@ import type { ClientSession } from '@oxyhq/core';
 import {
   runColdBoot,
   resolveCentralAuthUrl,
-  autoDetectAuthWebUrl,
   registrableApex,
   SSO_CALLBACK_PATH,
   ssoStateKey,
@@ -1419,14 +1418,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // step that prevents the re-bounce loop: when it finds a session,
             // the terminal `sso-bounce` never fires.
             //
-            // The instance is configured with `authWebUrl=auth.oxy.so` (central,
-            // for the bounce + FedCM), so we explicitly point the iframe at the
-            // per-apex host via `autoDetectAuthWebUrl()` and `silentSignIn`'s
-            // `authWebUrlOverride`. On a `*.oxy.so` RP the per-apex host IS the
-            // central host (`auth.oxy.so`), so this is a same-host no-op-
-            // equivalent. When auto-detection bails (localhost/IP/single-label)
-            // there is no per-apex IdP and the step skips. Web only; on native
-            // `isWebBrowser()` gates it off, so native never runs an iframe.
+            // The per-apex iframe mint itself lives in
+            // `mintSessionViaPerApexIframe` (shared verbatim with the in-session
+            // refresh handler so the two paths can never drift): it points the
+            // iframe at `autoDetectAuthWebUrl()` and skips when there is no
+            // per-apex IdP (localhost/IP/single-label/off-browser). Web only; on
+            // native `isWebBrowser()` gates it off, so native never runs an
+            // iframe.
             //
             // FIX-B: additionally skipped when `stored-session` already won.
             // FIX-D: bounded by `SILENT_IFRAME_TIMEOUT` (plus `iframe.onerror`
@@ -1434,15 +1432,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             id: 'silent-iframe',
             enabled: () => !storedSessionRestored && isWebBrowser(),
             run: async () => {
-              const perApexAuthUrl = autoDetectAuthWebUrl();
-              if (!perApexAuthUrl || !commitWebSession) {
+              if (!commitWebSession) {
                 return { kind: 'skip' };
               }
-              const session = await oxyServices.silentSignIn?.({
-                authWebUrlOverride: perApexAuthUrl,
-                timeout: SILENT_IFRAME_TIMEOUT,
-              });
-              if (!session?.user || !session?.sessionId) {
+              // Shared with the in-session refresh handler: the ONE
+              // implementation of "mint a first-party per-apex token without a
+              // reload" lives in `silentSessionRestore` so cold boot and refresh
+              // never drift.
+              const session = await mintSessionViaPerApexIframe(oxyServices, SILENT_IFRAME_TIMEOUT);
+              if (!session) {
                 return { kind: 'skip' };
               }
               await commitWebSession(session);
