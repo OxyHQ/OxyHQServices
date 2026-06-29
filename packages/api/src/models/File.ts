@@ -63,8 +63,12 @@ export interface IFile extends Omit<Document, '_id'> {
 /**
  * File purpose classification. `'user'` is the implicit default for every
  * existing record; system-owned namespaces use a dedicated value.
+ *  - `'federation-media-cache'`: federated/remote media cached via the scoped
+ *    service cache endpoints (delete-gated on this value).
+ *  - `'link-preview'`: an OG / oEmbed image re-hosted by the link-preview
+ *    service so a client never fetches the origin image directly.
  */
-export type FilePurpose = 'user' | 'federation-media-cache';
+export type FilePurpose = 'user' | 'federation-media-cache' | 'link-preview';
 
 const LIVE_FILE_STATUSES = ['active', 'trash'] as const;
 
@@ -115,7 +119,7 @@ const FileSchema = new Schema<IFile>({
   },
   purpose: {
     type: String,
-    enum: ['user', 'federation-media-cache'],
+    enum: ['user', 'federation-media-cache', 'link-preview'],
     default: 'user',
     index: true
   },

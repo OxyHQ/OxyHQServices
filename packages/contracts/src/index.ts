@@ -164,3 +164,18 @@ export type {
     CredentialListResult,
     CredentialVerifyResult,
 } from './civic';
+
+export {
+    // Schemas
+    linkPreviewSchema,
+    linkPreviewBatchRequestSchema,
+    linkPreviewBatchResponseSchema,
+    linkPreviewResponseSchema,
+} from './links';
+
+export type {
+    LinkPreviewStatus,
+    LinkPreview,
+    LinkPreviewBatchRequest,
+    LinkPreviewBatchResponse,
+} from './links';

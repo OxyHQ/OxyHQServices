@@ -17,6 +17,7 @@ import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import reputationRoutes from './routes/reputation.routes';
 import linkMetadataRoutes from './routes/linkMetadata';
+import linksRoutes from './routes/links';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
 import assetRoutes from './routes/assets';
@@ -61,6 +62,7 @@ import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
 import { startNodeIngestJobs, stopNodeIngestJobs } from './queue/nodeIngest.queue';
+import { startLinkPreviewWarmJobs, stopLinkPreviewWarmJobs } from './queue/linkPreviewWarm.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
@@ -391,6 +393,7 @@ async function gracefulShutdown(signal: string) {
 
   await stopBackgroundJobs();
   await stopNodeIngestJobs();
+  await stopLinkPreviewWarmJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -518,6 +521,9 @@ app.use('/notifications', userRateLimiter, csrfProtection, notificationsRouter);
 app.use('/reputation', csrfProtection, reputationRoutes);
 app.use('/wallet', userRateLimiter, csrfProtection, walletRoutes);
 app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
+// Ecosystem link-preview (URL unfurl) service. Bearer/service-token reads (no
+// cookie writes → no CSRF); the route applies its own per-principal limiter.
+app.use('/links', linksRoutes);
 app.use('/location-search', locationSearchRoutes);
 app.use('/workspaces', csrfProtection, workspaceRoutes);
 app.use('/applications', csrfProtection, applicationRoutes);
@@ -775,6 +781,11 @@ if (require.main === module) {
       // is set else an in-process interval. All node I/O is background-only —
       // never in a request's read path. Never throws.
       await startNodeIngestJobs();
+
+      // Start the ecosystem link-preview warm subsystem: per-URL background
+      // resolves (BullMQ when REDIS_URL is set, else an in-process pending set).
+      // All remote I/O is background-only — never on a request's read path.
+      await startLinkPreviewWarmJobs();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {

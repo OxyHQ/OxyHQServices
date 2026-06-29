@@ -32,6 +32,7 @@ import { OxyServicesContactsMixin } from './OxyServices.contacts';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
+import { OxyServicesLinksMixin } from './OxyServices.links';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -68,6 +69,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -139,6 +141,9 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // User nodes / decentralization (Fase 5): register/read/revoke/manage the
     // caller's personal data node + ingest hint.
     OxyServicesNodesMixin,
+    // Link previews / unfurls: SDK-owned link-metadata resolution via oxy-api,
+    // so apps stop scraping link metadata locally.
+    OxyServicesLinksMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,
