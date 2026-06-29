@@ -171,14 +171,17 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
       }
 
       const userId = payload.user?.id ?? payload.user?._id;
-      if (!userId || typeof payload.user?.username !== 'string' || typeof payload.user.name?.displayName !== 'string') {
+      if (!userId || typeof payload.user?.username !== 'string') {
         throw this.handleError(new Error('SSO exchange returned an invalid user'));
       }
 
       const user: MinimalUserData = {
         id: userId,
         username: payload.user.username,
-        name: payload.user.name,
+        // `name.displayName` is optional on the contract. A no-name user is
+        // valid; carry whatever structured name the server sent (possibly an
+        // empty object) and let consumers fall back to a handle.
+        name: payload.user.name ?? {},
         avatar: payload.user.avatar,
       };
 

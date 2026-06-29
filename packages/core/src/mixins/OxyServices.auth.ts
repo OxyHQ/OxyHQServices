@@ -1026,7 +1026,9 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           continue;
         }
         const userId = e.user.id ?? e.user._id;
-        if (!userId || !e.user.username || !e.user.name?.displayName) {
+        // `name.displayName` is optional on the contract — do NOT drop no-name
+        // accounts. Only an absent userId or username makes the entry unusable.
+        if (!userId || !e.user.username) {
           continue;
         }
         if (typeof e.authuser !== 'number') {
@@ -1040,7 +1042,9 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           user: {
             id: userId,
             username: e.user.username,
-            name: e.user.name,
+            // `name.displayName` is optional; carry whatever structured name the
+            // server sent (possibly an empty object) and let consumers fall back.
+            name: e.user.name ?? {},
             avatar: e.user.avatar ?? null,
             email: e.user.email,
             color: e.user.color ?? null,

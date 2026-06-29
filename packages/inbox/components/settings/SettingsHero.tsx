@@ -15,6 +15,7 @@ import { H3, P, Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { ChevronRight_Stroke2_Corner0_Rounded } from '@oxyhq/bloom/icons';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useRouter } from 'expo-router';
 
 import { useColors } from '@/constants/theme';
@@ -48,7 +49,7 @@ export function SettingsHero() {
     );
   }
 
-  const fullName = user.name.displayName;
+  const fullName = user?.name?.displayName || getNormalizedUserHandle(user) || '';
   const emailHandle = user.email || `${user.username}@oxy.so`;
 
   return (

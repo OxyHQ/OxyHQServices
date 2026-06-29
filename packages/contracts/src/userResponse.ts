@@ -40,7 +40,10 @@ import { verifiedDomainSchema } from './identity';
  * - `first` / `last` default to `''` in Mongo, so they are optional on the wire.
  * - `full` is a Mongoose virtual — absent unless the query materialised
  *   virtuals or the serializer composed it.
- * - `displayName` is the required canonical app-facing display string.
+ * - `displayName` is the canonical app-facing display string when present.
+ *   It is OPTIONAL on the wire: the API still synthesizes a default today, but
+ *   the contract no longer guarantees it, so consumers fall back to a handle
+ *   (e.g. `getNormalizedUserHandle`) when it is absent.
  *
  * This is declared as an explicit `interface` rather than being inferred from
  * the runtime schema via `z.infer<typeof userNameSchema>`. Inferring it produced
@@ -50,7 +53,7 @@ import { verifiedDomainSchema } from './identity';
  * Under a consumer's `moduleResolution: "node"` (node10), that chain does not
  * always resolve, so `name.displayName` silently widened to `{}` and broke the
  * "render `name.displayName` directly" contract at the type level. An explicit
- * interface emits `displayName: string` literally and survives BOTH `node` and
+ * interface emits `displayName?: string` literally and survives BOTH `node` and
  * `bundler` resolution. The index signature preserves the passthrough behaviour
  * (additive name fields are tolerated without a coordinated contract bump).
  */
@@ -58,8 +61,8 @@ export interface UserNameResponse {
     first?: string;
     last?: string;
     full?: string;
-    /** Required canonical display string — render this directly. */
-    displayName: string;
+    /** Canonical display string when present — render this directly. */
+    displayName?: string;
     [key: string]: unknown;
 }
 
@@ -68,15 +71,17 @@ export const userNameSchema: z.ZodType<UserNameResponse> = z
         first: z.string().optional(),
         last: z.string().optional(),
         full: z.string().optional(),
-        displayName: z.string(),
+        displayName: z.string().optional(),
     })
     .passthrough();
 
 /**
  * The canonical user object emitted by `formatUserResponse`.
  *
- * `id` and `name.displayName` are guaranteed on formatted user DTOs. The rest
- * is forwarded from the user document and may be absent depending on the query's
+ * `id` is present on formatted user DTOs. `name.displayName` is OPTIONAL on the
+ * contract — the API still synthesizes a default today, but consumers must not
+ * assume it is present and should fall back to a handle when it is absent. The
+ * rest is forwarded from the user document and may be absent depending on the query's
  * `.select(...)`/`.lean()` projection. Both `id` and `_id` are accepted because
  * some raw-document responses carry `_id` instead of `id`; resolve the
  * identifier with {@link resolveUserId}.

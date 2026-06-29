@@ -108,8 +108,10 @@ export interface User {
   privacySettings?: PrivacySettings;
   /**
    * Structured human name. `name.displayName` is the canonical display string
-   * resolved by the API; consumers render it directly instead of recomposing
-   * names from `first` / `last` / `full` / `username`.
+   * resolved by the API when present; consumers render it directly instead of
+   * recomposing names from `first` / `last` / `full` / `username`. It is now
+   * OPTIONAL (see `UserNameResponse`) — when absent, fall back to a handle
+   * (e.g. `getNormalizedUserHandle`) rather than recomposing a name locally.
    */
   name: UserNameResponse;
   bio?: string;
