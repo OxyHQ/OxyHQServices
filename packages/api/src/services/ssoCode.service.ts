@@ -52,10 +52,12 @@ export interface SsoSessionPayload {
   sessionId: string;
   accessToken: string;
   /**
-   * `user.name` is the structured {@link UserNameResponse} (required
-   * `displayName`), NOT a bare string — this is the canonical contract the SDK's
-   * `userResponseSchema` enforces on redemption. A string name would make
-   * `exchangeSsoCode` throw and every RP show logged-out.
+   * `user.name` is the structured {@link UserNameResponse}, NOT a bare string —
+   * this is the canonical contract the SDK's `userResponseSchema` enforces on
+   * redemption. A string name would make `exchangeSsoCode` throw and every RP
+   * show logged-out. `name.displayName` is OPTIONAL (present only when the user
+   * has a real name); username-only accounts omit it and RP clients fall back to
+   * the handle.
    */
   user: { id: string; username?: string; email?: string; avatar?: string; name: UserNameResponse };
   expiresAt?: string;

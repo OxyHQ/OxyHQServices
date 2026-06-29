@@ -76,9 +76,10 @@ const VALID_SESSION = {
   sessionId: 'sess-abc',
   accessToken: 'access-jwt-xyz',
   expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-  // `name` MUST be the structured UserNameResponse with a required displayName —
-  // a bare string name is rejected by `parseSessionPayload` (the contract the
-  // SDK's `userResponseSchema` enforces on redemption).
+  // `name` MUST be the structured UserNameResponse object — a bare string name
+  // is rejected by `parseSessionPayload`. `displayName` is OPTIONAL (contracts
+  // 0.6.0); it is included here because this fixture models a user with a real
+  // name.
   user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: { displayName: 'Alice' } },
 };
 
@@ -206,8 +207,8 @@ describe('POST /sso/code', () => {
   });
 
   it('returns 400 when user.name is a bare string (structured UserNameResponse required)', async () => {
-    // A string name silently drops the displayName the SDK requires → the
-    // session must never be minted. Fail closed at 400.
+    // A string name drops the structured shape the SDK parses on redemption →
+    // the session must never be minted. Fail closed at 400.
     const res = await requestJson(
       server,
       'POST',
@@ -245,7 +246,12 @@ describe('POST /sso/code', () => {
     expect(mockRedis.set).not.toHaveBeenCalled();
   });
 
-  it('returns 400 when user.name is an object without a non-empty displayName', async () => {
+  it('mints a code when user.name is a structured object without a displayName (handle fallback on the client)', async () => {
+    // `name.displayName` is OPTIONAL (contracts 0.6.0): a username-only account
+    // legitimately has no real name. The structured `name` object is still
+    // required (a bare string is rejected above), but the absence of a
+    // displayName no longer fails the payload — RP clients fall back to the
+    // handle.
     const res = await requestJson(
       server,
       'POST',
@@ -254,7 +260,27 @@ describe('POST /sso/code', () => {
         session: {
           sessionId: 'sess-x',
           accessToken: 'access-x',
-          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: { first: 'Alice', displayName: '   ' } },
+          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: {} },
+        },
+        clientOrigin: 'https://mention.earth',
+      },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.code).toEqual(expect.any(String));
+    expect(mockRedis.set).toHaveBeenCalled();
+  });
+
+  it('returns 400 when user.name carries a non-string displayName', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      {
+        session: {
+          sessionId: 'sess-x',
+          accessToken: 'access-x',
+          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: { first: 'Alice', displayName: 42 } },
         },
         clientOrigin: 'https://mention.earth',
       },

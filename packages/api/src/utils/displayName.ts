@@ -31,10 +31,11 @@ export interface NameResponse extends Record<string, unknown> {
   last?: string;
   full?: string;
   /**
-   * Optional to match the `@oxyhq/contracts` `UserNameResponse` contract.
-   * NOTE: the serializers in this module (`formatUserNameResponse`) STILL
-   * always synthesize a string today — only the type was relaxed. The runtime
-   * synthesis change is a later stage.
+   * The user's REAL display name (explicit `displayName`, or composed from
+   * `first`/`last`). OMITTED when the user has no real name — the API no longer
+   * synthesizes one from `username` / `publicKey` / `'Anonymous'`. Matches the
+   * optional `@oxyhq/contracts` `UserNameResponse` contract; consumers fall back
+   * to the handle when this field is absent.
    */
   displayName?: string;
 }
@@ -71,14 +72,21 @@ export function truncatePublicKeyHandle(publicKey: string | null | undefined): s
 }
 
 /**
- * Compose the authoritative default `name.displayName` in preference order:
+ * Compose the user's REAL display name, or `undefined` when they have none.
  *
- *   1. `name.full` (composed from `name.first` / `name.last`; first-only valid)
- *   2. `username`
- *   3. truncated `publicKey` handle
- *   4. `'Anonymous'`
+ *   1. explicit `name.displayName` (trimmed), else
+ *   2. `name.full` (composed from `name.first` / `name.last`; first-only valid),
+ *      else
+ *   3. `undefined`.
+ *
+ * It deliberately does NOT fall back to `username`, a truncated `publicKey`
+ * handle, or `'Anonymous'` — the API must not synthesize a display name. When
+ * this returns `undefined` the serializer omits `name.displayName` entirely and
+ * consumers fall back to the handle. Call sites that genuinely need a non-empty
+ * string (e.g. an ActivityPub actor `name`, an email greeting) add their OWN
+ * local fallback to the handle/username — never re-add it here.
  */
-export function composeDisplayName(source: DisplayNameSource): string {
+export function composeDisplayName(source: DisplayNameSource): string | undefined {
   const explicitDisplayName =
     typeof source.name?.displayName === 'string' ? source.name.displayName.trim() : '';
   if (explicitDisplayName) {
@@ -91,24 +99,18 @@ export function composeDisplayName(source: DisplayNameSource): string {
     return full;
   }
 
-  if (typeof source.username === 'string' && source.username.trim()) {
-    return source.username;
-  }
-
-  const handle = truncatePublicKeyHandle(source.publicKey);
-  if (handle) {
-    return handle;
-  }
-
-  return 'Anonymous';
+  return undefined;
 }
 
 /**
  * Build the canonical structured name emitted by user DTO serializers.
  *
- * `name.displayName` is the app-facing display string. It is always present on
- * formatted user responses, while `first`, `last`, and `full` preserve the raw
- * structured human-name fields when they exist.
+ * `name.displayName` is the app-facing display string. It is present ONLY when
+ * the user has a REAL name (explicit `displayName`, or composed from
+ * `first`/`last`); it is OMITTED otherwise — the API never synthesizes a name
+ * from `username` / `publicKey`, so consumers fall back to the handle. `first`,
+ * `last`, and `full` preserve the raw structured human-name fields when they
+ * exist.
  */
 export function formatUserNameResponse(source: DisplayNameSource): NameResponse {
   const rawName = source.name;
@@ -117,18 +119,19 @@ export function formatUserNameResponse(source: DisplayNameSource): NameResponse 
   const explicitFull = typeof rawName?.full === 'string' ? rawName.full.trim() : '';
   const full = explicitFull || composeFullName({ first, last });
 
-  const name: NameResponse = {
-    displayName: composeDisplayName({
-      ...source,
-      name: {
-        first,
-        last,
-        full,
-        displayName: rawName?.displayName,
-      },
-    }),
-  };
+  const name: NameResponse = {};
 
+  const displayName = composeDisplayName({
+    name: {
+      first,
+      last,
+      full,
+      displayName: rawName?.displayName,
+    },
+  });
+  if (displayName) {
+    name.displayName = displayName;
+  }
   if (first) {
     name.first = first;
   }

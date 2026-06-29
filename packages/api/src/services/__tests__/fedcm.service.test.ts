@@ -333,16 +333,19 @@ describe('FedCM exchangeIdToken (H9)', () => {
     expect(name.last).toBe('Liddell');
   });
 
-  it('falls back to username for displayName when the user has no structured name', async () => {
+  it('OMITS displayName when the user has no structured name (RP falls back to the handle)', async () => {
     // Default mock user is { _id: 'user-123', username: 'alice' } with no name.
+    // The API no longer synthesizes a display name from the username — the
+    // structured `name` object is still emitted, but without `displayName`.
     const token = mintToken();
     const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
 
     expect('error' in result).toBe(false);
     if ('error' in result) return;
+    expect(typeof result.user.name).toBe('object');
+    expect(result.user.name).not.toBeNull();
     const name = result.user.name as { displayName?: unknown };
-    expect(typeof name.displayName).toBe('string');
-    expect(name.displayName).toBe('alice');
+    expect(name.displayName).toBeUndefined();
   });
 
   it('records a FedCM grant for the user+origin on a successful exchange', async () => {

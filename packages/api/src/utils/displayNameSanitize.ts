@@ -37,15 +37,40 @@ const DISALLOWED_PATTERN = /[^\p{L}\p{M}\s']/gu;
 const DISALLOWED_PROBE = /[^\p{L}\p{M}\s']/u;
 
 /**
+ * Matches a run of combining marks (`\p{M}`) that is NOT attached to a base
+ * letter — i.e. the first mark of the run is preceded by something that is
+ * neither a letter nor another mark (string start, whitespace, the apostrophe,
+ * or a position vacated by a stripped character). The whole orphaned run is
+ * removed. A mark preceded by `\p{L}` (a base letter, e.g. the decomposed
+ * accent in "Renée") or by another `\p{M}` (a multi-mark cluster) is KEPT
+ * because the negative lookbehind fails at its position.
+ *
+ * This catches lone Tibetan/diacritic marks (e.g. U+0F18 in `"༘⋆"`) and the
+ * trailing variation selector (U+FE0F) left behind after an emoji base such as
+ * U+2764 (❤) is stripped, both of which would otherwise survive the
+ * `\p{M}`-friendly policy as meaningless garbage.
+ */
+const ORPHANED_MARK_PATTERN = /(?<![\p{L}\p{M}])\p{M}+/gu;
+
+/** Single test for the presence of an orphaned combining mark (non-global). */
+const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
+
+/**
  * Produce a clean display name from arbitrary (possibly federated/untrusted)
  * input. The transformation order is significant:
  *
- *   1. NFC-normalize so visually-identical strings compare/store identically.
+ *   1. NFC-normalize so visually-identical strings compare/store identically
+ *      (this also recomposes e.g. `e`+◌́ into a precomposed `é`, so legitimate
+ *      decomposed accents never reach step 4 as standalone marks).
  *   2. Strip `:shortcode:` tokens FIRST — otherwise step 3 would only remove
  *      the surrounding colons and leave the bare word (`:bongoCat:` → `bongoCat`).
  *   3. Replace every disallowed character with a space.
- *   4. Collapse runs of whitespace to a single space and trim the ends.
- *   5. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
+ *   4. Remove orphaned combining marks — any `\p{M}` run not attached to a base
+ *      letter (e.g. a lone Tibetan mark `U+0F18`, or a `U+FE0F` variation
+ *      selector left after its emoji base was stripped in step 3). Marks that
+ *      are still attached to a base letter are kept.
+ *   5. Collapse runs of whitespace to a single space and trim the ends.
+ *   6. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
  *      the slice landed on a boundary space.
  */
 export function cleanDisplayName(raw: string): string {
@@ -53,6 +78,7 @@ export function cleanDisplayName(raw: string): string {
     .normalize('NFC')
     .replace(SHORTCODE_PATTERN, ' ')
     .replace(DISALLOWED_PATTERN, ' ')
+    .replace(ORPHANED_MARK_PATTERN, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -63,15 +89,22 @@ export function cleanDisplayName(raw: string): string {
 }
 
 /**
- * Whether `raw` already satisfies the display-name character policy, i.e. it
- * contains no disallowed characters. Used to REJECT native (signup / profile
- * edit) names with a 400 rather than silently stripping them.
+ * Whether `raw` already satisfies the display-name policy, i.e. it contains no
+ * disallowed characters AND no orphaned combining marks. Used to REJECT native
+ * (signup / profile edit) names with a 400 rather than silently stripping them.
  *
- * The function only checks for disallowed characters; an empty or
- * whitespace-only string is considered valid (`true`). Call sites that require
- * a non-empty name enforce that separately — this check is purely about the
- * character set.
+ * This mirrors {@link cleanDisplayName}: a value that the cleaner would alter
+ * (beyond whitespace collapsing) is invalid here. The orphaned-mark probe runs
+ * on the NFC-normalized form so a legitimate decomposed accent (`e`+◌́) — which
+ * the cleaner recomposes into `é` — is NOT rejected, while a lone, base-less
+ * mark (e.g. `"༘"`) IS.
+ *
+ * The function only checks the character set; an empty or whitespace-only
+ * string is considered valid (`true`). Call sites that require a non-empty name
+ * enforce that separately.
  */
 export function isValidDisplayName(raw: string): boolean {
-  return !DISALLOWED_PROBE.test(raw);
+  return (
+    !DISALLOWED_PROBE.test(raw) && !ORPHANED_MARK_PROBE.test(raw.normalize('NFC'))
+  );
 }

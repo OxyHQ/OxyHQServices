@@ -1,12 +1,14 @@
 /**
- * Unit tests for the authoritative `name.displayName` composition (the logic
- * backing the `User.name.displayName` Mongoose virtual — see `models/User.ts`).
+ * Unit tests for the `name.displayName` composition (the logic backing the
+ * `User.name.displayName` Mongoose virtual — see `models/User.ts`).
  *
- * The composition was previously `username || truncatedPublicKey`, which IGNORED
- * the structured `name` subdocument and made the server's display default
- * unreliable. The fix composes in preference order:
+ * The composition returns the user's REAL name only:
  *
- *   name.full → username → truncated publicKey handle → 'Anonymous'
+ *   explicit name.displayName → name.full (from first/last) → undefined
+ *
+ * It does NOT synthesize a name from `username` / `publicKey` / `'Anonymous'`.
+ * When there is no real name the helper returns `undefined`, the serializer
+ * omits `name.displayName`, and consumers fall back to the handle.
  *
  * The API jest setup mocks Mongoose wholesale, so the model's virtual getter
  * never runs under test; the rules are exercised here against the pure helper
@@ -20,7 +22,7 @@ import {
   truncatePublicKeyHandle,
 } from '../displayName';
 
-describe('composeDisplayName (authoritative User.name.displayName default)', () => {
+describe('composeDisplayName (User.name.displayName — real name only)', () => {
   it('composes the full name when first AND last are present', () => {
     expect(
       composeDisplayName({
@@ -31,7 +33,7 @@ describe('composeDisplayName (authoritative User.name.displayName default)', () 
     ).toBe('Jane Doe');
   });
 
-  it('composes a FIRST-ONLY name (does not require both parts) over username', () => {
+  it('composes a FIRST-ONLY name (does not require both parts)', () => {
     expect(
       composeDisplayName({
         name: { first: 'Cher' },
@@ -40,7 +42,7 @@ describe('composeDisplayName (authoritative User.name.displayName default)', () 
     ).toBe('Cher');
   });
 
-  it('composes a LAST-ONLY name over username', () => {
+  it('composes a LAST-ONLY name', () => {
     expect(
       composeDisplayName({
         name: { last: 'Prince' },
@@ -49,47 +51,38 @@ describe('composeDisplayName (authoritative User.name.displayName default)', () 
     ).toBe('Prince');
   });
 
-  it('falls back to username when there is no usable name', () => {
+  it('prefers an explicit name.displayName (trimmed) over a composed full name', () => {
+    expect(
+      composeDisplayName({
+        name: { first: 'Jane', last: 'Doe', displayName: '  Janey  ' },
+      })
+    ).toBe('Janey');
+  });
+
+  it('returns undefined when there is no usable name (username is NOT a fallback)', () => {
     expect(
       composeDisplayName({
         name: { first: '', last: '' },
         username: 'fallbackuser',
         publicKey: '0x1234567890abcdef',
       })
-    ).toBe('fallbackuser');
+    ).toBeUndefined();
   });
 
-  it('falls back to username when the name subdocument is absent', () => {
-    expect(composeDisplayName({ username: 'noname' })).toBe('noname');
+  it('returns undefined when the name subdocument is absent (username only)', () => {
+    expect(composeDisplayName({ username: 'noname' })).toBeUndefined();
   });
 
-  it('falls back to the truncated 0x publicKey handle when neither name nor username exists', () => {
+  it('returns undefined for a publicKey-only user (no handle synthesis)', () => {
     expect(
       composeDisplayName({
         publicKey: '0x1234567890abcdef1234567890abcdef',
       })
-    ).toBe('0x123456...abcdef');
+    ).toBeUndefined();
   });
 
-  it('falls back to the truncated bare-hex publicKey handle (no 0x prefix)', () => {
-    expect(
-      composeDisplayName({
-        publicKey: 'abcdef1234567890fedcba',
-      })
-    ).toBe('abcdef...fedcba');
-  });
-
-  it("returns 'Anonymous' when name, username, and publicKey are all absent", () => {
-    expect(composeDisplayName({})).toBe('Anonymous');
-  });
-
-  it('ignores a whitespace-only username and falls through to the publicKey handle', () => {
-    expect(
-      composeDisplayName({
-        username: '   ',
-        publicKey: '0xabcdef1234567890abcdef',
-      })
-    ).toBe('0xabcdef...abcdef');
+  it('returns undefined when name, username, and publicKey are all absent', () => {
+    expect(composeDisplayName({})).toBeUndefined();
   });
 
   it('prefers the name even when a username is also present (name wins)', () => {
@@ -136,13 +129,30 @@ describe('formatUserNameResponse', () => {
     });
   });
 
-  it('emits displayName from username when structured names are empty', () => {
+  it('OMITS displayName (and first/last/full) for a username-only user', () => {
     expect(
       formatUserNameResponse({
         name: { first: '', last: '' },
         username: 'janedoe',
       })
-    ).toEqual({ displayName: 'janedoe' });
+    ).toEqual({});
+  });
+
+  it('OMITS displayName for a publicKey-only user (no synthesis)', () => {
+    expect(
+      formatUserNameResponse({
+        publicKey: '0x1234567890abcdef',
+      })
+    ).toEqual({});
+  });
+
+  it('emits a first-only displayName/full without a last name', () => {
+    expect(
+      formatUserNameResponse({
+        name: { first: 'Cher' },
+        username: 'mononym',
+      })
+    ).toEqual({ first: 'Cher', full: 'Cher', displayName: 'Cher' });
   });
 });
 

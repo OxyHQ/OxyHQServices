@@ -810,24 +810,23 @@ UserSchema.virtual('name.full').get(function() {
   return '';
 });
 
-// Virtual for structured display name — authoritative server-side default.
+// Virtual for the structured display name — the user's REAL name only.
 //
-// Composition preference order (see `utils/displayName.ts`, the single source of
-// truth shared with the unit tests):
-//   1. name.full (composed from name.first / name.last; first-only is valid —
-//      there is NO requirement that both parts exist)
-//   2. username
-//   3. truncated publicKey handle
-//   4. 'Anonymous'
+// Composition (see `utils/displayName.ts`, the single source of truth shared
+// with the unit tests):
+//   1. explicit name.displayName, else
+//   2. name.full (composed from name.first / name.last; first-only is valid —
+//      there is NO requirement that both parts exist), else
+//   3. undefined.
 //
-// This is the DERIVED default only. All raw fields (`name.first`, `name.last`,
-// `name.full`, `username`, `publicKey`) remain intact. Public DTO serializers
-// expose it as `name.displayName`; clients should render that field directly.
+// It does NOT synthesize a name from `username` / `publicKey`. When the user has
+// no real name the getter returns `undefined` and the field is simply absent in
+// the serialized JSON — clients fall back to the handle. All raw fields
+// (`name.first`, `name.last`, `name.full`, `username`, `publicKey`) remain
+// intact. Public DTO serializers expose it as `name.displayName`.
 UserSchema.virtual('name.displayName').get(function() {
   return composeDisplayName({
     name: this.name as { first?: string; last?: string } | undefined,
-    username: this.username as string | undefined,
-    publicKey: this.publicKey as string | undefined,
   });
 });
 
