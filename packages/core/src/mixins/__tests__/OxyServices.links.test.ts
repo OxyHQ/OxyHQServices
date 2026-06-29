@@ -11,7 +11,7 @@
  *    `data` map keyed by the requested url, and surfaces a chunk failure.
  */
 
-import type { LinkPreview, LinkPreviewBatchResponse } from '@oxyhq/contracts';
+import type { LinkPreview } from '@oxyhq/contracts';
 import { OxyServices } from '../../OxyServices';
 
 const sampleResolved: LinkPreview = {
@@ -82,10 +82,10 @@ describe('OxyServices.links', () => {
     });
 
     it('de-duplicates and sends a single chunk for <= 50 unique URLs', async () => {
-      const response: LinkPreviewBatchResponse = {
-        data: { 'https://a.test/': sampleResolved },
-      };
-      makeRequestSpy.mockResolvedValueOnce(response);
+      // makeRequest unwraps the API's `{ data }` envelope, so the resolved value
+      // is the bare record (NOT `{ data: {...} }`) — mirror that real shape here.
+      const record: Record<string, LinkPreview> = { 'https://a.test/': sampleResolved };
+      makeRequestSpy.mockResolvedValueOnce(record);
 
       const result = await oxy.getLinkPreviews([
         'https://a.test/',
@@ -93,7 +93,7 @@ describe('OxyServices.links', () => {
         '   ', // dropped
       ]);
 
-      expect(result).toEqual(response.data);
+      expect(result).toEqual(record);
       expect(makeRequestSpy).toHaveBeenCalledTimes(1);
       expect(makeRequestSpy).toHaveBeenCalledWith(
         'POST',
@@ -111,13 +111,13 @@ describe('OxyServices.links', () => {
           _method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
           _url: string,
           data?: { urls: string[] },
-        ): Promise<LinkPreviewBatchResponse> => {
+        ): Promise<Record<string, LinkPreview>> => {
           const chunkUrls = data?.urls ?? [];
           const dataMap: Record<string, LinkPreview> = {};
           for (const u of chunkUrls) {
             dataMap[u] = { url: u, status: 'resolved', title: `t-${u}` };
           }
-          return { data: dataMap };
+          return dataMap;
         },
       );
 

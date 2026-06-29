@@ -15,7 +15,7 @@
  * later read, so an SDK GET cache would pin the stale `'pending'` snapshot.
  * App-side caching (React Query / stores) owns this responsibility.
  */
-import type { LinkPreview, LinkPreviewBatchResponse } from '@oxyhq/contracts';
+import type { LinkPreview } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildUrl } from '../utils/apiUtils';
 
@@ -57,10 +57,14 @@ export function OxyServicesLinksMixin<T extends typeof OxyServicesBase>(Base: T)
      * Resolve multiple link previews via `POST /links/previews` (body `{ urls }`).
      *
      * Inputs are de-duplicated and split into chunks of {@link LINK_PREVIEWS_CHUNK_SIZE}
-     * (the server-side cap). Chunks run concurrently and their `data` maps are
+     * (the server-side cap). Chunks run concurrently and their result maps are
      * merged into a single result keyed by the REQUESTED url (the exact string
      * passed in `urls`) — matching the batch contract — so a caller can always
      * look its own input back up.
+     *
+     * `makeRequest` unwraps the API's top-level `{ data }` envelope (same as
+     * `getUsersByIds`'s `makeServiceRequest<User[]>`), so each chunk response is
+     * already the `Record<url, LinkPreview>` map — merge it directly.
      *
      * An empty / whitespace-only input resolves immediately with `{}` and
      * performs no network call. A failure in any chunk surfaces (via
@@ -82,7 +86,7 @@ export function OxyServicesLinksMixin<T extends typeof OxyServicesBase>(Base: T)
       try {
         const responses = await Promise.all(
           chunks.map((chunk) =>
-            this.makeRequest<LinkPreviewBatchResponse>(
+            this.makeRequest<Record<string, LinkPreview>>(
               'POST',
               '/links/previews',
               { urls: chunk },
@@ -92,7 +96,7 @@ export function OxyServicesLinksMixin<T extends typeof OxyServicesBase>(Base: T)
         );
 
         return responses.reduce<Record<string, LinkPreview>>(
-          (merged, response) => Object.assign(merged, response?.data ?? {}),
+          (merged, response) => Object.assign(merged, response ?? {}),
           {},
         );
       } catch (error) {
