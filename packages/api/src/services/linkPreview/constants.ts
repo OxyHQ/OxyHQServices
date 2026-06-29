@@ -107,6 +107,33 @@ export const LINK_PREVIEW_SYNC_MAX_CONCURRENCY = getEnvNumber(
 export const LINK_PREVIEW_MAX_URL_LENGTH = 2048;
 
 /**
+ * Number of warm jobs the BullMQ worker processes CONCURRENTLY per instance.
+ * BullMQ defaults to 1 (fully serial), which drains a large first-seen / backfill
+ * backlog far too slowly (≈1 URL at a time per instance). Each job is bounded
+ * (fetch timeouts, SSRF guard, negative cache, `isUsablePreview`) and the oEmbed
+ * hosts (YouTube/Vimeo/Spotify) are not anti-bot-walled, while generic-scrape
+ * failures degrade gracefully — so a modest fan-out is safe. Default 12,
+ * env-tunable.
+ */
+export const LINK_PREVIEW_WARM_CONCURRENCY = getEnvNumber('LINK_PREVIEW_WARM_CONCURRENCY', 12);
+
+/**
+ * Per-principal rate-limit ceiling (requests / 60s window) for the single-URL
+ * `GET /links/preview`. Every app calls the read endpoints with ONE shared
+ * service token, so an entire app's feed hydration shares a single principal's
+ * budget — these must be generous because cached reads are cheap. Default 600,
+ * env-tunable.
+ */
+export const LINK_PREVIEW_PREVIEW_RATE_MAX = getEnvNumber('LINK_PREVIEW_PREVIEW_RATE_MAX', 600);
+
+/**
+ * Per-principal rate-limit ceiling (requests / 60s window) for the batch
+ * `POST /links/previews` — the feed-hydration path. Same shared-service-token
+ * rationale as {@link LINK_PREVIEW_PREVIEW_RATE_MAX}. Default 600, env-tunable.
+ */
+export const LINK_PREVIEW_BATCH_RATE_MAX = getEnvNumber('LINK_PREVIEW_BATCH_RATE_MAX', 600);
+
+/**
  * Reserved synthetic owner id for every re-hosted link-preview image. NOT a
  * valid Mongo ObjectId, so it can never collide with a real user `_id` and the
  * media-privacy block checks short-circuit it (mirrors the federation-cache

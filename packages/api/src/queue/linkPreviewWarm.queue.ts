@@ -28,6 +28,7 @@ import { getQueueConnectionOptions } from './connection';
 import { isQueueEnabled } from './queueManager';
 import { COMPLETED_JOBS_RETENTION, FAILED_JOBS_RETENTION } from './constants';
 import { linkPreviewService } from '../services/linkPreview/linkPreviewService';
+import { LINK_PREVIEW_WARM_CONCURRENCY } from '../services/linkPreview/constants';
 
 /** BullMQ queue name (no `:` allowed). */
 const LINK_PREVIEW_WARM_QUEUE = 'link-preview-warm';
@@ -162,6 +163,8 @@ export async function startLinkPreviewWarmJobs(): Promise<void> {
       logger.error('Link-preview warm queue error', { error: err.message }),
     );
 
+    // BullMQ defaults a Worker to concurrency 1 (serial). Fan out so a large
+    // first-seen / backfill backlog drains in parallel; per-job work is bounded.
     worker = new Worker<LinkPreviewWarmJobData>(
       LINK_PREVIEW_WARM_QUEUE,
       async (job: Job<LinkPreviewWarmJobData>) => {
@@ -170,7 +173,7 @@ export async function startLinkPreviewWarmJobs(): Promise<void> {
           await linkPreviewService.resolveAndStore(url);
         }
       },
-      { connection: getQueueConnectionOptions() },
+      { connection: getQueueConnectionOptions(), concurrency: LINK_PREVIEW_WARM_CONCURRENCY },
     );
     worker.on('failed', (job, err: Error) =>
       logger.error('Link-preview warm job failed', { jobId: job?.id, error: err.message }),

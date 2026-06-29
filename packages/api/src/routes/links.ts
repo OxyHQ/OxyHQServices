@@ -34,6 +34,10 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { linkPreviewService } from '../services/linkPreview/linkPreviewService';
+import {
+  LINK_PREVIEW_BATCH_RATE_MAX,
+  LINK_PREVIEW_PREVIEW_RATE_MAX,
+} from '../services/linkPreview/constants';
 import { linkPreviewQuerySchema } from '../schemas/links.schemas';
 import { logger } from '../utils/logger';
 
@@ -47,10 +51,12 @@ function principalKey(req: Request): string {
   return `ip:${req.ip ?? 'unknown'}`;
 }
 
+// Reads are cheap (cache-backed) and every app calls them with ONE shared
+// service token, so the per-principal ceiling must be generous (env-tunable).
 const previewLimiter = rateLimit({
   prefix: 'rl:links:preview:',
   windowMs: 60_000,
-  max: 120,
+  max: LINK_PREVIEW_PREVIEW_RATE_MAX,
   keyGenerator: principalKey,
   message: 'Too many link-preview requests. Please slow down.',
 });
@@ -58,7 +64,7 @@ const previewLimiter = rateLimit({
 const batchLimiter = rateLimit({
   prefix: 'rl:links:batch:',
   windowMs: 60_000,
-  max: 60,
+  max: LINK_PREVIEW_BATCH_RATE_MAX,
   keyGenerator: principalKey,
   message: 'Too many link-preview batch requests. Please slow down.',
 });
