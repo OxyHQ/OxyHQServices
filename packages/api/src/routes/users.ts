@@ -45,6 +45,7 @@ import {
   usersByIdsBodySchema,
 } from '../schemas/users.schemas';
 import { sanitizeHtml } from '../utils/sanitize';
+import { cleanDisplayName } from '../utils/displayNameSanitize';
 import { rateLimit } from '../middleware/rateLimiter';
 import { buildExportBundle } from '../services/identityExport.service';
 import { exportBundleSchema } from '@oxyhq/contracts';
@@ -1447,7 +1448,10 @@ router.put(
     // profile display name and bio in client apps, so raw input is a stored-XSS
     // vector.
     if (typeof displayName === 'string') {
-      setFields['name.first'] = sanitizeHtml(displayName);
+      // Strip disallowed characters (emoji/symbols/shortcodes) from federated
+      // names. cleanDisplayName's output can never contain an XSS vector, so it
+      // replaces sanitizeHtml here (which would mangle the inert apostrophe).
+      setFields['name.first'] = cleanDisplayName(displayName);
     }
     if (typeof bio === 'string') {
       setFields.bio = sanitizeHtml(bio);

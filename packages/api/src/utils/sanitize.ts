@@ -21,6 +21,27 @@ export function sanitizeHtml(input: string): string {
 }
 
 /**
+ * Decode common HTML entities back to their literal characters.
+ *
+ * Handles numeric (`&#39;`), hex (`&#x27;`), and the named entities `&amp;`,
+ * `&lt;`, `&gt;`, `&quot;`, `&apos;`. This is the inverse of {@link sanitizeHtml}
+ * for the subset of entities Oxy ever produces, and is used to un-escape data
+ * that was previously stored HTML-escaped (e.g. federated display names /
+ * link-preview metadata) before re-processing it.
+ */
+export function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
+/**
  * Sanitize a string if it's a string, otherwise return as-is.
  */
 export function sanitizeString(value: unknown): unknown {
@@ -55,9 +76,14 @@ export function sanitizeObject<T extends Record<string, unknown>>(
  *
  * Applies HTML escaping to text fields that could be rendered in UI.
  * Skips: avatar (file ID), links (URLs), email, password.
+ *
+ * `name` is intentionally skipped: display names are validated against a strict
+ * letters/spaces/apostrophe policy upstream (see `utils/displayNameSanitize.ts`)
+ * and can never contain an XSS vector, so HTML-escaping them here would only
+ * corrupt the inert apostrophe (`O'Brien` → `O&#x27;Brien`, rendered literally).
  */
 export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<string, unknown> {
-  const skipFields = ['avatar', 'color', 'email', 'password', 'links', 'linksMetadata', 'locations'];
+  const skipFields = ['name', 'avatar', 'color', 'email', 'password', 'links', 'linksMetadata', 'locations'];
   const result = { ...updates };
 
   for (const key of Object.keys(result)) {

@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { isValidDisplayName } from '../utils/displayNameSanitize';
+
+const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
 
 // POST /auth/signup
 export const signupSchema = z.object({
@@ -11,6 +14,24 @@ export const signupSchema = z.object({
   }).optional(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+}).superRefine((data, ctx) => {
+  // Native users must supply a clean display name (letters/spaces/apostrophe
+  // only). Federated names are stripped silently elsewhere; native names are
+  // rejected with a 400 so the user fixes them at the source.
+  if (typeof data.name?.first === 'string' && !isValidDisplayName(data.name.first)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['name', 'first'],
+      message: INVALID_NAME_MESSAGE,
+    });
+  }
+  if (typeof data.name?.last === 'string' && !isValidDisplayName(data.name.last)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['name', 'last'],
+      message: INVALID_NAME_MESSAGE,
+    });
+  }
 });
 
 // POST /auth/login

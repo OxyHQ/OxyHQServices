@@ -16,20 +16,8 @@ import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
-import { sanitizeHtml } from '../utils/sanitize';
-
-/** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
-function decodeHtmlEntities(text: string): string {
-  if (!text) return text;
-  return text
-    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'");
-}
+import { cleanDisplayName } from '../utils/displayNameSanitize';
+import { sanitizeHtml, decodeHtmlEntities } from '../utils/sanitize';
 
 const AP_ACCEPT_TYPES = [
   'application/activity+json',
@@ -1094,7 +1082,7 @@ class FederationService {
     const setFields: Record<string, unknown> = {
       type: 'federated',
       username: profile.username,
-      'name.first': sanitizeHtml(profile.displayName),
+      'name.first': cleanDisplayName(profile.displayName),
       'federation.actorUri': profile.actorUri,
       'federation.domain': profile.domain,
       'federation.lastResolvedAt': new Date(),
@@ -1353,7 +1341,7 @@ class FederationService {
       const setFields: Record<string, unknown> = {};
 
       if (profile.displayName) {
-        setFields['name.first'] = sanitizeHtml(profile.displayName);
+        setFields['name.first'] = cleanDisplayName(profile.displayName);
       }
       setFields['federation.lastResolvedAt'] = new Date();
       if (profile.bio) {

@@ -281,7 +281,7 @@ describe('PUT /users/resolve (C4)', () => {
     );
   });
 
-  it('sanitizes federated display name and bio before persistence', async () => {
+  it('strips the federated display name and escapes bio before persistence', async () => {
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
     mockUserFindOne.mockReturnValueOnce({ select: selectResult });
@@ -305,7 +305,9 @@ describe('PUT /users/resolve (C4)', () => {
       { 'federation.actorUri': 'https://mastodon.social/users/alice' },
       expect.objectContaining({
         $set: expect.objectContaining({
-          'name.first': '&lt;img src=x onerror=alert(&quot;fediverse-xss&quot;)&gt;',
+          // Display name: disallowed characters stripped (never escaped).
+          'name.first': 'img src x onerror alert fediverse xss',
+          // Bio is not a display name and keeps HTML-entity escaping.
           bio: '&lt;script&gt;alert(&quot;bio&quot;)&lt;/script&gt;',
         }),
       }),
@@ -520,7 +522,7 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('escapes HTML in displayName/bio before persisting (stored-XSS regression)', async () => {
+  it('strips the federated displayName and escapes bio before persisting (stored-XSS regression)', async () => {
     // Type-immutability check: no existing user.
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -544,10 +546,13 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
     const [, update] = mockUserFindOneAndUpdate.mock.calls[0];
     const setFields = (update as { $set: Record<string, unknown> }).$set;
-    // Raw HTML must NOT be persisted — every metacharacter is entity-escaped.
-    expect(setFields['name.first']).toBe('&lt;img src=x onerror=alert(1)&gt;');
+    // Display names follow a strict char policy: disallowed characters
+    // (`<`, `>`, `=`, `(`, `)`, digits) are stripped, never escaped — the
+    // output can never carry an HTML/XSS vector.
+    expect(setFields['name.first']).toBe('img src x onerror alert');
+    expect(String(setFields['name.first'])).not.toMatch(/[<>&"]/);
+    // Bio is NOT a display name and keeps HTML-entity escaping.
     expect(setFields.bio).toBe('hi &lt;script&gt;steal()&lt;/script&gt; &amp; &quot;friends&quot;');
-    expect(String(setFields['name.first'])).not.toContain('<');
     expect(String(setFields.bio)).not.toContain('<script>');
   });
 

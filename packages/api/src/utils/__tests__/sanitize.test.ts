@@ -4,6 +4,7 @@ import {
   sanitizeObject,
   sanitizeProfileUpdate,
   sanitizeSearchQuery,
+  decodeHtmlEntities,
 } from '../sanitize';
 
 describe('sanitize utilities', () => {
@@ -94,12 +95,39 @@ describe('sanitize utilities', () => {
       expect(result.password).toBe('<secret>');
     });
 
-    it('sanitizes nested objects like name', () => {
+    it('does NOT escape the name field — names are validated to a strict char policy upstream', () => {
+      // Display names are letters/spaces/apostrophe only and can never contain
+      // an XSS vector, so escaping here would corrupt the inert apostrophe.
       const result = sanitizeProfileUpdate({
-        name: { first: '<b>John</b>', last: 'Doe' },
+        name: { first: "O'Brien", last: 'Doe' },
       });
-      expect((result.name as any).first).toBe('&lt;b&gt;John&lt;/b&gt;');
-      expect((result.name as any).last).toBe('Doe');
+      expect((result.name as { first: string }).first).toBe("O'Brien");
+      expect((result.name as { last: string }).last).toBe('Doe');
+    });
+  });
+
+  describe('decodeHtmlEntities', () => {
+    it('decodes the hex apostrophe entity', () => {
+      expect(decodeHtmlEntities('O&#x27;Brien')).toBe("O'Brien");
+    });
+
+    it('decodes the numeric apostrophe entity', () => {
+      expect(decodeHtmlEntities('O&#39;Brien')).toBe("O'Brien");
+    });
+
+    it('decodes named entities', () => {
+      expect(decodeHtmlEntities('A &amp; B &lt;x&gt; &quot;q&quot; &apos;a&apos;')).toBe(
+        'A & B <x> "q" \'a\''
+      );
+    });
+
+    it('round-trips with sanitizeHtml', () => {
+      const raw = '<a href="x">O\'Neil & co</a>';
+      expect(decodeHtmlEntities(sanitizeHtml(raw))).toBe(raw);
+    });
+
+    it('returns empty/falsy input unchanged', () => {
+      expect(decodeHtmlEntities('')).toBe('');
     });
   });
 

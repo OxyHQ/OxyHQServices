@@ -12,6 +12,8 @@ import { Types } from 'mongoose';
 import userCache from '../utils/userCache';
 import securityActivityService from './securityActivityService';
 import { sanitizeProfileUpdate } from '../utils/sanitize';
+import { isValidDisplayName } from '../utils/displayNameSanitize';
+import { BadRequestError } from '../utils/error';
 import { Request } from 'express';
 import {
   PaginationParams,
@@ -168,6 +170,19 @@ export class UserService {
       'notificationPreferences',
       'userPreferences',
     ] as const;
+
+    // Reject invalid native display names (letters/spaces/apostrophe only).
+    // Federated writes strip silently via cleanDisplayName; native edits get a
+    // 400 so the user corrects the name at the source. Runs BEFORE sanitization
+    // so the validation sees the user's raw input.
+    if (updates.name && typeof updates.name === 'object') {
+      for (const part of ['first', 'last'] as const) {
+        const value = updates.name[part];
+        if (typeof value === 'string' && !isValidDisplayName(value)) {
+          throw new BadRequestError('Name may only contain letters, spaces and apostrophes.');
+        }
+      }
+    }
 
     // Sanitize text fields to prevent XSS
     const sanitizedUpdates = sanitizeProfileUpdate(updates as Record<string, unknown>) as ProfileUpdateInput;

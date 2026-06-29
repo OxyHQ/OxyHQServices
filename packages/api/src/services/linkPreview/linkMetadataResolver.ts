@@ -2,6 +2,7 @@ import type { IncomingMessage, IncomingHttpHeaders } from 'http';
 import { URL } from 'url';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { logger } from '../../utils/logger';
+import { decodeHtmlEntities } from '../../utils/sanitize';
 import { linkMetadataProviders } from './linkMetadataProviders';
 import {
   LINK_PREVIEW_HTML_MAX_BYTES,
@@ -37,19 +38,6 @@ const SCRAPE_USER_AGENT =
 
 /** Matches any Google host (with or without a `www.` prefix), e.g. `google.com`, `www.google.co.uk`. */
 const GOOGLE_HOST = /^(www\.)?google\.[a-z.]+$/;
-
-/** Decode the common HTML entities that appear in OG/Twitter text fields. */
-function decodeHtmlEntities(text: string): string {
-  if (!text) return text;
-  return text
-    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'");
-}
 
 /** Read a single header value (collapsing the `string[] | undefined` shape). */
 function headerStr(value: string | string[] | undefined): string {
