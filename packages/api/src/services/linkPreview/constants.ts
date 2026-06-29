@@ -42,14 +42,6 @@ export const LINK_PREVIEW_HOT_TTL_SECONDS = getEnvNumber('LINK_PREVIEW_HOT_TTL_S
 export const LINK_PREVIEW_NEG_TTL_SECONDS = getEnvNumber('LINK_PREVIEW_NEG_TTL_SECONDS', 10 * 60);
 
 /**
- * Hard upper bound on the time the batch response path spends reading the Redis
- * hot cache across ALL requested URLs. Once exhausted, remaining lookups are
- * treated as misses (returned `pending`, warmed in the background) so a slow
- * Redis never gates the batch response. Default 250 ms.
- */
-export const LINK_PREVIEW_READ_BUDGET_MS = getEnvNumber('LINK_PREVIEW_READ_BUDGET_MS', 250);
-
-/**
  * Time-to-first-byte deadline for every outbound resolve fetch (remote HTML
  * page, provider oEmbed endpoint, image download). Default 6 s.
  */

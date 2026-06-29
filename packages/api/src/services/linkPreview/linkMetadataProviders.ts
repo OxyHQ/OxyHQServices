@@ -1,8 +1,8 @@
-import type { IncomingMessage } from 'http';
 import { URL } from 'url';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { logger } from '../../utils/logger';
 import { LINK_PREVIEW_TIMEOUT_MS } from './constants';
+import { readBoundedBody } from './boundedBody';
 import type { RawLinkMetadata } from './types';
 
 /**
@@ -81,37 +81,51 @@ function parseOembed(raw: string): OembedResponse | null {
   };
 }
 
-/** Read a bounded prefix of the response body as a UTF-8 string. */
-async function readLimitedJson(response: IncomingMessage, maxBytes: number): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    let settled = false;
+/**
+ * Map the consumed oEmbed fields into a {@link RawLinkMetadata}. `description` is
+ * gated by the flag: providers whose oEmbed lacks a useful description
+ * (YouTube/Spotify) pass `false` and let the generic og-scrape enrichment fill
+ * it; Vimeo passes `true` and uses its own.
+ */
+function buildOembedResult(
+  oembed: OembedResponse,
+  url: string,
+  siteName: string,
+  options: { description: boolean },
+): RawLinkMetadata {
+  const result: RawLinkMetadata = { url, siteName };
+  if (oembed.title) result.title = oembed.title;
+  if (options.description && oembed.description) result.description = oembed.description;
+  if (oembed.thumbnail_url) result.imageUrl = oembed.thumbnail_url;
+  return result;
+}
 
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      response.destroy();
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    };
-
-    response.on('data', (chunk: Buffer) => {
-      if (settled) return;
-      totalSize += chunk.length;
-      chunks.push(chunk);
-      if (totalSize > maxBytes) finish();
-    });
-    response.on('end', () => {
-      if (settled) return;
-      settled = true;
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    });
-    response.on('error', (error: Error) => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    });
-  });
+/**
+ * Build a host-matched oEmbed provider: `matches` tests the host set, `resolve`
+ * fetches `endpoint(url)` and maps it via {@link buildOembedResult}. Used by the
+ * providers whose resolution is a plain host→oEmbed lookup (Vimeo, Spotify);
+ * YouTube keeps a bespoke `resolve` for video-id extraction.
+ */
+function oembedHostProvider(config: {
+  id: string;
+  siteName: string;
+  hosts: ReadonlySet<string>;
+  endpoint: (url: URL) => string;
+  description: boolean;
+}): LinkMetadataProvider {
+  return {
+    id: config.id,
+    matches(url: URL): boolean {
+      return config.hosts.has(url.hostname.toLowerCase());
+    },
+    async resolve(url: URL): Promise<RawLinkMetadata | null> {
+      const oembed = await fetchOembed(config.endpoint(url));
+      if (!oembed) return null;
+      return buildOembedResult(oembed, url.toString(), config.siteName, {
+        description: config.description,
+      });
+    },
+  };
 }
 
 /**
@@ -153,7 +167,7 @@ async function fetchOembed(endpoint: string): Promise<OembedResponse | null> {
       result.response.destroy();
       return null;
     }
-    const body = await readLimitedJson(result.response, OEMBED_MAX_BYTES);
+    const body = await readBoundedBody(result.response, { maxBytes: OEMBED_MAX_BYTES });
     return parseOembed(body);
   } catch (error) {
     logger.debug('[linkPreviewProviders] oEmbed body read failed', {
@@ -223,57 +237,33 @@ const youtubeProvider: LinkMetadataProvider = {
     if (!oembed) return null;
 
     // YouTube oEmbed carries no description; the resolver fills it best-effort
-    // off the response path.
-    const result: RawLinkMetadata = { url: watchUrl, siteName: 'YouTube' };
-    if (oembed.title) result.title = oembed.title;
-    if (oembed.thumbnail_url) result.imageUrl = oembed.thumbnail_url;
-    return result;
+    // off the response path (description: false).
+    return buildOembedResult(oembed, watchUrl, 'YouTube', { description: false });
   },
 };
 
 const VIMEO_HOSTS: ReadonlySet<string> = new Set(['vimeo.com', 'www.vimeo.com', 'player.vimeo.com']);
 
-const vimeoProvider: LinkMetadataProvider = {
+// Vimeo oEmbed includes a usable description — use it directly (description: true).
+const vimeoProvider = oembedHostProvider({
   id: 'vimeo',
-  matches(url: URL): boolean {
-    return VIMEO_HOSTS.has(url.hostname.toLowerCase());
-  },
-  async resolve(url: URL): Promise<RawLinkMetadata | null> {
-    const oembed = await fetchOembed(
-      `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url.toString())}`,
-    );
-    if (!oembed) return null;
-
-    // Vimeo oEmbed includes a description — set it directly.
-    const result: RawLinkMetadata = { url: url.toString(), siteName: 'Vimeo' };
-    if (oembed.title) result.title = oembed.title;
-    if (oembed.description) result.description = oembed.description;
-    if (oembed.thumbnail_url) result.imageUrl = oembed.thumbnail_url;
-    return result;
-  },
-};
+  siteName: 'Vimeo',
+  hosts: VIMEO_HOSTS,
+  endpoint: (url) => `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url.toString())}`,
+  description: true,
+});
 
 const SPOTIFY_HOSTS: ReadonlySet<string> = new Set(['open.spotify.com']);
 
-const spotifyProvider: LinkMetadataProvider = {
+// Spotify oEmbed carries no description; the resolver fills it best-effort off
+// the response path (description: false).
+const spotifyProvider = oembedHostProvider({
   id: 'spotify',
-  matches(url: URL): boolean {
-    return SPOTIFY_HOSTS.has(url.hostname.toLowerCase());
-  },
-  async resolve(url: URL): Promise<RawLinkMetadata | null> {
-    const oembed = await fetchOembed(
-      `https://open.spotify.com/oembed?url=${encodeURIComponent(url.toString())}`,
-    );
-    if (!oembed) return null;
-
-    // Spotify oEmbed carries no description; the resolver fills it best-effort
-    // off the response path.
-    const result: RawLinkMetadata = { url: url.toString(), siteName: 'Spotify' };
-    if (oembed.title) result.title = oembed.title;
-    if (oembed.thumbnail_url) result.imageUrl = oembed.thumbnail_url;
-    return result;
-  },
-};
+  siteName: 'Spotify',
+  hosts: SPOTIFY_HOSTS,
+  endpoint: (url) => `https://open.spotify.com/oembed?url=${encodeURIComponent(url.toString())}`,
+  description: false,
+});
 
 /** Ordered oEmbed provider registry consulted before the generic scrape. */
 export const linkMetadataProviders: LinkMetadataProvider[] = [

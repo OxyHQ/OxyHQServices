@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { type LinkPreview, linkPreviewSchema } from '@oxyhq/contracts';
 import { getRedisClient } from '../../config/redis';
 import { logger } from '../../utils/logger';
+import { hostnameOf } from './url';
 import {
   LINK_PREVIEW_HOT_TTL_SECONDS,
   LINK_PREVIEW_LOCK_TTL_SECONDS,
   LINK_PREVIEW_NEG_TTL_SECONDS,
-  LINK_PREVIEW_READ_BUDGET_MS,
 } from './constants';
 
 /**
@@ -64,15 +64,14 @@ export function isUsablePreview(p: {
   if (/^(https?:\/\/|www\.)/i.test(title)) return false;
 
   // A title equal to the URL's host is the hostname fallback, not real metadata.
+  // (An unparseable url yields no host → the title is non-URL text, treat as usable.)
   if (p.url) {
-    try {
-      const host = new URL(p.url).hostname.toLowerCase();
+    const host = hostnameOf(p.url)?.toLowerCase();
+    if (host) {
       const titleLower = title.toLowerCase();
       if (titleLower === host || titleLower === host.replace(/^www\./, '')) {
         return false;
       }
-    } catch {
-      // Unparseable url — the title is non-URL text, so treat it as usable.
     }
   }
 
@@ -80,12 +79,40 @@ export function isUsablePreview(p: {
 }
 
 /**
- * Read a single cached preview:
- *  - a `LinkPreview` on a positive hit,
+ * Parse + contract-validate a raw stored hot entry.
+ *
+ * A cache read is the one consumer-facing value that does NOT pass through the
+ * serializer, so an entry written by an older/buggy deploy (e.g. one missing
+ * `status`) would otherwise be returned verbatim and 500 the route's output
+ * validation. Returns `null` for a corrupt-JSON OR contract-invalid entry — the
+ * caller treats it as a MISS so it is re-resolved and overwritten (the cache
+ * self-heals).
+ */
+function parseHotEntry(raw: string): LinkPreview | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const validated = linkPreviewSchema.safeParse(parsed);
+  if (!validated.success) {
+    logger.debug('[linkPreviewCache] discarding invalid cached preview (re-warming)');
+    return null;
+  }
+  return validated.data;
+}
+
+/**
+ * Read a single cached preview (the single-URL GET path):
+ *  - a `LinkPreview` on a positive (validated) hit,
  *  - `'negative'` when the URL is known to have no usable preview,
  *  - `null` on a miss (caller should warm in the background).
+ *
+ * A hot hit takes precedence over a negative marker; an invalid hot entry is a
+ * miss (it ignores the negative marker and is re-resolved).
  */
-async function getHotPreview(url: string): Promise<LinkPreview | 'negative' | null> {
+export async function readHotPreview(url: string): Promise<LinkPreview | 'negative' | null> {
   const redis = readyClient();
   if (!redis) return null;
   try {
@@ -94,24 +121,7 @@ async function getHotPreview(url: string): Promise<LinkPreview | 'negative' | nu
       redis.exists(keyFor(NEG_PREFIX, url)),
     ]);
     if (hit) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(hit);
-      } catch {
-        return null; // corrupt JSON → treat as a miss and re-warm
-      }
-      // VALIDATE the cached entry against the contract before returning it. A
-      // cache read is the one consumer-facing value that does NOT pass through
-      // the serializer, so an entry written by an older/buggy deploy (e.g. one
-      // missing `status`) would otherwise be returned verbatim and 500 the
-      // route's output validation. An invalid entry is treated as a MISS so it
-      // is re-resolved and overwritten — the cache self-heals.
-      const validated = linkPreviewSchema.safeParse(parsed);
-      if (!validated.success) {
-        logger.debug('[linkPreviewCache] discarding invalid cached preview (re-warming)');
-        return null;
-      }
-      return validated.data;
+      return parseHotEntry(hit);
     }
     if (neg === 1) return 'negative';
     return null;
@@ -123,50 +133,59 @@ async function getHotPreview(url: string): Promise<LinkPreview | 'negative' | nu
   }
 }
 
-/** Read a single URL's cached preview (exposed for the single-URL GET path). */
-export async function readHotPreview(url: string): Promise<LinkPreview | 'negative' | null> {
-  return getHotPreview(url);
-}
-
 /**
- * Batch-read previews for many URLs under one hard time budget.
+ * Batch-read previews for many URLs in TWO `MGET`s (one for the hot keys, one
+ * for the negative-marker keys) instead of a per-URL `GET`+`EXISTS` fan-out.
  *
  * Returns:
- *  - `previews`: URL → DTO for positive hits AND for negatives (negatives map to
- *    a `status:'empty'` DTO so the batch always answers every URL without
- *    re-warming a known-dead URL),
+ *  - `previews`: URL → DTO for positive (validated) hits AND for negatives
+ *    (negatives map to a `status:'empty'` DTO so the batch always answers every
+ *    URL without re-warming a known-dead URL),
  *  - `misses`: URLs that are true cache MISSES — the caller resolves these from
  *    Mongo and/or warms them.
+ *
+ * Per-URL semantics match {@link readHotPreview}: a hot hit wins; an invalid hot
+ * entry is a miss; otherwise a present negative marker → empty; otherwise a miss.
+ * Without Redis (or on a Redis error) every URL degrades to a miss.
  */
 export async function readHotPreviews(
   urls: string[],
 ): Promise<{ previews: Map<string, LinkPreview>; misses: string[] }> {
   const previews = new Map<string, LinkPreview>();
-  const misses: string[] = [];
-  if (urls.length === 0) return { previews, misses };
+  if (urls.length === 0) return { previews, misses: [] };
 
-  const deadline = Date.now() + LINK_PREVIEW_READ_BUDGET_MS;
+  const redis = readyClient();
+  if (!redis) return { previews, misses: [...urls] };
 
-  await Promise.all(
-    urls.map(async (url) => {
-      if (Date.now() >= deadline) {
-        misses.push(url);
-        return;
+  try {
+    const [hotVals, negVals] = await Promise.all([
+      redis.mget(urls.map((u) => keyFor(HOT_PREFIX, u))),
+      redis.mget(urls.map((u) => keyFor(NEG_PREFIX, u))),
+    ]);
+
+    const misses: string[] = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const hotRaw = hotVals[i];
+      if (hotRaw != null) {
+        const dto = parseHotEntry(hotRaw);
+        if (dto) previews.set(url, dto);
+        else misses.push(url);
+        continue;
       }
-      const cached = await getHotPreview(url);
-      if (cached === 'negative') {
+      if (negVals[i] != null) {
         previews.set(url, { url, status: 'empty' });
-        return;
+        continue;
       }
-      if (cached) {
-        previews.set(url, cached);
-      } else {
-        misses.push(url);
-      }
-    }),
-  );
-
-  return { previews, misses };
+      misses.push(url);
+    }
+    return { previews, misses };
+  } catch (error) {
+    logger.debug('[linkPreviewCache] batch hot read failed', {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return { previews: new Map(), misses: [...urls] };
+  }
 }
 
 /** Store a resolved preview DTO with the hot TTL. A failure is a logged no-op. */

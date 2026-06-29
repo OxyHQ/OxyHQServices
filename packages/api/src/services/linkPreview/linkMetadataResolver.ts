@@ -1,9 +1,11 @@
-import type { IncomingMessage, IncomingHttpHeaders } from 'http';
+import type { IncomingHttpHeaders } from 'http';
 import { URL } from 'url';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { logger } from '../../utils/logger';
 import { decodeHtmlEntities } from '../../utils/sanitize';
 import { linkMetadataProviders } from './linkMetadataProviders';
+import { readBoundedBody } from './boundedBody';
+import { hostnameOf } from './url';
 import {
   LINK_PREVIEW_HTML_MAX_BYTES,
   LINK_PREVIEW_MAX_URL_LENGTH,
@@ -91,14 +93,15 @@ export function normalizeUrl(url: string): string | null {
 }
 
 function extractSiteName(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return 'Link';
-  }
+  return hostnameOf(url)?.replace(/^www\./, '') ?? 'Link';
 }
 
-/** Resolve a possibly-relative image/favicon URL against the page's base URL. */
+/**
+ * Resolve a possibly-relative image/favicon URL against the page's base URL.
+ * `new URL(trimmed, baseUrl)` already resolves protocol-relative (`//host/x`),
+ * root-relative (`/x`), and plain-relative (`x`, `../x`) inputs, so the only
+ * special case is an already-absolute `http(s)` URL (returned as-is).
+ */
 function resolveAbsoluteUrl(value: string, baseUrl: string): string {
   if (!value || typeof value !== 'string') return value;
   const trimmed = value.trim();
@@ -107,68 +110,10 @@ function resolveAbsoluteUrl(value: string, baseUrl: string): string {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
 
   try {
-    const base = new URL(baseUrl);
-    if (trimmed.startsWith('//')) return `${base.protocol}${trimmed}`;
-    if (trimmed.startsWith('/')) return `${base.protocol}//${base.host}${trimmed}`;
     return new URL(trimmed, baseUrl).toString();
   } catch {
     return value;
   }
-}
-
-/**
- * Read a bounded amount of the response body for metadata extraction.
- *
- * Two early-stop conditions, both RESOLVING (never rejecting) so the parser
- * always receives whatever was read:
- *  - `</head>` appears → destroy the stream and resolve (all metadata lives in
- *    the head). Match is case-insensitive and boundary-safe (a small carryover
- *    from the previous chunk is searched together with the current one).
- *  - byte cap → resolve the truncated buffer.
- */
-function readLimitedHtml(response: IncomingMessage, maxBytes: number): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    let settled = false;
-
-    const carrySize = HEAD_CLOSE_MARKER.length - 1;
-    let carry: Buffer = Buffer.alloc(0);
-
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      response.destroy();
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    };
-
-    response.on('data', (chunk: Buffer) => {
-      if (settled) return;
-      totalSize += chunk.length;
-      chunks.push(chunk);
-
-      const window = carry.length > 0 ? Buffer.concat([carry, chunk]) : chunk;
-      if (window.toString('latin1').toLowerCase().includes(HEAD_CLOSE_MARKER)) {
-        finish();
-        return;
-      }
-      carry = window.length > carrySize ? window.subarray(window.length - carrySize) : window;
-
-      if (totalSize > maxBytes) {
-        finish();
-      }
-    });
-    response.on('end', () => {
-      if (settled) return;
-      settled = true;
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    });
-    response.on('error', (error: Error) => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    });
-  });
 }
 
 /** Extract `<title>` + meta/link tags from the HTML head (regex; no full DOM parse). */
@@ -270,7 +215,10 @@ async function fetchMetadataDocument(
       return { metadata: {}, finalUrl: result.finalUrl };
     }
 
-    const html = await readLimitedHtml(response, LINK_PREVIEW_HTML_MAX_BYTES);
+    const html = await readBoundedBody(response, {
+      maxBytes: LINK_PREVIEW_HTML_MAX_BYTES,
+      stopMarker: HEAD_CLOSE_MARKER,
+    });
     return { metadata: extractMetadataFromHtml(html), finalUrl: result.finalUrl };
   } finally {
     response.destroy();
