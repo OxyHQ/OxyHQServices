@@ -729,9 +729,10 @@ class FedCMService {
       };
       const idValue = userDoc._id?.toString() ?? userDoc.id ?? '';
       // Compose the canonical structured name (`UserNameResponse`) via the
-      // single source of truth — the SDK's `userResponseSchema` requires
-      // `name.displayName`, so we MUST emit the structured object, never a
-      // string. Falls back to username/publicKey/'Anonymous' for displayName.
+      // single source of truth — we MUST emit the structured object, never a
+      // bare string. `name.displayName` is present only when the user has a real
+      // name and is OMITTED otherwise (optional in `userResponseSchema`); RP
+      // clients fall back to the handle.
       const name = formatUserNameResponse({
         name: userDoc.name,
         username: userDoc.username,

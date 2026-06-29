@@ -84,12 +84,13 @@ function toNameParts(value: unknown): NameParts | undefined {
  * id = MongoDB ObjectId (_id.toString())
  * publicKey = separate field for authentication
  *
- * Self-sufficient name composition: the returned `name.full` and
- * `name.displayName` are ALWAYS correct whether or not the source document was
- * loaded with Mongoose virtuals. This is the canonical producer of the
- * `@oxyhq/core` `userResponseSchema` contract — the api
- * `userTransform.contract.test.ts` locks the output to that schema so the
- * producer cannot silently drift from it again.
+ * Self-sufficient name composition: the returned `name.full` is composed
+ * whether or not the source document was loaded with Mongoose virtuals, and
+ * `name.displayName` is present ONLY when the user has a real name (omitted for
+ * username-only / publicKey-only accounts — consumers fall back to the handle).
+ * This is the canonical producer of the `@oxyhq/core` `userResponseSchema`
+ * contract — the api `userTransform.contract.test.ts` locks the output to that
+ * schema so the producer cannot silently drift from it again.
  */
 export function formatUserResponse(user: unknown) {
   if (!isRecord(user)) {

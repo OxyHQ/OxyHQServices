@@ -612,11 +612,10 @@ export async function getUserActor(user: IUser, domain: string = AP_DOMAIN): Pro
   const username = user.username.split('@')[0]; // strip @domain if present
   const keyPair = await getUserKeyPair(username, domain);
 
-  const displayName = composeDisplayName({
-    name: user.name,
-    username,
-    publicKey: typeof user.publicKey === 'string' ? user.publicKey : undefined,
-  });
+  // An ActivityPub actor's `name` field requires a non-empty string. The API no
+  // longer synthesizes a display name, so fall back to the handle (`username` is
+  // guaranteed here — `getUserActor` returns null above when it is absent).
+  const displayName = composeDisplayName({ name: user.name }) ?? username;
 
   const avatar = await resolveActorAvatarUrl(user.avatar);
 

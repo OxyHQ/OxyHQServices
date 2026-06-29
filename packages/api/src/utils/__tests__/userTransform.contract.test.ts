@@ -10,9 +10,11 @@
  * these tests fail — exactly the class of bug that motivated the contract.
  *
  * The load-bearing assertion is that `name.full` and `name.displayName` are
- * ALWAYS composed (first-only included) even when the source document was
- * loaded WITHOUT Mongoose virtuals (a `.lean()` query), because the
- * `/auth/refresh-all` handler reads users via `.lean()`.
+ * composed from a REAL name (first-only included) even when the source document
+ * was loaded WITHOUT Mongoose virtuals (a `.lean()` query), because the
+ * `/auth/refresh-all` handler reads users via `.lean()`. When the user has no
+ * real name (username-only / publicKey-only) `name.displayName` is OMITTED and
+ * the client falls back to the handle.
  */
 
 import { formatUserResponse } from '../userTransform';
@@ -101,7 +103,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(safeParseContract(userResponseSchema, formatted)).not.toBeNull();
   });
 
-  it('emits name.displayName for a publicKey-only user with no username and no human name', () => {
+  it('OMITS name.displayName for a publicKey-only user with no username and no human name', () => {
     const formatted = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439014', {
         publicKey: '0x1234567890abcdef',
@@ -110,7 +112,9 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
 
     expect(formatted).not.toBeNull();
     expect(formatted?.username).toBeUndefined();
-    expect(formatted?.name).toEqual({ displayName: '0x123456...abcdef' });
+    // No real name → name is an empty object; displayName is absent and the
+    // client falls back to the handle.
+    expect(formatted?.name).toEqual({});
 
     // Still a valid contract object — id is the only guaranteed field.
     const parsed = safeParseContract(userResponseSchema, formatted);
@@ -118,7 +122,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(parsed && resolveUserId(parsed)).toBe('507f1f77bcf86cd799439014');
   });
 
-  it('omits empty full when first and last are both empty strings but still emits name.displayName', () => {
+  it('OMITS name.displayName when first and last are both empty strings (username-only)', () => {
     const formatted = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439015', {
         username: 'blanknames',
@@ -126,7 +130,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
       })
     );
 
-    expect(formatted?.name).toEqual({ displayName: 'blanknames' });
+    expect(formatted?.name).toEqual({});
     expect(safeParseContract(userResponseSchema, formatted)).not.toBeNull();
   });
 
