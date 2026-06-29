@@ -33,6 +33,11 @@ jest.mock('@oxyhq/core', () => {
         timestamp: 1234567890,
       })),
     },
+    // Pure host helpers consumed by the cross-apex sign-in guard
+    // (`isCrossApexWeb`). This suite runs on `localhost`, which has no
+    // registrable apex, so the guard is inert here.
+    CENTRAL_IDP_APEX: 'oxy.so',
+    registrableApex: () => null,
   };
 });
 

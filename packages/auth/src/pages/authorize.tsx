@@ -13,6 +13,7 @@ import {
 import { AccountChooser } from "@/components/account-chooser";
 import { ConsentCard } from "@/components/consent-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
+import { registerFedCMSession } from "@/lib/auth-utils";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   sessionStatusSchema,
@@ -644,6 +645,21 @@ export function AuthorizePage() {
         setSubmitting(false);
         return;
       }
+
+      // Durability: the device-flow handoff mints the RP's bearer via the
+      // `claim` exchange, which establishes NO IdP browser session. On a
+      // cross-apex RP that bearer cannot survive a reload (its refresh cookie is
+      // host-scoped to the API and unreachable cross-site), so the RP's cold-boot
+      // restore depends on the central `fedcm_session` cookie. A returning user
+      // who reached consent via the account chooser never passed through
+      // `/login`, so that cookie was never planted. Plant it now using the
+      // approving user's OWN validated session id — same-origin to this IdP host
+      // (the existing `/fedcm/set-session` same-origin guard + server-side
+      // session validation still apply), so the RP's next reload restores via the
+      // standard `/sso` establish bounce. Best-effort: the handoff already
+      // succeeded server-side; `registerFedCMSession` never throws, and a failed
+      // cookie plant must not fail the approval.
+      await registerFedCMSession(sessionId);
 
       // The cross-app handoff completes server-side via socket emission to
       // the polling client; no tokens are returned to the auth UI and none

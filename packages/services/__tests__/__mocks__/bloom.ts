@@ -6,7 +6,28 @@
  * can spy on the exported `toast` object directly.
  */
 
+import { createElement, type ReactNode } from 'react';
+
 type ToastFn = (message: string, options?: Record<string, unknown>) => void;
+
+/**
+ * Minimal `@oxyhq/bloom/button` + `@oxyhq/bloom/loading` stubs. All bloom
+ * subpaths map to this single file (see `jest.config.js` moduleNameMapper), so
+ * components under test that render `<Button>` / `<Loading>` resolve here. The
+ * Button forwards `children` (so queries by label work) and `onPress` (mapped to
+ * `onClick` for the jsdom host element); other RN-only props are dropped so they
+ * do not leak onto the DOM node.
+ */
+export const Button = ({
+  children,
+  onPress,
+}: {
+  children?: ReactNode;
+  onPress?: () => void;
+} & Record<string, unknown>) =>
+  createElement('button', { type: 'button', onClick: onPress }, children);
+
+export const Loading = () => createElement('span', null, 'loading');
 
 export const toast: {
   (message: string, options?: Record<string, unknown>): void;

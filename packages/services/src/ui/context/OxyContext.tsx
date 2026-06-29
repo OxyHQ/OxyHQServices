@@ -53,6 +53,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
 import { buildSilentGuardKey } from '../../utils/silentGuardKey';
+import { isCrossApexWeb, CrossApexDirectSignInError } from '../../utils/crossApex';
 import { createInSessionRefreshHandler, startTokenRefreshScheduler } from './inSessionTokenRefresh';
 import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silentSessionRestore';
 
@@ -1776,6 +1777,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       password: string,
       opts?: { deviceName?: string; deviceFingerprint?: string },
     ): Promise<PasswordSignInResult> => {
+      // On a cross-apex web RP a direct password sign-in mints a bearer against
+      // the Oxy API but establishes no `fedcm_session`, so the session would be
+      // lost on reload. Refuse it and direct the app to the durable IdP popup
+      // ("Continue with Oxy"). Native and same-apex `*.oxy.so` are unaffected.
+      if (isCrossApexWeb()) {
+        throw new CrossApexDirectSignInError();
+      }
       const response = await oxyServices.signIn(
         identifier,
         password,

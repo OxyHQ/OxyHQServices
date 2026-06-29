@@ -30,6 +30,7 @@ import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import AnotherDeviceQR from './AnotherDeviceQR';
 import { useOxyAuthSession, OXY_ACCOUNTS_WEB_URL } from '../hooks/useOxyAuthSession';
+import { isCrossApexWeb } from '../../utils/crossApex';
 
 // Store for modal visibility with subscription support
 let modalVisible = false;
@@ -109,6 +110,12 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
         switchSession,
         { onSignedIn: hideSignInModal },
     );
+
+    // On a cross-apex web RP, only the "Continue with Oxy" IdP popup establishes
+    // a durable `fedcm_session`. The Commons-app handoffs (same-device deep-link
+    // + cross-device QR) approve OUTSIDE the browser, so they leave no IdP
+    // session and the user would be logged out on reload — hide them there.
+    const crossApexWeb = isCrossApexWeb();
 
     // Entrance animation.
     const opacity = useSharedValue(0);
@@ -194,8 +201,9 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
 
                             {/* Same-device "Sign in with Oxy" handoff — deep-links into the
                                 native Oxy app to approve. Shown only when the handoff backend
-                                returned a payload. */}
-                            {qrPayload && (
+                                returned a payload, and never on a cross-apex web RP (the
+                                approval happens outside the browser → no durable session). */}
+                            {!crossApexWeb && qrPayload && (
                                 <Button
                                     variant="secondary"
                                     onPress={openSameDeviceApproval}
@@ -216,10 +224,14 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                                 </View>
                             )}
 
-                            {/* Collapsed "sign in on another device" QR disclosure */}
-                            <View style={styles.qrSection}>
-                                <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
-                            </View>
+                            {/* Collapsed "sign in on another device" QR disclosure. Hidden on
+                                a cross-apex web RP: a remote Commons-app approval completes via
+                                the device-flow claim, which plants no `fedcm_session`. */}
+                            {!crossApexWeb && (
+                                <View style={styles.qrSection}>
+                                    <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
+                                </View>
+                            )}
                         </>
                     )}
 

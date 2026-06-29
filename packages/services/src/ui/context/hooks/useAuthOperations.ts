@@ -10,6 +10,7 @@ import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
 import { isWebBrowser } from '../../hooks/useWebSSO';
 import { clearActiveAuthuser, clearSsoBounceState } from '../../utils/activeAuthuser';
+import { isCrossApexWeb, CrossApexDirectSignInError } from '../../../utils/crossApex';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
@@ -203,6 +204,13 @@ export const useAuthOperations = ({
    */
   const signIn = useCallback(
     async (publicKey: string, deviceName?: string): Promise<User> => {
+      // On a cross-apex web RP a direct public-key sign-in mints a bearer against
+      // the Oxy API but establishes no `fedcm_session`, so the session would be
+      // lost on reload. Refuse it and direct the app to the durable IdP popup
+      // ("Continue with Oxy"). Native and same-apex `*.oxy.so` are unaffected.
+      if (isCrossApexWeb()) {
+        throw new CrossApexDirectSignInError();
+      }
       setAuthState({ isLoading: true, error: null });
 
       try {
