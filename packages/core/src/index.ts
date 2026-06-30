@@ -324,6 +324,7 @@ export type {
     AssetDeleteSummary,
     AssetUpdateVisibilityRequest,
     AssetUpdateVisibilityResponse,
+    ServiceAssetMetadata,
     AccountStorageCategoryUsage,
     AccountStorageUsageResponse,
     SecurityEventType,
