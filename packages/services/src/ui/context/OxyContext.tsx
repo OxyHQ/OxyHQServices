@@ -1309,6 +1309,29 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     }
 
+    // LAST-ACTIVE-ACCOUNT priority (web multi-account). When the user has an
+    // explicit persisted active slot (`oxy_active_authuser`, written on every
+    // device sign-in / account SWITCH / cookie restore), the multi-account
+    // refresh-cookie restore is the ONLY cold-boot step that honors WHICH slot
+    // was last active — `restoreViaRefreshCookie` selects it via
+    // `selectActiveRefreshAccount(accounts, readActiveAuthuser())`. The
+    // `fedcm-silent` and per-apex `silent-iframe` steps only ever recover the
+    // PRIMARY central IdP session, so if either ran first they would clobber a
+    // switched (managed/org) account back to the primary on reload — the exact
+    // "switch is lost on reload" regression. So when a slot selection exists we
+    // run cookie-restore BEFORE those probes (and disable the later duplicate).
+    //
+    // Read ONCE here (synchronously usable by the step `enabled` gates below).
+    // It is non-null ONLY on first-party `*.oxy.so` web apps that persist the
+    // slot — a cross-apex RP never writes it (its restore funnels through
+    // `handleWebSSOSession`, which does not touch the authuser), and native has
+    // no localStorage, so both keep their existing order untouched. The
+    // earlier `stored-session` step still runs first (FIX-A latency), and when
+    // a slot exists but its cookies have all lapsed, cookie-restore simply
+    // returns no accounts and the chain falls through to the cross-domain
+    // fallbacks exactly as before.
+    const prioritizeMultiAccount = isWebBrowser() && readActiveAuthuser() !== null;
+
     try {
       const outcome = await runColdBoot<true>({
         steps: [
@@ -1404,6 +1427,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
+            // 2.75) LAST-ACTIVE multi-account restore (WEB, prioritized). Runs
+            // ONLY when an explicit persisted slot selection exists
+            // (`prioritizeMultiAccount`) — i.e. the user previously signed in or
+            // SWITCHED accounts on this first-party app. It runs BEFORE the
+            // `fedcm-silent` / `silent-iframe` probes (which only ever recover the
+            // PRIMARY central session) so a switched managed/org account survives
+            // reload instead of being clobbered back to the primary. The restore
+            // itself is the SAME `restoreViaRefreshCookie` as the terminal-tier
+            // step below: it rotates every device-local `oxy_rt_<authuser>` cookie
+            // and picks the persisted slot via `selectActiveRefreshAccount`,
+            // committing it (token + state + durable persistence + `markAuthResolved`).
+            // When no slot is persisted this is disabled and the original order is
+            // unchanged; when the slot's cookies have lapsed it returns no accounts
+            // and the chain falls through to the cross-domain fallbacks below.
+            id: 'cookie-restore-active',
+            enabled: () => prioritizeMultiAccount,
+            run: async () => {
+              const restored = await restoreViaRefreshCookie();
+              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
+            },
+          },
+          {
             // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
             // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
             // internally; we commit the returned session via
@@ -1477,8 +1522,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // is correct; cross-domain restore is handled by the SSO bounce.
             // FIX-D: `restoreViaRefreshCookie` bounds the request with
             // `COOKIE_RESTORE_TIMEOUT` so a cross-domain stall cannot hang here.
+            //
+            // Disabled when `prioritizeMultiAccount` already ran the
+            // `cookie-restore-active` step above (an explicit persisted slot) — that
+            // earlier step is the identical restore, so this terminal-tier copy
+            // would be a redundant second `refreshAllSessions`. It still runs in the
+            // common no-persisted-slot case (e.g. first visit to a first-party app
+            // whose central refresh cookies already exist).
             id: 'cookie-restore',
-            enabled: () => isWebBrowser(),
+            enabled: () => isWebBrowser() && !prioritizeMultiAccount,
             run: async () => {
               const restored = await restoreViaRefreshCookie();
               return restored ? { kind: 'session', session: true } : { kind: 'skip' };
