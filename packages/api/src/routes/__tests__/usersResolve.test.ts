@@ -402,6 +402,95 @@ describe('PUT /users/resolve (C4)', () => {
     fetchSpy.mockRestore();
   });
 
+  // ----------------------------------------------------------------------
+  // AT Protocol (Bluesky) external actors are keyed by a hostless DID
+  // (`did:plc:…` / `did:web:…`), not an http(s) ActivityPub actor URL. The DID
+  // is accepted and stored verbatim as the federation dedup key; the URL parse
+  // + hostname/WebFinger host-binding (which are AP-only and impossible for a
+  // hostless identifier) MUST be skipped for it.
+  // ----------------------------------------------------------------------
+
+  it('resolves a did:plc: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const actorUri = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
+    const newUserDoc = { _id: 'bsky-user', username: 'alice.bsky.social@bsky.social', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice.bsky.social@bsky.social',
+      actorUri,
+      domain: 'bsky.social',
+    });
+
+    expect(res.status).toBe(200);
+    // No WebFinger / host-binding network call for a DID actor.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // DID stored verbatim as both the dedup filter key and the persisted value.
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice.bsky.social@bsky.social',
+          'federation.actorUri': actorUri,
+          'federation.domain': 'bsky.social',
+          'federation.lastResolvedAt': expect.any(Date),
+        }),
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
+      expect.anything(),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('resolves a did:web: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const actorUri = 'did:web:example.com';
+    const newUserDoc = { _id: 'didweb-user', username: 'alice@example.com', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@example.com',
+      actorUri,
+      domain: 'example.com',
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice@example.com',
+          'federation.actorUri': actorUri,
+          'federation.domain': 'example.com',
+        }),
+      }),
+      expect.anything(),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
   it('refresh: schedules an off-request-path avatar download with force=true and returns immediately', async () => {
     const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
 
