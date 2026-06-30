@@ -73,7 +73,6 @@ function baseStub() {
       valid: true,
       user: { id: 'user_123', username: 'tester' },
     })),
-    setActingAs: jest.fn(),
     listAccounts: jest.fn(async () => []),
   };
 }

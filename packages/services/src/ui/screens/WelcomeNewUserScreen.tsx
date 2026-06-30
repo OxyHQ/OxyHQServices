@@ -65,12 +65,12 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 }) => {
     // Use useOxy() hook for OxyContext values. The greeting/avatar identity is
     // the ACTIVE account (the personal user during onboarding, but read through
-    // `activeAccount` so this stays correct everywhere), with the freshly
+    // `user` so this stays correct everywhere), with the freshly
     // registered `newUser` as the pre-store-hydration fallback.
-    const { activeAccount, oxyServices } = useOxy();
+    const { user, oxyServices } = useOxy();
     const { t, locale } = useI18n();
     const updateProfileMutation = useUpdateProfile();
-    const currentUser = activeAccount || newUser; // fallback
+    const currentUser = user || newUser; // fallback
     const bloomTheme = useTheme();
     const colors = {
         primary: bloomTheme.colors.primary,
@@ -93,12 +93,12 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
     // Update selectedAvatarId when the active account's avatar changes
     useEffect(() => {
-        if (activeAccount?.avatar) {
-            setSelectedAvatarId(activeAccount.avatar);
+        if (user?.avatar) {
+            setSelectedAvatarId(user.avatar);
         } else if (newUser?.avatar) {
             setSelectedAvatarId(newUser.avatar);
         }
-    }, [activeAccount?.avatar, newUser?.avatar]);
+    }, [user?.avatar, newUser?.avatar]);
 
     const avatarUri = selectedAvatarId ? oxyServices.getFileDownloadUrl(selectedAvatarId, 'thumb') : undefined;
 

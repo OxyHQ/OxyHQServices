@@ -68,7 +68,6 @@ const stub = {
   getSessionsBySessionId: jest.fn(async () => []),
   getUserSessions: jest.fn(async () => []),
   getDeviceSessions: jest.fn(async () => []),
-  setActingAs: jest.fn(),
   listAccounts: jest.fn(async () => []),
 };
 

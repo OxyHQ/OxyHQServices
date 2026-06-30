@@ -10,11 +10,6 @@ export interface OxyRequestUser {
   [key: string]: unknown;
 }
 
-export interface OxyActingAsContext {
-  userId: string;
-  role: 'owner' | 'admin' | 'editor';
-}
-
 export interface OxyServiceAppContext {
   appId: string;
   appName: string;
@@ -30,8 +25,6 @@ export interface OxyServiceActingAsContext {
 export interface OxyAuthRequest extends Request {
   userId?: string | null;
   user?: OxyRequestUser | null;
-  originalUser?: OxyRequestUser | null;
-  actingAs?: OxyActingAsContext;
   accessToken?: string;
   sessionId?: string | null;
   serviceApp?: OxyServiceAppContext;

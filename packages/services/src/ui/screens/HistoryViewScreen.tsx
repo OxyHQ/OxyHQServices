@@ -17,7 +17,7 @@ interface HistoryItem { id: string; query: string; type: 'search' | 'browse'; ti
 const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     // History is scoped to the ACTIVE account so a switch into an org/project/bot
     // shows that account's history, not the device-session owner's.
-    const { activeAccount } = useOxy();
+    const { user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -47,13 +47,13 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
             try {
                 setIsLoading(true);
                 const storage = await getStorage();
-                const stored = await storage.getItem(`history_${activeAccount?.id || 'guest'}`);
+                const stored = await storage.getItem(`history_${user?.id || 'guest'}`);
                 if (stored) { const parsed = JSON.parse(stored); setHistory(parsed.map((i: HistoryItem) => ({ ...i, timestamp: new Date(i.timestamp) }))); }
                 else setHistory([]);
             } catch { setHistory([]); } finally { setIsLoading(false); }
         };
         load();
-    }, [activeAccount?.id]);
+    }, [user?.id]);
 
     const handleDeleteLast15Minutes = useCallback(async () => {
         try {
@@ -62,21 +62,21 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
             const filtered = history.filter(item => item.timestamp < cutoff);
             setHistory(filtered);
             const storage = await getStorage();
-            await storage.setItem(`history_${activeAccount?.id || 'guest'}`, JSON.stringify(filtered));
+            await storage.setItem(`history_${user?.id || 'guest'}`, JSON.stringify(filtered));
             toast.success(t('history.deleteLast15Minutes.success') || 'Last 15 minutes deleted');
         } catch (e) { if (__DEV__) console.error('Failed to delete history:', e); toast.error(t('history.deleteLast15Minutes.error') || 'Failed to delete history'); }
         finally { setIsDeleting(false); }
-    }, [history, activeAccount?.id, t]);
+    }, [history, user?.id, t]);
 
     const handleClearAll = useCallback(async () => {
         try {
             setIsDeleting(true); setHistory([]);
             const storage = await getStorage();
-            await storage.removeItem(`history_${activeAccount?.id || 'guest'}`);
+            await storage.removeItem(`history_${user?.id || 'guest'}`);
             toast.success(t('history.clearAll.success') || 'History cleared');
         } catch (e) { if (__DEV__) console.error('Failed to clear history:', e); toast.error(t('history.clearAll.error') || 'Failed to clear history'); }
         finally { setIsDeleting(false); }
-    }, [activeAccount?.id, t]);
+    }, [user?.id, t]);
 
     const formatTime = (date: Date) => {
         const diff = new Date().getTime() - date.getTime();

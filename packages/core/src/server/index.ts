@@ -24,7 +24,6 @@ export {
   requireOxyAuth,
 } from './auth';
 export type {
-  OxyActingAsContext,
   OxyAuthenticatedRequest,
   OxyAuthMiddlewareOptions,
   OxyAuthRequest,

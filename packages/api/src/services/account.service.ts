@@ -534,9 +534,10 @@ export class AccountService {
   }
 
   /**
-   * Authorise `userId` to act AS `accountId` (`X-Acting-As`). Authorised iff the
-   * caller's effective role carries `account:act_as`. Returns the role on
-   * success, null otherwise.
+   * Authorise `userId` to switch INTO `accountId` (`POST /accounts/:id/switch`).
+   * Authorised iff the caller's effective role carries `account:act_as`. Returns
+   * the role on success, null otherwise. Also re-run to keep a managed-account
+   * session bound to its operator's membership (revocation kills the session).
    */
   async verifyActingAs(userId: string, accountId: string): Promise<AccountRole | null> {
     const access = await this.resolveEffectiveAccess(userId, accountId);

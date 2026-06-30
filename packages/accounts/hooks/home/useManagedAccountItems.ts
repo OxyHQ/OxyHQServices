@@ -7,7 +7,13 @@ import type { HomeHandlers } from './useHomeHandlers';
 
 interface UseManagedAccountItemsArgs {
   accounts: AccountNode[];
-  actingAs: string | null;
+  /**
+   * The id of the account the app is currently signed in as (`user.id`).
+   * Switching accounts is a real session switch, so when this matches one of
+   * the managed (non-personal) accounts the user is "currently using another
+   * account" — surfaced in the row subtitle.
+   */
+  currentAccountId: string | null;
   handleManagedAccounts: HomeHandlers['handleManagedAccounts'];
   handleCreateManagedAccount: HomeHandlers['handleCreateManagedAccount'];
 }
@@ -23,7 +29,7 @@ interface UseManagedAccountItemsArgs {
  */
 export function useManagedAccountItems({
   accounts,
-  actingAs,
+  currentAccountId,
   handleManagedAccounts,
   handleCreateManagedAccount,
 }: UseManagedAccountItemsArgs): GroupedItem[] {
@@ -32,6 +38,9 @@ export function useManagedAccountItems({
 
   return useMemo<GroupedItem[]>(() => {
     const manageable = accounts.filter((a) => a.relationship !== 'self');
+    // Whether the app is currently signed in as one of the managed accounts
+    // (a real session switch into a non-personal account).
+    const usingManagedAccount = manageable.some((a) => a.accountId === currentAccountId);
     const items: GroupedItem[] = [];
     if (manageable.length > 0) {
       items.push({
@@ -39,7 +48,7 @@ export function useManagedAccountItems({
         icon: 'account-group',
         iconColor: colors.sidebarIconSharing,
         title: t('home.identities.managedCount', { count: manageable.length }),
-        subtitle: actingAs ? t('home.identities.managedActingAs') : t('home.identities.managedSubtitle'),
+        subtitle: usingManagedAccount ? t('home.identities.managedActingAs') : t('home.identities.managedSubtitle'),
         onPress: handleManagedAccounts,
         showChevron: true,
       });
@@ -71,5 +80,5 @@ export function useManagedAccountItems({
       });
     }
     return items;
-  }, [accounts, actingAs, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount, t]);
+  }, [accounts, currentAccountId, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount, t]);
 }

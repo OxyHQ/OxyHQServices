@@ -24,6 +24,12 @@ export interface SessionCreateOptions {
    * logins (no stableDeviceKey) are unaffected.
    */
   stableDeviceKey?: string;
+  /**
+   * The OPERATOR user id when this session is minted by switching INTO a managed
+   * account (`userId` = the managed account). Recorded on the session for audit
+   * and to bind its validity to the operator's `account:act_as` membership.
+   */
+  operatedByUserId?: string;
 }
 
 export interface SessionRefreshResult {

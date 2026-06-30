@@ -686,9 +686,9 @@ export class SessionController {
       const user = await User.findOne(query).select('+password +twoFactorAuth');
 
       // Only `personal` accounts may authenticate directly. Non-personal accounts
-      // (organization/project/bot) are operated via AccountMember + X-Acting-As and
-      // carry no password — treat any such match as invalid credentials (no info
-      // leak) rather than ever minting a session for them.
+      // (organization/project/bot) are operated by switching INTO them
+      // (POST /accounts/:id/switch) and carry no password — treat any such match
+      // as invalid credentials (no info leak) rather than minting a session here.
       const isNonPersonalAccount = !!user && !!user.kind && user.kind !== 'personal';
 
       // Always run a password verification — against the real hash if we
