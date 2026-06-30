@@ -22,8 +22,8 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     // Search settings are persisted on the ACTIVE account's profile (the
-    // org/project/bot when switched, else the personal user); the read/write
-    // route to it via the X-Acting-As header.
+    // org/project/bot when switched, else the personal user); reads/writes
+    // authenticate as the active session, which IS that account.
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();

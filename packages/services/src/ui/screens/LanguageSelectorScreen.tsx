@@ -34,8 +34,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     theme,
 }) => {
     // Use useOxy() hook for OxyContext values. The language preference persists
-    // on the ACTIVE account's profile via the X-Acting-As header, so gate the
-    // server sync on the active account.
+    // on the ACTIVE account's profile — the active session IS that account — so
+    // gate the server sync on the active account.
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();

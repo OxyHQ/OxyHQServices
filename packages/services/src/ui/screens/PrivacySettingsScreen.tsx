@@ -134,8 +134,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
         loadUsers();
         // Re-load when the active account changes so the block/restrict lists
-        // reflect the account currently switched into (they resolve via the
-        // X-Acting-As header).
+        // reflect the account currently switched into (they resolve from the
+        // active session, which IS that account).
     }, [oxyServices, user?.id]);
 
     const handleUnblock = useCallback(async (userId: string) => {
