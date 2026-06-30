@@ -42,6 +42,7 @@ const mockDeleteCachedMedia = jest.fn();
 const mockUploadFileDirect = jest.fn();
 const mockGetDeletionSummary = jest.fn();
 const mockDeleteFile = jest.fn();
+const mockGetFilesByIds = jest.fn();
 const mockUserFindOne = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
@@ -83,6 +84,7 @@ jest.mock('../../services/assetServiceSingleton', () => ({
     uploadFileDirect: (...args: unknown[]) => mockUploadFileDirect(...args),
     getDeletionSummary: (...args: unknown[]) => mockGetDeletionSummary(...args),
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
+    getFilesByIds: (...args: unknown[]) => mockGetFilesByIds(...args),
   },
   s3Service: {},
 }));
@@ -97,9 +99,23 @@ jest.mock('../../models/User', () => ({
 import assetsRouter from '../assets';
 import { errorHandler } from '../../middleware/errorHandler';
 
+interface AssetMetadata {
+  id: string;
+  sha256: string;
+  mime: string;
+  size: number;
+  status: string;
+}
+
 interface JsonResponse {
   status: number;
-  body: { data?: { file?: { id?: string; sha256?: string }; message?: string }; error?: string; message?: string };
+  body: {
+    data?:
+      | { file?: { id?: string; sha256?: string }; message?: string }
+      | AssetMetadata[];
+    error?: string;
+    message?: string;
+  };
 }
 
 async function requestRaw(
@@ -192,6 +208,7 @@ beforeEach(() => {
       lean: () => Promise.resolve({ _id: FEDERATED_OWNER_ID, type: 'federated' }),
     }),
   });
+  mockGetFilesByIds.mockResolvedValue([]);
 
   // Default user principal for session-only routes.
   mockAuthMiddleware.mockImplementation(
@@ -456,6 +473,137 @@ describe('DELETE /assets/service/cache/:id', () => {
     );
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /assets/service/by-ids', () => {
+  function postByIds(ids: string[]): Promise<JsonResponse> {
+    const payload = Buffer.from(JSON.stringify({ ids }));
+    return requestRaw(
+      server,
+      'POST',
+      '/assets/service/by-ids',
+      { 'content-type': 'application/json', 'content-length': String(payload.length) },
+      payload
+    );
+  }
+
+  // Service principal carrying the files:read scope this route requires (the
+  // shared default principal only carries files:write/federation:write).
+  function grantFilesReadOnce(): void {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['files:read', 'files:write', 'federation:write'],
+        };
+        next();
+      }
+    );
+  }
+
+  it('returns metadata-only DTOs for known ids and omits deleted ones', async () => {
+    grantFilesReadOnce();
+    mockGetFilesByIds.mockResolvedValueOnce([
+      {
+        _id: { toString: () => CACHE_FILE_ID },
+        sha256: 'a'.repeat(64),
+        mime: 'image/png',
+        size: 1234,
+        status: 'active',
+        // Fields below must NOT leak into the response.
+        storageKey: 'public/content/2026/06/aa/secret.png',
+        ownerUserId: 'owner-1',
+        links: [{ app: 'mention' }],
+        variants: [{ type: 'thumb', key: 'k' }],
+      },
+      {
+        _id: { toString: () => USER_FILE_ID },
+        sha256: 'b'.repeat(64),
+        mime: 'video/mp4',
+        size: 9999,
+        status: 'deleted',
+      },
+    ]);
+
+    const res = await postByIds([CACHE_FILE_ID, USER_FILE_ID]);
+
+    expect(res.status).toBe(200);
+    expect(mockServiceAuthMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockAuthMiddleware).not.toHaveBeenCalled();
+    expect(mockGetFilesByIds).toHaveBeenCalledWith([CACHE_FILE_ID, USER_FILE_ID]);
+
+    const data = res.body.data as AssetMetadata[];
+    expect(Array.isArray(data)).toBe(true);
+    // Deleted id is omitted.
+    expect(data).toHaveLength(1);
+    expect(data[0]).toEqual({
+      id: CACHE_FILE_ID,
+      sha256: 'a'.repeat(64),
+      mime: 'image/png',
+      size: 1234,
+      status: 'active',
+    });
+    // Metadata-only contract: no bytes/url/owner/links/variants/storageKey.
+    expect(Object.keys(data[0]).sort()).toEqual(['id', 'mime', 'sha256', 'size', 'status']);
+  });
+
+  it('omits unknown ids (no whole-batch 404)', async () => {
+    grantFilesReadOnce();
+    // Only one of the two requested ids resolves to a live file.
+    mockGetFilesByIds.mockResolvedValueOnce([
+      {
+        _id: { toString: () => CACHE_FILE_ID },
+        sha256: 'c'.repeat(64),
+        mime: 'image/jpeg',
+        size: 42,
+        status: 'active',
+      },
+    ]);
+
+    const res = await postByIds([CACHE_FILE_ID, USER_FILE_ID]);
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as AssetMetadata[];
+    expect(data).toHaveLength(1);
+    expect(data[0].id).toBe(CACHE_FILE_ID);
+  });
+
+  it('requires the files:read service scope', async () => {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['files:write', 'federation:write'],
+        };
+        next();
+      }
+    );
+
+    const res = await postByIds([CACHE_FILE_ID]);
+
+    expect(res.status).toBe(403);
+    expect(mockGetFilesByIds).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty ids array with 400', async () => {
+    const res = await postByIds([]);
+
+    expect(res.status).toBe(400);
+    expect(mockGetFilesByIds).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than 100 ids with 400', async () => {
+    const ids = Array.from({ length: 101 }, (_v, i) => `64c00000000000000000${String(i).padStart(4, '0')}`);
+
+    const res = await postByIds(ids);
+
+    expect(res.status).toBe(400);
+    expect(mockGetFilesByIds).not.toHaveBeenCalled();
   });
 });
 

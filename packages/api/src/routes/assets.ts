@@ -17,6 +17,7 @@ import {
   assetUrlQuerySchema,
   updateVisibilitySchema,
   batchAccessSchema,
+  assetsByIdsBodySchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
@@ -761,6 +762,101 @@ router.delete(
     });
 
     sendSuccess(res, { message: 'Cached asset deleted successfully' });
+  })
+);
+
+/**
+ * @openapi
+ * /assets/service/by-ids:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Batch-resolve asset metadata for a service
+ *     description: >
+ *       Service-token-only batch metadata read. Given up to 100 file ids,
+ *       returns the content hash (`sha256`), `mime`, `size`, and `status` for
+ *       each KNOWN, non-deleted file. This is a METADATA-ONLY surface — it never
+ *       returns bytes, signed URLs, owner ids, links, or any other field, so a
+ *       service token can map a file id to its content hash without being able
+ *       to read private file contents. Unknown, invalid, or deleted ids are
+ *       silently omitted from `data` (the batch never 404s as a whole).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Resolved asset metadata (order not guaranteed).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       sha256:
+ *                         type: string
+ *                       mime:
+ *                         type: string
+ *                       size:
+ *                         type: integer
+ *                       status:
+ *                         type: string
+ *                         enum: [active, trash]
+ *       400:
+ *         description: Validation failed (empty array or more than 100 ids).
+ *       401:
+ *         description: Missing or expired service token.
+ *       403:
+ *         description: Not a service token, or missing the files:read scope.
+ */
+router.post(
+  '/service/by-ids',
+  serviceAuthMiddleware,
+  validate({ body: assetsByIdsBodySchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:read');
+
+    const { ids } = req.body as { ids: string[] };
+
+    const files = await assetService.getFilesByIds(ids);
+
+    // Metadata only: never expose bytes, signed URLs, owner ids, storage keys,
+    // links, or variants. Deleted tombstones are omitted so a resolved id always
+    // maps to a live asset.
+    const data = files
+      .filter((file) => file.status !== 'deleted')
+      .map((file) => ({
+        id: file._id.toString(),
+        sha256: file.sha256,
+        mime: file.mime,
+        size: file.size,
+        status: file.status,
+      }));
+
+    logger.debug('POST /assets/service/by-ids', {
+      appId: req.serviceApp?.appId,
+      requested: ids.length,
+      resolved: data.length,
+    });
+
+    sendSuccess(res, data);
   })
 );
 
