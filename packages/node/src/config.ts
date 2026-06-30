@@ -41,6 +41,7 @@
  */
 
 import { join, resolve } from 'node:path';
+import { ec as EC } from 'elliptic';
 import {
   DEFAULT_APP_NAMESPACE,
   DEFAULT_MAX_BLOB_BYTES,
@@ -98,10 +99,34 @@ export class ConfigError extends Error {
 const COMPRESSED_PUBKEY = /^(02|03)[0-9a-f]{64}$/;
 const UNCOMPRESSED_PUBKEY = /^04[0-9a-f]{128}$/;
 
+/** The single secp256k1 curve instance for key normalization. */
+const secp256k1 = new EC('secp256k1');
+
 /** True for a well-formed compressed or uncompressed secp256k1 public key (hex). */
 function isValidPublicKey(value: string): boolean {
   const key = value.toLowerCase();
   return COMPRESSED_PUBKEY.test(key) || UNCOMPRESSED_PUBKEY.test(key);
+}
+
+/**
+ * Normalize a hex secp256k1 public key to its UNCOMPRESSED form.
+ *
+ * Signed envelopes always embed the uncompressed key (`derivePublicKeyHex` →
+ * `getPublic('hex')`), and the owner check (`isOwnerKey`) compares the configured
+ * key against the envelope's key with a constant-time string equality. A
+ * compressed configured key (`02|03` + 64 hex) would therefore never match a
+ * signed envelope, silently breaking ALL owner-authorized writes. Normalizing at
+ * config load makes the configured key the same uncompressed hex the signer emits.
+ *
+ * @throws {ConfigError} when the key is not a valid secp256k1 curve point.
+ */
+function normalizePublicKey(value: string, label: string): string {
+  const key = value.toLowerCase();
+  try {
+    return secp256k1.keyFromPublic(key, 'hex').getPublic('hex');
+  } catch {
+    throw new ConfigError(`${label} is not a valid secp256k1 public key (not a curve point)`);
+  }
 }
 
 function parsePort(raw: string | undefined, prefix: string): number {
@@ -175,13 +200,17 @@ export function loadConfig(
   if (!isValidPublicKey(ownerRaw)) {
     throw new ConfigError(`${prefix}OWNER_PUBLIC_KEY must be a hex secp256k1 public key (compressed or uncompressed)`);
   }
-  const ownerPublicKey = ownerRaw.toLowerCase();
+  // Normalize to uncompressed hex so a compressed configured key still matches
+  // the (always-uncompressed) key embedded in a signed envelope's owner check.
+  const ownerPublicKey = normalizePublicKey(ownerRaw, `${prefix}OWNER_PUBLIC_KEY`);
 
   const nodePublicRaw = env[`${prefix}PUBLIC_KEY`]?.trim();
   if (nodePublicRaw && !isValidPublicKey(nodePublicRaw)) {
     throw new ConfigError(`${prefix}PUBLIC_KEY must be a hex secp256k1 public key (compressed or uncompressed)`);
   }
-  const nodePublicKey = nodePublicRaw ? nodePublicRaw.toLowerCase() : ownerPublicKey;
+  const nodePublicKey = nodePublicRaw
+    ? normalizePublicKey(nodePublicRaw, `${prefix}PUBLIC_KEY`)
+    : ownerPublicKey;
 
   const nodePrivateRaw = env[`${prefix}PRIVATE_KEY`]?.trim();
   const nodePrivateKey = nodePrivateRaw ? nodePrivateRaw.toLowerCase() : null;

@@ -36,7 +36,7 @@ import {
   type RecordStore,
   checkContinuity,
 } from '@oxyhq/protocol';
-import { BlobHashMismatchError } from '@oxyhq/protocol/node';
+import { BlobHashMismatchError, SHA256_HEX } from '@oxyhq/protocol/node';
 import { SCHEMA_SQL } from './schema.js';
 
 type DatabaseInstance = Database.Database;
@@ -270,6 +270,12 @@ export class NodeStore implements RecordStore, BlobStore {
    * @throws {BlobHashMismatchError} when the bytes do not hash to `hash`.
    */
   async putBlob(hash: string, bytes: Uint8Array): Promise<void> {
+    // Guard the blob address explicitly: it originates from a request route param
+    // (`req.params.hash`), which a client can tamper into a non-string. Bind a
+    // proven string before it reaches the SQL parameter sink.
+    if (typeof hash !== 'string' || !SHA256_HEX.test(hash.toLowerCase())) {
+      throw new TypeError('invalid_blob_hash');
+    }
     if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) {
       throw new TypeError('invalid_blob_bytes');
     }
@@ -284,6 +290,12 @@ export class NodeStore implements RecordStore, BlobStore {
 
   /** The bytes of a pinned blob, or `null` if absent. */
   async getBlob(hash: string): Promise<Uint8Array | null> {
+    // The address comes from a request route param; a tampered non-string can
+    // never address a stored blob — treat it as absent rather than confusing the
+    // `.toLowerCase()` + SQL parameter sink.
+    if (typeof hash !== 'string') {
+      return null;
+    }
     const row = this.getBlobStmt.get({ hash: hash.toLowerCase() }) as BlobRow | undefined;
     return row ? row.bytes : null;
   }

@@ -111,6 +111,21 @@ function readError(body: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Trim every trailing slash from a base URL in LINEAR time.
+ *
+ * Replaces an anchored-quantifier regex (`/\/+$/`) whose backtracking is a
+ * polynomial-ReDoS sink on a long all-slash input; a single-pass scan is O(n)
+ * with no ReDoS surface.
+ */
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47 /* '/' */) {
+    end -= 1;
+  }
+  return end === value.length ? value : value.slice(0, end);
+}
+
 export class NodeClient {
   private readonly baseUrl: string;
   private readonly fetch: NodeFetch;
@@ -122,7 +137,7 @@ export class NodeClient {
   private readonly blobMaxBytes: number;
 
   constructor(options: NodeClientOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/+$/, '');
+    this.baseUrl = trimTrailingSlashes(options.baseUrl);
     this.fetch = options.fetch;
     this.headersTimeoutMs = options.headersTimeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS;
     this.maxRedirects = options.maxRedirects ?? DEFAULT_CLIENT_MAX_REDIRECTS;

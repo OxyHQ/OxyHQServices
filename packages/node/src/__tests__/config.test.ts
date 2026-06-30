@@ -2,9 +2,12 @@
  * loadConfig tests — env-driven configuration parsing/validation.
  */
 
+import { ec as EC } from 'elliptic';
 import { ConfigError, loadConfig } from '../config';
 import { DEFAULT_MAX_BLOB_BYTES, DEFAULT_PORT, PROTOCOL_VERSION } from '@oxyhq/protocol/node';
 import { generateTestKeyPair } from './helpers/signEnvelope';
+
+const secp256k1 = new EC('secp256k1');
 
 describe('loadConfig', () => {
   const owner = generateTestKeyPair();
@@ -41,6 +44,39 @@ describe('loadConfig', () => {
     expect(config.mode).toBe('managed');
     expect(config.maxBlobBytes).toBe(1048576);
     expect(config.databasePath).toBe('/var/lib/oxy-node/custom.sqlite');
+  });
+
+  it('normalizes a COMPRESSED owner key to the uncompressed form a signer emits', () => {
+    // Re-encode the owner key in compressed (02|03 + 64 hex) form. A signed
+    // envelope always embeds the UNCOMPRESSED key, so without normalization the
+    // owner check (a string compare) would never match → all owner writes break.
+    const key = secp256k1.keyFromPublic(owner.publicKey, 'hex');
+    const compressed = key.getPublic(true, 'hex');
+    const uncompressed = key.getPublic(false, 'hex');
+    expect(compressed.startsWith('02') || compressed.startsWith('03')).toBe(true);
+    expect(uncompressed.startsWith('04')).toBe(true);
+
+    const config = loadConfig({ OXY_NODE_OWNER_PUBLIC_KEY: compressed });
+    // Resolved owner + node keys are the uncompressed hex the signer derives.
+    expect(config.ownerPublicKey).toBe(uncompressed);
+    expect(config.nodePublicKey).toBe(uncompressed);
+  });
+
+  it('normalizes an explicit compressed node PUBLIC_KEY independently of the owner key', () => {
+    const nodeKp = generateTestKeyPair();
+    const nodeKey = secp256k1.keyFromPublic(nodeKp.publicKey, 'hex');
+    const config = loadConfig({
+      OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey,
+      OXY_NODE_PUBLIC_KEY: nodeKey.getPublic(true, 'hex'),
+    });
+    expect(config.ownerPublicKey).toBe(owner.publicKey.toLowerCase());
+    expect(config.nodePublicKey).toBe(nodeKey.getPublic(false, 'hex'));
+  });
+
+  it('rejects a hex-shaped owner key that is not a valid curve point', () => {
+    // Correct compressed shape (02 + 64 hex) but not on the secp256k1 curve.
+    const offCurve = `02${'0'.repeat(64)}`;
+    expect(() => loadConfig({ OXY_NODE_OWNER_PUBLIC_KEY: offCurve })).toThrow(ConfigError);
   });
 
   it('rejects an invalid mode and an out-of-range port', () => {
