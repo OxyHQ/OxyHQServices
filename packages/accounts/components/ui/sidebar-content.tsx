@@ -50,17 +50,17 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const { t, locale } = useTranslation();
 
     const handlePressIn = useHapticPress();
-    const { actingAs, managedAccounts } = useOxy();
+    const { actingAs, accounts } = useOxy();
 
     // Compute the acting-as display name for the indicator using the canonical
     // helper so the fallback chain (name → username → publicKey → "Unnamed")
     // is identical across the app.
     const actingAsName = useMemo(() => {
-        if (!actingAs || !managedAccounts.length) return null;
-        const managed = managedAccounts.find((m) => m.accountId === actingAs);
-        if (!managed?.account) return null;
-        return getAccountDisplayName(managed.account, locale);
-    }, [actingAs, managedAccounts, locale]);
+        if (!actingAs || !accounts.length) return null;
+        const node = accounts.find((a) => a.accountId === actingAs);
+        if (!node?.account) return null;
+        return getAccountDisplayName(node.account, locale);
+    }, [actingAs, accounts, locale]);
 
     const handleNavigate = (path: MenuPath) => {
         router.push(path);

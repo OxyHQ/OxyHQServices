@@ -88,7 +88,7 @@ function DashboardPage() {
 
           <div className="mt-12">
             <Button asChild variant="outline" className="gap-2">
-              <Link to="/settings/workspace">
+              <Link to="/settings/account">
                 <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
                 Invite your team
               </Link>

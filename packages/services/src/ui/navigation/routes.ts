@@ -36,7 +36,10 @@ export type RouteName =
     | 'TrustFAQ'
     | 'FollowersList'  // List of user's followers
     | 'FollowingList' // List of users being followed
-    | 'CreateManagedAccount' // Create a new managed sub-account
+    | 'AccountSwitcher' // Unified account switcher (device sign-ins + account graph)
+    | 'CreateAccount' // Create a new account (organization / project / bot)
+    | 'AccountMembers' // Manage an account's members (invite / roles / transfer)
+    | 'AccountSettings' // Per-account profile edit + members + danger zone
     | 'AvatarCrop' // Square-crop editor presented before avatar upload
     | 'Notifications' // Per-channel notification preferences
     | 'ConnectedApps' // FedCM-authorized RP apps the user can revoke
@@ -77,7 +80,10 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     // User list screens (followers/following)
     FollowersList: () => require('../screens/FollowersListScreen').default,
     FollowingList: () => require('../screens/FollowingListScreen').default,
-    CreateManagedAccount: () => require('../screens/CreateManagedAccountScreen').default,
+    AccountSwitcher: () => require('../screens/AccountSwitcherScreen').default,
+    CreateAccount: () => require('../screens/CreateAccountScreen').default,
+    AccountMembers: () => require('../screens/AccountMembersScreen').default,
+    AccountSettings: () => require('../screens/AccountSettingsScreen').default,
     AvatarCrop: () => require('../screens/AvatarCropScreen').default,
     Notifications: () => require('../screens/NotificationsScreen').default,
     ConnectedApps: () => require('../screens/ConnectedAppsScreen').default,

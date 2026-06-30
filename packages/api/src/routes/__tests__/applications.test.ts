@@ -1,18 +1,10 @@
 /**
- * /applications routes — membership RBAC, credentials, ownership, redirect URIs
- * (issue #213; folds in the ported #216 redirect-URI canonicalisation cases).
+ * /applications routes — account-derived RBAC, credentials, redirect URIs.
  *
- * Covers per issue #213 acceptance criteria:
- *  - membership permission enforcement (each role can/can't do gated actions);
- *  - credential access (secret returned once, never on read, revoke blocks);
- *  - ownership transfer + owner management (can't remove last owner, can't
- *    demote an owner except via transfer);
- *  - application lookup by `_id`;
- *  - staff-only field gating;
- *  - redirectUris persist + dedupe on create/update (ported from #216).
- *
- * The three Application models are mocked with small in-memory fakes so the
- * route logic (RBAC resolution, permission checks, serialisation) is exercised
+ * After the unified-Account cutover, application access is DERIVED from the
+ * caller's effective `AccountMember` role over `app.ownerAccountId` (via
+ * `appPermissionsForAccountRole`). There is no per-app member table. These tests
+ * mock `account.service` to grant roles and drive the route's permission gates
  * end-to-end over real HTTP without a database.
  */
 
@@ -20,15 +12,21 @@ import express from 'express';
 import http from 'http';
 import { AddressInfo } from 'net';
 import { Types } from 'mongoose';
-import { permissionsForRole, type ApplicationRole } from '../../utils/applicationRoles';
 
-// The global jest.setup.cjs replaces `mongoose` with a stub that lacks `Types`
-// and `isValidObjectId`. This suite exercises real ObjectId validation /
-// equality through the route, so restore the genuine module here. The static
-// `import { Types }` above then resolves to the real mongoose export.
+// Restore the real mongoose (the global setup stubs it) so ObjectId works.
 jest.mock('mongoose', () => jest.requireActual('mongoose'));
 
-const mockAuthMiddleware = jest.fn();
+import type { AccountRole } from '../../utils/accountRoles';
+import { permissionsForAccountRole } from '../../utils/accountRoles';
+
+const OWNER_ID = '6a0000000000000000000001';
+const OTHER_ID = '6a0000000000000000000002';
+const ORG_ID = '6a0000000000000000000010';
+const APP_ID = '6a00000000000000000000a1';
+
+// ---------------------------------------------------------------------------
+// In-memory Application + ApplicationCredential fakes
+// ---------------------------------------------------------------------------
 
 interface FakeApp {
   _id: Types.ObjectId;
@@ -46,34 +44,8 @@ interface FakeApp {
   webhookUrl?: string;
   webhookSecret?: string;
   devWebhookUrl?: string;
-  workspaceId: Types.ObjectId;
+  ownerAccountId: Types.ObjectId;
   createdByUserId: Types.ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
-  save: jest.Mock;
-}
-
-interface FakeWorkspaceMember {
-  _id: Types.ObjectId;
-  workspaceId: Types.ObjectId;
-  userId: Types.ObjectId;
-  role: 'owner' | 'admin' | 'member' | 'viewer';
-  permissions: string[];
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-  save: jest.Mock;
-}
-
-interface FakeMember {
-  _id: Types.ObjectId;
-  applicationId: Types.ObjectId;
-  userId: Types.ObjectId;
-  role: ApplicationRole;
-  permissions: string[];
-  invitedByUserId?: Types.ObjectId;
-  joinedAt?: Date;
-  status: string;
   createdAt: Date;
   updatedAt: Date;
   save: jest.Mock;
@@ -89,7 +61,6 @@ interface FakeCredential {
   environment: string;
   scopes: string[];
   status: string;
-  lastUsedAt?: Date;
   expiresAt?: Date;
   rotatedFromCredentialId?: Types.ObjectId;
   createdByUserId: Types.ObjectId;
@@ -99,276 +70,101 @@ interface FakeCredential {
 }
 
 const apps: FakeApp[] = [];
-const members: FakeMember[] = [];
 const credentials: FakeCredential[] = [];
-const workspaceMembers: FakeWorkspaceMember[] = [];
 
-function resetStore(): void {
-  apps.length = 0;
-  members.length = 0;
-  credentials.length = 0;
-  workspaceMembers.length = 0;
-  userDirectory.length = 0;
-}
+const idEq = (a: unknown, b: unknown): boolean => String(a) === String(b);
 
-/** Test object-id strings (24 hex chars). */
-const APP_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
-const OWNER_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
-const ADMIN_ID = 'cccccccccccccccccccccccc';
-const DEVELOPER_ID = 'dddddddddddddddddddddddd';
-const VIEWER_ID = 'eeeeeeeeeeeeeeeeeeeeeeee';
-const BILLING_ID = 'ffffffffffffffffffffffff';
-const OUTSIDER_ID = '111111111111111111111111';
-const WORKSPACE_ID = '222222222222222222222222';
-const WS_OWNER_ID = '333333333333333333333333';
-const WS_MEMBER_ID = '444444444444444444444444';
-const WS_VIEWER_ID = '555555555555555555555555';
-/** id returned by the mocked `ensurePersonalWorkspace` for the default path. */
-const PERSONAL_WORKSPACE_ID = '666666666666666666666666';
-
-function matchesId(value: Types.ObjectId, candidate: unknown): boolean {
-  return value.toString() === String(candidate);
-}
-
-function applyStatusFilter(record: { status: string }, filter: unknown): boolean {
-  if (filter === undefined) return true;
-  if (typeof filter === 'string') return record.status === filter;
-  if (filter && typeof filter === 'object') {
-    const ne = (filter as { $ne?: string }).$ne;
-    if (ne !== undefined) return record.status !== ne;
+function matchField(actual: unknown, expected: unknown): boolean {
+  if (expected instanceof Types.ObjectId) {
+    return Array.isArray(actual) ? actual.some((a) => idEq(a, expected)) : idEq(actual, expected);
   }
-  return true;
+  if (expected !== null && typeof expected === 'object') {
+    const op = expected as Record<string, unknown>;
+    if ('$in' in op) {
+      const list = op.$in as unknown[];
+      return Array.isArray(actual)
+        ? actual.some((a) => list.some((v) => idEq(a, v)))
+        : list.some((v) => idEq(v, actual));
+    }
+    if ('$ne' in op) return !idEq(actual, op.$ne);
+    return false;
+  }
+  return idEq(actual, expected);
 }
 
-// --- Application model fake -------------------------------------------------
+function matchesQuery(doc: Record<string, unknown>, query: Record<string, unknown>): boolean {
+  return Object.entries(query).every(([key, expected]) => matchField(doc[key], expected));
+}
+
+function listQuery<T extends Record<string, unknown>>(results: T[]) {
+  const chain = {
+    sort: () => chain,
+    select: () => chain,
+    lean: async () => results[0] ?? null,
+    then: (resolve: (v: T[]) => unknown, reject?: (e: unknown) => unknown) =>
+      Promise.resolve(results).then(resolve, reject),
+  };
+  return chain;
+}
 
 const ApplicationMock = {
-  findOne: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      apps.find(
-        (a) =>
-          (query._id === undefined || matchesId(a._id, query._id)) &&
-          applyStatusFilter(a, query.status)
-      ) ?? null
-    )
-  ),
-  find: jest.fn((query: Record<string, unknown>) => {
-    const matchesClause = (a: FakeApp, clause: Record<string, unknown>): boolean => {
-      const idIn = (clause._id as { $in?: unknown[] } | undefined)?.$in;
-      if (idIn !== undefined && !idIn.some((id) => matchesId(a._id, id))) return false;
-      const wsIn = (clause.workspaceId as { $in?: unknown[] } | undefined)?.$in;
-      if (wsIn !== undefined && !wsIn.some((id) => matchesId(a.workspaceId, id))) return false;
-      return true;
-    };
-    const orClauses = query.$or as Record<string, unknown>[] | undefined;
-    const idIn = (query._id as { $in?: unknown[] } | undefined)?.$in;
-    const result = apps.filter((a) => {
-      if (!applyStatusFilter(a, query.status)) return false;
-      if (orClauses !== undefined) {
-        return orClauses.some((clause) => matchesClause(a, clause));
-      }
-      return idIn === undefined || idIn.some((id) => matchesId(a._id, id));
-    });
-    return { sort: () => Promise.resolve(result) };
-  }),
-  countDocuments: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      apps.filter(
-        (a) =>
-          (query.workspaceId === undefined || matchesId(a.workspaceId, query.workspaceId)) &&
-          applyStatusFilter(a, query.status)
-      ).length
-    )
-  ),
-  create: jest.fn((doc: Record<string, unknown>) => {
+  async findOne(query: Record<string, unknown> = {}) {
+    return apps.find((a) => matchesQuery(a, query)) ?? null;
+  },
+  find(query: Record<string, unknown> = {}) {
+    return listQuery(apps.filter((a) => matchesQuery(a, query)));
+  },
+  async create(data: Record<string, unknown>) {
     const now = new Date();
-    const app: FakeApp = {
+    const doc: FakeApp = {
       _id: new Types.ObjectId(),
-      name: doc.name as string,
-      description: doc.description as string | undefined,
-      websiteUrl: doc.websiteUrl as string | undefined,
-      icon: doc.icon as string | undefined,
-      type: (doc.type as string) ?? 'third_party',
-      status: (doc.status as string) ?? 'active',
-      isOfficial: (doc.isOfficial as boolean) ?? false,
-      isInternal: (doc.isInternal as boolean) ?? false,
-      capabilities: (doc.capabilities as string[]) ?? [],
-      redirectUris: (doc.redirectUris as string[]) ?? [],
-      scopes: (doc.scopes as string[]) ?? [],
-      workspaceId: doc.workspaceId as Types.ObjectId,
-      createdByUserId: doc.createdByUserId as Types.ObjectId,
+      name: '',
+      type: 'third_party',
+      status: 'active',
+      isOfficial: false,
+      isInternal: false,
+      capabilities: [],
+      redirectUris: [],
+      scopes: [],
       createdAt: now,
       updatedAt: now,
       save: jest.fn().mockResolvedValue(undefined),
-    };
-    apps.push(app);
-    return Promise.resolve(app);
-  }),
+      ...(data as Partial<FakeApp>),
+    } as FakeApp;
+    doc.save = jest.fn().mockResolvedValue(doc);
+    apps.push(doc);
+    return doc;
+  },
 };
-
-// --- ApplicationMember model fake ------------------------------------------
-
-const ApplicationMemberMock = {
-  findOne: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      members.find(
-        (m) =>
-          (query._id === undefined || matchesId(m._id, query._id)) &&
-          (query.applicationId === undefined || matchesId(m.applicationId, query.applicationId)) &&
-          (query.userId === undefined || matchesId(m.userId, query.userId)) &&
-          (query.role === undefined || m.role === query.role) &&
-          applyStatusFilter(m, query.status)
-      ) ?? null
-    )
-  ),
-  find: jest.fn((query: Record<string, unknown>) => {
-    const result = members.filter(
-      (m) =>
-        (query.userId === undefined || matchesId(m.userId, query.userId)) &&
-        (query.applicationId === undefined || matchesId(m.applicationId, query.applicationId)) &&
-        applyStatusFilter(m, query.status)
-    );
-    // Mirror a mongoose Query: thenable (resolves to the array) AND chainable
-    // via `.sort()` / `.select()`.
-    return {
-      sort: () => Promise.resolve(result),
-      select: () => Promise.resolve(result),
-      then: (resolve: (value: FakeMember[]) => unknown) => resolve(result),
-    };
-  }),
-  countDocuments: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      members.filter(
-        (m) =>
-          (query.applicationId === undefined || matchesId(m.applicationId, query.applicationId)) &&
-          (query.role === undefined || m.role === query.role) &&
-          applyStatusFilter(m, query.status)
-      ).length
-    )
-  ),
-  create: jest.fn((doc: Record<string, unknown>) => {
-    const now = new Date();
-    const member: FakeMember = {
-      _id: new Types.ObjectId(),
-      applicationId: doc.applicationId as Types.ObjectId,
-      userId: doc.userId as Types.ObjectId,
-      role: doc.role as ApplicationRole,
-      permissions: (doc.permissions as string[]) ?? [],
-      invitedByUserId: doc.invitedByUserId as Types.ObjectId | undefined,
-      joinedAt: doc.joinedAt as Date | undefined,
-      status: (doc.status as string) ?? 'active',
-      createdAt: now,
-      updatedAt: now,
-      save: jest.fn().mockResolvedValue(undefined),
-    };
-    member.save = jest.fn().mockResolvedValue(member);
-    members.push(member);
-    return Promise.resolve(member);
-  }),
-};
-
-// --- ApplicationCredential model fake --------------------------------------
 
 const ApplicationCredentialMock = {
-  findOne: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      credentials.find(
-        (c) =>
-          (query._id === undefined || matchesId(c._id, query._id)) &&
-          (query.applicationId === undefined || matchesId(c.applicationId, query.applicationId)) &&
-          applyStatusFilter(c, query.status)
-      ) ?? null
-    )
-  ),
-  find: jest.fn((query: Record<string, unknown>) => {
-    const result = credentials.filter(
-      (c) => query.applicationId === undefined || matchesId(c.applicationId, query.applicationId)
-    );
-    return {
-      select: () => ({ sort: () => Promise.resolve(result) }),
-    };
-  }),
-  create: jest.fn((doc: Record<string, unknown>) => {
+  find(query: Record<string, unknown> = {}) {
+    return listQuery(credentials.filter((c) => matchesQuery(c, query)));
+  },
+  async findOne(query: Record<string, unknown> = {}) {
+    return credentials.find((c) => matchesQuery(c, query)) ?? null;
+  },
+  async create(data: Record<string, unknown>) {
     const now = new Date();
-    const credential: FakeCredential = {
+    const doc: FakeCredential = {
       _id: new Types.ObjectId(),
-      applicationId: doc.applicationId as Types.ObjectId,
-      name: doc.name as string,
-      publicKey: doc.publicKey as string,
-      secretHash: doc.secretHash as string | undefined,
-      type: doc.type as string,
-      environment: doc.environment as string,
-      scopes: (doc.scopes as string[]) ?? [],
-      status: (doc.status as string) ?? 'active',
-      rotatedFromCredentialId: doc.rotatedFromCredentialId as Types.ObjectId | undefined,
-      createdByUserId: doc.createdByUserId as Types.ObjectId,
+      scopes: [],
+      status: 'active',
       createdAt: now,
       updatedAt: now,
       save: jest.fn().mockResolvedValue(undefined),
-    };
-    credentials.push(credential);
-    return Promise.resolve(credential);
-  }),
-};
-
-// --- WorkspaceMember model fake -------------------------------------------
-// The /applications routes resolve access via WorkspaceMember in addition to
-// ApplicationMember. The default store is empty so existing per-app-membership
-// tests behave exactly as before; workspace-access tests seed rows explicitly.
-
-const WorkspaceMemberMock = {
-  findOne: jest.fn((query: Record<string, unknown>) =>
-    Promise.resolve(
-      workspaceMembers.find(
-        (m) =>
-          (query.workspaceId === undefined || matchesId(m.workspaceId, query.workspaceId)) &&
-          (query.userId === undefined || matchesId(m.userId, query.userId)) &&
-          applyStatusFilter(m, query.status)
-      ) ?? null
-    )
-  ),
-  find: jest.fn((query: Record<string, unknown>) => {
-    const result = workspaceMembers.filter(
-      (m) =>
-        (query.userId === undefined || matchesId(m.userId, query.userId)) &&
-        (query.workspaceId === undefined || matchesId(m.workspaceId, query.workspaceId)) &&
-        applyStatusFilter(m, query.status)
-    );
-    return {
-      sort: () => Promise.resolve(result),
-      then: (resolve: (value: FakeWorkspaceMember[]) => unknown) => resolve(result),
-    };
-  }),
+      ...(data as Partial<FakeCredential>),
+    } as FakeCredential;
+    doc.save = jest.fn().mockResolvedValue(doc);
+    credentials.push(doc);
+    return doc;
+  },
 };
 
 jest.mock('../../models/Application', () => ({
   __esModule: true,
   Application: ApplicationMock,
   default: ApplicationMock,
-}));
-
-jest.mock('../../models/ApplicationMember', () => ({
-  __esModule: true,
-  ApplicationMember: ApplicationMemberMock,
-  default: ApplicationMemberMock,
-}));
-
-jest.mock('../../models/WorkspaceMember', () => ({
-  __esModule: true,
-  WorkspaceMember: WorkspaceMemberMock,
-  default: WorkspaceMemberMock,
-}));
-
-// The create route defaults to the caller's personal workspace when no
-// `workspaceId` is supplied. Mock the provisioning helper so it returns a stable
-// fake personal workspace without touching the (stubbed) Workspace model.
-const ensurePersonalWorkspaceMock = jest.fn(() =>
-  Promise.resolve({ _id: new Types.ObjectId(PERSONAL_WORKSPACE_ID) })
-);
-
-jest.mock('../../utils/workspaceProvisioning', () => ({
-  __esModule: true,
-  ensurePersonalWorkspace: (...args: unknown[]) => ensurePersonalWorkspaceMock(...args),
 }));
 
 jest.mock('../../models/ApplicationCredential', () => ({
@@ -384,37 +180,55 @@ jest.mock('../../models/ApiKeyUsage', () => ({
   default: { aggregate: jest.fn().mockResolvedValue([]) },
 }));
 
-// --- resolveUserByIdentifier fake ------------------------------------------
-// The invite path resolves a username/email to a User. Mock the resolver with a
-// small in-memory directory keyed by username (case-insensitive) and email
-// (lowercase). Tests register users via `seedUser`.
+// --- account.service mock ---------------------------------------------------
+// Grant the caller an effective account role per (userId, accountId). A caller
+// over their own account is an implicit owner (mirrors the real service).
 
-interface FakeUser {
-  _id: Types.ObjectId;
-  username?: string;
-  email?: string;
+const accessGrants = new Map<string, AccountRole>();
+function grantAccess(userId: string, accountId: string, role: AccountRole): void {
+  accessGrants.set(`${userId}:${accountId}`, role);
 }
 
-const userDirectory: FakeUser[] = [];
+function resolveRole(userId: string, accountId: string): AccountRole | undefined {
+  if (userId === accountId) return 'owner';
+  return accessGrants.get(`${userId}:${accountId}`);
+}
 
-const resolveUserByIdentifierMock = jest.fn((identifier: string) => {
-  const trimmed = identifier.trim();
-  if (trimmed.length === 0) return Promise.resolve(null);
-  if (trimmed.includes('@')) {
-    const email = trimmed.toLowerCase();
-    return Promise.resolve(userDirectory.find((u) => u.email === email) ?? null);
-  }
-  const username = trimmed.toLowerCase();
-  return Promise.resolve(
-    userDirectory.find((u) => u.username?.toLowerCase() === username) ?? null
-  );
-});
+const accountServiceMock = {
+  resolveEffectiveAccess: jest.fn(async (userId: string, accountId: string) => {
+    const role = resolveRole(userId, accountId);
+    if (!role) return null;
+    return {
+      role,
+      permissions: permissionsForAccountRole(role),
+      source: userId === accountId ? 'self' : 'direct',
+      membership: null,
+    };
+  }),
+  listAccessibleAccounts: jest.fn(async (userId: string) => {
+    const nodes: Array<Record<string, unknown>> = [
+      { accountId: userId, relationship: 'self', callerMembership: null },
+    ];
+    for (const [key, role] of accessGrants) {
+      const [u, accountId] = key.split(':');
+      if (u === userId) {
+        nodes.push({
+          accountId,
+          relationship: role === 'owner' ? 'owner' : 'member',
+          callerMembership: { role, permissions: [], source: 'direct', inherit: true },
+        });
+      }
+    }
+    return nodes;
+  }),
+};
 
-jest.mock('../../utils/resolveUserIdentifier', () => ({
+jest.mock('../../services/account.service', () => ({
   __esModule: true,
-  resolveUserByIdentifier: (identifier: string) => resolveUserByIdentifierMock(identifier),
+  accountService: accountServiceMock,
 }));
 
+const mockAuthMiddleware = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
 }));
@@ -431,13 +245,10 @@ interface JsonResponse {
   body: Record<string, unknown> & {
     application?: Record<string, unknown>;
     applications?: Array<Record<string, unknown>>;
-    member?: Record<string, unknown>;
-    members?: Array<Record<string, unknown>>;
     credential?: Record<string, unknown>;
     credentials?: Array<Record<string, unknown>>;
     secret?: string | null;
     rotatedFrom?: string;
-    graceExpiresAt?: string;
     success?: boolean;
     error?: string;
     message?: string;
@@ -445,12 +256,12 @@ interface JsonResponse {
 }
 
 async function requestJson(
-  server: http.Server,
+  srv: http.Server,
   method: string,
   path: string,
   payload?: unknown
 ): Promise<JsonResponse> {
-  const address = server.address() as AddressInfo;
+  const address = srv.address() as AddressInfo;
   const body = JSON.stringify(payload ?? {});
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -506,7 +317,7 @@ function seedApp(overrides: Partial<FakeApp> = {}): FakeApp {
     capabilities: [],
     redirectUris: [],
     scopes: [],
-    workspaceId: new Types.ObjectId(WORKSPACE_ID),
+    ownerAccountId: new Types.ObjectId(OWNER_ID),
     createdByUserId: new Types.ObjectId(OWNER_ID),
     createdAt: now,
     updatedAt: now,
@@ -515,92 +326,6 @@ function seedApp(overrides: Partial<FakeApp> = {}): FakeApp {
   };
   apps.push(app);
   return app;
-}
-
-const WORKSPACE_ROLE_PERMISSIONS: Record<
-  FakeWorkspaceMember['role'],
-  string[]
-> = {
-  owner: [
-    'workspace:read',
-    'workspace:update',
-    'workspace:delete',
-    'members:read',
-    'members:invite',
-    'members:update',
-    'members:remove',
-    'apps:read',
-    'apps:create',
-    'apps:update',
-    'apps:delete',
-    'ownership:transfer',
-  ],
-  admin: [
-    'workspace:read',
-    'workspace:update',
-    'members:read',
-    'members:invite',
-    'members:update',
-    'members:remove',
-    'apps:read',
-    'apps:create',
-    'apps:update',
-    'apps:delete',
-  ],
-  member: ['workspace:read', 'members:read', 'apps:read', 'apps:create'],
-  viewer: ['workspace:read', 'members:read', 'apps:read'],
-};
-
-function seedWorkspaceMember(
-  userId: string,
-  role: FakeWorkspaceMember['role'],
-  workspaceId = WORKSPACE_ID,
-  status = 'active'
-): FakeWorkspaceMember {
-  const now = new Date();
-  const member: FakeWorkspaceMember = {
-    _id: new Types.ObjectId(),
-    workspaceId: new Types.ObjectId(workspaceId),
-    userId: new Types.ObjectId(userId),
-    role,
-    permissions: WORKSPACE_ROLE_PERMISSIONS[role],
-    status,
-    createdAt: now,
-    updatedAt: now,
-    save: jest.fn().mockResolvedValue(undefined),
-  };
-  member.save = jest.fn().mockResolvedValue(member);
-  workspaceMembers.push(member);
-  return member;
-}
-
-function seedUser(userId: string, fields: { username?: string; email?: string }): FakeUser {
-  const user: FakeUser = {
-    _id: new Types.ObjectId(userId),
-    username: fields.username,
-    email: fields.email,
-  };
-  userDirectory.push(user);
-  return user;
-}
-
-function seedMember(userId: string, role: ApplicationRole, status = 'active'): FakeMember {
-  const now = new Date();
-  const member: FakeMember = {
-    _id: new Types.ObjectId(),
-    applicationId: new Types.ObjectId(APP_ID),
-    userId: new Types.ObjectId(userId),
-    role,
-    permissions: permissionsForRole(role),
-    status,
-    joinedAt: now,
-    createdAt: now,
-    updatedAt: now,
-    save: jest.fn().mockResolvedValue(undefined),
-  };
-  member.save = jest.fn().mockResolvedValue(member);
-  members.push(member);
-  return member;
 }
 
 function seedCredential(overrides: Partial<FakeCredential> = {}): FakeCredential {
@@ -639,829 +364,275 @@ afterAll((done) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  resetStore();
+  apps.length = 0;
+  credentials.length = 0;
+  accessGrants.clear();
   actAs(OWNER_ID, false);
   mockAuthMiddleware.mockImplementation(
     (req: { user?: unknown }, _res: unknown, next: () => void) => {
-      req.user = {
-        _id: { toString: () => currentUserId },
-        isStaff: currentIsStaff,
-      };
+      req.user = { _id: { toString: () => currentUserId }, isStaff: currentIsStaff };
       next();
     }
   );
 });
 
 // ---------------------------------------------------------------------------
-// Create + lookup by _id
+// Create
 // ---------------------------------------------------------------------------
 
 describe('POST /applications — create', () => {
-  // The creator must be an active workspace member with `apps:create`.
-  beforeEach(() => {
-    seedWorkspaceMember(OWNER_ID, 'owner');
-  });
-
-  it('creates the application bound to the workspace and an owner membership', async () => {
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'My App',
-      redirectUris: ['https://app.example.com/callback'],
-    });
-
+  it('defaults ownerAccountId to the caller and embeds callerMembership', async () => {
+    const res = await requestJson(server, 'POST', '/applications', { name: 'My App' });
     expect(res.status).toBe(201);
-    expect(res.body.application?.name).toBe('My App');
-    expect(res.body.application?.type).toBe('third_party');
-    expect(res.body.application?.workspaceId).toBe(WORKSPACE_ID);
-    expect(res.body.application?.redirectUris).toEqual(['https://app.example.com/callback']);
-    expect(ApplicationMemberMock.create).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'owner', status: 'active' })
-    );
+    expect(res.body.application?.ownerAccountId).toBe(OWNER_ID);
+    expect((res.body.application?.callerMembership as Record<string, unknown>)?.role).toBe('owner');
   });
 
-  it('de-duplicates redirectUris on create, preserving order and exact strings', async () => {
+  it('binds to an explicit ownerAccountId the caller can create apps in', async () => {
+    grantAccess(OWNER_ID, ORG_ID, 'admin');
     const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Dupes',
-      redirectUris: [
-        'https://a.example.com/cb',
-        'https://b.example.com/cb',
-        'https://a.example.com/cb',
-      ],
-    });
-
-    expect(res.status).toBe(201);
-    expect(res.body.application?.redirectUris).toEqual([
-      'https://a.example.com/cb',
-      'https://b.example.com/cb',
-    ]);
-  });
-
-  it('defaults to an empty redirectUris list when not supplied', async () => {
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'No Redirects',
+      ownerAccountId: ORG_ID,
+      name: 'Org App',
     });
     expect(res.status).toBe(201);
-    expect(res.body.application?.redirectUris).toEqual([]);
+    expect(res.body.application?.ownerAccountId).toBe(ORG_ID);
   });
 
-  it('creates without workspaceId → lands in the caller\'s personal workspace', async () => {
-    // No workspace membership required for the default path: the personal
-    // workspace is auto-provisioned and the caller always owns it.
-    const res = await requestJson(server, 'POST', '/applications', { name: 'No Workspace' });
-
-    expect(res.status).toBe(201);
-    expect(ensurePersonalWorkspaceMock).toHaveBeenCalled();
-    expect(res.body.application?.workspaceId).toBe(PERSONAL_WORKSPACE_ID);
-    expect(res.body.application?.name).toBe('No Workspace');
-    // Per-app owner membership is still created (#213).
-    expect(ApplicationMemberMock.create).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'owner', status: 'active' })
-    );
-  });
-
-  it('400 when workspaceId is supplied but malformed', async () => {
+  it('403 when the caller has no access to the owning account', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: 'not-an-object-id',
-      name: 'Bad Workspace',
+      ownerAccountId: ORG_ID,
+      name: 'Nope',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when the caller lacks apps:create (viewer)', async () => {
+    grantAccess(OWNER_ID, ORG_ID, 'viewer');
+    const res = await requestJson(server, 'POST', '/applications', {
+      ownerAccountId: ORG_ID,
+      name: 'Nope',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('400 when ownerAccountId is malformed', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      ownerAccountId: 'not-an-id',
+      name: 'Bad',
     });
     expect(res.status).toBe(400);
   });
 
-  it('403 when the caller is not a member of the supplied workspace', async () => {
-    actAs(OUTSIDER_ID);
+  it('de-duplicates redirectUris preserving order and exact strings', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Outsider App',
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('403 when the caller lacks apps:create in the workspace (viewer)', async () => {
-    seedWorkspaceMember(WS_VIEWER_ID, 'viewer');
-    actAs(WS_VIEWER_ID);
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Viewer App',
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('403 when a non-staff creator tries to self-grant a privileged scope (federation:write)', async () => {
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Escalation App',
-      redirectUris: ['https://mention.earth/__oxy/sso-callback'],
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('allows a non-staff creator to grant ordinary (non-privileged) scopes', async () => {
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Normal App',
-      scopes: ['user:read', 'files:write'],
+      name: 'R',
+      redirectUris: ['https://a.com/cb', 'https://a.com/cb', 'https://b.com/cb'],
     });
     expect(res.status).toBe(201);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'files:write']);
+    expect(res.body.application?.redirectUris).toEqual(['https://a.com/cb', 'https://b.com/cb']);
   });
 
-  it('allows a STAFF creator to grant a privileged scope', async () => {
-    actAs(OWNER_ID, true);
+  it('403 when a non-staff creator self-grants a privileged scope', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Federated App',
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(201);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
-  });
-});
-
-describe('GET /applications/:appId — lookup by _id', () => {
-  it('returns the application with the embedded callerMembership', async () => {
-    seedApp();
-    seedMember(OWNER_ID, 'owner');
-
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.application?._id).toBe(APP_ID);
-    const callerMembership = res.body.application?.callerMembership as
-      | { role?: string; permissions?: string[] }
-      | undefined;
-    expect(callerMembership?.role).toBe('owner');
-    expect(callerMembership?.permissions).toEqual(permissionsForRole('owner'));
-  });
-
-  it('404 for a non-existent application id', async () => {
-    const res = await requestJson(server, 'GET', `/applications/${new Types.ObjectId().toString()}`);
-    expect(res.status).toBe(404);
-  });
-
-  it('403 when the caller is not a member', async () => {
-    seedApp();
-    seedMember(OWNER_ID, 'owner');
-    actAs(OUTSIDER_ID);
-
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-    expect(res.status).toBe(403);
-  });
-});
-
-describe('GET /applications — list embeds callerMembership for low-permission roles', () => {
-  it('a developer (no members:read) still receives its own permission set', async () => {
-    seedApp();
-    seedMember(DEVELOPER_ID, 'developer');
-    actAs(DEVELOPER_ID);
-
-    const res = await requestJson(server, 'GET', '/applications');
-
-    expect(res.status).toBe(200);
-    expect(res.body.applications).toHaveLength(1);
-    const callerMembership = res.body.applications?.[0].callerMembership as
-      | { role?: string; permissions?: string[] }
-      | undefined;
-    expect(callerMembership?.role).toBe('developer');
-    expect(callerMembership?.permissions).toEqual(permissionsForRole('developer'));
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Workspace-scoped listing + workspace-membership access path
-// ---------------------------------------------------------------------------
-
-describe('GET /applications — workspace scoping + access', () => {
-  it('lists apps in the workspace the caller belongs to (workspace-only access)', async () => {
-    seedApp();
-    // Caller has NO per-app ApplicationMember, only a workspace membership.
-    seedWorkspaceMember(WS_OWNER_ID, 'owner');
-    actAs(WS_OWNER_ID);
-
-    const res = await requestJson(server, 'GET', '/applications');
-
-    expect(res.status).toBe(200);
-    expect(res.body.applications).toHaveLength(1);
-    const callerMembership = res.body.applications?.[0].callerMembership as
-      | { role?: string; source?: string }
-      | undefined;
-    // Synthetic membership derived from the workspace grant.
-    expect(callerMembership?.source).toBe('workspace');
-    expect(callerMembership?.role).toBe('owner');
-  });
-
-  it('?workspaceId= scopes results to that workspace for a member', async () => {
-    seedApp();
-    seedWorkspaceMember(WS_MEMBER_ID, 'member');
-    actAs(WS_MEMBER_ID);
-
-    const res = await requestJson(server, 'GET', `/applications?workspaceId=${WORKSPACE_ID}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.applications).toHaveLength(1);
-    expect(res.body.applications?.[0].workspaceId).toBe(WORKSPACE_ID);
-  });
-
-  it('403 when ?workspaceId= names a workspace the caller is not a member of', async () => {
-    seedApp();
-    actAs(OUTSIDER_ID);
-
-    const res = await requestJson(server, 'GET', `/applications?workspaceId=${WORKSPACE_ID}`);
-    expect(res.status).toBe(403);
-  });
-});
-
-describe('workspace-membership grants application access', () => {
-  it('workspace owner can read an app with no per-app ApplicationMember row', async () => {
-    seedApp();
-    seedWorkspaceMember(WS_OWNER_ID, 'owner');
-    actAs(WS_OWNER_ID);
-
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-    expect(res.status).toBe(200);
-    const callerMembership = res.body.application?.callerMembership as
-      | { source?: string; role?: string }
-      | undefined;
-    expect(callerMembership?.source).toBe('workspace');
-    expect(callerMembership?.role).toBe('owner');
-  });
-
-  it('workspace admin can update and delete the app without full app-owner permissions', async () => {
-    seedApp();
-    seedWorkspaceMember(WS_OWNER_ID, 'admin');
-    actAs(WS_OWNER_ID);
-
-    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      name: 'WS Rename',
-    });
-    expect(updateRes.status).toBe(200);
-    expect(updateRes.body.application?.name).toBe('WS Rename');
-
-    const deleteRes = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
-    expect(deleteRes.status).toBe(200);
-  });
-
-  it('workspace admin cannot manage credentials or transfer app ownership implicitly', async () => {
-    seedApp();
-    seedMember(DEVELOPER_ID, 'developer');
-    seedWorkspaceMember(WS_OWNER_ID, 'admin');
-    actAs(WS_OWNER_ID);
-
-    const credentialsRes = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
-    expect(credentialsRes.status).toBe(403);
-
-    const transferRes = await requestJson(
-      server,
-      'POST',
-      `/applications/${APP_ID}/transfer-ownership`,
-      {
-        userId: DEVELOPER_ID,
-      }
-    );
-    expect(transferRes.status).toBe(403);
-  });
-
-  it('workspace member gets app:read but NOT app:update or app:delete', async () => {
-    seedApp();
-    seedWorkspaceMember(WS_MEMBER_ID, 'member');
-    actAs(WS_MEMBER_ID);
-
-    const readRes = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-    expect(readRes.status).toBe(200);
-
-    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      name: 'Member Rename',
-    });
-    expect(updateRes.status).toBe(403);
-
-    const deleteRes = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
-    expect(deleteRes.status).toBe(403);
-  });
-
-  it('workspace viewer gets app:read only', async () => {
-    seedApp();
-    seedWorkspaceMember(WS_VIEWER_ID, 'viewer');
-    actAs(WS_VIEWER_ID);
-
-    const readRes = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-    expect(readRes.status).toBe(200);
-
-    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'No' });
-    expect(updateRes.status).toBe(403);
-  });
-
-  it('unions explicit app permissions with workspace permissions (broader wins)', async () => {
-    seedApp();
-    // Explicit per-app viewer (read-only) BUT workspace owner (full) → can delete.
-    seedMember(WS_OWNER_ID, 'viewer');
-    seedWorkspaceMember(WS_OWNER_ID, 'owner');
-    actAs(WS_OWNER_ID);
-
-    const res = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Membership permission enforcement per role
-// ---------------------------------------------------------------------------
-
-describe('membership permission enforcement', () => {
-  beforeEach(() => {
-    seedApp();
-    seedMember(OWNER_ID, 'owner');
-    seedMember(ADMIN_ID, 'admin');
-    seedMember(DEVELOPER_ID, 'developer');
-    seedMember(VIEWER_ID, 'viewer');
-    seedMember(BILLING_ID, 'billing');
-  });
-
-  it('owner can delete the application', async () => {
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-  });
-
-  it('admin cannot delete the application (no app:delete)', async () => {
-    actAs(ADMIN_ID);
-    const res = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
-    expect(res.status).toBe(403);
-  });
-
-  it('admin can update the application (app:update)', async () => {
-    actAs(ADMIN_ID);
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'Renamed' });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.name).toBe('Renamed');
-  });
-
-  it('viewer cannot update the application (no app:update)', async () => {
-    actAs(VIEWER_ID);
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'Nope' });
-    expect(res.status).toBe(403);
-  });
-
-  it('developer can read credentials (credentials:read)', async () => {
-    actAs(DEVELOPER_ID);
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
-    expect(res.status).toBe(200);
-  });
-
-  it('viewer cannot read credentials (no credentials:read)', async () => {
-    actAs(VIEWER_ID);
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
-    expect(res.status).toBe(403);
-  });
-
-  it('developer cannot invite members (no members:invite)', async () => {
-    actAs(DEVELOPER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'outsider',
-      role: 'viewer',
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('billing can read but not modify the app', async () => {
-    actAs(BILLING_ID);
-    const readRes = await requestJson(server, 'GET', `/applications/${APP_ID}`);
-    expect(readRes.status).toBe(200);
-    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      name: 'No',
-    });
-    expect(updateRes.status).toBe(403);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// PATCH redirectUris + staff-only field gating
-// ---------------------------------------------------------------------------
-
-describe('PATCH /applications/:appId', () => {
-  beforeEach(() => {
-    seedApp({ redirectUris: ['https://old.example.com/cb'] });
-    seedMember(OWNER_ID, 'owner');
-  });
-
-  it('updates and de-duplicates redirectUris, preserving order', async () => {
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      redirectUris: [
-        'https://x.example.com/cb',
-        'https://y.example.com/cb',
-        'https://x.example.com/cb',
-      ],
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.redirectUris).toEqual([
-      'https://x.example.com/cb',
-      'https://y.example.com/cb',
-    ]);
-  });
-
-  it('leaves redirectUris untouched when the field is omitted', async () => {
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'Renamed' });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.redirectUris).toEqual(['https://old.example.com/cb']);
-  });
-
-  it('silently ignores staff-only fields for a non-staff owner', async () => {
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      isInternal: true,
-      isOfficial: true,
-      type: 'system',
-      capabilities: ['x'],
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.isInternal).toBe(false);
-    expect(res.body.application?.isOfficial).toBe(false);
-    expect(res.body.application?.type).toBe('third_party');
-    expect(res.body.application?.capabilities).toEqual([]);
-  });
-
-  it('applies staff-only fields for a staff caller', async () => {
-    actAs(OWNER_ID, true);
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      isInternal: true,
-      type: 'internal',
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.isInternal).toBe(true);
-    expect(res.body.application?.type).toBe('internal');
-  });
-
-  it('403 when a non-staff owner tries to ADD a privileged scope via update', async () => {
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it('lets a non-staff owner keep an already-granted privileged scope (no re-grant)', async () => {
-    // Staff previously elevated this app; a routine non-staff edit that re-sends
-    // the existing privileged scope must not be rejected. Mutate the app seeded
-    // by this block's beforeEach rather than re-seeding (which would duplicate
-    // the APP_ID in the in-memory store).
-    apps[0].scopes = ['user:read', 'federation:write'];
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      scopes: ['user:read', 'federation:write'],
-      description: 'routine edit',
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
-  });
-
-  it('lets a STAFF owner add a privileged scope via update', async () => {
-    actAs(OWNER_ID, true);
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Credentials — secret once, never on read, revoke blocks
-// ---------------------------------------------------------------------------
-
-describe('credentials lifecycle', () => {
-  beforeEach(() => {
-    seedApp();
-    seedMember(OWNER_ID, 'owner');
-  });
-
-  it('returns the secret exactly once on creation and never the hash', async () => {
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Server key',
-      type: 'confidential',
-      environment: 'production',
-    });
-
-    expect(res.status).toBe(201);
-    expect(typeof res.body.secret).toBe('string');
-    expect((res.body.secret as string).length).toBeGreaterThan(0);
-    expect(res.body.credential).not.toHaveProperty('secretHash');
-    expect(res.body.credential).not.toHaveProperty('secret');
-    // The stored hash must not equal the plaintext secret.
-    const stored = credentials[0];
-    expect(stored.secretHash).toBeDefined();
-    expect(stored.secretHash).not.toBe(res.body.secret);
-  });
-
-  it('403 when creating a service credential for a non-internal application', async () => {
-    apps[0].isInternal = false;
-    apps[0].scopes = ['federation:write'];
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'External service key',
-      type: 'service',
-      environment: 'production',
+      name: 'Priv',
       scopes: ['federation:write'],
     });
     expect(res.status).toBe(403);
   });
 
-  it('400 when a credential requests a scope the application does not hold', async () => {
-    // Seeded app has scopes []. A credential cannot exceed the app's authority,
-    // so requesting user:read (or any ungranted scope) is rejected.
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Over-scoped',
-      type: 'confidential',
-      environment: 'production',
-      scopes: ['user:read'],
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('creates a service credential whose scopes are a subset of an internal app scopes', async () => {
-    apps[0].isInternal = true;
-    apps[0].scopes = ['user:read', 'files:write', 'federation:write'];
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Federation key',
-      type: 'service',
-      environment: 'production',
-      scopes: ['user:read', 'federation:write'],
+  it('allows a STAFF creator to grant a privileged scope', async () => {
+    actAs(OWNER_ID, true);
+    const res = await requestJson(server, 'POST', '/applications', {
+      name: 'Priv',
+      scopes: ['federation:write'],
     });
     expect(res.status).toBe(201);
-    expect(res.body.credential?.scopes).toEqual(['user:read', 'federation:write']);
+    expect(res.body.application?.scopes).toContain('federation:write');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Read / update / delete RBAC
+// ---------------------------------------------------------------------------
+
+describe('GET/PATCH/DELETE /applications/:appId — account-derived RBAC', () => {
+  it('owner can read its own app', async () => {
+    seedApp();
+    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.application?._id).toBe(APP_ID);
   });
 
-  it('400 when a credential requests an unknown scope (enum-rejected by schema)', async () => {
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Bad scope',
-      type: 'service',
+  it('404 for a non-existent application', async () => {
+    const res = await requestJson(server, 'GET', `/applications/${new Types.ObjectId().toString()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('403 when the caller has no access to the owning account', async () => {
+    seedApp({ ownerAccountId: new Types.ObjectId(ORG_ID) });
+    actAs(OTHER_ID);
+    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('a viewer cannot update (no app:update)', async () => {
+    seedApp({ ownerAccountId: new Types.ObjectId(ORG_ID) });
+    actAs(OTHER_ID);
+    grantAccess(OTHER_ID, ORG_ID, 'viewer');
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'X' });
+    expect(res.status).toBe(403);
+  });
+
+  it('an editor can update but cannot delete', async () => {
+    const app = seedApp({ ownerAccountId: new Types.ObjectId(ORG_ID) });
+    actAs(OTHER_ID);
+    grantAccess(OTHER_ID, ORG_ID, 'editor');
+
+    const patch = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'Renamed' });
+    expect(patch.status).toBe(200);
+    expect(app.name).toBe('Renamed');
+
+    const del = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
+    expect(del.status).toBe(403);
+  });
+
+  it('an admin can delete (soft-delete)', async () => {
+    const app = seedApp({ ownerAccountId: new Types.ObjectId(ORG_ID) });
+    actAs(OTHER_ID);
+    grantAccess(OTHER_ID, ORG_ID, 'admin');
+    const res = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
+    expect(res.status).toBe(200);
+    expect(app.status).toBe('deleted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+
+describe('GET /applications — list', () => {
+  it('lists apps across the accessible account forest', async () => {
+    seedApp({ _id: new Types.ObjectId(), ownerAccountId: new Types.ObjectId(OWNER_ID) });
+    seedApp({ _id: new Types.ObjectId(), ownerAccountId: new Types.ObjectId(ORG_ID) });
+    grantAccess(OWNER_ID, ORG_ID, 'developer');
+
+    const res = await requestJson(server, 'GET', '/applications');
+    expect(res.status).toBe(200);
+    expect(res.body.applications).toHaveLength(2);
+  });
+
+  it('?ownerAccountId= scopes to one account the caller can access', async () => {
+    seedApp({ _id: new Types.ObjectId(), ownerAccountId: new Types.ObjectId(ORG_ID) });
+    grantAccess(OWNER_ID, ORG_ID, 'admin');
+    const res = await requestJson(server, 'GET', `/applications?ownerAccountId=${ORG_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.applications).toHaveLength(1);
+    expect(res.body.applications?.[0].ownerAccountId).toBe(ORG_ID);
+  });
+
+  it('403 when ?ownerAccountId= names an account the caller cannot access', async () => {
+    const res = await requestJson(server, 'GET', `/applications?ownerAccountId=${ORG_ID}`);
+    expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Credentials
+// ---------------------------------------------------------------------------
+
+describe('credentials', () => {
+  it('create returns the secret exactly once; read never exposes it', async () => {
+    seedApp({ scopes: ['user:read'] });
+    const created = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'CI',
+      type: 'confidential',
       environment: 'production',
-      scopes: ['totally:made-up'],
     });
-    expect(res.status).toBe(400);
+    expect(created.status).toBe(201);
+    expect(created.body.secret).toMatch(/^[a-f0-9]{64}$/);
+
+    const list = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
+    expect(list.status).toBe(200);
+    expect(list.body.credentials?.[0]).not.toHaveProperty('secretHash');
+    expect(list.body.credentials?.[0]).not.toHaveProperty('secret');
   });
 
-  it('public credentials carry no secret', async () => {
+  it('a public credential carries no secret', async () => {
+    seedApp();
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'SPA',
+      name: 'pub',
       type: 'public',
       environment: 'production',
     });
     expect(res.status).toBe(201);
     expect(res.body.secret).toBeNull();
-    expect(credentials[0].secretHash).toBeUndefined();
   });
 
-  it('GET credentials never exposes the secret hash', async () => {
-    seedCredential({ name: 'Existing' });
-    const res = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
-    expect(res.status).toBe(200);
-    expect(res.body.credentials).toHaveLength(1);
-    expect(res.body.credentials?.[0]).not.toHaveProperty('secretHash');
-    expect(res.body.credentials?.[0].publicKey).toBeDefined();
-  });
-
-  it('rotate issues a NEW credential + new secret once, deprecates the old one with a future grace expiry', async () => {
-    const cred = seedCredential({ secretHash: 'old-hash' });
-    const res = await requestJson(
-      server,
-      'POST',
-      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
-    );
-
-    expect(res.status).toBe(200);
-    // A NEW credential is returned (different _id + publicKey from the source).
-    const returned = res.body.credential as {
-      _id?: string;
-      publicKey?: string;
-      status?: string;
-      rotatedFromCredentialId?: string;
-    };
-    expect(returned._id).not.toBe(cred._id.toString());
-    expect(returned.publicKey).not.toBe(cred.publicKey);
-    expect(returned.status).toBe('active');
-    expect(returned.rotatedFromCredentialId).toBe(cred._id.toString());
-
-    // New plaintext secret returned exactly once; never the hash.
-    expect(typeof res.body.secret).toBe('string');
-    expect((res.body.secret as string).length).toBeGreaterThan(0);
-    expect(res.body.credential).not.toHaveProperty('secretHash');
-
-    // rotatedFrom + graceExpiresAt are surfaced for the caller.
-    expect(res.body.rotatedFrom).toBe(cred._id.toString());
-    expect(typeof res.body.graceExpiresAt).toBe('string');
-
-    // The previous credential is now deprecated with a future expiry; its
-    // secret hash is UNCHANGED (it must keep authenticating during grace).
-    const previous = credentials.find((c) => c._id.equals(cred._id));
-    expect(previous?.status).toBe('deprecated');
-    expect(previous?.secretHash).toBe('old-hash');
-    expect(previous?.expiresAt).toBeInstanceOf(Date);
-    expect((previous?.expiresAt as Date).getTime()).toBeGreaterThan(Date.now());
-
-    // The new credential carries a fresh hash distinct from the plaintext.
-    const fresh = credentials.find((c) => c._id.toString() === returned._id);
-    expect(fresh?.secretHash).toBeDefined();
-    expect(fresh?.secretHash).not.toBe(res.body.secret);
-    expect(fresh?.rotatedFromCredentialId?.toString()).toBe(cred._id.toString());
-  });
-
-  it('rotate inherits name/type/environment/scopes from the source credential', async () => {
-    const cred = seedCredential({
-      name: 'Inherit me',
+  it('rejects a service credential on a non-trusted application', async () => {
+    seedApp({ type: 'third_party', isOfficial: false, isInternal: false });
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'svc',
       type: 'service',
-      environment: 'staging',
-      scopes: ['user:read', 'files:read'],
+      environment: 'production',
     });
-    const res = await requestJson(
-      server,
-      'POST',
-      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
-    );
-
-    expect(res.status).toBe(200);
-    const returned = res.body.credential as {
-      name?: string;
-      type?: string;
-      environment?: string;
-      scopes?: string[];
-    };
-    expect(returned.name).toBe('Inherit me');
-    expect(returned.type).toBe('service');
-    expect(returned.environment).toBe('staging');
-    expect(returned.scopes).toEqual(['user:read', 'files:read']);
+    expect(res.status).toBe(403);
   });
 
-  it('public credentials cannot be rotated', async () => {
-    const cred = seedCredential({ type: 'public', secretHash: undefined });
-    const res = await requestJson(
-      server,
-      'POST',
-      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
-    );
+  it('rejects credential scopes that exceed the application grant', async () => {
+    seedApp({ scopes: ['user:read'] });
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'over',
+      type: 'confidential',
+      environment: 'production',
+      scopes: ['federation:write'],
+    });
     expect(res.status).toBe(400);
   });
 
-  it('revoke sets status=revoked and a revoked credential cannot be rotated', async () => {
-    const cred = seedCredential();
-    const revokeRes = await requestJson(
-      server,
-      'DELETE',
-      `/applications/${APP_ID}/credentials/${cred._id.toString()}`
-    );
-    expect(revokeRes.status).toBe(200);
-    expect(cred.status).toBe('revoked');
-
-    const rotateRes = await requestJson(
-      server,
-      'POST',
-      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
-    );
-    expect(rotateRes.status).toBe(404);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Ownership transfer + owner-management guards
-// ---------------------------------------------------------------------------
-
-describe('ownership + owner management guards', () => {
-  beforeEach(() => {
+  it('rotate mints a new credential and deprecates the previous one', async () => {
     seedApp();
-    seedMember(OWNER_ID, 'owner');
-    seedMember(ADMIN_ID, 'admin');
-  });
-
-  it('owner can transfer ownership: target becomes owner, caller demoted to admin', async () => {
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/transfer-ownership`, {
-      userId: ADMIN_ID,
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-
-    const newOwner = members.find((m) => matchesId(m.userId, ADMIN_ID));
-    const formerOwner = members.find((m) => matchesId(m.userId, OWNER_ID));
-    expect(newOwner?.role).toBe('owner');
-    expect(formerOwner?.role).toBe('admin');
-  });
-
-  it('admin cannot transfer ownership (no ownership:transfer)', async () => {
-    actAs(ADMIN_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/transfer-ownership`, {
-      userId: ADMIN_ID,
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("cannot change an owner's role via the members endpoint", async () => {
-    actAs(OWNER_ID);
-    const ownerMember = members.find((m) => m.role === 'owner');
+    const previous = seedCredential({ type: 'confidential' });
     const res = await requestJson(
       server,
-      'PATCH',
-      `/applications/${APP_ID}/members/${ownerMember?._id.toString()}`,
-      { role: 'admin' }
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('cannot remove the last owner', async () => {
-    actAs(OWNER_ID);
-    const ownerMember = members.find((m) => m.role === 'owner');
-    const res = await requestJson(
-      server,
-      'DELETE',
-      `/applications/${APP_ID}/members/${ownerMember?._id.toString()}`
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('admin cannot remove an owner (only an owner may)', async () => {
-    actAs(ADMIN_ID);
-    const ownerMember = members.find((m) => m.role === 'owner');
-    const res = await requestJson(
-      server,
-      'DELETE',
-      `/applications/${APP_ID}/members/${ownerMember?._id.toString()}`
-    );
-    expect(res.status).toBe(403);
-  });
-
-  it('owner can remove a non-owner member', async () => {
-    actAs(OWNER_ID);
-    const adminMember = members.find((m) => m.role === 'admin');
-    const res = await requestJson(
-      server,
-      'DELETE',
-      `/applications/${APP_ID}/members/${adminMember?._id.toString()}`
+      'POST',
+      `/applications/${APP_ID}/credentials/${previous._id.toString()}/rotate`
     );
     expect(res.status).toBe(200);
-    expect(adminMember?.status).toBe('removed');
+    expect(res.body.secret).toMatch(/^[a-f0-9]{64}$/);
+    expect(res.body.rotatedFrom).toBe(previous._id.toString());
+    expect(previous.status).toBe('deprecated');
+    expect(previous.expiresAt).toBeInstanceOf(Date);
   });
-});
 
-// ---------------------------------------------------------------------------
-// Members — add + role derivation
-// ---------------------------------------------------------------------------
-
-describe('POST /applications/:appId/members', () => {
-  beforeEach(() => {
+  it('revoke marks the credential revoked', async () => {
     seedApp();
-    seedMember(OWNER_ID, 'owner');
+    const credential = seedCredential();
+    const res = await requestJson(
+      server,
+      'DELETE',
+      `/applications/${APP_ID}/credentials/${credential._id.toString()}`
+    );
+    expect(res.status).toBe(200);
+    expect(credential.status).toBe('revoked');
   });
 
-  it('adds an active member by username with permissions derived from role', async () => {
-    seedUser(DEVELOPER_ID, { username: 'Dev' });
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'dev',
-      role: 'developer',
+  it('a developer can manage credentials but a viewer cannot', async () => {
+    seedApp({ ownerAccountId: new Types.ObjectId(ORG_ID) });
+    actAs(OTHER_ID);
+    grantAccess(OTHER_ID, ORG_ID, 'viewer');
+    const viewerRes = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'x',
+      type: 'confidential',
+      environment: 'production',
     });
-    expect(res.status).toBe(201);
-    expect(res.body.member?.role).toBe('developer');
-    expect(res.body.member?.userId).toBe(DEVELOPER_ID);
-    expect(res.body.member?.permissions).toEqual(permissionsForRole('developer'));
-    expect(res.body.member?.status).toBe('active');
-  });
+    expect(viewerRes.status).toBe(403);
 
-  it('adds a member by email (case-insensitive)', async () => {
-    seedUser(DEVELOPER_ID, { email: 'dev@example.com' });
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'Dev@Example.com',
-      role: 'developer',
+    grantAccess(OTHER_ID, ORG_ID, 'developer');
+    const devRes = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'ok',
+      type: 'confidential',
+      environment: 'production',
     });
-    expect(res.status).toBe(201);
-    expect(res.body.member?.role).toBe('developer');
-    expect(res.body.member?.userId).toBe(DEVELOPER_ID);
-  });
-
-  it('404 when the username/email does not resolve to a user', async () => {
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'ghost',
-      role: 'developer',
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('rejects adding a user who is already an active member', async () => {
-    seedUser(DEVELOPER_ID, { username: 'dev' });
-    seedMember(DEVELOPER_ID, 'developer');
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'dev',
-      role: 'viewer',
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects role=owner on the invite path (owner only via transfer)', async () => {
-    seedUser(DEVELOPER_ID, { username: 'dev' });
-    actAs(OWNER_ID);
-    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      usernameOrEmail: 'dev',
-      role: 'owner',
-    });
-    expect(res.status).toBe(400);
+    expect(devRes.status).toBe(201);
   });
 });

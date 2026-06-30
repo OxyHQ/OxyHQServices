@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -10,57 +10,63 @@ import {
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { getAccountDisplayName } from '@oxyhq/core';
+import { useI18n } from '../hooks/useI18n';
 
 /**
- * ActingAsBanner - Shows a subtle banner when the user is acting as a managed account.
+ * ActingAsBanner - Shows a subtle banner when the caller is acting as another
+ * account from the account graph (delegated identity via `X-Acting-As`).
  *
- * - Tap to open the ManageAccount screen (account switcher lives in AccountMenu).
- * - Long-press to switch back to the primary account immediately.
+ * - Tap to open the unified {@link AccountSwitcher}.
+ * - Long-press to switch back to the personal account immediately.
  *
  * Place this component in your app's layout where you want the banner to appear
- * (typically at the top of the screen or below the header).
+ * (typically at the top of the screen or below the header). The "identity"
+ * here is the Account, NOT the cryptographic Commons/DID identity.
  */
 const ActingAsBanner: React.FC = () => {
   const bloomTheme = useTheme();
-  const { actingAs, managedAccounts, setActingAs, showBottomSheet, oxyServices } = useOxy();
+  const { actingAs, actingAsAccount, setActingAs, showBottomSheet, oxyServices } = useOxy();
+  const { t, locale } = useI18n();
 
-  const activeAccount = useMemo(() => {
-    if (!actingAs || !managedAccounts.length) return null;
-    const managed = managedAccounts.find((m) => m.accountId === actingAs);
-    return managed?.account ?? null;
-  }, [actingAs, managedAccounts]);
+  const account = actingAsAccount?.account ?? null;
 
-  if (!actingAs || !activeAccount) {
+  if (!actingAs || !account) {
     return null;
   }
 
-  const displayName = getAccountDisplayName(activeAccount);
+  const displayName = getAccountDisplayName(account, locale);
 
   const handlePress = () => {
-    showBottomSheet?.('ManageAccount');
+    showBottomSheet?.('AccountSwitcher');
   };
 
   const handleLongPress = () => {
     setActingAs(null);
   };
 
+  const label = t('accounts.actingAs.label', { name: displayName }) || `Acting as ${displayName}`;
+  const switchBack = t('accounts.actingAs.switchBack') || 'Switch back';
+
   return (
     <TouchableOpacity
-      style={[styles.container, { backgroundColor: bloomTheme.colors.primary + '14' }]}
+      style={[styles.container, { backgroundColor: `${bloomTheme.colors.primary}14` }]}
       onPress={handlePress}
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`Acting as ${displayName}. Tap to switch accounts, long press to switch back.`}
+      accessibilityLabel={
+        t('accounts.actingAs.a11y', { name: displayName })
+        || `Acting as ${displayName}. Tap to switch accounts, long press to switch back.`
+      }
     >
       <View style={styles.content}>
-        {activeAccount.avatar ? (
+        {account.avatar ? (
           <Image
-            source={{ uri: oxyServices.getFileDownloadUrl(activeAccount.avatar, 'thumb') }}
+            source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
             style={styles.avatar}
           />
         ) : (
-          <View style={[styles.avatarFallback, { backgroundColor: bloomTheme.colors.primary + '30' }]}>
+          <View style={[styles.avatarFallback, { backgroundColor: `${bloomTheme.colors.primary}30` }]}>
             <Text style={[styles.avatarText, { color: bloomTheme.colors.primary }]}>
               {displayName.charAt(0).toUpperCase()}
             </Text>
@@ -68,12 +74,12 @@ const ActingAsBanner: React.FC = () => {
         )}
         <View style={styles.textContainer}>
           <Text style={[styles.label, { color: bloomTheme.colors.primary }]} numberOfLines={1}>
-            Acting as {displayName}
+            {label}
           </Text>
         </View>
-        <View style={[styles.switchBackHint, { borderColor: bloomTheme.colors.primary + '40' }]}>
+        <View style={[styles.switchBackHint, { borderColor: `${bloomTheme.colors.primary}40` }]}>
           <Text style={[styles.switchBackText, { color: bloomTheme.colors.primary }]}>
-            Switch back
+            {switchBack}
           </Text>
         </View>
       </View>

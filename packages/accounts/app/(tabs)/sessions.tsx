@@ -189,8 +189,8 @@ export default function SessionsScreen() {
                                 id: 'managed-accounts-link',
                                 icon: 'account-group-outline',
                                 iconColor: colors.sidebarIconSharing,
-                                title: 'Looking for managed accounts?',
-                                subtitle: 'Go to Your Identities to manage sub-accounts',
+                                title: 'Looking for your accounts?',
+                                subtitle: 'Go to Accounts to manage organizations, projects, and bots',
                                 onPress: handleGoToManagedAccounts,
                                 showChevron: true,
                             }]} />

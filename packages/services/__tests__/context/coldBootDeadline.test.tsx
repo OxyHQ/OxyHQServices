@@ -69,7 +69,7 @@ function buildHangingStub() {
     getUserBySession: jest.fn(async (): Promise<User> => ({ id: USER_ID, username: 't' } as User)),
     refreshTokenViaCookie: jest.fn(async () => null),
     setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

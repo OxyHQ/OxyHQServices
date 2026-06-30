@@ -18,8 +18,8 @@ import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
 import { OxyServicesReputationMixin } from './OxyServices.reputation';
 import { OxyServicesAssetsMixin } from './OxyServices.assets';
-import { OxyServicesApplicationsMixin } from './OxyServices.applications';
-import { OxyServicesWorkspacesMixin } from './OxyServices.workspaces';
+import { OxyServicesAccountsMixin } from './OxyServices.accounts';
+import { OxyServicesConnectedAppsMixin } from './OxyServices.connectedApps';
 import { OxyServicesLocationMixin } from './OxyServices.location';
 import { OxyServicesAnalyticsMixin } from './OxyServices.analytics';
 import { OxyServicesDevicesMixin } from './OxyServices.devices';
@@ -27,7 +27,6 @@ import { OxyServicesSecurityMixin } from './OxyServices.security';
 import { OxyServicesUtilityMixin } from './OxyServices.utility';
 import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
-import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
@@ -56,15 +55,14 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesReputationMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAssetsMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesApplicationsMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesWorkspacesMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesAccountsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesConnectedAppsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLocationMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAnalyticsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDevicesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesSecurityMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesFeaturesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesTopicsMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesManagedAccountsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
@@ -125,15 +123,19 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesPaymentMixin,
     OxyServicesReputationMixin,
     OxyServicesAssetsMixin,
-    OxyServicesApplicationsMixin,
-    OxyServicesWorkspacesMixin,
+    // Unified account graph + the applications owned within it. The clean-cut
+    // replacement for the former managedAccounts + workspaces + applications
+    // (account-management) mixins.
+    OxyServicesAccountsMixin,
+    // OAuth-consent surface (public app identity + connected-app grants). Kept
+    // separate from account ownership.
+    OxyServicesConnectedAppsMixin,
     OxyServicesLocationMixin,
     OxyServicesAnalyticsMixin,
     OxyServicesDevicesMixin,
     OxyServicesSecurityMixin,
     OxyServicesFeaturesMixin,
     OxyServicesTopicsMixin,
-    OxyServicesManagedAccountsMixin,
     OxyServicesContactsMixin,
     OxyServicesAppDataMixin,
     // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)

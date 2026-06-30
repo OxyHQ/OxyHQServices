@@ -27,8 +27,10 @@ interface JwtPayload {
 }
 
 /**
- * Result from the managed-accounts verification endpoint.
- * Indicates whether a user is authorized to act as a given managed account.
+ * Result from the account acting-as verification endpoint
+ * (`GET /accounts/verify-acting-as`). Indicates whether a user is authorized to
+ * act as a given account. The `account:act_as` capability is granted only to the
+ * `owner`, `admin`, and `editor` account roles.
  */
 interface ActingAsVerification {
   authorized: boolean;
@@ -160,7 +162,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
     }
 
     /**
-     * Verify that a user is authorized to act as a managed account.
+     * Verify that a user is authorized to act as an account (direct membership
+     * or inherited via an ancestor). Backed by `GET /accounts/verify-acting-as`.
      * Results are cached in-memory for 5 minutes to avoid repeated API calls.
      *
      * @internal Used by the auth() middleware — not part of the public API
@@ -179,7 +182,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
       try {
         const result = await this.makeRequest<ActingAsVerification>(
           'GET',
-          '/managed-accounts/verify',
+          '/accounts/verify-acting-as',
           { accountId, userId },
           { cache: false, retry: false, timeout: 5000 }
         );

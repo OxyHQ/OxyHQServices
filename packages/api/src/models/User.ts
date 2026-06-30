@@ -87,6 +87,21 @@ export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['met
   return { type, linkedAt: new Date(), metadata };
 }
 
+/**
+ * Account graph classification for the unified Account system. ORTHOGONAL to
+ * the federation `type` field. `personal` accounts are the only ones that may
+ * log in directly; the rest are operated through `AccountMember` rows.
+ */
+export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
+export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
+/** Account-graph lifecycle state (additive — non-personal accounts only). */
+export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
+
+/** Maximum tree depth (ancestors length). Guards against pathological nesting. */
+export const MAX_ACCOUNT_DEPTH = 8;
+
 export interface IUser extends Document {
   username?: string;
   email?: string;
@@ -123,8 +138,33 @@ export interface IUser extends Document {
    */
   verifiedDomains?: VerifiedDomain[];
   type?: 'local' | 'federated' | 'agent' | 'automated';
-  isManagedAccount?: boolean;
-  managedBy?: mongoose.Types.ObjectId;
+  /**
+   * Account graph classification (unified Account system). ORTHOGONAL to
+   * `type` (the federation/automation flavour above): `kind` describes WHAT the
+   * account is in the ownership tree, not how it federates.
+   *  - `personal`     — a human login (the only kind that may authenticate
+   *                     directly); always a tree root.
+   *  - `organization` — a container account (e.g. a company/team).
+   *  - `project`      — a sub-account that scopes a slice of apps/members.
+   *  - `bot`          — a programmatic principal that acts as itself via an
+   *                     {@link AccountCredential} service token.
+   * Non-`personal` accounts have no direct login and are operated through
+   * {@link AccountMember} rows.
+   */
+  kind?: AccountKind;
+  /** Adjacency edge: the immediate parent account in the tree (null for roots). */
+  parentAccountId?: mongoose.Types.ObjectId | null;
+  /** Materialised path of ancestor account ids, ordered root → immediate parent. */
+  ancestors?: mongoose.Types.ObjectId[];
+  /** The root of this account's tree (self for roots). */
+  rootAccountId?: mongoose.Types.ObjectId;
+  /**
+   * Account-graph lifecycle state. `archived` accounts (DELETE /accounts/:id)
+   * are hidden from the accessible forest but never hard-deleted, so their tree
+   * edges and history survive. Personal accounts are deleted via the GDPR
+   * self-delete flow, NOT archived here.
+   */
+  accountStatus?: AccountStatus;
   federation?: {
     actorUri?: string;  // ActivityPub actor URI (globally unique identifier)
     domain?: string;    // e.g. "mastodon.social"
@@ -628,17 +668,35 @@ const UserSchema: Schema = new Schema(
       default: true,
       select: false,
     },
-    // Managed account (sub-account) support
-    isManagedAccount: {
-      type: Boolean,
-      default: false,
+    // Unified Account graph (orthogonal to `type` below). `kind` classifies the
+    // account in the ownership tree; `parentAccountId`/`ancestors`/`rootAccountId`
+    // materialise the tree for O(1) head + subtree queries.
+    kind: {
+      type: String,
+      enum: ACCOUNT_KINDS,
+      default: 'personal',
       index: true,
     },
-    managedBy: {
+    parentAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       default: null,
       index: { sparse: true },
+    },
+    ancestors: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: [],
+      index: true,
+    },
+    rootAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+    },
+    accountStatus: {
+      type: String,
+      enum: ACCOUNT_STATUSES,
+      default: 'active',
     },
     // Federated (ActivityPub / fediverse) user support
     type: {
@@ -756,6 +814,9 @@ UserSchema.index({ hashedPhone: 1 }, { sparse: true });
 // Verified-domain badge lookups (self-sovereign identity layer — B7). Sparse
 // because the vast majority of accounts will never claim a custom domain.
 UserSchema.index({ "verifiedDomains.domain": 1 }, { sparse: true });
+
+// Unified Account graph — list a parent's children of a given kind efficiently.
+UserSchema.index({ kind: 1, parentAccountId: 1 });
 
 /**
  * Keep `hashedEmail` and `hashedPhone` in sync with their canonical sources

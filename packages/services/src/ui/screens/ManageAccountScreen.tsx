@@ -94,7 +94,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         activeSessionId,
         logout,
         openAvatarPicker,
-        managedAccounts,
+        accounts,
     } = useOxy();
 
     const { data: userFromQuery, isLoading: userLoading } = useCurrentUser({
@@ -667,12 +667,12 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     />
                 </SettingsListGroup>
 
-                {/* Managed accounts */}
-                {managedAccounts.length > 0 || isAuthenticated ? (
+                {/* Accounts (unified account graph) */}
+                {accounts.length > 0 || isAuthenticated ? (
                     <SettingsListGroup
                         title={
-                            t('accountCenter.sections.managedAccounts')
-                            || 'Managed accounts'
+                            t('accountCenter.sections.accounts')
+                            || 'Accounts'
                         }
                     >
                         <SettingsListItem
@@ -683,23 +683,23 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                 />
                             }
                             title={
-                                t('accountCenter.items.manageIdentities.title')
-                                || 'Manage identities'
+                                t('accounts.manage.switch.title')
+                                || 'Switch account'
                             }
                             description={
-                                managedAccounts.length > 0
+                                accounts.length > 0
                                     ? (
-                                        t('accountCenter.items.manageIdentities.count', {
-                                            count: managedAccounts.length,
+                                        t('accounts.manage.switch.count', {
+                                            count: accounts.length,
                                         })
-                                        || `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'identity' : 'identities'}`
+                                        || `${accounts.length} ${accounts.length === 1 ? 'account' : 'accounts'}`
                                     )
                                     : (
-                                        t('accountCenter.items.manageIdentities.empty')
-                                        || 'Sub-accounts you control'
+                                        t('accounts.manage.switch.empty')
+                                        || 'Accounts you own or share'
                                     )
                             }
-                            onPress={() => navigate?.('CreateManagedAccount')}
+                            onPress={() => navigate?.('AccountSwitcher')}
                         />
                         <SettingsListItem
                             icon={
@@ -709,14 +709,14 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                 />
                             }
                             title={
-                                t('accountCenter.items.createIdentity.title')
-                                || 'Create new identity'
+                                t('accounts.create.title')
+                                || 'Create account'
                             }
                             description={
-                                t('accountCenter.items.createIdentity.subtitle')
-                                || 'Add a managed sub-account'
+                                t('accounts.manage.create.subtitle')
+                                || 'Add an organization, project, or bot'
                             }
-                            onPress={() => navigate?.('CreateManagedAccount')}
+                            onPress={() => navigate?.('CreateAccount')}
                         />
                     </SettingsListGroup>
                 ) : null}

@@ -32,7 +32,7 @@ export default function HomeScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  const { user, isLoading: oxyLoading, refreshSessions, sessions, managedAccounts, actingAs } = useOxy();
+  const { user, isLoading: oxyLoading, refreshSessions, sessions, accounts, actingAs } = useOxy();
   // Hydrate the user record from the server (createdAt + any fields that were
   // missing from a cached signIn response). useCurrentUser handles staleness
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
@@ -124,7 +124,7 @@ export default function HomeScreen() {
     handleSecurity: handlers.handleSecurity,
   });
   const managedAccountItems = useManagedAccountItems({
-    managedAccounts,
+    accounts,
     actingAs,
     handleManagedAccounts: handlers.handleManagedAccounts,
     handleCreateManagedAccount: handlers.handleCreateManagedAccount,

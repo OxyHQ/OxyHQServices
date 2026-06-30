@@ -107,7 +107,7 @@ function baseStub(overrides: StubOverrides = {}) {
       user: { id: COOKIE_USER_ID, username: 'tester' },
     })),
     setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

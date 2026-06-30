@@ -27,6 +27,7 @@ export { FontLoader, setupFonts } from './components/FontLoader';
 export { default as OxyIcon } from './components/icon/OxyIcon';
 export { default as AccountMenu } from './components/AccountMenu';
 export { default as AccountMenuButton } from './components/AccountMenuButton';
+export { default as AccountSwitcher, AccountSwitcherView } from './components/AccountSwitcher';
 
 // Context + hooks
 export { useOxy } from './context/OxyContext';
@@ -38,6 +39,10 @@ export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';
 // Screens
 export { default as ProfileScreen } from './screens/ProfileScreen';
 export { default as ManageAccountScreen } from './screens/ManageAccountScreen';
+export { default as AccountSwitcherScreen } from './screens/AccountSwitcherScreen';
+export { default as CreateAccountScreen } from './screens/CreateAccountScreen';
+export { default as AccountMembersScreen } from './screens/AccountMembersScreen';
+export { default as AccountSettingsScreen } from './screens/AccountSettingsScreen';
 
 // Stores
 export { useAuthStore } from './stores/authStore';

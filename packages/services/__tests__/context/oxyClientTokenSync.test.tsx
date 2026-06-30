@@ -221,14 +221,14 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     expect(requireContext(sink).isTokenReady).toBe(true);
   });
 
-  it('clears provider auth state when managed accounts returns 401', async () => {
+  it('clears provider auth state when listing accounts returns 401', async () => {
     const sink = makeCapture();
     renderProvider(sink);
     await waitFor(() => expect(sink.current).not.toBeNull());
     const providerInstance = requireContext(sink).oxyServices;
     const unauthorizedError = Object.assign(new Error('Unauthorized'), { status: 401 });
-    const getManagedAccountsSpy = jest
-      .spyOn(providerInstance, 'getManagedAccounts')
+    const listAccountsSpy = jest
+      .spyOn(providerInstance, 'listAccounts')
       .mockRejectedValue(unauthorizedError);
     const authenticatedUser = { id: 'user_managed_401', username: 'stale-user' } as User;
 
@@ -238,12 +238,12 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     });
 
     await waitFor(() => {
-      expect(getManagedAccountsSpy).toHaveBeenCalledTimes(1);
+      expect(listAccountsSpy).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
       expect(requireContext(sink).isAuthenticated).toBe(false);
     });
-    expect(requireContext(sink).managedAccounts).toEqual([]);
+    expect(requireContext(sink).accounts).toEqual([]);
     expect(providerInstance.getAccessToken()).toBeNull();
   });
 });

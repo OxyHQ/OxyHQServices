@@ -74,7 +74,7 @@ function baseStub() {
       user: { id: 'user_123', username: 'tester' },
     })),
     setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

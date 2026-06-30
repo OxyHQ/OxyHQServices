@@ -14,7 +14,8 @@
  * Both Applications live in the production "Oxy" team workspace, owned by the
  * platform user `oxy`. For each app this UPSERTS (never duplicates on re-run):
  *   - Application       keyed by (name + createdByUserId = oxyId)
- *   - ApplicationMember owner membership for oxy, keyed by (applicationId,userId)
+ *   - a single owner AccountMember for oxy on the Oxy org account (app access
+ *     derives from it — no per-app member row)
  *   - ApplicationCredential  type:'public', environment:'production',
  *                            publicKey minted EXACTLY like the real create route
  *                            (`oxy_dk_` + 24 random bytes hex). A `public`
@@ -55,10 +56,9 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Application, type IApplication } from '../src/models/Application';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
-import { ApplicationMember } from '../src/models/ApplicationMember';
-import { Workspace } from '../src/models/Workspace';
+import AccountMember from '../src/models/AccountMember';
 import { User } from '../src/models/User';
-import { permissionsForRole } from '../src/utils/applicationRoles';
+import { permissionsForAccountRole } from '../src/utils/accountRoles';
 import { logger } from '../src/utils/logger';
 import type { ApplicationScope } from '../src/utils/applicationScopes';
 
@@ -73,8 +73,6 @@ function generatePublicKey(): string {
 // ── Known production identifiers (the Oxy team workspace + platform owner) ───
 // These are verified to exist before any write so the script fails loudly if it
 // is ever pointed at the wrong database/environment.
-const OXY_WORKSPACE_ID = '6a2f9d8989b795cfdfac350f';
-const OXY_WORKSPACE_SLUG = 'oxy';
 const OXY_OWNER_USER_ID = '69b2d3df5d12f58c9800d651';
 const OXY_OWNER_USERNAME = 'oxy';
 
@@ -131,19 +129,19 @@ interface MappingRow {
   redirectUris: string[];
   createdApplication: boolean;
   updatedApplication: boolean;
-  createdMember: boolean;
   createdCredential: boolean;
   reusedCredential: boolean;
 }
 
 /**
- * Resolve and validate the production Oxy workspace + owner. Aborts (throws) if
- * either is missing or inconsistent, so the script never writes into the wrong
- * database.
+ * Resolve and validate the production Oxy owner, and resolve (minting if
+ * absent) the Oxy `kind:'organization'` account that owns the official apps.
+ * Aborts (throws) if the owner is missing/inconsistent, so the script never
+ * writes into the wrong database.
  */
-async function resolveTargets(): Promise<{
+async function resolveTargets(dryRun: boolean): Promise<{
   oxyId: mongoose.Types.ObjectId;
-  workspaceId: mongoose.Types.ObjectId;
+  ownerAccountId: mongoose.Types.ObjectId;
 }> {
   const owner = await User.findById(OXY_OWNER_USER_ID).select('_id username').lean();
   if (!owner?._id) {
@@ -159,44 +157,65 @@ async function resolveTargets(): Promise<{
     );
   }
   const oxyId = owner._id as mongoose.Types.ObjectId;
+  const oxyAccountName = process.env.OXY_ACCOUNT_NAME || 'Oxy';
 
-  const workspace = await Workspace.findById(OXY_WORKSPACE_ID)
-    .select('_id slug type ownerId status')
-    .lean();
-  if (!workspace?._id) {
-    throw new Error(
-      `Workspace _id ${OXY_WORKSPACE_ID} (slug "${OXY_WORKSPACE_SLUG}") not found — ` +
-        'refusing to register clients. Wrong database/environment?'
-    );
+  // Resolve (or mint) the Oxy organization account that owns the official apps,
+  // parented under the `oxy` user. Idempotent: keyed by (parentAccountId, kind,
+  // name.first). This is the same account the data migration (Phase 2) mints.
+  let oxyOrg = await User.findOne({
+    parentAccountId: oxyId,
+    kind: 'organization',
+    'name.first': oxyAccountName,
+  });
+  if (!oxyOrg && !dryRun) {
+    const baseUsername = `${OXY_OWNER_USERNAME}-org`;
+    let username = baseUsername;
+    for (let suffix = 1; suffix <= 1000; suffix += 1) {
+      const taken = await User.findOne({ username }).select('_id').lean();
+      if (!taken) break;
+      username = `${baseUsername}${suffix}`;
+    }
+    oxyOrg = await User.create({
+      username,
+      name: { first: oxyAccountName },
+      kind: 'organization',
+      type: 'local',
+      verified: true,
+      authMethods: [],
+      parentAccountId: oxyId,
+      ancestors: [oxyId],
+      rootAccountId: oxyId,
+      accountStatus: 'active',
+    });
   }
-  if (workspace.slug !== OXY_WORKSPACE_SLUG) {
-    throw new Error(
-      `Workspace _id ${OXY_WORKSPACE_ID} resolved to slug "${workspace.slug}", ` +
-        `expected "${OXY_WORKSPACE_SLUG}" — refusing to register clients.`
-    );
-  }
-  if (workspace.type !== 'team') {
-    throw new Error(
-      `Workspace _id ${OXY_WORKSPACE_ID} is type "${workspace.type}", expected "team" — ` +
-        'refusing to register clients.'
-    );
-  }
-  if (!workspace.ownerId || !(workspace.ownerId as mongoose.Types.ObjectId).equals(oxyId)) {
-    throw new Error(
-      `Workspace _id ${OXY_WORKSPACE_ID} is owned by ${String(workspace.ownerId)}, ` +
-        `expected owner ${oxyId.toString()} (user "${OXY_OWNER_USERNAME}") — ` +
-        'refusing to register clients.'
-    );
+  const ownerAccountId = oxyOrg?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
+
+  // Owner AccountMember for oxy on the org (idempotent).
+  if (oxyOrg && !dryRun) {
+    const existingOwner = await AccountMember.findOne({
+      accountId: oxyOrg._id,
+      memberUserId: oxyId,
+    });
+    if (!existingOwner) {
+      await AccountMember.create({
+        accountId: oxyOrg._id,
+        memberUserId: oxyId,
+        role: 'owner',
+        permissions: permissionsForAccountRole('owner'),
+        inherit: true,
+        status: 'active',
+        joinedAt: new Date(),
+      });
+    }
   }
 
   logger.info('Resolved production targets', {
     oxyId: oxyId.toString(),
     ownerUsername: OXY_OWNER_USERNAME,
-    workspaceId: (workspace._id as mongoose.Types.ObjectId).toString(),
-    workspaceSlug: OXY_WORKSPACE_SLUG,
+    ownerAccountId: ownerAccountId.toString(),
   });
 
-  return { oxyId, workspaceId: workspace._id as mongoose.Types.ObjectId };
+  return { oxyId, ownerAccountId };
 }
 
 async function register(): Promise<void> {
@@ -205,14 +224,12 @@ async function register(): Promise<void> {
     logger.info('DRY RUN — no writes will be performed');
   }
 
-  const { oxyId, workspaceId } = await resolveTargets();
-  const ownerPermissions = permissionsForRole('owner');
+  const { oxyId, ownerAccountId } = await resolveTargets(dryRun);
   const mapping: MappingRow[] = [];
 
   for (const spec of CLIENTS) {
     let createdApplication = false;
     let updatedApplication = false;
-    let createdMember = false;
     let createdCredential = false;
     let reusedCredential = false;
 
@@ -233,7 +250,7 @@ async function register(): Promise<void> {
           capabilities: [],
           redirectUris: spec.redirectUris,
           scopes: spec.scopes,
-          workspaceId,
+          ownerAccountId,
           createdByUserId: oxyId,
         });
       }
@@ -246,8 +263,8 @@ async function register(): Promise<void> {
       if (application.isInternal !== (spec.type === 'internal')) {
         application.isInternal = spec.type === 'internal';
       }
-      if (!application.workspaceId || !application.workspaceId.equals(workspaceId)) {
-        application.workspaceId = workspaceId;
+      if (!application.ownerAccountId || !application.ownerAccountId.equals(ownerAccountId)) {
+        application.ownerAccountId = ownerAccountId;
       }
 
       const mergedRedirects = Array.from(
@@ -274,21 +291,9 @@ async function register(): Promise<void> {
     const applicationId =
       application?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
 
-    // ── ApplicationMember: owner membership for oxy ──
-    const existingMember = await ApplicationMember.findOne({ applicationId, userId: oxyId });
-    if (!existingMember) {
-      createdMember = true;
-      if (!dryRun && application) {
-        await ApplicationMember.create({
-          applicationId,
-          userId: oxyId,
-          role: 'owner',
-          permissions: ownerPermissions,
-          status: 'active',
-          joinedAt: new Date(),
-        });
-      }
-    }
+    // Ownership/membership is handled ONCE at the org-account level in
+    // resolveTargets — app access for `oxy` derives from the Oxy org
+    // AccountMember (no per-app member row).
 
     // ── ApplicationCredential: reuse an existing active public prod cred ──
     let credential = await ApplicationCredential.findOne({
@@ -329,7 +334,6 @@ async function register(): Promise<void> {
       redirectUris: application?.redirectUris ?? spec.redirectUris,
       createdApplication,
       updatedApplication,
-      createdMember,
       createdCredential,
       reusedCredential,
     });
@@ -340,7 +344,6 @@ async function register(): Promise<void> {
     clients: CLIENTS.length,
     appsCreated: mapping.filter((m) => m.createdApplication).length,
     appsUpdated: mapping.filter((m) => m.updatedApplication).length,
-    membersCreated: mapping.filter((m) => m.createdMember).length,
     credentialsCreated: mapping.filter((m) => m.createdCredential).length,
     credentialsReused: mapping.filter((m) => m.reusedCredential).length,
   });

@@ -59,7 +59,7 @@ function buildStub(baseURL: string) {
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: 'u', username: 't' } as User)),
     validateSession: jest.fn(async () => ({ valid: true, user: { id: 'u' } })),
     setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { OxyServices, oxyClient } from '@oxyhq/core';
 import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
-import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
+import type { AccountNode, CreateAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import {
@@ -157,12 +157,21 @@ export interface OxyContextState {
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
   openAvatarPicker: () => void;
 
-  // Managed accounts (sub-accounts / managed identities)
+  // Unified account graph (self, owned orgs/projects/bots, accounts shared with
+  // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
+  /** The account id currently being acted-as (`X-Acting-As`), or `null` for the sign-in's own personal account. */
   actingAs: string | null;
-  managedAccounts: ManagedAccount[];
-  setActingAs: (userId: string | null) => void;
-  refreshManagedAccounts: () => Promise<void>;
-  createManagedAccount: (data: CreateManagedAccountInput) => Promise<ManagedAccount>;
+  /** Every account the caller can access — own personal root, owned, and shared — from `listAccounts()`. */
+  accounts: AccountNode[];
+  /**
+   * The {@link AccountNode} currently being acted-as, resolved from `accounts`
+   * by `actingAs`. `null` when acting as the sign-in's own personal account, or
+   * when the acting-as id is not (yet) present in the loaded `accounts` list.
+   */
+  actingAsAccount: AccountNode | null;
+  setActingAs: (accountId: string | null) => void;
+  refreshAccounts: () => Promise<void>;
+  createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -1981,9 +1990,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
   });
 
-  // --- Managed accounts state ---
+  // --- Account graph state ---
   const [actingAs, setActingAsState] = useState<string | null>(null);
-  const [managedAccounts, setManagedAccounts] = useState<ManagedAccount[]>([]);
+  const [accounts, setAccounts] = useState<AccountNode[]>([]);
 
   // Restore actingAs from storage on startup
   useEffect(() => {
@@ -2005,41 +2014,41 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return () => { mounted = false; };
   }, [storage, initialized, storageKeyPrefix, oxyServices]);
 
-  // Load managed accounts when authenticated
-  const refreshManagedAccounts = useCallback(async (): Promise<void> => {
+  // Load the unified account graph when authenticated
+  const refreshAccounts = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
-      setManagedAccounts([]);
+      setAccounts([]);
       return;
     }
 
     try {
-      const accounts = await oxyServices.getManagedAccounts();
-      setManagedAccounts(accounts);
+      const list = await oxyServices.listAccounts();
+      setAccounts(list);
     } catch (err) {
       if (isUnauthorizedStatus(err)) {
-        setManagedAccounts([]);
+        setAccounts([]);
         await clearSessionStateRef.current();
         return;
       }
       if (__DEV__) {
-        loggerUtil.debug('Failed to load managed accounts', { component: 'OxyContext' }, err as unknown);
+        loggerUtil.debug('Failed to load accounts', { component: 'OxyContext' }, err as unknown);
       }
     }
   }, [isAuthenticated, oxyServices, tokenReady]);
 
   useEffect(() => {
     if (isAuthenticated && initialized && tokenReady) {
-      refreshManagedAccounts();
+      refreshAccounts();
     }
-  }, [isAuthenticated, initialized, tokenReady, refreshManagedAccounts]);
+  }, [isAuthenticated, initialized, tokenReady, refreshAccounts]);
 
-  const setActingAs = useCallback((userId: string | null) => {
-    oxyServices.setActingAs(userId);
-    setActingAsState(userId);
+  const setActingAs = useCallback((accountId: string | null) => {
+    oxyServices.setActingAs(accountId);
+    setActingAsState(accountId);
     // Persist to storage
     if (storage) {
-      if (userId) {
-        storage.setItem(`${storageKeyPrefix}_acting_as`, userId).catch((persistError) => {
+      if (accountId) {
+        storage.setItem(`${storageKeyPrefix}_acting_as`, accountId).catch((persistError) => {
           loggerUtil.debug('Failed to persist acting-as account', { component: 'OxyContext' }, persistError as unknown);
         });
       } else {
@@ -2050,11 +2059,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [oxyServices, storage, storageKeyPrefix]);
 
-  const createManagedAccountFn = useCallback(async (data: CreateManagedAccountInput): Promise<ManagedAccount> => {
-    const account = await oxyServices.createManagedAccount(data);
-    await refreshManagedAccounts();
+  // The account currently being acted-as, resolved from the loaded graph.
+  const actingAsAccount = useMemo<AccountNode | null>(() => {
+    if (!actingAs) return null;
+    return accounts.find((node) => node.accountId === actingAs) ?? null;
+  }, [actingAs, accounts]);
+
+  const createAccountFn = useCallback(async (data: CreateAccountInput): Promise<AccountNode> => {
+    const account = await oxyServices.createAccount(data);
+    await refreshAccounts();
     return account;
-  }, [oxyServices, refreshManagedAccounts]);
+  }, [oxyServices, refreshAccounts]);
 
   const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
   const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
@@ -2099,10 +2114,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
     openAvatarPicker,
     actingAs,
-    managedAccounts,
+    accounts,
+    actingAsAccount,
     setActingAs,
-    refreshManagedAccounts,
-    createManagedAccount: createManagedAccountFn,
+    refreshAccounts,
+    createAccount: createAccountFn,
   }), [
     activeSessionId,
     signIn,
@@ -2144,10 +2160,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheetForContext,
     openAvatarPicker,
     actingAs,
-    managedAccounts,
+    accounts,
+    actingAsAccount,
     setActingAs,
-    refreshManagedAccounts,
-    createManagedAccountFn,
+    refreshAccounts,
+    createAccountFn,
   ]);
 
   return (
@@ -2215,10 +2232,11 @@ const LOADING_STATE: OxyContextState = {
   oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
   actingAs: null,
-  managedAccounts: [],
+  accounts: [],
+  actingAsAccount: null,
   setActingAs: () => {},
-  refreshManagedAccounts: () => rejectMissingProvider<void>(),
-  createManagedAccount: () => rejectMissingProvider<ManagedAccount>(),
+  refreshAccounts: () => rejectMissingProvider<void>(),
+  createAccount: () => rejectMissingProvider<AccountNode>(),
 };
 
 export const useOxy = (): OxyContextState => {

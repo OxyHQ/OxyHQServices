@@ -92,7 +92,7 @@ function buildStub(cfg: StubConfig) {
       ),
       validateSession: jest.fn(async () => ({ valid: true, user: { id: EXCHANGED_USER_ID } })),
       setActingAs: jest.fn(),
-      getManagedAccounts: jest.fn(async () => []),
+      listAccounts: jest.fn(async () => []),
     },
   };
 }
