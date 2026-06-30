@@ -232,6 +232,24 @@ function clearSsoBounceStateWeb(): void {
 }
 
 /**
+ * Safely resolve `window.localStorage`, returning `null` when unavailable. The
+ * PROPERTY ACCESS itself (`window.localStorage`) can throw a `SecurityError`
+ * synchronously in opaque-origin / sandboxed iframes or when storage is
+ * disabled — even reading the property evaluates the getter. Every durable
+ * read/write below routes through here so the getter throw is caught once, at
+ * the source, and callers stay clean. Returns `null` off-web and on any access
+ * failure (fail safe).
+ */
+function getLocalStorageWeb(): Storage | null {
+  if (!isWebBrowser()) return null;
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read the DURABLE "this origin has had a signed-in Oxy session before" hint
  * from `localStorage`. Drives the smart {@link allowSsoBounce} gate: a returning
  * visitor (hint present) whose cookie restore came back empty cross-domain
@@ -240,9 +258,10 @@ function clearSsoBounceStateWeb(): void {
  * any storage error (fail safe toward anonymous-browse).
  */
 function hasPriorSessionWeb(): boolean {
-  if (!isWebBrowser()) return false;
+  const storage = getLocalStorageWeb();
+  if (!storage) return false;
   try {
-    return window.localStorage.getItem(ssoPriorSessionKey(window.location.origin)) === '1';
+    return storage.getItem(ssoPriorSessionKey(window.location.origin)) === '1';
   } catch {
     return false;
   }
@@ -253,9 +272,10 @@ function hasPriorSessionWeb(): boolean {
  * or restored. Best-effort; no-ops off-web and swallows storage errors.
  */
 function markPriorSessionWeb(): void {
-  if (!isWebBrowser()) return;
+  const storage = getLocalStorageWeb();
+  if (!storage) return;
   try {
-    window.localStorage.setItem(ssoPriorSessionKey(window.location.origin), '1');
+    storage.setItem(ssoPriorSessionKey(window.location.origin), '1');
   } catch {
     // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
   }
@@ -269,9 +289,10 @@ function markPriorSessionWeb(): void {
  * recovers via a returning-user bounce. No-ops off-web / on storage failure.
  */
 function clearPriorSessionWeb(): void {
-  if (!isWebBrowser()) return;
+  const storage = getLocalStorageWeb();
+  if (!storage) return;
   try {
-    window.localStorage.removeItem(ssoPriorSessionKey(window.location.origin));
+    storage.removeItem(ssoPriorSessionKey(window.location.origin));
   } catch {
     // Best-effort.
   }
@@ -285,9 +306,10 @@ function clearPriorSessionWeb(): void {
  * storage failure (best-effort).
  */
 function markSignedOutWeb(): void {
-  if (!isWebBrowser()) return;
+  const storage = getLocalStorageWeb();
+  if (!storage) return;
   try {
-    window.localStorage.setItem(ssoSignedOutKey(window.location.origin), '1');
+    storage.setItem(ssoSignedOutKey(window.location.origin), '1');
   } catch {
     // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
   }
@@ -299,9 +321,10 @@ function markSignedOutWeb(): void {
  * "stuck signed out" state. No-ops off-web / on storage failure.
  */
 function clearSignedOutWeb(): void {
-  if (!isWebBrowser()) return;
+  const storage = getLocalStorageWeb();
+  if (!storage) return;
   try {
-    window.localStorage.removeItem(ssoSignedOutKey(window.location.origin));
+    storage.removeItem(ssoSignedOutKey(window.location.origin));
   } catch {
     // Best-effort.
   }
@@ -314,8 +337,9 @@ function clearSignedOutWeb(): void {
  * on storage failure (fail safe toward normal restore).
  */
 function silentRestoreSuppressedWeb(): boolean {
-  if (!isWebBrowser()) return false;
-  return silentRestoreSuppressed(window.localStorage, window.location.origin);
+  const storage = getLocalStorageWeb();
+  if (!storage) return false;
+  return silentRestoreSuppressed(storage, window.location.origin);
 }
 
 function isOnSsoCallbackPath(): boolean {
