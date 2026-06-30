@@ -40,7 +40,7 @@ interface MockOxyState {
   activeSessionId: string | null;
   // Payment/wallet/subscription queries scope by the ACTIVE account (the
   // account switched into), not the device-session owner.
-  activeAccount: { id: string } | null;
+  user: { id: string } | null;
 }
 
 const SUBSCRIPTION_FIXTURE: Subscription = {
@@ -102,7 +102,7 @@ const defaultMockState = (): MockOxyState => ({
   oxyServices: makeServices(),
   isAuthenticated: true,
   activeSessionId: 'sess-1',
-  activeAccount: { id: 'u1' },
+  user: { id: 'u1' },
 });
 
 let mockState: MockOxyState = defaultMockState();
@@ -197,7 +197,7 @@ describe('payment query hooks', () => {
     });
 
     it('does not call the SDK without a scoped active account id', () => {
-      mockState.activeAccount = null;
+      mockState.user = null;
 
       const { result } = renderHook(() => useUserSubscription(), {
         wrapper: makeWrapper(queryClient),
@@ -289,7 +289,7 @@ describe('payment query hooks', () => {
       },
       isAuthenticated: true,
       activeSessionId: 'sess-2',
-      activeAccount: { id: 'u2' },
+      user: { id: 'u2' },
     };
 
     const { result: secondResult } = renderHook(() => useUserWallet(), {

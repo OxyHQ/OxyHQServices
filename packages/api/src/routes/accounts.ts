@@ -12,6 +12,9 @@ import { accountService, type AccountNode, type EffectiveAccess } from '../servi
 import { User, IUser } from '../models/User';
 import { IAccountMember } from '../models/AccountMember';
 import { IAccountCredential } from '../models/AccountCredential';
+import sessionService from '../services/session.service';
+import { issueAndSetRefreshCookie } from '../services/refreshToken.service';
+import type { SessionAuthResponse } from '../types/session';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
@@ -22,7 +25,6 @@ import {
   accountMemberParams,
   accountCredentialParams,
   listAccountsQuerySchema,
-  verifyActingAsQuerySchema,
   createAccountSchema,
   updateAccountSchema,
   moveAccountSchema,
@@ -272,26 +274,94 @@ router.get(
 );
 
 /**
- * Verify whether `userId` may act AS `accountId` (drives `X-Acting-As`).
- * Replaces `/managed-accounts/verify`. A caller may only verify themselves.
+ * Switch INTO a managed/org account — a TRUE account switch (the whole app
+ * becomes that account), NOT a per-request delegation. Mints a REAL session
+ * whose `user` IS the target account, exactly like switching device accounts.
+ *
+ * The caller (operator) must hold `account:act_as` over the target. The minted
+ * session records the operator (`operatedByUserId`) for audit and binds its
+ * validity to that membership — revoking it kills the session (re-checked on
+ * validate + refresh). The session is added to the device's multi-account set
+ * (`oxy_rt_*` cookie family), so it survives reload and propagates cross-domain
+ * via `/auth/refresh-all` exactly like a device account.
+ *
+ * Returns the SAME shape as login / claimSession (`SessionAuthResponse` +
+ * `authuser`) so the client plants it as the active session.
  */
-router.get(
-  '/verify-acting-as',
-  readLimiter,
-  validate({ query: verifyActingAsQuerySchema }),
+router.post(
+  '/:id/switch',
+  writeLimiter,
+  validate({ params: accountIdRouteParams }),
   asyncHandler(async (req: AuthRequest, res) => {
-    const authenticatedUserId = requireUserId(req);
-    const { accountId, userId } = req.query as { accountId: string; userId: string };
-
-    if (!mongoose.isValidObjectId(accountId) || !mongoose.isValidObjectId(userId)) {
-      throw new BadRequestError('Invalid accountId or userId format');
-    }
-    if (userId !== authenticatedUserId) {
-      throw new ForbiddenError('Cannot verify another user');
+    const operatorId = requireUserId(req);
+    const id = req.params.id;
+    if (!mongoose.isValidObjectId(id)) {
+      throw new NotFoundError('Account not found');
     }
 
-    const role = await accountService.verifyActingAs(authenticatedUserId, accountId);
-    res.json({ authorized: Boolean(role), role: role ?? null });
+    // Authorize: the operator must hold account:act_as over the target (directly
+    // or inherited). Non-members / insufficient role → 403. This is the ONLY gate
+    // — the session token then carries identity; no per-request header is trusted.
+    const role = await accountService.verifyActingAs(operatorId, id);
+    if (!role) {
+      throw new ForbiddenError('You are not authorized to switch into this account');
+    }
+
+    const account = await User.findById(id);
+    if (!account || account.accountStatus === 'archived') {
+      throw new NotFoundError('Account not found');
+    }
+    // Only managed accounts are switch targets. Personal accounts are human
+    // logins and must never be assumed via a switch (that would be impersonation).
+    if (!account.kind || account.kind === 'personal') {
+      throw new ForbiddenError('Cannot switch into a personal account');
+    }
+
+    // Mint a REAL session for the managed account, recording the operator so the
+    // session's validity stays bound to their act_as membership.
+    const session = await sessionService.createSession(account._id.toString(), req, {
+      operatedByUserId: operatorId,
+    });
+
+    const userData = formatUserResponse(account);
+    if (!userData) {
+      throw new Error('Failed to format account data');
+    }
+
+    // Add the managed account to the device's multi-account set so it survives
+    // reload and propagates cross-domain via /auth/refresh-all (best-effort — a
+    // cookie failure must not break the switch).
+    let authuser: number | null = null;
+    try {
+      const issued = await issueAndSetRefreshCookie(res, session.sessionId, account._id, {
+        cookieHeader: req.headers.cookie,
+      });
+      authuser = issued.authuser;
+    } catch (error) {
+      logger.error('Failed to set refresh cookie during account switch', error instanceof Error ? error : new Error(String(error)), {
+        component: 'accounts',
+        method: 'switch',
+        accountId: account._id.toString(),
+      });
+    }
+
+    // Mirror the canonical login / claimSession response shape.
+    const response: SessionAuthResponse & { authuser?: number } = {
+      sessionId: session.sessionId,
+      deviceId: session.deviceId,
+      expiresAt: session.expiresAt.toISOString(),
+      accessToken: session.accessToken,
+      user: {
+        id: userData.id,
+        username: userData.username,
+        avatar: userData.avatar,
+      },
+    };
+    if (authuser !== null) {
+      response.authuser = authuser;
+    }
+
+    res.status(200).json(response);
   })
 );
 

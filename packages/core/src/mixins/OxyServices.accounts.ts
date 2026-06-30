@@ -25,12 +25,16 @@
  * member `_id`, and credentials by their `credentialId`. Never by name, slug, or
  * handle.
  *
- * NOTE: acting-as (delegated identity) is NOT part of this mixin — `setActingAs`
- * / `getActingAs` live on `OxyServices.base` and `verifyActingAs` on the utility
- * mixin (it verifies against `GET /accounts/verify-acting-as`).
+ * SWITCHING INTO AN ACCOUNT: `switchToAccount(accountId)` mints a REAL session
+ * for the target account and plants it as the active session — there is no
+ * per-request "acting-as" header. Identity is carried by the session/token, not
+ * a delegation header, so a switch propagates through reload and `refresh-all`
+ * exactly like a login.
  */
 import type { User } from '../models/interfaces';
+import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
+import { normalizeUserIdentity } from '../utils/userIdentity';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -427,6 +431,29 @@ export interface AccountSuccessResult {
   success: boolean;
 }
 
+/**
+ * Result of {@link OxyServicesAccountsMixin.switchToAccount} — the freshly
+ * minted session for the target account, in the SAME shape the canonical login
+ * / `claimSessionByToken` responses use (`SessionLoginResponse`), plus the
+ * device-local refresh-cookie slot index.
+ *
+ * `accessToken` is the first access token for the new session (already planted
+ * as the active token by `switchToAccount`). The refresh token is NOT in the
+ * body — the server sets it as the httpOnly `oxy_rt_<authuser>` cookie, which
+ * joins the device multi-account set so the switched session survives reload and
+ * propagates cross-domain via `/auth/refresh-all`. `user` is the target account.
+ */
+export interface SwitchAccountResult extends SessionLoginResponse {
+  /**
+   * The device-local refresh-cookie slot index (`oxy_rt_<authuser>`) the server
+   * assigned to the minted session. Surfaced so the consumer can register the
+   * new session in its device multi-account set exactly like a login response.
+   * Absent only when the server could not set the cookie (best-effort — the
+   * switch itself still succeeds).
+   */
+  authuser?: number;
+}
+
 export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
@@ -475,6 +502,67 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
           { cache: true, cacheTTL: CACHE_TIMES.LONG },
         );
         return res.account;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Switch the active session INTO a managed account.
+     *
+     * Calls `POST /accounts/:id/switch` with the signed-in operator's bearer.
+     * The server authorises the operator (must hold `account:act_as` over the
+     * target, directly or inherited — else 403; 404 if missing/archived; 403 if
+     * the target is a personal account), then mints a REAL session for the
+     * target account and returns it in the canonical login / `claimSessionByToken`
+     * shape (`{ sessionId, deviceId, expiresAt, accessToken, user, authuser }`).
+     *
+     * Unlike the removed `X-Acting-As` delegation header, the returned session
+     * IS the new identity: this plants `accessToken` as the active token —
+     * exactly like `claimSessionByToken` / `verifyChallenge` — so every
+     * subsequent request authenticates as the target account. The refresh token
+     * is the server-set httpOnly `oxy_rt_<authuser>` cookie (never in the body),
+     * so it joins the device multi-account set and survives reload /
+     * `refresh-all` with no extra client work.
+     *
+     * After planting, the SDK's identity-scoped GET cache is fully cleared so
+     * every cached read re-fetches as the new account. (The consuming
+     * `OxyContext` additionally invalidates its React Query cache and updates
+     * session state from the returned `user`; this clears the SDK's own HTTP
+     * cache at the source — `setTokens` deliberately preserves the warm cache for
+     * same-user silent refreshes, so the sweep here is explicit.)
+     *
+     * @param accountId - The target account's Mongo `_id`.
+     * @returns The minted session (planted) plus the device `authuser` slot.
+     */
+    async switchToAccount(accountId: string): Promise<SwitchAccountResult> {
+      try {
+        const res = await this.makeRequest<SwitchAccountResult>(
+          'POST',
+          `/accounts/${encodeURIComponent(accountId)}/switch`,
+          undefined,
+          { cache: false },
+        );
+
+        // Plant the freshly minted session as the ACTIVE session, mirroring
+        // `claimSessionByToken` / `verifyChallenge`: the response body carries
+        // the first access token; the refresh token is the server-set httpOnly
+        // cookie, so there is nothing else to store here.
+        if (res?.accessToken) {
+          this.setTokens(res.accessToken);
+        }
+
+        // Identity changed → drop the entire GET response cache so no entry
+        // personalised for the previous identity is reused. Cache keys are
+        // identity-scoped, so a different identity could not READ the old
+        // entries anyway, but clearing guarantees a clean refetch as the new
+        // account and frees the prior identity's resident data.
+        this.clearCache();
+
+        return {
+          ...res,
+          user: normalizeUserIdentity(res.user),
+        };
       } catch (error) {
         throw this.handleError(error);
       }

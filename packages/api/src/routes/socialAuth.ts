@@ -112,7 +112,8 @@ async function handleSocialSignIn(
   }
 
   // Only `personal` accounts may authenticate. Organization/project/bot accounts
-  // are operated via AccountMember + X-Acting-As and must never mint a session.
+  // are operated by switching INTO them (POST /accounts/:id/switch, which mints
+  // an operator-bound session) — never by a direct/social login here.
   if (user.kind && user.kind !== 'personal') {
     throw new ForbiddenError('This account cannot sign in directly');
   }

@@ -3,8 +3,8 @@
  *
  * Extracted from {@link HttpService} so the identity-tag derivation is a pure,
  * independently testable function with no dependency on instance/token state.
- * The HTTP service injects the live access token and acting-as id; everything
- * here is referentially transparent given those inputs.
+ * The HTTP service injects the live access token; everything here is
+ * referentially transparent given that input.
  */
 
 import { jwtDecode } from 'jwt-decode';
@@ -72,27 +72,22 @@ export function fnv1a32(str: string): string {
  *
  * We use the decoded user id rather than the raw JWT so the token never lands
  * in a cache key (no token leakage through any cache-key logging, no key bloat).
- * The acting-as id is folded in because managed-account responses differ per
- * acting identity — and `X-Acting-As` already changes the server response for
- * the same bearer token.
+ * Switching into a managed account mints a REAL new session whose access token
+ * carries the target account's id, so the identity tag changes naturally on a
+ * switch — there is no separate acting-as discriminator to fold in.
  *
  * @param accessToken The current bearer access token, or `null` when anonymous.
- * @param actingAsUserId The active managed-account id, or `null`.
  */
-export function computeIdentityTag(
-  accessToken: string | null,
-  actingAsUserId: string | null,
-): string {
-  let principal = ANON_IDENTITY;
-  if (accessToken) {
-    try {
-      const decoded = jwtDecode<CacheIdentityJwtPayload>(accessToken);
-      principal = decoded.userId || decoded.id || `t${fnv1a32(accessToken)}`;
-    } catch {
-      // Undecodable token — still partition it away from anon and from other
-      // tokens via a hash. Never silently fall back to ANON_IDENTITY.
-      principal = `t${fnv1a32(accessToken)}`;
-    }
+export function computeIdentityTag(accessToken: string | null): string {
+  if (!accessToken) {
+    return ANON_IDENTITY;
   }
-  return actingAsUserId ? `${principal}~as${actingAsUserId}` : principal;
+  try {
+    const decoded = jwtDecode<CacheIdentityJwtPayload>(accessToken);
+    return decoded.userId || decoded.id || `t${fnv1a32(accessToken)}`;
+  } catch {
+    // Undecodable token — still partition it away from anon and from other
+    // tokens via a hash. Never silently fall back to ANON_IDENTITY.
+    return `t${fnv1a32(accessToken)}`;
+  }
 }

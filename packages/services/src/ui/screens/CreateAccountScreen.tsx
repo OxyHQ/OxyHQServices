@@ -84,7 +84,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   parentAccountId,
 }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, createAccount, setActingAs } = useOxy();
+  const { oxyServices, createAccount, switchToAccount } = useOxy();
   const { t } = useI18n();
 
   const parentId = typeof parentAccountId === 'string' ? parentAccountId : undefined;
@@ -181,9 +181,11 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
 
       toast.success(t('accounts.create.toasts.success') || 'Account created');
 
-      // Switch to the new account
+      // Switch INTO the new account (real-session switch — the whole app becomes
+      // it). Best-effort: creation already succeeded, so a switch hiccup should
+      // not surface as a create failure.
       if (account.accountId) {
-        setActingAs(account.accountId);
+        await switchToAccount(account.accountId).catch(() => undefined);
       }
 
       onClose?.();
@@ -195,7 +197,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     } finally {
       setIsCreating(false);
     }
-  }, [canCreate, kind, username, displayName, bio, parentId, createAccount, setActingAs, onClose, t]);
+  }, [canCreate, kind, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
 
   // Status icon + color shown alongside the username field message
   const usernameIsInvalid = usernameStatus === 'taken' || usernameStatus === 'invalid';

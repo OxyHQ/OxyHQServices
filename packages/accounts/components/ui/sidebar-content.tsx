@@ -102,25 +102,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 }
 
 const styles = StyleSheet.create({
-    actingAsContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
-        marginBottom: 12,
-        gap: 8,
-        alignSelf: 'flex-start',
-    },
-    actingAsDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    actingAsText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
     menuContainer: {
         gap: 4,
         alignItems: 'flex-start',

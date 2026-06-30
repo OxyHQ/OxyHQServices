@@ -125,6 +125,7 @@ export type {
     TransferAccountOwnershipInput,
     CreateAccountCredentialInput,
     AccountSuccessResult,
+    SwitchAccountResult,
     // Applications owned within the account graph (Application = OAuth client).
     Application,
     ApplicationType,

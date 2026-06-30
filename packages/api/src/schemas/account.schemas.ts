@@ -25,12 +25,6 @@ export const listAccountsQuerySchema = z.object({
   tree: z.enum(['true', 'false']).optional(),
 });
 
-/** GET /accounts/verify-acting-as — both ids required. */
-export const verifyActingAsQuerySchema = z.object({
-  accountId: z.string().trim().min(1),
-  userId: z.string().trim().min(1),
-});
-
 const nameSchema = z
   .object({
     first: z.string().trim().max(100).optional(),

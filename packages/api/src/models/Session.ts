@@ -20,6 +20,16 @@ export interface ISession extends Document {
   refreshToken: string; // Refresh token for this session
   previousRefreshToken?: string; // Previous refresh token kept for grace period after rotation
   tokenRotatedAt?: Date; // When the refresh token was last rotated
+  /**
+   * The OPERATOR — the human user who minted this session by switching INTO a
+   * managed/org account (`userId` = the managed account). Absent for ordinary
+   * first-party sessions. While set, this session's validity is bound to the
+   * operator's `account:act_as` membership over `userId`: revoking that
+   * membership kills the session (re-checked on validate + refresh). Recorded
+   * for audit/accountability — actions on a managed account are attributable to
+   * the operator who performed them.
+   */
+  operatedByUserId?: mongoose.Types.ObjectId;
   isActive: boolean;
   expiresAt: Date; // When this session expires
   lastRefresh: Date; // Last time tokens were refreshed
@@ -68,6 +78,11 @@ const SessionSchema: Schema = new Schema(
     },
     tokenRotatedAt: {
       type: Date,
+      default: null,
+    },
+    operatedByUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
       default: null,
     },
     isActive: {

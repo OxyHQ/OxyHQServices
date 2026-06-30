@@ -32,11 +32,11 @@ export default function HomeScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  // `activeAccount` is the account the user is currently switched INTO (a true
-  // Google-style switch; equals the session `user` when not switched). Identity
-  // display (name / avatar / profile fields) follows `activeAccount`; the login
-  // security surfaces below stay on the session `user`.
-  const { user, activeAccount, isLoading: oxyLoading, refreshSessions, sessions, accounts, actingAs } = useOxy();
+  // `user` is the account the app is currently signed in as. Switching accounts
+  // is a real session switch, so `user` already reflects the switched-into
+  // account — identity display (name / avatar / profile fields) and the login
+  // security surfaces all read from `user`.
+  const { user, isLoading: oxyLoading, refreshSessions, sessions, accounts } = useOxy();
   // Hydrate the user record from the server (createdAt + any fields that were
   // missing from a cached signIn response). useCurrentUser handles staleness
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
@@ -58,10 +58,10 @@ export default function HomeScreen() {
     isLoading: biometricLoading,
   } = useBiometricSettings();
 
-  // Compute active-account identity data (the account switched into).
-  const displayName = useMemo(() => getDisplayName(activeAccount), [activeAccount]);
-  const accountCreatedDate = useMemo(() => formatDate(activeAccount?.createdAt), [activeAccount?.createdAt]);
-  const avatarUrl = useAvatarUrl(activeAccount);
+  // Compute current-account identity data (the account signed in as).
+  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
+  const avatarUrl = useAvatarUrl(user);
 
   const handlePressIn = useHapticPress();
 
@@ -97,7 +97,7 @@ export default function HomeScreen() {
 
   // Section item builders — each owns its own memoization.
   const recommendations = useHomeRecommendations({
-    username: activeAccount?.username,
+    username: user?.username,
     handleSetUsername: handlers.handleSetUsername,
   });
   const quickActions = useQuickActions(handlers);
@@ -113,7 +113,7 @@ export default function HomeScreen() {
   const quickStatsCards = useQuickStatsCards({
     deviceCount: devices.length,
     sessions,
-    username: activeAccount?.username,
+    username: user?.username,
     handleDevices: handlers.handleDevices,
     handleSecurity: handlers.handleSecurity,
     handlePersonalInfo: handlers.handlePersonalInfo,
@@ -129,7 +129,7 @@ export default function HomeScreen() {
   });
   const managedAccountItems = useManagedAccountItems({
     accounts,
-    actingAs,
+    currentAccountId: user?.id ?? null,
     handleManagedAccounts: handlers.handleManagedAccounts,
     handleCreateManagedAccount: handlers.handleCreateManagedAccount,
   });

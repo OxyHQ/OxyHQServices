@@ -111,12 +111,12 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
     const {
         activeSessionId,
         switchSession,
+        switchToAccount,
         removeSession,
         logout,
         logoutAll,
         accounts,
-        actingAs,
-        setActingAs,
+        user,
         oxyServices,
     } = useOxy();
     const { t, locale } = useI18n();
@@ -125,6 +125,7 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
     const { accounts: deviceAccounts } = useDeviceAccounts();
 
     const [busySessionId, setBusySessionId] = useState<string | null>(null);
+    const [switchingAccountId, setSwitchingAccountId] = useState<string | null>(null);
     const [removingSessionId, setRemovingSessionId] = useState<string | null>(null);
     const [signingOut, setSigningOut] = useState(false);
     const [signingOutAll, setSigningOutAll] = useState(false);
@@ -140,19 +141,37 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
         return [...current, ...others];
     }, [deviceAccounts]);
 
-    const isSwitching = busySessionId !== null;
+    const isSwitching = busySessionId !== null || switchingAccountId !== null;
     const actionDisabled = isSwitching || signingOut || signingOutAll;
 
+    // Account ids that are already signed in as REAL device sessions. After a
+    // `switchToAccount` the target becomes a device session (and the personal
+    // account always is one), so it would otherwise appear BOTH as a device row
+    // (Section A) and a graph row (Section B). We dedupe by hiding such accounts
+    // from the graph — they show in Section A, where the active one is flagged
+    // current.
+    const deviceUserIds = useMemo<Set<string>>(
+        () => new Set(deviceAccounts.map((account) => account.user.id).filter((id): id is string => Boolean(id))),
+        [deviceAccounts],
+    );
+
     // --- Account graph (Section B) ---
+    // The switchable graph minus accounts that are already device sessions
+    // (deduped into Section A). This is the set Section B renders and searches.
+    const graphAccounts = useMemo<AccountNode[]>(
+        () => accounts.filter((node) => !deviceUserIds.has(node.accountId)),
+        [accounts, deviceUserIds],
+    );
+
     const filtered = useMemo<AccountNode[]>(() => {
         const q = query.trim().toLowerCase();
-        if (!q) return accounts;
-        return accounts.filter((node) => {
+        if (!q) return graphAccounts;
+        return graphAccounts.filter((node) => {
             const name = getAccountDisplayName(node.account, locale).toLowerCase();
             const username = (node.account?.username ?? '').toLowerCase();
             return name.includes(q) || username.includes(q);
         });
-    }, [accounts, query, locale]);
+    }, [graphAccounts, query, locale]);
 
     const yourAccounts = useMemo(
         () => toTree(filtered.filter((node) => node.relationship !== 'member')),
@@ -165,11 +184,8 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
 
     const handleSwitchDevice = useCallback(async (sessionId: string) => {
         if (busySessionId) return;
-        // Tapping the already-active sign-in returns to that sign-in's own
-        // personal account (clearing any account-graph switch). When already on
-        // the personal account this just closes.
+        // Tapping the already-active sign-in just closes — it IS the current account.
         if (sessionId === activeSessionId) {
-            if (actingAs !== null) setActingAs(null);
             onClose();
             return;
         }
@@ -177,9 +193,6 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
         try {
             await onBeforeSessionChange?.();
             await switchSession(sessionId);
-            // The active sign-in changed; any account-graph switch belonged to the
-            // previous sign-in, so the new sign-in starts on its personal account.
-            if (actingAs !== null) setActingAs(null);
             toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
             onClose();
         } catch (error) {
@@ -190,7 +203,7 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
         } finally {
             setBusySessionId(null);
         }
-    }, [activeSessionId, busySessionId, actingAs, setActingAs, switchSession, t, onClose, onBeforeSessionChange]);
+    }, [activeSessionId, busySessionId, switchSession, t, onClose, onBeforeSessionChange]);
 
     const handleRemoveDevice = useCallback(async (sessionId: string) => {
         if (sessionId === activeSessionId || removingSessionId) return;
@@ -238,18 +251,40 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
         }
     }, [signingOutAll, logoutAll, t, onClose, onBeforeSessionChange]);
 
-    const handleSelectAccount = useCallback((node: AccountNode) => {
-        // The personal (self) account = no delegation (acting-as null).
-        setActingAs(node.relationship === 'self' ? null : node.accountId);
-        onClose();
-    }, [setActingAs, onClose]);
+    const handleSelectAccount = useCallback(async (node: AccountNode) => {
+        if (switchingAccountId) return;
+        // Already the active account → just close (it would also be deduped from
+        // the graph, but guard defensively).
+        if (node.accountId === user?.id) {
+            onClose();
+            return;
+        }
+        setSwitchingAccountId(node.accountId);
+        try {
+            await onBeforeSessionChange?.();
+            // Switching INTO a graph account is a REAL session switch — the whole
+            // app becomes that account (no delegation header).
+            await switchToAccount(node.accountId);
+            toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
+            onClose();
+        } catch (error) {
+            if (!isDev()) {
+                loggerUtil.warn('Switch account failed', { component: 'AccountSwitcher' }, error as unknown);
+            }
+            toast.error(t('accountSwitcher.toasts.switchFailed') || 'Failed to switch account');
+        } finally {
+            setSwitchingAccountId(null);
+        }
+    }, [switchingAccountId, user?.id, switchToAccount, t, onClose, onBeforeSessionChange]);
 
     const renderAccountNode = useCallback((node: AccountNode, isChild: boolean) => {
         const displayName = getAccountDisplayName(node.account, locale);
         const username = node.account?.username ? `@${node.account.username}` : null;
-        const active = node.relationship === 'self'
-            ? actingAs === null
-            : actingAs === node.accountId;
+        // Current account = the active session's user. After a real-session
+        // switch `user` IS this account (such accounts are normally deduped out of
+        // the graph, but the check stays correct/defensive if one lingers).
+        const active = node.accountId === user?.id;
+        const isNodeSwitching = switchingAccountId === node.accountId;
         const role = node.callerMembership?.role;
         const avatarUri = node.account?.avatar
             ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
@@ -267,11 +302,13 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
                 accessibilityLabel={displayName}
                 accessibilityState={{ selected: active }}
                 onPress={() => handleSelectAccount(node)}
+                disabled={isSwitching}
                 activeOpacity={0.6}
                 style={[
                     styles.accountRow,
                     isChild && styles.childRow,
                     active && { backgroundColor: colors.primarySubtle },
+                    isSwitching && !isNodeSwitching && styles.rowDisabled,
                 ]}
             >
                 <Avatar uri={avatarUri} name={displayName} size={isChild ? 28 : 34} />
@@ -305,10 +342,14 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
                         <Ionicons name="settings-outline" size={16} color={colors.textSecondary} />
                     </TouchableOpacity>
                 ) : null}
-                {active ? <Ionicons name="checkmark" size={20} color={colors.primary} /> : null}
+                {isNodeSwitching ? (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                ) : active ? (
+                    <Ionicons name="checkmark" size={20} color={colors.primary} />
+                ) : null}
             </TouchableOpacity>
         );
-    }, [actingAs, colors, handleSelectAccount, locale, onOpenAccountSettings, oxyServices, t]);
+    }, [user?.id, switchingAccountId, isSwitching, colors, handleSelectAccount, locale, onOpenAccountSettings, oxyServices, t]);
 
     const renderTree = useCallback((entries: TreeEntry[]) => (
         entries.map((entry) => (
@@ -333,11 +374,9 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
             {deviceRows.map((row) => {
                 const isBusy = busySessionId === row.sessionId;
                 const isRemoving = removingSessionId === row.sessionId;
-                // The active sign-in is THE current account only when no
-                // account-graph switch is in effect; otherwise a switched-into
-                // account is current and this row reads as the signed-in (but not
-                // active) account — tappable to return to it.
-                const isCurrentAccount = row.isActive && actingAs === null;
+                // The active device session IS the current account — there is no
+                // separate acting-as concept; switching makes `user` that account.
+                const isCurrentAccount = row.isActive;
                 return (
                     <TouchableOpacity
                         key={`device-${row.sessionId}`}
@@ -371,11 +410,6 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
                             <ActivityIndicator color={colors.primary} size="small" />
                         ) : isCurrentAccount ? (
                             <Ionicons name="checkmark" size={20} color={colors.primary} />
-                        ) : row.isActive ? (
-                            // Active sign-in while switched into another account:
-                            // no current-checkmark, no sign-out (can't sign out the
-                            // active session here) — tap the row to return to it.
-                            null
                         ) : isRemoving ? (
                             <ActivityIndicator color={colors.textSecondary} size="small" />
                         ) : (
@@ -420,12 +454,12 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
                 </Text>
             </TouchableOpacity>
 
-            {/* Section B — account graph */}
-            {accounts.length > 0 ? (
+            {/* Section B — account graph (switchable accounts not already a device session) */}
+            {graphAccounts.length > 0 ? (
                 <>
                     <Divider color={colors.border} spacing={4} />
 
-                    {accounts.length > 6 ? (
+                    {graphAccounts.length > 6 ? (
                         <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <Ionicons name="search" size={16} color={colors.textSecondary} />
                             <TextInput
