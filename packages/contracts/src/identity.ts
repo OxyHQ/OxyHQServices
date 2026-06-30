@@ -45,25 +45,69 @@ import { z } from 'zod';
 /* -------------------------------------------------------------------------- */
 
 /**
- * A single DID verification method. Mirrors the secp256k1 key entries the API
- * derives from `User.publicKey` + each `authMethods[]` of type `identity`.
- * `id` is a fragment reference within the DID document (e.g.
- * `did:web:oxy.so:u:<id>#key-1`); `controller` is the controlling DID;
- * `publicKeyHex` is the uncompressed/compressed secp256k1 public key in hex.
+ * A `EcdsaSecp256k1VerificationKey2019` verification method — the canonical Oxy
+ * key form. Mirrors the secp256k1 key entries the API derives from
+ * `User.publicKey` + each `authMethods[]` of type `identity`. `id` is a fragment
+ * reference within the DID document (e.g. `did:web:oxy.so:u:<id>#key-1`);
+ * `controller` is the controlling DID; `publicKeyHex` is the (uncompressed)
+ * secp256k1 public key in hex.
  */
-export interface VerificationMethod {
+export interface Secp256k1VerificationMethod {
     id: string;
     type: 'EcdsaSecp256k1VerificationKey2019';
     controller: string;
     publicKeyHex: string;
 }
 
-export const verificationMethodSchema: z.ZodType<VerificationMethod> = z.object({
+/**
+ * A `Multikey` verification method — the AtProto/Bluesky key form. The SAME
+ * secp256k1 key as an account's {@link Secp256k1VerificationMethod}, re-encoded
+ * the way atproto expects: `publicKeyMultibase` is the `did:key`-style multibase
+ * (`base58btc`, leading `z`) of the multicodec-prefixed (`0xe7 0x01`, secp256k1)
+ * COMPRESSED public key. This is the verification method a foreign Bluesky
+ * AppView reads when it routes to the user's bridge PDS; it is additive and only
+ * present for atproto-bridged self-sovereign accounts.
+ */
+export interface MultikeyVerificationMethod {
+    id: string;
+    type: 'Multikey';
+    controller: string;
+    publicKeyMultibase: string;
+}
+
+/**
+ * A single DID verification method — either the canonical Oxy secp256k1 form
+ * ({@link Secp256k1VerificationMethod}) or the atproto `Multikey` form
+ * ({@link MultikeyVerificationMethod}). Discriminated on `type`, so an
+ * `EcdsaSecp256k1VerificationKey2019` entry keeps its exact `publicKeyHex` shape
+ * (every document already served verifies byte-identically) and the `Multikey`
+ * entry carries `publicKeyMultibase`.
+ */
+export type VerificationMethod = Secp256k1VerificationMethod | MultikeyVerificationMethod;
+
+// The option schemas are left UN-annotated so they keep their concrete
+// `ZodObject` type — `z.discriminatedUnion` requires object options and an
+// explicit `z.ZodType<>` annotation would erase the shape it discriminates on.
+// `z.object` already infers each option's type exactly (id/type/controller +
+// the key field), so the union is structurally `VerificationMethod`.
+const secp256k1VerificationMethodSchema = z.object({
     id: z.string(),
     type: z.literal('EcdsaSecp256k1VerificationKey2019'),
     controller: z.string(),
     publicKeyHex: z.string(),
 });
+
+const multikeyVerificationMethodSchema = z.object({
+    id: z.string(),
+    type: z.literal('Multikey'),
+    controller: z.string(),
+    publicKeyMultibase: z.string(),
+});
+
+export const verificationMethodSchema = z.discriminatedUnion('type', [
+    secp256k1VerificationMethodSchema,
+    multikeyVerificationMethodSchema,
+]);
 
 /**
  * A DID service entry (the `service[]` array). Oxy publishes its API root and

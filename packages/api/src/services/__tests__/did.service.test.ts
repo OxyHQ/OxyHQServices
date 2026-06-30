@@ -249,3 +249,105 @@ describe('buildDidDocument — personal data node (F5a)', () => {
     expect(doc.service.some((s) => s.id.endsWith('#oxy-node'))).toBe(false);
   });
 });
+
+describe('buildDidDocument — atproto BE-DISCOVERED seam (C4)', () => {
+  const publicKey = newPublicKey();
+  const selfSovereign = {
+    _id: '507f1f77bcf86cd799439011',
+    publicKey,
+    username: 'nate',
+    authMethods: [{ type: 'identity', metadata: { publicKey } }],
+    type: 'local',
+  };
+  const custodial = {
+    _id: '507f1f77bcf86cd799439012',
+    username: 'paula',
+    authMethods: [{ type: 'password', metadata: { email: 'paula@oxy.so' } }],
+    type: 'local',
+  };
+
+  const ORIGINAL_BRIDGE_ENABLED = process.env.ATPROTO_BRIDGE_ENABLED;
+  const ORIGINAL_PDS_ENDPOINT = process.env.ATPROTO_PDS_ENDPOINT;
+  const PDS = 'https://mention.earth';
+
+  function restoreEnv(name: string, value: string | undefined): void {
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+
+  afterEach(() => {
+    restoreEnv('ATPROTO_BRIDGE_ENABLED', ORIGINAL_BRIDGE_ENABLED);
+    restoreEnv('ATPROTO_PDS_ENDPOINT', ORIGINAL_PDS_ENDPOINT);
+  });
+
+  function enableBridge(): void {
+    process.env.ATPROTO_BRIDGE_ENABLED = 'true';
+    process.env.ATPROTO_PDS_ENDPOINT = PDS;
+  }
+
+  it('adds the #atproto_pds service + a Multikey VM for a bridged self-sovereign user', () => {
+    enableBridge();
+    const doc = buildDidDocument(selfSovereign);
+    const did = buildUserDid(selfSovereign._id);
+
+    expect(() => didDocumentSchema.parse(doc)).not.toThrow();
+
+    // PDS service points at the configured bridge base URL.
+    expect(doc.service).toContainEqual({
+      id: `${did}#atproto_pds`,
+      type: 'AtprotoPersonalDataServer',
+      serviceEndpoint: PDS,
+    });
+
+    // Multikey VM alongside the existing secp256k1 VM, same key, atproto form.
+    const atprotoVm = doc.verificationMethod.find((vm) => vm.id === `${did}#atproto`);
+    expect(atprotoVm).toBeDefined();
+    expect(atprotoVm).toMatchObject({ id: `${did}#atproto`, type: 'Multikey', controller: did });
+    // secp256k1 Multikeys are the `zQ3sh…` did:key form.
+    expect(atprotoVm && 'publicKeyMultibase' in atprotoVm && atprotoVm.publicKeyMultibase).toMatch(/^zQ3sh/);
+
+    // The atproto VM is referenced as an authentication + assertion method.
+    expect(doc.authentication).toContain(`${did}#atproto`);
+    expect(doc.assertionMethod).toContain(`${did}#atproto`);
+
+    // The canonical secp256k1 #key-1 VM is untouched.
+    expect(doc.verificationMethod).toContainEqual({
+      id: `${did}#key-1`,
+      type: 'EcdsaSecp256k1VerificationKey2019',
+      controller: did,
+      publicKeyHex: publicKey,
+    });
+  });
+
+  it('leaves a self-sovereign document byte-identical when the bridge is OFF', () => {
+    restoreEnv('ATPROTO_BRIDGE_ENABLED', undefined);
+    restoreEnv('ATPROTO_PDS_ENDPOINT', undefined);
+    const off = buildDidDocument(selfSovereign);
+
+    expect(off.service.some((s) => s.id.endsWith('#atproto_pds'))).toBe(false);
+    expect(off.verificationMethod.some((vm) => vm.type === 'Multikey')).toBe(false);
+    expect(off.authentication).not.toContain(`${buildUserDid(selfSovereign._id)}#atproto`);
+  });
+
+  it('does NOT add the atproto seam to a custodial (no own key) user even when enabled', () => {
+    enableBridge();
+    process.env.OXY_PUBLIC_KEY = newPublicKey();
+    const doc = buildDidDocument(custodial);
+
+    expect(() => didDocumentSchema.parse(doc)).not.toThrow();
+    expect(doc.service.some((s) => s.id.endsWith('#atproto_pds'))).toBe(false);
+    expect(doc.verificationMethod.some((vm) => vm.type === 'Multikey')).toBe(false);
+  });
+
+  it('FAILS CLOSED when enabled but no PDS endpoint is configured', () => {
+    process.env.ATPROTO_BRIDGE_ENABLED = 'true';
+    delete process.env.ATPROTO_PDS_ENDPOINT;
+    const doc = buildDidDocument(selfSovereign);
+
+    expect(doc.service.some((s) => s.id.endsWith('#atproto_pds'))).toBe(false);
+    expect(doc.verificationMethod.some((vm) => vm.type === 'Multikey')).toBe(false);
+  });
+});

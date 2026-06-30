@@ -31,7 +31,13 @@
  * envelope — never from the projection's denormalized claims.
  */
 
-import type { SignedRecordEnvelope, VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
+import type {
+  SignedRecordEnvelope,
+  VerifiableCredentialResponse,
+  CredentialStatus,
+  DidDocument,
+  Secp256k1VerificationMethod,
+} from '@oxyhq/contracts';
 import { credentialRecordSchema } from '@oxyhq/contracts';
 import { signedRecordSigningInput, verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import SignatureService from '../signature.service';
@@ -395,7 +401,7 @@ export async function listCredentialsForHolder(
  */
 async function resolveIssuerVmKeys(issuerDid: string): Promise<string[] | null> {
   if (issuerDid === OXY_DID) {
-    return buildOxyDidDocument().verificationMethod.map((vm) => vm.publicKeyHex);
+    return secp256k1KeysOf(buildOxyDidDocument());
   }
   const issuerUserId = parseUserDid(issuerDid);
   if (!issuerUserId || !isValidObjectId(issuerUserId)) {
@@ -407,7 +413,18 @@ async function resolveIssuerVmKeys(issuerDid: string): Promise<string[] | null> 
   if (!issuer) {
     return null;
   }
-  return buildDidDocument(issuer).verificationMethod.map((vm) => vm.publicKeyHex);
+  return secp256k1KeysOf(buildDidDocument(issuer));
+}
+
+/**
+ * The hex public keys of a DID document's secp256k1 verification methods. The
+ * atproto `Multikey` VM carries the SAME key in multibase form (not hex), so it
+ * is intentionally excluded — credential signatures verify against the hex key.
+ */
+function secp256k1KeysOf(document: DidDocument): string[] {
+  return document.verificationMethod
+    .filter((vm): vm is Secp256k1VerificationMethod => vm.type === 'EcdsaSecp256k1VerificationKey2019')
+    .map((vm) => vm.publicKeyHex);
 }
 
 /** Best-effort lazy flip of an expired credential's status (never throws). */
