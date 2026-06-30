@@ -30,8 +30,22 @@ import {
 
 const ACTIVE_AUTHUSER_KEY = 'oxy_active_authuser';
 
-function hasLocalStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+/**
+ * Safely resolve `window.localStorage`, returning `null` when it is
+ * unavailable. The PROPERTY ACCESS itself (`window.localStorage`) can throw a
+ * `SecurityError` synchronously in opaque-origin / sandboxed iframes or when
+ * storage is disabled — even `typeof window.localStorage` evaluates the getter
+ * and throws. Every read/write in this module routes through here so the getter
+ * throw is caught once, at the source, and callers stay clean. Returns `null`
+ * off-web and on any access failure (fail safe).
+ */
+function getLocalStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function getSessionStorage(): Storage | null {
@@ -51,11 +65,12 @@ function getSessionStorage(): Storage | null {
  * fall back to deterministic selection (lowest authuser).
  */
 export function readActiveAuthuser(): number | null {
-  if (!hasLocalStorage()) {
+  const storage = getLocalStorage();
+  if (!storage) {
     return null;
   }
   try {
-    const raw = window.localStorage.getItem(ACTIVE_AUTHUSER_KEY);
+    const raw = storage.getItem(ACTIVE_AUTHUSER_KEY);
     if (raw === null) return null;
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isFinite(parsed) || parsed < 0) return null;
@@ -71,10 +86,11 @@ export function readActiveAuthuser(): number | null {
  * this succeeding — it is best-effort UX persistence, not authoritative.
  */
 export function writeActiveAuthuser(authuser: number): void {
-  if (!hasLocalStorage()) return;
   if (!Number.isFinite(authuser) || authuser < 0) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.setItem(ACTIVE_AUTHUSER_KEY, String(authuser));
+    storage.setItem(ACTIVE_AUTHUSER_KEY, String(authuser));
   } catch {
     // Best-effort persistence; swallow QuotaExceededError / SecurityError.
   }
@@ -86,9 +102,10 @@ export function writeActiveAuthuser(authuser: number): void {
  * cleared slot.
  */
 export function clearActiveAuthuser(): void {
-  if (!hasLocalStorage()) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.removeItem(ACTIVE_AUTHUSER_KEY);
+    storage.removeItem(ACTIVE_AUTHUSER_KEY);
   } catch {
     // Best-effort.
   }
@@ -103,9 +120,10 @@ export function clearActiveAuthuser(): void {
  * failure (best-effort).
  */
 export function markSignedOut(): void {
-  if (!hasLocalStorage()) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.setItem(ssoSignedOutKey(window.location.origin), '1');
+    storage.setItem(ssoSignedOutKey(window.location.origin), '1');
   } catch {
     // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
   }
@@ -118,9 +136,10 @@ export function markSignedOut(): void {
  * state. No-ops on native / storage failure.
  */
 export function clearSignedOut(): void {
-  if (!hasLocalStorage()) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.removeItem(ssoSignedOutKey(window.location.origin));
+    storage.removeItem(ssoSignedOutKey(window.location.origin));
   } catch {
     // Best-effort.
   }
@@ -134,8 +153,9 @@ export function clearSignedOut(): void {
  * `fedcm-silent` and `silent-iframe` cold-boot steps.
  */
 export function isSilentRestoreSuppressed(): boolean {
-  if (!hasLocalStorage()) return false;
-  return silentRestoreSuppressed(window.localStorage, window.location.origin);
+  const storage = getLocalStorage();
+  if (!storage) return false;
+  return silentRestoreSuppressed(storage, window.location.origin);
 }
 
 /**
