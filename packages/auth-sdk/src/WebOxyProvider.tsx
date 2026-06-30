@@ -743,15 +743,21 @@ export function WebOxyProvider({
       // session. A placeholder user (empty id) is never exposed (R4).
       const ssoKey = silentSignInKey(oxyServices);
 
-      // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
-      // central IdP session can still be live, so the silent `fedcm-silent` step
-      // below would re-mint a session on the next cold boot and sign the user back
-      // in without intent. Read the durable flag ONCE here (synchronously usable by
-      // the step `enabled` gate) and skip `fedcm-silent` while it is set. Any
-      // deliberate sign-in clears it. The terminal `sso-bounce` is already
-      // self-suppressed after sign-out (its prior-session hint is cleared), and the
-      // `cookie-restore` step reads only first-party cookies that an explicit
-      // sign-out already cleared.
+      // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", any
+      // credential that can silently re-mint a session may still be live on the
+      // next cold boot — the central IdP session (so `fedcm-silent` would re-mint)
+      // AND the device refresh cookies. Since PR #455 the PRIMARY web session also
+      // joins the `oxy_rt_<authuser>` device set, so `cookie-restore` would
+      // `refresh-all` that still-present cookie and silently sign the user back in.
+      // So this flag gates BOTH silent-restore steps — `fedcm-silent` AND
+      // `cookie-restore` — not a cookie wipe: the account may stay "known" for a
+      // fast deliberate re-sign-in, but no step restores it silently while the flag
+      // is set. Read the durable flag ONCE here (synchronously usable by the step
+      // `enabled` gates). Any deliberate sign-in (handleAuthSuccess / switch) clears
+      // it, so there is no "stuck signed out" state. The terminal `sso-bounce` needs
+      // no extra gate — it is already self-suppressed after sign-out (its
+      // prior-session hint is cleared). `sso-return` is NOT gated: it commits the
+      // result of a deliberate top-level `/sso` bounce the user just initiated.
       const silentRestoreBlocked = silentRestoreSuppressedWeb();
 
       const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
@@ -795,8 +801,13 @@ export function WebOxyProvider({
           // cross-domain RP (mention.earth, …) the cookie never reaches
           // `api.<apex>`, so `POST /auth/refresh-all` returns no accounts and
           // this skips. That is correct; the `sso-bounce` step handles it.
+          //
+          // SIGNED-OUT GATE: since PR #455 the primary's `oxy_rt` slot survives a
+          // deliberate sign-out, so without this gate this step would `refresh-all`
+          // that still-present cookie and silently re-log-in the user on reload.
+          // The flag is cleared by any deliberate sign-in (incl. account switch).
           id: 'cookie-restore',
-          enabled: () => isWebBrowser(),
+          enabled: () => isWebBrowser() && !silentRestoreBlocked,
           run: async () => {
             // FIX-D: bound the cookie restore so a cross-domain/stalled
             // `refresh-all` cannot hang cold boot in front of the terminal

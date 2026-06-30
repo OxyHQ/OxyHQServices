@@ -351,4 +351,41 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     );
     expect(window.localStorage.getItem(ACTIVE_AUTHUSER_KEY)).toBe('1');
   });
+
+  it('CASE signed-out gate also covers the prioritized multi-account path: a persisted slot does NOT restore while the signed-out flag is set', async () => {
+    // The user had a persisted active slot (`oxy_active_authuser = 1`) but then
+    // DELIBERATELY signed out. PR #455 means the device refresh cookies survive, so
+    // the prioritized `cookie-restore-active` step would `refresh-all` and silently
+    // restore — the gate must skip it. The sign-out also cleared the returning-user
+    // hint, so the terminal bounce is self-suppressed: the user stays signed out.
+    window.localStorage.setItem(ACTIVE_AUTHUSER_KEY, '1');
+    window.localStorage.removeItem('oxy_session_prior_session');
+    window.localStorage.setItem(oxyCore.ssoSignedOutKey('https://accounts.oxy.so'), '1');
+
+    const stub = baseStub();
+    // The cookie set WOULD resurrect both slots — but no step may run while signed
+    // out, so this must never be called.
+    stub.refreshAllSessions = jest.fn(async () => ({
+      accounts: [
+        {
+          authuser: 1,
+          accessToken: COOKIE_ACCESS_TOKEN,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          sessionId: 'sess_switched_signed_out',
+          user: { id: 'managed_org_user', username: 'org', avatar: null, color: null },
+        },
+      ],
+    }));
+
+    renderProvider(stub);
+
+    // Auth resolves to the SIGNED-OUT state without restoring.
+    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    expect(captured.isAuthenticated).toBe(false);
+    // The prioritized multi-account restore was gated off.
+    expect(stub.refreshAllSessions).not.toHaveBeenCalled();
+    expect(setTokensSpy).not.toHaveBeenCalled();
+    // No terminal bounce (the returning-user hint was cleared on sign-out).
+    expect(ssoNavigateSpy).not.toHaveBeenCalled();
+  });
 });
