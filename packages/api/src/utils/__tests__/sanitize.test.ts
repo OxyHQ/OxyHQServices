@@ -1,5 +1,6 @@
 import {
   sanitizeHtml,
+  sanitizePlainText,
   sanitizeString,
   sanitizeObject,
   sanitizeProfileUpdate,
@@ -54,11 +55,66 @@ describe('sanitize utilities', () => {
     });
   });
 
+  describe('sanitizePlainText', () => {
+    it('decodes the hex apostrophe entity (the federated-bio double-escape bug)', () => {
+      expect(sanitizePlainText('I don&#x27;t')).toBe("I don't");
+    });
+
+    it('decodes the named ampersand entity', () => {
+      expect(sanitizePlainText('Arthur &amp; Thomas')).toBe('Arthur & Thomas');
+    });
+
+    it('strips tags so no <script> survives', () => {
+      const result = sanitizePlainText("<script>alert('x')</script>hi");
+      expect(result).not.toContain('<script>');
+      expect(result).not.toContain('</script>');
+      expect(result).toBe("alert('x')hi");
+    });
+
+    it('removes encoded markup by decoding first, then stripping', () => {
+      // &lt;script&gt; decodes to a real tag, which is then stripped — no
+      // executable markup can survive into storage.
+      const result = sanitizePlainText('&lt;script&gt;evil()&lt;/script&gt;ok');
+      expect(result).not.toContain('<script>');
+      expect(result).toBe('evil()ok');
+    });
+
+    it('passes plain text through unchanged', () => {
+      expect(sanitizePlainText('Just a normal bio')).toBe('Just a normal bio');
+    });
+
+    it('trims surrounding whitespace but preserves internal newlines', () => {
+      expect(sanitizePlainText('  line one\nline two  ')).toBe('line one\nline two');
+    });
+
+    it('is idempotent (running twice yields the same result)', () => {
+      const inputs = [
+        'I don&#x27;t',
+        'Arthur &amp; Thomas',
+        "<script>alert('x')</script>hi",
+        'Just a normal bio',
+      ];
+      for (const input of inputs) {
+        const once = sanitizePlainText(input);
+        expect(sanitizePlainText(once)).toBe(once);
+      }
+    });
+
+    it('returns empty/falsy input unchanged', () => {
+      expect(sanitizePlainText('')).toBe('');
+    });
+  });
+
   describe('sanitizeObject', () => {
-    it('sanitizes all string values', () => {
+    it('strips tags from all string values (text rendering)', () => {
       const result = sanitizeObject({ name: '<b>Joe</b>', age: 30 });
-      expect(result.name).toBe('&lt;b&gt;Joe&lt;/b&gt;');
+      expect(result.name).toBe('Joe');
       expect(result.age).toBe(30);
+    });
+
+    it('decodes entities instead of escaping them', () => {
+      const result = sanitizeObject({ note: "don&#x27;t & won&#x27;t" });
+      expect(result.note).toBe("don't & won't");
     });
 
     it('skips fields in skipFields list', () => {
@@ -67,18 +123,31 @@ describe('sanitize utilities', () => {
         ['password']
       );
       expect(result.password).toBe('<script>');
-      expect(result.bio).toBe('&lt;b&gt;hi&lt;/b&gt;');
+      expect(result.bio).toBe('hi');
     });
   });
 
   describe('sanitizeProfileUpdate', () => {
-    it('sanitizes text fields', () => {
+    it('strips tags from text fields without entity-escaping them', () => {
       const result = sanitizeProfileUpdate({
         bio: '<script>alert(1)</script>',
         username: 'test<user>',
       });
-      expect(result.bio).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
-      expect(result.username).toBe('test&lt;user&gt;');
+      expect(result.bio).toBe('alert(1)');
+      expect(result.username).toBe('test');
+    });
+
+    it('does NOT escape apostrophes/ampersands in text fields (renders as text)', () => {
+      // A profile edit with an apostrophe in a free-text field must store the
+      // literal character, NOT `&#x27;` — clients render these fields as text.
+      const result = sanitizeProfileUpdate({
+        description: "Live in O'Brien's town",
+        bio: 'Arthur & Thomas',
+        address: "12 O'Connell St",
+      });
+      expect(result.description).toBe("Live in O'Brien's town");
+      expect(result.bio).toBe('Arthur & Thomas');
+      expect(result.address).toBe("12 O'Connell St");
     });
 
     it('skips avatar, email, password, links, linksMetadata, locations', () => {
