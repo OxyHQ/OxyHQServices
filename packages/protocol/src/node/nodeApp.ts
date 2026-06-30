@@ -54,6 +54,20 @@ import {
 } from './constants';
 
 /**
+ * The Express app returned by {@link createNodeApp}, augmented with a {@link stop}
+ * hook that releases the app's background resources (currently the rate-limiter's
+ * sweep timer). The node bootstrap calls it from the graceful-shutdown path.
+ */
+export interface NodeApp extends Express {
+  /**
+   * Release the app's background resources (the rate-limiter sweep timer).
+   * Idempotent and safe to call on shutdown; not required for process exit (the
+   * timer is `unref()`'d) but keeps long-lived test harnesses leak-free.
+   */
+  stop(): void;
+}
+
+/**
  * Thrown by a {@link BlobStore.putBlob} implementation when bytes do not hash to
  * the supplied address. Defined here (rather than in `@oxyhq/node`) so the node
  * app can map it to `hash_mismatch` without importing the store implementation.
@@ -215,13 +229,13 @@ async function toLogWireRecord(env: SignedRecordEnvelope): Promise<{
   };
 }
 
-export function createNodeApp(deps: NodeAppDependencies): Express {
+export function createNodeApp(deps: NodeAppDependencies): NodeApp {
   const { store, config, ownerAuth, logger } = deps;
   // The node holds one subject's repo; the store keys a single global chain and
   // ignores the subject argument. Pass the node's own key as a stable sentinel.
   const subject = config.nodePublicKey;
 
-  const app = express();
+  const app = express() as NodeApp;
   app.disable('x-powered-by');
 
   // JSON parser applies only to JSON bodies (it checks Content-Type), so the raw
@@ -230,7 +244,9 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
 
   // Per-IP rate limiter on the owner-authorized write routes. Caps request rate
   // BEFORE signature verification so a flood of bogus envelopes can't pin CPU.
+  // It owns a background sweep timer; expose its teardown as `app.stop()`.
   const writeRateLimit = createRateLimiter(config.writeRateLimit ?? DEFAULT_WRITE_RATE_LIMIT);
+  app.stop = (): void => writeRateLimit.stop();
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });

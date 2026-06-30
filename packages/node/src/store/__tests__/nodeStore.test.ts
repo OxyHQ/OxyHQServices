@@ -196,4 +196,34 @@ describe('NodeStore', () => {
     await expect(store.putBlob(wrongHash, bytes)).rejects.toThrow(BlobHashMismatchError);
     expect(await store.getBlob(wrongHash)).toBeNull();
   });
+
+  it('getBlob rejects a malformed (non-SHA-256-hex) address as absent before any DB query', async () => {
+    // A blob address that is not a well-formed 64-char SHA-256 hex digest can
+    // never name a stored blob (every address is validated at pin time), so it
+    // must short-circuit to `null` without reaching the DB. Cover the malformed
+    // shapes: too short, too long, non-hex chars, empty, and whitespace.
+    for (const malformed of [
+      '',
+      ' ',
+      'abc123',
+      'g'.repeat(64), // 64 chars but 'g' is out of hex range
+      'a'.repeat(63), // one short
+      'a'.repeat(65), // one long
+      `${'a'.repeat(63)} `, // trailing whitespace breaks the anchored match
+      'not-a-hash',
+    ]) {
+      expect(await store.getBlob(malformed)).toBeNull();
+    }
+  });
+
+  it('getBlob resolves a valid address case-insensitively', async () => {
+    const bytes = Buffer.from('case insensitive lookup');
+    const hash = createHash('sha256').update(bytes).digest('hex'); // lowercase hex
+    await store.putBlob(hash, bytes);
+
+    // Uppercased input is a valid SHA-256 hex shape and must resolve the same
+    // stored blob (the store lowercases before lookup).
+    const upper = hash.toUpperCase();
+    expect(Buffer.from((await store.getBlob(upper)) as Uint8Array).equals(bytes)).toBe(true);
+  });
 });

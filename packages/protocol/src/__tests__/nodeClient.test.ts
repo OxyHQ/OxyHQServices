@@ -88,12 +88,13 @@ describe('trimTrailingSlashes', () => {
 
 describe('NodeClient (end-to-end against createNodeApp)', () => {
   let owner: TestKeyPair;
+  let app: ReturnType<typeof createNodeApp>;
   let server: http.Server;
   let client: NodeClient;
 
   beforeEach(async () => {
     owner = generateKeyPair();
-    const app = createNodeApp({
+    app = createNodeApp({
       store: createInMemoryNodeStore(),
       config: makeConfig(owner.publicKey),
       ownerAuth: createTestOwnerAuth(owner.publicKey),
@@ -107,6 +108,7 @@ describe('NodeClient (end-to-end against createNodeApp)', () => {
   });
 
   afterEach(async () => {
+    app.stop();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 

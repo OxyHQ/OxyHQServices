@@ -24,7 +24,7 @@ import {
 function makeConfig(
   nodePublicKey: string,
   collections: readonly string[] = [],
-  writeRateLimit?: { windowMs: number; max: number },
+  writeRateLimit?: { windowMs: number; max: number; maxEntries?: number },
 ): NodeAppConfig {
   return {
     wellKnownPath: '/.well-known/oxy-node.json',
@@ -38,10 +38,14 @@ function makeConfig(
   };
 }
 
+// Apps built during a test own a background rate-limiter sweep timer; track them
+// so `afterEach` can stop the timers and leave no open handles between tests.
+const builtApps: Array<ReturnType<typeof createNodeApp>> = [];
+
 function buildApp(
   owner: TestKeyPair,
   collections: readonly string[] = [],
-  writeRateLimit?: { windowMs: number; max: number },
+  writeRateLimit?: { windowMs: number; max: number; maxEntries?: number },
 ) {
   const store = createInMemoryNodeStore();
   const app = createNodeApp({
@@ -50,6 +54,7 @@ function buildApp(
     ownerAuth: createTestOwnerAuth(owner.publicKey),
     logger: silentLogger,
   });
+  builtApps.push(app);
   return { app, store };
 }
 
@@ -58,6 +63,12 @@ describe('createNodeApp', () => {
 
   beforeEach(() => {
     owner = generateKeyPair();
+  });
+
+  afterEach(() => {
+    for (const app of builtApps.splice(0)) {
+      app.stop();
+    }
   });
 
   it('GET /.well-known/oxy-node.json returns identity + liveness (incl. serviceType)', async () => {

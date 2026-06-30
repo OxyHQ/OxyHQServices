@@ -16,6 +16,7 @@
 // ── Express app factory ───────────────────────────────────────────────────────
 export { createNodeApp, BlobHashMismatchError } from './nodeApp';
 export type {
+  NodeApp,
   NodeAppDependencies,
   NodeAppConfig,
   NodeStoreLike,
@@ -24,8 +25,12 @@ export type {
 } from './nodeApp';
 
 // ── Per-IP write rate limiter ──────────────────────────────────────────────────
-export { createRateLimiter, DEFAULT_WRITE_RATE_LIMIT } from './rateLimit';
-export type { RateLimitConfig } from './rateLimit';
+export {
+  createRateLimiter,
+  DEFAULT_WRITE_RATE_LIMIT,
+  DEFAULT_MAX_RATE_LIMIT_ENTRIES,
+} from './rateLimit';
+export type { RateLimitConfig, RateLimiter } from './rateLimit';
 
 // ── Record verification (signature + v2 + content address) ─────────────────────
 export { verifyNodeRecordEnvelope } from './verifyRecord';
