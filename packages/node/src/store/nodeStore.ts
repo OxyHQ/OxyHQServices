@@ -270,12 +270,15 @@ export class NodeStore implements RecordStore, BlobStore {
    * @throws {BlobHashMismatchError} when the bytes do not hash to `hash`.
    */
   async putBlob(hash: string, bytes: Uint8Array): Promise<void> {
+    if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) {
+      throw new TypeError('invalid_blob_bytes');
+    }
+    const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
     const address = hash.toLowerCase();
-    const actual = sha256Hex(bytes);
+    const actual = sha256Hex(buf);
     if (actual !== address) {
       throw new BlobHashMismatchError(address, actual);
     }
-    const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
     this.putBlobStmt.run({ hash: address, bytes: buf, size: buf.length, created_at: Date.now() });
   }
 
