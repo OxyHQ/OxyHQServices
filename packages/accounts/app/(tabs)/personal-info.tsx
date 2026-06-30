@@ -18,7 +18,10 @@ export default function PersonalInfoScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  const { user, isLoading: oxyLoading, showBottomSheet } = useOxy();
+  // This screen views/edits the ACTIVE account's profile (the account the user
+  // switched into), so all identity fields read from `activeAccount`. Edits flow
+  // through the bottom sheet, which already targets the active account.
+  const { activeAccount, isLoading: oxyLoading, showBottomSheet } = useOxy();
   const handlePressIn = useHapticPress();
   const handleEditField = useCallback((field: string) => {
     showBottomSheet?.({
@@ -27,12 +30,12 @@ export default function PersonalInfoScreen() {
     });
   }, [showBottomSheet]);
 
-  // Compute user data
-  const displayName = useMemo(() => getDisplayName(user), [user]);
-  const userEmail = useMemo(() => user?.email ?? t('personalInfo.fields.noEmail'), [user?.email, t]);
-  const extendedUser = user as ExtendedUser | undefined;
+  // Compute active-account profile data.
+  const displayName = useMemo(() => getDisplayName(activeAccount), [activeAccount]);
+  const userEmail = useMemo(() => activeAccount?.email ?? t('personalInfo.fields.noEmail'), [activeAccount?.email, t]);
+  const extendedUser = activeAccount as ExtendedUser | undefined;
   const userPhone = useMemo(() => extendedUser?.phone ?? null, [extendedUser]);
-  const userAddress = useMemo(() => user?.location ?? extendedUser?.address ?? null, [user, extendedUser]);
+  const userAddress = useMemo(() => activeAccount?.location ?? extendedUser?.address ?? null, [activeAccount, extendedUser]);
   const userBirthday = useMemo(() => {
     const birthday = extendedUser?.birthday ?? extendedUser?.dateOfBirth;
     return birthday ? formatDate(birthday) : null;
@@ -84,9 +87,9 @@ export default function PersonalInfoScreen() {
       icon: 'calendar-outline',
       iconColor: colors.sidebarIconData,
       title: t('personalInfo.fields.accountCreated'),
-      value: user?.createdAt ? formatDate(user.createdAt) : t('common.unknown'),
+      value: activeAccount?.createdAt ? formatDate(activeAccount.createdAt) : t('common.unknown'),
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField, t]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, activeAccount?.createdAt, handleEditField, t]);
 
   const contactItems = useMemo(() => [
     {

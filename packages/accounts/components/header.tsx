@@ -38,18 +38,20 @@ export function Header({ }: HeaderProps) {
     const isDesktop = Platform.OS === 'web' && width >= 768;
     const { t } = useTranslation();
 
-    const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
+    // The header avatar + name reflect the ACTIVE account (the account switched
+    // into), so a Google-style account switch is mirrored in the chrome.
+    const { activeAccount, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
 
     const lastPressRef = useRef<number>(0);
     const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const displayName = useMemo(() => getDisplayName(user), [user]);
+    const displayName = useMemo(() => getDisplayName(activeAccount), [activeAccount]);
     const avatarUrl = useMemo(() => {
-        if (user?.avatar && oxyServices) {
-            return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
+        if (activeAccount?.avatar && oxyServices) {
+            return oxyServices.getFileDownloadUrl(activeAccount.avatar, 'thumb');
         }
         return undefined;
-    }, [user?.avatar, oxyServices]);
+    }, [activeAccount?.avatar, oxyServices]);
 
     const clearPressTimeout = useCallback(() => {
         if (pressTimeoutRef.current) {
