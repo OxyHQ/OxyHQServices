@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname, type Href } from 'expo-router';
@@ -7,8 +7,6 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
-import { useOxy } from '@oxyhq/services';
-import { getAccountDisplayName } from '@oxyhq/core';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
 
@@ -47,20 +45,9 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const { mode } = useTheme();
     const router = useRouter();
     const pathname = usePathname();
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
 
     const handlePressIn = useHapticPress();
-    const { actingAs, accounts } = useOxy();
-
-    // Compute the active (switched-into) account's display name for the context
-    // cue using the canonical helper so the fallback chain (name → username →
-    // publicKey → "Unnamed") is identical across the app.
-    const activeAccountName = useMemo(() => {
-        if (!actingAs || !accounts.length) return null;
-        const node = accounts.find((a) => a.accountId === actingAs);
-        if (!node?.account) return null;
-        return getAccountDisplayName(node.account, locale);
-    }, [actingAs, accounts, locale]);
 
     const handleNavigate = (path: MenuPath) => {
         router.push(path);
@@ -69,15 +56,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
-            {/* Active-account context cue — which account the app is using now */}
-            {actingAs && activeAccountName && (
-                <View style={[styles.actingAsContainer, { backgroundColor: colors.sidebarIconSecurity + '14' }]}>
-                    <View style={[styles.actingAsDot, { backgroundColor: colors.sidebarIconSecurity }]} />
-                    <Text style={[styles.actingAsText, { color: colors.sidebarIconSecurity }]} numberOfLines={1}>
-                        {t('sidebar.actingAs', { name: activeAccountName })}
-                    </Text>
-                </View>
-            )}
             <View style={styles.menuContainer}>
                 {menuItems.map((item) => {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
