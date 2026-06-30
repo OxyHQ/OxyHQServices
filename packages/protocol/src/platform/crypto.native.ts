@@ -1,12 +1,12 @@
 /**
  * Platform Crypto / Storage — React Native Variant
  *
- * Companion to `./platformCrypto.ts`. See the doc-comment at the top of that
- * file for the full design.
+ * Companion to `./crypto.ts`. See the doc-comment at the top of that file for
+ * the full design.
  *
  * Metro auto-selects this file in any non-web build (`preferNativePlatform`
  * is `true` for iOS / Android, so `*.native.js` shadows `*.js` during
- * source-extension resolution inside `node_modules/@oxyhq/core/dist/`). On
+ * source-extension resolution inside `node_modules/@oxyhq/protocol/dist/`). On
  * iOS / Android `<base>.ios.js` / `<base>.android.js` would shadow this file
  * if they existed, but they don't — `.native.js` is the shared RN variant.
  *
@@ -22,8 +22,8 @@
  *
  * # Why static imports?
  *
- * Every RN consumer of `@oxyhq/core` already lists or transitively pulls
- * in `expo-crypto`, `expo-secure-store`, and
+ * Every RN consumer of `@oxyhq/protocol` (via `@oxyhq/core`) already lists or
+ * transitively pulls in `expo-crypto`, `expo-secure-store`, and
  * `@react-native-async-storage/async-storage` (they're stable Expo modules
  * present in `services`, `accounts`, `inbox`, and `test-app`). A static
  * import is what Metro wants to see anyway, and Hermes parses it like any
@@ -38,6 +38,11 @@
 import * as ExpoCrypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { ExpoCryptoLike, ExpoSecureStoreLike } from './expoTypes';
+
+// Re-export the interfaces so consumers can import them from the same
+// entry-point they use for the loaders (mirrors the default variant).
+export type { ExpoCryptoLike, ExpoSecureStoreLike };
 
 // ---------------------------------------------------------------------------
 // Node `crypto` — never available in RN.
@@ -49,7 +54,7 @@ export async function loadNodeCrypto(): Promise<typeof import('crypto')> {
   // diagnostic rather than letting Metro / Hermes attempt to find a
   // non-existent module at runtime.
   throw new Error(
-    "[oxy.platformCrypto] Node's built-in 'crypto' module is not available " +
+    "[oxy.protocol.crypto] Node's built-in 'crypto' module is not available " +
       'in a React Native runtime. Use the RN-specific helpers ' +
       '(loadExpoCrypto, getRandomBytesRN) or the Web Crypto API (`globalThis.crypto`).',
   );
@@ -57,18 +62,25 @@ export async function loadNodeCrypto(): Promise<typeof import('crypto')> {
 
 // ---------------------------------------------------------------------------
 // expo-crypto — RN cryptographic primitives.
+//
+// Cast to `ExpoCryptoLike` via `unknown` because the structural interface
+// narrows the surface (omits internal expo types) but the real module satisfies
+// every declared method/property structurally.
 // ---------------------------------------------------------------------------
 
-export async function loadExpoCrypto(): Promise<typeof import('expo-crypto')> {
-  return ExpoCrypto;
+export async function loadExpoCrypto(): Promise<ExpoCryptoLike> {
+  return ExpoCrypto as unknown as ExpoCryptoLike;
 }
 
 // ---------------------------------------------------------------------------
 // expo-secure-store — RN keychain / keystore.
+//
+// Same pattern: the real SecureStore namespace satisfies ExpoSecureStoreLike
+// structurally. Cast via `unknown` to avoid importing SecureStoreOptions.
 // ---------------------------------------------------------------------------
 
-export async function loadSecureStore(): Promise<typeof import('expo-secure-store')> {
-  return SecureStore;
+export async function loadSecureStore(): Promise<ExpoSecureStoreLike> {
+  return SecureStore as unknown as ExpoSecureStoreLike;
 }
 
 // ---------------------------------------------------------------------------

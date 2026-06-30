@@ -6,12 +6,12 @@
  *
  * - Browser/Node.js: Uses native crypto
  * - React Native: Uses expo-crypto (statically imported via the
- *   per-platform `platformCrypto` module — see that file's doc-comment for
- *   how platform routing works).
+ *   per-platform `platform/crypto` module in `@oxyhq/protocol` — see that
+ *   file's doc-comment for how platform routing works).
  */
 
 import { Buffer } from 'buffer';
-import { getRandomBytesRN } from '../utils/platformCrypto';
+import { getRandomBytesRN } from '@oxyhq/protocol';
 
 const getGlobalObject = (): typeof globalThis => {
   if (typeof globalThis !== 'undefined') return globalThis;
@@ -35,7 +35,8 @@ type CryptoLike = {
 /**
  * Synchronous random-bytes shim. On RN, this delegates to
  * `expo-crypto.getRandomBytes` (statically imported by the RN variant of
- * `platformCrypto`, so available without any async warm-up). On Node /
+ * `@oxyhq/protocol`'s `platform/crypto`, so available without any async
+ * warm-up). On Node /
  * browser, this throws — but is never called there because both platforms
  * already provide `globalThis.crypto.getRandomValues` natively.
  */

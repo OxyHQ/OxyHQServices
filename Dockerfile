@@ -15,17 +15,19 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root and override workspaces to only include api + core + contracts.
-# `@oxyhq/api` depends on `@oxyhq/contracts` (workspace:*); core is retained for the
-# admin scripts that import packages/core/src/* at runtime.
+# Copy workspace root and override workspaces to only include api + core +
+# protocol + contracts. `@oxyhq/api` depends on `@oxyhq/contracts` +
+# `@oxyhq/protocol` (workspace:*); core is retained for the admin scripts that
+# import packages/core/src/* at runtime (and core depends on protocol).
 # Remove bun.lock since the workspace change invalidates it — bun will
 # resolve fresh dependencies (still deterministic from package.json versions).
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # Copy package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
+COPY packages/protocol/package.json packages/protocol/
 COPY packages/contracts/package.json packages/contracts/
 
 # Install dependencies (no lockfile — workspace subset doesn't match the full monorepo lock)
@@ -33,12 +35,15 @@ RUN bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
+COPY packages/protocol/ packages/protocol/
 COPY packages/contracts/ packages/contracts/
 COPY packages/api/ packages/api/
 
-# Build contracts first (api depends on it at runtime via dist/cjs), then core
+# Build contracts first (api depends on it at runtime via dist/cjs), then
+# protocol (the signed-record crypto base core + api consume), then core
 # (api imports @oxyhq/core/server — safeFetch etc.), then api.
 RUN bun run --filter @oxyhq/contracts build
+RUN bun run --filter @oxyhq/protocol build
 RUN bun run --filter @oxyhq/core build
 RUN bun run --filter @oxyhq/api build
 
@@ -52,9 +57,10 @@ WORKDIR /app
 
 # Copy workspace root and override workspaces
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
+COPY packages/protocol/package.json packages/protocol/
 COPY packages/contracts/package.json packages/contracts/
 
 # Install production dependencies
@@ -63,6 +69,7 @@ RUN bun install --production
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
 COPY --from=builder /app/packages/core/dist packages/core/dist
+COPY --from=builder /app/packages/protocol/dist packages/protocol/dist
 COPY --from=builder /app/packages/contracts/dist packages/contracts/dist
 
 # Copy admin scripts + their src dependencies so one-shot ECS tasks can run them

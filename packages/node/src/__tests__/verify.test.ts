@@ -1,14 +1,15 @@
 /**
  * verify.ts tests — the cross-package verification proof.
  *
- * Envelopes are SIGNED with `@oxyhq/core` (`KeyManager` + `SignatureService`,
- * the same primitives the Commons vault uses) and VERIFIED with the node's
- * `verifyRecordEnvelope` (which reuses `signedRecordSigningInput` /
- * `computeRecordId` / `SignatureService.verify` from `@oxyhq/core`). A record
- * signed elsewhere therefore verifies on the node with no node-local crypto.
+ * Envelopes are SIGNED with the shared crypto (`KeyManager` from `@oxyhq/core`
+ * + `@oxyhq/protocol`'s `signMessage`, the same primitives the Commons vault
+ * uses) and VERIFIED with the node's `verifyRecordEnvelope` (which reuses
+ * `verifyEnvelopeSignature` / `computeRecordId` from `@oxyhq/protocol`). A
+ * record signed elsewhere therefore verifies on the node with no node-local
+ * crypto.
  */
 
-import { computeRecordId, signedRecordSigningInput } from '@oxyhq/core';
+import { computeRecordId, signedRecordSigningInput } from '@oxyhq/protocol';
 import { verifyRecordEnvelope } from '../verify';
 import { buildSignedEnvelope, generateTestKeyPair } from './helpers/signEnvelope';
 

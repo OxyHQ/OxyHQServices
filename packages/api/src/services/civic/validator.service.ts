@@ -18,7 +18,7 @@
  */
 
 import crypto from 'crypto';
-import { canonicalize } from '@oxyhq/core';
+import { canonicalize } from '@oxyhq/protocol';
 import { validationVerdictRecordSchema, type ValidationVerdict } from '@oxyhq/contracts';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { ReputationBalance } from '../../models/ReputationBalance';

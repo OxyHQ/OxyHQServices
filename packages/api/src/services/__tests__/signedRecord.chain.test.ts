@@ -57,7 +57,7 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import { computeRecordId } from '@oxyhq/core';
+import { computeRecordId } from '@oxyhq/protocol';
 import { signRecordEnvelope, verifyAndStoreRecord } from '../signedRecord.service';
 import { buildUserDid } from '../did.service';
 

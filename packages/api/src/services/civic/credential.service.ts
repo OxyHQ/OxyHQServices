@@ -33,7 +33,7 @@
 
 import type { SignedRecordEnvelope, VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
 import { credentialRecordSchema } from '@oxyhq/contracts';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import SignatureService from '../signature.service';
 import {
   buildUserDid,

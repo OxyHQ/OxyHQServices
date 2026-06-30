@@ -32,7 +32,7 @@ jest.mock('../../models/RepoHead', () => ({
   default: { findOne: jest.fn(), findOneAndUpdate: jest.fn() },
 }));
 
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import {
   signRecordEnvelope,
   verifyEnvelopeSignature,

@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 import request from 'supertest';
 import pino from 'pino';
-import { SignatureService } from '@oxyhq/core';
+import { signMessage } from '@oxyhq/protocol';
 import { createApp } from '../app';
 import { NodeStore } from '../store/nodeStore';
 import type { NodeConfig } from '../config';
@@ -33,7 +33,7 @@ function makeConfig(ownerPublicKey: string): NodeConfig {
 /** Build the owner-signed headers authorizing a blob pin. */
 async function ownerBlobPinHeaders(owner: TestKeyPair, hash: string): Promise<Record<string, string>> {
   const timestamp = Date.now();
-  const signature = await SignatureService.signWithKey(`oxy-node:blob-pin:${hash}:${timestamp}`, owner.privateKey);
+  const signature = await signMessage(`oxy-node:blob-pin:${hash}:${timestamp}`, owner.privateKey);
   return {
     [OWNER_AUTH_HEADERS.publicKey]: owner.publicKey,
     [OWNER_AUTH_HEADERS.signature]: signature,

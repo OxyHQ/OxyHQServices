@@ -3,6 +3,13 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'json'],
+  moduleNameMapper: {
+    // Resolve @oxyhq/protocol from its TypeScript SOURCE so core tests do not
+    // depend on the protocol package being built first, and so the
+    // `jest.mock('@oxyhq/protocol', () => ({ ...jest.requireActual(...) }))`
+    // overrides in the KeyManager suites resolve deterministically.
+    '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
+  },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       diagnostics: false,

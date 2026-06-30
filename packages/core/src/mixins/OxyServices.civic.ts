@@ -67,7 +67,7 @@ import type {
   VouchResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { canonicalize } from '../crypto/canonicalJson';
+import { canonicalize, verifySignature } from '@oxyhq/protocol';
 import { SignatureService } from '../crypto/signatureService';
 import { buildUserDid } from './OxyServices.identity';
 import { CACHE_TIMES } from './mixinHelpers';
@@ -290,7 +290,7 @@ export function parseAttestPayload(raw: string): ParsedAttestPayload | null {
  * key, matching the server which omits absent keys entirely) and checks the
  * `ES256K-DER-SHA256` signature against `attestation.publicKey`.
  *
- * NEVER throws: `SignatureService.verify` already swallows malformed-input
+ * NEVER throws: `verifySignature` already swallows malformed-input
  * errors and returns `false`, and an absent attestation short-circuits to
  * `false`. A pure, reusable helper (Commons can call it on a cached card).
  *
@@ -308,7 +308,7 @@ export async function verifyPublicCardAttestation(
   if (!signature || !publicKey) {
     return false;
   }
-  return SignatureService.verify(canonicalize(card), signature, publicKey);
+  return verifySignature(canonicalize(card), signature, publicKey);
 }
 
 /**

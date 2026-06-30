@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/core build && tsc",
+    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/protocol build && bun run --filter @oxyhq/core build && tsc",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
     "test": "jest"
@@ -28,6 +28,7 @@
   "dependencies": {
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
+    "@oxyhq/protocol": "workspace:*",
     "better-sqlite3": "^12.11.1",
     "express": "^4.21.2",
     "pino": "^10.3.1"

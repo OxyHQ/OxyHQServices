@@ -7,27 +7,38 @@
 
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
-import type { SecureStoreOptions } from 'expo-secure-store';
-import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
-import { loadExpoCrypto, loadNodeCrypto, loadSecureStore } from '../utils/platformCrypto';
+import { isWeb, isIOS, isAndroid } from '../utils/platform';
+import { type ExpoCryptoLike, type ExpoSecureStoreLike, isReactNative, isNodeJS, loadExpoCrypto, loadNodeCrypto, loadSecureStore } from '@oxyhq/protocol';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
 /**
- * Extended SecureStoreOptions that explicitly includes `keychainAccessGroup`.
+ * Options for expo-secure-store calls made by KeyManager.
  *
- * The shipped `expo-secure-store` types in this repo (see
- * `src/types/expo-secure-store.d.ts`) already declare `keychainAccessGroup`,
- * but we redeclare it here as an `interface extends ...` so the field stays
- * type-safe even when the upstream package types drift. Older versions of
- * `@types/expo-secure-store` omitted this field, which is why the code base
- * used to fall back to `as any` — that escape hatch is now removed.
+ * Defined as a standalone interface (not extending expo-secure-store's
+ * `SecureStoreOptions`) so that server / Node.js consumers of @oxyhq/core
+ * do not transitively pull in expo-modules-core's type declarations under
+ * NodeNext module resolution (which would cause NodeJS.Timeout / number
+ * pollution across all timer APIs). The fields mirror SecureStoreOptions
+ * exactly — any object satisfying this interface is safe to pass to the
+ * real expo-secure-store methods (which accept `options?: object`).
  */
-interface OxySecureStoreOptions extends SecureStoreOptions {
+interface OxySecureStoreOptions {
+  /** Keychain service name (Android keystore / iOS keychain tag). */
+  keychainService?: string;
+  /**
+   * Keychain / Keystore item accessibility. Use the constants from the
+   * `ExpoSecureStoreLike` handle returned by `initSecureStore()`, e.g.
+   * `store.WHEN_UNLOCKED_THIS_DEVICE_ONLY`.
+   */
+  keychainAccessible?: number;
+  /** Prompt shown to the user for biometric/auth-protected items. */
+  authenticationPrompt?: string;
+  /** Whether Face ID / Touch ID / biometric auth is required to read the item. */
+  requireAuthentication?: boolean;
   /**
    * iOS Keychain access group. Required for sharing identity material across
-   * apps in the Oxy ecosystem via Keychain Sharing entitlements. The
-   * underlying `expo-secure-store` runtime supports this option.
+   * apps in the Oxy ecosystem via Keychain Sharing entitlements.
    */
   keychainAccessGroup?: string;
 }
@@ -98,13 +109,13 @@ const ANDROID_ACCOUNT_TYPE = 'com.oxy.account';
 /**
  * Initialize React Native specific modules
  *
- * Delegates to `platformCrypto`, which is a per-platform module
- * (`platformCrypto.ts` vs `platformCrypto.react-native.ts`) selected by the
+ * Delegates to `@oxyhq/protocol`'s `platform/crypto`, a per-platform module
+ * (`crypto.ts` vs `crypto.native.ts`) selected by the
  * consumer's bundler. On RN it returns a statically-imported handle to
  * `expo-secure-store`; off RN it throws (and is never called because every
  * caller is gated by `isWebPlatform()` / native-only paths).
  */
-async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
+async function initSecureStore(): Promise<ExpoSecureStoreLike> {
   try {
     return await loadSecureStore();
   } catch (error) {
@@ -124,7 +135,7 @@ function isWebPlatform(): boolean {
   return isWeb();
 }
 
-async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
+async function initExpoCrypto(): Promise<ExpoCryptoLike> {
   // Same per-platform delegation as initSecureStore — see comment there.
   return loadExpoCrypto();
 }

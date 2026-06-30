@@ -18,7 +18,7 @@
  * constant-time and length-guarded, the blessed helper for identity equality.
  */
 
-import { SignatureService } from '@oxyhq/core';
+import { verifySignature } from '@oxyhq/protocol';
 import { verifySecret } from '@oxyhq/core/server';
 import { OWNER_AUTH_MAX_AGE_MS } from './constants.js';
 
@@ -66,5 +66,5 @@ export async function verifyOwnerActionSignature(
     return false;
   }
   const message = ownerActionMessage(action, auth.timestamp);
-  return SignatureService.verify(message, auth.signature, auth.publicKey);
+  return verifySignature(message, auth.signature, auth.publicKey);
 }

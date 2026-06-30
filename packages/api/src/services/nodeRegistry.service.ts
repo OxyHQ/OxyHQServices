@@ -20,7 +20,7 @@
 
 import type { UpdateQuery } from 'mongoose';
 import { z } from 'zod';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import { safeFetch } from '@oxyhq/core/server';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import UserNode, { type IUserNode, type UserNodeMode, type UserNodeController } from '../models/UserNode';

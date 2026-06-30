@@ -18,7 +18,8 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/request
 import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
-import { isNative, isReactNative, getPlatformOS } from './utils/platform';
+import { isNative, getPlatformOS } from './utils/platform';
+import { isReactNative } from '@oxyhq/protocol';
 import { computeIdentityTag, fnv1a32 } from './utils/cacheKey';
 import type { OxyConfig } from './models/interfaces';
 

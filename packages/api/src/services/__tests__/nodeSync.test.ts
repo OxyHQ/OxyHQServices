@@ -33,7 +33,7 @@ const mockUserFindById = jest.fn();
 const mockInvalidate = jest.fn();
 
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...a: unknown[]) => mockSafeFetch(...a) }));
-jest.mock('@oxyhq/core', () => ({
+jest.mock('@oxyhq/protocol', () => ({
   canonicalize: (v: unknown) => JSON.stringify(v),
   computeRecordId: async (env: { seq?: number }) => `rid-${env.seq}`,
 }));

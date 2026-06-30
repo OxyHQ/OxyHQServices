@@ -10,6 +10,10 @@ module.exports = {
     // regex below; the contracts source only imports `zod`, which resolves
     // normally from node_modules.
     '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    // Same rationale for @oxyhq/protocol (canonicalize / signedRecordSigningInput /
+    // computeRecordId, imported by the signed-record + civic + node-sync services):
+    // resolve from source so the api-test job needs no prior protocol build.
+    '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
     // Same rationale for @oxyhq/core/server (safeFetch/SsrfRejection, imported by
     // federation.service.ts + email.service.ts): the core dist is absent in the CI
     // `api-test` job (which runs tests without building workspace deps). Resolve it

@@ -17,7 +17,7 @@
 
 import { ec as EC } from 'elliptic';
 import { Types } from 'mongoose';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 
 const ec = new EC('secp256k1');

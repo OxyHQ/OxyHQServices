@@ -22,7 +22,7 @@
  */
 
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import SignatureService from '../signature.service';
 import { buildUserDid, OXY_DID } from '../did.service';
 import { getHead, materializeCurrent } from '../repoLog.service';

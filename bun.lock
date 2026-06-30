@@ -102,6 +102,7 @@
         "@node-rs/argon2": "^2.0.2",
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "workspace:*",
+        "@oxyhq/protocol": "workspace:*",
         "@socket.io/redis-adapter": "^8.3.0",
         "@types/cheerio": "^0.22.35",
         "@types/compression": "^1.8.1",
@@ -224,7 +225,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "5.1.1",
+      "version": "6.1.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "qrcode": "^1.5.4",
@@ -387,9 +388,10 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.17.1",
+      "version": "4.0.0",
       "dependencies": {
-        "@oxyhq/contracts": "workspace:*",
+        "@oxyhq/contracts": "workspace:^",
+        "@oxyhq/protocol": "workspace:^",
         "bip39": "^3.1.0",
         "buffer": "^6.0.3",
         "elliptic": "^6.6.1",
@@ -524,6 +526,7 @@
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "workspace:*",
+        "@oxyhq/protocol": "workspace:*",
         "better-sqlite3": "^12.11.1",
         "express": "^4.21.2",
         "pino": "^10.3.1",
@@ -540,9 +543,38 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/protocol": {
+      "name": "@oxyhq/protocol",
+      "version": "0.1.0",
+      "dependencies": {
+        "@oxyhq/contracts": "workspace:^",
+        "elliptic": "^6.6.1",
+        "zod": "^3.25.64",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "^1.9.4",
+        "@react-native-async-storage/async-storage": "^2.2.0",
+        "@types/elliptic": "^6.4.18",
+        "@types/node": "^22.0.0",
+        "expo-crypto": "~56.0.3",
+        "expo-secure-store": "~56.0.4",
+        "release-it": "^19.0.6",
+        "typescript": "^5.9.2",
+      },
+      "peerDependencies": {
+        "@react-native-async-storage/async-storage": "*",
+        "expo-crypto": "*",
+        "expo-secure-store": "*",
+      },
+      "optionalPeers": [
+        "@react-native-async-storage/async-storage",
+        "expo-crypto",
+        "expo-secure-store",
+      ],
+    },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "11.1.1",
+      "version": "13.0.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
       },
@@ -1530,6 +1562,8 @@
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
 
     "@oxyhq/node": ["@oxyhq/node@workspace:packages/node"],
+
+    "@oxyhq/protocol": ["@oxyhq/protocol@workspace:packages/protocol"],
 
     "@oxyhq/services": ["@oxyhq/services@workspace:packages/services"],
 

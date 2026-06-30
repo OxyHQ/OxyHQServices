@@ -7,12 +7,14 @@
  *
  * Workspace deps are resolved from their TypeScript SOURCE — mirroring
  * `packages/api/jest.config.js` — so the node tests never depend on
- * `@oxyhq/contracts` / `@oxyhq/core` being built first (matching the CI
- * convention where workspace deps are not pre-built for the test job):
+ * `@oxyhq/contracts` / `@oxyhq/protocol` / `@oxyhq/core` being built first
+ * (matching the CI convention where workspace deps are not pre-built for the
+ * test job):
  *  - `@oxyhq/contracts`  → `verify.ts` imports the runtime `signedRecordEnvelopeSchema`.
- *  - `@oxyhq/core`       → `verify.ts` reuses `signedRecordSigningInput` /
- *                          `computeRecordId` / `SignatureService`, and the tests
- *                          sign real envelopes with `KeyManager`.
+ *  - `@oxyhq/protocol`   → `verify.ts` reuses `verifyEnvelopeSignature` /
+ *                          `computeRecordId`, and the tests sign real envelopes
+ *                          with `signMessage` / `signedRecordSigningInput`.
+ *  - `@oxyhq/core`       → the tests generate keypairs with `KeyManager`.
  *  - `@oxyhq/core/server`→ owner-key equality uses `verifySecret`.
  *
  * @type {import('jest').Config}
@@ -23,6 +25,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
     '^@oxyhq/core/server$': '<rootDir>/../core/src/server/index.ts',
     '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
     // NodeNext ESM source uses `.js` extensions on relative imports of TS files.

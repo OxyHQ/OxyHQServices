@@ -32,7 +32,7 @@
  */
 
 import mongoose, { ClientSession } from 'mongoose';
-import { signedRecordSigningInput, computeRecordId } from '@oxyhq/core';
+import { signedRecordSigningInput, computeRecordId } from '@oxyhq/protocol';
 import { verifySecret } from '@oxyhq/core/server';
 import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 import SignatureService from './signature.service';

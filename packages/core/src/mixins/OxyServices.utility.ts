@@ -7,7 +7,7 @@
 import { jwtDecode } from 'jwt-decode';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { loadNodeCrypto } from '../utils/platformCrypto';
+import { loadNodeCrypto } from '@oxyhq/protocol';
 import { logger } from '../utils/loggerUtils';
 import { CACHE_TIMES } from './mixinHelpers';
 
@@ -487,9 +487,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             // Signature verification uses a manual HMAC-SHA256 compare because
             // this file ships into RN/web bundles where `jsonwebtoken` is
             // unavailable. The middleware only ever runs on Node hosts (see
-            // platformCrypto's doc-comment), and `loadNodeCrypto` is per-
-            // platform: the RN variant throws so Metro never bundles a Node
-            // built-in reference.
+            // `@oxyhq/protocol`'s `platform/crypto` doc-comment), and
+            // `loadNodeCrypto` is per-platform: the RN variant throws so Metro
+            // never bundles a Node built-in reference.
             try {
               await verifyServiceTokenSignature(token, jwtSecret);
               verifyServiceTokenClaims(decoded, {

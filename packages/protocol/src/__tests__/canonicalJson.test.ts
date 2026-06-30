@@ -8,7 +8,7 @@
  * behaviour, and the JSON value/omit semantics.
  */
 
-import { canonicalize } from '../canonicalJson';
+import { canonicalize } from '../envelope/canonicalJson';
 
 describe('canonicalize', () => {
   describe('object key ordering', () => {

@@ -1,11 +1,10 @@
 /**
- * Record verification — reuses `@oxyhq/core` so a record verifies on the node
- * with the EXACT code Oxy uses. No crypto is re-implemented here:
+ * Record verification — reuses `@oxyhq/protocol` so a record verifies on the
+ * node with the EXACT code Oxy uses. No crypto is re-implemented here:
  *
- *  - {@link signedRecordSigningInput} recomputes the canonical signing input
- *    (the bytes the signature covers) from the envelope's own fields.
- *  - {@link SignatureService.verify} checks the secp256k1 DER signature against
- *    the envelope's embedded `publicKey`.
+ *  - {@link verifyEnvelopeSignature} recomputes the canonical signing input
+ *    (the bytes the signature covers) from the envelope's own fields and checks
+ *    the secp256k1 DER signature against the envelope's embedded `publicKey`.
  *  - {@link computeRecordId} recomputes `recordId = sha256(signingInput)` — the
  *    content address used as the chain's `prev` pointer.
  *
@@ -20,7 +19,7 @@
  * configured owner public key, not a DID lookup.
  */
 
-import { signedRecordSigningInput, computeRecordId, SignatureService } from '@oxyhq/core';
+import { computeRecordId, verifyEnvelopeSignature } from '@oxyhq/protocol';
 import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 
 /** Stable, machine-readable reasons an envelope can fail verification. */
@@ -48,8 +47,7 @@ export async function verifyRecordEnvelope(input: unknown): Promise<VerifyResult
     return { ok: false, reason: 'not_v2' };
   }
 
-  const signingInput = signedRecordSigningInput(envelope);
-  const signatureValid = await SignatureService.verify(signingInput, envelope.signature, envelope.publicKey);
+  const signatureValid = await verifyEnvelopeSignature(envelope);
   if (!signatureValid) {
     return { ok: false, reason: 'bad_signature' };
   }

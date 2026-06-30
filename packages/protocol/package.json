@@ -1,0 +1,130 @@
+{
+  "name": "@oxyhq/protocol",
+  "version": "0.1.0",
+  "description": "Oxy Protocol \u2014 the app-agnostic base substrate: signed-record envelope, canonical JSON, signature/verification, and platform crypto. Reused by any Oxy app to decentralize its own content.",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "node": [
+        "dist/types/node/index.d.ts"
+      ]
+    }
+  },
+  "source": "src/index.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "react-native": "./dist/esm/index.js",
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/types/node/index.d.ts",
+        "default": "./dist/esm/node/index.js"
+      },
+      "require": {
+        "types": "./dist/types/node/index.d.ts",
+        "default": "./dist/cjs/node/index.js"
+      },
+      "default": "./dist/esm/node/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "react-native": {
+    "./dist/esm/platform/crypto.js": "./dist/esm/platform/crypto.native.js",
+    "./dist/cjs/platform/crypto.js": "./dist/cjs/platform/crypto.native.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "oxyhq",
+    "protocol",
+    "signed-records",
+    "canonical-json",
+    "crypto",
+    "did"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/protocol"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "bun run build:cjs && bun run build:esm && bun run build:types",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "typescript": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "lint": "biome lint --error-on-warnings ./src",
+    "prepublishOnly": "bun run clean && bun run build",
+    "release": "rm -rf dist && bun run build && release-it"
+  },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/protocol@${version}",
+      "tagAnnotation": "Release @oxyhq/protocol@${version}",
+      "commitMessage": "chore(protocol): release @oxyhq/protocol@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/protocol@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
+  },
+  "dependencies": {
+    "@oxyhq/contracts": "workspace:^",
+    "elliptic": "^6.6.1",
+    "zod": "^3.25.64"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": "*",
+    "expo-crypto": "*",
+    "expo-secure-store": "*"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    },
+    "expo-crypto": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@types/elliptic": "^6.4.18",
+    "@types/node": "^22.0.0",
+    "expo-crypto": "~56.0.3",
+    "expo-secure-store": "~56.0.4",
+    "release-it": "^19.0.6",
+    "typescript": "^5.9.2"
+  }
+}

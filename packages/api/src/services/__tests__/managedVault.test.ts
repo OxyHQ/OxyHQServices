@@ -58,7 +58,7 @@ jest.mock('../../services/signature.service', () => ({
   __esModule: true,
   default: { signMessage: (...args: unknown[]) => mockSignMessage(...args) },
 }));
-jest.mock('@oxyhq/core', () => ({ signedRecordSigningInput: (...args: unknown[]) => mockSigningInput(...args) }));
+jest.mock('@oxyhq/protocol', () => ({ signedRecordSigningInput: (...args: unknown[]) => mockSigningInput(...args) }));
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...args: unknown[]) => mockSafeFetch(...args) }));
 jest.mock('../../utils/userCache', () => ({ __esModule: true, default: { invalidate: (...args: unknown[]) => mockInvalidate(...args) } }));
 jest.mock('../../utils/logger', () => ({

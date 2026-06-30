@@ -51,7 +51,7 @@
  * still proceeds.
  */
 
-import { canonicalize, computeRecordId } from '@oxyhq/core';
+import { canonicalize, computeRecordId } from '@oxyhq/protocol';
 import { safeFetch } from '@oxyhq/core/server';
 import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 import UserNode from '../models/UserNode';

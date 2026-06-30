@@ -4,7 +4,7 @@
 import { normalizeLanguageCode, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
 import type { LanguageMetadata } from '../utils/languageUtils';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { loadAsyncStorage } from '../utils/platformCrypto';
+import { loadAsyncStorage } from '@oxyhq/protocol';
 import { isDev } from '../shared/utils/debugUtils';
 
 export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base: T) {
