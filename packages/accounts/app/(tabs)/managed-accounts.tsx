@@ -61,12 +61,15 @@ export default function ManagedAccountsScreen() {
   const { t, locale } = useTranslation();
 
   // Auth is enforced by the `(tabs)` layout — assume a session here.
+  // `user` is the account the app is currently signed in as. Selecting a
+  // managed account performs a REAL session switch via `switchToAccount`, after
+  // which `user` becomes that account — so the "current" account is simply
+  // whichever row matches `user.id`.
   const {
     isLoading: oxyLoading,
     accounts,
-    actingAs,
-    activeAccount,
-    setActingAs,
+    user,
+    switchToAccount,
     showBottomSheet,
     oxyServices,
     refreshAccounts,
@@ -90,20 +93,14 @@ export default function ManagedAccountsScreen() {
     showBottomSheet?.('CreateAccount');
   }, [showBottomSheet]);
 
-  // True account switch — selecting an account makes the whole app become it.
-  // This is NOT a toggle: returning to the personal account is itself a switch
-  // (via the banner below / `setActingAs(null)`), never an "un-act-as".
+  // True account switch — selecting an account makes the whole app sign in as
+  // it (a real session switch). Returning to the personal account is itself a
+  // switch, performed from the account switcher, never an "un-act-as".
   const handleSwitchTo = useCallback((accountId: string) => {
-    setActingAs(accountId);
-  }, [setActingAs]);
-
-  // The display name of the account currently switched into, for the
-  // "switch back to your personal account" banner. `null` on the personal
-  // account (no banner shown).
-  const activeAccountName = useMemo(
-    () => (actingAs && activeAccount ? coreGetAccountDisplayName(activeAccount, locale) : null),
-    [actingAs, activeAccount, locale],
-  );
+    Promise.resolve(switchToAccount(accountId)).catch((error) => {
+      console.error('Failed to switch account', error);
+    });
+  }, [switchToAccount]);
 
   const handleManageMembers = useCallback((accountId: string) => {
     showBottomSheet?.({ screen: 'AccountMembers', props: { accountId } });
@@ -111,13 +108,19 @@ export default function ManagedAccountsScreen() {
 
   const handleEditProfile = useCallback((accountId: string) => {
     // Editing a non-personal account's profile happens through the shared
-    // profile editor while acting as that account.
-    setActingAs(accountId);
-    showBottomSheet?.({
-      screen: 'EditProfileField',
-      props: { fieldType: 'displayName' },
-    });
-  }, [setActingAs, showBottomSheet]);
+    // profile editor, which targets the current account — so switch into the
+    // account first, then open the editor.
+    Promise.resolve(switchToAccount(accountId))
+      .then(() => {
+        showBottomSheet?.({
+          screen: 'EditProfileField',
+          props: { fieldType: 'displayName' },
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to switch account before editing', error);
+      });
+  }, [switchToAccount, showBottomSheet]);
 
   const handleArchiveAccount = useCallback((node: AccountNode) => {
     const name = getAccountDisplayName(node, locale);
@@ -133,9 +136,6 @@ export default function ManagedAccountsScreen() {
             try {
               setArchivingId(node.accountId);
               await oxyServices.archiveAccount(node.accountId);
-              if (actingAs === node.accountId) {
-                setActingAs(null);
-              }
               await refreshAccounts();
             } catch (error) {
               console.error('Failed to archive account', error);
@@ -147,7 +147,7 @@ export default function ManagedAccountsScreen() {
         },
       ],
     );
-  }, [oxyServices, actingAs, setActingAs, refreshAccounts, locale, t]);
+  }, [oxyServices, refreshAccounts, locale, t]);
 
   const buildItem = useCallback((node: AccountNode): GroupedItem => {
     const name = getAccountDisplayName(node, locale);
@@ -157,12 +157,11 @@ export default function ManagedAccountsScreen() {
     // rather than showing "No username set".
     const fallbackHandle = getAccountFallbackHandle(node.account ?? null);
     const role = getNodeRole(node);
-    // "Current" = the account the app is switched INTO. `actingAs` is the id
-    // form of the effective active account (the same value that drives
-    // `activeAccount`); it is the account id, so it matches `node.accountId`
-    // directly. The personal/self account (not listed here) is current when
-    // `actingAs` is null.
-    const isCurrent = actingAs === node.accountId;
+    // "Current" = the account the app is currently signed in as. A real session
+    // switch makes `user` become the switched-into account, so the current row
+    // is simply the one whose `accountId` matches `user.id`. The personal/self
+    // account is not listed here.
+    const isCurrent = user?.id === node.accountId;
     const isArchiving = archivingId === node.accountId;
     const avatarUri = node.account?.avatar
       ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
@@ -263,7 +262,7 @@ export default function ManagedAccountsScreen() {
             ? () => handleManageMembers(node.accountId)
             : undefined,
     };
-  }, [actingAs, archivingId, oxyServices, colors, handlePressIn, handleSwitchTo, handleManageMembers, handleEditProfile, handleArchiveAccount, t, locale]);
+  }, [user?.id, archivingId, oxyServices, colors, handlePressIn, handleSwitchTo, handleManageMembers, handleEditProfile, handleArchiveAccount, t, locale]);
 
   // Partition the accessible forest: accounts the caller owns (grouped by kind)
   // and accounts shared with them via membership. The caller's own personal
@@ -314,24 +313,6 @@ export default function ManagedAccountsScreen() {
               <Text style={styles.createButtonText}>{t('managedAccounts.createNew')}</Text>
             </TouchableOpacity>
           </Section>
-
-          {actingAs && (
-            <Section title="">
-              <AccountCard>
-                <GroupedSection items={[{
-                  id: 'switch-to-personal',
-                  icon: 'account-arrow-left',
-                  iconColor: colors.sidebarIconSecurity,
-                  title: t('managedAccounts.switchBackTitle'),
-                  subtitle: activeAccountName
-                    ? t('managedAccounts.switchBackSubtitle', { name: activeAccountName })
-                    : undefined,
-                  onPress: () => setActingAs(null),
-                  showChevron: false,
-                }]} />
-              </AccountCard>
-            </Section>
-          )}
 
           {totalCount === 0 ? (
             <Section title="">

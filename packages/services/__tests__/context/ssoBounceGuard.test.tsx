@@ -58,7 +58,6 @@ function buildStub(baseURL: string) {
     exchangeSsoCode: jest.fn(async () => null),
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: 'u', username: 't' } as User)),
     validateSession: jest.fn(async () => ({ valid: true, user: { id: 'u' } })),
-    setActingAs: jest.fn(),
     listAccounts: jest.fn(async () => []),
   };
 }

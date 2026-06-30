@@ -84,7 +84,6 @@ function buildStub(cfg: StubConfig) {
         async (): Promise<User> => ({ id: EXCHANGED_USER_ID, username: 'ssouser' } as User),
       ),
       validateSession: jest.fn(async () => ({ valid: true, user: { id: EXCHANGED_USER_ID } })),
-      setActingAs: jest.fn(),
       listAccounts: jest.fn(async () => []),
     },
   };

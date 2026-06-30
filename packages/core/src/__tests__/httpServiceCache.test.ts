@@ -112,25 +112,6 @@ describe('HttpService identity-scoped response cache', () => {
     expect(u2.profiles).toEqual(['for-user-2']);
   });
 
-  it('partitions the cache by acting-as identity for the same bearer token', async () => {
-    const http = newService();
-    http.setTokens(makeJwt({ userId: 'owner-1' }));
-
-    // Acting as managed account A.
-    http.setActingAs('managed-a');
-    fetchMock.mockResolvedValueOnce(jsonResponse({ items: ['a-only'] }));
-    const a = await http.get<{ items: string[] }>('/some/managed-resource', { cache: true });
-    expect(a.items).toEqual(['a-only']);
-
-    // Acting as managed account B — different content, must miss the cache.
-    http.setActingAs('managed-b');
-    fetchMock.mockResolvedValueOnce(jsonResponse({ items: ['b-only'] }));
-    const b = await http.get<{ items: string[] }>('/some/managed-resource', { cache: true });
-
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(b.items).toEqual(['b-only']);
-  });
-
   it('does NOT serve an authenticated cached response to an anonymous caller after clearTokens()', async () => {
     const http = newService();
     http.setTokens(makeJwt({ userId: 'user-1' }));

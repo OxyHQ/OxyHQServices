@@ -238,9 +238,6 @@ export class HttpService {
    */
   private _tokenChangeListeners = new Set<(accessToken: string | null) => void>();
 
-  // Acting-as identity for managed accounts
-  private _actingAsUserId: string | null = null;
-
   // Performance monitoring
   private requestMetrics = {
     totalRequests: 0,
@@ -464,11 +461,6 @@ export class HttpService {
             csrfTokenLength: csrfToken?.length,
             hasNativeAppHeader: headers['X-Native-App'] === 'true',
           });
-        }
-
-        // Add X-Acting-As header for managed account identity delegation
-        if (this._actingAsUserId) {
-          headers['X-Acting-As'] = this._actingAsUserId;
         }
 
         // Merge custom headers if provided
@@ -820,12 +812,12 @@ export class HttpService {
    * Derive a stable, non-sensitive identity discriminator for cache scoping.
    *
    * Thin instance wrapper over the pure {@link computeIdentityTag} helper —
-   * binds it to this instance's live access token and acting-as id. See that
-   * function's docs for the full resolution contract (anon fallback, decoded
-   * `userId || id`, token-hash fallback for undecodable tokens).
+   * binds it to this instance's live access token. See that function's docs for
+   * the full resolution contract (anon fallback, decoded `userId || id`,
+   * token-hash fallback for undecodable tokens).
    */
   private computeIdentityTag(): string {
-    return computeIdentityTag(this.tokenStore.getAccessToken(), this._actingAsUserId);
+    return computeIdentityTag(this.tokenStore.getAccessToken());
   }
 
   /**
@@ -1105,15 +1097,6 @@ export class HttpService {
 
   async delete<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<T> {
     return this.request<T>({ method: 'DELETE', url, ...config });
-  }
-
-  // Acting-as identity management (managed accounts)
-  setActingAs(userId: string | null): void {
-    this._actingAsUserId = userId;
-  }
-
-  getActingAs(): string | null {
-    return this._actingAsUserId;
   }
 
   // Token management

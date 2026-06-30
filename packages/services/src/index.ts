@@ -205,11 +205,6 @@ export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';
 
-// Subtle "active account" context cue for the account graph (not Commons/DID).
-// Shows which account is active when the user has switched into a non-personal
-// account; reads as the current account, not as delegation.
-export { default as ActiveAccountBanner } from './ui/components/ActiveAccountBanner';
-
 // Unified account menu (device-only switcher — popover on web, sheet on native)
 export { default as AccountMenu } from './ui/components/AccountMenu';
 export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/AccountMenu';

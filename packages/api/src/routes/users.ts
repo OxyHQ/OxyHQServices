@@ -1231,9 +1231,11 @@ router.delete(
  *
  * Hardening (C4):
  *  - Scope check: rejects service tokens that lack `federation:write`.
- *  - Actor URI binding: `actorUri.hostname` must match the asserted
- *    `domain` (so a malicious service can't claim to vouch for a user on
- *    a host they don't actually own).
+ *  - Actor URI binding (http(s) ActivityPub actors only): `actorUri.hostname`
+ *    must match the asserted `domain` (so a malicious service can't claim to
+ *    vouch for a user on a host they don't actually own). AT Protocol (Bluesky)
+ *    actors are identified by a hostless DID (`did:plc:`/`did:web:`); the DID is
+ *    stored verbatim and the host-binding check is skipped for it.
  *  - Username squatting: for `agent` / `automated`, refuse to upsert when
  *    a `local` (or other-type) user already owns the username.
  *  - Type immutability: never let `type` change on an existing user — a
@@ -1241,8 +1243,11 @@ router.delete(
  *
  * @body {'federated' | 'agent' | 'automated'} type
  * @body {string} username      - Unique username (e.g. "user@mastodon.social")
- * @body {string} [actorUri]    - ActivityPub actor URI (required for federated)
- * @body {string} [domain]      - Origin domain (required for federated)
+ * @body {string} [actorUri]    - Actor identifier (required for federated): an
+ *                                http(s) ActivityPub actor URI, or an AT Protocol
+ *                                DID (`did:plc:…` / `did:web:…`) for Bluesky actors
+ * @body {string} [domain]      - Origin domain (required for federated): the
+ *                                handle host (e.g. `bsky.social`) for atproto
  * @body {string} [displayName] - Display name
  * @body {string} [avatar]      - Avatar URL or asset ID
  * @body {string} [bio]         - Profile bio
@@ -1285,6 +1290,21 @@ function normalizeFederatedResolveUsername(username: string): string | null {
 function actorHostnameMatchesFederatedDomain(actorHostname: string, domain: string): boolean {
   const normalizedActorHostname = normalizeFederatedResolveDomain(actorHostname);
   return normalizedActorHostname === domain || normalizedActorHostname === `www.${domain}`;
+}
+
+/**
+ * AT Protocol (Bluesky) external actors are identified by a DID, not an http(s)
+ * ActivityPub actor URL. atproto uses exactly two DID methods — `did:plc:` and
+ * `did:web:` — and the DID is an opaque, globally-unique identifier with no host
+ * to parse. The URL/hostname binding that guards http(s) AP actors is therefore
+ * meaningless (and impossible) for a DID, so a DID actorUri is accepted and
+ * stored verbatim as the federation dedup key. The `did:` scheme and method
+ * name are lower-case per the DID spec; require a non-empty method-specific
+ * identifier after the prefix.
+ */
+const ATPROTO_DID_ACTOR_URI = /^did:(?:plc|web):\S+$/;
+function isAtprotoDidActorUri(actorUri: string): boolean {
+  return ATPROTO_DID_ACTOR_URI.test(actorUri);
 }
 
 async function verifyFederatedWebFingerBinding(username: string, actorUri: string): Promise<boolean> {
@@ -1372,14 +1392,26 @@ router.put(
       if (!domain || typeof domain !== 'string') {
         throw new BadRequestError('domain is required for federated users');
       }
+
+      // AT Protocol (Bluesky) external actors are keyed by a DID
+      // (`did:plc:…` / `did:web:…`) rather than an http(s) ActivityPub actor
+      // URL. A DID carries no host, so the URL parse + hostname/WebFinger
+      // binding below are AP-only and are skipped for it — the DID is stored
+      // verbatim as the dedup key. The `domain` carried alongside is the handle
+      // host (e.g. `bsky.social`) or the did:web host; it is stored as given and
+      // we never try to parse a host out of the DID itself.
+      const isDidActor = isAtprotoDidActorUri(actorUri);
+
       // Bind the actor URI hostname to the asserted domain so a service
       // can't claim "alice@mastodon.social" actually lives at
-      // attacker.example.
-      let actorHostname: string;
-      try {
-        actorHostname = new URL(actorUri).hostname.toLowerCase();
-      } catch {
-        throw new BadRequestError('actorUri must be a valid URL');
+      // attacker.example. http(s) AP actors only — a DID has no host to bind.
+      let actorHostname: string | null = null;
+      if (!isDidActor) {
+        try {
+          actorHostname = new URL(actorUri).hostname.toLowerCase();
+        } catch {
+          throw new BadRequestError('actorUri must be a valid http(s) URL or a did: URI');
+        }
       }
       const normalisedDomain = normalizeFederatedResolveDomain(domain);
       const normalisedUsername = normalizeFederatedResolveUsername(username);
@@ -1401,8 +1433,14 @@ router.put(
         throw new BadRequestError('Cannot resolve a user on an own federation domain');
       }
 
+      // http(s) AP host binding: the actor's host must match the asserted
+      // domain (or the domain must vouch for the handle via WebFinger). DID
+      // actors carry no host and are not WebFinger-resolvable, so this AP-only
+      // check is skipped for them — the `federation:write` scope plus the
+      // username↔domain binding above are the trust anchor for atproto actors.
       if (
-        !actorHostnameMatchesFederatedDomain(actorHostname, normalisedDomain)
+        actorHostname !== null
+        && !actorHostnameMatchesFederatedDomain(actorHostname, normalisedDomain)
         && !(await verifyFederatedWebFingerBinding(normalisedUsername, actorUri))
       ) {
         throw new BadRequestError('actorUri hostname does not match domain');

@@ -40,7 +40,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Saves & collections belong to the ACTIVE account (the org/project/bot when
     // switched, else the personal user).
-    const { oxyServices, activeAccount } = useOxy();
+    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
@@ -53,10 +53,10 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
         const loadData = async () => {
             try {
                 setIsLoading(true);
-                if (activeAccount?.id && oxyServices) {
+                if (user?.id && oxyServices) {
                     const [saved, cols] = await Promise.all([
-                        oxyServices.getSavedItems(activeAccount.id),
-                        oxyServices.getCollections(activeAccount.id),
+                        oxyServices.getSavedItems(user.id),
+                        oxyServices.getCollections(user.id),
                     ]);
                     setSavedItems(saved.map((item) => ({
                         id: item.id,
@@ -80,7 +80,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadData();
-    }, [activeAccount?.id, oxyServices, t]);
+    }, [user?.id, oxyServices, t]);
 
     const formatDate = (date: Date) => {
         return date.toLocaleDateString();

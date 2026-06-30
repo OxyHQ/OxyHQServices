@@ -11,9 +11,10 @@
  * strings (see `requireAccountPermission`) rather than on the role directly, so
  * the role map is the single source of truth for what each role may do.
  *
- * `account:act_as` (the right to operate AS the account via `X-Acting-As`) is
- * deliberately granted ONLY to owner/admin/editor — billing/developer/viewer
- * may manage facets of the account but never post/act as it.
+ * `account:act_as` (the right to switch INTO the account via
+ * `POST /accounts/:id/switch`, minting a real session AS it) is deliberately
+ * granted ONLY to owner/admin/editor — billing/developer/viewer may manage
+ * facets of the account but never post/act as it.
  *
  * Legacy role mapping (used by the migration scripts):
  *  - ManagedAccount owner/admin/editor → owner/admin/editor (unchanged)
@@ -159,7 +160,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AccountRole, readonly AccountPerm
   viewer: VIEWER_PERMISSIONS,
 };
 
-/** Roles whose holders may operate AS the account (`X-Acting-As`). */
+/** Roles whose holders may switch INTO the account (mint a session AS it). */
 export const ACTING_AS_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
 
 /**

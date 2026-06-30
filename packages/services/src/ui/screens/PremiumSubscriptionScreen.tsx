@@ -93,7 +93,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Premium state belongs to the ACTIVE account (the org/project/bot when
     // switched, else the personal user), not the device-session owner.
-    const { activeAccount } = useOxy();
+    const { user } = useOxy();
     const [loading, setLoading] = useState(true);
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -329,7 +329,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         if (currentAppPackage) {
             loadSubscriptionData();
         }
-    }, [currentAppPackage, activeAccount?.isPremium]);
+    }, [currentAppPackage, user?.isPremium]);
 
     const detectCurrentApp = () => {
         const detectedApp = 'mention';
@@ -346,7 +346,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             setPlans(availablePlans);
 
             let currentSubscription: UserSubscription | null = null;
-            if (activeAccount?.isPremium) {
+            if (user?.isPremium) {
                 currentSubscription = {
                     id: 'sub_12345',
                     planId: 'oxy-insider',

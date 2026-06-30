@@ -25,6 +25,7 @@ import type {
   ApplicationCredentialWithSecret,
   RotateApplicationCredentialResult,
   ApplicationUsageStats,
+  SwitchAccountResult,
 } from '../OxyServices.accounts';
 
 const setAccessTokenForTest = (oxy: OxyServices): void => {
@@ -171,6 +172,75 @@ describe('OxyServices.accounts', () => {
       makeRequestSpy.mockResolvedValue({ account: accountNodeFixture });
       await oxy.getAccount('a b/c');
       expect(makeRequestSpy.mock.calls[0][1]).toBe('/accounts/a%20b%2Fc');
+    });
+  });
+
+  describe('switchToAccount', () => {
+    const switchResponse: SwitchAccountResult = {
+      sessionId: 'sess_switch',
+      deviceId: 'dev_switch',
+      expiresAt: '2026-06-30T01:00:00.000Z',
+      accessToken: 'access_switch',
+      user: { id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } },
+      authuser: 2,
+    };
+
+    it('posts to /:id/switch (no body, no cache), plants the token, sweeps the cache, and returns the session', async () => {
+      const setTokensSpy = jest.spyOn(oxy, 'setTokens');
+      const clearCacheSpy = jest.spyOn(oxy, 'clearCache');
+      makeRequestSpy.mockResolvedValue(switchResponse);
+
+      const result = await oxy.switchToAccount('acc1');
+
+      // Request shape: POST, exact path, no body, cache disabled.
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/accounts/acc1/switch',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+
+      // Session planting: the access token from the body is installed as the
+      // active token (mirrors claimSessionByToken / verifyChallenge).
+      expect(setTokensSpy).toHaveBeenCalledWith('access_switch');
+      expect(oxy.getAccessToken()).toBe('access_switch');
+      expect(oxy.hasValidToken()).toBe(true);
+
+      // Identity changed → the whole GET cache is swept so reads refetch as the
+      // new account, AND it happens AFTER the token is planted.
+      expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+      expect(setTokensSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        clearCacheSpy.mock.invocationCallOrder[0],
+      );
+
+      // The returned session carries the target account (id-normalised) + authuser.
+      expect(result).toEqual({ ...switchResponse, user: { id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } } });
+      expect(result.authuser).toBe(2);
+
+      setTokensSpy.mockRestore();
+      clearCacheSpy.mockRestore();
+    });
+
+    it('URL-encodes the accountId path segment', async () => {
+      makeRequestSpy.mockResolvedValue(switchResponse);
+      await oxy.switchToAccount('a b/c');
+      expect(makeRequestSpy.mock.calls[0][1]).toBe('/accounts/a%20b%2Fc/switch');
+    });
+
+    it('does NOT plant or sweep when the operator is not authorized (403 surfaces via handleError)', async () => {
+      const setTokensSpy = jest.spyOn(oxy, 'setTokens');
+      const clearCacheSpy = jest.spyOn(oxy, 'clearCache');
+      makeRequestSpy.mockRejectedValue(
+        Object.assign(new Error('forbidden'), { response: { status: 403 } }),
+      );
+
+      await expect(oxy.switchToAccount('acc1')).rejects.toThrow();
+      // A failed switch must NOT mutate session state.
+      expect(setTokensSpy).not.toHaveBeenCalled();
+      expect(clearCacheSpy).not.toHaveBeenCalled();
+
+      setTokensSpy.mockRestore();
+      clearCacheSpy.mockRestore();
     });
   });
 

@@ -31,7 +31,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // and the own-profile fallback is the ACTIVE account (the account switched
     // into), so previewing my profile while switched into an org/project/bot
     // resolves "this is mine" against that account, not the session owner.
-    const { oxyServices, activeAccount: currentUser } = useOxy();
+    const { oxyServices, user: currentUser } = useOxy();
     const [profile, setProfile] = useState<User | null>(null);
     const [reputationTotal, setReputationTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);

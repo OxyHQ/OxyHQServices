@@ -8,9 +8,9 @@ import { useI18n } from '../hooks/useI18n';
 
 /**
  * Bottom-sheet route wrapper around {@link AccountSwitcherView}. Used when the
- * switcher is opened as a sheet (e.g. from the `ActiveAccountBanner` cue or the
- * "Your accounts" entry in ManageAccount) rather than as the header-chip
- * popover (which uses the `AccountSwitcher` modal directly).
+ * switcher is opened as a sheet (e.g. from the "Your accounts" entry in
+ * ManageAccount) rather than as the header-chip popover (which uses the
+ * `AccountSwitcher` modal directly).
  */
 const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigate }) => {
   const { t } = useI18n();

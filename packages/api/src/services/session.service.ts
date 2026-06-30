@@ -29,6 +29,23 @@ const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
 const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
 /**
+ * How often a managed-account session (one minted by switching INTO an account,
+ * carrying `operatedByUserId`) re-verifies that the operator still holds
+ * `account:act_as`, on the per-request VALIDATE path. The REFRESH path always
+ * re-checks (bypassing this throttle) so a revoked operator can never refresh
+ * indefinitely. 60s caps the per-request membership lookups while keeping
+ * revocation latency on the read path bounded.
+ */
+const MANAGED_SESSION_RECHECK_MS = 60_000;
+
+/**
+ * Last time (epoch ms) a managed session's operator membership was re-verified
+ * on the validate path, keyed by sessionId. Only managed sessions are tracked;
+ * entries are removed when the session is deactivated.
+ */
+const managedSessionRecheckAt = new Map<string, number>();
+
+/**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
  * Handles edge cases and corrupted cache entries gracefully
  * 
@@ -75,6 +92,74 @@ function extractUserIdFromCache(userIdValue: unknown): string | undefined {
 }
 
 class SessionService {
+  /**
+   * For a managed-account session (minted by switching INTO an account, carrying
+   * `operatedByUserId`), confirm the operator STILL holds `account:act_as` over
+   * the account (`userId`). If membership was revoked/downgraded, the session is
+   * deactivated and `false` is returned so the caller treats it as invalid —
+   * this is what makes a managed-account session REVOCABLE and bounded.
+   *
+   * Ordinary first-party sessions (no `operatedByUserId`) pass through untouched.
+   * On the per-request validate path the check is throttled to
+   * `MANAGED_SESSION_RECHECK_MS`; pass `force` (the refresh path) to bypass it so
+   * a revoked operator can never refresh indefinitely.
+   *
+   * `account.service` is imported LAZILY so the session-service module graph does
+   * not statically load the Account* models (which breaks suites that mock
+   * mongoose wholesale, and would couple every session consumer to them).
+   */
+  private async ensureManagedSessionAuthorized(
+    session: { sessionId: string; userId: unknown; operatedByUserId?: unknown },
+    opts: { force?: boolean } = {}
+  ): Promise<boolean> {
+    const operatorId = extractUserIdFromCache(session.operatedByUserId);
+    if (!operatorId) {
+      return true; // ordinary session (no operator) — nothing to bind
+    }
+
+    const sessionId = session.sessionId;
+    if (!opts.force) {
+      const last = managedSessionRecheckAt.get(sessionId);
+      if (last && Date.now() - last < MANAGED_SESSION_RECHECK_MS) {
+        return true; // re-verified recently on the validate path
+      }
+    }
+
+    // `userId` may be a raw ObjectId (refresh path) or a populated user doc
+    // (validate path, where getSessionWithUser swaps in the user) — normalize.
+    const accountId = extractUserIdFromCache(session.userId);
+    if (!accountId) {
+      return true;
+    }
+
+    try {
+      const { accountService } = await import('./account.service.js');
+      const role = await accountService.verifyActingAs(operatorId, accountId);
+      if (!role) {
+        await this.deactivateSession(sessionId);
+        managedSessionRecheckAt.delete(sessionId);
+        logger.info('[SessionService] Managed-account session revoked — operator lost act_as', {
+          sessionId: sessionId.substring(0, 8),
+          operatorId,
+          accountId,
+        });
+        return false;
+      }
+      managedSessionRecheckAt.set(sessionId, Date.now());
+      return true;
+    } catch (error) {
+      // Never hard-fail auth on a transient membership-lookup error; the refresh
+      // path will re-check. Fail OPEN here (keep the session) to avoid locking a
+      // legitimately-switched operator out on a flaky DB read.
+      logger.error('[SessionService] Managed-session act_as re-check failed', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'ensureManagedSessionAuthorized',
+        sessionId: sessionId.substring(0, 8),
+      });
+      return true;
+    }
+  }
+
   /**
    * Get session by sessionId with caching
    * 
@@ -240,6 +325,12 @@ class SessionService {
 
       const { session } = result;
 
+      // A managed-account session is only valid while its operator still holds
+      // act_as over the account. Revoked membership → deactivate + reject.
+      if (!(await this.ensureManagedSessionAuthorized(session))) {
+        return null;
+      }
+
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         this.updateLastActivity(sessionId).catch(() => {
           // Silently fail - non-critical operation
@@ -315,7 +406,7 @@ class SessionService {
     options: SessionCreateOptions = {}
   ): Promise<ISession> {
     try {
-      const { deviceName, deviceFingerprint, stableDeviceKey } = options;
+      const { deviceName, deviceFingerprint, stableDeviceKey, operatedByUserId } = options;
       // For IdP/FedCM-issued sessions the request is a server-to-server call
       // from the IdP (UA = 'unknown', egress IP varies per call), so the
       // UA/IP-derived deviceId would be random every time and sprawl a new
@@ -387,6 +478,10 @@ class SessionService {
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
               'deviceInfo.ipAddress': deviceInfo.ipAddress,
               'deviceInfo.userAgent': deviceInfo.userAgent,
+              // Bind the reused session to the CURRENT operator when this is an
+              // account switch (keeps the act_as re-check pointed at whoever just
+              // switched in); leave it untouched for ordinary sessions.
+              ...(operatedByUserId ? { operatedByUserId } : {}),
               updatedAt: now
             }
           },
@@ -422,6 +517,7 @@ class SessionService {
         },
         accessToken,
         refreshToken,
+        operatedByUserId: operatedByUserId || null,
         isActive: true,
         expiresAt,
         lastRefresh: now
@@ -499,6 +595,13 @@ class SessionService {
         });
 
         if (graceSession) {
+          // A managed-account session must re-prove operator act_as on EVERY
+          // refresh — even the grace path — so a revoked operator can never
+          // ride a refresh. `force` bypasses the validate-path throttle.
+          if (!(await this.ensureManagedSessionAuthorized(graceSession, { force: true }))) {
+            return null;
+          }
+
           // Another tab already rotated. Return the current (already-rotated) tokens
           // without generating new ones, making this idempotent within the grace window.
           logger.info('[SessionService] Refresh token grace period used', {
@@ -516,6 +619,12 @@ class SessionService {
         }
 
         // No grace period match either -- token is truly invalid
+        return null;
+      }
+
+      // A managed-account session must re-prove operator act_as on every refresh
+      // (revoked membership → kill the session, never refresh independently).
+      if (!(await this.ensureManagedSessionAuthorized(session, { force: true }))) {
         return null;
       }
 
@@ -570,6 +679,7 @@ class SessionService {
 
       // Invalidate cache
       sessionCache.invalidate(sessionId);
+      managedSessionRecheckAt.delete(sessionId);
 
       logger.info('[SessionService] Deactivated session', { sessionId: sessionId.substring(0, 8) });
       return result.modifiedCount > 0;
@@ -672,11 +782,20 @@ class SessionService {
   ): Promise<{ session: ISession; user?: any } | null> {
     try {
       if (populateUser) {
-        return await this.getSessionWithUser(sessionId, { useCache: true });
+        const result = await this.getSessionWithUser(sessionId, { useCache: true });
+        if (result && !(await this.ensureManagedSessionAuthorized(result.session))) {
+          return null;
+        }
+        return result;
       }
 
       const session = await this.getSession(sessionId, true);
       if (!session) {
+        return null;
+      }
+
+      // Bind managed-account sessions to the operator's act_as membership here too.
+      if (!(await this.ensureManagedSessionAuthorized(session))) {
         return null;
       }
 

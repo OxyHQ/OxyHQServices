@@ -24,7 +24,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     // Search settings are persisted on the ACTIVE account's profile (the
     // org/project/bot when switched, else the personal user); the read/write
     // route to it via the X-Acting-As header.
-    const { oxyServices, activeAccount } = useOxy();
+    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
@@ -33,7 +33,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     const { values: settings, toggle, savingKeys, setValues } = useSettingToggles<SearchSettings>({
         initialValues: { safeSearch: false, searchPersonalization: true },
         onSave: async (key, value) => {
-            if (!activeAccount?.id || !oxyServices) return;
+            if (!user?.id || !oxyServices) return;
 
             const fieldMap: Record<keyof SearchSettings, string> = {
                 safeSearch: 'autoFilter',
@@ -56,7 +56,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         const loadSettings = async () => {
             try {
                 setIsLoading(true);
-                if (activeAccount?.id && oxyServices) {
+                if (user?.id && oxyServices) {
                     const userData = await oxyServices.getCurrentUser() as User & { privacySettings?: { autoFilter?: boolean; dataSharing?: boolean } };
                     const privacySettings = userData?.privacySettings || {};
 
@@ -75,7 +75,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadSettings();
-    }, [activeAccount?.id, oxyServices, setValues]);
+    }, [user?.id, oxyServices, setValues]);
 
     if (isLoading) {
         return (

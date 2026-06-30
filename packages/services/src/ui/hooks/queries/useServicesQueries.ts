@@ -5,8 +5,11 @@ import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
 
-const accountQueryScope = (activeSessionId: string | null, actingAs?: string | null): string =>
-  `${activeSessionId ?? 'no-session'}:${actingAs ?? 'self'}`;
+// Per-account query scope. In the real-session switch model the active session
+// id uniquely identifies the active account (switching mints a new session), so
+// it alone scopes the cache — no separate acting-as key is needed.
+const accountQueryScope = (activeSessionId: string | null): string =>
+  `${activeSessionId ?? 'no-session'}`;
 
 /**
  * Get all active sessions for the current user
@@ -93,10 +96,10 @@ export const useDeviceSessions = (options?: { enabled?: boolean }) => {
  * Get user devices
  */
 export const useUserDevices = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId, actingAs } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.devices.list(accountQueryScope(activeSessionId, actingAs)),
+    queryKey: queryKeys.devices.list(accountQueryScope(activeSessionId)),
     queryFn: async () => {
       return authenticatedApiCall(
         oxyServices,
@@ -135,10 +138,10 @@ export const useSecurityInfo = (options?: { enabled?: boolean }) => {
  * `useEffect` fetches.
  */
 export const useAccountStorageUsage = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId, actingAs } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery<AccountStorageUsageResponse>({
-    queryKey: queryKeys.storage.usage(accountQueryScope(activeSessionId, actingAs)),
+    queryKey: queryKeys.storage.usage(accountQueryScope(activeSessionId)),
     queryFn: async () => {
       return authenticatedApiCall(
         oxyServices,

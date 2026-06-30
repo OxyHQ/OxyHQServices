@@ -298,8 +298,14 @@ export class UserService {
       logger.error('Failed to log security event for profile update:', error);
     }
 
-    // Convert to plain object with virtuals
+    // Convert to plain object with virtuals. The User schema's toObject
+    // transform DELETES `_id` (it emits the client `id` shape). `formatUserResponse`
+    // is a server-side serializer that resolves identity from `publicKey || _id`,
+    // so a keyless managed/org account (no publicKey) would otherwise reach it
+    // with neither field and throw "User must have a publicKey or _id". Re-attach
+    // `_id` so the serializer can identify keyless accounts.
     const userObj = user.toObject({ virtuals: true }) as IUser;
+    userObj._id = user._id;
 
     // Ensure name.full exists
     if (userObj.name && typeof userObj.name === 'object') {
@@ -1107,10 +1113,14 @@ export class UserService {
     stats?: UserStatistics,
     options: { includePrivateFields?: boolean } = {}
   ): PublicUserProfile {
-    // Handle both IUser (Mongoose document) and UserData (plain object)
-    // Use publicKey as id - publicKey is the primary identifier, fallback to _id
-    const userAsIUser = user as IUser;
-    const userId = userAsIUser.publicKey || userAsIUser._id?.toString();
+    // Handle both IUser (Mongoose document) and UserData (plain object).
+    // Identity preference: publicKey (local identity) → _id → the `id` field.
+    // The final `id` fallback covers objects that already went through the User
+    // schema's toObject/toJSON transform, which deletes `_id` and folds the
+    // identifier into `id` — a keyless managed/org account would otherwise have
+    // neither publicKey nor _id here.
+    const userAsIUser = user as IUser & { id?: string };
+    const userId = userAsIUser.publicKey || userAsIUser._id?.toString() || userAsIUser.id;
     if (!userId) {
       throw new Error('User must have a publicKey or _id');
     }

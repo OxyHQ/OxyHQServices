@@ -38,7 +38,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
   const { t } = useI18n();
-  const { oxyServices, canUsePrivateApi, actingAs, setActingAs } = useOxy();
+  const { oxyServices, canUsePrivateApi, user, accounts, switchToAccount } = useOxy();
   const queryClient = useQueryClient();
 
   const id = typeof accountId === 'string' ? accountId : '';
@@ -91,10 +91,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const archiveMutation = useMutation({
     mutationKey: ['accounts', 'archive', id],
     mutationFn: () => oxyServices.archiveAccount(id),
-    onSuccess: () => {
-      // If this was the active account, drop back to the personal account.
-      if (actingAs === id) {
-        setActingAs(null);
+    onSuccess: async () => {
+      // If we archived the account we're currently signed in AS, switch back to
+      // the personal account so the app isn't left as an archived identity.
+      if (user?.id === id) {
+        const personal = accounts.find((node) => node.relationship === 'self');
+        if (personal) {
+          await switchToAccount(personal.accountId).catch(() => undefined);
+        }
       }
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast.success(t('accounts.settings.toasts.archived') || 'Account archived');
