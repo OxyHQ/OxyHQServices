@@ -2090,6 +2090,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const setActingAs = useCallback((accountId: string | null) => {
     oxyServices.setActingAs(accountId);
     setActingAsState(accountId);
+    // Switching the acting-as identity changes every server response, but React
+    // Query keys are not namespaced by the acting-as target, so the cache would
+    // otherwise keep serving the previous account's data. Invalidate everything
+    // so each query refetches under the new identity (the next request carries
+    // the updated `X-Acting-As` header). `invalidateQueries` (not `clear`) keeps
+    // the account list/switcher populated mid-switch instead of blanking out.
+    queryClient.invalidateQueries();
     // Persist to storage
     if (storage) {
       if (accountId) {
@@ -2102,7 +2109,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         });
       }
     }
-  }, [oxyServices, storage, storageKeyPrefix]);
+  }, [oxyServices, storage, storageKeyPrefix, queryClient]);
   setActingAsRef.current = setActingAs;
 
   // The account switched into, resolved from the loaded graph.
