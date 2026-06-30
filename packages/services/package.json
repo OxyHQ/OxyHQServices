@@ -109,6 +109,7 @@
     "@oxyhq/contracts": "workspace:*"
   },
   "devDependencies": {
+    "@oxyhq/core": "workspace:^",
     "nativewind": "5.0.0-preview.3",
     "react-native-css": "^3.0.0",
     "@react-native-async-storage/async-storage": "^2.0.0",
