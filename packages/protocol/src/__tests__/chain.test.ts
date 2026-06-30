@@ -173,6 +173,25 @@ describe('verifyEnvelope', () => {
     });
   });
 
+  // A v2 envelope MUST carry seq/collection/rkey. The base schema enforces this,
+  // and the engine has a defense-in-depth guard (verify.ts) that re-checks them
+  // AFTER the signature check. These lock the observable contract: a properly
+  // SIGNED v2 envelope with a required chain field stripped is rejected
+  // `invalid_envelope` — the engine never appends it on ANY missing field.
+  it.each(['seq', 'collection', 'rkey'] as const)(
+    'rejects a signed v2 envelope missing `%s` as invalid_envelope',
+    async (field) => {
+      const env = await signEnvelope(v2Fields(), PRIVATE_KEY);
+      // Strip the field AFTER signing, so the envelope's signature is still
+      // internally valid — the rejection is purely the missing-chain-field guard.
+      const stripped = { ...env };
+      delete (stripped as Record<string, unknown>)[field];
+      await expect(
+        verifyEnvelope(stubStore(), resolver(SELF_RESOLVED), stripped as SignedRecordEnvelope, { now: FAR_FUTURE_NOW }),
+      ).resolves.toEqual({ ok: false, reason: 'invalid_envelope' });
+    },
+  );
+
   it('rejects a tampered record as bad_signature', async () => {
     const env = await signEnvelope(v2Fields(), PRIVATE_KEY);
     const tampered: SignedRecordEnvelope = { ...env, record: { hello: 'tampered' } };

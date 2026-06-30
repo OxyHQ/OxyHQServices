@@ -23,12 +23,16 @@ export type {
   NodeLogger,
 } from './nodeApp';
 
+// ── Per-IP write rate limiter ──────────────────────────────────────────────────
+export { createRateLimiter, DEFAULT_WRITE_RATE_LIMIT } from './rateLimit';
+export type { RateLimitConfig } from './rateLimit';
+
 // ── Record verification (signature + v2 + content address) ─────────────────────
 export { verifyNodeRecordEnvelope } from './verifyRecord';
 export type { NodeVerifyResult, NodeVerifyRejectionReason } from './verifyRecord';
 
 // ── HTTP client ────────────────────────────────────────────────────────────────
-export { NodeClient, NodeClientError } from './nodeClient';
+export { NodeClient, NodeClientError, trimTrailingSlashes } from './nodeClient';
 export type {
   NodeClientOptions,
   NodeHead,

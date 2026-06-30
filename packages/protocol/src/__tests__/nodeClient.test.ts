@@ -10,7 +10,7 @@ import http from 'node:http';
 import { createHash } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createNodeApp, type NodeAppConfig } from '../node/nodeApp';
-import { NodeClient, NodeClientError } from '../node/nodeClient';
+import { NodeClient, NodeClientError, trimTrailingSlashes } from '../node/nodeClient';
 import type { NodeFetch } from '../node/httpFetch';
 import { computeRecordId } from '../envelope/recordId';
 import {
@@ -62,6 +62,29 @@ function makeConfig(nodePublicKey: string): NodeAppConfig {
     collections: [],
   };
 }
+
+describe('trimTrailingSlashes', () => {
+  it('removes one or many trailing slashes', () => {
+    expect(trimTrailingSlashes('https://node.example')).toBe('https://node.example');
+    expect(trimTrailingSlashes('https://node.example/')).toBe('https://node.example');
+    expect(trimTrailingSlashes('https://node.example////')).toBe('https://node.example');
+  });
+
+  it('preserves interior slashes and the empty string', () => {
+    expect(trimTrailingSlashes('https://node.example/oxy/log')).toBe('https://node.example/oxy/log');
+    expect(trimTrailingSlashes('')).toBe('');
+    expect(trimTrailingSlashes('///')).toBe('');
+  });
+
+  it('is linear-time on a long all-slash input (no ReDoS backtracking)', () => {
+    const pathological = `https://node.example${'/'.repeat(200_000)}`;
+    const start = Date.now();
+    expect(trimTrailingSlashes(pathological)).toBe('https://node.example');
+    // A linear scan of 200k chars completes in well under a tenth of a second;
+    // a backtracking regex would be orders of magnitude slower.
+    expect(Date.now() - start).toBeLessThan(100);
+  });
+});
 
 describe('NodeClient (end-to-end against createNodeApp)', () => {
   let owner: TestKeyPair;

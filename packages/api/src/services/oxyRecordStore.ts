@@ -223,6 +223,14 @@ class OxyRecordStoreImpl implements RecordStore {
     if (!userId) {
       return null;
     }
+    // A v2 envelope missing its required `collection`/`rkey` would collapse the
+    // filter below to a global-latest comparison across ALL keys — a false
+    // replay/rollback rejection of valid appends on OTHER keys. Mirror the
+    // NodeStore guard and treat it as "no prior record for this key". (The
+    // engine rejects such an envelope as `invalid_envelope` upstream anyway.)
+    if (env.version === 2 && (typeof env.collection !== 'string' || typeof env.rkey !== 'string')) {
+      return null;
+    }
     const filter =
       env.version === 2
         ? { userId: { $eq: userId }, nsid: { $eq: env.collection }, rkey: { $eq: env.rkey } }

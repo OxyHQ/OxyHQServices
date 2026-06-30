@@ -37,6 +37,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { computeRecordId } from '../envelope/recordId';
 import type { RecordStore, BlobStore } from '../chain/recordStore';
+import { createRateLimiter, DEFAULT_WRITE_RATE_LIMIT, type RateLimitConfig } from './rateLimit';
 import { verifyNodeRecordEnvelope } from './verifyRecord';
 import {
   DEFAULT_LOG_LIMIT,
@@ -108,6 +109,14 @@ export interface NodeAppConfig {
    * `foreign_collection`) and the public log is filtered to them.
    */
   readonly collections: readonly string[];
+  /**
+   * Per-IP rate budget for the owner-authorized WRITE routes (`POST /records`,
+   * `POST /sync/push`, `PUT /blobs/:hash`). Defence-in-depth on the
+   * unauthenticated edge, capping request rate BEFORE signature verification.
+   * Defaults to {@link DEFAULT_WRITE_RATE_LIMIT} (60/min) — generous for the
+   * single-writer model.
+   */
+  readonly writeRateLimit?: RateLimitConfig;
 }
 
 /** Minimal structured logger (a pino `Logger` satisfies this structurally). */
@@ -122,16 +131,35 @@ export interface NodeAppDependencies {
   logger: NodeLogger;
 }
 
+/**
+ * Coerce a raw Express query value (`string | string[] | ParsedQs | undefined`)
+ * to a single string. A repeated/array param (`?since[]=a&since[]=b`) yields a
+ * non-string under qs; take its first string element so a tampered array can
+ * never reach a `typeof === 'string'` check as a non-string and cause type
+ * confusion. Returns `undefined` for anything that is not a string or a
+ * string-first array.
+ */
+function firstQueryValue(raw: unknown): string | undefined {
+  if (typeof raw === 'string') {
+    return raw;
+  }
+  if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'string') {
+    return raw[0];
+  }
+  return undefined;
+}
+
 /** Clamp the `limit` query param into `[1, MAX_LOG_LIMIT]`, defaulting when absent/invalid. */
 function parseLimit(raw: unknown): number {
-  if (typeof raw !== 'string' || raw.trim() === '') {
+  const value = firstQueryValue(raw);
+  if (value === undefined || value.trim() === '') {
     return DEFAULT_LOG_LIMIT;
   }
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
     return DEFAULT_LOG_LIMIT;
   }
-  return Math.min(value, MAX_LOG_LIMIT);
+  return Math.min(parsed, MAX_LOG_LIMIT);
 }
 
 /** HTTP status for a chain-append rejection. */
@@ -200,6 +228,10 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
   // blob upload below is untouched by it.
   const jsonParser = express.json({ limit: JSON_BODY_LIMIT });
 
+  // Per-IP rate limiter on the owner-authorized write routes. Caps request rate
+  // BEFORE signature verification so a flood of bogus envelopes can't pin CPU.
+  const writeRateLimit = createRateLimiter(config.writeRateLimit ?? DEFAULT_WRITE_RATE_LIMIT);
+
   app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok' });
   });
@@ -237,7 +269,7 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
   // ── Ordered log (ingest) ──────────────────────────────────────────────────────
   app.get(NODE_LOG_PATH, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const since = typeof req.query.since === 'string' ? req.query.since : undefined;
+      const since = firstQueryValue(req.query.since);
       const limit = parseLimit(req.query.limit);
       const head = await store.getHead(subject);
       const headWire = head && head.headRecordId !== null ? { seq: head.seq, headRecordId: head.headRecordId } : null;
@@ -257,7 +289,7 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
   });
 
   // ── Owner write: a single signed envelope ────────────────────────────────────
-  app.post(NODE_RECORDS_PATH, jsonParser, async (req: Request, res: Response, next: NextFunction) => {
+  app.post(NODE_RECORDS_PATH, writeRateLimit, jsonParser, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const verification = await verifyNodeRecordEnvelope(req.body);
       if (!verification.ok) {
@@ -284,7 +316,7 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
   });
 
   // ── Owner write: a batch push (verified + appended in order) ──────────────────
-  app.post(NODE_SYNC_PUSH_PATH, jsonParser, async (req: Request, res: Response, next: NextFunction) => {
+  app.post(NODE_SYNC_PUSH_PATH, writeRateLimit, jsonParser, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body: unknown = req.body;
       const items =
@@ -357,10 +389,16 @@ export function createNodeApp(deps: NodeAppDependencies): Express {
   // ── Owner pins a blob (signed-header authorization) ──────────────────────────
   app.put(
     `${NODE_BLOBS_PATH}/:hash`,
+    writeRateLimit,
     express.raw({ type: () => true, limit: config.maxBlobBytes }),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const hash = req.params.hash.toLowerCase();
+        const rawHash: unknown = req.params.hash;
+        if (typeof rawHash !== 'string') {
+          res.status(400).json({ error: 'invalid_hash' });
+          return;
+        }
+        const hash = rawHash.toLowerCase();
         if (!SHA256_HEX.test(hash)) {
           res.status(400).json({ error: 'invalid_hash' });
           return;

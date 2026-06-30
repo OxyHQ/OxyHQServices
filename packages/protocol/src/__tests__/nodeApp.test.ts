@@ -21,7 +21,11 @@ import {
   type TestKeyPair,
 } from './nodeHarness';
 
-function makeConfig(nodePublicKey: string, collections: readonly string[] = []): NodeAppConfig {
+function makeConfig(
+  nodePublicKey: string,
+  collections: readonly string[] = [],
+  writeRateLimit?: { windowMs: number; max: number },
+): NodeAppConfig {
   return {
     wellKnownPath: '/.well-known/oxy-node.json',
     protocolId: 'oxy-node/1',
@@ -30,14 +34,19 @@ function makeConfig(nodePublicKey: string, collections: readonly string[] = []):
     nodePublicKey,
     maxBlobBytes: 25 * 1024 * 1024,
     collections,
+    writeRateLimit,
   };
 }
 
-function buildApp(owner: TestKeyPair, collections: readonly string[] = []) {
+function buildApp(
+  owner: TestKeyPair,
+  collections: readonly string[] = [],
+  writeRateLimit?: { windowMs: number; max: number },
+) {
   const store = createInMemoryNodeStore();
   const app = createNodeApp({
     store,
-    config: makeConfig(owner.publicKey, collections),
+    config: makeConfig(owner.publicKey, collections, writeRateLimit),
     ownerAuth: createTestOwnerAuth(owner.publicKey),
     logger: silentLogger,
   });
@@ -257,5 +266,58 @@ describe('createNodeApp', () => {
       .set('Content-Type', 'application/octet-stream')
       .send(bytes);
     expect(res.status).toBe(401);
+  });
+
+  it('rate-limits the owner write route after the configured budget (429 rate_limited)', async () => {
+    // A tiny per-window budget makes the limiter deterministic: the 3rd write
+    // within the window is rejected 429 BEFORE the handler runs, regardless of
+    // each request's chain outcome.
+    const { app } = buildApp(owner, [], { windowMs: 60_000, max: 2 });
+    const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 0, prev: null });
+
+    const first = await request(app).post('/records').send(envelope);
+    expect(first.status).toBe(201);
+    // Second consumes the last slot (a chain_conflict on the replayed genesis,
+    // but it still counts against the budget — the limiter precedes the handler).
+    const second = await request(app).post('/records').send(envelope);
+    expect(second.status).not.toBe(429);
+    // Third exceeds the budget.
+    const third = await request(app).post('/records').send(envelope);
+    expect(third.status).toBe(429);
+    expect(third.body).toEqual({ error: 'rate_limited' });
+  });
+
+  it('GET /oxy/log coerces an array `since` param to its first value (no 500)', async () => {
+    const { app } = buildApp(owner);
+    let prev: string | null = null;
+    const ids: string[] = [];
+    for (let seq = 0; seq < 3; seq += 1) {
+      const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq, prev, record: { seq } });
+      const id = await computeRecordId(envelope);
+      await request(app).post('/records').send(envelope).expect(201);
+      ids.push(id);
+      prev = id;
+    }
+
+    // `?since[]=<id1>&since[]=<id2>` arrives as a string[] — the handler must
+    // take the FIRST value (a tampered array can never cause type confusion).
+    const res = await request(app).get('/oxy/log').query({ 'since[]': [ids[0], ids[2]] });
+    expect(res.status).toBe(200);
+    // Cursor resolves off ids[0] → records strictly after seq 0 → [1, 2].
+    expect(res.body.records.map((entry: { seq: number }) => entry.seq)).toEqual([1, 2]);
+  });
+
+  it('GET /oxy/log treats an array `limit` param as its first value', async () => {
+    const { app } = buildApp(owner);
+    let prev: string | null = null;
+    for (let seq = 0; seq < 4; seq += 1) {
+      const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq, prev, record: { seq } });
+      await request(app).post('/records').send(envelope).expect(201);
+      prev = await computeRecordId(envelope);
+    }
+
+    const res = await request(app).get('/oxy/log').query({ 'limit[]': ['2', '99'] });
+    expect(res.status).toBe(200);
+    expect(res.body.records.map((entry: { seq: number }) => entry.seq)).toEqual([0, 1]);
   });
 });
