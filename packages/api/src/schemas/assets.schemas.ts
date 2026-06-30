@@ -32,3 +32,16 @@ export const batchAccessSchema = z.object({
   fileIds: z.array(z.string().min(1)).min(1).max(100),
   context: z.any().optional(),
 });
+
+// Maximum number of ids accepted by POST /assets/service/by-ids in a single
+// request. Mirrors the POST /users/by-ids cap so a single service call can
+// resolve all media of one post at once without unbounded fan-out.
+export const MAX_ASSETS_BY_IDS = 100;
+
+// POST /assets/service/by-ids
+export const assetsByIdsBodySchema = z.object({
+  ids: z
+    .array(z.string().trim().min(1))
+    .min(1, 'ids must not be empty')
+    .max(MAX_ASSETS_BY_IDS, `Cannot request more than ${MAX_ASSETS_BY_IDS} assets at once`),
+});
