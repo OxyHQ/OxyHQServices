@@ -17,7 +17,7 @@ import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
 import { cleanDisplayName } from '../utils/displayNameSanitize';
-import { sanitizeHtml, decodeHtmlEntities } from '../utils/sanitize';
+import { sanitizePlainText, decodeHtmlEntities } from '../utils/sanitize';
 
 const AP_ACCEPT_TYPES = [
   'application/activity+json',
@@ -1109,7 +1109,7 @@ class FederationService {
     };
 
     if (profile.bio) {
-      const safeBio = sanitizeHtml(profile.bio);
+      const safeBio = sanitizePlainText(profile.bio);
       setFields.bio = safeBio;
       setFields.description = safeBio;
     }
@@ -1366,7 +1366,7 @@ class FederationService {
       }
       setFields['federation.lastResolvedAt'] = new Date();
       if (profile.bio) {
-        const safeBio = sanitizeHtml(profile.bio);
+        const safeBio = sanitizePlainText(profile.bio);
         setFields.bio = safeBio;
         setFields.description = safeBio;
       }

@@ -281,7 +281,7 @@ describe('PUT /users/resolve (C4)', () => {
     );
   });
 
-  it('strips the federated display name and escapes bio before persistence', async () => {
+  it('strips the federated display name and strips tags from bio before persistence', async () => {
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
     mockUserFindOne.mockReturnValueOnce({ select: selectResult });
@@ -307,8 +307,9 @@ describe('PUT /users/resolve (C4)', () => {
         $set: expect.objectContaining({
           // Display name: disallowed characters stripped (never escaped).
           'name.first': 'img src x onerror alert fediverse xss',
-          // Bio is not a display name and keeps HTML-entity escaping.
-          bio: '&lt;script&gt;alert(&quot;bio&quot;)&lt;/script&gt;',
+          // Bio renders as text in clients: tags are stripped (no executable
+          // markup survives) and the value is NOT HTML-entity-escaped.
+          bio: 'alert("bio")',
         }),
       }),
       expect.anything(),
@@ -522,7 +523,7 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('strips the federated displayName and escapes bio before persisting (stored-XSS regression)', async () => {
+  it('strips the federated displayName and strips tags from bio before persisting (stored-XSS regression)', async () => {
     // Type-immutability check: no existing user.
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -551,8 +552,10 @@ describe('PUT /users/resolve (C4)', () => {
     // output can never carry an HTML/XSS vector.
     expect(setFields['name.first']).toBe('img src x onerror alert');
     expect(String(setFields['name.first'])).not.toMatch(/[<>&"]/);
-    // Bio is NOT a display name and keeps HTML-entity escaping.
-    expect(setFields.bio).toBe('hi &lt;script&gt;steal()&lt;/script&gt; &amp; &quot;friends&quot;');
+    // Bio renders as text: HTML tags are stripped (no <script> survives) but the
+    // value is NOT entity-escaped — apostrophes/ampersands stay literal so
+    // clients don't render `&amp;`/`&#x27;`.
+    expect(setFields.bio).toBe('hi steal() & "friends"');
     expect(String(setFields.bio)).not.toContain('<script>');
   });
 

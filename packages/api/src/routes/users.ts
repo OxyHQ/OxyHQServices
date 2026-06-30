@@ -44,7 +44,7 @@ import {
   updatePrivacyBodySchema,
   usersByIdsBodySchema,
 } from '../schemas/users.schemas';
-import { sanitizeHtml } from '../utils/sanitize';
+import { sanitizePlainText } from '../utils/sanitize';
 import { cleanDisplayName } from '../utils/displayNameSanitize';
 import { rateLimit } from '../middleware/rateLimiter';
 import { buildExportBundle } from '../services/identityExport.service';
@@ -1443,18 +1443,21 @@ router.put(
     // immutability invariant above already rejected mismatched updates.
     const setOnInsert: Record<string, unknown> = { type };
 
-    // Escape HTML in free-text fields sourced from untrusted remote actors
-    // (federated/agent/automated) before persisting — these render as the
-    // profile display name and bio in client apps, so raw input is a stored-XSS
-    // vector.
+    // Clean free-text fields sourced from untrusted remote actors
+    // (federated/agent/automated) before persisting. The bio renders as TEXT in
+    // client apps, so we decode entities + strip tags (sanitizePlainText) rather
+    // than HTML-entity-escape it — escaping would store a literal `&#x27;`/`&amp;`
+    // that the client then double-renders. XSS protection comes from tag-
+    // stripping here plus the client's text-rendering auto-escape, not entity
+    // escaping. (See utils/sanitize.ts sanitizePlainText.)
     if (typeof displayName === 'string') {
       // Strip disallowed characters (emoji/symbols/shortcodes) from federated
-      // names. cleanDisplayName's output can never contain an XSS vector, so it
-      // replaces sanitizeHtml here (which would mangle the inert apostrophe).
+      // names. cleanDisplayName's output can never contain an XSS vector and is
+      // already clean, so it owns the name field here.
       setFields['name.first'] = cleanDisplayName(displayName);
     }
     if (typeof bio === 'string') {
-      setFields.bio = sanitizeHtml(bio);
+      setFields.bio = sanitizePlainText(bio);
     }
 
     // Avatar handling splits two ways:
