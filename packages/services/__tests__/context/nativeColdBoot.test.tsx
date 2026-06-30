@@ -97,7 +97,7 @@ function buildStub() {
     getSessionsBySessionId: jest.fn(async () => []),
     getUserSessions: jest.fn(async () => []),
     setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

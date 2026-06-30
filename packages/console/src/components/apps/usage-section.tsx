@@ -19,7 +19,7 @@ interface UsageSectionProps {
 }
 
 export function UsageSection({ application, access }: UsageSectionProps) {
-  const canRead = access.can('usage:read');
+  const canRead = access.can('apps:read');
   const [period, setPeriod] = useState('7d');
   const { data: usage, isLoading } = useApplicationUsage(application._id, period, canRead);
 

@@ -1,0 +1,261 @@
+import type React from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  View,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+  KeyboardAvoidingView,
+} from 'react-native';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast, Dialog, useDialogControl } from '@oxyhq/bloom';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { H1, Text } from '@oxyhq/bloom/typography';
+import { Button } from '@oxyhq/bloom/button';
+import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import type { UpdateAccountInput } from '@oxyhq/core';
+import type { BaseScreenProps } from '../types/navigation';
+import Header from '../components/Header';
+import { SettingsIcon } from '../components/SettingsIcon';
+import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
+
+const DISPLAY_NAME_MAX = 50;
+const BIO_MAX = 160;
+
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+
+/**
+ * Per-account settings: edit the account's profile, jump to member management,
+ * and archive the account (danger zone). Receives the target `accountId` via
+ * navigation props. Self-surface for the caller's own personal account lives in
+ * {@link ManageAccountScreen}; this screen manages a non-personal account in the
+ * graph.
+ */
+const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigate, accountId }) => {
+  const bloomTheme = useTheme();
+  const colors = bloomTheme.colors;
+  const { t } = useI18n();
+  const { oxyServices, canUsePrivateApi, actingAs, setActingAs } = useOxy();
+  const queryClient = useQueryClient();
+
+  const id = typeof accountId === 'string' ? accountId : '';
+
+  const accountQuery = useQuery({
+    queryKey: ['accounts', 'detail', id],
+    queryFn: () => oxyServices.getAccount(id),
+    enabled: canUsePrivateApi && id.length > 0,
+  });
+
+  const node = accountQuery.data ?? null;
+  const permissions = node?.callerMembership?.permissions ?? [];
+  const isImplicitOwner = node ? node.relationship !== 'member' : false;
+  const can = useCallback(
+    (permission: string): boolean => isImplicitOwner || permissions.includes(permission),
+    [isImplicitOwner, permissions],
+  );
+  const canUpdate = can('account:update');
+  const canViewMembers = can('members:read');
+  const canArchive = can('account:delete');
+
+  // Editable fields, seeded lazily from the loaded account once.
+  const [seeded, setSeeded] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [bio, setBio] = useState('');
+
+  // Seed the form from the account during render (no useEffect): the first time
+  // the query resolves we capture its values into local edit state.
+  if (node && !seeded) {
+    const first = node.account?.name?.first ?? '';
+    const last = node.account?.name?.last ?? '';
+    setDisplayName([first, last].filter(Boolean).join(' '));
+    setBio(node.account?.bio ?? '');
+    setSeeded(true);
+  }
+
+  const updateMutation = useMutation({
+    mutationKey: ['accounts', 'update', id],
+    mutationFn: (input: UpdateAccountInput) => oxyServices.updateAccount(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts', 'detail', id] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success(t('accounts.settings.toasts.saved') || 'Account updated');
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, t('accounts.settings.toasts.saveFailed') || 'Failed to update account'));
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationKey: ['accounts', 'archive', id],
+    mutationFn: () => oxyServices.archiveAccount(id),
+    onSuccess: () => {
+      // If we were acting as this account, drop back to the personal account.
+      if (actingAs === id) {
+        setActingAs(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success(t('accounts.settings.toasts.archived') || 'Account archived');
+      (onClose ?? goBack)?.();
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, t('accounts.settings.toasts.archiveFailed') || 'Failed to archive account'));
+    },
+  });
+
+  const archiveDialog = useDialogControl();
+
+  const handleSave = useCallback(() => {
+    const trimmed = displayName.trim();
+    const nameParts = trimmed.split(/\s+/).filter(Boolean);
+    const first = nameParts[0] || '';
+    const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+    updateMutation.mutate({
+      name: { first, last },
+      bio: bio.trim() ? bio.trim() : null,
+    });
+  }, [displayName, bio, updateMutation]);
+
+  const title = t('accounts.settings.title') || 'Account settings';
+
+  const accountHandle = useMemo(() => {
+    const username = node?.account?.username;
+    return username ? `@${username}` : '';
+  }, [node?.account?.username]);
+
+  if (!id) {
+    return (
+      <View className="flex-1 bg-bg">
+        <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
+        <View className="flex-1 items-center justify-center px-screen-margin">
+          <Text className="text-body font-body text-text-secondary text-center">
+            {t('accounts.settings.errors.missingAccount') || 'No account selected.'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1 bg-bg">
+      <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {accountQuery.isLoading ? (
+            <View className="items-center py-space-32">
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          ) : (
+            <>
+              <View className="gap-space-8">
+                <H1 className="text-headerBold font-headerBold text-text" numberOfLines={1}>
+                  {accountHandle || title}
+                </H1>
+                <Text className="text-body font-body text-text-secondary">
+                  {t('accounts.settings.subtitle') || 'Manage this account’s profile, members, and access.'}
+                </Text>
+              </View>
+
+              {/* Profile edit */}
+              {canUpdate ? (
+                <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
+                  <TextField>
+                    <TextFieldInput
+                      floatingLabel
+                      label={t('accounts.settings.displayName.label') || 'Display name'}
+                      value={displayName}
+                      onChangeText={setDisplayName}
+                      maxLength={DISPLAY_NAME_MAX}
+                    />
+                  </TextField>
+                  <View className="gap-space-4">
+                    <TextField>
+                      <TextFieldInput
+                        floatingLabel
+                        label={t('accounts.settings.bio.label') || 'Bio (optional)'}
+                        value={bio}
+                        onChangeText={setBio}
+                        maxLength={BIO_MAX}
+                        multiline
+                        numberOfLines={3}
+                        textAlignVertical="top"
+                      />
+                    </TextField>
+                    <Text className="text-caption font-caption text-text-tertiary px-space-4 text-right">
+                      {bio.length}/{BIO_MAX}
+                    </Text>
+                  </View>
+                  <Button
+                    variant="primary"
+                    onPress={handleSave}
+                    disabled={updateMutation.isPending || !displayName.trim()}
+                    loading={updateMutation.isPending}
+                    accessibilityLabel={t('accounts.settings.save') || 'Save changes'}
+                    className="w-full"
+                  >
+                    {t('accounts.settings.save') || 'Save changes'}
+                  </Button>
+                </View>
+              ) : null}
+
+              {/* Members entry */}
+              {canViewMembers ? (
+                <SettingsListGroup title={t('accounts.settings.sections.access') || 'Access'}>
+                  <SettingsListItem
+                    icon={<SettingsIcon name="account-multiple" color={colors.info} />}
+                    title={t('accounts.members.title') || 'Members'}
+                    description={t('accounts.settings.members.subtitle') || 'Invite people and manage roles'}
+                    onPress={() => navigate?.('AccountMembers', { accountId: id })}
+                  />
+                </SettingsListGroup>
+              ) : null}
+
+              {/* Danger zone */}
+              {canArchive ? (
+                <SettingsListGroup title={t('accounts.settings.sections.dangerZone') || 'Danger zone'}>
+                  <SettingsListItem
+                    icon={<SettingsIcon name="archive-arrow-down" color={colors.error} />}
+                    title={t('accounts.settings.archive.title') || 'Archive account'}
+                    description={t('accounts.settings.archive.subtitle') || 'Deactivate this account'}
+                    onPress={() => archiveDialog.open()}
+                  />
+                </SettingsListGroup>
+              ) : null}
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <Dialog
+        control={archiveDialog}
+        title={t('accounts.settings.archive.confirmTitle') || 'Archive account'}
+        description={
+          t('accounts.settings.archive.confirmDescription')
+          || 'Archive this account? It will be deactivated and its members will lose access.'
+        }
+        actions={[
+          {
+            label: t('accounts.settings.archive.title') || 'Archive account',
+            color: 'destructive',
+            onPress: () => archiveMutation.mutate(),
+          },
+          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+        ]}
+      />
+    </View>
+  );
+};
+
+export default AccountSettingsScreen;

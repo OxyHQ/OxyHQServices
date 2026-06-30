@@ -3,9 +3,11 @@ import { useCallback, useRef, useState } from 'react';
 import { TouchableOpacity, StyleSheet, Platform, type LayoutChangeEvent } from 'react-native';
 import { getAccountDisplayName } from '@oxyhq/core';
 import Avatar from './Avatar';
-import AccountMenu, { type AccountMenuAnchor } from './AccountMenu';
+import AccountSwitcher from './AccountSwitcher';
+import type { AccountMenuAnchor } from './AccountMenu';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { showBottomSheet } from '../navigation/bottomSheetManager';
 
 export interface AccountMenuButtonProps {
     /** Avatar size (px). Defaults to 36 (Google account chip size). */
@@ -19,11 +21,13 @@ export interface AccountMenuButtonProps {
 const isWeb = Platform.OS === 'web';
 
 /**
- * Avatar entry-point that opens the unified {@link AccountMenu}. Reads the
+ * Avatar entry-point that opens the unified {@link AccountSwitcher}. Reads the
  * active account from `useOxy()` — never receive user data via props.
  *
- * Renders a small avatar chip (top-right friendly). Click → opens AccountMenu.
- * Pure component: owns only the open-state and the trigger's measured anchor.
+ * Renders a small avatar chip (top-right friendly). Click → opens the switcher
+ * (device sign-ins + account graph). Pure component: owns only the open-state
+ * and the trigger's measured anchor. Create-account and per-account settings
+ * route through the global bottom-sheet manager.
  */
 const AccountMenuButton: React.FC<AccountMenuButtonProps> = ({
     size = 36,
@@ -91,11 +95,15 @@ const AccountMenuButton: React.FC<AccountMenuButtonProps> = ({
             >
                 <Avatar uri={avatarUri} name={displayName} size={size} />
             </TouchableOpacity>
-            <AccountMenu
+            <AccountSwitcher
                 open={open}
                 onClose={handleClose}
                 onNavigateManage={onNavigateManage}
                 onAddAccount={onAddAccount}
+                onCreateAccount={() => showBottomSheet('CreateAccount')}
+                onOpenAccountSettings={(accountId) =>
+                    showBottomSheet({ screen: 'AccountSettings', props: { accountId } })
+                }
                 anchor={anchor}
             />
         </>

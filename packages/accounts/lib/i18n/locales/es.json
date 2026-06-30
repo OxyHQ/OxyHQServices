@@ -83,8 +83,8 @@
       "accountInfo": "Información de la cuenta",
       "recentActivity": "Actividad reciente",
       "overview": "Resumen",
-      "yourIdentities": "Tus identidades",
-      "yourIdentitiesSubtitle": "Crea y gestiona subcuentas para distintos usos.",
+      "yourIdentities": "Cuentas",
+      "yourIdentitiesSubtitle": "Gestiona las cuentas que posees y las que comparten contigo.",
       "security": "Seguridad"
     },
     "recommendations": {
@@ -126,11 +126,11 @@
       "managedCount": "{{count}} cuentas gestionadas",
       "managedCount_one": "{{count}} cuenta gestionada",
       "managedSubtitle": "Toca para ver todas",
-      "managedActingAs": "Actuando como otra identidad",
-      "createNew": "Crear nueva identidad",
+      "managedActingAs": "Actuando como otra cuenta",
+      "createNew": "Crear cuenta",
       "manageAll": "Gestionar todas",
       "noManaged": "Aún no tienes cuentas gestionadas",
-      "noManagedSubtitle": "Crea identidades para distintos contextos"
+      "noManagedSubtitle": "Crea cuentas para distintos contextos"
     },
     "securityOverview": {
       "biometricChecking": "Comprobando...",
@@ -404,9 +404,28 @@
     }
   },
   "managedAccounts": {
-    "title": "Tus identidades",
-    "subtitle": "Crea y gestiona identidades para distintos usos.",
-    "noUsernameYet": "Aún sin nombre de usuario"
+    "title": "Cuentas",
+    "subtitle": "Gestiona las cuentas que posees y las que comparten contigo. Cada una tiene su propio perfil, nombre de usuario y contenido.",
+    "createNew": "Crear cuenta",
+    "noUsernameYet": "Aún sin nombre de usuario",
+    "actingAsTitle": "Estás actuando como otra cuenta",
+    "actingAsSubtitle": "Las acciones en otras apps se realizarán como esta cuenta. Toca para detener.",
+    "groups": {
+      "organizations": "Organizaciones",
+      "projects": "Proyectos",
+      "bots": "Bots",
+      "shared": "Compartidas contigo"
+    },
+    "empty": {
+      "title": "Aún no tienes cuentas",
+      "subtitle": "Crea una organización, proyecto o bot para distintos contextos, o consigue que te inviten a una cuenta compartida."
+    },
+    "archive": {
+      "confirmTitle": "Archivar cuenta",
+      "confirmBody": "¿Seguro que quieres archivar «{{name}}»? Se quitará de tus cuentas.",
+      "confirm": "Archivar",
+      "error": "No se pudo archivar la cuenta. Inténtalo de nuevo."
+    }
   },
   "payments": {
     "title": "Pagos y suscripciones",
@@ -704,7 +723,7 @@
     "thirdParty": "Conexiones de terceros",
     "payments": "Pagos y suscripciones",
     "storage": "Almacenamiento Oxy",
-    "yourIdentities": "Tus identidades",
+    "yourIdentities": "Cuentas",
     "authorize": "Autorizar",
     "scanQr": "Escanear código QR"
   },
@@ -738,10 +757,12 @@
     "removeDevice": "Quitar dispositivo",
     "removeSession": "Quitar sesión",
     "switchSession": "Cambiar a esta sesión",
-    "actAs": "Actuar como esta identidad",
-    "stopActingAs": "Dejar de actuar como esta identidad",
+    "actAs": "Actuar como esta cuenta",
+    "stopActingAs": "Dejar de actuar como esta cuenta",
+    "manageMembers": "Gestionar miembros y uso compartido",
     "editProfile": "Editar perfil",
     "deleteAccount": "Eliminar cuenta",
+    "archiveAccount": "Archivar cuenta",
     "deviceDetails": "Ver detalles del dispositivo",
     "deviceDetailsHint": "Muestra la información completa del dispositivo",
     "sessionDetails": "Ver detalles de la sesión",

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { APPLICATION_ROLES } from '../utils/applicationRoles';
 import { APPLICATION_SCOPES } from '../utils/applicationScopes';
 import {
   APPLICATION_CREDENTIAL_TYPES,
@@ -9,12 +8,6 @@ import {
 /** Route params with :appId. */
 export const appIdRouteParams = z.object({
   appId: z.string().trim().min(1),
-});
-
-/** Route params with :appId and :memberId. */
-export const appMemberParams = z.object({
-  appId: z.string().trim().min(1),
-  memberId: z.string().trim().min(1),
 });
 
 /** Route params with :appId and :credId. */
@@ -35,12 +28,11 @@ const appScopesSchema = z.array(z.enum(APPLICATION_SCOPES)).optional();
 /** POST /applications — create. Staff-only fields are intentionally absent. */
 export const createApplicationSchema = z.object({
   /**
-   * The Workspace that will own the new application. OPTIONAL for rollout
-   * safety: the api deploys before the Console learns to send it, so when
-   * omitted the route defaults to the caller's personal workspace (also good
-   * UX — an app created without a chosen workspace lands in "Personal").
+   * The Account that will own the new application. OPTIONAL: when omitted the
+   * route defaults to the caller's OWN account (a top-level app they own). When
+   * provided the caller must hold `apps:create` over that account.
    */
-  workspaceId: z.string().trim().min(1).optional(),
+  ownerAccountId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   websiteUrl: websiteUrlSchema,
@@ -49,9 +41,9 @@ export const createApplicationSchema = z.object({
   scopes: appScopesSchema,
 });
 
-/** Optional `?workspaceId=` filter on GET /applications. */
+/** Optional `?ownerAccountId=` filter on GET /applications. */
 export const listApplicationsQuerySchema = z.object({
-  workspaceId: z.string().trim().min(1).optional(),
+  ownerAccountId: z.string().trim().min(1).optional(),
 });
 
 /**
@@ -78,33 +70,6 @@ export const updateApplicationSchema = z
     capabilities: z.array(z.string()).optional(),
   })
   .strict();
-
-/** Roles assignable to a member (owner is reachable only via transfer-ownership). */
-const assignableRoles = APPLICATION_ROLES.filter((role) => role !== 'owner') as Exclude<
-  (typeof APPLICATION_ROLES)[number],
-  'owner'
->[];
-
-/**
- * POST /applications/:appId/members — invite/add a member.
- *
- * `usernameOrEmail` is resolved to a userId server-side (people know usernames
- * and emails, not opaque Mongo ids). See `utils/resolveUserIdentifier.ts`.
- */
-export const inviteMemberSchema = z.object({
-  usernameOrEmail: z.string().trim().min(1),
-  role: z.enum(assignableRoles as [typeof assignableRoles[number], ...typeof assignableRoles]),
-});
-
-/** PATCH /applications/:appId/members/:memberId — change a member role. */
-export const updateMemberSchema = z.object({
-  role: z.enum(assignableRoles as [typeof assignableRoles[number], ...typeof assignableRoles]),
-});
-
-/** POST /applications/:appId/transfer-ownership. */
-export const transferOwnershipSchema = z.object({
-  userId: z.string().trim().min(1),
-});
 
 /**
  * POST /applications/:appId/credentials — create a credential.

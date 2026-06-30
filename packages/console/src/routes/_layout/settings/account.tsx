@@ -10,6 +10,7 @@ import {
   Mail01Icon,
   Cancel01Icon,
   CrownIcon,
+  ArrowDataTransferHorizontalIcon,
 } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,15 +48,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  useWorkspace,
-  useWorkspaceMembers,
-  useInviteWorkspaceMember,
-  useUpdateWorkspaceMember,
-  useRemoveWorkspaceMember,
-  type WorkspaceRole,
-  type WorkspaceMember,
-  type AssignableWorkspaceRole,
-} from '@/hooks/use-workspace';
+  useAccount,
+  useAccountMembers,
+  useInviteAccountMember,
+  useUpdateAccountMember,
+  useRemoveAccountMember,
+  useTransferAccountOwnership,
+  type AccountRole,
+  type AccountMember,
+  type AssignableAccountRole,
+} from '@/hooks/use-account';
 import { toast } from 'sonner';
 import {
   getErrorMessage,
@@ -64,45 +66,55 @@ import {
 } from '@/lib/api-error';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 
-export const Route = createFileRoute('/_layout/settings/workspace')({
-  component: WorkspaceSettingsPage,
+export const Route = createFileRoute('/_layout/settings/account')({
+  component: AccountSettingsPage,
 });
 
-const roleLabels: Record<WorkspaceRole, string> = {
+const roleLabels: Record<AccountRole, string> = {
   owner: 'Owner',
   admin: 'Admin',
-  member: 'Member',
+  editor: 'Editor',
+  developer: 'Developer',
+  billing: 'Billing',
   viewer: 'Viewer',
 };
 
-const roleDescriptions: Record<AssignableWorkspaceRole, string> = {
+const roleDescriptions: Record<AssignableAccountRole, string> = {
   admin: 'Can manage members and settings',
-  member: 'Can create apps and API keys',
+  editor: 'Can create and edit apps and content',
+  developer: 'Can manage apps, credentials, and webhooks',
+  billing: 'Can manage billing',
   viewer: 'Read-only access',
 };
 
-const ASSIGNABLE_ROLES: AssignableWorkspaceRole[] = ['admin', 'member', 'viewer'];
+const ASSIGNABLE_ROLES: AssignableAccountRole[] = ['admin', 'editor', 'developer', 'billing', 'viewer'];
 
 /** Short, readable handle for a member identified only by user id. */
 function shortUserId(userId: string): string {
   return userId.length > 10 ? `${userId.slice(0, 6)}…${userId.slice(-4)}` : userId;
 }
 
-function WorkspaceSettingsPage() {
+function AccountSettingsPage() {
   const { user, oxyServices } = useAuth();
   const {
-    currentWorkspace,
-    updateWorkspace,
-    deleteWorkspace,
-    canEditWorkspace,
+    currentAccount,
+    updateAccount,
+    archiveAccount,
+    canEditAccount,
     canManageMembers,
-    canDeleteWorkspace,
-  } = useWorkspace();
+    canTransferOwnership,
+    canArchiveAccount,
+  } = useAccount();
 
-  const workspaceId = currentWorkspace?._id;
-  const isPersonal = currentWorkspace?.type === 'personal';
+  const accountId = currentAccount?.accountId;
+  const isPersonal = currentAccount?.kind === 'personal';
+  const accountUser = currentAccount?.account;
 
-  // Personal workspaces show the signed-in user's avatar (read-only — it is
+  // The display label for the account: its canonical `name.displayName`, falling
+  // back to the handle. Used in the header and delete confirmation.
+  const accountLabel = accountUser?.name?.displayName ?? accountUser?.username ?? '';
+
+  // Personal accounts show the signed-in user's avatar (read-only — it is
   // managed in the user's Oxy account). Resolved the same way as `nav-user.tsx`.
   const userAvatarUrl = ((): string | undefined => {
     if (!user?.avatar) return undefined;
@@ -118,37 +130,44 @@ function WorkspaceSettingsPage() {
     return (name?.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
   })();
 
-  // Members are fetched only for team workspaces with permission to read them.
-  const canManage = currentWorkspace ? canManageMembers(currentWorkspace) : false;
-  const membersQuery = useWorkspaceMembers(workspaceId, !!currentWorkspace && !isPersonal);
+  // Members are fetched only for non-personal accounts with permission to read.
+  const canManage = currentAccount ? canManageMembers(currentAccount) : false;
+  const canTransfer = currentAccount ? canTransferOwnership(currentAccount) : false;
+  const membersQuery = useAccountMembers(accountId, !!currentAccount && !isPersonal);
   const members = membersQuery.data ?? [];
   const activeMembers = members.filter((m) => m.status === 'active');
   const pendingInvites = members.filter((m) => m.status === 'invited');
   const ownerCount = activeMembers.filter((m) => m.role === 'owner').length;
 
-  const inviteMemberMutation = useInviteWorkspaceMember();
-  const updateMemberMutation = useUpdateWorkspaceMember();
-  const removeMemberMutation = useRemoveWorkspaceMember();
+  const inviteMemberMutation = useInviteAccountMember();
+  const updateMemberMutation = useUpdateAccountMember();
+  const removeMemberMutation = useRemoveAccountMember();
+  const transferOwnershipMutation = useTransferAccountOwnership();
 
-  // General form — seeded from the current workspace via lazy initializers so
-  // the inputs stay editable without an effect resetting them on every render.
-  const [name, setName] = useState(() => currentWorkspace?.name ?? '');
-  const [description, setDescription] = useState(() => currentWorkspace?.description ?? '');
-  const [icon, setIcon] = useState(() => currentWorkspace?.icon ?? '');
+  // General form — seeded from the current account via lazy initializers so the
+  // inputs stay editable without an effect resetting them on every render. The
+  // org/project display name is carried in `name.displayName` (set server-side
+  // from the structured name); editing it writes back through `name.first`.
+  const [name, setName] = useState(() => currentAccount?.account.name?.displayName ?? '');
+  const [bio, setBio] = useState(() => currentAccount?.account.bio ?? '');
+  const [avatar, setAvatar] = useState(() => currentAccount?.account.avatar ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
   // Invite dialog state
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteIdentifier, setInviteIdentifier] = useState('');
-  const [inviteRole, setInviteRole] = useState<AssignableWorkspaceRole>('member');
+  const [inviteRole, setInviteRole] = useState<AssignableAccountRole>('editor');
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Member action state
+  const [memberToPromote, setMemberToPromote] = useState<AccountMember | null>(null);
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
-  if (!currentWorkspace || !workspaceId) {
+  if (!currentAccount || !accountId) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading...</p>
@@ -156,27 +175,28 @@ function WorkspaceSettingsPage() {
     );
   }
 
-  const canEdit = canEditWorkspace(currentWorkspace);
-  const canDelete = canDeleteWorkspace(currentWorkspace) && !isPersonal;
+  const canEdit = canEditAccount(currentAccount);
+  const canDelete = canArchiveAccount(currentAccount) && !isPersonal;
 
   const handleSave = async () => {
     const trimmed = name.trim();
-    // Personal workspaces cannot be renamed — never send a name change for them.
+    // Personal accounts cannot be renamed — never send a name change for them.
     if (!isPersonal && !trimmed) {
-      toast.error('Workspace name is required');
+      toast.error('Account name is required');
       return;
     }
 
     setIsSaving(true);
     try {
-      await updateWorkspace(workspaceId, {
-        // Omit `name` for personal workspaces (rename is blocked server-side).
-        ...(isPersonal ? {} : { name: trimmed }),
-        description: description.trim() || null,
+      await updateAccount(accountId, {
+        // Omit `name` for personal accounts (rename is blocked server-side).
+        // For org/project accounts the display name is stored in `name.first`.
+        ...(isPersonal ? {} : { name: { first: trimmed } }),
+        bio: bio.trim() || null,
       });
-      toast.success('Workspace updated');
+      toast.success('Account updated');
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update workspace'));
+      toast.error(getErrorMessage(error, 'Failed to update account'));
     } finally {
       setIsSaving(false);
     }
@@ -184,18 +204,18 @@ function WorkspaceSettingsPage() {
 
   // The avatar uploader resolves a public URL, then persists it immediately so
   // the change lands without requiring the "Save changes" button. Only rendered
-  // for team workspaces — personal workspaces inherit the user's account avatar
-  // and expose no uploader.
+  // for non-personal accounts — personal accounts inherit the user's account
+  // avatar and expose no uploader.
   const handleAvatarChange = async (url: string) => {
     const safeUrl = stripSensitiveImageUrlQueryParams(url);
-    setIcon(safeUrl);
+    setAvatar(safeUrl);
     try {
-      await updateWorkspace(workspaceId, { icon: safeUrl || null });
-      toast.success(safeUrl ? 'Workspace avatar updated' : 'Workspace avatar removed');
+      await updateAccount(accountId, { avatar: safeUrl || null });
+      toast.success(safeUrl ? 'Account avatar updated' : 'Account avatar removed');
     } catch (error) {
       // Revert the local preview to the persisted value on failure.
-      setIcon(currentWorkspace.icon ?? '');
-      toast.error(getErrorMessage(error, 'Failed to update workspace avatar'));
+      setAvatar(currentAccount.account.avatar ?? '');
+      toast.error(getErrorMessage(error, 'Failed to update account avatar'));
     }
   };
 
@@ -203,7 +223,7 @@ function WorkspaceSettingsPage() {
     setShowInviteDialog(open);
     if (!open) {
       setInviteIdentifier('');
-      setInviteRole('member');
+      setInviteRole('editor');
       setInviteError(null);
     }
   };
@@ -218,14 +238,14 @@ function WorkspaceSettingsPage() {
 
     try {
       await inviteMemberMutation.mutateAsync({
-        workspaceId,
+        accountId,
         usernameOrEmail,
         role: inviteRole,
       });
       toast.success('Invitation sent');
       setShowInviteDialog(false);
       setInviteIdentifier('');
-      setInviteRole('member');
+      setInviteRole('editor');
     } catch (error) {
       if (isUserNotFoundError(error)) {
         setInviteError(USER_NOT_FOUND_MESSAGE);
@@ -236,32 +256,48 @@ function WorkspaceSettingsPage() {
     }
   };
 
-  const handleRemoveMember = async (member: WorkspaceMember) => {
+  const handleRemoveMember = async (member: AccountMember) => {
     try {
-      await removeMemberMutation.mutateAsync({ workspaceId, memberId: member._id });
+      await removeMemberMutation.mutateAsync({ accountId, memberId: member._id });
       toast.success('Member removed');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to remove member'));
     }
   };
 
-  const handleRoleChange = async (member: WorkspaceMember, role: AssignableWorkspaceRole) => {
+  const handleRoleChange = async (member: AccountMember, role: AssignableAccountRole) => {
     if (role === member.role) {
       return;
     }
     try {
-      await updateMemberMutation.mutateAsync({ workspaceId, memberId: member._id, role });
+      await updateMemberMutation.mutateAsync({ accountId, memberId: member._id, role });
       toast.success('Role updated');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to update role'));
     }
   };
 
+  const handleTransfer = async () => {
+    if (!memberToPromote) {
+      return;
+    }
+    try {
+      await transferOwnershipMutation.mutateAsync({
+        accountId,
+        userId: memberToPromote.memberUserId,
+      });
+      setMemberToPromote(null);
+      toast.success('Ownership transferred');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to transfer ownership'));
+    }
+  };
+
   // Invitations are members with `status: 'invited'`; cancelling one is the
   // same operation as removing a member.
-  const handleCancelInvite = async (invite: WorkspaceMember) => {
+  const handleCancelInvite = async (invite: AccountMember) => {
     try {
-      await removeMemberMutation.mutateAsync({ workspaceId, memberId: invite._id });
+      await removeMemberMutation.mutateAsync({ accountId, memberId: invite._id });
       toast.success('Invitation cancelled');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to cancel invitation'));
@@ -269,24 +305,21 @@ function WorkspaceSettingsPage() {
   };
 
   const handleDelete = async () => {
-    if (deleteConfirmation !== currentWorkspace.name) {
-      toast.error('Please type the workspace name to confirm');
+    if (deleteConfirmation !== accountLabel) {
+      toast.error('Please type the account name to confirm');
       return;
     }
 
     setIsDeleting(true);
     try {
-      await deleteWorkspace(workspaceId);
-      toast.success('Workspace deleted');
+      await archiveAccount(accountId);
+      toast.success('Account archived');
       setShowDeleteDialog(false);
       setDeleteConfirmation('');
     } catch (error) {
-      // The API returns 409 when the workspace still owns applications.
+      // The API returns 409 when the account still owns applications.
       toast.error(
-        getErrorMessage(
-          error,
-          'Failed to delete workspace. Move or delete its apps first.'
-        )
+        getErrorMessage(error, 'Failed to archive account. Move or delete its apps first.')
       );
     } finally {
       setIsDeleting(false);
@@ -306,19 +339,15 @@ function WorkspaceSettingsPage() {
         </Link>
         <div className="flex items-center gap-3">
           <div className="flex aspect-square size-10 items-center justify-center overflow-hidden rounded-lg bg-primary text-primary-foreground">
-            {currentWorkspace.icon ? (
-              <img
-                src={currentWorkspace.icon}
-                alt={currentWorkspace.name}
-                className="size-full object-cover"
-              />
+            {accountUser?.avatar ? (
+              <img src={accountUser.avatar} alt={accountLabel} className="size-full object-cover" />
             ) : (
               <HugeiconsIcon icon={UserMultiple02Icon} size={20} />
             )}
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Workspace Settings</h1>
-            <p className="text-sm text-muted-foreground">{currentWorkspace.name}</p>
+            <h1 className="text-2xl font-semibold text-foreground">Account settings</h1>
+            <p className="text-sm text-muted-foreground">{accountLabel}</p>
           </div>
         </div>
       </div>
@@ -332,11 +361,11 @@ function WorkspaceSettingsPage() {
             {isPersonal ? (
               <div className="flex items-center gap-3">
                 <Avatar className="size-14 rounded-lg">
-                  <AvatarImage src={userAvatarUrl} alt={currentWorkspace.name} />
+                  <AvatarImage src={userAvatarUrl} alt={accountLabel} />
                   <AvatarFallback className="rounded-lg text-base">{userInitials}</AvatarFallback>
                 </Avatar>
                 <p className="text-xs text-muted-foreground">
-                  Your personal workspace uses your account avatar.{' '}
+                  Your personal account uses your account avatar.{' '}
                   <a
                     href={config.accountsUrl}
                     target="_blank"
@@ -350,10 +379,10 @@ function WorkspaceSettingsPage() {
             ) : (
               <ImageUploadField
                 oxyServices={oxyServices}
-                value={icon}
+                value={avatar}
                 onChange={handleAvatarChange}
                 disabled={!canEdit}
-                label="Workspace avatar"
+                label="Account avatar"
                 onError={(message) => toast.error(message)}
                 fallback={
                   <HugeiconsIcon icon={UserMultiple02Icon} size={24} className="text-muted-foreground" />
@@ -362,7 +391,7 @@ function WorkspaceSettingsPage() {
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="name">Workspace name</Label>
+            <Label htmlFor="name">Account name</Label>
             <Input
               id="name"
               value={name}
@@ -372,18 +401,24 @@ function WorkspaceSettingsPage() {
             />
             {isPersonal && (
               <p className="text-xs text-muted-foreground">
-                Personal workspace name cannot be changed
+                Personal account name cannot be changed
               </p>
             )}
           </div>
+          {!isPersonal && accountUser?.username && (
+            <div className="space-y-2">
+              <Label>Handle</Label>
+              <p className="text-sm font-mono text-muted-foreground">@{accountUser.username}</p>
+            </div>
+          )}
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="bio">Description</Label>
             <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              id="bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
               disabled={!canEdit}
-              placeholder="A brief description of your workspace"
+              placeholder="A brief description of this account"
               rows={3}
             />
           </div>
@@ -395,11 +430,11 @@ function WorkspaceSettingsPage() {
         </div>
       </div>
 
-      {/* Team Members */}
+      {/* Members */}
       {!isPersonal && (
         <div className="px-6 py-6 border-b border-border">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-foreground">Team Members</h2>
+            <h2 className="text-sm font-semibold text-foreground">Members</h2>
             {canManage && (
               <Button size="sm" onClick={() => setShowInviteDialog(true)}>
                 <HugeiconsIcon icon={Add01Icon} size={14} className="mr-1.5" />
@@ -424,6 +459,7 @@ function WorkspaceSettingsPage() {
                 const isLastOwner = isOwner && ownerCount <= 1;
                 const canEditThisRole = canManage && !isOwner;
                 const canRemoveThisMember = canManage && !isOwner && !isLastOwner;
+                const canTransferToThis = canTransfer && !isOwner;
 
                 return (
                   <div
@@ -433,12 +469,12 @@ function WorkspaceSettingsPage() {
                     <div className="flex items-center gap-3 min-w-0">
                       <Avatar className="size-8">
                         <AvatarFallback>
-                          {member.userId[0]?.toUpperCase() ?? '?'}
+                          {member.memberUserId[0]?.toUpperCase() ?? '?'}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0">
-                        <p className="text-sm font-mono truncate" title={member.userId}>
-                          {shortUserId(member.userId)}
+                        <p className="text-sm font-mono truncate" title={member.memberUserId}>
+                          {shortUserId(member.memberUserId)}
                         </p>
                         <p className="text-xs text-muted-foreground">{roleLabels[member.role]}</p>
                       </div>
@@ -453,10 +489,10 @@ function WorkspaceSettingsPage() {
                         <Select
                           value={member.role}
                           onValueChange={(value) =>
-                            handleRoleChange(member, value as AssignableWorkspaceRole)
+                            handleRoleChange(member, value as AssignableAccountRole)
                           }
                         >
-                          <SelectTrigger className="w-28 h-8">
+                          <SelectTrigger className="w-32 h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -469,6 +505,18 @@ function WorkspaceSettingsPage() {
                         </Select>
                       ) : (
                         <Badge variant="outline">{roleLabels[member.role]}</Badge>
+                      )}
+                      {canTransferToThis && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setMemberToPromote(member)}
+                          aria-label="Transfer ownership"
+                          title="Transfer ownership"
+                        >
+                          <HugeiconsIcon icon={ArrowDataTransferHorizontalIcon} size={14} />
+                        </Button>
                       )}
                       {canRemoveThisMember && (
                         <Button
@@ -508,8 +556,8 @@ function WorkspaceSettingsPage() {
                         />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-mono truncate" title={invite.userId}>
-                          {shortUserId(invite.userId)}
+                        <p className="text-sm font-mono truncate" title={invite.memberUserId}>
+                          {shortUserId(invite.memberUserId)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Invited as {roleLabels[invite.role]}
@@ -536,7 +584,7 @@ function WorkspaceSettingsPage() {
         </div>
       )}
 
-      {/* Billing — workspace billing isn't a backend concept here; the dedicated
+      {/* Billing — account billing isn't a backend concept here; the dedicated
           Billing page covers it. */}
       <div className="px-6 py-6 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground mb-4">Billing</h2>
@@ -560,14 +608,14 @@ function WorkspaceSettingsPage() {
           <div className="p-4 rounded-lg border border-destructive/30 bg-destructive/5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Delete workspace</p>
+                <p className="text-sm font-medium">Archive account</p>
                 <p className="text-xs text-muted-foreground">
-                  This permanently deletes the workspace. Move or delete its apps first.
+                  This archives the account. Move or delete its apps first.
                 </p>
               </div>
               <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
                 <HugeiconsIcon icon={Delete02Icon} size={14} className="mr-1.5" />
-                Delete
+                Archive
               </Button>
             </div>
           </div>
@@ -578,7 +626,7 @@ function WorkspaceSettingsPage() {
       <Dialog open={showInviteDialog} onOpenChange={handleInviteDialogChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite team member</DialogTitle>
+            <DialogTitle>Invite member</DialogTitle>
             <DialogDescription>
               Add a member by their username or email and choose their role.
             </DialogDescription>
@@ -615,7 +663,7 @@ function WorkspaceSettingsPage() {
               <Label htmlFor="invite-role">Role</Label>
               <Select
                 value={inviteRole}
-                onValueChange={(v) => setInviteRole(v as AssignableWorkspaceRole)}
+                onValueChange={(v) => setInviteRole(v as AssignableAccountRole)}
               >
                 <SelectTrigger id="invite-role">
                   <SelectValue />
@@ -649,37 +697,61 @@ function WorkspaceSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Transfer Ownership Confirmation */}
+      <AlertDialog
+        open={!!memberToPromote}
+        onOpenChange={(open) => !open && setMemberToPromote(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transfer ownership</AlertDialogTitle>
+            <AlertDialogDescription>
+              Transfer ownership of this account to this member? You will be demoted to admin. This
+              action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleTransfer}
+              disabled={transferOwnershipMutation.isPending}
+            >
+              {transferOwnershipMutation.isPending ? 'Transferring...' : 'Transfer ownership'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Archive Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete workspace</AlertDialogTitle>
+            <AlertDialogTitle>Archive account</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the workspace "
-              {currentWorkspace.name}". The workspace must have no apps before it can be deleted.
+              This archives the account "{accountLabel}". The account must have no apps before it
+              can be archived.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
             <Label htmlFor="delete-confirm" className="text-sm">
-              Type <span className="font-mono font-semibold">{currentWorkspace.name}</span> to
-              confirm
+              Type <span className="font-mono font-semibold">{accountLabel}</span> to confirm
             </Label>
             <Input
               id="delete-confirm"
               value={deleteConfirmation}
               onChange={(e) => setDeleteConfirmation(e.target.value)}
               className="mt-2"
-              placeholder={currentWorkspace.name}
+              placeholder={accountLabel}
             />
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setDeleteConfirmation('')}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleteConfirmation !== currentWorkspace.name || isDeleting}
+              disabled={deleteConfirmation !== accountLabel || isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isDeleting ? 'Deleting...' : 'Delete workspace'}
+              {isDeleting ? 'Archiving...' : 'Archive account'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

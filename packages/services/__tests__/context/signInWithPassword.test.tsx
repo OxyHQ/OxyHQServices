@@ -79,7 +79,7 @@ function buildStub(signInImpl: () => Promise<unknown>) {
       getUserSessions: jest.fn(async () => []),
       getDeviceSessions: jest.fn(async () => []),
       setActingAs: jest.fn(),
-      getManagedAccounts: jest.fn(async () => []),
+      listAccounts: jest.fn(async () => []),
     },
   };
 }

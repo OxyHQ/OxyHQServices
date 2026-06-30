@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import type { IncomingMessage } from 'http';
 import mongoose from 'mongoose';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
-import User, { IUser } from '../models/User';
+import User, { IUser, type AccountKind } from '../models/User';
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
@@ -478,6 +478,26 @@ interface BuildActorOptions {
   name: string;
   summary?: string;
   avatar?: string;
+  /** Account graph kind → ActivityPub actor type (per-user actors only). */
+  kind?: AccountKind;
+}
+
+/**
+ * Map an account `kind` to its ActivityPub actor `type`. A personal account is a
+ * `Person`; organizations/projects/bots map to the corresponding AP actor types
+ * so remote servers render them appropriately.
+ */
+function actorTypeForKind(kind: AccountKind | undefined): string {
+  switch (kind) {
+    case 'organization':
+      return 'Organization';
+    case 'project':
+      return 'Group';
+    case 'bot':
+      return 'Service';
+    default:
+      return 'Person';
+  }
 }
 
 /**
@@ -489,7 +509,7 @@ interface BuildActorOptions {
  * functions to this one builder is what guarantees a self-consistent actor.
  */
 function buildActor(opts: BuildActorOptions): Record<string, unknown> {
-  const { domain, username, publicKeyPem, keyId, name, summary, avatar } = opts;
+  const { domain, username, publicKeyPem, keyId, name, summary, avatar, kind } = opts;
   const base = `https://${domain}/ap`;
 
   if (username === null) {
@@ -523,7 +543,7 @@ function buildActor(opts: BuildActorOptions): Record<string, unknown> {
       'https://w3id.org/security/v1',
     ],
     id: actorUrl,
-    type: 'Person',
+    type: actorTypeForKind(kind),
     preferredUsername: username,
     name,
     summary: summary ?? '',
@@ -627,6 +647,7 @@ export async function getUserActor(user: IUser, domain: string = AP_DOMAIN): Pro
     name: displayName,
     summary: user.bio || user.description || '',
     avatar,
+    kind: user.kind,
   });
 }
 

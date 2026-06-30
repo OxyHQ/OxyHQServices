@@ -20,7 +20,7 @@ import { User } from '../src/models/User';
 import Follow from '../src/models/Follow';
 import Session from '../src/models/Session';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
-import { ApplicationMember } from '../src/models/ApplicationMember';
+import AccountMember from '../src/models/AccountMember';
 import { RefreshToken } from '../src/models/RefreshToken';
 import Block from '../src/models/Block';
 import Restricted from '../src/models/Restricted';
@@ -191,7 +191,7 @@ async function linkageForCategory(ids: ObjId[]): Promise<Record<string, number>>
   });
 
   const appCreds = await ApplicationCredential.countDocuments({ createdByUserId: { $in: ids } });
-  const appMembers = await ApplicationMember.countDocuments({ userId: { $in: ids } });
+  const appMembers = await AccountMember.countDocuments({ memberUserId: { $in: ids } });
   const refreshTokens = await RefreshToken.countDocuments({ userId: { $in: ids } });
 
   const blocks = await Block.countDocuments({

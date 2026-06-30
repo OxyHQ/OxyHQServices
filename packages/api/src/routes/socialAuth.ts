@@ -13,7 +13,7 @@ import { Router } from 'express';
 import { User, buildAuthMethod } from '../models/User';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
-import { BadRequestError, UnauthorizedError } from '../utils/error';
+import { BadRequestError, ForbiddenError, UnauthorizedError } from '../utils/error';
 import { validate } from '../middleware/validate';
 import { googleSignInSchema, appleSignInSchema, githubSignInSchema } from '../schemas/socialAuth.schemas';
 import { logger } from '../utils/logger';
@@ -109,6 +109,12 @@ async function handleSocialSignIn(
       });
       await user.save();
     }
+  }
+
+  // Only `personal` accounts may authenticate. Organization/project/bot accounts
+  // are operated via AccountMember + X-Acting-As and must never mint a session.
+  if (user.kind && user.kind !== 'personal') {
+    throw new ForbiddenError('This account cannot sign in directly');
   }
 
   // 4. Create session

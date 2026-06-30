@@ -4,8 +4,10 @@
  * every official Oxy app in the ecosystem, owned by the platform user `oxy`.
  *
  * For each app this UPSERTS (never duplicates on re-run):
- *   - Application      keyed by (name + createdByUserId = oxyId)
- *   - ApplicationMember owner membership for oxy, keyed by (applicationId,userId)
+ *   - Application      keyed by (name + createdByUserId = oxyId), owned by the
+ *                      minted Oxy `kind:'organization'` account (ownerAccountId)
+ *   - AccountMember    a single owner membership for oxy on the Oxy org account
+ *                      (app access derives from it — no per-app member row)
  *   - ApplicationCredential  type:'public', environment:'production',
  *                            publicKey minted EXACTLY like the real create route
  *                            (`oxy_dk_` + 24 random bytes hex). A `public`
@@ -31,13 +33,9 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Application, type IApplication } from '../src/models/Application';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
-import { ApplicationMember } from '../src/models/ApplicationMember';
-import { Workspace } from '../src/models/Workspace';
-import { WorkspaceMember } from '../src/models/WorkspaceMember';
+import AccountMember from '../src/models/AccountMember';
 import { User } from '../src/models/User';
-import { permissionsForRole } from '../src/utils/applicationRoles';
-import { permissionsForRole as workspacePermissionsForRole } from '../src/utils/workspaceRoles';
-import { generateUniqueWorkspaceSlug } from '../src/utils/workspaceProvisioning';
+import { permissionsForAccountRole } from '../src/utils/accountRoles';
 import { logger } from '../src/utils/logger';
 import type { ApplicationScope } from '../src/utils/applicationScopes';
 
@@ -241,7 +239,6 @@ interface MappingRow {
   redirectUris: string[];
   websiteUrl?: string;
   createdApplication: boolean;
-  createdMember: boolean;
   createdCredential: boolean;
 }
 
@@ -286,64 +283,75 @@ async function seed(): Promise<void> {
   const oxyId = owner._id as mongoose.Types.ObjectId;
   logger.info('Resolved owner user', { username: ownerUsername, oxyId: oxyId.toString() });
 
-  // ── Oxy team Workspace: every seeded official app belongs to it ──
-  // Idempotent, keyed by (name='Oxy', ownerId=oxyId, type='team'). Mirrors the
-  // special case in scripts/migrate-workspaces.ts.
-  const oxyWorkspaceName = process.env.OXY_WORKSPACE_NAME || 'Oxy';
-  let oxyWorkspace = await Workspace.findOne({
-    name: oxyWorkspaceName,
-    ownerId: oxyId,
-    type: 'team',
-    status: 'active',
+  // ── Oxy organization account: every seeded official app is owned by it ──
+  // The unified Account model owns apps via `Application.ownerAccountId`. We mint
+  // (idempotently) a `kind:'organization'` account named "Oxy" parented under the
+  // `oxy` user, and make `oxy` its owner via a single AccountMember row. App
+  // access then derives from that membership — there is no per-app member row.
+  const oxyAccountName = process.env.OXY_ACCOUNT_NAME || 'Oxy';
+  let oxyOrg = await User.findOne({
+    parentAccountId: oxyId,
+    kind: 'organization',
+    'name.first': oxyAccountName,
   });
-  if (!oxyWorkspace && !dryRun) {
-    const slug = await generateUniqueWorkspaceSlug(oxyWorkspaceName);
-    oxyWorkspace = await Workspace.create({
-      name: oxyWorkspaceName,
-      slug,
-      type: 'team',
-      ownerId: oxyId,
-      status: 'active',
+  if (!oxyOrg && !dryRun) {
+    const baseUsername = `${ownerUsername}-org`;
+    let username = baseUsername;
+    for (let suffix = 1; suffix <= 1000; suffix += 1) {
+      const taken = await User.findOne({ username }).select('_id').lean();
+      if (!taken) break;
+      username = `${baseUsername}${suffix}`;
+    }
+    oxyOrg = await User.create({
+      username,
+      name: { first: oxyAccountName },
+      kind: 'organization',
+      type: 'local',
+      verified: true,
+      authMethods: [],
+      parentAccountId: oxyId,
+      ancestors: [oxyId],
+      rootAccountId: oxyId,
+      accountStatus: 'active',
     });
   }
-  const oxyWorkspaceId =
-    oxyWorkspace?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
-  if (oxyWorkspace && !dryRun) {
-    const wsMember = await WorkspaceMember.findOne({
-      workspaceId: oxyWorkspace._id,
-      userId: oxyId,
+  const oxyOrgId = oxyOrg?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
+
+  // Owner AccountMember for oxy on the org (idempotent).
+  if (oxyOrg && !dryRun) {
+    const existingOwner = await AccountMember.findOne({
+      accountId: oxyOrg._id,
+      memberUserId: oxyId,
     });
-    if (!wsMember) {
-      await WorkspaceMember.create({
-        workspaceId: oxyWorkspace._id,
-        userId: oxyId,
+    if (!existingOwner) {
+      await AccountMember.create({
+        accountId: oxyOrg._id,
+        memberUserId: oxyId,
         role: 'owner',
-        permissions: workspacePermissionsForRole('owner'),
+        permissions: permissionsForAccountRole('owner'),
+        inherit: true,
         status: 'active',
         joinedAt: new Date(),
       });
     }
   }
-  logger.info('Oxy team workspace', {
-    name: oxyWorkspaceName,
-    workspaceId: oxyWorkspaceId.toString(),
-    created: !!oxyWorkspace && oxyWorkspace.isNew,
+  logger.info('Oxy organization account', {
+    name: oxyAccountName,
+    ownerAccountId: oxyOrgId.toString(),
+    created: !!oxyOrg && oxyOrg.isNew,
   });
 
-  const ownerPermissions = permissionsForRole('owner');
   const mapping: MappingRow[] = [];
 
   let appsCreated = 0;
   let appsUpdated = 0;
   let legacyAppsRetired = 0;
-  let membersCreated = 0;
   let credentialsCreated = 0;
   let legacyCredentialsRevoked = 0;
   let credentialsReused = 0;
 
   for (const spec of SEED_APPS) {
     let createdApplication = false;
-    let createdMember = false;
     let createdCredential = false;
 
     // ── Application: upsert keyed by (name, createdByUserId) ──
@@ -373,7 +381,7 @@ async function seed(): Promise<void> {
       capabilities: [] as string[],
       redirectUris: spec.redirectUris,
       scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
-      workspaceId: oxyWorkspaceId,
+      ownerAccountId: oxyOrgId,
     };
 
     if (!application) {
@@ -398,7 +406,7 @@ async function seed(): Promise<void> {
       application.capabilities = desiredAppFields.capabilities;
       application.redirectUris = desiredAppFields.redirectUris;
       application.scopes = desiredAppFields.scopes;
-      application.workspaceId = desiredAppFields.workspaceId;
+      application.ownerAccountId = desiredAppFields.ownerAccountId;
       if (application.isModified()) {
         await application.save();
         appsUpdated += 1;
@@ -418,25 +426,8 @@ async function seed(): Promise<void> {
     const applicationId =
       application?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
 
-    // ── ApplicationMember: owner membership for oxy ──
-    const existingMember = await ApplicationMember.findOne({
-      applicationId,
-      userId: oxyId,
-    });
-    if (!existingMember) {
-      createdMember = true;
-      if (!dryRun && application) {
-        await ApplicationMember.create({
-          applicationId,
-          userId: oxyId,
-          role: 'owner',
-          permissions: ownerPermissions,
-          status: 'active',
-          joinedAt: new Date(),
-        });
-        membersCreated += 1;
-      }
-    }
+    // Ownership/membership is handled ONCE at the org-account level above — app
+    // access for `oxy` derives from the Oxy org `AccountMember` (no per-app row).
 
     // ── ApplicationCredential: reuse an existing active public prod cred ──
     let credential = await ApplicationCredential.findOne({
@@ -474,7 +465,6 @@ async function seed(): Promise<void> {
       redirectUris: spec.redirectUris,
       websiteUrl: spec.websiteUrl,
       createdApplication,
-      createdMember,
       createdCredential,
     });
   }
@@ -484,7 +474,6 @@ async function seed(): Promise<void> {
     apps: SEED_APPS.length,
     appsCreated,
     appsUpdated,
-    membersCreated,
     credentialsCreated,
     legacyAppsRetired,
     legacyCredentialsRevoked,

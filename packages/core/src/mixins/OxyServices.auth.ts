@@ -12,7 +12,7 @@ import type {
 import type { UserNameResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
-import type { PublicApplication } from './OxyServices.applications';
+import type { PublicApplication } from './OxyServices.connectedApps';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';

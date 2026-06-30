@@ -139,10 +139,10 @@ const es: LocaleDict = {
   },
 
   settings: {
-    title: 'Ajustes del workspace',
-    workspace: {
-      title: 'Workspace',
-      nameLabel: 'Nombre del workspace',
+    title: 'Ajustes de la cuenta',
+    account: {
+      title: 'Cuenta',
+      nameLabel: 'Nombre de la cuenta',
     },
     language: {
       title: 'Idioma',

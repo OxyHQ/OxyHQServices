@@ -5,7 +5,7 @@ import { WebOxyProvider } from '@oxyhq/auth';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
-import { WorkspaceProvider } from '@/hooks/use-workspace';
+import { AccountProvider } from '@/hooks/use-account';
 import { LocaleProvider } from '@/lib/i18n';
 
 import config from '@/lib/config';
@@ -41,12 +41,12 @@ function RootComponent() {
       <LocaleProvider>
         <BloomThemeProvider mode="system" colorPreset="oxy">
           <WebOxyProvider baseURL={config.oxyUrl} clientId={config.clientId}>
-            <WorkspaceProvider>
+            <AccountProvider>
               <TooltipProvider delayDuration={300}>
                 <Outlet />
                 <Toaster position="bottom-right" richColors closeButton />
               </TooltipProvider>
-            </WorkspaceProvider>
+            </AccountProvider>
           </WebOxyProvider>
         </BloomThemeProvider>
       </LocaleProvider>

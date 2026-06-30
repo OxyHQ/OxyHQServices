@@ -106,7 +106,7 @@ function buildStub(cfg: StubConfig) {
       ),
       validateSession: jest.fn(async () => ({ valid: true, user: { id: IFRAME_USER_ID } })),
       setActingAs: jest.fn(),
-      getManagedAccounts: jest.fn(async () => []),
+      listAccounts: jest.fn(async () => []),
     },
   };
 }

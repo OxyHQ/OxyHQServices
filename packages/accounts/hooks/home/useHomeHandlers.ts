@@ -93,7 +93,7 @@ export function useHomeHandlers(): HomeHandlers {
   }, [router]);
 
   const handleCreateManagedAccount = useCallback(() => {
-    showBottomSheet?.('CreateManagedAccount');
+    showBottomSheet?.('CreateAccount');
   }, [showBottomSheet]);
 
   const handleSetUsername = useCallback(() => {
