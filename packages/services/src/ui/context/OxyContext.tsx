@@ -43,7 +43,7 @@ import { useAuthOperations } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
-import { readActiveAuthuser, writeActiveAuthuser } from '../utils/activeAuthuser';
+import { readActiveAuthuser, writeActiveAuthuser, clearSignedOut, isSilentRestoreSuppressed } from '../utils/activeAuthuser';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1322,15 +1322,29 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // run cookie-restore BEFORE those probes (and disable the later duplicate).
     //
     // Read ONCE here (synchronously usable by the step `enabled` gates below).
-    // It is non-null ONLY on first-party `*.oxy.so` web apps that persist the
-    // slot — a cross-apex RP never writes it (its restore funnels through
-    // `handleWebSSOSession`, which does not touch the authuser), and native has
-    // no localStorage, so both keep their existing order untouched. The
-    // earlier `stored-session` step still runs first (FIX-A latency), and when
-    // a slot exists but its cookies have all lapsed, cookie-restore simply
-    // returns no accounts and the chain falls through to the cross-domain
-    // fallbacks exactly as before.
+    // It is non-null ONLY on first-party web apps that persist the slot. Both the
+    // device sign-in/switch paths AND `handleWebSSOSession` (FedCM/SSO/credentials
+    // commit funnel) now persist it — but only when the session genuinely joined
+    // the device set: `establishDeviceRefreshSlot` returns an `authuser` ONLY on
+    // first-party web (same registrable apex as the API), so a cross-apex RP never
+    // writes a phantom slot and native has no localStorage. Both therefore keep
+    // their existing order untouched. The earlier `stored-session` step still runs
+    // first (FIX-A latency), and when a slot exists but its cookies have all
+    // lapsed, cookie-restore simply returns no accounts and the chain falls through
+    // to the cross-domain fallbacks exactly as before.
     const prioritizeMultiAccount = isWebBrowser() && readActiveAuthuser() !== null;
+
+    // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
+    // central IdP session (FedCM credential association / per-apex `fedcm_session`
+    // cookie) can still be live, so the AUTOMATIC silent steps below
+    // (`fedcm-silent`, `silent-iframe`) would re-mint a session on the very next
+    // cold boot and sign the user back in without intent. Read the durable flag
+    // ONCE here (synchronously usable by the step `enabled` gates) and skip those
+    // two steps while it is set. Any deliberate sign-in clears it. The `sso-bounce`
+    // step is already self-suppressed after sign-out (its `hasPriorSession` hint is
+    // cleared), and the local restore steps (`stored-session`, cookie-restore) are
+    // unaffected — a deliberate sign-out clears those credentials anyway.
+    const silentRestoreBlocked = isSilentRestoreSuppressed();
 
     try {
       const outcome = await runColdBoot<true>({
@@ -1461,7 +1475,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // valid local bearer, and skipping it avoids the silent round-trip.
             id: 'fedcm-silent',
             enabled: () =>
-              !storedSessionRestored && fedcmSupported && !servicesSilentAttempted.has(silentKey),
+              !storedSessionRestored &&
+              !silentRestoreBlocked &&
+              fedcmSupported &&
+              !servicesSilentAttempted.has(silentKey),
             run: async () => {
               servicesSilentAttempted.add(silentKey);
               const session = await oxyServices.silentSignInWithFedCM?.();
@@ -1496,7 +1513,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // FIX-D: bounded by `SILENT_IFRAME_TIMEOUT` (plus `iframe.onerror`
             // fail-fast in core) so a no-message iframe cannot stall cold boot.
             id: 'silent-iframe',
-            enabled: () => !storedSessionRestored && isWebBrowser(),
+            enabled: () => !storedSessionRestored && !silentRestoreBlocked && isWebBrowser(),
             run: async () => {
               if (!commitWebSession) {
                 return { kind: 'skip' };
@@ -1779,6 +1796,38 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
     oxyServices.httpService.setTokens(session.accessToken);
 
+    // A committed web session re-enables automatic silent restore: clear the
+    // durable "deliberately signed out" flag. This funnel is reached by deliberate
+    // sign-ins (password, interactive FedCM, `/sso` return) AND by the silent
+    // cold-boot steps — but those are GATED on the flag, so when it is set they
+    // never run and never reach here; clearing is therefore only hit on a genuine
+    // (re-)sign-in or when restore was already permitted, both correct.
+    clearSignedOut();
+
+    // Register this primary session in the device's first-party multi-account
+    // refresh-cookie set (web only). Every web primary-session restore funnels
+    // through here — FedCM silent (`/fedcm/exchange`), per-apex `/auth/silent`
+    // iframe, central `/sso` return, and keyless password sign-in. Of those, only
+    // a same-apex `/fedcm/exchange` plants an `oxy_rt_<authuser>` slot as a side
+    // effect; the cross-origin/credential-less restores (`/sso/exchange`,
+    // `/auth/silent` postMessage) cannot set an `api.oxy.so` cookie at all. So
+    // WITHOUT this call a web primary never joins the device set: `refresh-all`
+    // returns zero accounts, and account-switch persistence + the
+    // `cookie-restore-active` cold-boot step have no foundation. Calling the shared
+    // `POST /auth/session` primitive here makes EVERY primary participate in the
+    // set, re-plants the rotated token, and records the active `authuser` so the
+    // next cold boot's `cookie-restore-active` reconciles the persisted active
+    // (possibly switched) account instead of `fedcm-silent` clobbering it back to
+    // the primary. Best-effort: a `null` result (native / transient failure)
+    // leaves the in-session token untouched.
+    const primaryAuthuser = await oxyServices.establishDeviceRefreshSlot();
+    // A non-null slot is returned ONLY on first-party web (the helper gates on
+    // platform + same registrable apex), so recording the active slot here is safe
+    // and never writes a phantom authuser for a cross-apex RP or native.
+    if (typeof primaryAuthuser === 'number') {
+      writeActiveAuthuser(primaryAuthuser);
+    }
+
     const clientSession = {
       sessionId: session.sessionId,
       deviceId: session.deviceId || '',
@@ -1786,6 +1835,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       lastActive: new Date().toISOString(),
       userId: session.user.id?.toString() ?? '',
       isCurrent: true,
+      ...(typeof primaryAuthuser === 'number' ? { authuser: primaryAuthuser } : null),
     };
 
     updateSessions([clientSession], { merge: true });
@@ -2098,6 +2148,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!result?.user || !result?.sessionId) {
       throw new Error('Account switch did not return a valid session');
     }
+
+    // A switch is a deliberate sign-in into an account: re-enable automatic silent
+    // restore by clearing any prior "deliberately signed out" flag.
+    clearSignedOut();
 
     // `oxyServices.switchToAccount` already planted `result.accessToken` as the
     // active token; mirror the minted session into the multi-account store and

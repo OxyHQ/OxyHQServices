@@ -539,12 +539,14 @@ export {
     ssoNoSessionKey,
     ssoAttemptedKey,
     ssoPriorSessionKey,
+    ssoSignedOutKey,
     ssoCallbackBootstrapKey,
     ssoNavigate,
     getSsoCallbackBootstrapScript,
     buildSsoBounceUrl,
     isCentralIdPOrigin,
     guardActive,
+    silentRestoreSuppressed,
     allowSsoBounce,
 } from './utils/ssoBounce';
 export type { SsoBounceGate } from './utils/ssoBounce';

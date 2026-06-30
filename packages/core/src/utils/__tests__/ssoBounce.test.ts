@@ -16,9 +16,11 @@ import {
   ssoNoSessionKey,
   ssoAttemptedKey,
   ssoPriorSessionKey,
+  ssoSignedOutKey,
   buildSsoBounceUrl,
   isCentralIdPOrigin,
   guardActive,
+  silentRestoreSuppressed,
   allowSsoBounce,
 } from '../ssoBounce';
 import { CENTRAL_AUTH_URL } from '../authWebUrl';
@@ -40,11 +42,50 @@ describe('per-origin key builders', () => {
     expect(ssoNoSessionKey(origin)).toBe('oxy_sso_no_session:https://mention.earth');
     expect(ssoAttemptedKey(origin)).toBe('oxy_sso_attempted:https://mention.earth');
     expect(ssoPriorSessionKey(origin)).toBe('oxy_sso_prior_session:https://mention.earth');
+    expect(ssoSignedOutKey(origin)).toBe('oxy_signed_out:https://mention.earth');
   });
 
   it('namespaces keys per origin so two RPs never collide', () => {
     expect(ssoStateKey('https://a.test')).not.toBe(ssoStateKey('https://b.test'));
     expect(ssoPriorSessionKey('https://a.test')).not.toBe(ssoPriorSessionKey('https://b.test'));
+    expect(ssoSignedOutKey('https://a.test')).not.toBe(ssoSignedOutKey('https://b.test'));
+  });
+});
+
+describe('silentRestoreSuppressed (deliberately-signed-out gate)', () => {
+  const origin = 'https://accounts.oxy.so';
+
+  function storageWith(value: string | null): Pick<Storage, 'getItem'> {
+    return { getItem: (key: string) => (key === ssoSignedOutKey(origin) ? value : null) };
+  }
+
+  it('is SUPPRESSED when the signed-out flag is set to "1" for this origin', () => {
+    expect(silentRestoreSuppressed(storageWith('1'), origin)).toBe(true);
+  });
+
+  it('is NOT suppressed when the flag is absent (normal restore)', () => {
+    expect(silentRestoreSuppressed(storageWith(null), origin)).toBe(false);
+  });
+
+  it('is NOT suppressed for any non-"1" value (only the exact set value gates)', () => {
+    expect(silentRestoreSuppressed(storageWith('0'), origin)).toBe(false);
+    expect(silentRestoreSuppressed(storageWith(''), origin)).toBe(false);
+  });
+
+  it('is per-origin: another origin\'s flag does not suppress this one', () => {
+    const otherOriginFlag: Pick<Storage, 'getItem'> = {
+      getItem: (key: string) => (key === ssoSignedOutKey('https://other.test') ? '1' : null),
+    };
+    expect(silentRestoreSuppressed(otherOriginFlag, origin)).toBe(false);
+  });
+
+  it('fails safe (NOT suppressed, never throws) when getItem throws', () => {
+    const throwing: Pick<Storage, 'getItem'> = {
+      getItem: () => {
+        throw new Error('storage locked');
+      },
+    };
+    expect(silentRestoreSuppressed(throwing, origin)).toBe(false);
   });
 });
 

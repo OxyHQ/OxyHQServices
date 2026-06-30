@@ -509,11 +509,35 @@ export class AuthManager {
 
     this.currentAuthMethod = method;
 
-    const decodedAuthuser = session.accessToken
-      ? AuthManager.decodeAuthuserFromAccessToken(session.accessToken)
+    // Register this primary session in the device's first-party multi-account
+    // refresh-cookie set (web only). Every web primary commit funnels through
+    // here (FedCM, central `/sso` return, credentials), but only a same-apex
+    // `/fedcm/exchange` plants an `oxy_rt_<authuser>` slot as a side effect — the
+    // cross-origin/credential-less restores (`/sso/exchange`, the IdP
+    // `/auth/silent` postMessage) cannot set an `api.oxy.so` cookie. WITHOUT this
+    // call those primaries never join the device set, so `refresh-all` returns no
+    // accounts and account-switch persistence has no foundation. The shared
+    // `POST /auth/session` primitive plants/reuses this user's slot where the
+    // cookies ARE visible, re-plants the rotated access token, and returns the
+    // AUTHORITATIVE `authuser` slot (the one actually written) — preferred over the
+    // JWT-decoded guess, which may not correspond to a real cookie. No-op on native
+    // (returns `null`); best-effort on transient failure.
+    const establishedAuthuser = await this.oxyServices.establishDeviceRefreshSlot();
+    // The slot mint rotated the access token; pick it up so the registry and the
+    // refresh authority track the cookie just written. Falls back to the original
+    // session token when the slot was a no-op (native) or failed.
+    const rotatedToken =
+      (establishedAuthuser !== null ? this.oxyServices.getAccessToken() : null) ??
+      session.accessToken;
+    if (rotatedToken) {
+      this._lastKnownAccessToken = rotatedToken;
+    }
+
+    const decodedAuthuser = rotatedToken
+      ? AuthManager.decodeAuthuserFromAccessToken(rotatedToken)
       : null;
-    const authuser = decodedAuthuser ?? 0;
-    if (session.accessToken && session.sessionId) {
+    const authuser = establishedAuthuser ?? decodedAuthuser ?? 0;
+    if (rotatedToken && session.sessionId) {
       this.accounts.set(authuser, {
         authuser,
         sessionId: session.sessionId,
@@ -523,7 +547,7 @@ export class AuthManager {
           name: session.user.name,
           avatar: session.user.avatar ?? null,
         },
-        accessToken: session.accessToken,
+        accessToken: rotatedToken,
         expiresAt: session.expiresAt,
       });
       this.activeAuthuser = authuser;
