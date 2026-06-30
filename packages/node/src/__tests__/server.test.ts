@@ -64,6 +64,7 @@ describe('node HTTP API', () => {
   });
 
   afterEach(() => {
+    app.stop();
     store.close();
   });
 

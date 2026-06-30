@@ -13,8 +13,7 @@
  * by tests with an in-memory store and no network.
  */
 
-import type { Express } from 'express';
-import { createNodeApp } from '@oxyhq/protocol/node';
+import { createNodeApp, type NodeApp } from '@oxyhq/protocol/node';
 import type { Logger } from './logger.js';
 import type { NodeConfig } from './config.js';
 import { createOwnerAuth } from './auth.js';
@@ -26,7 +25,7 @@ export interface AppDependencies {
   logger: Logger;
 }
 
-export function createApp(deps: AppDependencies): Express {
+export function createApp(deps: AppDependencies): NodeApp {
   const { store, config, logger } = deps;
   return createNodeApp({
     store,

@@ -290,10 +290,12 @@ export class NodeStore implements RecordStore, BlobStore {
 
   /** The bytes of a pinned blob, or `null` if absent. */
   async getBlob(hash: string): Promise<Uint8Array | null> {
-    // The address comes from a request route param; a tampered non-string can
-    // never address a stored blob — treat it as absent rather than confusing the
-    // `.toLowerCase()` + SQL parameter sink.
-    if (typeof hash !== 'string') {
+    // The address comes from a request route param; a tampered non-string or a
+    // value that is not a well-formed 64-char SHA-256 hex digest can never
+    // address a stored blob (all addresses are validated at pin time). Reject it
+    // as absent BEFORE the DB query so garbage input cannot drive needless reads
+    // or reach the `.toLowerCase()` + SQL parameter sink.
+    if (typeof hash !== 'string' || !SHA256_HEX.test(hash.toLowerCase())) {
       return null;
     }
     const row = this.getBlobStmt.get({ hash: hash.toLowerCase() }) as BlobRow | undefined;
