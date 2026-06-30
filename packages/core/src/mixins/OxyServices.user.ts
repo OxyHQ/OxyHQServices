@@ -89,6 +89,18 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     ) => Promise<R>;
 
     /**
+     * Raw service credentials stored by `configureServiceAuth()` on the auth
+     * mixin (earlier in the pipeline). Surfaced here via `declare` — for the
+     * same typing reason as `makeServiceRequest` above — so `getUsersByIds` can
+     * detect whether this instance is service-configured (a backend) and pick
+     * the bearer-service path, or fall back to the user-session path (a browser/
+     * RN client). Both are `null` until `configureServiceAuth(apiKey, apiSecret)`
+     * is called.
+     */
+    declare _serviceApiKey: string | null;
+    declare _serviceApiSecret: string | null;
+
+    /**
      * Get profile by username
      */
     async getProfileByUsername(username: string): Promise<User> {
@@ -349,16 +361,28 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * by `id`); each is run through `normalizeUserIdentity`, matching
      * `getUserById`.
      *
-     * **Service-token auth (required).** `/users/by-ids` is a server-to-server
-     * bulk fetch of PUBLIC user data and is called via `makeServiceRequest`,
-     * which attaches `Authorization: Bearer <serviceToken>`. oxy-api's CSRF
-     * middleware skips bearer-authenticated requests, so the calling client
-     * MUST be service-configured (`configureServiceAuth(apiKey, apiSecret)`)
-     * before invoking this method; otherwise `getServiceToken()` throws because
-     * no credentials are available. (A plain user-session request fails here:
-     * server-to-server there is no cookie jar, so the auto-attached
-     * `X-CSRF-Token` has no matching cookie and oxy-api rejects the POST with
-     * 403 "CSRF token missing".)
+     * **Dual-mode auth.** `/users/by-ids` is `optionalUserOrServiceAuth` on
+     * oxy-api: it accepts a service token, a user session, or an anonymous
+     * caller, and returns the SAME public `{ data: PublicUserProfile[] }`
+     * payload (canonical `name.displayName` + `_count`) in every case — no
+     * viewer-specific fields. This method picks the path automatically:
+     * - **Service-configured host (backend):** when `configureServiceAuth(apiKey,
+     *   apiSecret)` has been called, the chunk is fetched via `makeServiceRequest`
+     *   (attaches `Authorization: Bearer <serviceToken>`). This is the
+     *   server-to-server feed/notification hydration path (e.g. Mention's
+     *   `PostHydrationService`) and is unchanged.
+     * - **Plain client (browser / React Native with a user session):** when no
+     *   service credentials are configured, the chunk is fetched via
+     *   `makeRequest`, which attaches the configured user bearer. oxy-api's CSRF
+     *   middleware skips bearer-authenticated writes, and `makeRequest` only
+     *   fetches a CSRF token for cookie-only (no-bearer) state-changing requests,
+     *   so the user-bearer POST is sent without CSRF and succeeds. Previously
+     *   this method always used the service path, so every client-side caller
+     *   silently received `[]` because `getServiceToken()` had no credentials.
+     *
+     * Both paths run results through `normalizeUserIdentity` and unwrap the
+     * API's `{ data }` envelope identically (`makeServiceRequest` is literally
+     * `makeRequest` plus a bearer service header).
      *
      * Resilience: chunks are independent. A failed chunk is logged and skipped
      * — the method returns every user that resolved successfully rather than
@@ -381,15 +405,23 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         chunks.push(uniqueIds.slice(i, i + USERS_BY_IDS_CHUNK_SIZE));
       }
 
+      // A backend that called configureServiceAuth() uses the bearer-service
+      // path; any other caller (browser / RN with a user session) uses the
+      // user-bearer path. See the method doc for why the user path is CSRF-safe.
+      const useServiceAuth = Boolean(this._serviceApiKey && this._serviceApiSecret);
+
       // Run chunks concurrently; a single chunk failure must not sink the rest.
       const settled = await Promise.all(
         chunks.map(async (chunk): Promise<User[]> => {
           try {
-            const users = await this.makeServiceRequest<User[]>('POST', '/users/by-ids', { ids: chunk });
+            const users = useServiceAuth
+              ? await this.makeServiceRequest<User[]>('POST', '/users/by-ids', { ids: chunk })
+              : await this.makeRequest<User[]>('POST', '/users/by-ids', { ids: chunk }, { cache: false });
             return Array.isArray(users) ? users.map((user) => normalizeUserIdentity(user)) : [];
           } catch (error: unknown) {
             logger.warn('getUsersByIds: chunk failed, continuing with remaining chunks', {
               method: 'getUsersByIds',
+              mode: useServiceAuth ? 'service' : 'user',
               chunkSize: chunk.length,
               status: extractErrorStatus(error),
               error: error instanceof Error ? error.message : String(error),
