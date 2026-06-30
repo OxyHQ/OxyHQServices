@@ -1,13 +1,22 @@
-# @oxyhq/node — Oxy personal data node
+# @oxyhq/node — Oxy data node (reusable multi-app base)
 
 A small, self-hostable server that stores **your own signed records** (your
-personal "repo") and serves them so Oxy can ingest/mirror them. The node is the
-**source of truth** for the data you author; Oxy keeps a fast read copy.
+personal "repo") and serves them so an app can ingest/mirror them. The node is
+the **source of truth** for the data you author; the app keeps a fast read copy.
 
-This is Fase 5 (decentralization) of the Oxy ID / Commons platform. The node
-reuses [`@oxyhq/core`](../core) for all cryptography — a record signed by your
-key (via the Commons vault's `SignatureService` / envelope **v2**) verifies on
-the node with the **exact same code** Oxy uses. No crypto is re-implemented.
+This is Fase 5 (decentralization) of the Oxy ID / Commons platform. The runnable
+engine lives in [`@oxyhq/protocol/node`](../protocol) (`createNodeApp`, the
+SQLite store interface, the record verifier, the `NodeClient`); this package is
+the thin **deployment** of that engine — its SQLite store, env config, owner-key
+authority, and bootstrap. Because the engine is app-agnostic, **the same image
+serves many app-node deployments by ENV alone**: the default `OXY_NODE_*`
+(`app.oxy`) deployment is the Oxy identity node, and a future `mention-node`
+(built in workstream B3) is the **same base** with `MENTION_NODE_*` /
+`app.mention` env — no fork.
+
+All cryptography is reused from `@oxyhq/protocol` — a record signed by your key
+(via the Commons vault's `SignatureService` / envelope **v2**) verifies on the
+node with the **exact same code** Oxy uses. No crypto is re-implemented.
 
 ## What lives on a node
 
@@ -39,7 +48,7 @@ owner-signed header (no shared bearer secret).
 
 | Method & path | Auth | Purpose |
 |---|---|---|
-| `GET /.well-known/oxy-node.json` | none | Node identity + liveness `{ nodePublicKey, mode, version, head }` (Oxy's probe) |
+| `GET /.well-known/oxy-node.json` | none | Node identity + liveness `{ nodePublicKey, mode, version, serviceType, head }` (Oxy's probe) |
 | `GET /oxy/head` | none | Chain head `{ seq, headRecordId, recordCount }` |
 | `GET /oxy/log?since=<seq\|recordId>&limit=` | none | Ordered envelopes from a cursor (Oxy ingest) |
 | `POST /records` | owner (signed envelope) | Write a single signed record |
@@ -65,7 +74,17 @@ and `X-Oxy-Node-Timestamp`.
 | `OXY_NODE_DATA_DIR` | no | `<cwd>/data` | Directory for the SQLite database |
 | `OXY_NODE_DB_PATH` | no | `<dataDir>/node.sqlite` | Explicit DB file path |
 | `OXY_NODE_MAX_BLOB_BYTES` | no | `26214400` (25 MiB) | Max pinned blob size |
+| `OXY_NODE_APP_NAMESPACE` | no | `app.oxy` | Application namespace this node serves; bounds the collection allowlist |
+| `OXY_NODE_COLLECTIONS` | no | _(any)_ | Comma-separated collection allowlist. Empty = accept any collection; when set, every entry must be within `APP_NAMESPACE` and only these collections may be written / appear in the public log |
+| `OXY_NODE_WELL_KNOWN_PATH` | no | `/.well-known/oxy-node.json` | Liveness manifest path |
+| `OXY_NODE_PROTOCOL_ID` | no | `oxy-node/1` | Advertised node-protocol id (the manifest `version`) |
+| `OXY_NODE_SERVICE_TYPE` | no | `OxyPersonalDataNode` | Advertised DID-document service-type label |
 | `OXY_NODE_LOG_LEVEL` | no | `info` | pino log level |
+
+The env-var **prefix is configurable** (`loadConfig(env, prefix)`): the Oxy
+identity node uses `OXY_NODE_`; a Mention node deployment uses `MENTION_NODE_`
+with `MENTION_NODE_APP_NAMESPACE=app.mention`. One codebase + one image, many app
+nodes — config only.
 
 No secrets are hardcoded; the process refuses to start without a well-formed
 owner key.

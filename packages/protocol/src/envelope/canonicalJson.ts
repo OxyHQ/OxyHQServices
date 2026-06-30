@@ -7,10 +7,10 @@
  * object keys happen to be written, how the value was deserialized, or which
  * runtime built it.
  *
- * This is the load-bearing primitive for the self-sovereign identity layer's
- * signed records (`SignatureService.signRecord` + the API's record-verify path):
- * both sides import THIS function from `@oxyhq/core`, so cross-implementation
- * number/string formatting differences cannot cause a verify mismatch.
+ * This is the load-bearing primitive for the protocol's signed records
+ * (`signEnvelope` + `verifyEnvelopeSignature`): every implementation imports
+ * THIS function from `@oxyhq/protocol`, so cross-implementation number/string
+ * formatting differences cannot cause a verify mismatch.
  *
  * Rules (the JSON Canonicalization Scheme subset we need):
  *  - Objects: keys are sorted (ascending, by UTF-16 code unit — the default

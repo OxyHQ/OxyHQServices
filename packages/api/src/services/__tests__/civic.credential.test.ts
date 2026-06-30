@@ -173,7 +173,7 @@ describe('issueCredential', () => {
       status: 'active',
     });
     // The signed record was appended on the ISSUER's chain.
-    expect(mockVerifyAndStore.mock.calls[0][2]).toBe(ISSUER);
+    expect(mockVerifyAndStore.mock.calls[0][1]).toBe(ISSUER);
   });
 
   it('rejects a wrong envelope type', async () => {

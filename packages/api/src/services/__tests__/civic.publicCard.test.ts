@@ -9,7 +9,7 @@
  */
 
 import { ec as EC } from 'elliptic';
-import { canonicalize } from '@oxyhq/core';
+import { canonicalize } from '@oxyhq/protocol';
 
 const ec = new EC('secp256k1');
 const oxyKey = ec.genKeyPair();

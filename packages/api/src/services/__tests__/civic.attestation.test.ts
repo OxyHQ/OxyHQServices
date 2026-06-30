@@ -17,7 +17,7 @@
 
 import { ec as EC } from 'elliptic';
 import { Types } from 'mongoose';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 
 const ec = new EC('secp256k1');
@@ -145,7 +145,7 @@ describe('attestAward', () => {
     });
     // It was actually stored against the subject's chain.
     expect(mockVerifyAndStore).toHaveBeenCalledTimes(1);
-    expect(mockVerifyAndStore.mock.calls[0][2]).toBe(SUBJECT_USER_ID);
+    expect(mockVerifyAndStore.mock.calls[0][1]).toBe(SUBJECT_USER_ID);
   });
 
   it('extends the chain when a head already exists', async () => {

@@ -1,4 +1,4 @@
-import { loadAsyncStorage } from './platformCrypto';
+import { loadAsyncStorage } from '@oxyhq/protocol';
 
 export interface DeviceFingerprint {
   userAgent: string;

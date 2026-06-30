@@ -30,10 +30,11 @@ const mockSignedRecordFindOne = jest.fn();
 const mockSignedRecordCreate = jest.fn();
 const mockWitnessCreate = jest.fn();
 const mockUserFindById = jest.fn();
+const mockUserExists = jest.fn();
 const mockInvalidate = jest.fn();
 
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...a: unknown[]) => mockSafeFetch(...a) }));
-jest.mock('@oxyhq/core', () => ({
+jest.mock('@oxyhq/protocol', () => ({
   canonicalize: (v: unknown) => JSON.stringify(v),
   computeRecordId: async (env: { seq?: number }) => `rid-${env.seq}`,
 }));
@@ -65,8 +66,8 @@ jest.mock('../../models/NodeIngestWitness', () => ({
 }));
 jest.mock('../../models/User', () => ({
   __esModule: true,
-  User: { findById: (...a: unknown[]) => mockUserFindById(...a) },
-  default: { findById: (...a: unknown[]) => mockUserFindById(...a) },
+  User: { findById: (...a: unknown[]) => mockUserFindById(...a), exists: (...a: unknown[]) => mockUserExists(...a) },
+  default: { findById: (...a: unknown[]) => mockUserFindById(...a), exists: (...a: unknown[]) => mockUserExists(...a) },
 }));
 jest.mock('../../utils/userCache', () => ({ __esModule: true, default: { invalidate: (...a: unknown[]) => mockInvalidate(...a) } }));
 jest.mock('../../utils/logger', () => ({
@@ -120,6 +121,7 @@ beforeEach(() => {
 
   mockUserNodeFindOne.mockReturnValue(selectLean({ endpoint: 'https://node.example.com', cursor: undefined }));
   mockUserFindById.mockReturnValue(selectLean({ publicKey: PUBLIC_KEY, authMethods: [] }));
+  mockUserExists.mockResolvedValue(true);
   mockGetHead.mockResolvedValue(null); // local head -1
   mockUserNodeUpdateOne.mockResolvedValue({ modifiedCount: 1 });
   mockSignedRecordFindOne.mockReturnValue(sortLean(null));
@@ -145,9 +147,11 @@ describe('ingestFromNode — happy path', () => {
 
     await ingestFromNode(USER_ID);
 
-    // Head then log, both via safeFetch (SSRF-safe) — never a raw fetch.
+    // Head then log, both via safeFetch (SSRF-safe) — never a raw fetch. The
+    // first log page omits `since` (a genesis cursor) so the node serves the log
+    // from genesis (`since=-1` is not a valid wire cursor — an absent one is).
     expect(mockSafeFetch).toHaveBeenNthCalledWith(1, 'https://node.example.com/oxy/head', expect.objectContaining({ maxRedirects: 1 }));
-    expect(mockSafeFetch.mock.calls[1][0]).toContain('https://node.example.com/oxy/log?since=-1&limit=100');
+    expect(mockSafeFetch.mock.calls[1][0]).toContain('https://node.example.com/oxy/log?limit=100');
 
     expect(mockVerifyAndStore).toHaveBeenCalledTimes(3);
     expect(mockWitnessCreate).toHaveBeenCalledTimes(3); // one counter-sign per record

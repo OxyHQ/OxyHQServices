@@ -9,6 +9,7 @@
   ],
   "workspaces": [
     "packages/contracts",
+    "packages/protocol",
     "packages/core",
     "packages/auth-sdk",
     "packages/services",
@@ -28,6 +29,7 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "clean": "turbo run clean",
+    "protocol:build": "bun run --filter @oxyhq/protocol build",
     "core:build": "bun run --filter @oxyhq/core build",
     "auth:build": "bun run --filter @oxyhq/auth build",
     "services:build": "bun run --filter @oxyhq/services build",

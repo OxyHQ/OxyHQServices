@@ -134,12 +134,35 @@ describe('signedRecordEnvelopeSchema', () => {
         expect(parsed).toBeNull();
     });
 
-    it('rejects a record type outside the union', () => {
+    it('accepts an open, app-defined record type (the base envelope is app-agnostic)', () => {
         const parsed = safeParseContract(signedRecordEnvelopeSchema, {
             ...envelope,
-            type: 'foobar',
+            type: 'app_record',
+        });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.type).toBe('app_record');
+    });
+
+    it('rejects an empty record type', () => {
+        const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+            ...envelope,
+            type: '',
         });
         expect(parsed).toBeNull();
+    });
+
+    it('round-trips a production identity envelope byte-identically under the widened type schema', () => {
+        // Canonical-bytes safety: widening `type` enum→string must not reject or
+        // mutate a record already in production. The parsed value equals the input
+        // exactly, so the signed bytes a verifier recomputes are unchanged.
+        const identityEnvelope: SignedRecordEnvelope = {
+            ...envelope,
+            type: 'identity',
+            record: { handle: '@nate' },
+        };
+        const parsed = safeParseContract(signedRecordEnvelopeSchema, identityEnvelope);
+        expect(parsed).not.toBeNull();
+        expect(parsed).toEqual(identityEnvelope);
     });
 
     it('rejects a version outside the {1,2} union', () => {
@@ -199,6 +222,18 @@ describe('signedRecordEnvelopeSchema', () => {
             expect(parsed).not.toBeNull();
             expect(parsed?.seq).toBe(1);
             expect(parsed?.prev).toBe('a'.repeat(64));
+        });
+
+        it('accepts an app record type carried on an app collection (app.mention.feed.post)', () => {
+            const parsed = safeParseContract(signedRecordEnvelopeSchema, {
+                ...v2Genesis,
+                type: 'app_record',
+                collection: 'app.mention.feed.post',
+                rkey: 'post_1',
+            });
+            expect(parsed).not.toBeNull();
+            expect(parsed?.type).toBe('app_record');
+            expect(parsed?.collection).toBe('app.mention.feed.post');
         });
 
         it('accepts every widened civic record type', () => {

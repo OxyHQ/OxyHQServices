@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -42,10 +42,6 @@
       "default": "./dist/esm/server/index.js"
     },
     "./package.json": "./package.json"
-  },
-  "react-native": {
-    "./dist/esm/utils/platformCrypto.js": "./dist/esm/utils/platformCrypto.native.js",
-    "./dist/cjs/utils/platformCrypto.js": "./dist/cjs/utils/platformCrypto.native.js"
   },
   "files": [
     "dist",
@@ -99,6 +95,7 @@
   },
   "dependencies": {
     "@oxyhq/contracts": "workspace:^",
+    "@oxyhq/protocol": "workspace:^",
     "bip39": "^3.1.0",
     "buffer": "^6.0.3",
     "elliptic": "^6.6.1",

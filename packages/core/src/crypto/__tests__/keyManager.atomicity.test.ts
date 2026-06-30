@@ -83,8 +83,9 @@ jest.mock(
   { virtual: true },
 );
 
-jest.mock('../../utils/platformCrypto', () => ({
+jest.mock('@oxyhq/protocol', () => ({
   __esModule: true,
+  ...jest.requireActual('@oxyhq/protocol'),
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   loadExpoCrypto: async () => require('expo-crypto'),
   // eslint-disable-next-line @typescript-eslint/no-require-imports

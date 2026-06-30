@@ -18,20 +18,15 @@
  */
 
 import crypto from 'crypto';
-import { canonicalize } from '@oxyhq/core';
+import { canonicalize, verifyEnvelopeSignature } from '@oxyhq/protocol';
 import { validationVerdictRecordSchema, type ValidationVerdict } from '@oxyhq/contracts';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { ReputationBalance } from '../../models/ReputationBalance';
 import ValidationRequest, { type IValidationRequest } from '../../models/ValidationRequest';
 import ValidationVote, { type IValidationVote } from '../../models/ValidationVote';
 import ValidatorAffinity from '../../models/ValidatorAffinity';
-import { User } from '../../models/User';
 import { isSockPuppetRelation } from './graphExclusion';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-} from '../signedRecord.service';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { reputationService } from '../reputation.service';
 import { buildUserDid } from '../did.service';
 import {
@@ -279,13 +274,11 @@ export async function submitVote(
     return { ok: false, reason: 'payload_mismatch' };
   }
 
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
-  const voter = await User.findById(validatorUserId).select('publicKey authMethods').lean();
-  const subject: SignedRecordSubject = { publicKey: voter?.publicKey, authMethods: voter?.authMethods };
-  const stored = await verifyAndStoreRecord(envelope, subject, validatorUserId);
+  const stored = await verifyAndStoreRecord(envelope, validatorUserId);
   if (!stored.ok) {
     return { ok: false, reason: 'store_failed' };
   }

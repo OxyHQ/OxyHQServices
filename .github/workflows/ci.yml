@@ -44,12 +44,14 @@ jobs:
       # fedcm.service.ts) from its published `dist`, like any normal dependency.
       # This job does not build workspace deps, so core's `dist` is absent on a
       # fresh checkout → `Cannot find module '@oxyhq/core'`. Build core (and its
-      # own dep `@oxyhq/contracts`, which core's tsc build needs) so the import
-      # resolves. `@oxyhq/contracts`/`@oxyhq/core/server` are still mapped to
-      # source in jest.config.js; this only provides the bare `@oxyhq/core` dist.
+      # own deps `@oxyhq/contracts` and `@oxyhq/protocol`, which core's tsc build
+      # needs) in topological order so the import resolves.
+      # `@oxyhq/contracts`/`@oxyhq/core/server` are still mapped to source in
+      # jest.config.js; this only provides the bare `@oxyhq/core` dist.
       - name: Build core SDK (for @oxyhq/core resolution in api tests)
         run: |
           bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
           bun run --filter @oxyhq/core build
 
       - name: Run linter

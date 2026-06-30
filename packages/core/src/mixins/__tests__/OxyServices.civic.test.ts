@@ -37,7 +37,7 @@ import type {
   VerifiableCredentialResponse,
 } from '@oxyhq/contracts';
 import { OxyServices } from '../../OxyServices';
-import { canonicalize } from '../../crypto/canonicalJson';
+import { canonicalize, signMessage } from '@oxyhq/protocol';
 import { SignatureService } from '../../crypto/signatureService';
 import { parseAttestPayload, parseIdPayload, verifyPublicCardAttestation } from '../OxyServices.civic';
 
@@ -61,7 +61,7 @@ async function signCard(card: PublicCard): Promise<{ attestation: ExportAttestat
   const keyPair = ec.genKeyPair();
   const privateKey = keyPair.getPrivate('hex');
   const publicKey = keyPair.getPublic('hex');
-  const signature = await SignatureService.signWithKey(canonicalize(card), privateKey);
+  const signature = await signMessage(canonicalize(card), privateKey);
   return {
     attestation: {
       issuer: 'did:web:api.oxy.so',

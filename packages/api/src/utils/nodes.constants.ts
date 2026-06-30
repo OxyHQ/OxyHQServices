@@ -47,16 +47,6 @@ export const NODE_LIVENESS_SWEEP_BATCH = 100;
 /*  F5b — bidirectional sync (node → Oxy ingest)                              */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The node-facing log + head paths a node exposes for Oxy to PULL its authentic
- * signed chain back in. Mirrors the Oxy→node export shapes (`/identity/log` +
- * `/identity/head`) so a record signed on the node verifies in Oxy unchanged.
- * Both are fetched ONLY in the background via `safeFetch` (SSRF-safe) — never in
- * a request's read path.
- */
-export const NODE_OXY_LOG_PATH = '/oxy/log';
-export const NODE_OXY_HEAD_PATH = '/oxy/head';
-
 /** Records pulled per `/oxy/log` page (bounds a single fetch's working set). */
 export const NODE_INGEST_BATCH = 100;
 

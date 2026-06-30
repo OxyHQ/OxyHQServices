@@ -58,7 +58,7 @@ jest.mock('../../services/signature.service', () => ({
   __esModule: true,
   default: { signMessage: (...args: unknown[]) => mockSignMessage(...args) },
 }));
-jest.mock('@oxyhq/core', () => ({ signedRecordSigningInput: (...args: unknown[]) => mockSigningInput(...args) }));
+jest.mock('@oxyhq/protocol', () => ({ signedRecordSigningInput: (...args: unknown[]) => mockSigningInput(...args) }));
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...args: unknown[]) => mockSafeFetch(...args) }));
 jest.mock('../../utils/userCache', () => ({ __esModule: true, default: { invalidate: (...args: unknown[]) => mockInvalidate(...args) } }));
 jest.mock('../../utils/logger', () => ({
@@ -135,7 +135,7 @@ describe('provisionManagedVault — happy path', () => {
 
     // The envelope handed to verifyAndStoreRecord is an Oxy-custodial v2 node record.
     expect(mockVerifyAndStoreRecord).toHaveBeenCalledTimes(1);
-    const [envelope, subject, subjectUserId] = mockVerifyAndStoreRecord.mock.calls[0];
+    const [envelope, subjectUserId] = mockVerifyAndStoreRecord.mock.calls[0];
     expect(envelope).toMatchObject({
       version: 2,
       type: 'node',
@@ -155,8 +155,7 @@ describe('provisionManagedVault — happy path', () => {
       mode: 'pull',
       managed: true,
     });
-    // Empty subject — custodial records do not consult the account's own VMs.
-    expect(subject).toEqual({ publicKey: null, authMethods: [] });
+    // Stored against the subject's chain (the resolver resolves the custodial key).
     expect(subjectUserId).toBe(USER_ID);
 
     // Materialized as a managed, Oxy-operated, active node.

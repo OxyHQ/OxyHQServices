@@ -16,7 +16,7 @@ import type { PublicApplication } from './OxyServices.connectedApps';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
-import { loadNodeCrypto } from '../utils/platformCrypto';
+import { loadNodeCrypto } from '@oxyhq/protocol';
 import { logger } from '../utils/loggerUtils';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 

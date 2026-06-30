@@ -4,7 +4,7 @@
  * A Verifiable Credential (VC) is an ISSUER (an employer / course / app that
  * holds a DID) cryptographically attesting a CLAIM about a HOLDER — e.g. "worked
  * at X 2020–2024", "completed course Y". The credential is a SIGNED record
- * (envelope `type: 'credential'`, already in the `SignedRecordType` union) whose
+ * (envelope `type: 'credential'`, an Oxy record type in `OxySignedRecordType`) whose
  * `record.about` is the HOLDER's DID (the W3C `credentialSubject`). It is
  * verifiable OFFLINE against the issuer DID's CURRENT verification method plus a
  * revocation/expiry check — anyone the holder shows the credential to can verify
@@ -33,7 +33,7 @@
 
 import type { SignedRecordEnvelope, VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
 import { credentialRecordSchema } from '@oxyhq/contracts';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput, verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import SignatureService from '../signature.service';
 import {
   buildUserDid,
@@ -43,12 +43,7 @@ import {
   OXY_DID,
   type DidUserInput,
 } from '../did.service';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-  type EnvelopeRejectionReason,
-} from '../signedRecord.service';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { getHead } from '../repoLog.service';
 import { User } from '../../models/User';
 import SignedRecord from '../../models/SignedRecord';
@@ -73,7 +68,7 @@ export type CredentialIssueRejectionReason =
   | 'holder_not_found'
   | 'invalid_expiry'
   | 'oxy_key_unconfigured'
-  | EnvelopeRejectionReason;
+  | RejectionReason;
 
 export type CredentialIssueResult =
   | { ok: true; credential: VerifiableCredentialResponse }
@@ -224,25 +219,18 @@ export async function issueCredential(
     return { ok: false, reason: 'invalid_expiry' };
   }
 
-  const [holderExists, issuer] = await Promise.all([
-    User.exists({ _id: holderUserId }),
-    User.findById(issuerUserId).select('publicKey authMethods').lean(),
-  ]);
+  const holderExists = await User.exists({ _id: holderUserId });
   if (!holderExists) {
     return { ok: false, reason: 'holder_not_found' };
   }
-  const issuerSubject: SignedRecordSubject = {
-    publicKey: issuer?.publicKey,
-    authMethods: issuer?.authMethods,
-  };
 
   // Cheap forgery gate before the authoritative verify-and-store (which repeats
   // signature + current-VM + chain-continuity checks transactionally).
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
-  const stored = await verifyAndStoreRecord(envelope, issuerSubject, issuerUserId);
+  const stored = await verifyAndStoreRecord(envelope, issuerUserId);
   if (!stored.ok) {
     return { ok: false, reason: stored.reason };
   }
@@ -350,8 +338,8 @@ export async function issueOrgCredential(input: IssueOrgCredentialInput): Promis
     const envelope: SignedRecordEnvelope = { ...fields, signature };
 
     // The holder account's VMs are NOT consulted for a custodial record (the
-    // issuer is OXY_DID), so an empty subject is sufficient here.
-    const stored = await verifyAndStoreRecord(envelope, { publicKey: null, authMethods: [] }, holderUserId);
+    // issuer is OXY_DID); the resolver resolves the subject either way.
+    const stored = await verifyAndStoreRecord(envelope, holderUserId);
     if (stored.ok) {
       const recordId = stored.record.recordId ?? '';
       const credential = await persistCredentialRow({
@@ -466,7 +454,7 @@ export async function verifyCredential(idOrRecordId: string): Promise<Credential
   if (!issuerVmKeys.includes(env.publicKey)) {
     return { valid: false, reason: 'issuer_key_not_current', credential: serializeCredential(vc) };
   }
-  if (!verifyEnvelopeSignature(env)) {
+  if (!(await verifyEnvelopeSignature(env))) {
     return { valid: false, reason: 'bad_signature', credential: serializeCredential(vc) };
   }
 

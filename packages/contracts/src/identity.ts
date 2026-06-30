@@ -120,28 +120,23 @@ export const didDocumentSchema: z.ZodType<DidDocument> = z.object({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The category of a signed record. v1 only ever carried `identity` / `profile`
- * (already in production); v2 widens the union with the civic record types
- * (reputation attestations, real-life / peer validations, personhood vouches,
- * verifiable credentials) and the user-node registration record. The signing
- * input includes `type`, so this union is part of the signed bytes.
- */
-export type SignedRecordType =
-    | 'identity'
-    | 'profile'
-    | 'reputation_attestation'
-    | 'real_life_attestation'
-    | 'validation_verdict'
-    | 'personhood_vouch'
-    | 'credential'
-    | 'node';
-
-/**
  * A signed record envelope. `record` is the arbitrary payload; the signing
  * input is the canonical-JSON of every envelope field EXCEPT `publicKey` and
  * `signature`. `subject` and `issuer` are DIDs (the subject the record is about
  * and the signer's DID — equal for self-issued records, `OXY_DID` for a
  * custodial provenance attestation). `issuedAt` is epoch milliseconds.
+ *
+ * ## `type` — open by design
+ *
+ * `type` is an OPEN, non-empty string: it is the application-defined category of
+ * the record (e.g. Oxy's `identity`/`profile`/civic types, or `app.mention.*`'s
+ * `app_record`). The base envelope is app-agnostic, so it cannot enumerate every
+ * app's record categories — each app re-narrows `type` to its own closed set on
+ * the way INTO its own store (Oxy via {@link OxySignedRecordType}; an app via
+ * its own constant). Widening `type` from a closed enum to a string is
+ * canonical-bytes-safe: {@link signedRecordSigningInput} serializes `type` as the
+ * same JSON string either way, so every record already signed in production
+ * verifies byte-for-byte.
  *
  * ## Versioning
  *
@@ -164,7 +159,8 @@ export type SignedRecordType =
  */
 export interface SignedRecordEnvelope {
     version: 1 | 2;
-    type: SignedRecordType;
+    /** App-defined record category (open string); each store re-narrows it. */
+    type: string;
     subject: string;
     issuer: string;
     record: Record<string, unknown>;
@@ -185,16 +181,9 @@ export interface SignedRecordEnvelope {
 export const signedRecordEnvelopeSchema: z.ZodType<SignedRecordEnvelope> = z
     .object({
         version: z.union([z.literal(1), z.literal(2)]),
-        type: z.enum([
-            'identity',
-            'profile',
-            'reputation_attestation',
-            'real_life_attestation',
-            'validation_verdict',
-            'personhood_vouch',
-            'credential',
-            'node',
-        ]),
+        // Open, app-defined category (see the `type` doc above). The Oxy STORE
+        // re-narrows to `oxySignedRecordTypeSchema`; an app to its own constant.
+        type: z.string().min(1),
         subject: z.string(),
         issuer: z.string(),
         record: z.record(z.unknown()),

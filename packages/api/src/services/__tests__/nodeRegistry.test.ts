@@ -32,7 +32,7 @@ jest.mock('../../models/UserNode', () => ({
 }));
 
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...args: unknown[]) => mockSafeFetch(...args) }));
-jest.mock('@oxyhq/core', () => ({ signedRecordSigningInput: jest.fn() }));
+jest.mock('@oxyhq/protocol', () => ({ signedRecordSigningInput: jest.fn() }));
 jest.mock('../../models/User', () => ({
   __esModule: true,
   User: { findById: jest.fn() },

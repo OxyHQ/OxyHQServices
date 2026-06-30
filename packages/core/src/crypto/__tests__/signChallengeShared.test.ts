@@ -9,6 +9,7 @@
  */
 
 import { ec as EC } from 'elliptic';
+import { verifySignature } from '@oxyhq/protocol';
 import { KeyManager } from '../keyManager';
 import { SignatureService } from '../signatureService';
 
@@ -40,7 +41,7 @@ describe('SignatureService.signChallengeWithSharedKey', () => {
     // uses, proving the format is unchanged and the shared key signed it.
     const message = `auth:${sharedPublicKey}:chal-123:${result.timestamp}`;
     await expect(
-      SignatureService.verify(message, result.challenge, sharedPublicKey),
+      verifySignature(message, result.challenge, sharedPublicKey),
     ).resolves.toBe(true);
   });
 

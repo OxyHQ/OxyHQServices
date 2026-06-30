@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { User } from '../../models/User';
 import { ReputationTransaction } from '../../models/ReputationTransaction';
@@ -29,12 +30,7 @@ import PersonhoodVouch from '../../models/PersonhoodVouch';
 import PersonhoodStatus, { type IPersonhoodStatus } from '../../models/PersonhoodStatus';
 import { buildUserDid, parseUserDid } from '../did.service';
 import { isValidObjectId } from '../../utils/validation';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-  type EnvelopeRejectionReason,
-} from '../signedRecord.service';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { isSockPuppetRelation } from './graphExclusion';
 import { computeSybilPenalty } from './sybil.service';
 import { reputationService } from '../reputation.service';
@@ -83,7 +79,7 @@ export type VouchRejectionReason =
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
   | 'excluded_shared_ip'
-  | EnvelopeRejectionReason;
+  | RejectionReason;
 
 export type VouchResult =
   | { ok: true; recordId: string; subjectUserId: string; voucherUserId: string; stakeAmount: number; points: number }
@@ -287,7 +283,7 @@ export async function vouchForPerson(
   }
 
   // Cheap forgery gate before any expensive graph / DB work.
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
@@ -298,10 +294,7 @@ export async function vouchForPerson(
     return { ok: false, reason: 'voucher_below_threshold' };
   }
 
-  const [subjectExists, voucher] = await Promise.all([
-    User.exists({ _id: subjectUserId }),
-    User.findById(voucherUserId).select('publicKey authMethods').lean(),
-  ]);
+  const subjectExists = await User.exists({ _id: subjectUserId });
   if (!subjectExists) {
     return { ok: false, reason: 'subject_not_found' };
   }
@@ -329,8 +322,7 @@ export async function vouchForPerson(
   }
 
   // Store the voucher's signed statement on the voucher's own chain.
-  const subject: SignedRecordSubject = { publicKey: voucher?.publicKey, authMethods: voucher?.authMethods };
-  const stored = await verifyAndStoreRecord(envelope, subject, voucherUserId);
+  const stored = await verifyAndStoreRecord(envelope, voucherUserId);
   if (!stored.ok) {
     return { ok: false, reason: stored.reason };
   }

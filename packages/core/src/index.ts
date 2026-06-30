@@ -264,9 +264,8 @@ export {
     IdentityPersistError,
 } from './crypto/keyManager';
 export type { KeyPair } from './crypto/keyManager';
-export { SignatureService, signedRecordSigningInput, computeRecordId } from './crypto/signatureService';
-export type { SignedMessage, AuthChallenge, SignedRecordSigningFields } from './crypto/signatureService';
-export { canonicalize } from './crypto/canonicalJson';
+export { SignatureService } from './crypto/signatureService';
+export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
 export type { RecoveryPhraseResult } from './crypto/recoveryPhrase';
 

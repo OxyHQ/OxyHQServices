@@ -9,11 +9,17 @@
 import { createHash } from 'node:crypto';
 import request from 'supertest';
 import pino from 'pino';
-import { SignatureService } from '@oxyhq/core';
+import { signMessage } from '@oxyhq/protocol';
+import {
+  DEFAULT_APP_NAMESPACE,
+  DEFAULT_SERVICE_TYPE,
+  DEFAULT_WELL_KNOWN_PATH,
+  OWNER_AUTH_HEADERS,
+  PROTOCOL_VERSION,
+} from '@oxyhq/protocol/node';
 import { createApp } from '../app';
 import { NodeStore } from '../store/nodeStore';
 import type { NodeConfig } from '../config';
-import { OWNER_AUTH_HEADERS, PROTOCOL_VERSION } from '../constants';
 import { buildSignedEnvelope, generateTestKeyPair, recordIdOf, type TestKeyPair } from './helpers/signEnvelope';
 
 function makeConfig(ownerPublicKey: string): NodeConfig {
@@ -26,14 +32,19 @@ function makeConfig(ownerPublicKey: string): NodeConfig {
     dataDir: '/tmp/oxy-node-test',
     databasePath: ':memory:',
     maxBlobBytes: 25 * 1024 * 1024,
-    protocolVersion: PROTOCOL_VERSION,
+    protocolId: PROTOCOL_VERSION,
+    serviceType: DEFAULT_SERVICE_TYPE,
+    wellKnownPath: DEFAULT_WELL_KNOWN_PATH,
+    appNamespace: DEFAULT_APP_NAMESPACE,
+    collections: [],
+    envPrefix: 'OXY_NODE_',
   };
 }
 
 /** Build the owner-signed headers authorizing a blob pin. */
 async function ownerBlobPinHeaders(owner: TestKeyPair, hash: string): Promise<Record<string, string>> {
   const timestamp = Date.now();
-  const signature = await SignatureService.signWithKey(`oxy-node:blob-pin:${hash}:${timestamp}`, owner.privateKey);
+  const signature = await signMessage(`oxy-node:blob-pin:${hash}:${timestamp}`, owner.privateKey);
   return {
     [OWNER_AUTH_HEADERS.publicKey]: owner.publicKey,
     [OWNER_AUTH_HEADERS.signature]: signature,
@@ -63,6 +74,7 @@ describe('node HTTP API', () => {
       nodePublicKey: owner.publicKey.toLowerCase(),
       mode: 'self-hosted',
       version: PROTOCOL_VERSION,
+      serviceType: DEFAULT_SERVICE_TYPE,
       head: null,
     });
   });

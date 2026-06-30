@@ -20,7 +20,7 @@
 
 import type { UpdateQuery } from 'mongoose';
 import { z } from 'zod';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput } from '@oxyhq/protocol';
 import { safeFetch } from '@oxyhq/core/server';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import UserNode, { type IUserNode, type UserNodeMode, type UserNodeController } from '../models/UserNode';
@@ -446,8 +446,8 @@ export async function provisionManagedVault(userId: string): Promise<ProvisionMa
     const envelope: SignedRecordEnvelope = { ...fields, signature };
 
     // The subject account's own verification methods are NOT consulted for a
-    // custodial record (issuer === OXY_DID), so an empty subject suffices.
-    const result = await verifyAndStoreRecord(envelope, { publicKey: null, authMethods: [] }, userId);
+    // custodial record (issuer === OXY_DID); the resolver resolves the subject.
+    const result = await verifyAndStoreRecord(envelope, userId);
     if (result.ok) {
       stored = true;
       break;

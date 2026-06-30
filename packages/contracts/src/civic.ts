@@ -389,7 +389,8 @@ export const vouchResultSchema: z.ZodType<VouchResult> = z.object({
 // A Verifiable Credential (VC) is an issuer (an employer / course / app that
 // holds a DID) cryptographically attesting a claim ABOUT a holder (e.g. "worked
 // at X 2020–2024", "completed course Y"). It is a SIGNED record (envelope
-// `type: 'credential'`, already in `SignedRecordType`) verifiable OFFLINE
+// `type: 'credential'`, an Oxy record type in `OxySignedRecordType`) verifiable
+// OFFLINE
 // against the issuer DID's current verification method plus a revocation check.
 //
 // Two issuance modes share this ONE wire shape (`record.about` is ALWAYS the

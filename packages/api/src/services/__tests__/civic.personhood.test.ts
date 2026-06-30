@@ -32,8 +32,11 @@ const mockTxnFindOne = jest.fn();
 const mockTxnCount = jest.fn();
 
 jest.mock('../signedRecord.service', () => ({
-  verifyEnvelopeSignature: (...a: unknown[]) => mockVerifySig(...a),
   verifyAndStoreRecord: (...a: unknown[]) => mockVerifyAndStore(...a),
+}));
+jest.mock('@oxyhq/protocol', () => ({
+  ...jest.requireActual('@oxyhq/protocol'),
+  verifyEnvelopeSignature: (...a: unknown[]) => mockVerifySig(...a),
 }));
 jest.mock('../civic/graphExclusion', () => ({
   isSockPuppetRelation: (...a: unknown[]) => mockIsSockPuppet(...a),

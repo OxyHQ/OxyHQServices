@@ -66,14 +66,16 @@ jest.mock(
 );
 
 // Production code routes platform-specific module loads through
-// `platformCrypto`, which ships in two physical variants on disk
-// (`platformCrypto.ts` / `platformCrypto.react-native.ts`) selected by the
-// consumer's bundler. Jest runs on Node — it picks the default variant,
-// which references Node's built-in `crypto`, not `expo-*`. For the test
-// suite to exercise the RN code paths, we mock the helper module to
-// delegate to the virtual `expo-*` modules registered above.
-jest.mock('../../utils/platformCrypto', () => ({
+// `@oxyhq/protocol`'s `platform/crypto`, which ships in two physical variants
+// on disk (`crypto.ts` / `crypto.native.ts`) selected by the consumer's
+// bundler. Jest runs on Node — it picks the default variant, which references
+// Node's built-in `crypto`, not `expo-*`. For the test suite to exercise the
+// RN code paths, we override only the platform loaders to delegate to the
+// virtual `expo-*` modules registered above, keeping every other protocol
+// export (canonical bytes, signing, the platform predicates) real.
+jest.mock('@oxyhq/protocol', () => ({
   __esModule: true,
+  ...jest.requireActual('@oxyhq/protocol'),
   loadExpoCrypto: async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require('expo-crypto');

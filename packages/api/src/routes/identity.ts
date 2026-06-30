@@ -31,6 +31,8 @@ import {
   domainVerificationRequestSchema,
   domainVerificationInstructionsSchema,
   type SignedRecordEnvelope,
+  type ChainHeadResponse,
+  type LogPageResponse,
 } from '@oxyhq/contracts';
 import { User } from '../models/User';
 import type { VerifiedDomainMethod } from '../models/User';
@@ -40,7 +42,6 @@ import {
   verifyAndStoreRecord,
   verifyEnvelope,
   getLatestRecord,
-  type SignedRecordSubject,
 } from '../services/signedRecord.service';
 import { getHead, getPublicLogSince, resolveCursorSeq } from '../services/repoLog.service';
 import { materializeNodeFromRecord } from '../services/nodeRegistry.service';
@@ -191,12 +192,7 @@ router.post(
     }
 
     const envelope = req.body as SignedRecordEnvelope;
-    const subject: SignedRecordSubject = {
-      publicKey: req.user?.publicKey,
-      authMethods: req.user?.authMethods,
-    };
-
-    const result = await verifyAndStoreRecord(envelope, subject, userId);
+    const result = await verifyAndStoreRecord(envelope, userId);
     if (!result.ok) {
       throw new BadRequestError(`Signed record rejected: ${result.reason}`);
     }
@@ -235,13 +231,12 @@ router.get(
     }
 
     const head = await getHead(userId);
+    const payload: ChainHeadResponse = head
+      ? { headRecordId: head.headRecordId, seq: head.seq, recordCount: head.recordCount }
+      : { headRecordId: null, seq: -1, recordCount: 0 };
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=5');
-    res.json(
-      head
-        ? { headRecordId: head.headRecordId, seq: head.seq, recordCount: head.recordCount }
-        : { headRecordId: null, seq: -1, recordCount: 0 },
-    );
+    res.json(payload);
   }),
 );
 
@@ -280,9 +275,10 @@ router.get(
     const limitRaw = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : Number.NaN;
     const records = await getPublicLogSince(userId, sinceSeq, Number.isFinite(limitRaw) ? limitRaw : undefined);
 
+    const page: LogPageResponse = { records, count: records.length };
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=5');
-    res.json({ records, count: records.length });
+    res.json(page);
   }),
 );
 
@@ -302,13 +298,12 @@ router.get(
     }
 
     const head = await getHead(userId);
+    const payload: ChainHeadResponse = head
+      ? { headRecordId: head.headRecordId, seq: head.seq, recordCount: head.recordCount }
+      : { headRecordId: null, seq: -1, recordCount: 0 };
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=5');
-    res.json(
-      head
-        ? { seq: head.seq, headRecordId: head.headRecordId, recordCount: head.recordCount }
-        : { seq: -1, headRecordId: null, recordCount: 0 },
-    );
+    res.json(payload);
   }),
 );
 
@@ -355,11 +350,7 @@ router.get(
       throw new NotFoundError('Record not found');
     }
 
-    const verification = await verifyEnvelope(
-      record.envelope,
-      { publicKey: subjectUser.publicKey, authMethods: subjectUser.authMethods },
-      userId,
-    );
+    const verification = await verifyEnvelope(record.envelope, userId);
 
     res.json({
       verified: verification.ok,

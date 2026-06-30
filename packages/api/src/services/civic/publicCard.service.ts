@@ -18,7 +18,7 @@
 
 import type { PublicCard, SignedPublicCard, ExportAttestation, PersonhoodStatus as PersonhoodStatusValue } from '@oxyhq/contracts';
 import { signedPublicCardSchema } from '@oxyhq/contracts';
-import { canonicalize } from '@oxyhq/core';
+import { canonicalize } from '@oxyhq/protocol';
 import { User } from '../../models/User';
 import { ReputationBalance } from '../../models/ReputationBalance';
 import PersonhoodStatusModel from '../../models/PersonhoodStatus';

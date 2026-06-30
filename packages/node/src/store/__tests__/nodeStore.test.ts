@@ -1,12 +1,21 @@
 /**
- * NodeStore unit tests — append/continuity, log cursor + cap, head, record
- * materialization, and content-addressed blob storage.
+ * NodeStore unit tests — the SQLite store as a `@oxyhq/protocol`
+ * `RecordStore`/`BlobStore`: append/continuity (via the shared `checkContinuity`),
+ * log cursor + cap, head, record materialization, the freshness frontier, and
+ * content-addressed blob storage. Same behaviour as before the protocol reshape;
+ * the internals now delegate continuity to the shared engine and the methods are
+ * async + subject-keyed.
  */
 
-import { NodeStore, BlobHashMismatchError } from '../nodeStore';
 import { createHash } from 'node:crypto';
+import { BlobHashMismatchError } from '@oxyhq/protocol/node';
+import { NodeStore } from '../nodeStore';
 import { buildSignedEnvelope, generateTestKeyPair, recordIdOf, type TestKeyPair } from '../../__tests__/helpers/signEnvelope';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
+
+// A node holds one subject's repo; the store keys a single global chain and
+// ignores the subject argument, so any value works here.
+const SUBJECT = 'did:web:api.oxy.so:u:test-owner';
 
 describe('NodeStore', () => {
   let store: NodeStore;
@@ -34,18 +43,18 @@ describe('NodeStore', () => {
       ...over,
     });
     const recordId = await recordIdOf(envelope);
-    const outcome = store.appendRecord(envelope, recordId);
+    const outcome = await store.append(SUBJECT, envelope, recordId);
     expect(outcome.ok).toBe(true);
     return { envelope, recordId };
   }
 
   it('appends a genesis record and advances the head', async () => {
-    expect(store.getHead()).toBeNull();
+    expect(await store.getHead(SUBJECT)).toBeNull();
 
     const { recordId } = await appendGenesis();
 
-    const head = store.getHead();
-    expect(head).toEqual({ seq: 0, headRecordId: recordId, recordCount: 1 });
+    const head = await store.getHead(SUBJECT);
+    expect(head).toEqual({ headRecordId: recordId, seq: 0, recordCount: 1 });
   });
 
   it('appends a chain of records with correct prev/seq linkage', async () => {
@@ -59,10 +68,10 @@ describe('NodeStore', () => {
       record: { step: 2 },
     });
     const secondId = await recordIdOf(second);
-    const outcome = store.appendRecord(second, secondId);
+    const outcome = await store.append(SUBJECT, second, secondId);
 
     expect(outcome).toEqual({ ok: true, recordId: secondId, seq: 1 });
-    expect(store.getHead()).toEqual({ seq: 1, headRecordId: secondId, recordCount: 2 });
+    expect(await store.getHead(SUBJECT)).toEqual({ headRecordId: secondId, seq: 1, recordCount: 2 });
   });
 
   it('rejects a chain GAP (first record is not genesis)', async () => {
@@ -74,8 +83,8 @@ describe('NodeStore', () => {
     });
     const recordId = await recordIdOf(envelope);
 
-    expect(store.appendRecord(envelope, recordId)).toEqual({ ok: false, reason: 'chain_gap' });
-    expect(store.getHead()).toBeNull();
+    expect(await store.append(SUBJECT, envelope, recordId)).toEqual({ ok: false, reason: 'chain_gap' });
+    expect(await store.getHead(SUBJECT)).toBeNull();
   });
 
   it('rejects a chain FORK (prev does not match the head)', async () => {
@@ -89,8 +98,8 @@ describe('NodeStore', () => {
     });
     const forkId = await recordIdOf(fork);
 
-    expect(store.appendRecord(fork, forkId)).toEqual({ ok: false, reason: 'chain_fork' });
-    expect(store.getHead()?.seq).toBe(0);
+    expect(await store.append(SUBJECT, fork, forkId)).toEqual({ ok: false, reason: 'chain_fork' });
+    expect((await store.getHead(SUBJECT))?.seq).toBe(0);
   });
 
   it('rejects a bad seq (does not extend the head by exactly one)', async () => {
@@ -104,7 +113,7 @@ describe('NodeStore', () => {
     });
     const skipId = await recordIdOf(skip);
 
-    expect(store.appendRecord(skip, skipId)).toEqual({ ok: false, reason: 'bad_seq' });
+    expect(await store.append(SUBJECT, skip, skipId)).toEqual({ ok: false, reason: 'bad_seq' });
   });
 
   it('returns the ordered log from a cursor and caps the limit', async () => {
@@ -119,27 +128,31 @@ describe('NodeStore', () => {
         record: { seq },
       });
       const id = await recordIdOf(envelope);
-      expect(store.appendRecord(envelope, id).ok).toBe(true);
+      expect((await store.append(SUBJECT, envelope, id)).ok).toBe(true);
       ids.push(id);
       prev = id;
     }
 
-    const all = store.getLogSince(undefined, 100);
-    expect(all.map((entry) => entry.seq)).toEqual([0, 1, 2, 3, 4]);
+    const all = await store.getLogSince(SUBJECT, -1, 100);
+    expect(all.map((env) => env.seq)).toEqual([0, 1, 2, 3, 4]);
 
-    const afterSeq1 = store.getLogSince(1, 100);
-    expect(afterSeq1.map((entry) => entry.seq)).toEqual([2, 3, 4]);
+    const afterSeq1 = await store.getLogSince(SUBJECT, 1, 100);
+    expect(afterSeq1.map((env) => env.seq)).toEqual([2, 3, 4]);
 
-    const afterRecordId = store.getLogSince(ids[2], 100);
-    expect(afterRecordId.map((entry) => entry.seq)).toEqual([3, 4]);
+    // A recordId cursor resolves to its seq, then the numeric log slice follows.
+    const afterRecordSeq = await store.resolveCursorSeq(SUBJECT, ids[2]);
+    expect(afterRecordSeq).toBe(2);
+    const afterRecordId = await store.getLogSince(SUBJECT, afterRecordSeq as number, 100);
+    expect(afterRecordId.map((env) => env.seq)).toEqual([3, 4]);
 
-    const capped = store.getLogSince(undefined, 2);
-    expect(capped.map((entry) => entry.seq)).toEqual([0, 1]);
+    const capped = await store.getLogSince(SUBJECT, -1, 2);
+    expect(capped.map((env) => env.seq)).toEqual([0, 1]);
 
-    expect(store.getLogSince('f'.repeat(64), 100)).toEqual([]);
+    // An unknown recordId cursor resolves to null (the app then serves an empty page).
+    expect(await store.resolveCursorSeq(SUBJECT, 'f'.repeat(64))).toBeNull();
   });
 
-  it('materializes the latest version of a record key', async () => {
+  it('materializes the latest version of a record key + its freshness frontier', async () => {
     const { recordId: v0 } = await appendGenesis({ collection: 'app.oxy.profile', rkey: 'self', record: { bio: 'v0' } });
 
     const v1 = await buildSignedEnvelope({
@@ -150,33 +163,37 @@ describe('NodeStore', () => {
       collection: 'app.oxy.profile',
       rkey: 'self',
       record: { bio: 'v1' },
+      issuedAt: 1_700_000_001_000,
     });
     const v1Id = await recordIdOf(v1);
-    expect(store.appendRecord(v1, v1Id).ok).toBe(true);
+    expect((await store.append(SUBJECT, v1, v1Id)).ok).toBe(true);
 
-    const latest = store.getRecord('app.oxy.profile', 'self');
+    const latest = await store.materializeCurrent(SUBJECT, 'app.oxy.profile', 'self');
     expect(latest?.seq).toBe(1);
-    expect(latest?.envelope.record).toEqual({ bio: 'v1' });
-    expect(store.getRecord('app.oxy.profile', 'missing')).toBeNull();
+    expect(latest?.record).toEqual({ bio: 'v1' });
+    expect(await store.materializeCurrent(SUBJECT, 'app.oxy.profile', 'missing')).toBeNull();
+
+    // The freshness frontier is the latest record's issuedAt for that key.
+    expect(await store.latestIssuedAtForKey(SUBJECT, v1)).toBe(1_700_000_001_000);
   });
 
-  it('stores and serves a content-addressed blob', () => {
+  it('stores and serves a content-addressed blob', async () => {
     const bytes = Buffer.from('hello blob world');
     const hash = createHash('sha256').update(bytes).digest('hex');
 
-    expect(store.getBlob(hash)).toBeNull();
-    store.putBlob(hash, bytes);
-    expect(store.getBlob(hash)?.equals(bytes)).toBe(true);
+    expect(await store.getBlob(hash)).toBeNull();
+    await store.putBlob(hash, bytes);
+    expect(Buffer.from((await store.getBlob(hash)) as Uint8Array).equals(bytes)).toBe(true);
 
     // Idempotent re-pin is a no-op.
-    expect(() => store.putBlob(hash, bytes)).not.toThrow();
+    await expect(store.putBlob(hash, bytes)).resolves.toBeUndefined();
   });
 
-  it('rejects a blob whose bytes do not hash to the address', () => {
+  it('rejects a blob whose bytes do not hash to the address', async () => {
     const bytes = Buffer.from('the real bytes');
     const wrongHash = createHash('sha256').update(Buffer.from('different bytes')).digest('hex');
 
-    expect(() => store.putBlob(wrongHash, bytes)).toThrow(BlobHashMismatchError);
-    expect(store.getBlob(wrongHash)).toBeNull();
+    await expect(store.putBlob(wrongHash, bytes)).rejects.toThrow(BlobHashMismatchError);
+    expect(await store.getBlob(wrongHash)).toBeNull();
   });
 });

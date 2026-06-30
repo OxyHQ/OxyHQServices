@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "bun --watch src/server.ts",
-    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/core build && tsc",
+    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/protocol build && bun run --filter @oxyhq/core build && tsc",
     "clean": "rm -rf dist",
     "migrate:locations": "bun run src/utils/migrateLocations.ts",
     "register:commons-clients": "bun run scripts/register-commons-clients.ts",
@@ -53,6 +53,7 @@
     "@node-rs/argon2": "^2.0.2",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
+    "@oxyhq/protocol": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/cheerio": "^0.22.35",
     "@types/compression": "^1.8.1",

@@ -2,64 +2,45 @@
  * NodeStore — the node's durable, append-only signed-record log and blob store,
  * backed by `better-sqlite3` (synchronous, single-file, on-disk).
  *
- * Responsibilities:
+ * It IMPLEMENTS the app-agnostic `@oxyhq/protocol` {@link RecordStore} +
+ * {@link BlobStore} interfaces, so the generic `createNodeApp` engine drives it
+ * with no node-specific knowledge:
  *  - Append v2 signed-record envelopes, enforcing per-subject hash-chain
- *    continuity (`prev === head`, `seq === head.seq + 1`; genesis = `seq 0`,
- *    `prev null`). Gaps/forks are rejected; the unique `seq`/`record_id` indexes
- *    are the concurrency backstop (surfaced as `chain_conflict`).
- *  - Serve the ordered log from a cursor (`getLogSince`) and the chain head
- *    (`getHead`) for Oxy ingest.
- *  - Materialize the latest version of a record key (`getRecord`).
- *  - Pin and serve content-addressed blobs (`putBlob` / `getBlob`), validating
- *    the bytes hash to the supplied address.
+ *    continuity via the shared `checkContinuity` (no hand-rolled copy). Gaps/
+ *    forks are rejected; the unique `seq`/`record_id` indexes are the
+ *    concurrency backstop, surfaced as `chain_conflict` on `SQLITE_CONSTRAINT`.
+ *  - Serve the ordered log from a numeric cursor (`getLogSince`), resolve a
+ *    `recordId` cursor to its `seq` (`resolveCursorSeq`), and the chain head
+ *    (`getHead`).
+ *  - Materialize the latest version of a record key (`materializeCurrent`) and
+ *    its freshness frontier (`latestIssuedAtForKey`).
+ *  - Pin and serve content-addressed blobs (`putBlob` / `getBlob`).
+ *
+ * A node holds exactly ONE subject's repo (a single per-subject chain mirroring
+ * Oxy's `RepoHead`), so the `subject` argument required by the interface is
+ * accepted but not used to partition storage — `seq` is globally monotonic.
  *
  * Signature verification and `recordId` computation happen OUTSIDE this class
- * (in {@link ../verify.ts}, reusing `@oxyhq/core`); the store is the integrity
- * and persistence layer and trusts the `recordId` passed to {@link appendRecord}.
- * All SQL goes through prepared statements with bound parameters.
+ * (in `createNodeApp` via `@oxyhq/protocol`); the store is the integrity and
+ * persistence layer and trusts the `recordId` passed to {@link append}. All SQL
+ * goes through prepared statements with bound parameters.
  */
 
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
+import {
+  type AppendOutcome,
+  type ChainHead,
+  type BlobStore,
+  type RecordStore,
+  checkContinuity,
+} from '@oxyhq/protocol';
+import { BlobHashMismatchError } from '@oxyhq/protocol/node';
 import { SCHEMA_SQL } from './schema.js';
 
 type DatabaseInstance = Database.Database;
 type PreparedStatement = Database.Statement;
-
-/** A materialized log entry: chain coordinates + the full stored envelope. */
-export interface StoredRecord {
-  seq: number;
-  collection: string;
-  rkey: string;
-  recordId: string;
-  prev: string | null;
-  issuedAt: number;
-  envelope: SignedRecordEnvelope;
-}
-
-/** The current chain head (single per-subject head). */
-export interface HeadInfo {
-  seq: number;
-  headRecordId: string;
-  recordCount: number;
-}
-
-/** Outcome of appending a record to the chain. */
-export type AppendOutcome =
-  | { ok: true; recordId: string; seq: number }
-  | { ok: false; reason: 'not_v2' | 'chain_gap' | 'chain_fork' | 'bad_seq' | 'chain_conflict' };
-
-/** Thrown by {@link NodeStore.putBlob} when the bytes do not hash to the address. */
-export class BlobHashMismatchError extends Error {
-  constructor(
-    public readonly expected: string,
-    public readonly actual: string,
-  ) {
-    super(`blob hash mismatch: expected ${expected}, computed ${actual}`);
-    this.name = 'BlobHashMismatchError';
-  }
-}
 
 interface RecordRow {
   seq: number;
@@ -81,12 +62,17 @@ interface SeqRow {
   seq: number;
 }
 
+interface IssuedAtRow {
+  issued_at: number;
+}
+
 interface BlobRow {
   bytes: Buffer;
 }
 
 /** Pre-narrowed arguments to the atomic append transaction. */
 interface AppendArgs {
+  env: SignedRecordEnvelope;
   seq: number;
   collection: string;
   rkey: string;
@@ -95,9 +81,6 @@ interface AppendArgs {
   envelopeJson: string;
   recordId: string;
 }
-
-/** A 64-char lowercase SHA-256 hex digest (the blob/record content address). */
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 function isSqliteConstraintError(error: unknown): boolean {
   return (
@@ -108,23 +91,24 @@ function isSqliteConstraintError(error: unknown): boolean {
   );
 }
 
-function sha256Hex(bytes: Buffer): string {
+function sha256Hex(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export class NodeStore {
+export class NodeStore implements RecordStore, BlobStore {
   private readonly db: DatabaseInstance;
 
   private readonly insertRecordStmt: PreparedStatement;
   private readonly upsertHeadStmt: PreparedStatement;
   private readonly getHeadStmt: PreparedStatement;
   private readonly getRecordStmt: PreparedStatement;
+  private readonly latestIssuedAtStmt: PreparedStatement;
   private readonly logSinceStmt: PreparedStatement;
   private readonly seqByRecordIdStmt: PreparedStatement;
   private readonly putBlobStmt: PreparedStatement;
   private readonly getBlobStmt: PreparedStatement;
 
-  /** The atomic append: continuity check + record insert + head advance. */
+  /** The atomic append: shared continuity check + record insert + head advance. */
   private readonly appendTxn: (args: AppendArgs) => AppendOutcome;
 
   /**
@@ -155,6 +139,10 @@ export class NodeStore {
        FROM records WHERE collection = @collection AND rkey = @rkey
        ORDER BY seq DESC LIMIT 1`,
     );
+    this.latestIssuedAtStmt = this.db.prepare(
+      `SELECT issued_at FROM records WHERE collection = @collection AND rkey = @rkey
+       ORDER BY seq DESC LIMIT 1`,
+    );
     this.logSinceStmt = this.db.prepare(
       `SELECT seq, collection, rkey, record_id, prev, issued_at, envelope
        FROM records WHERE seq > @since ORDER BY seq ASC LIMIT @limit`,
@@ -168,58 +156,63 @@ export class NodeStore {
     this.getBlobStmt = this.db.prepare(`SELECT bytes FROM blobs WHERE hash = @hash`);
 
     this.appendTxn = this.db.transaction((args: AppendArgs): AppendOutcome => {
-      const { seq, collection, rkey, prev, issuedAt, envelopeJson, recordId } = args;
+      const headRow = this.getHeadStmt.get() as HeadRow | undefined;
+      const head: ChainHead | null = headRow
+        ? { headRecordId: headRow.head_record_id, seq: headRow.seq, recordCount: headRow.record_count }
+        : null;
 
-      const head = this.getHeadStmt.get() as HeadRow | undefined;
-      const isGenesis = seq === 0 && prev === null;
-
-      if (!head) {
-        if (!isGenesis) {
-          return { ok: false, reason: 'chain_gap' };
-        }
-      } else {
-        if (prev !== head.head_record_id) {
-          return { ok: false, reason: 'chain_fork' };
-        }
-        if (seq !== head.seq + 1) {
-          return { ok: false, reason: 'bad_seq' };
-        }
+      // Single source of continuity truth — the shared protocol check (no copy).
+      const continuity = checkContinuity(head, args.env);
+      if (!continuity.ok) {
+        return { ok: false, reason: continuity.reason };
       }
 
       this.insertRecordStmt.run({
-        seq,
-        collection,
-        rkey,
-        record_id: recordId,
-        prev,
-        issued_at: issuedAt,
-        envelope: envelopeJson,
+        seq: args.seq,
+        collection: args.collection,
+        rkey: args.rkey,
+        record_id: args.recordId,
+        prev: args.prev,
+        issued_at: args.issuedAt,
+        envelope: args.envelopeJson,
       });
-      this.upsertHeadStmt.run({ seq, head_record_id: recordId });
+      this.upsertHeadStmt.run({ seq: args.seq, head_record_id: args.recordId });
 
-      return { ok: true, recordId, seq };
+      return { ok: true, recordId: args.recordId, seq: args.seq };
     });
   }
 
+  /** The current chain head, or `null` for an empty log. The `subject` is ignored (single-subject node). */
+  async getHead(_subject: string): Promise<ChainHead | null> {
+    const row = this.getHeadStmt.get() as HeadRow | undefined;
+    if (!row) {
+      return null;
+    }
+    return { headRecordId: row.head_record_id, seq: row.seq, recordCount: row.record_count };
+  }
+
   /**
-   * Append a verified v2 envelope, enforcing chain continuity. The envelope's
-   * signature and `recordId` MUST already have been verified (see
-   * {@link ../verify.ts}). Returns a typed outcome rather than throwing on a
-   * chain violation so the route maps it to a 4xx.
+   * Append a verified v2 envelope, enforcing chain continuity via the shared
+   * protocol check. The envelope's signature and `recordId` MUST already have
+   * been verified (in `createNodeApp`). Returns a typed outcome rather than
+   * throwing on a chain violation so the route maps it to a 4xx; a unique-index
+   * collision (concurrent writer) surfaces as `chain_conflict`.
+   *
+   * A node holds a v2 hash chain — a non-v2 envelope can never reach this store
+   * (the node app rejects it as `not_v2` before append), so this requires v2.
    */
-  appendRecord(env: SignedRecordEnvelope, recordId: string): AppendOutcome {
+  async append(_subject: string, env: SignedRecordEnvelope, recordId: string): Promise<AppendOutcome> {
     if (
       env.version !== 2 ||
       typeof env.seq !== 'number' ||
       typeof env.collection !== 'string' ||
       typeof env.rkey !== 'string'
     ) {
-      return { ok: false, reason: 'not_v2' };
+      throw new TypeError('NodeStore.append requires a v2 envelope with seq/collection/rkey');
     }
 
-    // After the guards above, the chain fields are narrowed to their concrete
-    // types; pass them explicitly so the transaction needs no casts.
     const args: AppendArgs = {
+      env,
       seq: env.seq,
       collection: env.collection,
       rkey: env.rkey,
@@ -239,34 +232,35 @@ export class NodeStore {
     }
   }
 
-  /** The current chain head, or `null` for an empty log. */
-  getHead(): HeadInfo | null {
-    const row = this.getHeadStmt.get() as HeadRow | undefined;
-    if (!row) {
+  /** Ordered log entries strictly AFTER the numeric `sinceSeq` cursor (`-1` = from genesis). */
+  async getLogSince(_subject: string, sinceSeq: number, limit: number): Promise<SignedRecordEnvelope[]> {
+    const rows = this.logSinceStmt.all({ since: sinceSeq, limit }) as RecordRow[];
+    return rows.map((row) => JSON.parse(row.envelope) as SignedRecordEnvelope);
+  }
+
+  /** Resolve a `recordId` cursor to its chain `seq`, or `null` when unknown. */
+  async resolveCursorSeq(_subject: string, recordId: string): Promise<number | null> {
+    const row = this.seqByRecordIdStmt.get({ record_id: recordId.toLowerCase() }) as SeqRow | undefined;
+    return row ? row.seq : null;
+  }
+
+  /** The latest (highest-`seq`) envelope for a record key, or `null`. */
+  async materializeCurrent(
+    _subject: string,
+    collection: string,
+    rkey: string,
+  ): Promise<SignedRecordEnvelope | null> {
+    const row = this.getRecordStmt.get({ collection, rkey }) as RecordRow | undefined;
+    return row ? (JSON.parse(row.envelope) as SignedRecordEnvelope) : null;
+  }
+
+  /** The `issuedAt` of the latest record for the envelope's `(collection, rkey)` key, or `null`. */
+  async latestIssuedAtForKey(_subject: string, env: SignedRecordEnvelope): Promise<number | null> {
+    if (env.version !== 2 || typeof env.collection !== 'string' || typeof env.rkey !== 'string') {
       return null;
     }
-    return { seq: row.seq, headRecordId: row.head_record_id, recordCount: row.record_count };
-  }
-
-  /**
-   * Ordered log entries strictly AFTER the `since` cursor.
-   *
-   * `since` may be a numeric `seq` (string or number) or a 64-hex `recordId`;
-   * absent → from the start. An unknown `recordId` cursor yields an empty page.
-   */
-  getLogSince(since: string | number | undefined, limit: number): StoredRecord[] {
-    const sinceSeq = this.resolveCursor(since);
-    if (sinceSeq === null) {
-      return [];
-    }
-    const rows = this.logSinceStmt.all({ since: sinceSeq, limit }) as RecordRow[];
-    return rows.map((row) => this.toStoredRecord(row));
-  }
-
-  /** The latest (highest-`seq`) version of a record key, or `null`. */
-  getRecord(collection: string, rkey: string): StoredRecord | null {
-    const row = this.getRecordStmt.get({ collection, rkey }) as RecordRow | undefined;
-    return row ? this.toStoredRecord(row) : null;
+    const row = this.latestIssuedAtStmt.get({ collection: env.collection, rkey: env.rkey }) as IssuedAtRow | undefined;
+    return row ? row.issued_at : null;
   }
 
   /**
@@ -275,17 +269,21 @@ export class NodeStore {
    *
    * @throws {BlobHashMismatchError} when the bytes do not hash to `hash`.
    */
-  putBlob(hash: string, bytes: Buffer): void {
+  async putBlob(hash: string, bytes: Uint8Array): Promise<void> {
+    if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) {
+      throw new TypeError('invalid_blob_bytes');
+    }
+    const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
     const address = hash.toLowerCase();
-    const actual = sha256Hex(bytes);
+    const actual = sha256Hex(buf);
     if (actual !== address) {
       throw new BlobHashMismatchError(address, actual);
     }
-    this.putBlobStmt.run({ hash: address, bytes, size: bytes.length, created_at: Date.now() });
+    this.putBlobStmt.run({ hash: address, bytes: buf, size: buf.length, created_at: Date.now() });
   }
 
   /** The bytes of a pinned blob, or `null` if absent. */
-  getBlob(hash: string): Buffer | null {
+  async getBlob(hash: string): Promise<Uint8Array | null> {
     const row = this.getBlobStmt.get({ hash: hash.toLowerCase() }) as BlobRow | undefined;
     return row ? row.bytes : null;
   }
@@ -293,41 +291,5 @@ export class NodeStore {
   /** Close the underlying database (graceful shutdown / test teardown). */
   close(): void {
     this.db.close();
-  }
-
-  /**
-   * Resolve a cursor to the exclusive lower-bound `seq`.
-   * Returns `-1` (all records) for an absent cursor and `null` for an
-   * unresolvable `recordId`.
-   */
-  private resolveCursor(since: string | number | undefined): number | null {
-    if (since === undefined || since === null || since === '') {
-      return -1;
-    }
-    if (typeof since === 'number') {
-      return Number.isInteger(since) ? since : -1;
-    }
-    if (SHA256_HEX.test(since.toLowerCase())) {
-      const row = this.seqByRecordIdStmt.get({ record_id: since.toLowerCase() }) as SeqRow | undefined;
-      return row ? row.seq : null;
-    }
-    if (/^\d+$/.test(since)) {
-      const parsed = Number(since);
-      return Number.isSafeInteger(parsed) ? parsed : -1;
-    }
-    // An unrecognized cursor shape resolves to nothing rather than dumping the log.
-    return null;
-  }
-
-  private toStoredRecord(row: RecordRow): StoredRecord {
-    return {
-      seq: row.seq,
-      collection: row.collection,
-      rkey: row.rkey,
-      recordId: row.record_id,
-      prev: row.prev,
-      issuedAt: row.issued_at,
-      envelope: JSON.parse(row.envelope) as SignedRecordEnvelope,
-    };
   }
 }

@@ -1,6 +1,6 @@
 import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { isReactNative } from '../utils/platform';
+import { isReactNative } from '@oxyhq/protocol';
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {

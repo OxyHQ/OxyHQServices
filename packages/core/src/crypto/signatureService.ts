@@ -1,108 +1,26 @@
 /**
- * Signature Service - ECDSA Digital Signatures
- * 
- * Handles signing and verification of messages using ECDSA secp256k1.
- * Used for authenticating requests and proving identity ownership.
+ * Signature Service - ECDSA Digital Signatures (device-key bound)
+ *
+ * Handles signing and verification of messages with the user's DEVICE identity
+ * key (read from {@link KeyManager} / secure storage). All cryptography itself —
+ * canonical signing input, SHA-256, secp256k1 sign/verify, envelope assembly —
+ * is delegated to `@oxyhq/protocol`; this service only resolves the key from
+ * storage and orchestrates the protocol primitives.
  */
 
-import { ec as EC } from 'elliptic';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
+import {
+  signEnvelope,
+  signMessage,
+  verifySignature,
+  sha256,
+  loadExpoCrypto,
+  loadNodeCrypto,
+  isReactNative,
+  isNodeJS,
+} from '@oxyhq/protocol';
 import { KeyManager } from './keyManager';
-import { canonicalize } from './canonicalJson';
-import { isReactNative, isNodeJS } from '../utils/platform';
-import { loadExpoCrypto, loadNodeCrypto } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
-import { isDev } from '../shared/utils/debugUtils';
-
-const ec = new EC('secp256k1');
-
-/**
- * The signing-input portion of a {@link SignedRecordEnvelope}: every field
- * EXCEPT the `publicKey` and `signature`. Both the client (when signing) and
- * the server (when verifying) canonicalize exactly these fields, so they agree
- * on the bytes that the signature covers.
- *
- * The v2 chain fields (`seq`/`prev`/`collection`/`rkey`) are optional: a v1
- * envelope omits them and is signed over only the base fields; a v2 envelope
- * carries them and includes them in the signed bytes.
- */
-export type SignedRecordSigningFields = Pick<
-  SignedRecordEnvelope,
-  'version' | 'type' | 'subject' | 'issuer' | 'record' | 'issuedAt'
-> &
-  Partial<Pick<SignedRecordEnvelope, 'seq' | 'prev' | 'collection' | 'rkey'>>;
-
-/**
- * Compute the canonical signing input for a signed-record envelope.
- *
- * This is the single definition of "what the signature covers". `@oxyhq/core`
- * (client signing) and `@oxyhq/api` (server verification) both call this, so a
- * record signed by a client and verified by the server cannot drift.
- *
- * - **v1**: the canonical JSON of `{version, type, subject, issuer, record,
- *   issuedAt}` — BYTE-IDENTICAL to the original scheme, so every signature
- *   already in production keeps verifying.
- * - **v2**: the canonical JSON additionally includes the hash-chain fields
- *   `{seq, prev, collection, rkey}`. Because {@link canonicalize} sorts keys,
- *   the on-the-wire field order is irrelevant; the resulting canonical key
- *   order is `collection, issuedAt, issuer, prev, record, rkey, seq, subject,
- *   type, version`. `prev` is `null` at genesis (serialized as `null`, not
- *   omitted), so it is always part of the signed bytes.
- */
-export function signedRecordSigningInput(fields: SignedRecordSigningFields): string {
-  const { version, type, subject, issuer, record, issuedAt } = fields;
-  if (version === 2) {
-    const { seq, prev, collection, rkey } = fields;
-    return canonicalize({ version, type, subject, issuer, record, issuedAt, seq, prev, collection, rkey });
-  }
-  return canonicalize({ version, type, subject, issuer, record, issuedAt });
-}
-
-/**
- * Compute the `recordId` (content address) of a signed record: the SHA-256 hex
- * digest of its canonical {@link signedRecordSigningInput}.
- *
- * Deterministic and stable across runtimes (it reuses the same canonicalization
- * + SHA-256 the signature itself is built on). The recordId is what `prev`
- * references in the per-subject hash chain, so `@oxyhq/core` (client) and
- * `@oxyhq/api` (server) MUST compute it identically — both call this function.
- * It is taken over the SIGNING input (excluding `publicKey`/`signature`), so it
- * is a pure content address of the record's meaning, independent of who signed.
- */
-export async function computeRecordId(fields: SignedRecordSigningFields): Promise<string> {
-  return sha256(signedRecordSigningInput(fields));
-}
-
-/**
- * Compute SHA-256 hash of a string
- */
-async function sha256(message: string): Promise<string> {
-  // In React Native, use expo-crypto
-  if (isReactNative()) {
-    const Crypto = await loadExpoCrypto();
-    return Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      message
-    );
-  }
-
-  if (isNodeJS()) {
-    try {
-      const nodeCrypto = await loadNodeCrypto();
-      return nodeCrypto.createHash('sha256').update(message).digest('hex');
-    } catch (error) {
-      // Node crypto failed to load — log and fall through to Web Crypto API
-      logger.warn('[oxy.crypto] Node crypto unavailable, falling back to Web Crypto', { component: 'SignatureService' }, error);
-    }
-  }
-
-  // Browser: use Web Crypto API
-  const encoder = new TextEncoder();
-  const data = encoder.encode(message);
-  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 export interface SignedMessage {
   message: string;
@@ -158,78 +76,15 @@ export class SignatureService {
   }
 
   /**
-   * Sign a message using the stored private key
+   * Sign a message using the stored device private key
    * Returns the signature in DER format (hex encoded)
    */
   static async sign(message: string): Promise<string> {
-    const keyPair = await KeyManager.getKeyPairObject();
-    if (!keyPair) {
+    const privateKey = await KeyManager.getPrivateKey();
+    if (!privateKey) {
       throw new Error('No identity found. Please create or import an identity first.');
     }
-
-    const messageHash = await sha256(message);
-    const signature = keyPair.sign(messageHash);
-    return signature.toDER('hex');
-  }
-
-  /**
-   * Sign a message with an explicit private key (without storing)
-   * Useful for one-time operations or testing
-   */
-  static async signWithKey(message: string, privateKey: string): Promise<string> {
-    const keyPair = ec.keyFromPrivate(privateKey);
-    const messageHash = await sha256(message);
-    const signature = keyPair.sign(messageHash);
-    return signature.toDER('hex');
-  }
-
-  /**
-   * Verify a signature against a message and public key
-   *
-   * Returns false on any error (invalid signature, malformed input, etc.).
-   * Errors are logged at debug level so they're available when troubleshooting
-   * signature mismatches but don't surface to the caller.
-   */
-  static async verify(message: string, signature: string, publicKey: string): Promise<boolean> {
-    try {
-      const key = ec.keyFromPublic(publicKey, 'hex');
-      const messageHash = await sha256(message);
-      return key.verify(messageHash, signature);
-    } catch (error) {
-      if (isDev()) {
-        logger.debug('[oxy.crypto] verify() returned false', { component: 'SignatureService' }, error);
-      }
-      return false;
-    }
-  }
-
-  /**
-   * Synchronous verification (for Node.js backend)
-   * Uses crypto module directly for hashing
-   * Note: This method should only be used in Node.js environments
-   */
-  static verifySync(message: string, signature: string, publicKey: string): boolean {
-    try {
-      if (!isNodeJS()) {
-        // In React Native, use async verify instead
-        throw new Error('verifySync should only be used in Node.js. Use verify() in React Native.');
-      }
-      // Intentionally using Function constructor here: this method is synchronous by design
-      // (Node.js backend hot-path) so we cannot use `await import()`. The Function constructor
-      // prevents Metro/bundlers from statically resolving the require. This is acceptable because
-      // verifySync is gated by isNodeJS() and will never execute in browser/RN environments.
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      const getCrypto = new Function('return require("crypto")');
-      const crypto = getCrypto();
-      const key = ec.keyFromPublic(publicKey, 'hex');
-      const messageHash = crypto.createHash('sha256').update(message).digest('hex');
-      return key.verify(messageHash, signature);
-    } catch (error) {
-      if (isDev()) {
-        logger.debug('[oxy.crypto] verifySync() returned false', { component: 'SignatureService' }, error);
-      }
-      return false;
-    }
+    return signMessage(message, privateKey);
   }
 
   /**
@@ -271,7 +126,7 @@ export class SignatureService {
 
     // Verify signature
     const messageWithTimestamp = `${message}:${timestamp}`;
-    return SignatureService.verify(messageWithTimestamp, signature, publicKey);
+    return verifySignature(messageWithTimestamp, signature, publicKey);
   }
 
   /**
@@ -303,9 +158,10 @@ export class SignatureService {
    * Mirrors {@link signChallenge} exactly — same message format
    * (`auth:${publicKey}:${challenge}:${timestamp}`) so the server verification
    * path is unchanged — but sources the shared public/private key from
-   * `KeyManager` and signs with `signWithKey`. Used by "Sign in with Oxy"
-   * same-device shared-keychain SSO (Mechanism A): a sibling native app proves
-   * control of the shared identity to mint its own session.
+   * `KeyManager` and signs with the protocol's explicit-key {@link signMessage}.
+   * Used by "Sign in with Oxy" same-device shared-keychain SSO (Mechanism A): a
+   * sibling native app proves control of the shared identity to mint its own
+   * session.
    *
    * Throws if no shared identity exists (native-only; the shared keychain is
    * unavailable on web).
@@ -319,7 +175,7 @@ export class SignatureService {
 
     const timestamp = Date.now();
     const message = `auth:${publicKey}:${challenge}:${timestamp}`;
-    const signature = await SignatureService.signWithKey(message, privateKey);
+    const signature = await signMessage(message, privateKey);
 
     return {
       challenge: signature,
@@ -345,7 +201,7 @@ export class SignatureService {
     }
 
     const message = `auth:${publicKey}:${originalChallenge}:${timestamp}`;
-    return SignatureService.verify(message, signature, publicKey);
+    return verifySignature(message, signature, publicKey);
   }
 
   /**
@@ -385,12 +241,12 @@ export class SignatureService {
     }
 
     const timestamp = Date.now();
-    
+
     // Create canonical string representation
     const sortedKeys = Object.keys(data).sort();
     const canonicalParts = sortedKeys.map(key => `${key}:${JSON.stringify(data[key])}`);
     const canonicalString = canonicalParts.join('|');
-    
+
     const message = `request:${publicKey}:${timestamp}:${canonicalString}`;
     const signature = await SignatureService.sign(message);
 
@@ -406,9 +262,11 @@ export class SignatureService {
    *
    * The envelope is self-issued: `issuer` equals `subject` (the signer's DID).
    * The signature covers the canonical JSON of every field EXCEPT `publicKey`
-   * and `signature` (see {@link signedRecordSigningInput}); `alg` is
-   * `ES256K-DER-SHA256` (secp256k1 over the SHA-256 of the canonical bytes,
-   * DER-encoded), the same scheme this service uses everywhere else.
+   * and `signature`; `alg` is `ES256K-DER-SHA256` (secp256k1 over the SHA-256 of
+   * the canonical bytes, DER-encoded). The cryptography is delegated to the
+   * protocol's {@link signEnvelope}, which derives the (uncompressed-hex)
+   * `publicKey` from the stored device key — identical to the registered
+   * verification method.
    *
    * Requires a stored identity (native secure storage); throws if none exists.
    *
@@ -421,35 +279,22 @@ export class SignatureService {
     subject: string,
     record: Record<string, unknown>,
   ): Promise<SignedRecordEnvelope> {
-    const publicKey = await KeyManager.getPublicKey();
-    if (!publicKey) {
+    const privateKey = await KeyManager.getPrivateKey();
+    if (!privateKey) {
       throw new Error('No identity found. Please create or import an identity first.');
     }
 
-    const version = 1 as const;
-    const issuer = subject;
-    const issuedAt = Date.now();
-    const signingInput = signedRecordSigningInput({
-      version,
-      type,
-      subject,
-      issuer,
-      record,
-      issuedAt,
-    });
-    const signature = await SignatureService.sign(signingInput);
-
-    return {
-      version,
-      type,
-      subject,
-      issuer,
-      record,
-      issuedAt,
-      publicKey,
-      alg: 'ES256K-DER-SHA256',
-      signature,
-    };
+    return signEnvelope(
+      {
+        version: 1,
+        type,
+        subject,
+        issuer: subject,
+        record,
+        issuedAt: Date.now(),
+      },
+      privateKey,
+    );
   }
 
   /**
@@ -457,8 +302,8 @@ export class SignatureService {
    * fields.
    *
    * Identical to {@link signRecord} (self-issued: `issuer === subject`; same
-   * `ES256K-DER-SHA256` scheme over {@link signedRecordSigningInput}) but
-   * `version` is `2` and the signed bytes additionally cover the chain fields:
+   * `ES256K-DER-SHA256` scheme) but `version` is `2` and the signed bytes
+   * additionally cover the chain fields:
    *
    * @param type - The record category.
    * @param subject - The subject DID the record is about (also the issuer).
@@ -478,60 +323,27 @@ export class SignatureService {
     record: Record<string, unknown>,
     chain: { seq: number; prev: string | null; collection: string; rkey: string },
   ): Promise<SignedRecordEnvelope> {
-    const publicKey = await KeyManager.getPublicKey();
-    if (!publicKey) {
+    const privateKey = await KeyManager.getPrivateKey();
+    if (!privateKey) {
       throw new Error('No identity found. Please create or import an identity first.');
     }
 
-    const version = 2 as const;
-    const issuer = subject;
-    const issuedAt = Date.now();
     const { seq, prev, collection, rkey } = chain;
-    const signingInput = signedRecordSigningInput({
-      version,
-      type,
-      subject,
-      issuer,
-      record,
-      issuedAt,
-      seq,
-      prev,
-      collection,
-      rkey,
-    });
-    const signature = await SignatureService.sign(signingInput);
-
-    return {
-      version,
-      type,
-      subject,
-      issuer,
-      record,
-      issuedAt,
-      seq,
-      prev,
-      collection,
-      rkey,
-      publicKey,
-      alg: 'ES256K-DER-SHA256',
-      signature,
-    };
-  }
-
-  /**
-   * Verify a signed-record envelope: recompute the canonical signing input from
-   * the envelope's own fields and check the signature against the envelope's
-   * `publicKey`.
-   *
-   * Note: this confirms the signature is internally consistent with the
-   * embedded `publicKey`. It does NOT establish that `publicKey` is an
-   * authorized verification method for `subject` — that authorization check is
-   * the server's responsibility (it asserts the key is a current verification
-   * method on the subject's DID).
-   */
-  static async verifyRecord(envelope: SignedRecordEnvelope): Promise<boolean> {
-    const signingInput = signedRecordSigningInput(envelope);
-    return SignatureService.verify(signingInput, envelope.signature, envelope.publicKey);
+    return signEnvelope(
+      {
+        version: 2,
+        type,
+        subject,
+        issuer: subject,
+        record,
+        issuedAt: Date.now(),
+        seq,
+        prev,
+        collection,
+        rkey,
+      },
+      privateKey,
+    );
   }
 }
 

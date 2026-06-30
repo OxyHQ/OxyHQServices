@@ -18,7 +18,7 @@
  * as NDJSON.
  */
 
-import { canonicalize } from '@oxyhq/core';
+import { canonicalize } from '@oxyhq/protocol';
 import type {
   ExportBundle,
   ExportAttestation,
