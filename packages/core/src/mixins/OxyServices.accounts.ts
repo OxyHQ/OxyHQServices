@@ -35,8 +35,6 @@ import type { User } from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
-import { isWeb } from '../utils/platform';
-import { logger } from '../utils/loggerUtils';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -564,37 +562,16 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         // Register the switched session in the device's multi-account set by
         // establishing its first-party refresh cookie. This MUST be a separate
-        // call to `POST /auth/session`: the switch route is at `/accounts/*`,
-        // outside the `oxy_rt_<authuser>` cookie's `Path=/auth` scope, so it can
-        // never read the device's existing slots and would overwrite slot 0
-        // (destroying the operator's own session). `/auth/session` runs where the
-        // cookies ARE visible, so the server allocates a NEW slot that coexists
-        // with the operator's and returns its `authuser`. Web-only; best-effort.
-        let authuser = res.authuser;
-        if (isWeb()) {
-          try {
-            const established = await this.makeRequest<{ accessToken?: string; authuser?: number }>(
-              'POST',
-              '/auth/session',
-              undefined,
-              { cache: false },
-            );
-            if (typeof established?.authuser === 'number') {
-              authuser = established.authuser;
-            }
-            // /auth/session mints a fresh access token off the same session;
-            // re-plant it so the active token matches the rotated cookie.
-            if (established?.accessToken) {
-              this.setTokens(established.accessToken);
-            }
-          } catch (error) {
-            logger.warn(
-              '[OxyServices] Failed to establish device refresh cookie after account switch; the switch is active in-session but may not survive a reload',
-              { component: 'OxyServices', method: 'switchToAccount' },
-              error,
-            );
-          }
-        }
+        // call to `POST /auth/session` (the shared `establishDeviceRefreshSlot`
+        // primitive): the switch route is at `/accounts/*`, outside the
+        // `oxy_rt_<authuser>` cookie's `Path=/auth` scope, so it can never read
+        // the device's existing slots and would overwrite slot 0 (destroying the
+        // operator's own session). `/auth/session` runs where the cookies ARE
+        // visible, so the server allocates a NEW slot that coexists with the
+        // operator's and returns its `authuser`. Web-only; best-effort (the helper
+        // re-plants the rotated access token and returns `null` on native/failure).
+        const establishedAuthuser = await this.establishDeviceRefreshSlot();
+        const authuser = establishedAuthuser ?? res.authuser;
 
         // Identity changed → drop the entire GET response cache so no entry
         // personalised for the previous identity is reused. Cache keys are

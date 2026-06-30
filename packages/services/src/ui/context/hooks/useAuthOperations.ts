@@ -9,7 +9,13 @@ import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
 import { isWebBrowser } from '../../hooks/useWebSSO';
-import { clearActiveAuthuser, clearSsoBounceState } from '../../utils/activeAuthuser';
+import {
+  clearActiveAuthuser,
+  clearSsoBounceState,
+  writeActiveAuthuser,
+  markSignedOut,
+  clearSignedOut,
+} from '../../utils/activeAuthuser';
 import { isCrossApexWeb, CrossApexDirectSignInError } from '../../../utils/crossApex';
 
 export interface UseAuthOperationsOptions {
@@ -132,6 +138,23 @@ export const useAuthOperations = ({
         deviceName,
         deviceFingerprint,
       );
+
+      // Deliberate sign-in re-enables automatic silent restore: clear the durable
+      // "deliberately signed out" flag so a prior sign-out no longer suppresses
+      // the `fedcm-silent` / per-apex iframe cold-boot steps.
+      clearSignedOut();
+
+      // Register this primary session in the device's first-party multi-account
+      // refresh-cookie set so a web key-based sign-in survives reload via
+      // `refresh-all` and coexists with switched accounts. `/auth/verify` mints the
+      // session but (unlike `/auth/login` / `/fedcm/exchange`) does NOT plant an
+      // `oxy_rt_<authuser>` slot, so we establish it here through the shared
+      // `POST /auth/session` primitive. No-op on native and cross-apex (returns
+      // `null`); records the active slot when one is genuinely allocated.
+      const verifyAuthuser = await oxyServices.establishDeviceRefreshSlot();
+      if (typeof verifyAuthuser === 'number') {
+        writeActiveAuthuser(verifyAuthuser);
+      }
 
       // Get full user data
       fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
@@ -260,7 +283,14 @@ export const useAuthOperations = ({
             await switchSession(filteredSessions[0].sessionId);
           } else {
             // Genuine FULL sign-out (no sessions remain): clear the per-origin
-            // SSO bounce state so a fresh deliberate sign-in can re-probe.
+            // SSO bounce state so a fresh deliberate sign-in can re-probe, drop
+            // the persisted active device slot so the next cold boot does not
+            // prioritize a now-signed-out `oxy_active_authuser`, and SET the
+            // deliberately-signed-out flag so the silent cold-boot steps
+            // (`fedcm-silent` / per-apex iframe) do not re-mint a session from a
+            // still-live IdP session on the next reload (mirrors `logoutAll`).
+            markSignedOut();
+            clearActiveAuthuser();
             clearSsoBounceState();
             clearPriorSessionHintSafe(clearPriorSessionHint, logger);
             await clearSessionState();
@@ -322,6 +352,9 @@ export const useAuthOperations = ({
       if (isWebBrowser()) {
         await oxyServices.logoutAllSessionsViaCookie();
         clearActiveAuthuser();
+        // Deliberate full sign-out: suppress automatic silent restore on the next
+        // cold boot so a still-live IdP session does not re-mint a session.
+        markSignedOut();
       }
       // logoutAll is ALWAYS a full sign-out: clear the per-origin SSO bounce
       // state (web-guarded internally) so a fresh sign-in can re-probe, and drop

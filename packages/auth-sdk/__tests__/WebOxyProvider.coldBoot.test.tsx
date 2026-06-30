@@ -100,6 +100,8 @@ jest.mock('@oxyhq/core', () => {
     ssoDestKey: actual.ssoDestKey,
     ssoAttemptedKey: actual.ssoAttemptedKey,
     ssoPriorSessionKey: actual.ssoPriorSessionKey,
+    ssoSignedOutKey: actual.ssoSignedOutKey,
+    silentRestoreSuppressed: actual.silentRestoreSuppressed,
     isCentralIdPOrigin: actual.isCentralIdPOrigin,
     guardActive: actual.guardActive,
     allowSsoBounce: actual.allowSsoBounce,
@@ -156,6 +158,7 @@ import {
   ssoDestKey,
   ssoAttemptedKey,
   ssoPriorSessionKey,
+  ssoSignedOutKey,
   SSO_CALLBACK_PATH,
   buildSsoBounceUrl,
 } from '@oxyhq/core';
@@ -333,6 +336,24 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(latest.userId).toBe('u1');
     expect(stubs.managerInitialize).not.toHaveBeenCalled();
     expect(bounced()).toBe(false);
+  });
+
+  it('5b) DELIBERATELY-SIGNED-OUT gate: fedcm-silent is SKIPPED when the signed-out flag is set', async () => {
+    resetStubs('https://api.test-5b');
+    // FedCM WOULD succeed — but the user deliberately signed out, so silent
+    // restore must NOT run and must NOT sign them back in on this cold boot.
+    stubs.isFedCMSupported.mockReturnValue(true);
+    stubs.silentSignInWithFedCM.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
+    window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    // The chain falls through to the terminal bounce (the beforeEach seeds the
+    // returning-visitor hint), proving fedcm-silent did not silently restore.
+    await waitFor(() => expect(bounced()).toBe(true));
+    expect(stubs.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(latest.isAuthenticated).toBe(false);
   });
 
   it('6) cookie-restore hydrates a real user and commits when prior steps skip', async () => {

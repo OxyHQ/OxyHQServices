@@ -58,6 +58,7 @@ import * as sessionHelpers from '../../src/ui/utils/sessionHelpers';
 interface FakeServices {
   requestChallenge: jest.Mock;
   verifyChallenge: jest.Mock;
+  establishDeviceRefreshSlot: jest.Mock;
   setTokens: jest.Mock;
   getUserBySession: jest.Mock;
   logoutSession: jest.Mock;
@@ -82,6 +83,10 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
     refreshToken: 'verify-refresh-token',
     user: { id: 'user-1', username: 'alice' },
   })),
+  // `/auth/verify` mints the session but does NOT plant the device refresh slot,
+  // so `performSignIn` registers it via this shared primitive. Mock resolves
+  // `null` (its real return off a registrable-apex-less jsdom origin / native).
+  establishDeviceRefreshSlot: jest.fn(async (): Promise<number | null> => null),
   setTokens: jest.fn(),
   getUserBySession: jest.fn(async (): Promise<User> => ({
     id: 'user-1',

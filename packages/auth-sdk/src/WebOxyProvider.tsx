@@ -31,6 +31,8 @@ import {
   ssoDestKey,
   ssoAttemptedKey,
   ssoPriorSessionKey,
+  ssoSignedOutKey,
+  silentRestoreSuppressed,
   isCentralIdPOrigin,
   guardActive,
   allowSsoBounce,
@@ -275,6 +277,47 @@ function clearPriorSessionWeb(): void {
   }
 }
 
+/**
+ * Set the durable "deliberately signed out" flag (core {@link ssoSignedOutKey}).
+ * Called ONLY on EXPLICIT full sign-out so the next cold boot does not silently
+ * re-mint a session from a still-live IdP session via `fedcm-silent`. Cleared by
+ * any deliberate sign-in (see {@link clearSignedOutWeb}). No-ops off-web / on
+ * storage failure (best-effort).
+ */
+function markSignedOutWeb(): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.localStorage.setItem(ssoSignedOutKey(window.location.origin), '1');
+  } catch {
+    // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
+  }
+}
+
+/**
+ * Clear the durable "deliberately signed out" flag. Called on ANY deliberate
+ * sign-in so a real sign-in fully re-enables automatic silent restore — no
+ * "stuck signed out" state. No-ops off-web / on storage failure.
+ */
+function clearSignedOutWeb(): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.localStorage.removeItem(ssoSignedOutKey(window.location.origin));
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * Whether AUTOMATIC silent restore is suppressed because the user deliberately
+ * signed out (durable flag, read via the core {@link silentRestoreSuppressed}
+ * predicate). Gates the `fedcm-silent` cold-boot step. Returns `false` off-web /
+ * on storage failure (fail safe toward normal restore).
+ */
+function silentRestoreSuppressedWeb(): boolean {
+  if (!isWebBrowser()) return false;
+  return silentRestoreSuppressed(window.localStorage, window.location.origin);
+}
+
 function isOnSsoCallbackPath(): boolean {
   return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
 }
@@ -453,6 +496,11 @@ export function WebOxyProvider({
     // (FedCM / redirect / SSO return / claimed device-flow) funnels through
     // here, so this is the single chokepoint for the hint.
     markPriorSessionWeb();
+    // A committed session re-enables automatic silent restore: clear the durable
+    // "deliberately signed out" flag. The `fedcm-silent` step is GATED on the
+    // flag, so when it is set that step never runs and never reaches here — this
+    // clear is only hit on a genuine (re-)sign-in or when restore was permitted.
+    clearSignedOutWeb();
 
     // A fresh login appends a new device-local slot server-side (via
     // `Set-Cookie: oxy_rt_${n}`). Pull the canonical snapshot so the
@@ -695,6 +743,17 @@ export function WebOxyProvider({
       // session. A placeholder user (empty id) is never exposed (R4).
       const ssoKey = silentSignInKey(oxyServices);
 
+      // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
+      // central IdP session can still be live, so the silent `fedcm-silent` step
+      // below would re-mint a session on the next cold boot and sign the user back
+      // in without intent. Read the durable flag ONCE here (synchronously usable by
+      // the step `enabled` gate) and skip `fedcm-silent` while it is set. Any
+      // deliberate sign-in clears it. The terminal `sso-bounce` is already
+      // self-suppressed after sign-out (its prior-session hint is cleared), and the
+      // `cookie-restore` step reads only first-party cookies that an explicit
+      // sign-out already cleared.
+      const silentRestoreBlocked = silentRestoreSuppressedWeb();
+
       const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
         {
           // 0) SSO return: we are back from a top-level bounce to the central
@@ -717,6 +776,7 @@ export function WebOxyProvider({
           id: 'fedcm-silent',
           enabled: () =>
             isWebBrowser() &&
+            !silentRestoreBlocked &&
             oxyServices.isFedCMSupported() === true &&
             !fedcmSilentSignInAttempted.has(ssoKey),
           run: async () => {
@@ -1039,6 +1099,11 @@ export function WebOxyProvider({
       // after an explicit sign-out). The passive cookie-expiry path leaves it
       // intact so an expired session still recovers via a returning-user bounce.
       clearPriorSessionWeb();
+      // EXPLICIT sign-out: set the durable "deliberately signed out" flag so the
+      // `fedcm-silent` cold-boot step does not silently re-mint a session from a
+      // still-live IdP session on the next reload. Cleared on any deliberate
+      // sign-in.
+      markSignedOutWeb();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign out failed';
       setError(errorMessage);
@@ -1052,6 +1117,9 @@ export function WebOxyProvider({
       await authManager.switchAuthuser(authuser);
       const active = authManager.getActiveAccount();
       if (active) {
+        // A switch is a deliberate sign-in into an account: re-enable automatic
+        // silent restore by clearing any prior "deliberately signed out" flag.
+        clearSignedOutWeb();
         setActiveSessionId(active.sessionId);
         // Fetch the canonical User shape with the freshly planted token —
         // the refresh-all projection is minimal (id/username/avatar/...)
@@ -1106,6 +1174,10 @@ export function WebOxyProvider({
         setUser(null);
         setActiveSessionId(null);
         clearQueryCache(queryClient);
+        // No slots remain — this is a deliberate full sign-out. Suppress automatic
+        // silent restore on the next cold boot so a still-live IdP session does not
+        // re-mint a session (cleared on any deliberate sign-in).
+        markSignedOutWeb();
       }
       syncAccountsFromManager();
     } catch (err) {
@@ -1132,6 +1204,9 @@ export function WebOxyProvider({
     // hint so the next cold boot is treated as first-time anonymous.
     clearSsoBounceStateWeb();
     clearPriorSessionWeb();
+    // Suppress automatic silent restore until a deliberate sign-in (parity with
+    // `signOut`): a still-live IdP session must not silently re-mint here.
+    markSignedOutWeb();
   }, [authManager, syncAccountsFromManager, queryClient]);
 
   useEffect(() => {

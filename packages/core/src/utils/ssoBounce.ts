@@ -69,6 +69,7 @@ const NO_SESSION_KEY_PREFIX = 'oxy_sso_no_session:';
 const ATTEMPTED_KEY_PREFIX = 'oxy_sso_attempted:';
 const CALLBACK_BOOTSTRAP_KEY_PREFIX = 'oxy_sso_callback_bootstrap:';
 const PRIOR_SESSION_KEY_PREFIX = 'oxy_sso_prior_session:';
+const SIGNED_OUT_KEY_PREFIX = 'oxy_signed_out:';
 
 /** Per-origin CSRF state key (matched on return to defeat fragment forgery). */
 export function ssoStateKey(origin: string): string {
@@ -123,6 +124,37 @@ export function ssoAttemptedKey(origin: string): string {
  */
 export function ssoPriorSessionKey(origin: string): string {
   return `${PRIOR_SESSION_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Per-origin DURABLE "the user DELIBERATELY signed out on this device/origin"
+ * flag.
+ *
+ * Like {@link ssoPriorSessionKey} this lives in DURABLE storage (web
+ * `localStorage`; services uses its own `storageKeyPrefix`-scoped key), NOT the
+ * per-tab `sessionStorage` the loop-breaker keys use — it must survive a reload.
+ *
+ * It exists purely to suppress AUTOMATIC silent restore after a deliberate
+ * sign-out: a still-live IdP session (the central `fedcm_session` / the FedCM
+ * credential association) would otherwise let `fedcm-silent` / the per-apex
+ * `/auth/silent` iframe re-mint a session on the very next cold boot, so a user
+ * who pressed "Sign out" gets silently signed back in on reload. With this flag
+ * set, those silent cold-boot steps are skipped while the Gmail-style
+ * returning-account fast-path is otherwise preserved.
+ *
+ * Lifecycle (mirrors the existing gate machinery — set on a definitive event,
+ * cleared on its inverse):
+ *   - SET on EXPLICIT full sign-out (alongside clearing the prior-session hint
+ *     and the SSO bounce state).
+ *   - CLEARED on ANY deliberate sign-in (password, FedCM, account switch, device
+ *     claim) so a real sign-in fully re-enables silent restore — there is no
+ *     "stuck signed out" state.
+ *
+ * NOTE: this gates only AUTOMATIC/silent restore. An INTERACTIVE sign-in always
+ * clears it first, so the user can always sign back in.
+ */
+export function ssoSignedOutKey(origin: string): string {
+  return `${SIGNED_OUT_KEY_PREFIX}${origin}`;
 }
 
 /**
@@ -265,6 +297,35 @@ export function guardActive(
     return false;
   }
   return now - ts < SSO_GUARD_TTL_MS;
+}
+
+/**
+ * Whether AUTOMATIC silent restore is SUPPRESSED for this origin because the
+ * user deliberately signed out (the durable {@link ssoSignedOutKey} flag).
+ *
+ * When `true`, the silent cold-boot steps that can re-mint a session from a
+ * still-live IdP session WITHOUT user intent — `fedcm-silent` and the per-apex
+ * `/auth/silent` iframe — MUST be skipped, so a user who pressed "Sign out" is
+ * not silently signed back in on the next reload. Interactive sign-in clears the
+ * flag, so this never blocks a deliberate re-sign-in.
+ *
+ * Defensive: a `getItem` that throws (locked/disabled storage) is treated as NOT
+ * suppressed, so the gate fails toward the normal restore behaviour rather than
+ * wedging the user out.
+ *
+ * @param storage - The DURABLE storage to read (web `localStorage`; injected for
+ *   testability).
+ * @param origin - The page origin whose signed-out flag to evaluate.
+ */
+export function silentRestoreSuppressed(
+  storage: Pick<Storage, 'getItem'>,
+  origin: string,
+): boolean {
+  try {
+    return storage.getItem(ssoSignedOutKey(origin)) === '1';
+  } catch {
+    return false;
+  }
 }
 
 /**
