@@ -22,6 +22,7 @@
  */
 
 import crypto from 'crypto';
+import { verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { realLifeAttestationRecordSchema } from '@oxyhq/contracts';
 import { User } from '../../models/User';
@@ -29,12 +30,7 @@ import { ReputationTransaction } from '../../models/ReputationTransaction';
 import CivicNonce from '../../models/CivicNonce';
 import { buildUserDid, parseUserDid } from '../did.service';
 import { isValidObjectId } from '../../utils/validation';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-  type EnvelopeRejectionReason,
-} from '../signedRecord.service';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { isSockPuppetRelation } from './graphExclusion';
 import { reputationService } from '../reputation.service';
 import { REAL_LIFE_ATTESTED_ACTION } from '../../utils/reputation.constants';
@@ -61,7 +57,7 @@ export type RealLifeRejectionReason =
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
   | 'excluded_shared_ip'
-  | EnvelopeRejectionReason;
+  | RejectionReason;
 
 export type RealLifeResult =
   | { ok: true; recordId: string; subjectUserId: string; attestorUserId: string; points: number }
@@ -157,21 +153,14 @@ export async function submitRealLifeAttestation(
     return { ok: false, reason: 'expired' };
   }
 
-  const [subjectExists, attestor] = await Promise.all([
-    User.exists({ _id: subjectUserId }),
-    User.findById(attestorUserId).select('publicKey authMethods').lean(),
-  ]);
+  const subjectExists = await User.exists({ _id: subjectUserId });
   if (!subjectExists) {
     return { ok: false, reason: 'subject_not_found' };
   }
-  const subject: SignedRecordSubject = {
-    publicKey: attestor?.publicKey,
-    authMethods: attestor?.authMethods,
-  };
 
   // Cheap forgery gate before any expensive graph work (authoritative
   // verification happens again inside verifyAndStoreRecord).
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
@@ -203,7 +192,7 @@ export async function submitRealLifeAttestation(
   }
 
   // Store B's signed attestation on B's chain (authoritative verify + append).
-  const stored = await verifyAndStoreRecord(envelope, subject, attestorUserId);
+  const stored = await verifyAndStoreRecord(envelope, attestorUserId);
   if (!stored.ok) {
     return { ok: false, reason: stored.reason };
   }

@@ -115,8 +115,8 @@ export async function attestAward(
     const envelope: SignedRecordEnvelope = { ...fields, signature };
 
     // The subject account's VMs are NOT consulted for a custodial record (the
-    // issuer is OXY_DID), so an empty subject is sufficient here.
-    const result = await verifyAndStoreRecord(envelope, { publicKey: null, authMethods: [] }, subjectUserId);
+    // issuer is OXY_DID); the resolver resolves the subject either way.
+    const result = await verifyAndStoreRecord(envelope, subjectUserId);
     if (result.ok) {
       return envelope;
     }

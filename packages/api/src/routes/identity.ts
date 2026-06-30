@@ -42,7 +42,6 @@ import {
   verifyAndStoreRecord,
   verifyEnvelope,
   getLatestRecord,
-  type SignedRecordSubject,
 } from '../services/signedRecord.service';
 import { getHead, getPublicLogSince, resolveCursorSeq } from '../services/repoLog.service';
 import { materializeNodeFromRecord } from '../services/nodeRegistry.service';
@@ -193,12 +192,7 @@ router.post(
     }
 
     const envelope = req.body as SignedRecordEnvelope;
-    const subject: SignedRecordSubject = {
-      publicKey: req.user?.publicKey,
-      authMethods: req.user?.authMethods,
-    };
-
-    const result = await verifyAndStoreRecord(envelope, subject, userId);
+    const result = await verifyAndStoreRecord(envelope, userId);
     if (!result.ok) {
       throw new BadRequestError(`Signed record rejected: ${result.reason}`);
     }
@@ -356,11 +350,7 @@ router.get(
       throw new NotFoundError('Record not found');
     }
 
-    const verification = await verifyEnvelope(
-      record.envelope,
-      { publicKey: subjectUser.publicKey, authMethods: subjectUser.authMethods },
-      userId,
-    );
+    const verification = await verifyEnvelope(record.envelope, userId);
 
     res.json({
       verified: verification.ok,

@@ -24,6 +24,7 @@ const mockSrFindOne = jest.fn();
 const mockSrCreate = jest.fn();
 const mockHeadFindOne = jest.fn();
 const mockHeadUpdate = jest.fn();
+const mockUserFindById = jest.fn();
 
 jest.mock('../../models/SignedRecord', () => ({
   __esModule: true,
@@ -31,6 +32,14 @@ jest.mock('../../models/SignedRecord', () => ({
     findOne: (...args: unknown[]) => mockSrFindOne(...args),
     create: (...args: unknown[]) => mockSrCreate(...args),
   },
+}));
+
+// The oxyVerificationResolver (inside the real verifyAndStoreRecord) reads the
+// subject's verification methods from User; mock it to expose the test key.
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  User: { findById: (...args: unknown[]) => mockUserFindById(...args) },
+  default: { findById: (...args: unknown[]) => mockUserFindById(...args) },
 }));
 
 jest.mock('../../models/RepoHead', () => ({
@@ -67,7 +76,6 @@ const USER_ID = '507f1f77bcf86cd799439011';
 const keyPair = ec.genKeyPair();
 const PUBLIC_KEY = keyPair.getPublic('hex');
 const PRIVATE_KEY = keyPair.getPrivate('hex');
-const SUBJECT = { publicKey: PUBLIC_KEY };
 
 type V2Fields = Omit<SignedRecordEnvelope, 'signature'>;
 
@@ -114,6 +122,9 @@ beforeEach(() => {
   mockSrCreate.mockReset();
   mockHeadFindOne.mockReset();
   mockHeadUpdate.mockReset();
+  mockUserFindById.mockReset();
+  // The subject resolves to a single current verification method (the test key).
+  mockUserFindById.mockReturnValue({ select: () => ({ lean: () => Promise.resolve({ publicKey: PUBLIC_KEY }) }) });
   // create echoes its input (array form → array; object form → object).
   mockSrCreate.mockImplementation((arg: unknown) =>
     Array.isArray(arg)
@@ -129,7 +140,7 @@ describe('verifyAndStoreRecord — v2 genesis', () => {
     noHead();
     const env = signRecordEnvelope(v2Fields(), PRIVATE_KEY);
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result.ok).toBe(true);
     // SignedRecord inserted with the chain fields. The envelope's `collection`
@@ -159,7 +170,7 @@ describe('verifyAndStoreRecord — v2 extension', () => {
       PRIVATE_KEY,
     );
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result.ok).toBe(true);
     const created = mockSrCreate.mock.calls[0][0][0];
@@ -178,7 +189,7 @@ describe('verifyAndStoreRecord — chain rejections', () => {
       PRIVATE_KEY,
     );
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result).toEqual({ ok: false, reason: 'chain_fork' });
     expect(mockSrCreate).not.toHaveBeenCalled();
@@ -193,7 +204,7 @@ describe('verifyAndStoreRecord — chain rejections', () => {
       PRIVATE_KEY,
     );
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result).toEqual({ ok: false, reason: 'bad_seq' });
     expect(mockSrCreate).not.toHaveBeenCalled();
@@ -207,7 +218,7 @@ describe('verifyAndStoreRecord — chain rejections', () => {
       PRIVATE_KEY,
     );
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result).toEqual({ ok: false, reason: 'chain_gap' });
     expect(mockSrCreate).not.toHaveBeenCalled();
@@ -231,7 +242,7 @@ describe('verifyAndStoreRecord — v1 back-compat', () => {
       PRIVATE_KEY,
     );
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result.ok).toBe(true);
     // v1 create is the single-object form, with NO chain fields.
@@ -252,7 +263,7 @@ describe('verifyAndStoreRecord — concurrency backstop', () => {
     mockSrCreate.mockRejectedValueOnce(Object.assign(new Error('E11000 duplicate key'), { code: 11000 }));
     const env = signRecordEnvelope(v2Fields(), PRIVATE_KEY);
 
-    const result = await verifyAndStoreRecord(env, SUBJECT, USER_ID);
+    const result = await verifyAndStoreRecord(env, USER_ID);
 
     expect(result).toEqual({ ok: false, reason: 'chain_conflict' });
   });

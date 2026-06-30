@@ -60,10 +60,7 @@ import NodeIngestWitness from '../models/NodeIngestWitness';
 import { User } from '../models/User';
 import SignatureService from './signature.service';
 import { getHead } from './repoLog.service';
-import {
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-} from './signedRecord.service';
+import { verifyAndStoreRecord } from './signedRecord.service';
 import userCache from '../utils/userCache';
 import { logger } from '../utils/logger';
 import {
@@ -268,10 +265,9 @@ async function storeForkMirror(env: SignedRecordEnvelope, userId: string, record
  */
 async function ingestEnvelope(
   env: SignedRecordEnvelope,
-  subject: SignedRecordSubject,
   userId: string,
 ): Promise<IngestOutcome> {
-  const result = await verifyAndStoreRecord(env, subject, userId);
+  const result = await verifyAndStoreRecord(env, userId);
 
   if (result.ok) {
     const recordId = result.record.recordId ?? (await computeRecordId(env));
@@ -363,11 +359,12 @@ export async function ingestFromNode(userId: string): Promise<void> {
       return; // no registered node — nothing to ingest
     }
 
-    const user = await User.findById(userId).select('publicKey authMethods').lean();
-    if (!user) {
+    // Skip ingest for a deleted account — the resolver would reject every record
+    // as untrusted anyway, but bail early to avoid the per-record churn.
+    const userExists = await User.exists({ _id: userId });
+    if (!userExists) {
       return;
     }
-    const subject: SignedRecordSubject = { publicKey: user.publicKey, authMethods: user.authMethods };
 
     // Compare the node's head against Oxy's local head. When Oxy is already at or
     // ahead of the node, there is nothing to pull — just stamp the sync time.
@@ -419,7 +416,7 @@ export async function ingestFromNode(userId: string): Promise<void> {
           continue;
         }
 
-        const outcome = await ingestEnvelope(env, subject, userId);
+        const outcome = await ingestEnvelope(env, userId);
         if (outcome.kind === 'appended') {
           cursor = outcome.seq >= 0 ? outcome.seq : cursor;
           changed = true;

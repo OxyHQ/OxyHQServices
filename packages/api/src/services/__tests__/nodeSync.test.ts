@@ -30,6 +30,7 @@ const mockSignedRecordFindOne = jest.fn();
 const mockSignedRecordCreate = jest.fn();
 const mockWitnessCreate = jest.fn();
 const mockUserFindById = jest.fn();
+const mockUserExists = jest.fn();
 const mockInvalidate = jest.fn();
 
 jest.mock('@oxyhq/core/server', () => ({ safeFetch: (...a: unknown[]) => mockSafeFetch(...a) }));
@@ -65,8 +66,8 @@ jest.mock('../../models/NodeIngestWitness', () => ({
 }));
 jest.mock('../../models/User', () => ({
   __esModule: true,
-  User: { findById: (...a: unknown[]) => mockUserFindById(...a) },
-  default: { findById: (...a: unknown[]) => mockUserFindById(...a) },
+  User: { findById: (...a: unknown[]) => mockUserFindById(...a), exists: (...a: unknown[]) => mockUserExists(...a) },
+  default: { findById: (...a: unknown[]) => mockUserFindById(...a), exists: (...a: unknown[]) => mockUserExists(...a) },
 }));
 jest.mock('../../utils/userCache', () => ({ __esModule: true, default: { invalidate: (...a: unknown[]) => mockInvalidate(...a) } }));
 jest.mock('../../utils/logger', () => ({
@@ -120,6 +121,7 @@ beforeEach(() => {
 
   mockUserNodeFindOne.mockReturnValue(selectLean({ endpoint: 'https://node.example.com', cursor: undefined }));
   mockUserFindById.mockReturnValue(selectLean({ publicKey: PUBLIC_KEY, authMethods: [] }));
+  mockUserExists.mockResolvedValue(true);
   mockGetHead.mockResolvedValue(null); // local head -1
   mockUserNodeUpdateOne.mockResolvedValue({ modifiedCount: 1 });
   mockSignedRecordFindOne.mockReturnValue(sortLean(null));

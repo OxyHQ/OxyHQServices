@@ -99,9 +99,9 @@ describe('canonicalize', () => {
 
   describe('rejects values outside the JSON data model', () => {
     it('throws on non-finite numbers', () => {
-      expect(() => canonicalize(NaN)).toThrow();
-      expect(() => canonicalize(Infinity)).toThrow();
-      expect(() => canonicalize({ x: Infinity })).toThrow();
+      expect(() => canonicalize(Number.NaN)).toThrow();
+      expect(() => canonicalize(Number.POSITIVE_INFINITY)).toThrow();
+      expect(() => canonicalize({ x: Number.POSITIVE_INFINITY })).toThrow();
     });
 
     it('throws on bigint', () => {

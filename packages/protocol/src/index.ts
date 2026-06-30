@@ -25,6 +25,32 @@ export {
 } from './envelope/sign';
 
 // ---------------------------------------------------------------------------
+// Chain — per-subject hash-chain engine over an injected RecordStore + resolver
+// ---------------------------------------------------------------------------
+export type {
+  ChainHead,
+  RejectionReason,
+  VerifyOutcome,
+  AppendOutcome,
+} from './chain/types';
+export { UNCHAINED_SEQ } from './chain/types';
+export { checkContinuity } from './chain/continuity';
+export type { RecordStore, BlobStore } from './chain/recordStore';
+export { verifyEnvelope, DEFAULT_CLOCK_SKEW_MS } from './chain/verify';
+export type { VerifyOptions } from './chain/verify';
+export { verifyAndAppend } from './chain/engine';
+
+// ---------------------------------------------------------------------------
+// Identity — injected verification-method resolution + authorization rule
+// ---------------------------------------------------------------------------
+export { isAuthorizedKey } from './identity/resolver';
+export type {
+  VerificationMethodResolver,
+  ResolvedVerificationMethods,
+  KeyAuthorization,
+} from './identity/resolver';
+
+// ---------------------------------------------------------------------------
 // Platform — runtime predicates + lazy crypto/storage loaders
 // ---------------------------------------------------------------------------
 export { isReactNative, isNodeJS } from './platform/platform';
