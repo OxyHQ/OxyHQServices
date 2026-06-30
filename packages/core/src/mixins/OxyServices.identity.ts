@@ -28,6 +28,7 @@ import type {
   DidDocument,
   DomainVerificationInstructions,
   ExportBundle,
+  OxySignedRecordType,
   SignedRecordEnvelope,
   VerifiedDomain,
 } from '@oxyhq/contracts';
@@ -43,8 +44,13 @@ import { CACHE_TIMES } from './mixinHelpers';
  */
 const OXY_IDENTITY_APEX = 'oxy.so';
 
-/** Record categories a client may sign and publish. */
-export type IdentityRecordType = SignedRecordEnvelope['type'];
+/**
+ * Record categories a client may sign and publish to the Oxy store. The base
+ * envelope `type` is now an open string (any app may define its own records on
+ * the shared grammar); the Oxy identity store re-narrows it to the closed Oxy
+ * record set.
+ */
+export type IdentityRecordType = OxySignedRecordType;
 
 /** Auth-method types that can be unlinked via {@link OxyServicesIdentityMixin}. */
 export type UnlinkableAuthMethodType = 'identity' | 'password' | 'google' | 'apple' | 'github';

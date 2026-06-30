@@ -34,7 +34,11 @@
 import mongoose, { ClientSession } from 'mongoose';
 import { signedRecordSigningInput, computeRecordId } from '@oxyhq/protocol';
 import { verifySecret } from '@oxyhq/core/server';
-import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
+import {
+  signedRecordEnvelopeSchema,
+  oxySignedRecordTypeSchema,
+  type SignedRecordEnvelope,
+} from '@oxyhq/contracts';
 import SignatureService from './signature.service';
 import { buildUserDid, OXY_DID } from './did.service';
 import SignedRecord, { type ISignedRecord } from '../models/SignedRecord';
@@ -212,6 +216,14 @@ export async function verifyEnvelope(
 ): Promise<EnvelopeVerification> {
   const parsed = signedRecordEnvelopeSchema.safeParse(env);
   if (!parsed.success) {
+    return { ok: false, reason: 'invalid_envelope' };
+  }
+
+  // The base envelope `type` is now an OPEN string so any Oxy app may sign its
+  // own records on the shared grammar; the Oxy identity/civic/node store accepts
+  // ONLY the closed Oxy record set. Re-narrow it here so a non-Oxy `type` (e.g.
+  // an app's `app_record`) never lands on the Oxy chain.
+  if (!oxySignedRecordTypeSchema.safeParse(env.type).success) {
     return { ok: false, reason: 'invalid_envelope' };
   }
 

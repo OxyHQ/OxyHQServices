@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import type { SignedRecordEnvelope, SignedRecordType } from '@oxyhq/contracts';
+import { oxySignedRecordTypeSchema } from '@oxyhq/contracts';
+import type { OxySignedRecordType, SignedRecordEnvelope } from '@oxyhq/contracts';
 
 /**
  * SignedRecord (self-sovereign identity layer — B5; F0.2 per-subject hash chain)
@@ -42,7 +43,7 @@ export interface ISignedRecord extends Document {
   subjectDid: string;
   /** The Oxy account that owns the subject DID. */
   userId: mongoose.Types.ObjectId;
-  type: SignedRecordType;
+  type: OxySignedRecordType;
   /** The complete signed envelope as published by the client. */
   envelope: SignedRecordEnvelope;
   /** The secp256k1 public key that signed the envelope (a current VM at write time). */
@@ -71,16 +72,9 @@ const SignedRecordSchema = new Schema<ISignedRecord>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: [
-        'identity',
-        'profile',
-        'reputation_attestation',
-        'real_life_attestation',
-        'validation_verdict',
-        'personhood_vouch',
-        'credential',
-        'node',
-      ],
+      // Re-narrow the open envelope `type` to the closed Oxy store set — derived
+      // from the single source of truth so the Mongoose enum cannot drift.
+      enum: [...oxySignedRecordTypeSchema.options],
       required: true,
     },
     // The envelope is contract-validated before it ever reaches the model, so

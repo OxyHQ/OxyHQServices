@@ -40,6 +40,7 @@
  * server's `serializeNode` projection exactly. Dates cross the wire as ISO
  * strings.
  */
+import type { ChainHeadResponse } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { SignatureService } from '../crypto/signatureService';
 import { buildUserDid } from './OxyServices.identity';
@@ -155,18 +156,6 @@ export interface RegisterNodeInput {
 export interface RemoveNodeResult {
   /** `true` when an active registration was flipped to `revoked`. */
   revoked: boolean;
-}
-
-/**
- * The current chain head as returned by `GET /identity/records/:userId/chain/head`.
- * `headRecordId` is `null` and `seq` is `-1` when the subject has no chain yet,
- * so the next record's coordinates are always `seq: head.seq + 1` (genesis = 0)
- * and `prev: head.headRecordId` (genesis = null).
- */
-interface ChainHeadResponse {
-  headRecordId: string | null;
-  seq: number;
-  recordCount: number;
 }
 
 export function OxyServicesNodesMixin<T extends typeof OxyServicesBase>(Base: T) {

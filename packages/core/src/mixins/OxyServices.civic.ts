@@ -49,17 +49,18 @@
  * session.
  */
 import type {
+  ChainHeadResponse,
   CredentialIssueResult,
   CredentialListResult,
   CredentialStatus,
   CredentialVerifyResult,
   ExportAttestation,
+  OxySignedRecordType,
   PersonhoodStatusResult,
   PublicCard,
   RealLifeAttestationResult,
   SignedPublicCard,
   SignedRecordEnvelope,
-  SignedRecordType,
   ValidationRequestSummary,
   ValidationVerdict,
   ValidationVoteResult,
@@ -388,18 +389,6 @@ export interface IssueCredentialInput {
 export interface RevokeCredentialResult {
   revoked: boolean;
   credential: VerifiableCredentialResponse;
-}
-
-/**
- * The current chain head as returned by `GET /identity/records/:userId/chain/head`.
- * `headRecordId` is `null` and `seq` is `-1` when the subject has no chain yet,
- * so the next record's coordinates are always `seq: head.seq + 1` (genesis = 0)
- * and `prev: head.headRecordId` (genesis = null).
- */
-interface ChainHeadResponse {
-  headRecordId: string | null;
-  seq: number;
-  recordCount: number;
 }
 
 export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -929,7 +918,7 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
      * @param rkey - The AtProto-style record key within the collection.
      */
     async _signMyCivicRecordV2(
-      type: SignedRecordType,
+      type: OxySignedRecordType,
       record: Record<string, unknown>,
       collection: string,
       rkey: string,

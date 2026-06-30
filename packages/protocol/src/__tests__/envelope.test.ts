@@ -12,6 +12,7 @@
  */
 
 import { ec as EC } from 'elliptic';
+import { signedRecordEnvelopeSchema } from '@oxyhq/contracts';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import {
   canonicalize,
@@ -227,5 +228,42 @@ describe('canonical-bytes fixture (move-invariance guard)', () => {
     await expect(verifySignature(EXPECTED_SIGNING_INPUT, sig, PUBLIC_KEY)).resolves.toBe(true);
     await expect(verifySignature(EXPECTED_SIGNING_INPUT, sig, 'not-a-key')).resolves.toBe(false);
     expect(canonicalize(FIELDS)).toBe(EXPECTED_SIGNING_INPUT);
+  });
+
+  /**
+   * A2 type-widening guard: opening the envelope `type` from a closed enum to a
+   * string is canonical-bytes-safe AND lets app records onto the shared grammar.
+   * `signedRecordEnvelopeSchema` (the widened contract) is exercised end-to-end
+   * against the real signer/verifier — the schema change must not reject or alter
+   * a production envelope, and an `app.mention.*` record must now validate.
+   */
+  it('the widened base schema accepts a production identity envelope with unchanged canonical bytes', async () => {
+    const identityFields = {
+      version: 1 as const,
+      type: 'identity',
+      subject: 'did:web:oxy.so:u:u1',
+      issuer: 'did:web:oxy.so:u:u1',
+      record: { handle: '@nate' },
+      issuedAt: 1750000000000,
+    };
+    const signed = await signEnvelope(identityFields, PRIVATE_KEY);
+    // The widened schema accepts the production envelope unchanged.
+    const parsed = signedRecordEnvelopeSchema.safeParse(signed);
+    expect(parsed.success).toBe(true);
+    // Its canonical signing bytes are byte-identical to the locked v1 golden —
+    // the enum→string widening does not touch what the signature covers.
+    expect(signedRecordSigningInput(signed)).toBe(
+      '{"issuedAt":1750000000000,"issuer":"did:web:oxy.so:u:u1","record":{"handle":"@nate"},"subject":"did:web:oxy.so:u:u1","type":"identity","version":1}',
+    );
+    await expect(verifyEnvelopeSignature(signed)).resolves.toBe(true);
+  });
+
+  it('the widened base schema accepts the signed app_record envelope (app.mention.feed.post)', async () => {
+    const signed = await signEnvelope(FIELDS, PRIVATE_KEY);
+    expect(signed.type).toBe('app_record');
+    expect(signed.collection).toBe('app.mention.feed.post');
+    const parsed = signedRecordEnvelopeSchema.safeParse(signed);
+    expect(parsed.success).toBe(true);
+    await expect(verifyEnvelopeSignature(signed)).resolves.toBe(true);
   });
 });

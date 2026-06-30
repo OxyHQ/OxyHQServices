@@ -4,7 +4,7 @@
  * A Verifiable Credential (VC) is an ISSUER (an employer / course / app that
  * holds a DID) cryptographically attesting a CLAIM about a HOLDER — e.g. "worked
  * at X 2020–2024", "completed course Y". The credential is a SIGNED record
- * (envelope `type: 'credential'`, already in the `SignedRecordType` union) whose
+ * (envelope `type: 'credential'`, an Oxy record type in `OxySignedRecordType`) whose
  * `record.about` is the HOLDER's DID (the W3C `credentialSubject`). It is
  * verifiable OFFLINE against the issuer DID's CURRENT verification method plus a
  * revocation/expiry check — anyone the holder shows the credential to can verify

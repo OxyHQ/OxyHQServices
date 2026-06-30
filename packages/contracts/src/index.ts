@@ -105,7 +105,6 @@ export type {
     DidService,
     DidDocument,
     SignedRecordEnvelope,
-    SignedRecordType,
     VerifiedDomain,
     DomainVerificationRequest,
     DomainVerificationInstructions,
@@ -114,6 +113,27 @@ export type {
     ExportAttestation,
     ExportBundle,
 } from './identity';
+
+export {
+    // Schemas
+    oxySignedRecordTypeSchema,
+} from './oxyRecordTypes';
+
+export type {
+    OxySignedRecordType,
+} from './oxyRecordTypes';
+
+export {
+    // Schemas
+    chainHeadResponseSchema,
+    logPageResponseSchema,
+} from './protocol';
+
+export type {
+    LexiconRecord,
+    ChainHeadResponse,
+    LogPageResponse,
+} from './protocol';
 
 export {
     // Schemas
