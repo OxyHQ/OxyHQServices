@@ -1,12 +1,38 @@
-import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor } from '../models/interfaces';
+import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor, ServiceAssetMetadata } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { isReactNative } from '@oxyhq/protocol';
+import { logger } from '../utils/loggerUtils';
+import { extractErrorStatus } from '../utils/errorUtils';
+
+/**
+ * Maximum number of ids sent per `POST /assets/service/by-ids` request. Matches
+ * the server-side batch cap (the route rejects empty or > 100 id arrays with a
+ * 400); larger inputs are split into multiple chunked calls and merged. Mirrors
+ * `getUsersByIds`'s `USERS_BY_IDS_CHUNK_SIZE`.
+ */
+const SERVICE_ASSET_METADATA_CHUNK_SIZE = 100;
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
+
+    /**
+     * Service-token request, implemented by the auth mixin earlier in the
+     * composition pipeline (see `mixins/index.ts`). The assets mixin is typed
+     * against `OxyServicesBase`, which does not carry the auth mixin's methods,
+     * so this `declare` surfaces the inherited runtime method to TypeScript
+     * without re-implementing it. Used by
+     * {@link getServiceAssetMetadataByIds} to authenticate the server-to-server
+     * `/assets/service/by-ids` bulk fetch with a bearer service token.
+     */
+    declare makeServiceRequest: <R = unknown>(
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+      url: string,
+      data?: unknown,
+      userId?: string,
+    ) => Promise<R>;
 
     /**
      * Delete file
@@ -165,6 +191,74 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         }
       }
       return urls;
+    }
+
+    /**
+     * Resolve many Oxy asset ids to their content-addressed metadata in one
+     * round-trip per chunk via `POST /assets/service/by-ids` (body `{ ids }`).
+     *
+     * Returns each asset's `sha256`, `mime`, byte `size`, and `status` — built
+     * for server-to-server callers (e.g. Mention's MTN Protocol blob-ref
+     * resolution) that need the content hash for an asset id. Ids are
+     * deduplicated and validated (empty/blank ids dropped) before being split
+     * into chunks of {@link SERVICE_ASSET_METADATA_CHUNK_SIZE} (the server-side
+     * cap). The server omits unknown/deleted ids from each chunk's `data`, so
+     * the merged result may be shorter than the requested id list and the caller
+     * is expected to map by `id`.
+     *
+     * **Service-token auth (required).** `/assets/service/by-ids` is guarded by
+     * `serviceAuthMiddleware` + the `files:read` scope and is called via
+     * `makeServiceRequest`, which attaches `Authorization: Bearer <serviceToken>`
+     * (the same client that calls `POST /assets/service/cache`). The calling
+     * client MUST be service-configured (`configureServiceAuth(apiKey,
+     * apiSecret)`) before invoking this method; otherwise `getServiceToken()`
+     * throws because no credentials are available. A plain user-session request
+     * is rejected by the route's service-auth guard.
+     *
+     * Resilience: chunks are independent. A failed chunk is logged and skipped —
+     * the method returns every entry that resolved successfully rather than
+     * discarding the whole call on one chunk's failure. An empty/whitespace-only
+     * input resolves immediately with `[]` and performs no network call.
+     *
+     * Not cached at the SDK layer: it's a POST keyed on a multi-id body (low hit
+     * rate), mirroring the sibling service/POST methods which never cache.
+     */
+    async getServiceAssetMetadataByIds(ids: string[]): Promise<ServiceAssetMetadata[]> {
+      const uniqueIds = Array.from(
+        new Set(ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)),
+      );
+      if (uniqueIds.length === 0) {
+        return [];
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueIds.length; i += SERVICE_ASSET_METADATA_CHUNK_SIZE) {
+        chunks.push(uniqueIds.slice(i, i + SERVICE_ASSET_METADATA_CHUNK_SIZE));
+      }
+
+      // Run chunks concurrently; a single chunk failure must not sink the rest.
+      const settled = await Promise.all(
+        chunks.map(async (chunk): Promise<ServiceAssetMetadata[]> => {
+          try {
+            const entries = await this.makeServiceRequest<ServiceAssetMetadata[]>(
+              'POST',
+              '/assets/service/by-ids',
+              { ids: chunk },
+            );
+            return Array.isArray(entries) ? entries : [];
+          } catch (error: unknown) {
+            logger.warn('getServiceAssetMetadataByIds: chunk failed, continuing with remaining chunks', {
+              method: 'getServiceAssetMetadataByIds',
+              chunkSize: chunk.length,
+              status: extractErrorStatus(error),
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          }
+        }),
+      );
+
+      return settled.flat();
     }
 
     /**

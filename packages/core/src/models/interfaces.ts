@@ -515,6 +515,25 @@ export interface AssetUpdateVisibilityResponse {
 }
 
 /**
+ * Minimal, service-token-scoped asset metadata returned by
+ * `POST /assets/service/by-ids`.
+ *
+ * Resolves an Oxy asset `id` to its content-addressed identity (`sha256`),
+ * MIME type, byte `size`, and storage `status`. Used by server-to-server
+ * callers (e.g. Mention's MTN Protocol blob-ref resolution) that hold a
+ * `files:read`-scoped service token rather than a user session. Unknown or
+ * deleted ids are omitted from the response (never error the whole batch),
+ * so the result may be shorter than the requested id list.
+ */
+export interface ServiceAssetMetadata {
+  id: string;
+  sha256: string;
+  mime: string;
+  size: number;
+  status: 'active' | 'trash';
+}
+
+/**
  * Account storage usage (server-side usage, not local AsyncStorage)
  */
 export interface AccountStorageCategoryUsage {
