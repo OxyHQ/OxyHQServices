@@ -66,6 +66,11 @@ export async function verifyEnvelope(
     return { ok: false, reason: 'bad_signature' };
   }
 
+  // Enforce that v2 envelopes strictly contain required chain fields.
+  if (env.version === 2 && (typeof env.seq !== 'number' || typeof env.collection !== 'string' || typeof env.rkey !== 'string')) {
+    return { ok: false, reason: 'invalid_envelope' };
+  }
+
   // 3. The signing key is an authorized writer for the issuer (self-issued ⇒ a
   //    current VM of the subject; custodial ⇒ the custodial key; else untrusted).
   const resolved = await resolver.resolve(env.subject);
