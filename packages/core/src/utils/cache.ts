@@ -240,6 +240,8 @@ export function registerCacheForCleanup(cache: TTLCache<any>): void {
         cache.cleanup();
       }
     }, 60000); // Every minute
+    // Never block process/worker exit on a housekeeping timer.
+    cleanupInterval.unref?.();
   }
 }
 
