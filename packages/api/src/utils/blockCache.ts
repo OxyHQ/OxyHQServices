@@ -128,6 +128,7 @@ class BlockCache {
     this.cleanupTimer = setInterval(() => {
       this.cleanup();
     }, this.config.cleanupInterval);
+    this.cleanupTimer.unref?.();
   }
 
   clear(): void {

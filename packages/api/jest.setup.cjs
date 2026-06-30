@@ -2,12 +2,13 @@
 const dotenv = require('dotenv');
 dotenv.config({ path: '.env.test' });
 
-// Mock MongoDB. `Types` is the real mongoose `Types` (pure, stateless ObjectId
-// utilities — `Types.ObjectId` + `ObjectId.isValid`); it touches no connection,
-// so exposing it keeps the mock faithful to production code that validates ids.
-const { Types: mongooseTypes } = jest.requireActual('mongoose');
+// Mock MongoDB. `Types.ObjectId` is sourced from `bson` (mongoose's own ObjectId
+// implementation — `mongoose.Types.ObjectId` IS bson's `ObjectId`), so id
+// validation (`Types.ObjectId.isValid`) stays byte-identical to production while
+// loading none of mongoose's connection machinery.
+const { ObjectId } = jest.requireActual('bson');
 jest.mock('mongoose', () => ({
-  Types: mongooseTypes,
+  Types: { ObjectId },
   connect: jest.fn(() => Promise.resolve()),
   connection: {
     on: jest.fn(),
