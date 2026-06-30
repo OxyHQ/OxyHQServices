@@ -763,8 +763,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     defaultVisibility = 'private',
     linkContext,
 }) => {
-    // Use useOxy() hook for OxyContext values
-    const { user, oxyServices } = useOxy();
+    // Use useOxy() hook for OxyContext values. Files are owned by the ACTIVE
+    // account (the org/project/bot when switched, else the personal user): the
+    // default file owner and every "is this mine?" ownership check resolve
+    // against `activeAccount`, so switching shows/manages that account's files.
+    const { activeAccount, oxyServices } = useOxy();
     const { t } = useI18n();
     const uploadFileMutation = useUploadFile();
     // Prompt controls
@@ -1033,7 +1036,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const backgroundColor = colors.backgroundSecondary;
     const borderColor = colors.border;
 
-    const targetUserId = userId || user?.id;
+    const targetUserId = userId || activeAccount?.id;
 
     const storeSetUploading = useFileStore(s => s.setUploading);
     const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
@@ -2287,11 +2290,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Ionicons name="images-outline" size={64} color={colors.textTertiary} />
                     <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyPhotos.title')}</Text>
                     <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}> {
-                        user?.id === targetUserId
+                        activeAccount?.id === targetUserId
                             ? t('fileManagement.emptyPhotos.ownDescription')
                             : t('fileManagement.emptyPhotos.otherDescription')
                     } </Text>
-                    {user?.id === targetUserId && (
+                    {activeAccount?.id === targetUserId && (
                         <TouchableOpacity
                             style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
                             onPress={handleFileUpload}
@@ -2357,7 +2360,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [
         filteredFiles,
         colors,
-        user?.id,
+        activeAccount?.id,
         targetUserId,
         uploading,
         handleFileUpload,
@@ -2381,12 +2384,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
             <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyFiles.title')}</Text>
             <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
-                {user?.id === targetUserId
+                {activeAccount?.id === targetUserId
                     ? t('fileManagement.emptyFiles.ownDescription')
                     : t('fileManagement.emptyFiles.otherDescription')
                 }
             </Text>
-            {user?.id === targetUserId && (
+            {activeAccount?.id === targetUserId && (
                 <TouchableOpacity
                     style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
                     onPress={handleFileUpload}
@@ -2596,7 +2599,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const photosOnly = filteredFiles.filter(
             (file) => file.contentType.startsWith('image/'),
         );
-        const isOwner = user?.id === targetUserId;
+        const isOwner = activeAccount?.id === targetUserId;
         const allowUpload = isOwner && allowUploadInSelectMode;
 
         return (
@@ -2654,14 +2657,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     onClose={handleCloseFile}
                     onDownload={handleFileDownload}
                     onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
+                    isOwner={activeAccount?.id === targetUserId}
                 />
                 <FileDetailsModal
                     control={fileDetailsControl}
                     file={selectedFile}
                     onDownload={handleFileDownload}
                     onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
+                    isOwner={activeAccount?.id === targetUserId}
                 />
             </>
         );
@@ -2837,7 +2840,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         color={colors.textSecondary}
                     />
                 </TouchableOpacity>
-                {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
+                {activeAccount?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
                         style={[
                             fileManagementStyles.uploadButton,
@@ -3010,7 +3013,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     file={selectedFile}
                     onDownload={handleFileDownload}
                     onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
+                    isOwner={activeAccount?.id === targetUserId}
                 />
             )}
 

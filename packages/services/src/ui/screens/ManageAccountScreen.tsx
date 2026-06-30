@@ -89,6 +89,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const { t, locale } = useI18n();
     const {
         user: contextUser,
+        activeAccount,
         isAuthenticated,
         oxyServices,
         activeSessionId,
@@ -100,6 +101,11 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const { data: userFromQuery, isLoading: userLoading } = useCurrentUser({
         enabled: isAuthenticated,
     });
+    // `user` is the device-session OWNER (the human login) — used only for
+    // account/session MANAGEMENT and GDPR-level actions (sign-out, device
+    // sessions, download-data, delete-account). Identity-of-me surfaces (the
+    // profile header, preview-profile target, premium state) read
+    // `activeAccount` so a switch into an org/project/bot is reflected here.
     const user = userFromQuery ?? contextUser;
 
     const { data: subscription } = useUserSubscription({ enabled: isAuthenticated });
@@ -121,13 +127,13 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const [signingOutAllDevices, setSigningOutAllDevices] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
 
-    const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
-    const handle = useMemo(() => getAccountFallbackHandle(user), [user]);
+    const displayName = useMemo(() => getAccountDisplayName(activeAccount, locale), [activeAccount, locale]);
+    const handle = useMemo(() => getAccountFallbackHandle(activeAccount), [activeAccount]);
     const avatarUri = useMemo(() => {
-        return user?.avatar
-            ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb')
+        return activeAccount?.avatar
+            ? oxyServices.getFileDownloadUrl(activeAccount.avatar, 'thumb')
             : undefined;
-    }, [user?.avatar, oxyServices]);
+    }, [activeAccount?.avatar, oxyServices]);
 
     const handleSignOut = useCallback(async () => {
         if (signingOut) {
@@ -355,12 +361,12 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                     </H4>
                     {handle ? (
                         <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user?.username ? `@${handle}` : handle}
+                            {activeAccount?.username ? `@${handle}` : handle}
                         </Text>
                     ) : null}
-                    {user?.email ? (
+                    {activeAccount?.email ? (
                         <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user.email}
+                            {activeAccount.email}
                         </Text>
                     ) : null}
                 </View>
@@ -412,9 +418,9 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             || 'See how your profile looks to others'
                         }
                         onPress={() =>
-                            user?.id ? navigate?.('Profile', { userId: user.id }) : undefined
+                            activeAccount?.id ? navigate?.('Profile', { userId: activeAccount.id }) : undefined
                         }
-                        disabled={!user?.id}
+                        disabled={!activeAccount?.id}
                     />
                     <SettingsListItem
                         icon={
@@ -581,13 +587,13 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('accountOverview.items.premium.title') || 'Oxy+'
                         }
                         description={
-                            user?.isPremium
+                            activeAccount?.isPremium
                                 ? (t('accountOverview.items.premium.manage') || 'Manage your premium plan')
                                 : (t('accountOverview.items.premium.upgrade') || 'Upgrade to premium features')
                         }
                         onPress={() => navigate?.('PremiumSubscription')}
                     />
-                    {user?.isPremium || subscription?.status === 'active' ? (
+                    {activeAccount?.isPremium || subscription?.status === 'active' ? (
                         <SettingsListItem
                             icon={
                                 <SettingsIcon

@@ -20,8 +20,9 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    // Use useOxy() hook for OxyContext values
-    const { user, oxyServices, isAuthenticated } = useOxy();
+    // Reputation/trust is the ACTIVE account's standing (the org/project/bot
+    // when switched, else the personal user).
+    const { activeAccount, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const [reputationTotal, setReputationTotal] = useState<number | null>(null);
     const [trustTier, setTrustTier] = useState<TrustTier | null>(null);
@@ -33,12 +34,12 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     const primaryColor = bloomTheme.colors.primary;
 
     useEffect(() => {
-        if (!user) return;
+        if (!activeAccount) return;
         setIsLoading(true);
         setError(null);
         Promise.all([
-            oxyServices.getReputationBalance(user.id),
-            oxyServices.getReputationTransactions(user.id, 20, 0),
+            oxyServices.getReputationBalance(activeAccount.id),
+            oxyServices.getReputationTransactions(activeAccount.id, 20, 0),
         ])
             .then(([balance, txns]) => {
                 setReputationTotal(balance.total);
@@ -52,7 +53,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
                 );
             })
             .finally(() => setIsLoading(false));
-    }, [user, oxyServices, t]);
+    }, [activeAccount, oxyServices, t]);
 
     const trustTierLabel = useMemo(
         () => (trustTier ? getTrustTierLabel(trustTier, t) : null),

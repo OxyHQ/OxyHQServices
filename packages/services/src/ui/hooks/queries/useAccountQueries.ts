@@ -232,8 +232,11 @@ export const useAuthorizedApps = (options?: { enabled?: boolean }) => {
  * Get privacy settings for a user
  */
 export const usePrivacySettings = (userId?: string, options?: { enabled?: boolean }) => {
-  const { oxyServices, activeSessionId, user } = useOxy();
-  const targetUserId = userId || user?.id;
+  const { oxyServices, activeSessionId, activeAccount } = useOxy();
+  // When no explicit user id is supplied, target the ACTIVE account (the
+  // account switched into) so "my privacy settings" reflects the current
+  // account, matching the imperative PrivacySettingsScreen.
+  const targetUserId = userId || activeAccount?.id;
 
   return useQuery({
     queryKey: queryKeys.privacy.settings(targetUserId),

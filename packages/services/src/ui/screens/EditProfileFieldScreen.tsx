@@ -88,7 +88,10 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     theme,
     fieldType = 'displayName',
 }) => {
-    const { user } = useOxy();
+    // Editing "my" profile targets the ACTIVE account — writes already route to
+    // it via the X-Acting-As header, so the initial field values must mirror the
+    // active account (an org/project/bot when switched, else the personal user).
+    const { activeAccount } = useOxy();
     const { t } = useI18n();
     const { saveProfile, updateField, isSaving } = useProfileEditing();
     const bloomTheme = useTheme();
@@ -262,11 +265,11 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         }
     }, [fieldType, t]);
 
-    // Initialize field values from user data
+    // Initialize field values from the active account's data
     useEffect(() => {
-        if (!user) return;
+        if (!activeAccount) return;
 
-        const userData = user;
+        const userData = activeAccount;
 
         if (fieldConfig.isList) {
             if (fieldType === 'locations') {
@@ -316,7 +319,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             });
             setFieldValues(initialValues);
         }
-    }, [user, fieldConfig, fieldType]);
+    }, [activeAccount, fieldConfig, fieldType]);
 
     // Field change handler
     const handleFieldChange = useCallback((key: string, value: string) => {
