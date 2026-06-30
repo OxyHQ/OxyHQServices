@@ -86,17 +86,6 @@ Look up the exact `.bun/<pkg>@<ver>+<hash>/` directory in the running image (it 
 
 **GOTCHA — oxy-api Dockerfile: do NOT switch to a full-workspace frozen-lockfile install (PR #261):** The Dockerfile intentionally installs only the lean `core+contracts+api` workspace subset (workspaces-narrowing `node -e` + `bun install`). A full-workspace `bun install --frozen-lockfile` pulls `esbuild` (a frontend-only dep) whose arm64/alpine postinstall hard-fails with `Expected "0.27.2" but got "0.25.12"`, breaking the prod Docker build. A proper fix requires a SCOPED frozen install (`--filter` the api/core/contracts closure so `esbuild` is never materialized) or a single-esbuild-version root override, validated on a real arm64 build. Do NOT apply a naive full-workspace frozen install to the API Dockerfile.
 
-## Custom Agents
-
-Use these agents for all implementation work:
-- `oxy-core` — @oxyhq/core: OxyServices client, mixins, crypto, types. NEVER import react/RN/expo.
-- `oxy-auth` — auth-sdk + auth app: FedCM, service tokens, sessions, 2FA. NEVER import RN/expo.
-- `oxy-api` — API backend: routes, models, services (email, billing, federation, S3, MongoDB)
-- `oxy-frontend` — Frontend apps: accounts (MyAccount / "Accounts by Oxy"), commons (identity vault / "Commons by Oxy"), console (Cloud), inbox (Email), auth (FedCM IdP)
-- `oxy-services` — @oxyhq/services: Expo/RN components, screens, bottom sheets
-- `mention-fixer` — Cross-stack debugging (Mention ↔ Oxy)
-- `git-ops` — Git commit, push, merge operations
-
 ## Commands
 
 ```bash
@@ -420,14 +409,6 @@ const result = await oxy.makeServiceRequest('POST', '/some/endpoint', data, user
 app.use('/internal', oxy.serviceAuth());
 ```
 
-## API: User Display Name Contract
-
-`packages/api/src/utils/displayName.ts` (`composeDisplayName`) is the authoritative server-side name composition point. It returns a real name (explicit `displayName` field or composed `first`+`last`) or `undefined` — it does NOT fall back to `username`, `publicKey`, or `'Anonymous'`. `formatUserNameResponse` omits `displayName` entirely when there is no real name.
-
-`@oxyhq/core` public `User.name.displayName` is **optional** (`string | undefined`). App components render `name.displayName` when present; when absent, fall back to the handle via `getNormalizedUserHandle`. The only sanctioned fallback is `displayName ?? handle`. If a displayed name is wrong or missing, fix the API serializer or SDK type — do not add `displayName || first || username` chains in components.
-
-Request/update DTOs such as `UserProfileUpdate` live in `@oxyhq/contracts`. Import them directly from `@oxyhq/contracts`; do not re-export them through core/services or duplicate them in app packages.
-
 ## API: userCache Invalidation Rule
 
 **Every** API route that modifies user state (`updateUserProfile`, `PATCH /privacy/:id/privacy`, `PUT /users/:userId/privacy`, etc.) MUST call `userCache.invalidate(userId)` after the write. Skipping this causes the in-memory cache to return stale pre-write data on the next `getUserBySession`, silently reverting client updates.
@@ -706,55 +687,6 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - BottomSheet pan context must use a **primitive** `SharedValue` (`contextY = useSharedValue(0)`), NEVER an object-valued SharedValue — object SharedValues mutated inside worklets crash under `react-native-worklets@0.8.3` (`removeListener` on UI thread).
 - `hooks/mergeRefs.ts` returns a plain `(instance: T|null) => void` (not `React.RefCallback`) so the ref stays assignable across duplicate `@types/react` copies (RN 0.85 / React 19).
 
-## Published Package Versions
-
-Last bumped: 2026-06-29 (optional displayName — PRs #422/#423/#424). Historical 2026-06-25/26 figures are preserved in the Notes column; the 3.11.0/0.3.0 snapshot in global AGENTS.md was stale.
-
-| Package | Version | Notes |
-|---------|---------|-------|
-| `@oxyhq/contracts` | **0.6.0** | **0.6.0 (2026-06-29):** `userNameSchema` `displayName` changed to optional (`z.string().optional()`); `UserNameResponse.displayName` is now `string \| undefined`. **0.3.0:** new `identity.ts` (didDocumentSchema, signedRecordEnvelopeSchema, verifiedDomainSchema, authMethodsResponseSchema, exportBundleSchema — attestation nullable; `did?`+`verifiedDomains?` on userResponseSchema). **0.2.1:** `UserNameResponse` made explicit interface + required `displayName: string` (was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: recommendation/appEndorsement/appInterest/appUserSignal/fedcmTokenPayload runtime exports. |
-| `@oxyhq/core` | **3.18.1** | **3.18.1 (2026-06-29):** optional `name.displayName` + relaxed SSO/refresh-all gates (`OxyServices.sso.ts`, `OxyServices.auth.ts`); pins `@oxyhq/contracts ^0.6.0`. **PUBLISH GOTCHA:** core's internal contracts dep MUST use `workspace:^` (NOT `workspace:*`) — `workspace:*` emits an EXACT pin in the published artifact and caused a broken 3.18.0 publish (superseded by 3.18.1). Always use `workspace:^` for inter-workspace deps when publishing. **3.11.0:** identity mixin (`oxy.resolveDid`/`getMyDid`/`listAuthMethods`/`linkIdentityKey`/`unlinkAuthMethod`/`signRecord`/`publishRecord`/`exportMyData`/domain verify), `canonicalJson`, Sign-in-with-Oxy methods, `signChallengeWithSharedKey`. **3.10.1:** `assetUpload` materializes web `{uri}` → Blob. **3.10.0:** `safeFetch`, `createOxyCors`, `verifySecret` in `@oxyhq/core/server`. **3.9.0:** mixin writes sweep cache; `createLinkedClient` no-cache default; `express-rate-limit` required peer. 3.8.0: `getUsersByIds`; 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs. **GOTCHA: 3.3.0 and 3.4.0 BROKEN** (unpublished contracts dep). Pin to **^3.18.1**. |
-| `@oxyhq/auth` | **5.1.1** | **5.1.1:** `useCommonsSignIn` hook (web QR Sign-in-with-Oxy) + `qrcode` dep; core floor `^3.11.0`. **5.0.0 (BREAKING):** `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister`, `zustand` moved to `peerDependencies`; `sonner` optional peer. Consumers must declare all four. 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback`. 4.1.0: `clientId` prop. |
-| `@oxyhq/services` | **11.1.0** | **11.1.0:** `signInWithPassword` on `useOxy`, shared-key cold-boot step, `useOxyAuthSession` exposes `authorizeCode`/`qrPayload`, Sign-in-with-Oxy UI in `SignInModal`/`OxyAuthScreen`; core floor `^3.11.0`, contracts `^0.3.0`. **11.0.0 (BREAKING — packaging only):** `zustand`, `@react-native-async-storage/async-storage`, `socket.io-client`, `expo-font`, `expo-image`, `react-native-qrcode-svg` moved to `peerDependencies`; `react-native-keyboard-controller` optional peer; build tools to devDeps. All consumers must declare the moved peers. 10.3.3: UNFOLLOW-ALL multi-user `FollowButton` toggle. 10.0.0: `appName` removed; use `clientId`. |
-| `@oxyhq/bloom` | **0.19.1** | **0.19.1:** `ImageResolver` widened to `(id, variant?) => string|undefined`; `Avatar`/`AvatarGroup`/`UserHoverCard` accept `variant` prop. Register `ImageResolverProvider` at root with `oxyServices.getFileDownloadUrl`. **0.18.1:** `react-native-reanimated` + `react-native-gesture-handler` now required peers. **0.18.x:** 11 compound-component families → flat prefixed exports (clean cut). Six families stay namespaces. **0.16.x:** `Dialog`/`BottomSheet` only; `CenteredDialog`/`ResponsiveSheet` REMOVED. |
-
-**CRITICAL — SSO helpers live ONLY in `@oxyhq/core`:** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, all `sso*Key` constants, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer. (`MULTIPART_TLDS` was REMOVED in PR #247 — `fapiAutoDetect.ts` now uses the `tldts` Public Suffix List library via `getDomain(host,{allowPrivateDomains:true})`; `tldts` is a direct dep of `@oxyhq/core`.)
-
-**Consumer apps on latest (2026-06-29):** Target `@oxyhq/core ^3.18.1`, `@oxyhq/contracts ^0.6.0`, `@oxyhq/auth ^5.1.1` where used, `@oxyhq/services ^11.1.0` where used, `@oxyhq/bloom ^0.19.1` where used. Expo web apps inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
-
-**Official app clientIds (public, safe to record):** "Commons by Oxy" = `oxy_dk_f65326da2a0d106bf98e873ce19b0ca9094d6c0c1f845a18`; "Oxy Auth" = `oxy_dk_86e915fc05782683064b255fd5bac278a5a606bd85662202`.
-
-### Breaking changes in `@oxyhq/services@11.0.0`
-
-Packaging-only — zero source or API changes. The following were moved from `dependencies` → `peerDependencies`. All consumers MUST declare them directly:
-- `zustand`
-- `@react-native-async-storage/async-storage`
-- `socket.io-client`
-- `expo-font`
-- `expo-image`
-- `react-native-qrcode-svg`
-- `react-native-keyboard-controller` (optional peer)
-
-### Breaking changes in `@oxyhq/services@10.0.0`
-
-- `appName` prop REMOVED from `OxyProvider` — use `clientId`.
-
-### Breaking changes in `@oxyhq/services@8.0.0`
-
-`@tanstack/*` moved to `peerDependencies`. RN/Expo apps MUST add:
-- `@tanstack/react-query ^5.100.0`
-- `@tanstack/react-query-persist-client ^5.100.0`
-- `@tanstack/query-async-storage-persister ^5.100.0`
-- `@tanstack/query-sync-storage-persister ^5.100.0` (web only, optional)
-
-`RouteName` union: `'AccountSettings'` and `'AccountCenter'` → unified into `'ManageAccount'`.
-
-### `expo-crypto` shim (services 8.0.1)
-
-The real Expo SDK 56 API is `randomUUID()`, NOT `getRandomUUID()`. Validated against `node_modules/expo-crypto/build/Crypto.d.ts:67`. The shim at `packages/services/src/types/expo-crypto.d.ts` previously declared the wrong name (fixed commit `34773e8c`).
-
-**Rule**: when authoring a `.d.ts` shim for a dynamic-imported module, validate every declared name against the real consumer's `node_modules/<pkg>/build/*.d.ts`. TypeScript accepts a wrong-named shim silently — the failure only shows at runtime as `TypeError: undefined is not a function`.
-
 ## Terminology
 
 - **OxyServices** — main API client class (in core)
@@ -817,22 +749,6 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 - IdP worker MUST deploy as `_worker.js` (full `bun run build`). Static-only deploy returns 405 on all dynamic routes.
 - NEVER set `FEDCM_ISSUER` env var on the `oxy-auth` CF Pages project — pins all hosts to the same issuer, silently breaks multi-domain FAPI.
 - Changes require a redeploy of auth.oxy.so to take effect in production
-
-## Pending (post-merge, PR #415)
-
-**All shipped (2026-06-26):** `@oxyhq/contracts 0.3.0`, `@oxyhq/core 3.11.0`, `@oxyhq/auth 5.1.1`, `@oxyhq/services 11.1.0` published. OXY custodial signing keypair in SSM + GitHub secrets, wired into oxy-api task-def (oxy-infra `b7112c3`, applied), deployed, verified live (`did:web:oxy.so` carries `#oxy-custodial-key`). Commons + Oxy Auth clientIds registered. **Updated 2026-06-29:** `@oxyhq/contracts 0.6.0` + `@oxyhq/core 3.18.1` (optional displayName, relaxed auth gates — PRs #422/#423/#424).
-
-Remaining items that require action:
-
-1. **Commons EAS project** — create a new EAS project for Commons (`so.oxy.commons`) and add its project ID to `packages/commons/app.json`. Required for native builds. Commons clientId `oxy_dk_f65326da2a0d106bf98e873ce19b0ca9094d6c0c1f845a18` is already registered and wired in `packages/commons/constants/oxy.ts`.
-
-2. **Infra — did:web apex proxy forwarding** (deferred): `did:web:api.oxy.so:u:<id>` works today. `oxy.so/u/*/did.json` routing via the `oxy-federation-proxy` Worker is deferred — zero consumers today. When ready, route `oxy.so/u/*/did.json` → oxy-api.
-
-5. **Oxy Trust migration** (`scripts/migrate-karma-to-reputation.ts`): MUST be run as a one-shot ECS task — all users read 0 reputation balance until it runs. (Carried forward from pre-PR #415 pending items.)
-
-6. **`REC_SCORING_V2=true`** not yet set in `oxy-api` ECS task in `app-services.tf` (recommendations scoring v2 pending). (Carried forward.)
-
-7. **Civic Fase 5 (user nodes / decentralization)** — NOT started. Full handoff in `/home/nate/Oxy/OxyHQServices/CONTINUATION.md`. Read that file first before resuming civic work.
 
 ## Commons Civic Identity Layer — Oxy ID (Fases 0–4)
 
@@ -919,9 +835,3 @@ Reputation awards are NEVER self-issued. The flow: users generate signed attesta
 - **Scan FAB:** Bloom `Fab` on the ID landing screen opens `app/(scan)/` as a `fullScreenModal` — handles both `oxycommons://attest` (real-life attestation) and `oxycommons://approve` (sign-in handoff).
 - **Reputation screen:** `components/reputation/*` — standing hero, Skia composition donut (shows breakdown arc per category), civic-duty CTA (prompts next action to grow standing), signed activity ledger (reads `GET /reputation/:userId/transactions` + `GET /civic/attest/history`).
 - **QR schemes:** ALL use `oxycommons://` — `oxycommons://card` (share identity card), `oxycommons://attest?payload=<signed>` (real-life attestation), `oxycommons://approve?v=1&code=<authorizeCode>&...` (sign-in handoff). `oxydni://` scheme is removed entirely.
-
-### Pending Civic Items
-
-- Seed `isSeedVerifier = true` on bootstrap verified users in production before personhood flows can propagate.
-- Run `scripts/migrate-karma-to-reputation.ts` ECS one-shot (all balances read 0 until done — also listed in main Pending above).
-- Fase 5 (user nodes / decentralization) — NOT started. See `/home/nate/Oxy/OxyHQServices/CONTINUATION.md` for full handoff.

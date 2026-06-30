@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TextInput, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
@@ -81,6 +81,11 @@ export default function NodeScreen() {
   const { t } = useTranslation();
   const relativeTime = useRelativeTime();
 
+  // Self-hosting a node signs a `type:'node'` record with the on-device
+  // identity key, which only exists in the native Oxy app. On web we hide that
+  // path and steer the user to the custodial managed vault instead.
+  const isWeb = Platform.OS === 'web';
+
   const query = useMyNode();
   const node = query.data;
 
@@ -114,9 +119,11 @@ export default function NodeScreen() {
   }, [endpointValid, publicKeyValid, register, endpoint, publicKey, mode]);
 
   const openForm = useCallback(() => {
+    // The self-host register flow is native-only; it must never open on web.
+    if (isWeb) return;
     register.reset();
     setFormOpen(true);
-  }, [register]);
+  }, [isWeb, register]);
 
   const closeForm = useCallback(() => {
     register.reset();
@@ -224,15 +231,23 @@ export default function NodeScreen() {
             </View>
           </SoftSurface>
 
-          <SecondaryButton
-            label={t('civic.nodes.selfHost.cta')}
-            icon="console-network-outline"
-            onPress={openForm}
-            disabled={provisionBusy}
-          />
-          <ThemedText style={[styles.choiceHint, { color: colors.textSecondary }]}>
-            {t('civic.nodes.selfHost.ctaSubtitle')}
-          </ThemedText>
+          {isWeb ? (
+            <Callout tone="info" icon="cellphone-key">
+              {t('civic.nodes.selfHost.webUnavailable')}
+            </Callout>
+          ) : (
+            <>
+              <SecondaryButton
+                label={t('civic.nodes.selfHost.cta')}
+                icon="console-network-outline"
+                onPress={openForm}
+                disabled={provisionBusy}
+              />
+              <ThemedText style={[styles.choiceHint, { color: colors.textSecondary }]}>
+                {t('civic.nodes.selfHost.ctaSubtitle')}
+              </ThemedText>
+            </>
+          )}
         </View>
       </Section>
 
