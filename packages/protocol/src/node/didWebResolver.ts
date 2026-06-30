@@ -17,7 +17,11 @@
  *  - a `%3A` in the host segment is decoded to `:` (an explicit port).
  */
 
-import { didDocumentSchema, type DidDocument } from '@oxyhq/contracts';
+import {
+  didDocumentSchema,
+  type DidDocument,
+  type Secp256k1VerificationMethod,
+} from '@oxyhq/contracts';
 import type {
   ResolvedVerificationMethods,
   VerificationMethodResolver,
@@ -73,14 +77,28 @@ export function didWebToUrl(did: string): string | null {
   return `${base}/${pathParts.join('/')}/did.json`;
 }
 
+/** True for a secp256k1 verification method (carries `publicKeyHex`). */
+function isSecp256k1Vm(
+  vm: DidDocument['verificationMethod'][number],
+): vm is Secp256k1VerificationMethod {
+  return vm.type === 'EcdsaSecp256k1VerificationKey2019';
+}
+
 /**
  * Collect the subject's current verification keys from its DID document: the
- * `publicKeyHex` of every verification method referenced by `assertionMethod`
- * (the keys that may sign assertions/records), deduped. Falls back to ALL
- * `verificationMethod[]` keys when `assertionMethod` references nothing local.
+ * `publicKeyHex` of every secp256k1 verification method referenced by
+ * `assertionMethod` (the keys that may sign assertions/records), deduped. Falls
+ * back to ALL secp256k1 `verificationMethod[]` keys when `assertionMethod`
+ * references nothing local. Non-secp256k1 methods (e.g. the atproto `Multikey`,
+ * which carries the SAME key in multibase form, not hex) are skipped — record
+ * signatures verify against the hex key.
  */
 function collectCurrentPublicKeys(doc: DidDocument): string[] {
-  const byId = new Map(doc.verificationMethod.map((vm) => [vm.id, vm.publicKeyHex] as const));
+  const byId = new Map(
+    doc.verificationMethod
+      .filter(isSecp256k1Vm)
+      .map((vm) => [vm.id, vm.publicKeyHex] as const),
+  );
   const keys: string[] = [];
   for (const id of doc.assertionMethod) {
     const key = byId.get(id);
@@ -89,9 +107,9 @@ function collectCurrentPublicKeys(doc: DidDocument): string[] {
     }
   }
   if (keys.length === 0) {
-    for (const vm of doc.verificationMethod) {
-      if (!keys.includes(vm.publicKeyHex)) {
-        keys.push(vm.publicKeyHex);
+    for (const key of byId.values()) {
+      if (!keys.includes(key)) {
+        keys.push(key);
       }
     }
   }

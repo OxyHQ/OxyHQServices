@@ -26,6 +26,16 @@ import {
   type DidService,
 } from '@oxyhq/contracts';
 import { OXY_NODE_SERVICE_TYPE, OXY_NODE_SERVICE_FRAGMENT } from '../utils/nodes.constants';
+import {
+  ATPROTO_BRIDGE_ENABLED,
+  ATPROTO_PDS_ENDPOINT_ENV,
+  ATPROTO_PDS_SERVICE_FRAGMENT,
+  ATPROTO_PDS_SERVICE_TYPE,
+  ATPROTO_VERIFICATION_METHOD_FRAGMENT,
+  ATPROTO_MULTIKEY_VM_TYPE,
+} from '../utils/atproto.constants';
+import { secp256k1PublicKeyToMultikey } from '../utils/multikey';
+import { logger } from '../utils/logger';
 
 /**
  * The federation/identity domain — drives webfinger handles, profile URLs, and
@@ -56,6 +66,24 @@ const DID_CONTEXT = [
 ];
 
 const SECP256K1_VM_TYPE = 'EcdsaSecp256k1VerificationKey2019' as const;
+
+/**
+ * The HTTPS base URL of the atproto bridge PDS, or `null` when the seam is not
+ * fully configured. The seam is live ONLY when the bridge is enabled
+ * (`ATPROTO_BRIDGE_ENABLED`) AND a real endpoint is set — a PDS service entry
+ * with no endpoint is worse than none, so it FAILS CLOSED. Both inputs are read
+ * at call time (not module load) so a test or a hot-reconfigured task observes
+ * the current env. {@link ATPROTO_BRIDGE_ENABLED} is the canonical exported gate;
+ * it is re-derived here from the same env var so the check stays call-time-exact.
+ */
+function atprotoPdsEndpoint(): string | null {
+  const enabled = ATPROTO_BRIDGE_ENABLED || process.env.ATPROTO_BRIDGE_ENABLED === 'true';
+  if (!enabled) {
+    return null;
+  }
+  const endpoint = process.env[ATPROTO_PDS_ENDPOINT_ENV]?.trim();
+  return endpoint && endpoint.length > 0 ? endpoint : null;
+}
 
 /**
  * The minimal identity-bearing shape of a user the DID builder reads. Accepts a
@@ -205,6 +233,41 @@ export function buildDidDocument(user: DidUserInput): DidDocument {
       type: OXY_NODE_SERVICE_TYPE,
       serviceEndpoint: user.node.endpoint,
     });
+  }
+
+  // C4 atproto BE-DISCOVERED seam: when the bridge is enabled and a self-sovereign
+  // account holds an own identity key, additively announce the bridge PDS service
+  // and an atproto `Multikey` verification method (the same secp256k1 key, encoded
+  // the way a Bluesky AppView expects). Custodial accounts have no own key, so
+  // they never gain an atproto VM. Derived on demand; the document stays
+  // byte-identical for everyone when the seam is off.
+  const pdsEndpoint = atprotoPdsEndpoint();
+  if (pdsEndpoint && isSelfSovereign) {
+    const atprotoVmId = `${did}${ATPROTO_VERIFICATION_METHOD_FRAGMENT}`;
+    try {
+      // The primary identity key is the atproto signing key (matches `#key-1`).
+      const publicKeyMultibase = secp256k1PublicKeyToMultikey(identityKeys[0]);
+      verificationMethod.push({
+        id: atprotoVmId,
+        type: ATPROTO_MULTIKEY_VM_TYPE,
+        controller: did,
+        publicKeyMultibase,
+      });
+      activeVerificationMethodIds.push(atprotoVmId);
+      service.push({
+        id: `${did}${ATPROTO_PDS_SERVICE_FRAGMENT}`,
+        type: ATPROTO_PDS_SERVICE_TYPE,
+        serviceEndpoint: pdsEndpoint,
+      });
+    } catch (err) {
+      // A malformed stored key must never break the canonical document: skip the
+      // atproto seam for this user and serve the standard document.
+      logger.warn('Skipping atproto DID seam: identity key is not a valid secp256k1 public key', {
+        component: 'did',
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const document: DidDocument = {

@@ -84,6 +84,22 @@ describe('createDidWebResolver', () => {
     expect(await resolver.resolve(SUBJECT)).toEqual({ currentPublicKeys: [KEY_A, KEY_B] });
   });
 
+  it('ignores a Multikey VM and collects only the secp256k1 hex keys', async () => {
+    // An atproto-bridged document carries an extra `Multikey` VM (the SAME key in
+    // multibase form, no `publicKeyHex`). The resolver must skip it and resolve to
+    // the hex signing key only.
+    const doc = didDoc({
+      verificationMethod: [
+        { id: `${SUBJECT}#key-1`, type: 'EcdsaSecp256k1VerificationKey2019', controller: SUBJECT, publicKeyHex: KEY_A },
+        { id: `${SUBJECT}#atproto`, type: 'Multikey', controller: SUBJECT, publicKeyMultibase: 'zQ3shFakeMultibaseKey' },
+      ],
+      authentication: [`${SUBJECT}#key-1`, `${SUBJECT}#atproto`],
+      assertionMethod: [`${SUBJECT}#key-1`, `${SUBJECT}#atproto`],
+    });
+    const resolver = createDidWebResolver(async () => jsonResponse(doc));
+    expect(await resolver.resolve(SUBJECT)).toEqual({ currentPublicKeys: [KEY_A] });
+  });
+
   it('returns null for a non-did:web subject (no fetch)', async () => {
     const fetch = jest.fn();
     const resolver = createDidWebResolver(fetch as unknown as NodeFetch);

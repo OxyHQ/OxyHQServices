@@ -102,6 +102,8 @@ export {
 
 export type {
     VerificationMethod,
+    Secp256k1VerificationMethod,
+    MultikeyVerificationMethod,
     DidService,
     DidDocument,
     SignedRecordEnvelope,
