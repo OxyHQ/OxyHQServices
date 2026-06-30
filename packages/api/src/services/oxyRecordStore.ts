@@ -225,8 +225,8 @@ class OxyRecordStoreImpl implements RecordStore {
     }
     const filter =
       env.version === 2
-        ? { userId, nsid: env.collection, rkey: env.rkey }
-        : { userId, type: env.type };
+        ? { userId: { $eq: userId }, nsid: { $eq: env.collection }, rkey: { $eq: env.rkey } }
+        : { userId: { $eq: userId }, type: { $eq: env.type } };
     const latest = await SignedRecord.findOne(filter)
       .sort({ createdAt: -1 })
       .lean<{ envelope?: { issuedAt?: number } } | null>();
