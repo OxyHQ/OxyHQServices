@@ -102,12 +102,37 @@ export class AssetService {
    * records are excluded, so a hash that matches only a tombstone resolves to
    * nothing (never a stale/dead asset). The result is unordered and may be
    * shorter than the input — unresolvable hashes are simply absent.
+   *
+   * DETERMINISTIC ONE-PER-HASH: content-addressing dedups bytes, but `File` docs
+   * are per-owner/per-context, so several live records can share one sha256. The
+   * route maps `sha256 -> fileId`, which must be stable across calls. We pick a
+   * single representative per hash: the OLDEST record, ordered by `createdAt` then
+   * `_id` as a total-order tiebreaker (two docs can share a `createdAt`; `_id` is
+   * unique and monotonic). The first-uploaded record is the canonical origin of
+   * that content and never changes once written, so repeated calls always return
+   * the same id. At most one record per requested hash is returned.
    */
   async findActiveFilesBySha256(sha256s: string[]): Promise<IFile[]> {
     if (sha256s.length === 0) {
       return [];
     }
-    return File.find({ sha256: { $in: sha256s }, status: { $ne: 'deleted' } });
+
+    // Oldest-first by (createdAt, _id) so the per-hash collapse below keeps the
+    // canonical (first-uploaded) record. `_id` breaks createdAt ties for a total,
+    // reproducible order.
+    const files = await File.find({
+      sha256: { $in: sha256s },
+      status: { $ne: 'deleted' },
+    }).sort({ createdAt: 1, _id: 1 });
+
+    const representativeBySha = new Map<string, IFile>();
+    for (const file of files) {
+      if (!representativeBySha.has(file.sha256)) {
+        representativeBySha.set(file.sha256, file);
+      }
+    }
+
+    return Array.from(representativeBySha.values());
   }
 
   private getFederationRepairRemoteUrl(file: IFile): string | null {
@@ -1246,10 +1271,24 @@ export class AssetService {
   }
 
   /**
-   * Get multiple files by ID
+   * Get multiple files by ID.
+   *
+   * Invalid (non-ObjectId) ids are dropped before querying rather than passed to
+   * Mongo: a single malformed id in the batch would otherwise throw a `CastError`
+   * and fail the whole lookup. This mirrors `userService.getUsersByIds` — batch
+   * resolvers are lenient and simply omit ids they cannot resolve. The result is
+   * unordered and may be shorter than the input.
    */
   async getFilesByIds(fileIds: string[]): Promise<IFile[]> {
-    return File.find({ _id: { $in: fileIds } });
+    const objectIds = fileIds
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    if (objectIds.length === 0) {
+      return [];
+    }
+
+    return File.find({ _id: { $in: objectIds } });
   }
 
   /**
