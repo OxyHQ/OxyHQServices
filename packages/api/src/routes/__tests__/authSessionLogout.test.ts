@@ -11,6 +11,10 @@
  *  - bearer-authenticated (authMiddleware sets req.user + next): mints + sets an
  *    `oxy_rt_0` cookie (Path=/auth) for the session derived ONLY from the
  *    caller's own bearer token, and returns { accessToken, expiresAt, authuser }.
+ *  - account-switch coexistence: when an existing `oxy_rt_0` (a DIFFERENT user)
+ *    is presented, the switched bearer's session lands in a NEW slot (`oxy_rt_1`)
+ *    and the operator's slot 0 is neither overwritten nor revoked. This is the
+ *    establishment step the SDK runs after `POST /accounts/:id/switch`.
  *  - invalid/missing bearer (authMiddleware responds 401): 401, no cookie minted.
  *
  * `/auth/logout`:
@@ -396,6 +400,67 @@ describe('POST /auth/session', () => {
     // Value is a real token, not empty (i.e. not a clear).
     const value = (cookie as string).split(';')[0].slice(`${REFRESH_COOKIE_SLOT_0}=`.length);
     expect(value.length).toBeGreaterThan(0);
+  });
+
+  it('allocates a NEW slot (oxy_rt_1) for the switched account and PRESERVES the operator\'s oxy_rt_0 — the account-switch coexistence contract', async () => {
+    // This is EXACTLY what the SDK does immediately after POST /accounts/:id/switch:
+    // the switched managed account is now the bearer, while the operator's primary
+    // session is still parked in oxy_rt_0. Crucially this runs at /auth/session
+    // (Path=/auth), so the browser DOES present oxy_rt_0 here — unlike the
+    // /accounts/* switch route, which never receives it and is why issuing the
+    // cookie there blindly clobbered slot 0. The server sees slot 0 is held by a
+    // DIFFERENT user and allocates slot 1; it must never overwrite or revoke the
+    // operator's slot. Proves: 2nd user gets a NEW slot AND the primary survives.
+    const OPERATOR_ID = '64f7c2a1b8e9d3f4a1c2b3d5'; // distinct from TEST_USER_ID
+    const operatorRaw = 'operator-slot0-raw-token';
+    stageToken(buildStoredToken(operatorRaw, {
+      _id: 'rt-operator',
+      sessionId: 'sess-operator',
+      family: 'fam-operator',
+      userId: { toString: () => OPERATOR_ID },
+    }));
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // Bearer = the switched managed account; its session id comes from its token.
+    mockExtractToken.mockReturnValueOnce('switched-bearer-jwt');
+    mockDecodeToken.mockReturnValueOnce({ sessionId: 'sess-switched', userId: TEST_USER_ID });
+    mockCreate.mockResolvedValueOnce({});
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'switched-access-jwt', expiresAt });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session',
+      {},
+      {
+        bearer: 'switched-bearer-jwt',
+        origin: 'https://accounts.oxy.so',
+        cookieHeader: `oxy_rt_0=${operatorRaw}`,
+      }
+    );
+
+    expect(res.status).toBe(200);
+    // The switched account lands in a NEW slot — never the operator's slot 0.
+    expect(res.body.authuser).toBe(1);
+
+    // oxy_rt_1 is set with a real (non-empty) token, scoped to /auth.
+    const slot1 = res.setCookie.find((c) => c.startsWith('oxy_rt_1='));
+    expect(slot1).toBeDefined();
+    expect(slot1).toContain('Path=/auth');
+    expect((slot1 as string).split(';')[0].slice('oxy_rt_1='.length).length).toBeGreaterThan(0);
+
+    // The operator's slot 0 is NEVER overwritten (no oxy_rt_0 token write) and
+    // NEVER revoked (no family revoke). Both accounts now coexist on the device.
+    const slot0Token = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_0=') && !/Max-Age=0/i.test(c)
+    );
+    expect(slot0Token).toBeUndefined();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+
+    // The new cookie is bound to the SWITCHED session + user, not the operator's.
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'sess-switched', userId: TEST_USER_ID })
+    );
   });
 
   it('returns 400 and mints no cookie when the token arrives via ?token= in the URL', async () => {

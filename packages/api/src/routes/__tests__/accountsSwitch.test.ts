@@ -6,11 +6,17 @@
  * the authorization gate + response shape without a database:
  *  - account.service.verifyActingAs → controls act_as authorization,
  *  - User.findById → the target account doc,
- *  - sessionService.createSession + issueAndSetRefreshCookie → session minting.
+ *  - sessionService.createSession → session minting.
  *
  * Asserts: non-members are rejected (403); a personal account is never a switch
  * target (403); an authorized member mints a session whose user is the target and
  * records the operator; the response mirrors the login/claimSession shape.
+ *
+ * ROOT-CAUSE GUARD (slot-clobber regression): the switch route MUST NOT write any
+ * `oxy_rt_<authuser>` refresh cookie. Those cookies are `Path=/auth` scoped, so
+ * the browser never sends them to this `/accounts/*` route; issuing one blind here
+ * always picks slot 0 and OVERWRITES the operator's own primary session. The SDK
+ * establishes the device cookie via `POST /auth/session` (under `/auth`) instead.
  */
 
 import express from 'express';
@@ -42,12 +48,6 @@ jest.mock('../../services/session.service', () => ({
   default: { createSession: (...args: unknown[]) => mockCreateSession(...args) },
 }));
 
-const mockIssueCookie = jest.fn();
-jest.mock('../../services/refreshToken.service', () => ({
-  __esModule: true,
-  issueAndSetRefreshCookie: (...args: unknown[]) => mockIssueCookie(...args),
-}));
-
 const mockAuthMiddleware = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -68,6 +68,7 @@ import { errorHandler } from '../../middleware/errorHandler';
 
 interface JsonResponse {
   status: number;
+  setCookie: string[];
   body: Record<string, unknown> & {
     user?: { id?: string; username?: string };
     sessionId?: string;
@@ -95,7 +96,12 @@ function post(srv: http.Server, path: string): Promise<JsonResponse> {
         res.on('data', (c) => { raw += c; });
         res.on('end', () => {
           try {
-            resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} });
+            const setCookie = res.headers['set-cookie'] ?? [];
+            resolve({
+              status: res.statusCode ?? 0,
+              setCookie: Array.isArray(setCookie) ? setCookie : [setCookie],
+              body: raw.length > 0 ? JSON.parse(raw) : {},
+            });
           } catch (err) { reject(err); }
         });
       }
@@ -126,7 +132,6 @@ beforeEach(() => {
   mockVerifyActingAs.mockReset();
   mockFindById.mockReset();
   mockCreateSession.mockReset();
-  mockIssueCookie.mockReset();
 });
 
 describe('POST /accounts/:id/switch', () => {
@@ -169,7 +174,6 @@ describe('POST /accounts/:id/switch', () => {
       expiresAt: new Date('2030-01-01T00:00:00.000Z'),
       accessToken: 'acc-1',
     });
-    mockIssueCookie.mockResolvedValue({ accessToken: 'acc-1', expiresAt: new Date(), authuser: 2 });
 
     const res = await post(server, `/accounts/${ORG_ID}/switch`);
 
@@ -179,11 +183,35 @@ describe('POST /accounts/:id/switch', () => {
     expect(res.body.user?.username).toBe('acme-org');
     expect(res.body.sessionId).toBe('sess-1');
     expect(res.body.accessToken).toBe('acc-1');
-    expect(res.body.authuser).toBe(2);
     // Operator recorded on the minted session.
     expect(mockCreateSession).toHaveBeenCalledWith(ORG_ID, expect.anything(), { operatedByUserId: OPERATOR_ID });
-    // Added to the device multi-account set.
-    expect(mockIssueCookie).toHaveBeenCalled();
+  });
+
+  it('does NOT write a refresh cookie (slot-clobber guard) — establishment is deferred to /auth/session', async () => {
+    mockVerifyActingAs.mockResolvedValue('admin');
+    mockFindById.mockResolvedValue({
+      _id: new Types.ObjectId(ORG_ID),
+      username: 'acme-org',
+      kind: 'organization',
+      accountStatus: 'active',
+    });
+    mockCreateSession.mockResolvedValue({
+      sessionId: 'sess-1',
+      deviceId: 'dev-1',
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      accessToken: 'acc-1',
+    });
+
+    const res = await post(server, `/accounts/${ORG_ID}/switch`);
+
+    expect(res.status).toBe(200);
+    // The route lives at /accounts/* — outside the oxy_rt_* cookie's Path=/auth
+    // scope — so it can never see the device's existing slots. Issuing a cookie
+    // here would blindly take slot 0 and destroy the operator's own session.
+    // It MUST leave the cookie untouched; the SDK establishes it via /auth/session.
+    expect(res.setCookie.some((c) => /(^|\s)oxy_rt_\d+=/.test(c) && !/Max-Age=0/.test(c))).toBe(false);
+    // No authuser is resolved by this route — the SDK gets it from /auth/session.
+    expect(res.body.authuser).toBeUndefined();
   });
 
   it('returns 404 for a missing/archived target', async () => {

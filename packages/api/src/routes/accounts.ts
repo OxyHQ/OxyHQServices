@@ -7,13 +7,11 @@ import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
-import { logger } from '../utils/logger';
 import { accountService, type AccountNode, type EffectiveAccess } from '../services/account.service';
 import { User, IUser } from '../models/User';
 import { IAccountMember } from '../models/AccountMember';
 import { IAccountCredential } from '../models/AccountCredential';
 import sessionService from '../services/session.service';
-import { issueAndSetRefreshCookie } from '../services/refreshToken.service';
 import type { SessionAuthResponse } from '../types/session';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
@@ -281,12 +279,20 @@ router.get(
  * The caller (operator) must hold `account:act_as` over the target. The minted
  * session records the operator (`operatedByUserId`) for audit and binds its
  * validity to that membership — revoking it kills the session (re-checked on
- * validate + refresh). The session is added to the device's multi-account set
- * (`oxy_rt_*` cookie family), so it survives reload and propagates cross-domain
- * via `/auth/refresh-all` exactly like a device account.
+ * validate + refresh).
  *
- * Returns the SAME shape as login / claimSession (`SessionAuthResponse` +
- * `authuser`) so the client plants it as the active session.
+ * The session joins the device's multi-account set (`oxy_rt_<authuser>` cookie
+ * family) so it survives reload and propagates cross-domain via
+ * `/auth/refresh-all` — but that cookie is NOT set here. The refresh cookies are
+ * scoped to `Path=/auth` (REFRESH_COOKIE_PATH), so a browser never sends them to
+ * this `/accounts/*` route; setting one here would run blind to the device's
+ * existing slots and clobber slot 0 (the operator's own session). Instead the SDK
+ * plants the returned `accessToken` and then calls the canonical
+ * `POST /auth/session` — which IS under `/auth`, where the cookies are visible —
+ * to establish this session's refresh cookie in a correctly-allocated NEW slot.
+ *
+ * Returns the SAME shape as login / claimSession (`SessionAuthResponse`) so the
+ * client plants it as the active session.
  */
 router.post(
   '/:id/switch',
@@ -328,25 +334,16 @@ router.post(
       throw new Error('Failed to format account data');
     }
 
-    // Add the managed account to the device's multi-account set so it survives
-    // reload and propagates cross-domain via /auth/refresh-all (best-effort — a
-    // cookie failure must not break the switch).
-    let authuser: number | null = null;
-    try {
-      const issued = await issueAndSetRefreshCookie(res, session.sessionId, account._id, {
-        cookieHeader: req.headers.cookie,
-      });
-      authuser = issued.authuser;
-    } catch (error) {
-      logger.error('Failed to set refresh cookie during account switch', error instanceof Error ? error : new Error(String(error)), {
-        component: 'accounts',
-        method: 'switch',
-        accountId: account._id.toString(),
-      });
-    }
+    // The device multi-account refresh cookie is deliberately NOT set here — see
+    // the route docstring. The `oxy_rt_<authuser>` cookies are `Path=/auth`
+    // scoped, so this `/accounts/*` route never receives them; issuing one blind
+    // would always pick slot 0 and overwrite the operator's own primary session.
+    // The SDK plants the returned `accessToken` and establishes the cookie via
+    // `POST /auth/session` (under `/auth`, where the slots are visible) so the
+    // switched session lands in a correctly-allocated NEW slot.
 
     // Mirror the canonical login / claimSession response shape.
-    const response: SessionAuthResponse & { authuser?: number } = {
+    const response: SessionAuthResponse = {
       sessionId: session.sessionId,
       deviceId: session.deviceId,
       expiresAt: session.expiresAt.toISOString(),
@@ -357,9 +354,6 @@ router.post(
         avatar: userData.avatar,
       },
     };
-    if (authuser !== null) {
-      response.authuser = authuser;
-    }
 
     res.status(200).json(response);
   })
