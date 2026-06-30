@@ -1334,16 +1334,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // to the cross-domain fallbacks exactly as before.
     const prioritizeMultiAccount = isWebBrowser() && readActiveAuthuser() !== null;
 
-    // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
-    // central IdP session (FedCM credential association / per-apex `fedcm_session`
-    // cookie) can still be live, so the AUTOMATIC silent steps below
-    // (`fedcm-silent`, `silent-iframe`) would re-mint a session on the very next
-    // cold boot and sign the user back in without intent. Read the durable flag
-    // ONCE here (synchronously usable by the step `enabled` gates) and skip those
-    // two steps while it is set. Any deliberate sign-in clears it. The `sso-bounce`
-    // step is already self-suppressed after sign-out (its `hasPriorSession` hint is
-    // cleared), and the local restore steps (`stored-session`, cookie-restore) are
-    // unaffected — a deliberate sign-out clears those credentials anyway.
+    // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", any
+    // credential that can silently re-mint a session may still be live on the
+    // next reload — the central IdP session (FedCM credential association /
+    // per-apex `fedcm_session` cookie) AND the device refresh cookies. Since
+    // PR #455 the PRIMARY web session also joins the `oxy_rt_<authuser>` device
+    // set, so the un-gated cookie-restore steps would `refresh-all` that still-
+    // present cookie and sign the user back in without intent — exactly the
+    // "sign-out is silently undone" regression. So this flag gates EVERY
+    // AUTOMATIC silent-restore cold-boot step: `stored-session`,
+    // `cookie-restore-active`, `fedcm-silent`, `silent-iframe`, and
+    // `cookie-restore`. The gate — not a cookie wipe — is the authority: the
+    // account may stay "known" for a fast deliberate re-sign-in, but no step
+    // restores it silently while the flag is set. Read the durable flag ONCE here
+    // (synchronously usable by every step `enabled` gate). Any deliberate sign-in
+    // (password, FedCM, account switch, device claim) clears it, so there is no
+    // "stuck signed out" state. The `sso-bounce` step needs no extra gate: it is
+    // already self-suppressed after sign-out (its `hasPriorSession` hint is
+    // cleared). `sso-return` is NOT gated — it commits the result of a deliberate
+    // top-level `/sso` bounce the user just initiated. `shared-key-signin` is
+    // native-only and the flag never sets on native (`markSignedOut` no-ops
+    // off-web), so its gate would be moot; it is left untouched.
     const silentRestoreBlocked = isSilentRestoreSuppressed();
 
     try {
@@ -1363,12 +1374,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 2) Stored-session bearer restore. NO `enabled` gate — runs on ALL
-            // platforms. This is native's ONLY restore path (every web-only step
-            // is disabled off-browser, so native reaches exactly this) AND the
-            // common WEB reload winner.
+            // 2) Stored-session bearer restore. Runs on ALL platforms EXCEPT when
+            // the deliberately-signed-out flag is set (web only — it never sets on
+            // native, so native still always reaches exactly this step, its ONLY
+            // restore path). This is also the common WEB reload winner.
             //
-            // ORDERING (FIX A): this step now runs BEFORE the slow web-only
+            // SIGNED-OUT GATE: after a deliberate full sign-out the stored session
+            // state is cleared, so this would normally skip anyway — but the gate
+            // makes that authoritative rather than incidental, so no residual
+            // stored token can silently restore while the user is signed out.
+            //
+            // ORDERING (FIX A): this step runs BEFORE the slow web-only
             // probes (`fedcm-silent`, `silent-iframe`, `cookie-restore`). On a
             // normal reload the local bearer validates in one round-trip and
             // wins; `runColdBoot` then short-circuits and never even evaluates
@@ -1379,6 +1395,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // local session this step skips and the cross-domain fallback chain
             // (fedcm → iframe → cookie → sso-bounce) runs exactly as before.
             id: 'stored-session',
+            enabled: () => !silentRestoreBlocked,
             run: async () => {
               const restored = await restoreStoredSession();
               if (restored) {
@@ -1455,8 +1472,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // When no slot is persisted this is disabled and the original order is
             // unchanged; when the slot's cookies have lapsed it returns no accounts
             // and the chain falls through to the cross-domain fallbacks below.
+            //
+            // SIGNED-OUT GATE: since PR #455 the primary's `oxy_rt` slot survives a
+            // deliberate sign-out, so without this gate `refresh-all` would re-mint
+            // and silently re-log-in the user on reload. The flag is cleared by any
+            // deliberate sign-in (including an account SWITCH, which also writes the
+            // new active slot), so the switch-survives-reload path is unaffected.
             id: 'cookie-restore-active',
-            enabled: () => prioritizeMultiAccount,
+            enabled: () => prioritizeMultiAccount && !silentRestoreBlocked,
             run: async () => {
               const restored = await restoreViaRefreshCookie();
               return restored ? { kind: 'session', session: true } : { kind: 'skip' };
@@ -1546,8 +1569,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // would be a redundant second `refreshAllSessions`. It still runs in the
             // common no-persisted-slot case (e.g. first visit to a first-party app
             // whose central refresh cookies already exist).
+            //
+            // SIGNED-OUT GATE (same rationale as `cookie-restore-active`): the
+            // primary's `oxy_rt` slot survives a deliberate sign-out (PR #455), so
+            // this must be skipped while the signed-out flag is set or it would
+            // silently re-restore the primary on reload.
             id: 'cookie-restore',
-            enabled: () => isWebBrowser() && !prioritizeMultiAccount,
+            enabled: () => isWebBrowser() && !prioritizeMultiAccount && !silentRestoreBlocked,
             run: async () => {
               const restored = await restoreViaRefreshCookie();
               return restored ? { kind: 'session', session: true } : { kind: 'skip' };

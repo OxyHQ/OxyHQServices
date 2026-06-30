@@ -356,6 +356,49 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(latest.isAuthenticated).toBe(false);
   });
 
+  it('5c) DELIBERATELY-SIGNED-OUT gate: cookie-restore is SKIPPED when the signed-out flag is set', async () => {
+    resetStubs('https://api.test-5c');
+    // The refresh cookie is STILL present (PR #455: the primary web session joins
+    // the device `oxy_rt` set), so `authManager.initialize()` WOULD restore a real
+    // user — but the user deliberately signed out, so the cookie-restore step must
+    // NOT run and must NOT silently re-log them in on this cold boot.
+    stubs.isFedCMSupported.mockReturnValue(false);
+    stubs.managerInitialize.mockResolvedValue(realUser);
+    stubs.getActiveAccount.mockReturnValue({ sessionId: 'sess_cookie' });
+    stubs.getCurrentUser.mockResolvedValue(realUser);
+    window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    // The chain falls through to the terminal bounce (the beforeEach seeds the
+    // returning-visitor hint), proving cookie-restore did not silently restore.
+    await waitFor(() => expect(bounced()).toBe(true));
+    expect(stubs.managerInitialize).not.toHaveBeenCalled();
+    expect(latest.isAuthenticated).toBe(false);
+  });
+
+  it('5d) deliberate sign-in CLEARS the signed-out flag → cookie-restore restores again on the next boot', async () => {
+    resetStubs('https://api.test-5d');
+    // Arm the signed-out flag, then clear it (simulating a deliberate sign-in /
+    // account switch, which both call `clearSignedOut*`). The very next cold boot
+    // must restore normally — there is no "stuck signed out" state.
+    window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
+    window.localStorage.removeItem(ssoSignedOutKey(ORIGIN));
+    stubs.isFedCMSupported.mockReturnValue(false);
+    stubs.managerInitialize.mockResolvedValue(realUser);
+    stubs.getActiveAccount.mockReturnValue({ sessionId: 'sess_cookie' });
+    stubs.getCurrentUser.mockResolvedValue(realUser);
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    await waitFor(() => expect(latest.isAuthenticated).toBe(true));
+    expect(latest.userId).toBe('u1');
+    expect(stubs.managerInitialize).toHaveBeenCalled();
+    expect(bounced()).toBe(false);
+  });
+
   it('6) cookie-restore hydrates a real user and commits when prior steps skip', async () => {
     resetStubs('https://api.test-6');
     stubs.managerInitialize.mockResolvedValue(realUser);
