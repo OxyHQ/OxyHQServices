@@ -45,3 +45,23 @@ export const assetsByIdsBodySchema = z.object({
     .min(1, 'ids must not be empty')
     .max(MAX_ASSETS_BY_IDS, `Cannot request more than ${MAX_ASSETS_BY_IDS} assets at once`),
 });
+
+// Maximum number of content hashes accepted by POST /assets/service/by-sha256
+// in a single request. Mirrors MAX_ASSETS_BY_IDS so the reverse content-address
+// lookup has the same per-call fan-out ceiling as the forward id lookup.
+export const MAX_ASSETS_BY_SHA256 = 100;
+
+// A lowercase hex SHA-256 digest: exactly 64 hex characters.
+const sha256Hex = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-f0-9]{64}$/, 'sha256 must be a 64-character hex digest');
+
+// POST /assets/service/by-sha256
+export const assetsBySha256BodySchema = z.object({
+  sha256s: z
+    .array(sha256Hex)
+    .min(1, 'sha256s must not be empty')
+    .max(MAX_ASSETS_BY_SHA256, `Cannot request more than ${MAX_ASSETS_BY_SHA256} hashes at once`),
+});

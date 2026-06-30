@@ -88,6 +88,28 @@ export class AssetService {
     return File.findOne({ sha256, status: { $ne: 'deleted' } });
   }
 
+  /**
+   * Batch reverse content-address lookup: resolve many content hashes to their
+   * live (non-deleted) `File` records in a single query.
+   *
+   * This is the batched counterpart of {@link findActiveFileBySha}, used by the
+   * service-token `POST /assets/service/by-sha256` route to resolve a record's
+   * `blob.sha256` back to a servable asset without issuing one query per hash.
+   * It backs the same `{ sha256: 1, status: 1 }` index the single-hash lookup
+   * uses, so a 100-hash batch is one indexed `$in` scan.
+   *
+   * The same tombstone-revival safety holds as in the single lookup: deleted
+   * records are excluded, so a hash that matches only a tombstone resolves to
+   * nothing (never a stale/dead asset). The result is unordered and may be
+   * shorter than the input — unresolvable hashes are simply absent.
+   */
+  async findActiveFilesBySha256(sha256s: string[]): Promise<IFile[]> {
+    if (sha256s.length === 0) {
+      return [];
+    }
+    return File.find({ sha256: { $in: sha256s }, status: { $ne: 'deleted' } });
+  }
+
   private getFederationRepairRemoteUrl(file: IFile): string | null {
     const metadata = file.metadata || {};
     const remoteUrl = metadata.remoteUrl;

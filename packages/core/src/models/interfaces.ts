@@ -534,6 +534,30 @@ export interface ServiceAssetMetadata {
 }
 
 /**
+ * Reverse-lookup asset metadata returned by `POST /assets/service/by-sha256`.
+ *
+ * Resolves a content-addressed `sha256` digest back to the live Oxy asset that
+ * holds those bytes: its file `id`, MIME type, byte `size`, storage `status`,
+ * and — for active, public, CDN-reachable assets only — a public `url`
+ * (`cloud.oxy.so`). This is the inverse of {@link ServiceAssetMetadata}: it lets
+ * a `files:read`-scoped service-to-server caller (e.g. Mention's MTN materializer
+ * / node-blob sync) turn a record's `blob.sha256` into a servable asset.
+ *
+ * `url` is omitted for private/unlisted assets (and for public assets whose
+ * bytes are not yet CDN-reachable) — those must be streamed through the origin.
+ * Unknown or deleted hashes are omitted from the response (never error the whole
+ * batch), so the result may be shorter than the requested hash list.
+ */
+export interface ServiceAssetMetadataBySha {
+  sha256: string;
+  id: string;
+  mime: string;
+  size: number;
+  status: 'active' | 'trash';
+  url?: string;
+}
+
+/**
  * Account storage usage (server-side usage, not local AsyncStorage)
  */
 export interface AccountStorageCategoryUsage {
