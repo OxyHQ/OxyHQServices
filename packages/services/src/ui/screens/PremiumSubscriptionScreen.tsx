@@ -91,7 +91,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
 }) => {
-    // Use useOxy() hook for OxyContext values
+    // Premium state belongs to the ACTIVE account (the org/project/bot when
+    // switched, else the personal user), not the device-session owner.
     const { user } = useOxy();
     const [loading, setLoading] = useState(true);
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);

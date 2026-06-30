@@ -64,11 +64,6 @@ export type {
 } from './mixins/OxyServices.auth';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type {
-    CreateManagedAccountInput,
-    ManagedAccountManager,
-    ManagedAccount,
-} from './mixins/OxyServices.managedAccounts';
-export type {
     ContactDiscoveryMatch,
     ContactDiscoveryResponse,
 } from './mixins/OxyServices.contacts';
@@ -97,26 +92,50 @@ export { normalizeProfileLinks } from './utils/profileLinks';
 export type { ProfileLink, ProfileLinkMetadata } from './utils/profileLinks';
 
 // ---------------------------------------------------------------------------
-// Applications (multi-user apps: membership, roles, credentials)
+// Connected apps (OAuth consent: public app identity + authorized-app grants)
 // ---------------------------------------------------------------------------
 export type {
-    Application,
     PublicApplication,
     ConnectedApp,
-    ApplicationMember,
-    ApplicationCredential,
-    ApplicationRole,
+} from './mixins/OxyServices.connectedApps';
+
+// ---------------------------------------------------------------------------
+// Accounts (unified account graph: tree, membership, roles, bot credentials)
+// plus the applications owned within it (Application = OAuth client).
+// ---------------------------------------------------------------------------
+export type {
+    AccountKind,
+    AccountRelationship,
+    AccountRole,
+    AccountMemberStatus,
+    AccountMemberSource,
+    AccountMember,
+    AccountNode,
+    AccountCredentialType,
+    AccountCredentialEnvironment,
+    AccountCredentialStatus,
+    AccountCredential,
+    AccountCredentialWithSecret,
+    RotateAccountCredentialResult,
+    ListAccountsOptions,
+    CreateAccountInput,
+    UpdateAccountInput,
+    InviteAccountMemberInput,
+    UpdateAccountMemberInput,
+    TransferAccountOwnershipInput,
+    CreateAccountCredentialInput,
+    AccountSuccessResult,
+    SwitchAccountResult,
+    // Applications owned within the account graph (Application = OAuth client).
+    Application,
     ApplicationType,
     ApplicationStatus,
-    ApplicationMemberStatus,
+    ApplicationCredential,
     ApplicationCredentialType,
     ApplicationCredentialStatus,
     ApplicationEnvironment,
     CreateApplicationInput,
     UpdateApplicationInput,
-    InviteApplicationMemberInput,
-    UpdateApplicationMemberInput,
-    TransferApplicationOwnershipInput,
     CreateApplicationCredentialInput,
     ApplicationCredentialWithSecret,
     RotateApplicationCredentialResult,
@@ -125,26 +144,7 @@ export type {
     ApplicationUsageByDay,
     ApplicationUsageByEndpoint,
     ApplicationUsageStats,
-    ApplicationSuccessResult,
-} from './mixins/OxyServices.applications';
-
-// ---------------------------------------------------------------------------
-// Workspaces (multi-user containers: membership, roles)
-// ---------------------------------------------------------------------------
-export type {
-    Workspace,
-    WorkspaceMember,
-    WorkspaceRole,
-    WorkspaceType,
-    WorkspaceStatus,
-    WorkspaceMemberStatus,
-    CreateWorkspaceInput,
-    UpdateWorkspaceInput,
-    InviteWorkspaceMemberInput,
-    UpdateWorkspaceMemberInput,
-    TransferWorkspaceOwnershipInput,
-    WorkspaceSuccessResult,
-} from './mixins/OxyServices.workspaces';
+} from './mixins/OxyServices.accounts';
 
 // ---------------------------------------------------------------------------
 // Reputation (Oxy Trust: ledger, balances, disputes, rules, influence)

@@ -83,8 +83,8 @@
       "accountInfo": "Account Info",
       "recentActivity": "Recent Activity",
       "overview": "Overview",
-      "yourIdentities": "Your Identities",
-      "yourIdentitiesSubtitle": "Create and manage sub-accounts for different purposes.",
+      "yourIdentities": "Accounts",
+      "yourIdentitiesSubtitle": "Manage accounts you own and accounts shared with you.",
       "security": "Security"
     },
     "recommendations": {
@@ -126,11 +126,11 @@
       "managedCount": "{{count}} managed accounts",
       "managedCount_one": "{{count}} managed account",
       "managedSubtitle": "Tap to view all",
-      "managedActingAs": "Currently acting as another identity",
-      "createNew": "Create New Identity",
+      "managedActingAs": "Currently using another account",
+      "createNew": "Create account",
       "manageAll": "Manage All",
       "noManaged": "No managed accounts yet",
-      "noManagedSubtitle": "Create identities for different contexts"
+      "noManagedSubtitle": "Create accounts for different contexts"
     },
     "securityOverview": {
       "biometricChecking": "Checking...",
@@ -404,9 +404,28 @@
     }
   },
   "managedAccounts": {
-    "title": "Your Identities",
-    "subtitle": "Create and manage identities for different purposes.",
-    "noUsernameYet": "No username set yet"
+    "title": "Accounts",
+    "subtitle": "Manage accounts you own and accounts shared with you. Each has its own profile, username, and content.",
+    "createNew": "Create account",
+    "noUsernameYet": "No username set yet",
+    "switchBackTitle": "Switch back to your personal account",
+    "switchBackSubtitle": "You're currently using {{name}}",
+    "groups": {
+      "organizations": "Organizations",
+      "projects": "Projects",
+      "bots": "Bots",
+      "shared": "Shared with you"
+    },
+    "empty": {
+      "title": "No accounts yet",
+      "subtitle": "Create an organization, project, or bot for different contexts — or get invited to an account someone shares with you."
+    },
+    "archive": {
+      "confirmTitle": "Archive account",
+      "confirmBody": "Are you sure you want to archive \"{{name}}\"? It will be removed from your accounts.",
+      "confirm": "Archive",
+      "error": "Failed to archive account. Please try again."
+    }
   },
   "payments": {
     "title": "Payments & subscriptions",
@@ -678,7 +697,7 @@
     }
   },
   "sidebar": {
-    "actingAs": "Acting as {{name}}",
+    "actingAs": "Using {{name}}",
     "managedAccountFallback": "Managed Account"
   },
   "search": {
@@ -704,7 +723,7 @@
     "thirdParty": "Third-party connections",
     "payments": "Payments & subscriptions",
     "storage": "Oxy storage",
-    "yourIdentities": "Your Identities",
+    "yourIdentities": "Accounts",
     "authorize": "Authorize",
     "scanQr": "Scan QR Code"
   },
@@ -738,10 +757,12 @@
     "removeDevice": "Remove device",
     "removeSession": "Remove session",
     "switchSession": "Switch to this session",
-    "actAs": "Act as this identity",
-    "stopActingAs": "Stop acting as this identity",
+    "actAs": "Switch to this account",
+    "stopActingAs": "Current account",
+    "manageMembers": "Manage members and sharing",
     "editProfile": "Edit profile",
     "deleteAccount": "Delete account",
+    "archiveAccount": "Archive account",
     "deviceDetails": "Open device details",
     "deviceDetailsHint": "Shows full device information",
     "sessionDetails": "Open session details",

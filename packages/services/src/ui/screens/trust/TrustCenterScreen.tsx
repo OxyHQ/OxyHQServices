@@ -20,7 +20,8 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    // Use useOxy() hook for OxyContext values
+    // Reputation/trust is the ACTIVE account's standing (the org/project/bot
+    // when switched, else the personal user).
     const { user, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const [reputationTotal, setReputationTotal] = useState<number | null>(null);

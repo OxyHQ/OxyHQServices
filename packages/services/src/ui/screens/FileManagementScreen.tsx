@@ -763,7 +763,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     defaultVisibility = 'private',
     linkContext,
 }) => {
-    // Use useOxy() hook for OxyContext values
+    // Use useOxy() hook for OxyContext values. Files are owned by the ACTIVE
+    // account (the org/project/bot when switched, else the personal user): the
+    // default file owner and every "is this mine?" ownership check resolve
+    // against `user`, so switching shows/manages that account's files.
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
     const uploadFileMutation = useUploadFile();

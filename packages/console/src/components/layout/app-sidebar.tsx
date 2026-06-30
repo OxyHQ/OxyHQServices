@@ -79,7 +79,7 @@ const settingsNavItems = [
     url: '/settings',
     icon: Settings01Icon,
     items: [
-      { title: 'Workspace', url: '/settings/workspace' },
+      { title: 'Account', url: '/settings/account' },
     ],
   },
 ];

@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "3.18.1",
+  "version": "4.0.1",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -102,7 +102,7 @@
     "invariant": "^2.2.4",
     "jwt-decode": "^4.0.0",
     "socket.io-client": "^4.8.1",
-    "tldts": "^7.0.22",
+    "tldts": "^7.4.5",
     "zod": "^3.25.64"
   },
   "peerDependencies": {

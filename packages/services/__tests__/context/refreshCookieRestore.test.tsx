@@ -106,8 +106,7 @@ function baseStub(overrides: StubOverrides = {}) {
       valid: true,
       user: { id: COOKIE_USER_ID, username: 'tester' },
     })),
-    setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 
@@ -136,6 +135,11 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     setTokensSpy.mockClear();
     isFedCMSupportedSpy.mockClear();
+    // Default: FedCM unsupported (these cross-domain restore cases don't need
+    // it). Reset the IMPLEMENTATION too — `mockClear` only clears call history,
+    // so a test that opts into FedCM via `mockReturnValue(true)` would otherwise
+    // leak that into the next test.
+    isFedCMSupportedSpy.mockReturnValue(false);
     // `accounts.oxy.so` is a first-party RP, NOT the central IdP, so a fully
     // logged-out cold boot ends in the terminal `sso-bounce`. Spy the
     // navigation seam so it is observable and never tears down jsdom.
@@ -264,5 +268,87 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     expect(setTokensSpy).toHaveBeenCalledWith(SLOT_1_TOKEN);
     expect(window.localStorage.getItem(ACTIVE_AUTHUSER_KEY)).toBe('1');
     expect(window.localStorage.getItem(ACTIVE_SESSION_KEY)).toBe(SLOT_1_SESSION_ID);
+  });
+
+  it('CASE switched account survives reload: a persisted non-primary authuser makes the multi-account cookie restore WIN before fedcm-silent (which only knows the primary)', async () => {
+    // REGRESSION GUARD ("switch is lost on reload"): the user previously
+    // SWITCHED into a managed/org account — its REAL session joined the device
+    // multi-account set as slot 1 and the active slot was persisted
+    // (`oxy_active_authuser = 1`). On a hard reload, Chrome `fedcm-silent` WOULD
+    // recover the PRIMARY central session (slot 0) and — before this fix — won
+    // first because it sits ahead of the cookie-restore step, silently reverting
+    // the switch. With the fix, the persisted slot runs the multi-account cookie
+    // restore FIRST (it is the only step that honors WHICH slot was active), so
+    // the switched account is restored, not the primary.
+    window.localStorage.setItem(ACTIVE_AUTHUSER_KEY, '1');
+
+    const SLOT_1_SESSION_ID = 'sess_switched_1';
+    const SLOT_1_USER_ID = 'managed_org_user';
+    const SLOT_1_TOKEN = buildAccessToken({
+      sessionId: SLOT_1_SESSION_ID,
+      userId: SLOT_1_USER_ID,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const stub = baseStub({
+      // After cookie restore plants slot 1, `getCurrentUser` resolves the
+      // canonical (switched) user — so `captured.userId` reflecting it proves
+      // the switched account is the one that was committed.
+      getCurrentUser: jest.fn(async (): Promise<User> => ({ id: SLOT_1_USER_ID, username: 'org' } as User)),
+    });
+    // FedCM is supported AND silent reauthn returns the PRIMARY session, so the
+    // `fedcm-silent` step is genuinely ARMED — if it ran first (the bug) it would
+    // win and clobber the switch back to the primary.
+    isFedCMSupportedSpy.mockReturnValue(true);
+    stub.silentSignInWithFedCM = jest.fn(async () => ({
+      sessionId: COOKIE_SESSION_ID,
+      deviceId: 'dev_primary',
+      accessToken: COOKIE_ACCESS_TOKEN,
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      user: { id: COOKIE_USER_ID, username: 'tester' },
+    }));
+    // Unique base URL so the module-level silent run-once guard cannot pre-disable
+    // `fedcm-silent` from a sibling test — the step must be genuinely armed so the
+    // assertion "cookie restore beats it" is meaningful.
+    stub.getBaseURL = () => 'https://api.oxy.so/switched-account';
+    stub.getSessionBaseUrl = () => 'https://api.oxy.so/switched-account';
+    stub.refreshAllSessions = jest.fn(async () => ({
+      accounts: [
+        {
+          authuser: 0,
+          accessToken: COOKIE_ACCESS_TOKEN,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          sessionId: COOKIE_SESSION_ID,
+          user: { id: COOKIE_USER_ID, username: 'tester', avatar: null, color: null },
+        },
+        {
+          authuser: 1,
+          accessToken: SLOT_1_TOKEN,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          sessionId: SLOT_1_SESSION_ID,
+          user: { id: SLOT_1_USER_ID, username: 'org', avatar: null, color: null },
+        },
+      ],
+    }));
+
+    renderProvider(stub);
+
+    await waitFor(() => expect(captured.isAuthenticated).toBe(true));
+
+    // The SWITCHED (slot 1) account is restored — NOT the primary (slot 0).
+    expect(captured.userId).toBe(SLOT_1_USER_ID);
+    // The slot-1 token was planted on the HTTP client.
+    expect(setTokensSpy).toHaveBeenCalledWith(SLOT_1_TOKEN);
+    // Cookie restore won FIRST: the armed fedcm-silent step was never reached.
+    expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(stub.refreshAllSessions).toHaveBeenCalledTimes(1);
+    // No terminal SSO bounce (a session was recovered).
+    expect(ssoNavigateSpy).not.toHaveBeenCalled();
+
+    // The active slot + session id are (re)persisted to the switched account.
+    await waitFor(() =>
+      expect(window.localStorage.getItem(ACTIVE_SESSION_KEY)).toBe(SLOT_1_SESSION_ID),
+    );
+    expect(window.localStorage.getItem(ACTIVE_AUTHUSER_KEY)).toBe('1');
   });
 });

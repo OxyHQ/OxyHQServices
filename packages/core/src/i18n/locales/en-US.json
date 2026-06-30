@@ -154,6 +154,10 @@
       "skip": "Skip",
       "enter": "Enter",
       "continue": "Continue"
+    },
+    "trust": {
+      "title": "Oxy Trust = Trust & Growth",
+      "body": "Oxy Trust is a reputation system that reacts to what you do. Helpful, respectful, constructive actions earn reputation. Harmful or low‑effort stuff chips it away. More reputation raises your trust tier and can unlock benefits; low reputation can limit features. It keeps things fair and rewards real contribution."
     }
   },
   "language": {
@@ -162,7 +166,8 @@
     "current": "Current Language",
     "available": "Available Languages",
     "changed": "Language changed to {{lang}}",
-    "saveFailed": "Failed to save language preference"
+    "saveFailed": "Failed to save language preference",
+    "search": "Search languages"
   },
   "profile": {
     "edit": "Edit Profile",
@@ -172,7 +177,9 @@
     "reputation": "Reputation",
     "followers": "Followers",
     "following": "Following",
-    "more": "+ {{count}} more"
+    "more": "+ {{count}} more",
+    "errorTitle": "Profile Error",
+    "errorSubtext": "This could happen if the user doesn't exist or the profile service is unavailable."
   },
   "feedback": {
     "type": {
@@ -215,7 +222,8 @@
       "priority": "Priority:",
       "category": "Category:",
       "titleLabel": "Title:",
-      "contact": "Contact:"
+      "contact": "Contact:",
+      "titleField": "Title:"
     },
     "actions": {
       "submit": "Submit Feedback",
@@ -230,7 +238,9 @@
       "thanks": "Thank you for your feedback!",
       "submitFailed": "Failed to submit feedback",
       "submitSuccess": "Feedback submitted successfully!"
-    }
+    },
+    "title": "Feedback",
+    "subtitle": "Tell us what you think"
   },
   "recover": {
     "title": "Recover Account",
@@ -264,7 +274,8 @@
       "accountManagement": "Account Management",
       "multiAccount": "Multi-Account",
       "addAccount": "Add Account",
-      "moreOptions": "More Options"
+      "moreOptions": "More Options",
+      "accounts": "Accounts"
     },
     "quickActions": {
       "overview": "Overview",
@@ -326,7 +337,10 @@
     "sections": {
       "current": "Current Account",
       "otherWithCount": "Other Accounts ({{count}})",
-      "deviceSessions": "Device Sessions"
+      "deviceSessions": "Device Sessions",
+      "sharedWithYou": "Shared with you",
+      "thisDevice": "On this device",
+      "yourAccounts": "Your accounts"
     },
     "currentBadge": "Current",
     "loading": "Loading accounts...",
@@ -361,7 +375,9 @@
     "empty": {
       "title": "No saved accounts",
       "subtitle": "Add another account to switch between them quickly"
-    }
+    },
+    "label": "Account switcher",
+    "searchPlaceholder": "Search accounts"
   },
   "reputation": {
     "faq": {
@@ -522,7 +538,9 @@
     },
     "confirms": {
       "cancelSub": "Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.",
-      "unsubscribeFeature": "Are you sure you want to unsubscribe from {{name}}?"
+      "unsubscribeFeature": "Are you sure you want to unsubscribe from {{name}}?",
+      "cancelSubTitle": "Cancel Subscription",
+      "unsubscribeFeatureTitle": "Unsubscribe from Feature"
     },
     "current": {
       "title": "Current Subscription",
@@ -540,11 +558,13 @@
     "billing": {
       "monthly": "Monthly",
       "yearly": "Yearly",
-      "saveYearly": "💰 Save 20% with yearly billing"
+      "saveYearly": "💰 Save 20% with yearly billing",
+      "label": "Billing period"
     },
     "tabs": {
       "plans": "Full Plans",
-      "features": "Individual Features"
+      "features": "Individual Features",
+      "label": "Subscription type"
     },
     "plan": {
       "scope": {
@@ -554,7 +574,8 @@
       },
       "badge": {
         "appExclusive": "App Exclusive",
-        "notAvailable": "Not Available"
+        "notAvailable": "Not Available",
+        "mostPopular": "Most Popular"
       },
       "perInterval": "per {{interval}}",
       "current": "Current Plan",
@@ -566,7 +587,16 @@
         "availableIn": "Available in: {{apps}}"
       },
       "includedInPlan": "Included in your plan",
-      "subscribed": "Subscribed"
+      "subscribed": "Subscribed",
+      "included": "Included",
+      "plansOnly": "Only available in subscription plans"
+    },
+    "features": {
+      "title": "Individual Features",
+      "subtitle": "Subscribe to specific features you need. Some features are included in subscription plans."
+    },
+    "dev": {
+      "appContext": "Test App Context (Dev Only)"
     }
   },
   "editProfile": {
@@ -692,7 +722,8 @@
       "cropMeasureFailed": "Could not measure the image",
       "cropNotReady": "Image not ready yet",
       "cropFailed": "Failed to crop image"
-    }
+    },
+    "changeAvatar": "Change avatar"
   },
   "accountOverview": {
     "title": "Account",
@@ -884,6 +915,9 @@
       "description": "Use your activity to improve search results",
       "updated": "Search personalization updated",
       "error": "Failed to update personalization"
+    },
+    "searchPersonalization": {
+      "error": "Failed to update personalization"
     }
   },
   "privacySettings": {
@@ -945,7 +979,8 @@
     "title": "Account Verification",
     "description": "Request a verified badge for your account. Verified accounts help establish authenticity and credibility.",
     "sections": {
-      "request": "VERIFICATION REQUEST"
+      "request": "VERIFICATION REQUEST",
+      "benefits": "What verification gives you"
     },
     "reasonLabel": "Reason for Verification *",
     "reasonPlaceholder": "Explain why you need a verified badge (e.g., public figure, brand, organization)",
@@ -958,7 +993,13 @@
     "successMessage": "Your verification request has been submitted. Request ID: {{requestId}}",
     "ok": "OK",
     "error": "Service not available",
-    "note": "Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed."
+    "note": "Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.",
+    "heroTitle": "Get a verified badge",
+    "benefits": {
+      "authenticity": "Confirms your identity is authentic and trusted",
+      "badge": "Displays a verified badge across the platform",
+      "credibility": "Builds credibility with people who follow you"
+    }
   },
   "help": {
     "title": "Help & Support",
@@ -1069,7 +1110,8 @@
       "verify": "Verify",
       "resetPassword": "Reset Password",
       "signedOut": "Signed out",
-      "close": "Close"
+      "close": "Close",
+      "delete": "Delete"
     },
     "cancel": "Cancel",
     "revoke": "Revoke",
@@ -1088,7 +1130,9 @@
       "email": "Email",
       "password": "Password",
       "confirmPassword": "Confirm Password"
-    }
+    },
+    "back": "Back",
+    "remove": "Remove"
   },
   "sessionManagement": {
     "title": "Active Sessions",
@@ -1518,5 +1562,335 @@
     "openWithUser": "Account menu for {{name}}",
     "switching": "Switching account…",
     "signOutAccount": "Sign out {{name}}"
+  },
+  "accounts": {
+    "activeAccount": {
+      "a11y": "Active account: {{name}}. Tap to switch accounts.",
+      "label": "Active account"
+    },
+    "roles": {
+      "owner": {
+        "label": "Owner"
+      },
+      "admin": {
+        "label": "Admin"
+      },
+      "editor": {
+        "label": "Editor"
+      },
+      "developer": {
+        "label": "Developer"
+      },
+      "billing": {
+        "label": "Billing"
+      },
+      "viewer": {
+        "label": "Viewer"
+      }
+    },
+    "kinds": {
+      "organization": {
+        "label": "Organization",
+        "description": "A shared team account with members"
+      },
+      "project": {
+        "label": "Project",
+        "description": "A separate account you control"
+      },
+      "bot": {
+        "label": "Bot",
+        "description": "A programmatic account with service credentials"
+      }
+    },
+    "create": {
+      "title": "Create account",
+      "subtitle": "Create an account you control. It will have its own profile, members, and apps.",
+      "displayName": {
+        "label": "Display name"
+      },
+      "bio": {
+        "label": "Bio (optional)"
+      },
+      "username": {
+        "label": "Username",
+        "available": "Username is available",
+        "taken": "Username is taken",
+        "tooShort": "Username must be at least 3 characters",
+        "invalidChars": "Only letters, numbers, hyphens, and underscores",
+        "checkFailed": "Could not check availability"
+      },
+      "toasts": {
+        "success": "Account created",
+        "failed": "Failed to create account"
+      }
+    },
+    "manage": {
+      "create": {
+        "subtitle": "Add an organization, project, or bot"
+      },
+      "switch": {
+        "title": "Switch account",
+        "count": "{{count}} accounts",
+        "empty": "Accounts you own or share"
+      }
+    },
+    "members": {
+      "title": "Members",
+      "subtitle": "People with access to this account.",
+      "empty": "No members yet.",
+      "actions": {
+        "remove": "Remove member",
+        "transfer": "Transfer ownership"
+      },
+      "errors": {
+        "identifierRequired": "Enter a username or email to invite",
+        "missingAccount": "No account selected.",
+        "noPermission": "You do not have permission to view members.",
+        "userNotFound": "User not found"
+      },
+      "invite": {
+        "title": "Add a member",
+        "identifierLabel": "Username or email",
+        "roleLabel": "Role",
+        "submit": "Add member"
+      },
+      "removeConfirm": {
+        "title": "Remove member",
+        "description": "Remove this member from the account? They will lose all access."
+      },
+      "transferConfirm": {
+        "title": "Transfer ownership",
+        "description": "Transfer ownership of this account to this member? You will be demoted to admin. This cannot be undone."
+      },
+      "toasts": {
+        "added": "Member added",
+        "addFailed": "Failed to add member",
+        "removed": "Member removed",
+        "removeFailed": "Failed to remove member",
+        "roleUpdated": "Role updated",
+        "roleFailed": "Failed to update role",
+        "transferred": "Ownership transferred",
+        "transferFailed": "Failed to transfer ownership"
+      }
+    },
+    "settings": {
+      "title": "Account settings",
+      "subtitle": "Manage this account’s profile, members, and access.",
+      "save": "Save changes",
+      "displayName": {
+        "label": "Display name"
+      },
+      "bio": {
+        "label": "Bio (optional)"
+      },
+      "sections": {
+        "access": "Access",
+        "dangerZone": "Danger zone"
+      },
+      "members": {
+        "subtitle": "Invite people and manage roles"
+      },
+      "archive": {
+        "title": "Archive account",
+        "subtitle": "Deactivate this account",
+        "confirmTitle": "Archive account",
+        "confirmDescription": "Archive this account? It will be deactivated and its members will lose access."
+      },
+      "errors": {
+        "missingAccount": "No account selected."
+      },
+      "toasts": {
+        "saved": "Account updated",
+        "saveFailed": "Failed to update account",
+        "archived": "Account archived",
+        "archiveFailed": "Failed to archive account"
+      }
+    }
+  },
+  "deleteAccount": {
+    "title": "Delete Account",
+    "warning": "This action cannot be undone. Your account and all associated data will be permanently deleted.",
+    "confirmLabel": "Type \"{{username}}\" to confirm",
+    "confirm": "Delete Forever",
+    "error": "Failed to delete account"
+  },
+  "manageAccount": {
+    "title": "Manage your Oxy Account",
+    "signOutOfThisAccount": "Sign out of this account",
+    "sections": {
+      "profile": "Profile",
+      "preferences": "Preferences",
+      "security": "Security",
+      "sessions": "Sessions & devices",
+      "legal": "Legal",
+      "dangerZone": "Danger zone"
+    },
+    "items": {
+      "editProfile": {
+        "title": "Edit profile",
+        "subtitle": "Name, username, bio, links"
+      },
+      "theme": {
+        "title": "Theme color",
+        "subtitle": "Personalize your Bloom color"
+      },
+      "security": {
+        "title": "Security settings",
+        "subtitle": "Password, 2FA, recovery"
+      },
+      "billing": {
+        "title": "Billing",
+        "subtitle": "Manage subscription and payment methods"
+      }
+    },
+    "sessions": {
+      "thisDevice": "This device",
+      "lastActive": "Last active {{relative}}",
+      "loading": "Loading sessions…",
+      "empty": "No active sessions",
+      "signOutAllOnThisDevice": "Sign out of all other devices",
+      "signOutAllSubtitle": "End {{count}} other device session(s)"
+    },
+    "confirms": {
+      "removeDeviceTitle": "Remove device",
+      "removeDevice": "Sign out from \"{{name}}\"?",
+      "signOutAllDevicesTitle": "Sign out of all other devices",
+      "signOutAllDevices": "End {{count}} other device session(s)? This won't sign you out here."
+    },
+    "toasts": {
+      "deviceRemoved": "Signed out from {{name}}",
+      "deviceRemoveFailed": "Failed to remove device",
+      "allDevicesSignedOut": "Signed out from all other devices",
+      "allDevicesFailed": "Failed to sign out from other devices"
+    }
+  },
+  "trust": {
+    "tiers": {
+      "new": "New",
+      "trusted": "Trusted",
+      "high_trust": "High Trust",
+      "verified": "Verified",
+      "restricted": "Restricted"
+    },
+    "center": {
+      "title": "Trust Center",
+      "balance": "reputation points",
+      "history": "Reputation History",
+      "noHistory": "No reputation history yet.",
+      "noDescription": "No description",
+      "info": "Reputation can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.",
+      "loadError": "Failed to load reputation data",
+      "actions": {
+        "title": "Explore",
+        "about": "About",
+        "faq": "FAQ",
+        "leaderboard": "Leaderboard",
+        "rewards": "Rewards",
+        "rules": "Rules"
+      }
+    },
+    "about": {
+      "title": "About Oxy Trust",
+      "subtitle": "Learn about the reputation system",
+      "intro": "Oxy Trust is a recognition of your positive actions in the Oxy Ecosystem. Reputation cannot be sent or received directly, only earned by contributing to the community.",
+      "how": {
+        "title": "How to Earn Reputation",
+        "contribute": "Contributing content",
+        "help": "Helping other users",
+        "participate": "Participating in events",
+        "report": "Reporting bugs",
+        "other": "Other positive actions"
+      },
+      "why": {
+        "title": "Why Oxy Trust?",
+        "text": "Your reputation and trust tier unlock special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!"
+      }
+    },
+    "faq": {
+      "title": "Trust FAQ",
+      "subtitle": "Frequently asked questions about Oxy Trust",
+      "search": "Search FAQ...",
+      "noResults": "No FAQ items found matching \"{{query}}\"",
+      "items": {
+        "what": {
+          "q": "What is Oxy Trust?",
+          "a": "Oxy Trust is a reputation system that recognizes your positive contributions across the Oxy Ecosystem. Your reputation reflects how helpful, respectful, and constructive your actions are."
+        },
+        "earn": {
+          "q": "How do I earn reputation?",
+          "a": "You earn reputation by contributing content, helping other users, participating in events, and reporting bugs. Constructive, positive actions raise your reputation over time."
+        },
+        "lose": {
+          "q": "Can I lose reputation?",
+          "a": "Yes. Harmful, abusive, or low-effort actions can reduce your reputation and lower your trust tier."
+        },
+        "use": {
+          "q": "What is reputation used for?",
+          "a": "Your reputation and trust tier unlock special features, recognition, and privileges across the Oxy Ecosystem."
+        },
+        "transfer": {
+          "q": "Can I send or receive reputation?",
+          "a": "No. Reputation cannot be transferred between accounts. It can only be earned through your own actions."
+        },
+        "support": {
+          "q": "Where can I get help?",
+          "a": "If you have questions about Oxy Trust, read the About section or contact support from the Help screen."
+        }
+      }
+    },
+    "leaderboard": {
+      "title": "Trust Leaderboard",
+      "subtitle": "Top contributors in the community",
+      "rankLabel": "rank {{rank}}",
+      "empty": "No leaderboard data",
+      "emptyDesc": "Top contributors will appear here as the community grows.",
+      "error": "Failed to load leaderboard"
+    },
+    "rewards": {
+      "title": "Trust Rewards",
+      "subtitle": "Unlock special features and recognition"
+    },
+    "rules": {
+      "title": "Trust Rules",
+      "subtitle": "How to earn reputation",
+      "empty": "No rules found.",
+      "categories": {
+        "content": "Content",
+        "social": "Social",
+        "trust": "Trust",
+        "moderation": "Moderation",
+        "physical": "Real Life",
+        "penalty": "Penalties",
+        "other": "Other"
+      }
+    },
+    "achievements": {
+      "unlocked": "Achievements",
+      "locked": "Locked Achievements",
+      "firstStep": "First Step",
+      "firstStepDesc": "Earned your first reputation point",
+      "novice": "Novice",
+      "noviceDesc": "Reached 10 reputation points",
+      "contributor": "Contributor",
+      "contributorDesc": "Reached 50 reputation points",
+      "risingStar": "Rising Star",
+      "risingStarDesc": "Reached 100 reputation points",
+      "communityHero": "Community Hero",
+      "communityHeroDesc": "Reached 500 reputation points",
+      "legend": "Legend",
+      "legendDesc": "Reached 1000 reputation points",
+      "phoenix": "Phoenix",
+      "phoenixDesc": "Reached 2500 reputation points",
+      "unstoppable": "Unstoppable",
+      "unstoppableDesc": "Reached 5000 reputation points",
+      "helper": "Helper",
+      "helperDesc": "Helped 10 users",
+      "bugHunter": "Bug Hunter",
+      "bugHunterDesc": "Reported helpful bugs",
+      "streakMaster": "Streak Master",
+      "streakMasterDesc": "7 day activity streak",
+      "earlyAdopter": "Early Adopter",
+      "earlyAdopterDesc": "Been part of the community from the start"
+    }
   }
 }

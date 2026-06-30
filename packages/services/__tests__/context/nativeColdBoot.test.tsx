@@ -96,8 +96,7 @@ function buildStub() {
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: STORED_USER_ID, username: 'nativeuser' } as User)),
     getSessionsBySessionId: jest.fn(async () => []),
     getUserSessions: jest.fn(async () => []),
-    setActingAs: jest.fn(),
-    getManagedAccounts: jest.fn(async () => []),
+    listAccounts: jest.fn(async () => []),
   };
 }
 

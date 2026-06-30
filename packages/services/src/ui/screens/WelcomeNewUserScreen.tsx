@@ -63,7 +63,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     theme,
     newUser,
 }) => {
-    // Use useOxy() hook for OxyContext values
+    // Use useOxy() hook for OxyContext values. The greeting/avatar identity is
+    // the ACTIVE account (the personal user during onboarding, but read through
+    // `user` so this stays correct everywhere), with the freshly
+    // registered `newUser` as the pre-store-hydration fallback.
     const { user, oxyServices } = useOxy();
     const { t, locale } = useI18n();
     const updateProfileMutation = useUpdateProfile();
@@ -88,7 +91,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const [lastName, setLastName] = useState(() => (currentUser?.name?.last ?? '').trim());
     const [savingName, setSavingName] = useState(false);
 
-    // Update selectedAvatarId when user changes
+    // Update selectedAvatarId when the active account's avatar changes
     useEffect(() => {
         if (user?.avatar) {
             setSelectedAvatarId(user.avatar);

@@ -140,10 +140,10 @@ const en: LocaleDict = {
   },
 
   settings: {
-    title: 'Workspace settings',
-    workspace: {
-      title: 'Workspace',
-      nameLabel: 'Workspace name',
+    title: 'Account settings',
+    account: {
+      title: 'Account',
+      nameLabel: 'Account name',
     },
     language: {
       title: 'Language',

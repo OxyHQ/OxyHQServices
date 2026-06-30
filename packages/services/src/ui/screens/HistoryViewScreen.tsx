@@ -15,6 +15,8 @@ import { Dialog, useDialogControl } from '@oxyhq/bloom';
 interface HistoryItem { id: string; query: string; type: 'search' | 'browse'; timestamp: Date; }
 
 const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
+    // History is scoped to the ACTIVE account so a switch into an org/project/bot
+    // shows that account's history, not the device-session owner's.
     const { user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();

@@ -1,27 +1,35 @@
 import { useMemo } from 'react';
-import type { ManagedAccount } from '@oxyhq/core';
+import type { AccountNode } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import type { GroupedItem } from '@/components/sections/types';
 import type { HomeHandlers } from './useHomeHandlers';
 
 interface UseManagedAccountItemsArgs {
-  managedAccounts: ManagedAccount[];
-  actingAs: string | null;
+  accounts: AccountNode[];
+  /**
+   * The id of the account the app is currently signed in as (`user.id`).
+   * Switching accounts is a real session switch, so when this matches one of
+   * the managed (non-personal) accounts the user is "currently using another
+   * account" — surfaced in the row subtitle.
+   */
+  currentAccountId: string | null;
   handleManagedAccounts: HomeHandlers['handleManagedAccounts'];
   handleCreateManagedAccount: HomeHandlers['handleCreateManagedAccount'];
 }
 
 /**
- * Builds the "Your identities" rows on the home screen. When the user has
- * managed accounts it shows a count + create + manage-all trio; otherwise it
- * shows a single "no managed accounts yet" call-to-action.
+ * Builds the "Accounts" rows on the home screen. When the user has accounts
+ * beyond their own personal one it shows a count + create + manage-all trio;
+ * otherwise it shows a single "no accounts yet" call-to-action.
  *
- * Extracted verbatim from the screen's inline `useMemo`.
+ * The accessible forest from the SDK includes the caller's own personal
+ * (`self`) account; that root is excluded here so the count reflects only the
+ * accounts the user manages or has been given access to.
  */
 export function useManagedAccountItems({
-  managedAccounts,
-  actingAs,
+  accounts,
+  currentAccountId,
   handleManagedAccounts,
   handleCreateManagedAccount,
 }: UseManagedAccountItemsArgs): GroupedItem[] {
@@ -29,19 +37,23 @@ export function useManagedAccountItems({
   const { t } = useTranslation();
 
   return useMemo<GroupedItem[]>(() => {
+    const manageable = accounts.filter((a) => a.relationship !== 'self');
+    // Whether the app is currently signed in as one of the managed accounts
+    // (a real session switch into a non-personal account).
+    const usingManagedAccount = manageable.some((a) => a.accountId === currentAccountId);
     const items: GroupedItem[] = [];
-    if (managedAccounts.length > 0) {
+    if (manageable.length > 0) {
       items.push({
         id: 'managed-count',
         icon: 'account-group',
         iconColor: colors.sidebarIconSharing,
-        title: t('home.identities.managedCount', { count: managedAccounts.length }),
-        subtitle: actingAs ? t('home.identities.managedActingAs') : t('home.identities.managedSubtitle'),
+        title: t('home.identities.managedCount', { count: manageable.length }),
+        subtitle: usingManagedAccount ? t('home.identities.managedActingAs') : t('home.identities.managedSubtitle'),
         onPress: handleManagedAccounts,
         showChevron: true,
       });
       items.push({
-        id: 'create-identity',
+        id: 'create-account',
         icon: 'account-plus-outline',
         iconColor: colors.sidebarIconPersonalInfo,
         title: t('home.identities.createNew'),
@@ -68,5 +80,5 @@ export function useManagedAccountItems({
       });
     }
     return items;
-  }, [managedAccounts, actingAs, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount, t]);
+  }, [accounts, currentAccountId, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount, t]);
 }

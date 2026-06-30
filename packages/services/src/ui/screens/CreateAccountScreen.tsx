@@ -6,8 +6,10 @@ import {
   ActivityIndicator,
   ScrollView,
   KeyboardAvoidingView,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import type { AccountKind, CreateAccountInput } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
@@ -20,20 +22,74 @@ import { toast } from '@oxyhq/bloom';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
 
+/** Kind of account this screen can create. `personal` is a signup-minted root and is never created here. */
+type CreatableAccountKind = Exclude<AccountKind, 'personal'>;
+
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,30}$/;
 const DEBOUNCE_MS = 400;
 const USERNAME_MAX = 30;
 const DISPLAY_NAME_MAX = 50;
 const BIO_MAX = 160;
 
-const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
+interface KindOption {
+  value: CreatableAccountKind;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+}
+
+// The creatable account kinds, matching the API `createAccountSchema` enum.
+// Order places the most common choice (a project / persona) first.
+const KIND_OPTIONS: KindOption[] = [
+  { value: 'project', icon: 'cube-outline' },
+  { value: 'organization', icon: 'business-outline' },
+  { value: 'bot', icon: 'hardware-chip-outline' },
+];
+
+const kindLabel = (
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  kind: CreatableAccountKind,
+): string => {
+  switch (kind) {
+    case 'organization':
+      return t('accounts.kinds.organization.label') || 'Organization';
+    case 'bot':
+      return t('accounts.kinds.bot.label') || 'Bot';
+    default:
+      return t('accounts.kinds.project.label') || 'Project';
+  }
+};
+
+const kindDescription = (
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  kind: CreatableAccountKind,
+): string => {
+  switch (kind) {
+    case 'organization':
+      return t('accounts.kinds.organization.description') || 'A shared team account with members';
+    case 'bot':
+      return t('accounts.kinds.bot.description') || 'A programmatic account with service credentials';
+    default:
+      return t('accounts.kinds.project.description') || 'A separate account you control';
+  }
+};
+
+/**
+ * Create a new account in the unified account graph (an organization, project,
+ * or bot). The caller becomes its owner. Optionally nested under a parent
+ * account via the `parentAccountId` prop. NOT the cryptographic Commons/DID
+ * "identity" — that is a separate concept.
+ */
+const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   onClose,
   goBack,
+  parentAccountId,
 }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, createManagedAccount, setActingAs } = useOxy();
+  const { oxyServices, createAccount, switchToAccount } = useOxy();
   const { t } = useI18n();
 
+  const parentId = typeof parentAccountId === 'string' ? parentAccountId : undefined;
+
+  const [kind, setKind] = useState<CreatableAccountKind>('project');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -51,13 +107,19 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
 
     if (!value || value.length < 3) {
       setUsernameStatus(value.length > 0 ? 'invalid' : 'idle');
-      setUsernameMessage(value.length > 0 ? 'Username must be at least 3 characters' : '');
+      setUsernameMessage(
+        value.length > 0
+          ? (t('accounts.create.username.tooShort') || 'Username must be at least 3 characters')
+          : '',
+      );
       return;
     }
 
     if (!USERNAME_REGEX.test(value)) {
       setUsernameStatus('invalid');
-      setUsernameMessage('Only letters, numbers, hyphens, and underscores');
+      setUsernameMessage(
+        t('accounts.create.username.invalidChars') || 'Only letters, numbers, hyphens, and underscores',
+      );
       return;
     }
 
@@ -68,13 +130,18 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
       try {
         const result = await oxyServices.checkUsernameAvailability(value);
         setUsernameStatus(result.available ? 'available' : 'taken');
-        setUsernameMessage(result.message || (result.available ? 'Username is available' : 'Username is taken'));
+        setUsernameMessage(
+          result.message
+          || (result.available
+            ? (t('accounts.create.username.available') || 'Username is available')
+            : (t('accounts.create.username.taken') || 'Username is taken')),
+        );
       } catch {
         setUsernameStatus('idle');
-        setUsernameMessage('Could not check availability');
+        setUsernameMessage(t('accounts.create.username.checkFailed') || 'Could not check availability');
       }
     }, DEBOUNCE_MS);
-  }, [oxyServices]);
+  }, [oxyServices, t]);
 
   const handleUsernameChange = useCallback((value: string) => {
     const cleaned = value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -103,27 +170,34 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
       const firstName = nameParts[0] || '';
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
 
-      const account = await createManagedAccount({
+      const input: CreateAccountInput = {
+        kind,
         username,
         name: { first: firstName, last: lastName },
         bio: bio.trim() || undefined,
-      });
+        ...(parentId ? { parentAccountId: parentId } : null),
+      };
+      const account = await createAccount(input);
 
-      toast.success('Identity created successfully');
+      toast.success(t('accounts.create.toasts.success') || 'Account created');
 
-      // Switch to the new managed account
+      // Switch INTO the new account (real-session switch — the whole app becomes
+      // it). Best-effort: creation already succeeded, so a switch hiccup should
+      // not surface as a create failure.
       if (account.accountId) {
-        setActingAs(account.accountId);
+        await switchToAccount(account.accountId).catch(() => undefined);
       }
 
       onClose?.();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to create identity';
+      const message = error instanceof Error
+        ? error.message
+        : (t('accounts.create.toasts.failed') || 'Failed to create account');
       toast.error(message);
     } finally {
       setIsCreating(false);
     }
-  }, [canCreate, username, displayName, bio, createManagedAccount, setActingAs, onClose]);
+  }, [canCreate, kind, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
 
   // Status icon + color shown alongside the username field message
   const usernameIsInvalid = usernameStatus === 'taken' || usernameStatus === 'invalid';
@@ -133,10 +207,12 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
       ? bloomTheme.colors.negative
       : bloomTheme.colors.textSecondary;
 
+  const title = t('accounts.create.title') || 'Create account';
+
   return (
     <View className="flex-1 bg-bg">
       <Header
-        title="Create Identity"
+        title={title}
         onBack={goBack}
         onClose={onClose}
         showBackButton={true}
@@ -158,11 +234,55 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
           {/* Big Title */}
           <View className="gap-space-8">
             <H1 className="text-headerBold font-headerBold text-text">
-              Create Identity
+              {title}
             </H1>
             <Text className="text-body font-body text-text-secondary">
-              Create a managed identity that you control. It will have its own profile, posts, and interactions.
+              {t('accounts.create.subtitle')
+                || 'Create an account you control. It will have its own profile, members, and apps.'}
             </Text>
+          </View>
+
+          {/* Kind picker */}
+          <View className="gap-space-8">
+            {KIND_OPTIONS.map((option) => {
+              const selected = option.value === kind;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={kindLabel(t, option.value)}
+                  onPress={() => setKind(option.value)}
+                  activeOpacity={0.7}
+                  className="flex-row items-center gap-space-12 p-space-16 rounded-radius-20"
+                  style={{
+                    backgroundColor: selected ? bloomTheme.colors.primarySubtle : bloomTheme.colors.card,
+                    borderWidth: 1,
+                    borderColor: selected ? bloomTheme.colors.primary : bloomTheme.colors.border,
+                  }}
+                >
+                  <Ionicons
+                    name={option.icon}
+                    size={22}
+                    color={selected ? bloomTheme.colors.primary : bloomTheme.colors.icon}
+                  />
+                  <View className="flex-1">
+                    <Text
+                      className="text-body font-bodyBold"
+                      style={{ color: selected ? bloomTheme.colors.primary : bloomTheme.colors.text }}
+                    >
+                      {kindLabel(t, option.value)}
+                    </Text>
+                    <Text className="text-caption font-caption text-text-secondary">
+                      {kindDescription(t, option.value)}
+                    </Text>
+                  </View>
+                  {selected ? (
+                    <Ionicons name="checkmark-circle" size={20} color={bloomTheme.colors.primary} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Form Content */}
@@ -172,7 +292,7 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
               <TextField isInvalid={usernameIsInvalid}>
                 <TextFieldInput
                   floatingLabel
-                  label="Username"
+                  label={t('accounts.create.username.label') || 'Username'}
                   value={username}
                   onChangeText={handleUsernameChange}
                   isInvalid={usernameIsInvalid}
@@ -204,7 +324,7 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
             <TextField>
               <TextFieldInput
                 floatingLabel
-                label="Display Name"
+                label={t('accounts.create.displayName.label') || 'Display name'}
                 value={displayName}
                 onChangeText={setDisplayName}
                 maxLength={DISPLAY_NAME_MAX}
@@ -216,7 +336,7 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
               <TextField>
                 <TextFieldInput
                   floatingLabel
-                  label="Bio (optional)"
+                  label={t('accounts.create.bio.label') || 'Bio (optional)'}
                   value={bio}
                   onChangeText={setBio}
                   maxLength={BIO_MAX}
@@ -237,10 +357,10 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
             onPress={handleCreate}
             disabled={!canCreate}
             loading={isCreating}
-            accessibilityLabel="Create Identity"
+            accessibilityLabel={title}
             className="w-full"
           >
-            Create Identity
+            {title}
           </Button>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -248,4 +368,4 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
   );
 };
 
-export default CreateManagedAccountScreen;
+export default CreateAccountScreen;

@@ -205,14 +205,17 @@ export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';
 
-// Acting-as banner for managed accounts
-export { default as ActingAsBanner } from './ui/components/ActingAsBanner';
-
-// Unified account menu (popover on web, bottom-sheet style modal on native)
+// Unified account menu (device-only switcher — popover on web, sheet on native)
 export { default as AccountMenu } from './ui/components/AccountMenu';
 export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/AccountMenu';
 export { default as AccountMenuButton } from './ui/components/AccountMenuButton';
 export type { AccountMenuButtonProps } from './ui/components/AccountMenuButton';
+
+// Unified account switcher (device sign-ins + account graph). `AccountMenuButton`
+// opens this; the `AccountSwitcherView` body also backs the `AccountSwitcher`
+// bottom-sheet route.
+export { default as AccountSwitcher, AccountSwitcherView } from './ui/components/AccountSwitcher';
+export type { AccountSwitcherProps, AccountSwitcherActions } from './ui/components/AccountSwitcher';
 
 // Unified device-account hook (hydrates every signed-in account on the device
 // with real name/email/avatar/color for the account switcher).
@@ -223,11 +226,17 @@ export type {
     UseDeviceAccountsResult,
 } from './ui/hooks/useDeviceAccounts';
 
-// Unified "Manage your Oxy Account" screen
+// Unified "Manage your Oxy Account" screen (the caller's own personal account)
 export { default as ManageAccountScreen } from './ui/screens/ManageAccountScreen';
 export { default as NotificationsScreen } from './ui/screens/NotificationsScreen';
 export { default as PreferencesScreen } from './ui/screens/PreferencesScreen';
 export { default as ConnectedAppsScreen } from './ui/screens/ConnectedAppsScreen';
+
+// Account-graph screens (organization / project / bot accounts)
+export { default as AccountSwitcherScreen } from './ui/screens/AccountSwitcherScreen';
+export { default as CreateAccountScreen } from './ui/screens/CreateAccountScreen';
+export { default as AccountMembersScreen } from './ui/screens/AccountMembersScreen';
+export { default as AccountSettingsScreen } from './ui/screens/AccountSettingsScreen';
 
 // ---------------------------------------------------------------------------
 // Bottom-sheet navigation

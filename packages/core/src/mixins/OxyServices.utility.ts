@@ -27,15 +27,6 @@ interface JwtPayload {
 }
 
 /**
- * Result from the managed-accounts verification endpoint.
- * Indicates whether a user is authorized to act as a given managed account.
- */
-interface ActingAsVerification {
-  authorized: boolean;
-  role: 'owner' | 'admin' | 'editor';
-}
-
-/**
  * Result from the service-acting-as verification endpoint.
  * Confirms that a given service app holds an active delegation grant for
  * the supplied user, along with the explicit scope list the grant covers.
@@ -139,9 +130,6 @@ interface AuthMiddlewareOptions {
 
 export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
-    /** @internal In-memory cache for acting-as verification results (TTL: 5 min) */
-    _actingAsCache = new Map<string, { result: ActingAsVerification | null; expiresAt: number }>();
-
     /**
      * In-memory cache for service-acting-as verification.
      * Negative results are cached for 1min to avoid hammering the verify
@@ -157,54 +145,6 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
     // monorepo-wide refactor of the mixin pipeline.
     constructor(...args: any[]) {
       super(...(args as [any]));
-    }
-
-    /**
-     * Verify that a user is authorized to act as a managed account.
-     * Results are cached in-memory for 5 minutes to avoid repeated API calls.
-     *
-     * @internal Used by the auth() middleware — not part of the public API
-     */
-    async verifyActingAs(userId: string, accountId: string): Promise<ActingAsVerification | null> {
-      const cacheKey = `${userId}:${accountId}`;
-      const now = Date.now();
-
-      // Check cache
-      const cached = this._actingAsCache.get(cacheKey);
-      if (cached && cached.expiresAt > now) {
-        return cached.result;
-      }
-
-      // Query the API
-      try {
-        const result = await this.makeRequest<ActingAsVerification>(
-          'GET',
-          '/managed-accounts/verify',
-          { accountId, userId },
-          { cache: false, retry: false, timeout: 5000 }
-        );
-
-        // Cache successful result for 5 minutes
-        this._actingAsCache.set(cacheKey, {
-          result: result && result.authorized ? result : null,
-          expiresAt: now + 5 * 60 * 1000,
-        });
-
-        return result && result.authorized ? result : null;
-      } catch (error) {
-        logger.warn('[oxy.auth] verifyActingAs lookup failed — caching negative result', {
-          component: 'auth',
-          method: 'verifyActingAs',
-          userId,
-          accountId,
-        }, error);
-        // Cache negative result for 1 minute to avoid hammering on transient errors
-        this._actingAsCache.set(cacheKey, {
-          result: null,
-          expiresAt: now + 1 * 60 * 1000,
-        });
-        return null;
-      }
     }
 
     /**
@@ -359,50 +299,6 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
 
       // Return an async middleware function
       return async (req: AuthReq, res: AuthRes, next: AuthNext) => {
-        // Process X-Acting-As header for managed account identity delegation.
-        // Called after successful authentication, before next(). If the header
-        // is present, verifies authorization and swaps the request identity to
-        // the managed account, preserving the original user for audit trails.
-        const processActingAs = async (): Promise<boolean> => {
-          const actingAsUserId = req.headers['x-acting-as'];
-          if (!actingAsUserId || typeof actingAsUserId !== 'string') return true; // No header, proceed normally
-          const currentUserId = req.userId;
-          if (!currentUserId) return true; // No authenticated user yet — nothing to swap
-
-          const verification = await oxyInstance.verifyActingAs(currentUserId, actingAsUserId);
-          if (!verification) {
-            const error = {
-              error: 'ACTING_AS_UNAUTHORIZED',
-              message: 'Not authorized to act as this account',
-              code: 'ACTING_AS_UNAUTHORIZED',
-              status: 403,
-            };
-            if (onError) {
-              onError(error);
-            } else {
-              res.status(403).json(error);
-            }
-            return false;
-          }
-
-          // Preserve original user for audit trails
-          req.originalUser = { id: currentUserId, ...(req.user ?? {}) };
-          req.actingAs = { userId: actingAsUserId, role: verification.role };
-
-          // Swap user identity to the managed account
-          req.userId = actingAsUserId;
-          req.user = { id: actingAsUserId, _id: actingAsUserId } as unknown as User;
-
-          if (debug) {
-            logger.debug(`[oxy.auth] Acting as ${actingAsUserId} (role=${verification.role}) original=${currentUserId}`, {
-              component: 'auth',
-              method: 'auth.processActingAs',
-            });
-          }
-
-          return true;
-        };
-
         try {
           // Extract token from Authorization header.
           // Node/Express normalizes `Authorization` to a string; we guard
@@ -709,9 +605,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 });
               }
 
-              // Process X-Acting-As header before proceeding
-              if (await processActingAs()) return next();
-              return;
+              return next();
             } catch (validationError) {
               if (debug) {
                 logger.debug('[oxy.auth] Session validation failed', {
@@ -778,8 +672,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             });
           }
 
-          // Process X-Acting-As header before proceeding
-          if (await processActingAs()) next();
+          next();
         } catch (error) {
           const handled = oxyInstance.handleError(error) as Error & {
             code?: string;
@@ -1125,8 +1018,6 @@ interface AuthReq {
   sessionId?: string | null;
   serviceApp?: ServiceApp;
   serviceActingAs?: { userId: string; scopes: string[] };
-  actingAs?: { userId: string; role: string };
-  originalUser?: { id: string } & Partial<User>;
 }
 
 interface AuthRes {
@@ -1143,7 +1034,6 @@ interface SocketLike {
 }
 
 interface OxyAuthInstance {
-  verifyActingAs(userId: string, accountId: string): Promise<ActingAsVerification | null>;
   verifyServiceActingAs(appId: string, userId: string): Promise<ServiceActingAsVerification | null>;
   validateSession(
     sessionId: string,

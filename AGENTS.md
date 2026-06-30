@@ -182,9 +182,11 @@ When splitting imports: use `import type` for type-only imports, regular `import
 
 ## User Identity Contract
 
-- Oxy API owns canonical `name.displayName` for user/profile DTOs. Compose it server-side with `packages/api/src/utils/displayName.ts` / `composeDisplayName` and include it in serializers such as `userService.formatUserResponse`.
+- Oxy API owns `name.displayName` for user/profile DTOs. `composeDisplayName` (`packages/api/src/utils/displayName.ts`) returns a real name (explicit displayName or composed first/last) or `undefined` — it does NOT fall back to username, publicKey, or `'Anonymous'`. `formatUserNameResponse` omits `displayName` when there is no real name.
 - `@oxyhq/contracts` owns both the formatted user response contract and `UserProfileUpdate`. `@oxyhq/core`, `@oxyhq/services`, and `@oxyhq/api` import those types directly from `@oxyhq/contracts`; do not re-export them through another package.
-- `@oxyhq/core` public `User.name.displayName` is required. Consumers render `name.displayName` directly; they must not recompute names from `name.first`, `name.last`, `name.full`, or `username` in app components.
+- `@oxyhq/core` public `User.name.displayName` is **optional** (`string | undefined`). Consumers render `name.displayName` when present; **when absent, fall back to the handle** via `getNormalizedUserHandle` from `@oxyhq/core`. The pattern is `displayName ?? handle` — a single handle fallback. Do NOT rebuild multi-field chains (`displayName || first || username...`). The account-switcher helper `getAccountDisplayName` (local account surfaces only) keeps its own chain.
+- **Display name character policy** (`cleanDisplayName`): allows letters (`\p{L}`) + marks (`\p{M}`) + spaces + apostrophe only; strips emoji, symbols, `:shortcode:`, digits, hyphens, dots, AND orphaned combining marks (a mark not attached to a base letter). Native writes reject 400; federated names are stripped on ingest; existing records were backfilled by a one-shot script that has since run in prod and been removed.
+- **Auth gate relaxation (2026-06-29):** `OxyServices.sso.ts` + `OxyServices.auth.ts` (refresh-all) no longer require `displayName`; oxy-api `sso.controller.ts parseSessionPayload` no longer requires it (still requires a structured `name` object + displayName-string-if-present). Do NOT re-tighten these gates.
 - Profile handle normalization belongs in `@oxyhq/core` (`packages/core/src/utils/userHandle.ts`). Consumers must use `getNormalizedUserHandle` for local/federated routes instead of local route helpers or manual domain concatenation.
 
 ## Auth / Session Contract
@@ -224,13 +226,13 @@ Backend APIs use `@oxyhq/core/server` for request identity and security:
 
 ## @oxyhq/contracts — Contract-First API Schemas
 
-Package: `packages/contracts` → `@oxyhq/contracts` **v0.3.0** (published 2026-06-26). SINGLE SOURCE OF TRUTH for API request/response contracts.
+Package: `packages/contracts` → `@oxyhq/contracts` **v0.6.0** (published 2026-06-29). SINGLE SOURCE OF TRUTH for API request/response contracts.
 
 **What it contains:**
-- Zod schemas: `userNameSchema`, `userResponseSchema` (now includes `did?` + `verifiedDomains?`), `userProfileUpdateSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
+- Zod schemas: `userNameSchema` (as of 0.6.0: `displayName` field is optional — `z.string().optional()`), `userResponseSchema` (includes `did?` + `verifiedDomains?`), `userProfileUpdateSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
 - **New in 0.3.0 (`identity.ts`):** `didDocumentSchema` (+ `verificationMethodSchema`, `didServiceSchema`), `signedRecordEnvelopeSchema`, `verifiedDomainSchema` + domain-request/instructions schemas, `authMethodsResponseSchema` (extended with `did` + per-method `verificationMethodId`), `exportBundleSchema`
 - Helpers: `resolveUserId`, `safeParseContract`
-- Inferred types: `UserNameResponse` (explicit `interface` with required `displayName: string` — fixed in 0.2.1; was a `z.infer` passthrough that degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`; **new 0.3.0**: `DidDocument`, `VerificationMethod`, `DidService`, `SignedRecordEnvelope`, `VerifiedDomain`, `AuthMethodsResponse`, `ExportBundle`
+- Inferred types: `UserNameResponse` (explicit `interface`; `displayName` is now **`string | undefined`** as of 0.6.0 — optional; 0.2.1 had made it explicit + required; pre-0.2.1 was a `z.infer` passthrough degrading to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`; **new 0.3.0**: `DidDocument`, `VerificationMethod`, `DidService`, `SignedRecordEnvelope`, `VerifiedDomain`, `AuthMethodsResponse`, `ExportBundle`
 - **`src/civic.ts`** — civic/Oxy ID schemas: `publicCardSchema`, `idPayloadSchema`, `attestQrPayloadSchema`, `validationVoteSchema`, `personhoodSchema`, `credentialSchema` + inferred types. Consumed as `workspace:*` by `packages/api`, `packages/core`, and `packages/services`. **NOT yet published to npm** — keep as internal `workspace:*` until Fases 0–4 are fully deployed and stable.
 
 **Build:** dual CJS+ESM+types via tsc (same pattern as core: `tsconfig.{cjs,esm,types}.json` + `scripts/fix-esm-imports.mjs`). Zero runtime deps except `zod ^3.25.64`.
@@ -275,7 +277,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
 - `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
 
-**NOTE:** `accountUtils.ts` is not a frontend display-name fallback for API user/profile DTOs. API serializers own `name.displayName`; consumers render it directly.
+**NOTE:** `accountUtils.ts` is not a frontend display-name fallback for API user/profile DTOs. API serializers own `name.displayName` (optional); consumers render it when present, then fall back to `getNormalizedUserHandle` — not to `accountUtils`.
 
 ## Application Model (#213 + #216) — replaces DeveloperApp (2026-06-14)
 
@@ -420,11 +422,9 @@ app.use('/internal', oxy.serviceAuth());
 
 ## API: User Display Name Contract
 
-`packages/api/src/utils/displayName.ts` (`composeDisplayName`) is the authoritative server-side name composition point. API serializers must emit a required `name.displayName` on user/profile DTOs; clients must treat that value as ready to render.
+`packages/api/src/utils/displayName.ts` (`composeDisplayName`) is the authoritative server-side name composition point. It returns a real name (explicit `displayName` field or composed `first`+`last`) or `undefined` — it does NOT fall back to `username`, `publicKey`, or `'Anonymous'`. `formatUserNameResponse` omits `displayName` entirely when there is no real name.
 
-`formatUserResponse` / equivalent serializers emit the composed `name.displayName`. Raw fields (`name.first`, `name.last`, `name.full`, `username`, `publicKey`) may remain exposed for editing/details, but they are not a frontend display-name resolver.
-
-`@oxyhq/core` public `User.name.displayName` is required. App components render `name.displayName` directly. If a displayed name is missing or wrong, fix the API serializer or SDK type; do not add app-local helpers, aliases, or `displayName || username` chains.
+`@oxyhq/core` public `User.name.displayName` is **optional** (`string | undefined`). App components render `name.displayName` when present; when absent, fall back to the handle via `getNormalizedUserHandle`. The only sanctioned fallback is `displayName ?? handle`. If a displayed name is wrong or missing, fix the API serializer or SDK type — do not add `displayName || first || username` chains in components.
 
 Request/update DTOs such as `UserProfileUpdate` live in `@oxyhq/contracts`. Import them directly from `@oxyhq/contracts`; do not re-export them through core/services or duplicate them in app packages.
 
@@ -708,19 +708,19 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 ## Published Package Versions
 
-All 8 external apps + OxyHQServices internal apps bumped this session (2026-06-25).
+Last bumped: 2026-06-29 (optional displayName — PRs #422/#423/#424). Historical 2026-06-25/26 figures are preserved in the Notes column; the 3.11.0/0.3.0 snapshot in global AGENTS.md was stale.
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/contracts` | **0.3.0** | **0.3.0 (published 2026-06-26):** new `identity.ts` (didDocumentSchema, signedRecordEnvelopeSchema, verifiedDomainSchema, authMethodsResponseSchema, exportBundleSchema — attestation nullable; `did?`+`verifiedDomains?` on userResponseSchema). **0.2.1:** `UserNameResponse` is now an explicit `interface` with required `displayName: string` (was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: added recommendation*/appEndorsement*/appInterest*/appUserSignal*/fedcmTokenPayload runtime exports. |
-| `@oxyhq/core` | **3.11.0** | **3.11.0:** identity mixin (`oxy.resolveDid`/`getMyDid`/`listAuthMethods`/`linkIdentityKey`/`unlinkAuthMethod`/`signRecord`/`publishRecord`/`exportMyData`/domain verify), `canonicalJson` (`canonicalize` + `signedRecordSigningInput`), Sign-in-with-Oxy methods (`signInWithSharedIdentity`, `startCommonsSignIn`, `pollCommonsSignIn`, `getCommonsApprovalInfo`, `approveCommonsSignIn`, `denyCommonsSignIn`), `signChallengeWithSharedKey`; core floor `@oxyhq/contracts ^0.3.0`. **3.10.1:** `assetUpload` materializes web `{uri}` descriptors to a Blob before upload (fixes empty web uploads). **3.10.0:** New `@oxyhq/core/server` exports: `safeFetch` + `assertSafePublicUrl` (SSRF-safe fetch), `createOxyCors` (deny-by-default CORS allowlist), `verifySecret` (constant-time equality). **3.9.0:** All mixin writes sweep cache. `createLinkedClient` defaults to `enableCache:false`. `express-rate-limit` is a required peer for `@oxyhq/core/server` consumers. 3.8.0: `getUsersByIds(ids)`; 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs. **GOTCHA: 3.3.0 and 3.4.0 BROKEN** (unpublished contracts dep). Pin to **^3.11.0**. |
+| `@oxyhq/contracts` | **0.6.0** | **0.6.0 (2026-06-29):** `userNameSchema` `displayName` changed to optional (`z.string().optional()`); `UserNameResponse.displayName` is now `string \| undefined`. **0.3.0:** new `identity.ts` (didDocumentSchema, signedRecordEnvelopeSchema, verifiedDomainSchema, authMethodsResponseSchema, exportBundleSchema — attestation nullable; `did?`+`verifiedDomains?` on userResponseSchema). **0.2.1:** `UserNameResponse` made explicit interface + required `displayName: string` (was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: recommendation/appEndorsement/appInterest/appUserSignal/fedcmTokenPayload runtime exports. |
+| `@oxyhq/core` | **3.18.1** | **3.18.1 (2026-06-29):** optional `name.displayName` + relaxed SSO/refresh-all gates (`OxyServices.sso.ts`, `OxyServices.auth.ts`); pins `@oxyhq/contracts ^0.6.0`. **PUBLISH GOTCHA:** core's internal contracts dep MUST use `workspace:^` (NOT `workspace:*`) — `workspace:*` emits an EXACT pin in the published artifact and caused a broken 3.18.0 publish (superseded by 3.18.1). Always use `workspace:^` for inter-workspace deps when publishing. **3.11.0:** identity mixin (`oxy.resolveDid`/`getMyDid`/`listAuthMethods`/`linkIdentityKey`/`unlinkAuthMethod`/`signRecord`/`publishRecord`/`exportMyData`/domain verify), `canonicalJson`, Sign-in-with-Oxy methods, `signChallengeWithSharedKey`. **3.10.1:** `assetUpload` materializes web `{uri}` → Blob. **3.10.0:** `safeFetch`, `createOxyCors`, `verifySecret` in `@oxyhq/core/server`. **3.9.0:** mixin writes sweep cache; `createLinkedClient` no-cache default; `express-rate-limit` required peer. 3.8.0: `getUsersByIds`; 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs. **GOTCHA: 3.3.0 and 3.4.0 BROKEN** (unpublished contracts dep). Pin to **^3.18.1**. |
 | `@oxyhq/auth` | **5.1.1** | **5.1.1:** `useCommonsSignIn` hook (web QR Sign-in-with-Oxy) + `qrcode` dep; core floor `^3.11.0`. **5.0.0 (BREAKING):** `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister`, `zustand` moved to `peerDependencies`; `sonner` optional peer. Consumers must declare all four. 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback`. 4.1.0: `clientId` prop. |
 | `@oxyhq/services` | **11.1.0** | **11.1.0:** `signInWithPassword` on `useOxy`, shared-key cold-boot step, `useOxyAuthSession` exposes `authorizeCode`/`qrPayload`, Sign-in-with-Oxy UI in `SignInModal`/`OxyAuthScreen`; core floor `^3.11.0`, contracts `^0.3.0`. **11.0.0 (BREAKING — packaging only):** `zustand`, `@react-native-async-storage/async-storage`, `socket.io-client`, `expo-font`, `expo-image`, `react-native-qrcode-svg` moved to `peerDependencies`; `react-native-keyboard-controller` optional peer; build tools to devDeps. All consumers must declare the moved peers. 10.3.3: UNFOLLOW-ALL multi-user `FollowButton` toggle. 10.0.0: `appName` removed; use `clientId`. |
 | `@oxyhq/bloom` | **0.19.1** | **0.19.1:** `ImageResolver` widened to `(id, variant?) => string|undefined`; `Avatar`/`AvatarGroup`/`UserHoverCard` accept `variant` prop. Register `ImageResolverProvider` at root with `oxyServices.getFileDownloadUrl`. **0.18.1:** `react-native-reanimated` + `react-native-gesture-handler` now required peers. **0.18.x:** 11 compound-component families → flat prefixed exports (clean cut). Six families stay namespaces. **0.16.x:** `Dialog`/`BottomSheet` only; `CenteredDialog`/`ResponsiveSheet` REMOVED. |
 
 **CRITICAL — SSO helpers live ONLY in `@oxyhq/core`:** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, all `sso*Key` constants, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer. (`MULTIPART_TLDS` was REMOVED in PR #247 — `fapiAutoDetect.ts` now uses the `tldts` Public Suffix List library via `getDomain(host,{allowPrivateDomains:true})`; `tldts` is a direct dep of `@oxyhq/core`.)
 
-**Consumer apps on latest (2026-06-26):** Target `@oxyhq/core ^3.11.0`, `@oxyhq/contracts ^0.3.0`, `@oxyhq/auth ^5.1.1` where used, `@oxyhq/services ^11.1.0` where used, `@oxyhq/bloom ^0.19.1` where used. Expo web apps inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
+**Consumer apps on latest (2026-06-29):** Target `@oxyhq/core ^3.18.1`, `@oxyhq/contracts ^0.6.0`, `@oxyhq/auth ^5.1.1` where used, `@oxyhq/services ^11.1.0` where used, `@oxyhq/bloom ^0.19.1` where used. Expo web apps inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
 
 **Official app clientIds (public, safe to record):** "Commons by Oxy" = `oxy_dk_f65326da2a0d106bf98e873ce19b0ca9094d6c0c1f845a18`; "Oxy Auth" = `oxy_dk_86e915fc05782683064b255fd5bac278a5a606bd85662202`.
 
@@ -775,7 +775,7 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 - DO NOT refactor the auth app onto `WebOxyProvider`/`runColdBoot`.
 
 **Zod schema contract — `packages/auth/lib/schemas.ts` MUST mirror the real API (commit 58f3c935)**
-- `user.name` is ALWAYS the structured object `{ first?, last?, full? }` — NEVER a plain `z.string()`. Shape drift makes `safeParse` silently return null → whole parse collapses → `LOGGED_OUT_STATE` → account switcher never appears despite valid cookies.
+- `user.name` is ALWAYS the structured object `{ first?, last?, full?, displayName? }` — NEVER a plain `z.string()`. Shape drift makes `safeParse` silently return null → whole parse collapses → `LOGGED_OUT_STATE` → account switcher never appears despite valid cookies. `displayName` is **optional** as of `@oxyhq/contracts 0.6.0`; the local mirror in `packages/auth/lib/schemas.ts` must have it as `z.string().optional()`.
 - `username` is optional (`z.string().optional()`) — publicKey-only accounts have none.
 - `/auth/refresh-all` `authuser` field is nullable (`z.number().nullable()`) — the legacy un-suffixed `oxy_rt` slot emits `authuser: null`.
 - `slotRank()` sorts the null-authuser legacy slot last.
@@ -820,7 +820,7 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 
 ## Pending (post-merge, PR #415)
 
-**All shipped (2026-06-26):** `@oxyhq/contracts 0.3.0`, `@oxyhq/core 3.11.0`, `@oxyhq/auth 5.1.1`, `@oxyhq/services 11.1.0` published. OXY custodial signing keypair in SSM + GitHub secrets, wired into oxy-api task-def (oxy-infra `b7112c3`, applied), deployed, verified live (`did:web:oxy.so` carries `#oxy-custodial-key`). Commons + Oxy Auth clientIds registered.
+**All shipped (2026-06-26):** `@oxyhq/contracts 0.3.0`, `@oxyhq/core 3.11.0`, `@oxyhq/auth 5.1.1`, `@oxyhq/services 11.1.0` published. OXY custodial signing keypair in SSM + GitHub secrets, wired into oxy-api task-def (oxy-infra `b7112c3`, applied), deployed, verified live (`did:web:oxy.so` carries `#oxy-custodial-key`). Commons + Oxy Auth clientIds registered. **Updated 2026-06-29:** `@oxyhq/contracts 0.6.0` + `@oxyhq/core 3.18.1` (optional displayName, relaxed auth gates — PRs #422/#423/#424).
 
 Remaining items that require action:
 

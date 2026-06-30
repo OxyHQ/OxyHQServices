@@ -65,6 +65,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     goBack,
 }) => {
+    // Privacy settings belong to the ACTIVE account (the org/project/bot when
+    // switched, else the personal user).
     const { oxyServices, user } = useOxy();
     const { t, locale } = useI18n();
     const bloomTheme = useTheme();
@@ -131,7 +133,10 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadUsers();
-    }, [oxyServices]);
+        // Re-load when the active account changes so the block/restrict lists
+        // reflect the account currently switched into (they resolve via the
+        // X-Acting-As header).
+    }, [oxyServices, user?.id]);
 
     const handleUnblock = useCallback(async (userId: string) => {
         if (!oxyServices) return;

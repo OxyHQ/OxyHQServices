@@ -29,7 +29,8 @@ import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.sc
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
-import { ApplicationMember } from '../models/ApplicationMember';
+import { Application } from '../models/Application';
+import { accountService } from '../services/account.service';
 import { getRedisClient } from '../config/redis';
 import {
   resolveWeightProfile,
@@ -675,8 +676,9 @@ interface RecommendationOptions {
  * (cross-tenant data exposure). Authorization rules:
  *  - SERVICE token: allowed only for its OWN application
  *    (`clientId === serviceApp.appId`).
- *  - USER session: allowed only when the user is an ACTIVE member of that
- *    application (`ApplicationMember` with `status: 'active'`).
+ *  - USER session: allowed only when the user has effective access to the
+ *    application's owning account (an `AccountMember` role over
+ *    `app.ownerAccountId`, with tree inheritance).
  *  - Anonymous: no owning application context → never authorized (and no DB
  *    lookup is performed).
  */
@@ -707,22 +709,22 @@ async function resolveAuthorizedRecommendationClientId(
     return undefined;
   }
 
-  // USER session: authorized only when an active member of the application.
+  // USER session: authorized only when the caller has effective access to the
+  // application's owning account (a member of the account, with inheritance).
   const userId = req.user?._id;
   if (!userId || !Types.ObjectId.isValid(userId)) {
     return undefined;
   }
 
-  const membership = await ApplicationMember.findOne({
-    applicationId: new Types.ObjectId(requestedAppId),
-    userId: new Types.ObjectId(userId),
-    status: 'active',
-  })
-    .select('_id')
-    .lean();
-
-  if (membership) {
-    return requestedAppId;
+  const application = await Application.findById(requestedAppId).select('ownerAccountId').lean();
+  if (application?.ownerAccountId) {
+    const access = await accountService.resolveEffectiveAccess(
+      userId.toString(),
+      application.ownerAccountId.toString()
+    );
+    if (access) {
+      return requestedAppId;
+    }
   }
 
   logger.warn('recommendations: dropping unauthorized clientId', {

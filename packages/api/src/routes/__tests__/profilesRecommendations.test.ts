@@ -29,7 +29,8 @@ const mockFollowFind = jest.fn();
 const mockFollowAggregate = jest.fn();
 const mockUserAggregate = jest.fn();
 const mockAppUserSignalFind = jest.fn();
-const mockApplicationMemberFindOne = jest.fn();
+const mockApplicationFindById = jest.fn();
+const mockResolveEffectiveAccess = jest.fn();
 
 // The dual-auth middleware is swappable per-test so we can run authenticated and
 // logged-out paths against the same mounted router. The mocked
@@ -118,9 +119,15 @@ jest.mock('../../models/AppUserSignal', () => ({
   },
 }));
 
-jest.mock('../../models/ApplicationMember', () => ({
-  ApplicationMember: {
-    findOne: (...args: unknown[]) => mockApplicationMemberFindOne(...args),
+jest.mock('../../models/Application', () => ({
+  Application: {
+    findById: (...args: unknown[]) => mockApplicationFindById(...args),
+  },
+}));
+
+jest.mock('../../services/account.service', () => ({
+  accountService: {
+    resolveEffectiveAccess: (...args: unknown[]) => mockResolveEffectiveAccess(...args),
   },
 }));
 
@@ -314,10 +321,13 @@ beforeEach(() => {
     limit: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue([]),
   });
-  mockApplicationMemberFindOne.mockReturnValue({
+  // By default a user-supplied clientId resolves to no owning app / no access,
+  // so the app-scoped signal path is never authorized for a user session.
+  mockApplicationFindById.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue(null),
   });
+  mockResolveEffectiveAccess.mockResolvedValue(null);
 });
 
 describe('GET /profiles/recommendations exclusion set', () => {
@@ -541,7 +551,6 @@ describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
     const res = await postJson(server, {}, { limit: 10, clientId: victimAppId });
 
     expect(res.status).toBe(200);
-    expect(mockApplicationMemberFindOne).not.toHaveBeenCalled();
     expect(mockAppUserSignalFind).not.toHaveBeenCalled();
   });
 

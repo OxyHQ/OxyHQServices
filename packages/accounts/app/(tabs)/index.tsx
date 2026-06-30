@@ -32,7 +32,11 @@ export default function HomeScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  const { user, isLoading: oxyLoading, refreshSessions, sessions, managedAccounts, actingAs } = useOxy();
+  // `user` is the account the app is currently signed in as. Switching accounts
+  // is a real session switch, so `user` already reflects the switched-into
+  // account — identity display (name / avatar / profile fields) and the login
+  // security surfaces all read from `user`.
+  const { user, isLoading: oxyLoading, refreshSessions, sessions, accounts } = useOxy();
   // Hydrate the user record from the server (createdAt + any fields that were
   // missing from a cached signIn response). useCurrentUser handles staleness
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
@@ -54,7 +58,7 @@ export default function HomeScreen() {
     isLoading: biometricLoading,
   } = useBiometricSettings();
 
-  // Compute user data
+  // Compute current-account identity data (the account signed in as).
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
   const avatarUrl = useAvatarUrl(user);
@@ -124,8 +128,8 @@ export default function HomeScreen() {
     handleSecurity: handlers.handleSecurity,
   });
   const managedAccountItems = useManagedAccountItems({
-    managedAccounts,
-    actingAs,
+    accounts,
+    currentAccountId: user?.id ?? null,
     handleManagedAccounts: handlers.handleManagedAccounts,
     handleCreateManagedAccount: handlers.handleCreateManagedAccount,
   });

@@ -12,7 +12,7 @@ import {
 } from 'react';
 import { OxyServices, oxyClient } from '@oxyhq/core';
 import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
-import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
+import type { AccountNode, CreateAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import {
@@ -157,12 +157,32 @@ export interface OxyContextState {
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
   openAvatarPicker: () => void;
 
-  // Managed accounts (sub-accounts / managed identities)
-  actingAs: string | null;
-  managedAccounts: ManagedAccount[];
-  setActingAs: (userId: string | null) => void;
-  refreshManagedAccounts: () => Promise<void>;
-  createManagedAccount: (data: CreateManagedAccountInput) => Promise<ManagedAccount>;
+  // Unified account graph (self, owned orgs/projects/bots, accounts shared with
+  // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
+  //
+  // UX concept: the user picks an account and the WHOLE app becomes that account
+  // — a genuine, REAL-SESSION switch (`switchToAccount`), identical to switching
+  // between device sign-ins. There is NO separate "active account" concept:
+  // `user` IS the active account after a switch. The removed `X-Acting-As`
+  // delegation header is gone entirely.
+  /** Every account the caller can access — own personal root, owned, and shared — from `listAccounts()`. */
+  accounts: AccountNode[];
+  /**
+   * Switch the active session INTO an account from the {@link accounts} graph
+   * (a managed org/project/bot, or an account shared with the caller).
+   *
+   * Mints and plants a REAL session for the target via
+   * `oxyServices.switchToAccount`, then commits it into context state the SAME
+   * way sign-in / {@link switchSession} do — so afterwards `user` IS the target
+   * account and every request authenticates as it. The minted session joins the
+   * device multi-account set (server-set httpOnly `oxy_rt_<authuser>` cookie), so
+   * it survives reload / `refresh-all` and appears in the device account list
+   * exactly like a device sign-in. Refreshes the account graph and invalidates
+   * all React Query data so everything reloads as the new account.
+   */
+  switchToAccount: (accountId: string) => Promise<void>;
+  refreshAccounts: () => Promise<void>;
+  createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -1289,6 +1309,29 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     }
 
+    // LAST-ACTIVE-ACCOUNT priority (web multi-account). When the user has an
+    // explicit persisted active slot (`oxy_active_authuser`, written on every
+    // device sign-in / account SWITCH / cookie restore), the multi-account
+    // refresh-cookie restore is the ONLY cold-boot step that honors WHICH slot
+    // was last active — `restoreViaRefreshCookie` selects it via
+    // `selectActiveRefreshAccount(accounts, readActiveAuthuser())`. The
+    // `fedcm-silent` and per-apex `silent-iframe` steps only ever recover the
+    // PRIMARY central IdP session, so if either ran first they would clobber a
+    // switched (managed/org) account back to the primary on reload — the exact
+    // "switch is lost on reload" regression. So when a slot selection exists we
+    // run cookie-restore BEFORE those probes (and disable the later duplicate).
+    //
+    // Read ONCE here (synchronously usable by the step `enabled` gates below).
+    // It is non-null ONLY on first-party `*.oxy.so` web apps that persist the
+    // slot — a cross-apex RP never writes it (its restore funnels through
+    // `handleWebSSOSession`, which does not touch the authuser), and native has
+    // no localStorage, so both keep their existing order untouched. The
+    // earlier `stored-session` step still runs first (FIX-A latency), and when
+    // a slot exists but its cookies have all lapsed, cookie-restore simply
+    // returns no accounts and the chain falls through to the cross-domain
+    // fallbacks exactly as before.
+    const prioritizeMultiAccount = isWebBrowser() && readActiveAuthuser() !== null;
+
     try {
       const outcome = await runColdBoot<true>({
         steps: [
@@ -1384,6 +1427,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
+            // 2.75) LAST-ACTIVE multi-account restore (WEB, prioritized). Runs
+            // ONLY when an explicit persisted slot selection exists
+            // (`prioritizeMultiAccount`) — i.e. the user previously signed in or
+            // SWITCHED accounts on this first-party app. It runs BEFORE the
+            // `fedcm-silent` / `silent-iframe` probes (which only ever recover the
+            // PRIMARY central session) so a switched managed/org account survives
+            // reload instead of being clobbered back to the primary. The restore
+            // itself is the SAME `restoreViaRefreshCookie` as the terminal-tier
+            // step below: it rotates every device-local `oxy_rt_<authuser>` cookie
+            // and picks the persisted slot via `selectActiveRefreshAccount`,
+            // committing it (token + state + durable persistence + `markAuthResolved`).
+            // When no slot is persisted this is disabled and the original order is
+            // unchanged; when the slot's cookies have lapsed it returns no accounts
+            // and the chain falls through to the cross-domain fallbacks below.
+            id: 'cookie-restore-active',
+            enabled: () => prioritizeMultiAccount,
+            run: async () => {
+              const restored = await restoreViaRefreshCookie();
+              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
+            },
+          },
+          {
             // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
             // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
             // internally; we commit the returned session via
@@ -1457,8 +1522,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // is correct; cross-domain restore is handled by the SSO bounce.
             // FIX-D: `restoreViaRefreshCookie` bounds the request with
             // `COOKIE_RESTORE_TIMEOUT` so a cross-domain stall cannot hang here.
+            //
+            // Disabled when `prioritizeMultiAccount` already ran the
+            // `cookie-restore-active` step above (an explicit persisted slot) — that
+            // earlier step is the identical restore, so this terminal-tier copy
+            // would be a redundant second `refreshAllSessions`. It still runs in the
+            // common no-persisted-slot case (e.g. first visit to a first-party app
+            // whose central refresh cookies already exist).
             id: 'cookie-restore',
-            enabled: () => isWebBrowser(),
+            enabled: () => isWebBrowser() && !prioritizeMultiAccount,
             run: async () => {
               const restored = await restoreViaRefreshCookie();
               return restored ? { kind: 'session', session: true } : { kind: 'skip' };
@@ -1981,80 +2053,101 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
   });
 
-  // --- Managed accounts state ---
-  const [actingAs, setActingAsState] = useState<string | null>(null);
-  const [managedAccounts, setManagedAccounts] = useState<ManagedAccount[]>([]);
+  // --- Account graph state ---
+  const [accounts, setAccounts] = useState<AccountNode[]>([]);
 
-  // Restore actingAs from storage on startup
-  useEffect(() => {
-    if (!storage || !initialized) return;
-    let mounted = true;
-    (async () => {
-      try {
-        const stored = await storage.getItem(`${storageKeyPrefix}_acting_as`);
-        if (mounted && stored) {
-          setActingAsState(stored);
-          oxyServices.setActingAs(stored);
-        }
-      } catch (err) {
-        if (__DEV__) {
-          loggerUtil.debug('Failed to restore actingAs from storage', { component: 'OxyContext' }, err as unknown);
-        }
-      }
-    })();
-    return () => { mounted = false; };
-  }, [storage, initialized, storageKeyPrefix, oxyServices]);
-
-  // Load managed accounts when authenticated
-  const refreshManagedAccounts = useCallback(async (): Promise<void> => {
+  // Load the unified account graph when authenticated
+  const refreshAccounts = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
-      setManagedAccounts([]);
+      setAccounts([]);
       return;
     }
 
     try {
-      const accounts = await oxyServices.getManagedAccounts();
-      setManagedAccounts(accounts);
+      const list = await oxyServices.listAccounts();
+      setAccounts(list);
     } catch (err) {
       if (isUnauthorizedStatus(err)) {
-        setManagedAccounts([]);
+        setAccounts([]);
         await clearSessionStateRef.current();
         return;
       }
       if (__DEV__) {
-        loggerUtil.debug('Failed to load managed accounts', { component: 'OxyContext' }, err as unknown);
+        loggerUtil.debug('Failed to load accounts', { component: 'OxyContext' }, err as unknown);
       }
     }
   }, [isAuthenticated, oxyServices, tokenReady]);
 
   useEffect(() => {
     if (isAuthenticated && initialized && tokenReady) {
-      refreshManagedAccounts();
+      refreshAccounts();
     }
-  }, [isAuthenticated, initialized, tokenReady, refreshManagedAccounts]);
+  }, [isAuthenticated, initialized, tokenReady, refreshAccounts]);
 
-  const setActingAs = useCallback((userId: string | null) => {
-    oxyServices.setActingAs(userId);
-    setActingAsState(userId);
-    // Persist to storage
-    if (storage) {
-      if (userId) {
-        storage.setItem(`${storageKeyPrefix}_acting_as`, userId).catch((persistError) => {
-          loggerUtil.debug('Failed to persist acting-as account', { component: 'OxyContext' }, persistError as unknown);
-        });
-      } else {
-        storage.removeItem(`${storageKeyPrefix}_acting_as`).catch((persistError) => {
-          loggerUtil.debug('Failed to clear acting-as account', { component: 'OxyContext' }, persistError as unknown);
-        });
+  // Switch the active session INTO an account from the unified graph. In the
+  // REAL-SESSION model this is identical to switching device sign-ins: mint a
+  // real session for the target and make the whole app that account. The removed
+  // `X-Acting-As` delegation header is gone — `oxyServices.switchToAccount`
+  // plants the minted access token (the refresh token is the server-set httpOnly
+  // `oxy_rt_<authuser>` cookie, so the session joins the device multi-account set
+  // and survives reload / `refresh-all`). We then commit the session into context
+  // state the SAME way sign-in / `switchSession` do, refresh the account graph,
+  // and invalidate every query so all data reloads as the new account.
+  const switchToAccount = useCallback(async (accountId: string): Promise<void> => {
+    const result = await oxyServices.switchToAccount(accountId);
+    if (!result?.user || !result?.sessionId) {
+      throw new Error('Account switch did not return a valid session');
+    }
+
+    // `oxyServices.switchToAccount` already planted `result.accessToken` as the
+    // active token; mirror the minted session into the multi-account store and
+    // mark it current, recording the device `authuser` slot so web silent-switch
+    // and the device account chooser can address it.
+    const now = new Date();
+    const clientSession: ClientSession = {
+      sessionId: result.sessionId,
+      deviceId: result.deviceId || '',
+      expiresAt: result.expiresAt || new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
+      lastActive: now.toISOString(),
+      userId: result.user.id?.toString() ?? '',
+      isCurrent: true,
+      ...(typeof result.authuser === 'number' ? { authuser: result.authuser } : null),
+    };
+    updateSessions([clientSession], { merge: true });
+    setActiveSessionId(result.sessionId);
+    if (isWebBrowser() && typeof result.authuser === 'number') {
+      writeActiveAuthuser(result.authuser);
+    }
+    await persistSessionDurably(result.sessionId);
+
+    // Fetch the canonical User for the new account (the switch result carries
+    // only MinimalUserData); fall back to that minimal shape if the profile
+    // fetch fails so the app still reflects the switched identity.
+    let fullUser: User;
+    try {
+      fullUser = await oxyServices.getCurrentUser();
+    } catch (profileError) {
+      if (__DEV__) {
+        loggerUtil.debug('Failed to fetch full user after account switch; using switch result user', { component: 'OxyContext', method: 'switchToAccount' }, profileError as unknown);
       }
+      fullUser = result.user as unknown as User;
     }
-  }, [oxyServices, storage, storageKeyPrefix]);
+    loginSuccess(fullUser);
+    onAuthStateChange?.(fullUser);
 
-  const createManagedAccountFn = useCallback(async (data: CreateManagedAccountInput): Promise<ManagedAccount> => {
-    const account = await oxyServices.createManagedAccount(data);
-    await refreshManagedAccounts();
+    // Reload the switchable account graph (the new active account's relationships
+    // differ) and invalidate every query so all data refetches as the new
+    // account — the deviceAccounts probe re-enumerates the multi-account set so
+    // the switched account now appears as a device session.
+    await refreshAccounts();
+    queryClient.invalidateQueries();
+  }, [oxyServices, updateSessions, setActiveSessionId, persistSessionDurably, loginSuccess, onAuthStateChange, refreshAccounts, queryClient]);
+
+  const createAccountFn = useCallback(async (data: CreateAccountInput): Promise<AccountNode> => {
+    const account = await oxyServices.createAccount(data);
+    await refreshAccounts();
     return account;
-  }, [oxyServices, refreshManagedAccounts]);
+  }, [oxyServices, refreshAccounts]);
 
   const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
   const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
@@ -2098,11 +2191,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
     openAvatarPicker,
-    actingAs,
-    managedAccounts,
-    setActingAs,
-    refreshManagedAccounts,
-    createManagedAccount: createManagedAccountFn,
+    accounts,
+    switchToAccount,
+    refreshAccounts,
+    createAccount: createAccountFn,
   }), [
     activeSessionId,
     signIn,
@@ -2143,11 +2235,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     user,
     showBottomSheetForContext,
     openAvatarPicker,
-    actingAs,
-    managedAccounts,
-    setActingAs,
-    refreshManagedAccounts,
-    createManagedAccountFn,
+    accounts,
+    switchToAccount,
+    refreshAccounts,
+    createAccountFn,
   ]);
 
   return (
@@ -2214,11 +2305,10 @@ const LOADING_STATE: OxyContextState = {
   clientId: null,
   oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
-  actingAs: null,
-  managedAccounts: [],
-  setActingAs: () => {},
-  refreshManagedAccounts: () => rejectMissingProvider<void>(),
-  createManagedAccount: () => rejectMissingProvider<ManagedAccount>(),
+  accounts: [],
+  switchToAccount: () => rejectMissingProvider<void>(),
+  refreshAccounts: () => rejectMissingProvider<void>(),
+  createAccount: () => rejectMissingProvider<AccountNode>(),
 };
 
 export const useOxy = (): OxyContextState => {

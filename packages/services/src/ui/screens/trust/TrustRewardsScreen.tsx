@@ -77,6 +77,8 @@ const LOCKED_OPACITY = 0.5;
 
 const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { t } = useI18n();
+    // Reputation/trust is the ACTIVE account's standing (the org/project/bot
+    // when switched, else the personal user).
     const { user, oxyServices, isAuthenticated } = useOxy();
     const [reputationTotal, setReputationTotal] = useState<number>(0);
     const [, setIsLoading] = useState(true);

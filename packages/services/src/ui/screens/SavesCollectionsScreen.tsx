@@ -38,7 +38,8 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     goBack,
 }) => {
-    // Use useOxy() hook for OxyContext values
+    // Saves & collections belong to the ACTIVE account (the org/project/bot when
+    // switched, else the personal user).
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();

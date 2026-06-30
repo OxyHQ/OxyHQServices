@@ -38,6 +38,8 @@ interface MockOxyState {
   oxyServices: MockOxyServices;
   isAuthenticated: boolean;
   activeSessionId: string | null;
+  // Payment/wallet/subscription queries scope by the ACTIVE account (the
+  // account switched into), not the device-session owner.
   user: { id: string } | null;
 }
 
@@ -194,7 +196,7 @@ describe('payment query hooks', () => {
       expect(mockState.oxyServices.getCurrentUserSubscription).not.toHaveBeenCalled();
     });
 
-    it('does not call the SDK without a scoped current user id', () => {
+    it('does not call the SDK without a scoped active account id', () => {
       mockState.user = null;
 
       const { result } = renderHook(() => useUserSubscription(), {
@@ -271,7 +273,7 @@ describe('payment query hooks', () => {
     });
   });
 
-  it('scopes payment query keys by the authenticated user id', async () => {
+  it('scopes payment query keys by the active account id', async () => {
     const { result: firstResult } = renderHook(() => useUserWallet(), {
       wrapper: makeWrapper(queryClient),
     });

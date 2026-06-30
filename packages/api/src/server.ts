@@ -24,7 +24,7 @@ import assetRoutes from './routes/assets';
 import cdnRoutes from './routes/cdn';
 import storageRoutes from './routes/storage';
 import applicationRoutes from './routes/applications';
-import workspaceRoutes from './routes/workspaces';
+import accountRoutes from './routes/accounts';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
@@ -45,7 +45,6 @@ import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
 import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
-import managedAccountsRouter from './routes/managedAccounts';
 import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
@@ -525,8 +524,10 @@ app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
 // cookie writes → no CSRF); the route applies its own per-principal limiter.
 app.use('/links', linksRoutes);
 app.use('/location-search', locationSearchRoutes);
-app.use('/workspaces', csrfProtection, workspaceRoutes);
 app.use('/applications', csrfProtection, applicationRoutes);
+// Unified Account graph (tree + membership + service credentials). Per-route
+// rate limiters (rl:accounts:*) live inside the router.
+app.use('/accounts', csrfProtection, accountRoutes);
 app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
@@ -545,7 +546,6 @@ app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
 app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
-app.use('/managed-accounts', userRateLimiter, csrfProtection, authMiddleware, managedAccountsRouter);
 app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 // Service-token-only cross-app signal ingest (endorsements + interests). No
 // csrfProtection — Bearer-authenticated service writes are exempt (no ambient

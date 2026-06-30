@@ -18,6 +18,10 @@ export default function PersonalInfoScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  // This screen views/edits the current account's profile. Switching accounts
+  // is a real session switch, so all identity fields read from `user` (the
+  // switched-into account). Edits flow through the bottom sheet, which targets
+  // the current account.
   const { user, isLoading: oxyLoading, showBottomSheet } = useOxy();
   const handlePressIn = useHapticPress();
   const handleEditField = useCallback((field: string) => {
@@ -27,7 +31,7 @@ export default function PersonalInfoScreen() {
     });
   }, [showBottomSheet]);
 
-  // Compute user data
+  // Compute current-account profile data.
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const userEmail = useMemo(() => user?.email ?? t('personalInfo.fields.noEmail'), [user?.email, t]);
   const extendedUser = user as ExtendedUser | undefined;

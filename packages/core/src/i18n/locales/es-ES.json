@@ -110,7 +110,9 @@
     "reputation": "Reputación",
     "followers": "Seguidores",
     "following": "Siguiendo",
-    "more": "+ {{count}} más"
+    "more": "+ {{count}} más",
+    "errorTitle": "Error de perfil",
+    "errorSubtext": "Esto puede ocurrir si el usuario no existe o el servicio de perfiles no está disponible."
   },
   "language": {
     "title": "Idioma",
@@ -118,7 +120,8 @@
     "current": "Idioma actual",
     "available": "Idiomas disponibles",
     "changed": "Idioma cambiado a {{lang}}",
-    "saveFailed": "Error al guardar la preferencia de idioma"
+    "saveFailed": "Error al guardar la preferencia de idioma",
+    "search": "Buscar idiomas"
   },
   "recover": {
     "title": "Recuperar cuenta",
@@ -269,7 +272,8 @@
       "cropMeasureFailed": "No se pudo medir la imagen",
       "cropNotReady": "La imagen aún no está lista",
       "cropFailed": "No se pudo recortar la imagen"
-    }
+    },
+    "changeAvatar": "Cambiar avatar"
   },
   "common": {
     "actions": {
@@ -283,7 +287,8 @@
       "verify": "Verificar",
       "resetPassword": "Restablecer contraseña",
       "signedOut": "Sesión cerrada",
-      "close": "Cerrar"
+      "close": "Cerrar",
+      "delete": "Eliminar"
     },
     "cancel": "Cancelar",
     "revoke": "Revocar",
@@ -314,7 +319,9 @@
     "status": {
       "notSignedIn": "No has iniciado sesión",
       "loading": "Cargando..."
-    }
+    },
+    "back": "Atrás",
+    "remove": "Eliminar"
   },
   "accountOverview": {
     "title": "Cuenta",
@@ -459,7 +466,8 @@
       "accountManagement": "Gestión de la cuenta",
       "multiAccount": "Multi‑cuenta",
       "addAccount": "Añadir cuenta",
-      "moreOptions": "Más opciones"
+      "moreOptions": "Más opciones",
+      "accounts": "Cuentas"
     },
     "quickActions": {
       "overview": "Resumen",
@@ -521,7 +529,10 @@
     "sections": {
       "current": "Cuenta actual",
       "otherWithCount": "Otras cuentas ({{count}})",
-      "deviceSessions": "Sesiones de dispositivo"
+      "deviceSessions": "Sesiones de dispositivo",
+      "sharedWithYou": "Compartidas contigo",
+      "thisDevice": "En este dispositivo",
+      "yourAccounts": "Tus cuentas"
     },
     "currentBadge": "Actual",
     "loading": "Cargando cuentas...",
@@ -556,7 +567,9 @@
     "empty": {
       "title": "No hay cuentas guardadas",
       "subtitle": "Añade otra cuenta para cambiar rápidamente entre ellas"
-    }
+    },
+    "label": "Selector de cuentas",
+    "searchPlaceholder": "Buscar cuentas"
   },
   "feedback": {
     "type": {
@@ -599,7 +612,8 @@
       "priority": "Prioridad:",
       "category": "Categoría:",
       "titleLabel": "Título:",
-      "contact": "Contacto:"
+      "contact": "Contacto:",
+      "titleField": "Título:"
     },
     "actions": {
       "submit": "Enviar comentario",
@@ -614,7 +628,9 @@
       "thanks": "¡Gracias por tu comentario!",
       "submitFailed": "Error al enviar el comentario",
       "submitSuccess": "¡Comentario enviado correctamente!"
-    }
+    },
+    "title": "Comentarios",
+    "subtitle": "Cuéntanos qué opinas"
   },
   "reputation": {
     "faq": {
@@ -775,7 +791,9 @@
     },
     "confirms": {
       "cancelSub": "¿Seguro que quieres cancelar tu suscripción? Perderás el acceso a las funciones premium al final del periodo de facturación.",
-      "unsubscribeFeature": "¿Seguro que quieres darte de baja de {{name}}?"
+      "unsubscribeFeature": "¿Seguro que quieres darte de baja de {{name}}?",
+      "cancelSubTitle": "Cancelar suscripción",
+      "unsubscribeFeatureTitle": "Cancelar suscripción a la función"
     },
     "current": {
       "title": "Suscripción actual",
@@ -793,11 +811,13 @@
     "billing": {
       "monthly": "Mensual",
       "yearly": "Anual",
-      "saveYearly": "💰 Ahorra un 20% con la facturación anual"
+      "saveYearly": "💰 Ahorra un 20% con la facturación anual",
+      "label": "Periodo de facturación"
     },
     "tabs": {
       "plans": "Planes completos",
-      "features": "Funciones individuales"
+      "features": "Funciones individuales",
+      "label": "Tipo de suscripción"
     },
     "plan": {
       "scope": {
@@ -807,7 +827,8 @@
       },
       "badge": {
         "appExclusive": "Exclusivo de la app",
-        "notAvailable": "No disponible"
+        "notAvailable": "No disponible",
+        "mostPopular": "Más popular"
       },
       "perInterval": "por {{interval}}",
       "current": "Plan actual",
@@ -819,7 +840,16 @@
         "availableIn": "Disponible en: {{apps}}"
       },
       "includedInPlan": "Incluido en tu plan",
-      "subscribed": "Suscrito"
+      "subscribed": "Suscrito",
+      "included": "Incluido",
+      "plansOnly": "Solo disponible en los planes de suscripción"
+    },
+    "features": {
+      "title": "Funciones individuales",
+      "subtitle": "Suscríbete a las funciones concretas que necesitas. Algunas funciones están incluidas en los planes de suscripción."
+    },
+    "dev": {
+      "appContext": "Contexto de app de prueba (solo desarrollo)"
     }
   },
   "welcomeNew": {
@@ -874,6 +904,10 @@
       "skip": "Omitir",
       "enter": "Entrar",
       "continue": "Continuar"
+    },
+    "trust": {
+      "title": "Oxy Trust = Confianza y crecimiento",
+      "body": "Oxy Trust es un sistema de reputación que reacciona a lo que haces. Las acciones útiles, respetuosas y constructivas ganan reputación. Lo dañino o de poco esfuerzo la reduce. Más reputación eleva tu nivel de confianza y puede desbloquear beneficios; una reputación baja puede limitar funciones. Mantiene las cosas justas y recompensa la contribución real."
     }
   },
   "history": {
@@ -929,6 +963,9 @@
       "description": "Usa tu actividad para mejorar los resultados de búsqueda",
       "updated": "Personalización de búsqueda actualizada",
       "error": "Error al actualizar la personalización"
+    },
+    "searchPersonalization": {
+      "error": "No se pudo actualizar la personalización"
     }
   },
   "privacySettings": {
@@ -990,7 +1027,8 @@
     "title": "Verificación de cuenta",
     "description": "Solicita una insignia verificada para tu cuenta. Las cuentas verificadas ayudan a establecer autenticidad y credibilidad.",
     "sections": {
-      "request": "SOLICITUD DE VERIFICACIÓN"
+      "request": "SOLICITUD DE VERIFICACIÓN",
+      "benefits": "Qué te aporta la verificación"
     },
     "reasonLabel": "Motivo de la verificación *",
     "reasonPlaceholder": "Explica por qué necesitas una insignia verificada (p. ej., figura pública, marca, organización)",
@@ -1003,7 +1041,13 @@
     "successMessage": "Tu solicitud de verificación ha sido enviada. ID de solicitud: {{requestId}}",
     "ok": "OK",
     "error": "Servicio no disponible",
-    "note": "Nota: Las solicitudes de verificación se revisan manualmente y pueden tardar varios días. Te notificaremos cuando tu solicitud haya sido revisada."
+    "note": "Nota: Las solicitudes de verificación se revisan manualmente y pueden tardar varios días. Te notificaremos cuando tu solicitud haya sido revisada.",
+    "heroTitle": "Consigue una insignia de verificación",
+    "benefits": {
+      "authenticity": "Confirma que tu identidad es auténtica y de confianza",
+      "badge": "Muestra una insignia de verificación en toda la plataforma",
+      "credibility": "Genera credibilidad ante quienes te siguen"
+    }
   },
   "help": {
     "title": "Ayuda y soporte",
@@ -1518,5 +1562,335 @@
     "openWithUser": "Menú de cuenta de {{name}}",
     "switching": "Cambiando de cuenta…",
     "signOutAccount": "Cerrar sesión de {{name}}"
+  },
+  "accounts": {
+    "activeAccount": {
+      "a11y": "Cuenta activa: {{name}}. Toca para cambiar de cuenta.",
+      "label": "Cuenta activa"
+    },
+    "roles": {
+      "owner": {
+        "label": "Propietario"
+      },
+      "admin": {
+        "label": "Administrador"
+      },
+      "editor": {
+        "label": "Editor"
+      },
+      "developer": {
+        "label": "Desarrollador"
+      },
+      "billing": {
+        "label": "Facturación"
+      },
+      "viewer": {
+        "label": "Lector"
+      }
+    },
+    "kinds": {
+      "organization": {
+        "label": "Organización",
+        "description": "Una cuenta de equipo compartida con miembros"
+      },
+      "project": {
+        "label": "Proyecto",
+        "description": "Una cuenta independiente que tú controlas"
+      },
+      "bot": {
+        "label": "Bot",
+        "description": "Una cuenta programática con credenciales de servicio"
+      }
+    },
+    "create": {
+      "title": "Crear cuenta",
+      "subtitle": "Crea una cuenta que tú controlas. Tendrá su propio perfil, miembros y aplicaciones.",
+      "displayName": {
+        "label": "Nombre visible"
+      },
+      "bio": {
+        "label": "Biografía (opcional)"
+      },
+      "username": {
+        "label": "Nombre de usuario",
+        "available": "El nombre de usuario está disponible",
+        "taken": "El nombre de usuario ya está en uso",
+        "tooShort": "El nombre de usuario debe tener al menos 3 caracteres",
+        "invalidChars": "Solo letras, números, guiones y guiones bajos",
+        "checkFailed": "No se pudo comprobar la disponibilidad"
+      },
+      "toasts": {
+        "success": "Cuenta creada",
+        "failed": "No se pudo crear la cuenta"
+      }
+    },
+    "manage": {
+      "create": {
+        "subtitle": "Añade una organización, proyecto o bot"
+      },
+      "switch": {
+        "title": "Cambiar de cuenta",
+        "count": "{{count}} cuentas",
+        "empty": "Cuentas que posees o compartes"
+      }
+    },
+    "members": {
+      "title": "Miembros",
+      "subtitle": "Personas con acceso a esta cuenta.",
+      "empty": "Aún no hay miembros.",
+      "actions": {
+        "remove": "Eliminar miembro",
+        "transfer": "Transferir propiedad"
+      },
+      "errors": {
+        "identifierRequired": "Introduce un nombre de usuario o correo para invitar",
+        "missingAccount": "Ninguna cuenta seleccionada.",
+        "noPermission": "No tienes permiso para ver los miembros.",
+        "userNotFound": "Usuario no encontrado"
+      },
+      "invite": {
+        "title": "Añadir un miembro",
+        "identifierLabel": "Nombre de usuario o correo",
+        "roleLabel": "Rol",
+        "submit": "Añadir miembro"
+      },
+      "removeConfirm": {
+        "title": "Eliminar miembro",
+        "description": "¿Eliminar a este miembro de la cuenta? Perderá todo el acceso."
+      },
+      "transferConfirm": {
+        "title": "Transferir propiedad",
+        "description": "¿Transferir la propiedad de esta cuenta a este miembro? Pasarás a ser administrador. Esto no se puede deshacer."
+      },
+      "toasts": {
+        "added": "Miembro añadido",
+        "addFailed": "No se pudo añadir el miembro",
+        "removed": "Miembro eliminado",
+        "removeFailed": "No se pudo eliminar el miembro",
+        "roleUpdated": "Rol actualizado",
+        "roleFailed": "No se pudo actualizar el rol",
+        "transferred": "Propiedad transferida",
+        "transferFailed": "No se pudo transferir la propiedad"
+      }
+    },
+    "settings": {
+      "title": "Configuración de la cuenta",
+      "subtitle": "Gestiona el perfil, los miembros y el acceso de esta cuenta.",
+      "save": "Guardar cambios",
+      "displayName": {
+        "label": "Nombre visible"
+      },
+      "bio": {
+        "label": "Biografía (opcional)"
+      },
+      "sections": {
+        "access": "Acceso",
+        "dangerZone": "Zona de peligro"
+      },
+      "members": {
+        "subtitle": "Invita a personas y gestiona los roles"
+      },
+      "archive": {
+        "title": "Archivar cuenta",
+        "subtitle": "Desactivar esta cuenta",
+        "confirmTitle": "Archivar cuenta",
+        "confirmDescription": "¿Archivar esta cuenta? Se desactivará y sus miembros perderán el acceso."
+      },
+      "errors": {
+        "missingAccount": "Ninguna cuenta seleccionada."
+      },
+      "toasts": {
+        "saved": "Cuenta actualizada",
+        "saveFailed": "No se pudo actualizar la cuenta",
+        "archived": "Cuenta archivada",
+        "archiveFailed": "No se pudo archivar la cuenta"
+      }
+    }
+  },
+  "deleteAccount": {
+    "title": "Eliminar cuenta",
+    "warning": "Esta acción no se puede deshacer. Tu cuenta y todos los datos asociados se eliminarán de forma permanente.",
+    "confirmLabel": "Escribe \"{{username}}\" para confirmar",
+    "confirm": "Eliminar para siempre",
+    "error": "No se pudo eliminar la cuenta"
+  },
+  "manageAccount": {
+    "title": "Gestiona tu cuenta de Oxy",
+    "signOutOfThisAccount": "Cerrar sesión de esta cuenta",
+    "sections": {
+      "profile": "Perfil",
+      "preferences": "Preferencias",
+      "security": "Seguridad",
+      "sessions": "Sesiones y dispositivos",
+      "legal": "Legal",
+      "dangerZone": "Zona de peligro"
+    },
+    "items": {
+      "editProfile": {
+        "title": "Editar perfil",
+        "subtitle": "Nombre, usuario, biografía, enlaces"
+      },
+      "theme": {
+        "title": "Color del tema",
+        "subtitle": "Personaliza tu color de Bloom"
+      },
+      "security": {
+        "title": "Configuración de seguridad",
+        "subtitle": "Contraseña, 2FA, recuperación"
+      },
+      "billing": {
+        "title": "Facturación",
+        "subtitle": "Gestiona la suscripción y los métodos de pago"
+      }
+    },
+    "sessions": {
+      "thisDevice": "Este dispositivo",
+      "lastActive": "Última actividad {{relative}}",
+      "loading": "Cargando sesiones…",
+      "empty": "No hay sesiones activas",
+      "signOutAllOnThisDevice": "Cerrar sesión en los demás dispositivos",
+      "signOutAllSubtitle": "Finalizar {{count}} sesión(es) de otros dispositivos"
+    },
+    "confirms": {
+      "removeDeviceTitle": "Eliminar dispositivo",
+      "removeDevice": "¿Cerrar sesión en \"{{name}}\"?",
+      "signOutAllDevicesTitle": "Cerrar sesión en los demás dispositivos",
+      "signOutAllDevices": "¿Finalizar {{count}} sesión(es) de otros dispositivos? No se cerrará tu sesión aquí."
+    },
+    "toasts": {
+      "deviceRemoved": "Sesión cerrada en {{name}}",
+      "deviceRemoveFailed": "No se pudo eliminar el dispositivo",
+      "allDevicesSignedOut": "Sesión cerrada en todos los demás dispositivos",
+      "allDevicesFailed": "No se pudo cerrar sesión en los demás dispositivos"
+    }
+  },
+  "trust": {
+    "tiers": {
+      "new": "Nuevo",
+      "trusted": "De confianza",
+      "high_trust": "Alta confianza",
+      "verified": "Verificado",
+      "restricted": "Restringido"
+    },
+    "center": {
+      "title": "Centro de confianza",
+      "balance": "puntos de reputación",
+      "history": "Historial de reputación",
+      "noHistory": "Aún no hay historial de reputación.",
+      "noDescription": "Sin descripción",
+      "info": "La reputación solo se gana con acciones positivas en el ecosistema Oxy. No se puede enviar ni recibir directamente.",
+      "loadError": "No se pudieron cargar los datos de reputación",
+      "actions": {
+        "title": "Explorar",
+        "about": "Acerca de",
+        "faq": "Preguntas frecuentes",
+        "leaderboard": "Clasificación",
+        "rewards": "Recompensas",
+        "rules": "Reglas"
+      }
+    },
+    "about": {
+      "title": "Acerca de Oxy Trust",
+      "subtitle": "Conoce el sistema de reputación",
+      "intro": "Oxy Trust es un reconocimiento de tus acciones positivas en el ecosistema Oxy. La reputación no se puede enviar ni recibir directamente, solo se gana contribuyendo a la comunidad.",
+      "how": {
+        "title": "Cómo ganar reputación",
+        "contribute": "Aportar contenido",
+        "help": "Ayudar a otros usuarios",
+        "participate": "Participar en eventos",
+        "report": "Reportar errores",
+        "other": "Otras acciones positivas"
+      },
+      "why": {
+        "title": "¿Por qué Oxy Trust?",
+        "text": "Tu reputación y tu nivel de confianza desbloquean funciones especiales y reconocimiento en el ecosistema Oxy. ¡Cuanto más contribuyas, más ganas!"
+      }
+    },
+    "faq": {
+      "title": "Preguntas frecuentes de Trust",
+      "subtitle": "Preguntas frecuentes sobre Oxy Trust",
+      "search": "Buscar preguntas frecuentes...",
+      "noResults": "No se encontraron preguntas que coincidan con \"{{query}}\"",
+      "items": {
+        "what": {
+          "q": "¿Qué es Oxy Trust?",
+          "a": "Oxy Trust es un sistema de reputación que reconoce tus contribuciones positivas en todo el ecosistema Oxy. Tu reputación refleja lo útiles, respetuosas y constructivas que son tus acciones."
+        },
+        "earn": {
+          "q": "¿Cómo gano reputación?",
+          "a": "Ganas reputación aportando contenido, ayudando a otros usuarios, participando en eventos y reportando errores. Las acciones constructivas y positivas elevan tu reputación con el tiempo."
+        },
+        "lose": {
+          "q": "¿Puedo perder reputación?",
+          "a": "Sí. Las acciones dañinas, abusivas o de poco esfuerzo pueden reducir tu reputación y bajar tu nivel de confianza."
+        },
+        "use": {
+          "q": "¿Para qué sirve la reputación?",
+          "a": "Tu reputación y tu nivel de confianza desbloquean funciones especiales, reconocimiento y privilegios en todo el ecosistema Oxy."
+        },
+        "transfer": {
+          "q": "¿Puedo enviar o recibir reputación?",
+          "a": "No. La reputación no se puede transferir entre cuentas. Solo se puede ganar con tus propias acciones."
+        },
+        "support": {
+          "q": "¿Dónde puedo conseguir ayuda?",
+          "a": "Si tienes preguntas sobre Oxy Trust, lee la sección Acerca de o contacta con soporte desde la pantalla de Ayuda."
+        }
+      }
+    },
+    "leaderboard": {
+      "title": "Clasificación de Trust",
+      "subtitle": "Principales colaboradores de la comunidad",
+      "rankLabel": "puesto {{rank}}",
+      "empty": "No hay datos de clasificación",
+      "emptyDesc": "Los principales colaboradores aparecerán aquí a medida que crezca la comunidad.",
+      "error": "No se pudo cargar la clasificación"
+    },
+    "rewards": {
+      "title": "Recompensas de Trust",
+      "subtitle": "Desbloquea funciones especiales y reconocimiento"
+    },
+    "rules": {
+      "title": "Reglas de Trust",
+      "subtitle": "Cómo ganar reputación",
+      "empty": "No se encontraron reglas.",
+      "categories": {
+        "content": "Contenido",
+        "social": "Social",
+        "trust": "Confianza",
+        "moderation": "Moderación",
+        "physical": "Vida real",
+        "penalty": "Penalizaciones",
+        "other": "Otros"
+      }
+    },
+    "achievements": {
+      "unlocked": "Logros",
+      "locked": "Logros bloqueados",
+      "firstStep": "Primer paso",
+      "firstStepDesc": "Ganaste tu primer punto de reputación",
+      "novice": "Principiante",
+      "noviceDesc": "Alcanzaste 10 puntos de reputación",
+      "contributor": "Colaborador",
+      "contributorDesc": "Alcanzaste 50 puntos de reputación",
+      "risingStar": "Estrella emergente",
+      "risingStarDesc": "Alcanzaste 100 puntos de reputación",
+      "communityHero": "Héroe de la comunidad",
+      "communityHeroDesc": "Alcanzaste 500 puntos de reputación",
+      "legend": "Leyenda",
+      "legendDesc": "Alcanzaste 1000 puntos de reputación",
+      "phoenix": "Fénix",
+      "phoenixDesc": "Alcanzaste 2500 puntos de reputación",
+      "unstoppable": "Imparable",
+      "unstoppableDesc": "Alcanzaste 5000 puntos de reputación",
+      "helper": "Ayudante",
+      "helperDesc": "Ayudaste a 10 usuarios",
+      "bugHunter": "Cazador de errores",
+      "bugHunterDesc": "Reportaste errores útiles",
+      "streakMaster": "Maestro de la racha",
+      "streakMasterDesc": "Racha de actividad de 7 días",
+      "earlyAdopter": "Pionero",
+      "earlyAdopterDesc": "Has formado parte de la comunidad desde el principio"
+    }
   }
 }

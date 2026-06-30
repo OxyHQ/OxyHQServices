@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname, type Href } from 'expo-router';
@@ -7,8 +7,6 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
-import { useOxy } from '@oxyhq/services';
-import { getAccountDisplayName } from '@oxyhq/core';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
 
@@ -47,20 +45,9 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const { mode } = useTheme();
     const router = useRouter();
     const pathname = usePathname();
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
 
     const handlePressIn = useHapticPress();
-    const { actingAs, managedAccounts } = useOxy();
-
-    // Compute the acting-as display name for the indicator using the canonical
-    // helper so the fallback chain (name → username → publicKey → "Unnamed")
-    // is identical across the app.
-    const actingAsName = useMemo(() => {
-        if (!actingAs || !managedAccounts.length) return null;
-        const managed = managedAccounts.find((m) => m.accountId === actingAs);
-        if (!managed?.account) return null;
-        return getAccountDisplayName(managed.account, locale);
-    }, [actingAs, managedAccounts, locale]);
 
     const handleNavigate = (path: MenuPath) => {
         router.push(path);
@@ -69,15 +56,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
-            {/* Acting-as indicator */}
-            {actingAs && actingAsName && (
-                <View style={[styles.actingAsContainer, { backgroundColor: colors.sidebarIconSecurity + '14' }]}>
-                    <View style={[styles.actingAsDot, { backgroundColor: colors.success }]} />
-                    <Text style={[styles.actingAsText, { color: colors.sidebarIconSecurity }]} numberOfLines={1}>
-                        {t('sidebar.actingAs', { name: actingAsName })}
-                    </Text>
-                </View>
-            )}
             <View style={styles.menuContainer}>
                 {menuItems.map((item) => {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
@@ -124,25 +102,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 }
 
 const styles = StyleSheet.create({
-    actingAsContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
-        marginBottom: 12,
-        gap: 8,
-        alignSelf: 'flex-start',
-    },
-    actingAsDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    actingAsText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
     menuContainer: {
         gap: 4,
         alignItems: 'flex-start',

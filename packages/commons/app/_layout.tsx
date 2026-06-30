@@ -18,7 +18,7 @@ configureReanimatedLogger({
 });
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -149,7 +149,6 @@ function AppStackContent() {
     <SafeAreaProvider>
       <ScrollProvider>
         <ThemeProvider value={navTheme}>
-          <ActingAsBanner />
           <Stack>
             {/*
               Bidirectional onboarding guard.

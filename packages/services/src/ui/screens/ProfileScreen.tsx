@@ -27,7 +27,10 @@ const AVATAR_OVERLAP = -56;
 const INFO_ICON_SIZE = 18;
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate }) => {
-    // Use useOxy() hook for OxyContext values
+    // Use useOxy() hook for OxyContext values. "Me" for own-profile detection
+    // and the own-profile fallback is the ACTIVE account (the account switched
+    // into), so previewing my profile while switched into an org/project/bot
+    // resolves "this is mine" against that account, not the session owner.
     const { oxyServices, user: currentUser } = useOxy();
     const [profile, setProfile] = useState<User | null>(null);
     const [reputationTotal, setReputationTotal] = useState<number | null>(null);

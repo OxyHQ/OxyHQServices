@@ -685,13 +685,19 @@ export class SessionController {
 
       const user = await User.findOne(query).select('+password +twoFactorAuth');
 
+      // Only `personal` accounts may authenticate directly. Non-personal accounts
+      // (organization/project/bot) are operated by switching INTO them
+      // (POST /accounts/:id/switch) and carry no password — treat any such match
+      // as invalid credentials (no info leak) rather than minting a session here.
+      const isNonPersonalAccount = !!user && !!user.kind && user.kind !== 'personal';
+
       // Always run a password verification — against the real hash if we
       // found one, otherwise against a dummy hash — so the response time
       // is the same in both branches.
       const hashToCompare = user?.password ?? DUMMY_PASSWORD_HASH;
       const isValidPassword = await verifyPassword(password, hashToCompare);
 
-      if (!user?.password || !isValidPassword) {
+      if (!user?.password || !isValidPassword || isNonPersonalAccount) {
         const failure = await recordFailure({
           scope: LOGIN_LOCKOUT_SCOPE,
           identifier: lockoutKey,

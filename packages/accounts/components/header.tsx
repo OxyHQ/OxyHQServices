@@ -38,6 +38,9 @@ export function Header({ }: HeaderProps) {
     const isDesktop = Platform.OS === 'web' && width >= 768;
     const { t } = useTranslation();
 
+    // The header avatar + name reflect the current account. A Google-style
+    // account switch is a real session switch, so `user` already mirrors the
+    // switched-into account in the chrome.
     const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
 
     const lastPressRef = useRef<number>(0);

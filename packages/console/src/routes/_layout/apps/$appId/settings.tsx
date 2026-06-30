@@ -3,7 +3,6 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowLeft01Icon,
   Settings01Icon,
-  UserMultiple02Icon,
   Key01Icon,
   ChartLineData02Icon,
 } from '@hugeicons/core-free-icons';
@@ -11,13 +10,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  useApplication,
-  useApplicationMembers,
-  useCallerAccess,
-} from '@/hooks/use-applications';
+import { useApplication, useCallerAccess } from '@/hooks/use-applications';
 import { GeneralSection } from '@/components/apps/general-section';
-import { MembersSection } from '@/components/apps/members-section';
 import { CredentialsSection } from '@/components/apps/credentials-section';
 import { UsageSection } from '@/components/apps/usage-section';
 
@@ -28,11 +22,10 @@ export const Route = createFileRoute('/_layout/apps/$appId/settings')({
 function AppSettingsPage() {
   const { appId } = Route.useParams();
   const { data: application, isLoading, isError } = useApplication(appId);
-  // Members are also used as a fallback source for the caller's own access when
-  // the API does not embed `callerMembership`; the request is authorized
-  // server-side, so it is safe to issue here.
-  const { data: members } = useApplicationMembers(appId);
-  const access = useCallerAccess(application, members);
+  // Access derives from the caller's membership in the application's OWNING
+  // account, embedded on the application response as `callerMembership`. Members
+  // are managed at the account level (see Account settings), not per-app.
+  const access = useCallerAccess(application);
 
   if (isLoading) {
     return (
@@ -53,9 +46,8 @@ function AppSettingsPage() {
     );
   }
 
-  const showMembersTab = access.can('members:read');
   const showCredentialsTab = access.can('credentials:read');
-  const showUsageTab = access.can('usage:read');
+  const showUsageTab = access.can('apps:read');
 
   return (
     <ScrollArea className="flex-1 bg-background">
@@ -93,12 +85,6 @@ function AppSettingsPage() {
               <HugeiconsIcon icon={Settings01Icon} size={16} />
               General
             </TabsTrigger>
-            {showMembersTab && (
-              <TabsTrigger value="members">
-                <HugeiconsIcon icon={UserMultiple02Icon} size={16} />
-                Members
-              </TabsTrigger>
-            )}
             {showCredentialsTab && (
               <TabsTrigger value="credentials">
                 <HugeiconsIcon icon={Key01Icon} size={16} />
@@ -116,12 +102,6 @@ function AppSettingsPage() {
           <TabsContent value="general" className="max-w-2xl">
             <GeneralSection application={application} access={access} />
           </TabsContent>
-
-          {showMembersTab && (
-            <TabsContent value="members" className="max-w-3xl">
-              <MembersSection application={application} access={access} />
-            </TabsContent>
-          )}
 
           {showCredentialsTab && (
             <TabsContent value="credentials" className="max-w-3xl">

@@ -9,7 +9,7 @@
  */
 
 import { OxyServices } from '../../OxyServices';
-import type { ConnectedApp } from '../OxyServices.applications';
+import type { ConnectedApp } from '../OxyServices.connectedApps';
 
 /** Build a non-verified JWT whose payload decodes to the given claims. */
 function makeJwt(payload: Record<string, unknown>): string {

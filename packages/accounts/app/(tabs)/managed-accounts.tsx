@@ -6,16 +6,25 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, AccountCard } from '@/components/ui';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
+import type { GroupedItem } from '@/components/sections/types';
 import { useOxy, Avatar } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
-import type { ManagedAccount } from '@oxyhq/core';
+import type { AccountNode, AccountRole } from '@oxyhq/core';
 import { getAccountDisplayName as coreGetAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
-function getRoleBadgeColor(role: string, colors: AppColors): string {
+// Roles whose membership carries the `account:act_as` capability — the only
+// roles that can SWITCH INTO the account (selecting it makes the whole app
+// become that account). Mirrors the account role set (owner/admin/editor).
+const SWITCHABLE_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
+// Roles that may manage membership + sharing of the account.
+const MANAGE_MEMBER_ROLES: readonly AccountRole[] = ['owner', 'admin'];
+// Roles that may edit the account's profile.
+const EDIT_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
+
+function getRoleBadgeColor(role: AccountRole, colors: AppColors): string {
   switch (role) {
     case 'owner':
       return colors.sidebarIconPersonalInfo;
@@ -23,19 +32,27 @@ function getRoleBadgeColor(role: string, colors: AppColors): string {
       return colors.sidebarIconSecurity;
     case 'editor':
       return colors.sidebarIconPayments;
+    case 'developer':
+      return colors.sidebarIconData;
+    case 'billing':
+      return colors.sidebarIconStorage;
     default:
       return colors.icon;
   }
 }
 
-function getAccountDisplayName(account: ManagedAccount, locale?: string): string {
-  return coreGetAccountDisplayName(account.account ?? null, locale);
+function getAccountDisplayName(node: AccountNode, locale?: string): string {
+  return coreGetAccountDisplayName(node.account ?? null, locale);
 }
 
-function getUserRole(account: ManagedAccount, userId?: string): string {
-  if (!userId) return 'unknown';
-  const manager = account.managers.find((m) => m.userId === userId);
-  return manager?.role ?? 'unknown';
+/**
+ * The caller's effective role on a node. Prefer the resolved membership role;
+ * fall back to the relationship (an owned/`self` account is implicitly owned,
+ * a shared account with no membership row defaults to read-only `viewer`).
+ */
+function getNodeRole(node: AccountNode): AccountRole {
+  if (node.callerMembership?.role) return node.callerMembership.role;
+  return node.relationship === 'member' ? 'viewer' : 'owner';
 }
 
 export default function ManagedAccountsScreen() {
@@ -44,176 +61,231 @@ export default function ManagedAccountsScreen() {
   const { t, locale } = useTranslation();
 
   // Auth is enforced by the `(tabs)` layout — assume a session here.
+  // `user` is the account the app is currently signed in as. Selecting a
+  // managed account performs a REAL session switch via `switchToAccount`, after
+  // which `user` becomes that account — so the "current" account is simply
+  // whichever row matches `user.id`.
   const {
-    user,
     isLoading: oxyLoading,
-    managedAccounts,
-    actingAs,
-    setActingAs,
+    accounts,
+    user,
+    switchToAccount,
     showBottomSheet,
     oxyServices,
-    refreshManagedAccounts,
+    refreshAccounts,
   } = useOxy();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const userId = typeof user?._id === 'string' ? user._id : user?.id?.toString();
+  const [archivingId, setArchivingId] = useState<string | null>(null);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshManagedAccounts();
+      await refreshAccounts();
     } catch (error) {
-      console.error('Failed to refresh managed accounts', error);
+      console.error('Failed to refresh accounts', error);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshManagedAccounts]);
+  }, [refreshAccounts]);
 
   const handleCreateAccount = useCallback(() => {
-    showBottomSheet?.('CreateManagedAccount');
+    showBottomSheet?.('CreateAccount');
   }, [showBottomSheet]);
 
-  const handleActAs = useCallback((accountId: string) => {
-    if (actingAs === accountId) {
-      setActingAs(null);
-    } else {
-      setActingAs(accountId);
-    }
-  }, [actingAs, setActingAs]);
+  // True account switch — selecting an account makes the whole app sign in as
+  // it (a real session switch). Returning to the personal account is itself a
+  // switch, performed from the account switcher, never an "un-act-as".
+  const handleSwitchTo = useCallback((accountId: string) => {
+    Promise.resolve(switchToAccount(accountId)).catch((error) => {
+      console.error('Failed to switch account', error);
+    });
+  }, [switchToAccount]);
+
+  const handleManageMembers = useCallback((accountId: string) => {
+    showBottomSheet?.({ screen: 'AccountMembers', props: { accountId } });
+  }, [showBottomSheet]);
 
   const handleEditProfile = useCallback((accountId: string) => {
-    setActingAs(accountId);
-    showBottomSheet?.({
-      screen: 'EditProfileField',
-      props: { fieldType: 'displayName' },
-    });
-  }, [setActingAs, showBottomSheet]);
+    // Editing a non-personal account's profile happens through the shared
+    // profile editor, which targets the current account — so switch into the
+    // account first, then open the editor.
+    Promise.resolve(switchToAccount(accountId))
+      .then(() => {
+        showBottomSheet?.({
+          screen: 'EditProfileField',
+          props: { fieldType: 'displayName' },
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to switch account before editing', error);
+      });
+  }, [switchToAccount, showBottomSheet]);
 
-  const handleDeleteAccount = useCallback((account: ManagedAccount) => {
-    const name = getAccountDisplayName(account, locale);
+  const handleArchiveAccount = useCallback((node: AccountNode) => {
+    const name = getAccountDisplayName(node, locale);
     alert(
-      'Delete Managed Account',
-      `Are you sure you want to permanently delete "${name}"? This action cannot be undone.`,
+      t('managedAccounts.archive.confirmTitle'),
+      t('managedAccounts.archive.confirmBody', { name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('managedAccounts.archive.confirm'),
           style: 'destructive',
           onPress: async () => {
             try {
-              setDeletingId(account.accountId);
-              await oxyServices.deleteManagedAccount(account.accountId);
-              if (actingAs === account.accountId) {
-                setActingAs(null);
-              }
-              await refreshManagedAccounts();
+              setArchivingId(node.accountId);
+              await oxyServices.archiveAccount(node.accountId);
+              await refreshAccounts();
             } catch (error) {
-              console.error('Failed to delete managed account', error);
-              toast.error('Failed to delete managed account. Please try again.');
+              console.error('Failed to archive account', error);
+              toast.error(t('managedAccounts.archive.error'));
             } finally {
-              setDeletingId(null);
+              setArchivingId(null);
             }
           },
         },
       ],
     );
-  }, [oxyServices, actingAs, setActingAs, refreshManagedAccounts, alert]);
+  }, [oxyServices, refreshAccounts, locale, t]);
 
-  const accountListItems = useMemo(() => {
-    return managedAccounts.map((account) => {
-      const name = getAccountDisplayName(account, locale);
-      const username = account.account?.username;
-      // When a managed account has no username yet (e.g. mid-onboarding) we
-      // fall back to a truncated `publicKey` handle so the row still feels
-      // like an identifiable identity instead of showing "No username set".
-      const fallbackHandle = getAccountFallbackHandle(account.account ?? null);
-      const role = getUserRole(account, userId);
-      const isActingAs = actingAs === account.accountId;
-      const isDeleting = deletingId === account.accountId;
-      const avatarUri = account.account?.avatar
-        ? oxyServices.getFileDownloadUrl(account.account.avatar, 'thumb')
-        : undefined;
-      const badgeColor = getRoleBadgeColor(role, colors);
+  const buildItem = useCallback((node: AccountNode): GroupedItem => {
+    const name = getAccountDisplayName(node, locale);
+    const username = node.account?.username;
+    // When an account has no username yet (e.g. mid-provisioning) fall back to
+    // a truncated `publicKey` handle so the row still reads as identifiable
+    // rather than showing "No username set".
+    const fallbackHandle = getAccountFallbackHandle(node.account ?? null);
+    const role = getNodeRole(node);
+    // "Current" = the account the app is currently signed in as. A real session
+    // switch makes `user` become the switched-into account, so the current row
+    // is simply the one whose `accountId` matches `user.id`. The personal/self
+    // account is not listed here.
+    const isCurrent = user?.id === node.accountId;
+    const isArchiving = archivingId === node.accountId;
+    const avatarUri = node.account?.avatar
+      ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
+      : undefined;
+    const badgeColor = getRoleBadgeColor(role, colors);
+    const canSwitchInto = SWITCHABLE_ROLES.includes(role);
+    const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
+    const canEdit = EDIT_ROLES.includes(role);
+    const canArchive = role === 'owner';
 
-      return {
-        id: account.accountId,
-        title: name,
-        subtitle: username
-          ? `@${username}`
-          : (fallbackHandle ?? t('managedAccounts.noUsernameYet') ?? 'No username set'),
-        customIcon: (
-          <View style={styles.avatarContainer}>
-            <Avatar name={name} uri={avatarUri} size={40} />
-            {isActingAs && (
-              <View style={[styles.activeIndicator, { backgroundColor: colors.success }]} />
-            )}
+    return {
+      id: node.accountId,
+      title: name,
+      subtitle: username
+        ? `@${username}`
+        : (fallbackHandle ?? t('managedAccounts.noUsernameYet')),
+      customIcon: <Avatar name={name} uri={avatarUri} size={40} />,
+      customContent: (
+        <View style={styles.accountActions}>
+          <View style={[styles.roleBadge, { backgroundColor: badgeColor + '20', borderColor: badgeColor + '40' }]}>
+            <Text style={[styles.roleBadgeText, { color: badgeColor }]}>{role}</Text>
           </View>
-        ),
-        customContent: (
-          <View style={styles.accountActions}>
-            <View style={[styles.roleBadge, { backgroundColor: badgeColor + '20', borderColor: badgeColor + '40' }]}>
-              <Text style={[styles.roleBadgeText, { color: badgeColor }]}>
-                {role}
-              </Text>
-            </View>
-            {isDeleting ? (
-              <ActivityIndicator size="small" color={colors.text} />
-            ) : (
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: isActingAs ? colors.success + '20' : colors.card }]}
-                  onPressIn={handlePressIn}
-                  onPress={() => handleActAs(account.accountId)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={isActingAs ? t('a11y.stopActingAs') : t('a11y.actAs')}
-                  accessibilityState={{ selected: isActingAs }}
+          {isArchiving ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            <View style={styles.actionButtons}>
+              {isCurrent ? (
+                // Single "current account" indicator (Gmail-style). Not a toggle:
+                // the account is already active, so there is nothing to press.
+                <View
+                  style={styles.currentIndicator}
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel={t('a11y.stopActingAs')}
                 >
-                  <MaterialCommunityIcons
-                    name={isActingAs ? 'account-check' : 'account-switch'}
-                    size={16}
-                    color={isActingAs ? colors.success : colors.text}
-                  />
-                </TouchableOpacity>
+                  <MaterialCommunityIcons name="check" size={20} color={colors.tint} />
+                </View>
+              ) : canSwitchInto ? (
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: colors.card }]}
                   onPressIn={handlePressIn}
-                  onPress={() => handleEditProfile(account.accountId)}
+                  onPress={() => handleSwitchTo(node.accountId)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.actAs')}
+                >
+                  <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.text} />
+                </TouchableOpacity>
+              ) : null}
+              {canManageMembers && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.card }]}
+                  onPressIn={handlePressIn}
+                  onPress={() => handleManageMembers(node.accountId)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.manageMembers')}
+                >
+                  <MaterialCommunityIcons name="account-multiple-outline" size={16} color={colors.text} />
+                </TouchableOpacity>
+              )}
+              {canEdit && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.card }]}
+                  onPressIn={handlePressIn}
+                  onPress={() => handleEditProfile(node.accountId)}
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel={t('a11y.editProfile')}
                 >
                   <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.text} />
                 </TouchableOpacity>
-                {role === 'owner' && (
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.card }]}
-                    onPressIn={handlePressIn}
-                    onPress={() => handleDeleteAccount(account)}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('a11y.deleteAccount')}
-                  >
-                    <MaterialCommunityIcons name="delete-outline" size={16} color={colors.error} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
-        ),
-        onPress: () => handleActAs(account.accountId),
-      };
-    });
-  }, [managedAccounts, userId, actingAs, deletingId, oxyServices, colors, handlePressIn, handleActAs, handleEditProfile, handleDeleteAccount, t, locale]);
+              )}
+              {canArchive && (
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.card }]}
+                  onPressIn={handlePressIn}
+                  onPress={() => handleArchiveAccount(node)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.archiveAccount')}
+                >
+                  <MaterialCommunityIcons name="archive-outline" size={16} color={colors.error} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      ),
+      // Tapping the row switches INTO the account (Gmail-style). The current
+      // account is not pressable (it is already active); accounts the caller
+      // can't switch into fall back to the manage-members affordance.
+      onPress: isCurrent
+        ? undefined
+        : canSwitchInto
+          ? () => handleSwitchTo(node.accountId)
+          : canManageMembers
+            ? () => handleManageMembers(node.accountId)
+            : undefined,
+    };
+  }, [user?.id, archivingId, oxyServices, colors, handlePressIn, handleSwitchTo, handleManageMembers, handleEditProfile, handleArchiveAccount, t, locale]);
+
+  // Partition the accessible forest: accounts the caller owns (grouped by kind)
+  // and accounts shared with them via membership. The caller's own personal
+  // (`self`) account is naturally excluded — it is neither a managed kind nor a
+  // `member` relationship.
+  const groups = useMemo(() => {
+    const owned = accounts.filter((a) => a.relationship !== 'member' && a.kind !== 'personal');
+    return {
+      organizations: owned.filter((a) => a.kind === 'organization'),
+      projects: owned.filter((a) => a.kind === 'project'),
+      bots: owned.filter((a) => a.kind === 'bot'),
+      shared: accounts.filter((a) => a.relationship === 'member'),
+    };
+  }, [accounts]);
+
+  const totalCount = groups.organizations.length + groups.projects.length + groups.bots.length + groups.shared.length;
 
   if (oxyLoading) {
     return (
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -224,8 +296,8 @@ export default function ManagedAccountsScreen() {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
           <ScreenHeader
-            title="Your Identities"
-            subtitle="Create and manage sub-accounts for different purposes. Each identity has its own profile, username, and content."
+            title={t('managedAccounts.title')}
+            subtitle={t('managedAccounts.subtitle')}
           />
 
           <Section title="">
@@ -235,47 +307,56 @@ export default function ManagedAccountsScreen() {
               onPress={handleCreateAccount}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Create New Identity"
+              accessibilityLabel={t('managedAccounts.createNew')}
             >
               <MaterialCommunityIcons name="account-plus-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Create New Identity</Text>
+              <Text style={styles.createButtonText}>{t('managedAccounts.createNew')}</Text>
             </TouchableOpacity>
           </Section>
 
-          {actingAs && (
-            <Section title="">
-              <AccountCard>
-                <GroupedSection items={[{
-                  id: 'acting-as-info',
-                  icon: 'information-outline',
-                  iconColor: colors.sidebarIconSecurity,
-                  title: 'You are currently acting as another identity',
-                  subtitle: 'Actions in other apps will be performed as this identity',
-                  onPress: () => setActingAs(null),
-                  showChevron: false,
-                }]} />
-              </AccountCard>
-            </Section>
-          )}
-
-          {accountListItems.length === 0 ? (
+          {totalCount === 0 ? (
             <Section title="">
               <View style={styles.emptyState}>
                 <View style={[styles.emptyIcon, { backgroundColor: colors.sidebarIconSharing + '20' }]}>
                   <MaterialCommunityIcons name="account-group-outline" size={48} color={colors.sidebarIconSharing} />
                 </View>
-                <ThemedText style={styles.emptyTitle}>No managed accounts</ThemedText>
+                <ThemedText style={styles.emptyTitle}>{t('managedAccounts.empty.title')}</ThemedText>
                 <ThemedText style={[styles.emptySubtitle, { color: colors.icon }]}>
-                  Create sub-accounts for different contexts such as work, personal branding, or team management.
+                  {t('managedAccounts.empty.subtitle')}
                 </ThemedText>
               </View>
             </Section>
           ) : (
-            <Section title={`${accountListItems.length} ${accountListItems.length === 1 ? 'Identity' : 'Identities'}`}>
-              <AccountCard>
-                <GroupedSection items={accountListItems} />
-              </AccountCard>
-            </Section>
+            <>
+              {groups.organizations.length > 0 && (
+                <Section title={t('managedAccounts.groups.organizations')}>
+                  <AccountCard>
+                    <GroupedSection items={groups.organizations.map(buildItem)} />
+                  </AccountCard>
+                </Section>
+              )}
+              {groups.projects.length > 0 && (
+                <Section title={t('managedAccounts.groups.projects')}>
+                  <AccountCard>
+                    <GroupedSection items={groups.projects.map(buildItem)} />
+                  </AccountCard>
+                </Section>
+              )}
+              {groups.bots.length > 0 && (
+                <Section title={t('managedAccounts.groups.bots')}>
+                  <AccountCard>
+                    <GroupedSection items={groups.bots.map(buildItem)} />
+                  </AccountCard>
+                </Section>
+              )}
+              {groups.shared.length > 0 && (
+                <Section title={t('managedAccounts.groups.shared')}>
+                  <AccountCard>
+                    <GroupedSection items={groups.shared.map(buildItem)} />
+                  </AccountCard>
+                </Section>
+              )}
+            </>
           )}
         </View>
       </View>
@@ -314,19 +395,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  avatarContainer: {
-    position: 'relative',
-  },
-  activeIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
   accountActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -336,6 +404,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  currentIndicator: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionButton: {
     width: 32,

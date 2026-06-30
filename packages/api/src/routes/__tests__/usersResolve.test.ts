@@ -281,7 +281,7 @@ describe('PUT /users/resolve (C4)', () => {
     );
   });
 
-  it('strips the federated display name and escapes bio before persistence', async () => {
+  it('strips the federated display name and strips tags from bio before persistence', async () => {
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
     mockUserFindOne.mockReturnValueOnce({ select: selectResult });
@@ -307,8 +307,9 @@ describe('PUT /users/resolve (C4)', () => {
         $set: expect.objectContaining({
           // Display name: disallowed characters stripped (never escaped).
           'name.first': 'img src x onerror alert fediverse xss',
-          // Bio is not a display name and keeps HTML-entity escaping.
-          bio: '&lt;script&gt;alert(&quot;bio&quot;)&lt;/script&gt;',
+          // Bio renders as text in clients: tags are stripped (no executable
+          // markup survives) and the value is NOT HTML-entity-escaped.
+          bio: 'alert("bio")',
         }),
       }),
       expect.anything(),
@@ -386,6 +387,95 @@ describe('PUT /users/resolve (C4)', () => {
       'https://example.com/.well-known/webfinger?resource=acct%3Aalice%40example.com',
       expect.anything(),
     );
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice@example.com',
+          'federation.actorUri': actorUri,
+          'federation.domain': 'example.com',
+        }),
+      }),
+      expect.anything(),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  // ----------------------------------------------------------------------
+  // AT Protocol (Bluesky) external actors are keyed by a hostless DID
+  // (`did:plc:…` / `did:web:…`), not an http(s) ActivityPub actor URL. The DID
+  // is accepted and stored verbatim as the federation dedup key; the URL parse
+  // + hostname/WebFinger host-binding (which are AP-only and impossible for a
+  // hostless identifier) MUST be skipped for it.
+  // ----------------------------------------------------------------------
+
+  it('resolves a did:plc: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const actorUri = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
+    const newUserDoc = { _id: 'bsky-user', username: 'alice.bsky.social@bsky.social', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice.bsky.social@bsky.social',
+      actorUri,
+      domain: 'bsky.social',
+    });
+
+    expect(res.status).toBe(200);
+    // No WebFinger / host-binding network call for a DID actor.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // DID stored verbatim as both the dedup filter key and the persisted value.
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice.bsky.social@bsky.social',
+          'federation.actorUri': actorUri,
+          'federation.domain': 'bsky.social',
+          'federation.lastResolvedAt': expect.any(Date),
+        }),
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
+      expect.anything(),
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it('resolves a did:web: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const actorUri = 'did:web:example.com';
+    const newUserDoc = { _id: 'didweb-user', username: 'alice@example.com', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@example.com',
+      actorUri,
+      domain: 'example.com',
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
       { 'federation.actorUri': actorUri },
       expect.objectContaining({
@@ -522,7 +612,7 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('strips the federated displayName and escapes bio before persisting (stored-XSS regression)', async () => {
+  it('strips the federated displayName and strips tags from bio before persisting (stored-XSS regression)', async () => {
     // Type-immutability check: no existing user.
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -551,8 +641,10 @@ describe('PUT /users/resolve (C4)', () => {
     // output can never carry an HTML/XSS vector.
     expect(setFields['name.first']).toBe('img src x onerror alert');
     expect(String(setFields['name.first'])).not.toMatch(/[<>&"]/);
-    // Bio is NOT a display name and keeps HTML-entity escaping.
-    expect(setFields.bio).toBe('hi &lt;script&gt;steal()&lt;/script&gt; &amp; &quot;friends&quot;');
+    // Bio renders as text: HTML tags are stripped (no <script> survives) but the
+    // value is NOT entity-escaped — apostrophes/ampersands stay literal so
+    // clients don't render `&amp;`/`&#x27;`.
+    expect(setFields.bio).toBe('hi steal() & "friends"');
     expect(String(setFields.bio)).not.toContain('<script>');
   });
 

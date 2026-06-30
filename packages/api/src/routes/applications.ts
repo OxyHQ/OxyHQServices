@@ -7,13 +7,11 @@ import {
   type ApplicationScope,
   isPrivilegedScope,
 } from '../utils/applicationScopes';
-import { ApplicationMember, IApplicationMember } from '../models/ApplicationMember';
 import {
   ApplicationCredential,
   IApplicationCredential,
 } from '../models/ApplicationCredential';
 import ApiKeyUsage from '../models/ApiKeyUsage';
-import { WorkspaceMember, IWorkspaceMember } from '../models/WorkspaceMember';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
@@ -25,60 +23,50 @@ import {
   UnauthorizedError,
 } from '../utils/error';
 import { logger } from '../utils/logger';
-import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import approvedClientsCache from '../utils/approvedClientsCache';
 import { refreshOriginRegistry } from '../config/dynamicOriginRegistry';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { isTrustedApplication } from '../utils/trustedApplication';
-import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
+import { accountService } from '../services/account.service';
 import {
-  permissionsForRole,
-  appPermissionsForWorkspaceRole,
+  appPermissionsForAccountRole,
+  type AccountRole,
   type ApplicationPermission,
-  type ApplicationRole,
-} from '../utils/applicationRoles';
+} from '../utils/accountRoles';
 import {
   appIdRouteParams,
-  appMemberParams,
   appCredentialParams,
   periodQuerySchema,
   createApplicationSchema,
   listApplicationsQuerySchema,
   updateApplicationSchema,
-  inviteMemberSchema,
-  updateMemberSchema,
-  transferOwnershipSchema,
   createCredentialSchema,
 } from '../schemas/application.schemas';
 
 /**
  * Resolved application access for the caller.
  *
- * Access to an application is granted by EITHER an explicit per-app
- * `ApplicationMember` row (#213) OR active membership of the application's
- * owning Workspace. Both grants are resolved and their permissions UNIONed into
- * `permissions` so the caller always receives the broader set.
+ * Access to an application is DERIVED from the caller's effective `AccountMember`
+ * role over the application's owning account (`app.ownerAccountId`), honouring
+ * tree inheritance. The account role is mapped to a concrete set of application
+ * permissions via `appPermissionsForAccountRole`. There is no per-app member
+ * table.
  */
 interface AppAccess {
   application: IApplication;
-  /** Explicit per-app membership, if the caller has one. */
-  appMembership: IApplicationMember | null;
-  /** Workspace membership for the app's workspace, if the caller has one. */
-  workspaceMembership: IWorkspaceMember | null;
-  /** Effective application permissions (union of both grants). */
+  /** The caller's effective account role over `ownerAccountId`. */
+  role: AccountRole;
+  /** Effective application permissions derived from that role. */
   permissions: Set<ApplicationPermission>;
 }
 
 /**
  * Request decorated by `loadApplicationContext` / `requireAppPermission` with
- * the resolved application and the caller's access. `membership` is the explicit
- * per-app ApplicationMember (may be absent for workspace-only access); `access`
- * always carries the resolved effective permissions.
+ * the resolved application and the caller's access.
  */
 interface AppContextRequest extends AuthRequest {
   application?: IApplication;
-  membership?: IApplicationMember;
   access?: AppAccess;
 }
 
@@ -101,8 +89,7 @@ const router = express.Router();
  * Rebuild the dynamic CORS origin snapshot after an Application
  * create/update/delete. A change to an app's `redirectUris` or `status` changes
  * the registry-derived CORS allowlist, so refresh now instead of waiting for
- * the 60s background tick. Fire-and-forget — never blocks the response; a
- * failure just means the change lands on the next tick.
+ * the 60s background tick. Fire-and-forget — never blocks the response.
  */
 function refreshDynamicCorsOrigins(): void {
   void refreshOriginRegistry().catch((err) =>
@@ -174,19 +161,9 @@ function resolveRedirectUris(input: { redirectUris?: string[] }): string[] | und
  * application's scopes.
  *
  * Privileged scopes ({@link isPrivilegedScope}, e.g. `federation:write`) confer
- * act-on-behalf authority and are NOT self-grantable. Mirroring how `type` /
- * `isOfficial` / `isInternal` / `capabilities` are staff-gated on the update
- * path, a NON-STAFF caller is REJECTED with 403 if the scope set they submit
- * adds a privileged scope that was not already present on the application.
- *
- * `previousScopes` is the application's current persisted scope set (empty on
- * create). A non-staff caller may keep an already-granted privileged scope (so
- * routine edits to an app that staff previously elevated do not fail) but may
- * never INTRODUCE one. Staff are unrestricted.
- *
- * Returns the validated scope list to persist (the input, de-duplicated). Throws
- * {@link ForbiddenError} when a non-staff caller attempts to add a privileged
- * scope.
+ * act-on-behalf authority and are NOT self-grantable. A NON-STAFF caller is
+ * REJECTED with 403 if the scope set they submit adds a privileged scope that
+ * was not already present on the application. Returns the validated scope list.
  */
 function authorizeRequestedScopes(
   req: AuthRequest,
@@ -217,35 +194,18 @@ function authorizeRequestedScopes(
   return deduped;
 }
 
-/** Serialised explicit per-app membership shape. */
-type SerializedAppMember = ReturnType<typeof serializeMember>;
-
 /**
- * Serialised caller membership embedded on an application. Either a real per-app
- * ApplicationMember projection, or a synthetic projection derived from the
- * caller's workspace grant (`source: 'workspace'`, no ApplicationMember `_id`).
+ * Serialised caller membership embedded on an application. Derived from the
+ * caller's effective account role over `ownerAccountId` (no per-app member row).
  */
-interface SerializedWorkspaceCallerMembership {
-  _id: null;
-  applicationId: string;
-  userId: string;
-  role: string;
-  permissions: string[];
-  source: 'workspace';
-  workspaceId: string;
+interface SerializedCallerMembership {
+  role: AccountRole;
+  permissions: ApplicationPermission[];
+  source: 'account';
+  ownerAccountId: string;
 }
 
-type SerializedCallerMembership = SerializedAppMember | SerializedWorkspaceCallerMembership;
-
-/**
- * Serialise an application for client responses (no webhook secret).
- *
- * When the caller's own membership is supplied it is embedded as
- * `callerMembership` so roles that lack `members:read` (developer, billing) can
- * still discover their own permission set, and the Console can gate UI on
- * `application.callerMembership.permissions`. The `callerMembership` may be a
- * real per-app membership or a synthetic projection of a workspace grant.
- */
+/** Serialise an application for client responses (no webhook secret). */
 function serializeApplication(
   app: IApplication,
   callerMembership?: SerializedCallerMembership | null
@@ -265,27 +225,11 @@ function serializeApplication(
     scopes: app.scopes ?? [],
     webhookUrl: app.webhookUrl,
     devWebhookUrl: app.devWebhookUrl,
-    workspaceId: app.workspaceId ? app.workspaceId.toString() : null,
+    ownerAccountId: app.ownerAccountId.toString(),
     createdByUserId: app.createdByUserId.toString(),
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
     callerMembership: callerMembership ?? null,
-  };
-}
-
-/** Serialise a membership for client responses. */
-function serializeMember(member: IApplicationMember) {
-  return {
-    _id: member._id.toString(),
-    applicationId: member.applicationId.toString(),
-    userId: member.userId.toString(),
-    role: member.role,
-    permissions: member.permissions,
-    invitedByUserId: member.invitedByUserId?.toString(),
-    joinedAt: member.joinedAt,
-    status: member.status,
-    createdAt: member.createdAt,
-    updatedAt: member.updatedAt,
   };
 }
 
@@ -377,16 +321,23 @@ function generateCredentialMaterial(): { publicKey: string; secret: string; secr
   return { publicKey, secret, secretHash };
 }
 
+/** Build the `callerMembership` projection from resolved access. */
+function callerMembershipFromAccess(access: AppAccess | undefined): SerializedCallerMembership | null {
+  if (!access) return null;
+  return {
+    role: access.role,
+    permissions: [...access.permissions],
+    source: 'account',
+    ownerAccountId: access.application.ownerAccountId.toString(),
+  };
+}
+
 /**
  * Resolve the application (non-deleted) and the caller's effective access for
- * `:appId`.
- *
- * Access is granted by EITHER an explicit `ApplicationMember` row (#213) OR
- * active membership of the application's owning Workspace. The effective
- * permission set is the UNION of both grants. Returns 404 when the app is
- * missing/deleted and 403 when the caller has neither grant. Attaches the
- * resolved `application`, the explicit `membership` (if any), and the full
- * `access` to the request.
+ * `:appId`. Access is the caller's effective `AccountMember` role over
+ * `app.ownerAccountId` (with inheritance), mapped to application permissions.
+ * Returns 404 when the app is missing/deleted and 403 when the caller has no
+ * account access to its owner.
  */
 async function loadApplicationContext(req: AppContextRequest): Promise<AppAccess> {
   const userId = requireUserId(req);
@@ -404,48 +355,20 @@ async function loadApplicationContext(req: AppContextRequest): Promise<AppAccess
     throw new NotFoundError('Application not found');
   }
 
-  const appMembership = await ApplicationMember.findOne({
-    applicationId: application._id,
+  const accountAccess = await accountService.resolveEffectiveAccess(
     userId,
-    status: 'active',
-  });
-
-  // Workspace membership is an alternative (and additive) access path. An app
-  // always belongs to a workspace, but legacy/in-flight rows may not yet carry
-  // a workspaceId — guard against that so resolution never throws.
-  const workspaceMembership = application.workspaceId
-    ? await WorkspaceMember.findOne({
-        workspaceId: application.workspaceId,
-        userId,
-        status: 'active',
-      })
-    : null;
-
-  if (!appMembership && !workspaceMembership) {
+    application.ownerAccountId.toString()
+  );
+  if (!accountAccess) {
     throw new ForbiddenError('You do not have access to this application');
   }
 
-  const permissions = new Set<ApplicationPermission>();
-  if (appMembership) {
-    for (const permission of appMembership.permissions) {
-      permissions.add(permission as ApplicationPermission);
-    }
-  }
-  if (workspaceMembership) {
-    for (const permission of appPermissionsForWorkspaceRole(workspaceMembership.role)) {
-      permissions.add(permission);
-    }
-  }
+  const permissions = new Set<ApplicationPermission>(
+    appPermissionsForAccountRole(accountAccess.role)
+  );
 
-  const access: AppAccess = {
-    application,
-    appMembership: appMembership ?? null,
-    workspaceMembership: workspaceMembership ?? null,
-    permissions,
-  };
-
+  const access: AppAccess = { application, role: accountAccess.role, permissions };
   req.application = application;
-  req.membership = appMembership ?? undefined;
   req.access = access;
   return access;
 }
@@ -464,154 +387,70 @@ function requireAppPermission(permission: ApplicationPermission) {
   });
 }
 
-/**
- * Build the `callerMembership` projection from resolved access. Prefers the
- * explicit per-app ApplicationMember; for workspace-only access synthesises a
- * membership-shaped object from the effective permissions so the Console can
- * still gate UI on `application.callerMembership`.
- */
-function callerMembershipFromAccess(access: AppAccess | undefined) {
-  if (!access) return null;
-  if (access.appMembership) {
-    return serializeMember(access.appMembership);
-  }
-  if (access.workspaceMembership) {
-    // Synthetic membership derived from the workspace grant. Carries no
-    // ApplicationMember `_id` (there is no per-app row) and reports the
-    // workspace role as the effective role.
-    return {
-      _id: null,
-      applicationId: access.application._id.toString(),
-      userId: access.workspaceMembership.userId.toString(),
-      role: access.workspaceMembership.role,
-      permissions: [...access.permissions],
-      source: 'workspace' as const,
-      workspaceId: access.workspaceMembership.workspaceId.toString(),
-    };
-  }
-  return null;
-}
-
-/**
- * Whether the caller has owner-level authority over the application's members.
- *
- * True when the caller is an explicit per-app `owner`, OR an `owner`/`admin` of
- * the owning workspace (workspace operators may manage every application their
- * workspace owns, including demoting/removing per-app owners).
- */
-function isEffectiveAppOwner(access: AppAccess | undefined): boolean {
-  if (!access) return false;
-  if (access.appMembership?.role === 'owner') return true;
-  const workspaceRole = access.workspaceMembership?.role;
-  return workspaceRole === 'owner' || workspaceRole === 'admin';
-}
-
 // ============================================================================
 // Applications — CRUD
 // ============================================================================
 
 /**
- * List applications the caller can access.
+ * List applications the caller can access — i.e. every app whose owning account
+ * is in the caller's accessible account forest (their own account + every
+ * account they are a member of, with subtrees).
  *
- * Access is granted by EITHER an explicit per-app ApplicationMember row (#213)
- * OR active membership of the application's owning workspace. The two sets are
- * UNIONed.
- *
- * With `?workspaceId=<id>`: returns only that workspace's applications, and only
- * if the caller is an active member of that workspace (otherwise 403). Without
- * it: returns applications across ALL workspaces the caller is an active member
- * of, plus any apps where the caller has only an explicit ApplicationMember row.
- *
- * `callerMembership` embeds the explicit per-app membership when present, else a
- * synthetic projection of the workspace grant.
+ * With `?ownerAccountId=<id>`: returns only that account's applications, and
+ * only if the caller has effective access to that account (otherwise 403).
  */
 router.get(
   '/',
   validate({ query: listApplicationsQuerySchema }),
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUserId(req);
-    const workspaceIdFilter = req.query.workspaceId as string | undefined;
+    const ownerAccountIdFilter = req.query.ownerAccountId as string | undefined;
 
-    // Resolve the caller's active workspace memberships (optionally scoped).
-    const workspaceMemberQuery: Record<string, unknown> = { userId, status: 'active' };
-    if (workspaceIdFilter !== undefined) {
-      if (!mongoose.isValidObjectId(workspaceIdFilter)) {
-        throw new NotFoundError('Workspace not found');
+    // The caller's effective account role per accessible account id.
+    const roleByAccountId = new Map<string, AccountRole>();
+
+    if (ownerAccountIdFilter !== undefined) {
+      if (!mongoose.isValidObjectId(ownerAccountIdFilter)) {
+        throw new NotFoundError('Account not found');
       }
-      workspaceMemberQuery.workspaceId = new mongoose.Types.ObjectId(workspaceIdFilter);
-    }
-    const workspaceMemberships = await WorkspaceMember.find(workspaceMemberQuery);
-
-    // Explicit `?workspaceId=` requires the caller to be an active member.
-    if (workspaceIdFilter !== undefined && workspaceMemberships.length === 0) {
-      throw new ForbiddenError('You are not a member of this workspace');
-    }
-
-    const workspaceRoleByWorkspaceId = new Map<string, IWorkspaceMember>();
-    for (const membership of workspaceMemberships) {
-      workspaceRoleByWorkspaceId.set(membership.workspaceId.toString(), membership);
-    }
-    const accessibleWorkspaceIds = workspaceMemberships.map((m) => m.workspaceId);
-
-    // Resolve the caller's explicit per-app memberships. When scoping by
-    // workspace, ignore standalone app memberships so the result reflects only
-    // that workspace's applications.
-    const appMembershipByAppId = new Map<string, IApplicationMember>();
-    if (workspaceIdFilter === undefined) {
-      const appMemberships = await ApplicationMember.find({ userId, status: 'active' });
-      for (const membership of appMemberships) {
-        appMembershipByAppId.set(membership.applicationId.toString(), membership);
+      const access = await accountService.resolveEffectiveAccess(userId, ownerAccountIdFilter);
+      if (!access) {
+        throw new ForbiddenError('You do not have access to this account');
+      }
+      roleByAccountId.set(ownerAccountIdFilter, access.role);
+    } else {
+      const nodes = await accountService.listAccessibleAccounts(userId);
+      for (const node of nodes) {
+        const role: AccountRole | undefined =
+          node.relationship === 'self' ? 'owner' : node.callerMembership?.role;
+        if (role) {
+          roleByAccountId.set(node.accountId, role);
+        }
       }
     }
 
-    // Union: apps in the caller's accessible workspaces OR apps the caller has an
-    // explicit membership for.
-    const orClauses: Record<string, unknown>[] = [];
-    if (accessibleWorkspaceIds.length > 0) {
-      orClauses.push({ workspaceId: { $in: accessibleWorkspaceIds } });
-    }
-    if (appMembershipByAppId.size > 0) {
-      orClauses.push({
-        _id: { $in: [...appMembershipByAppId.keys()].map((id) => new mongoose.Types.ObjectId(id)) },
-      });
-    }
-
-    if (orClauses.length === 0) {
+    const accountIds = [...roleByAccountId.keys()].map((id) => new mongoose.Types.ObjectId(id));
+    if (accountIds.length === 0) {
       res.json({ applications: [] });
       return;
     }
 
     const applications = await Application.find({
-      $or: orClauses,
+      ownerAccountId: { $in: accountIds },
       status: { $ne: 'deleted' },
     }).sort({ createdAt: -1 });
 
     res.json({
       applications: applications.map((app) => {
-        const appMembership = appMembershipByAppId.get(app._id.toString());
-        const workspaceMembership = app.workspaceId
-          ? workspaceRoleByWorkspaceId.get(app.workspaceId.toString())
-          : undefined;
-
-        const permissions = new Set<ApplicationPermission>();
-        if (appMembership) {
-          for (const permission of appMembership.permissions) {
-            permissions.add(permission as ApplicationPermission);
-          }
-        }
-        if (workspaceMembership) {
-          for (const permission of appPermissionsForWorkspaceRole(workspaceMembership.role)) {
-            permissions.add(permission);
-          }
-        }
-
-        const callerMembership = callerMembershipFromAccess({
-          application: app,
-          appMembership: appMembership ?? null,
-          workspaceMembership: workspaceMembership ?? null,
-          permissions,
-        });
-
+        const role = roleByAccountId.get(app.ownerAccountId.toString());
+        const callerMembership = role
+          ? {
+              role,
+              permissions: appPermissionsForAccountRole(role),
+              source: 'account' as const,
+              ownerAccountId: app.ownerAccountId.toString(),
+            }
+          : null;
         return serializeApplication(app, callerMembership);
       }),
     });
@@ -619,19 +458,11 @@ router.get(
 );
 
 /**
- * Create a new application inside a workspace.
+ * Create a new application owned by an account.
  *
- * `workspaceId` is OPTIONAL for rollout safety (the api ships before the Console
- * learns to send it):
- *  - PROVIDED → the caller must be an active member of that workspace carrying
- *    `apps:create` (400 on an invalid id, 403 otherwise). The app is bound to it.
- *  - OMITTED → the app lands in the caller's personal workspace (auto-provisioned
- *    via `ensurePersonalWorkspace`), which the caller always owns.
- *
- * Either way the application ends up bound to a concrete workspace, and the
- * creator is also added as an active per-app `owner` member (#213) so the
- * explicit ApplicationMember path keeps working. Staff-only fields default and
- * are not settable here.
+ * `ownerAccountId` defaults to the caller's OWN account when omitted (a
+ * top-level app they own). The caller must hold `apps:create` over the owning
+ * account. Staff-only fields default and are not settable here.
  */
 router.post(
   '/',
@@ -639,7 +470,7 @@ router.post(
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUserId(req);
     const body = req.body as {
-      workspaceId?: string;
+      ownerAccountId?: string;
       name: string;
       description?: string;
       websiteUrl?: string;
@@ -648,35 +479,20 @@ router.post(
       scopes?: typeof APPLICATION_SCOPES[number][];
     };
 
-    let workspaceObjectId: mongoose.Types.ObjectId;
-    if (body.workspaceId !== undefined) {
-      if (!mongoose.isValidObjectId(body.workspaceId)) {
-        throw new BadRequestError('Invalid workspaceId');
-      }
-      workspaceObjectId = new mongoose.Types.ObjectId(body.workspaceId);
-
-      // Caller must be an active workspace member carrying `apps:create`.
-      const workspaceMembership = await WorkspaceMember.findOne({
-        workspaceId: workspaceObjectId,
-        userId,
-        status: 'active',
-      });
-      if (!workspaceMembership) {
-        throw new ForbiddenError('You are not a member of this workspace');
-      }
-      if (!workspaceMembership.permissions.includes('apps:create')) {
-        throw new ForbiddenError('Missing required permission: apps:create');
-      }
-    } else {
-      // No workspace chosen — default to the caller's personal workspace, which
-      // they always own (and therefore always hold `apps:create` in).
-      const personalWorkspace = await ensurePersonalWorkspace(userId);
-      workspaceObjectId = personalWorkspace._id;
+    const ownerAccountId = body.ownerAccountId ?? userId;
+    if (!mongoose.isValidObjectId(ownerAccountId)) {
+      throw new BadRequestError('Invalid ownerAccountId');
     }
 
-    // Privileged scopes (e.g. federation:write) are NOT self-grantable: a
-    // non-staff creator may not introduce one. No app exists yet, so the
-    // previously-granted set is empty.
+    const access = await accountService.resolveEffectiveAccess(userId, ownerAccountId);
+    if (!access) {
+      throw new ForbiddenError('You do not have access to the owning account');
+    }
+    if (!access.permissions.includes('apps:create')) {
+      throw new ForbiddenError('Missing required permission: apps:create');
+    }
+
+    // Privileged scopes (e.g. federation:write) are NOT self-grantable.
     const scopes = authorizeRequestedScopes(req, body.scopes ?? [], []);
 
     const application = await Application.create({
@@ -686,22 +502,12 @@ router.post(
       icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
       redirectUris: resolveRedirectUris(body) ?? [],
       scopes,
-      workspaceId: workspaceObjectId,
+      ownerAccountId: new mongoose.Types.ObjectId(ownerAccountId),
       createdByUserId: new mongoose.Types.ObjectId(userId),
     });
 
-    const ownerMember = await ApplicationMember.create({
-      applicationId: application._id,
-      userId: new mongoose.Types.ObjectId(userId),
-      role: 'owner',
-      permissions: permissionsForRole('owner'),
-      status: 'active',
-      joinedAt: new Date(),
-    });
-
     // A newly-created app is `active` and may carry redirectUris, so it can add
-    // origins to the FedCM/SSO approved-clients allow-list. Drop the cached set
-    // so those origins are honoured on the next read instead of after the TTL.
+    // origins to the FedCM/SSO approved-clients allow-list. Drop the cached set.
     if (application.status === 'active' && (application.redirectUris?.length ?? 0) > 0) {
       approvedClientsCache.invalidate();
       refreshDynamicCorsOrigins();
@@ -710,12 +516,19 @@ router.post(
     logger.info('Application created', {
       userId,
       applicationId: application._id.toString(),
-      workspaceId: workspaceObjectId.toString(),
+      ownerAccountId: ownerAccountId,
       name: application.name,
     });
 
+    const callerMembership: SerializedCallerMembership = {
+      role: access.role,
+      permissions: appPermissionsForAccountRole(access.role),
+      source: 'account',
+      ownerAccountId: ownerAccountId,
+    };
+
     res.status(201).json({
-      application: serializeApplication(application, serializeMember(ownerMember)),
+      application: serializeApplication(application, callerMembership),
     });
   })
 );
@@ -806,18 +619,12 @@ router.patch(
     await application.save();
 
     // The federation-domain allow-list is DERIVED from this app's redirectUris
-    // and status (see credentialDomainCache / routes/federation.ts). A change to
-    // either could otherwise linger up to the cache TTL (60s) before
-    // re-evaluation; invalidate eagerly so revoked redirectUris or a suspended
+    // and status; invalidate eagerly so revoked redirectUris or a suspended
     // status stop authorising federation signing immediately.
     credentialDomainCache.invalidate(application._id.toString());
 
     // The FedCM/SSO approved-clients allow-list is ALSO derived from active
-    // Applications' redirectUris (fedcm.service.fetchApprovedClientOrigins).
-    // Changing this app's redirectUris or status (active ↔ suspended) changes
-    // that allow-list, so drop the cached origin set — otherwise a removed
-    // redirect origin stays approved (or a newly-added one stays unapproved)
-    // for up to the 60s TTL.
+    // Applications' redirectUris — drop the cached origin set.
     approvedClientsCache.invalidate();
     refreshDynamicCorsOrigins();
 
@@ -833,7 +640,7 @@ router.patch(
 );
 
 /**
- * Soft-delete an application (owner only).
+ * Soft-delete an application (`app:delete`).
  */
 router.delete(
   '/:appId',
@@ -848,274 +655,15 @@ router.delete(
     application.status = 'deleted';
     await application.save();
 
-    // A deleted app must immediately stop authorising federation signing — the
-    // derived allow-list only honours `active` apps, so drop the cached entry.
+    // A deleted app must immediately stop authorising federation signing.
     credentialDomainCache.invalidate(application._id.toString());
-
-    // Likewise drop the FedCM/SSO approved-clients origin set: a deleted app's
-    // redirect origins must stop being approved without waiting out the TTL.
+    // Likewise drop the FedCM/SSO approved-clients origin set.
     approvedClientsCache.invalidate();
     refreshDynamicCorsOrigins();
 
     logger.info('Application deleted', {
       userId: requireUserId(req),
       applicationId: application._id.toString(),
-    });
-
-    res.json({ success: true });
-  })
-);
-
-// ============================================================================
-// Members
-// ============================================================================
-
-/**
- * List members of an application.
- */
-router.get(
-  '/:appId/members',
-  validate({ params: appIdRouteParams }),
-  requireAppPermission('members:read'),
-  asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
-      throw new NotFoundError('Application not found');
-    }
-
-    const members = await ApplicationMember.find({
-      applicationId: application._id,
-      status: { $ne: 'removed' },
-    }).sort({ createdAt: 1 });
-
-    res.json({ members: members.map(serializeMember) });
-  })
-);
-
-/**
- * Add a member to an application (role != owner). Re-activates a previously
- * removed membership instead of creating a duplicate.
- */
-router.post(
-  '/:appId/members',
-  validate({ params: appIdRouteParams, body: inviteMemberSchema }),
-  requireAppPermission('members:invite'),
-  asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
-      throw new NotFoundError('Application not found');
-    }
-
-    const { usernameOrEmail, role } = req.body as {
-      usernameOrEmail: string;
-      role: ApplicationRole;
-    };
-
-    const targetUser = await resolveUserByIdentifier(usernameOrEmail);
-    if (!targetUser) {
-      throw new NotFoundError('User not found');
-    }
-
-    const callerUserId = requireUserId(req);
-    const targetUserObjectId = targetUser._id;
-
-    const existing = await ApplicationMember.findOne({
-      applicationId: application._id,
-      userId: targetUserObjectId,
-    });
-
-    if (existing && existing.status === 'active') {
-      throw new BadRequestError('User is already a member of this application');
-    }
-
-    const permissions = permissionsForRole(role);
-
-    let member: IApplicationMember;
-    if (existing) {
-      existing.role = role;
-      existing.permissions = permissions;
-      existing.status = 'active';
-      existing.invitedByUserId = new mongoose.Types.ObjectId(callerUserId);
-      existing.joinedAt = new Date();
-      member = await existing.save();
-    } else {
-      member = await ApplicationMember.create({
-        applicationId: application._id,
-        userId: targetUserObjectId,
-        role,
-        permissions,
-        status: 'active',
-        invitedByUserId: new mongoose.Types.ObjectId(callerUserId),
-        joinedAt: new Date(),
-      });
-    }
-
-    logger.info('Application member added', {
-      applicationId: application._id.toString(),
-      memberId: member._id.toString(),
-      role,
-      by: callerUserId,
-    });
-
-    res.status(201).json({ member: serializeMember(member) });
-  })
-);
-
-/**
- * Change a member's role. An owner's role can only be changed via
- * transfer-ownership; only an owner may modify another owner.
- */
-router.patch(
-  '/:appId/members/:memberId',
-  validate({ params: appMemberParams, body: updateMemberSchema }),
-  requireAppPermission('members:update'),
-  asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
-      throw new NotFoundError('Application not found');
-    }
-
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
-
-    const member = await ApplicationMember.findOne({
-      _id: req.params.memberId,
-      applicationId: application._id,
-      status: { $ne: 'removed' },
-    });
-    if (!member) {
-      throw new NotFoundError('Member not found');
-    }
-
-    if (member.role === 'owner') {
-      throw new ForbiddenError(
-        "An owner's role can only be changed via transfer-ownership"
-      );
-    }
-
-    const { role } = req.body as { role: ApplicationRole };
-    member.role = role;
-    member.permissions = permissionsForRole(role);
-    await member.save();
-
-    logger.info('Application member role updated', {
-      applicationId: application._id.toString(),
-      memberId: member._id.toString(),
-      role,
-      by: requireUserId(req),
-    });
-
-    res.json({ member: serializeMember(member) });
-  })
-);
-
-/**
- * Remove a member. The last owner cannot be removed; an owner can only be
- * removed by another owner.
- */
-router.delete(
-  '/:appId/members/:memberId',
-  validate({ params: appMemberParams }),
-  requireAppPermission('members:remove'),
-  asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
-      throw new NotFoundError('Application not found');
-    }
-
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
-
-    const member = await ApplicationMember.findOne({
-      _id: req.params.memberId,
-      applicationId: application._id,
-      status: { $ne: 'removed' },
-    });
-    if (!member) {
-      throw new NotFoundError('Member not found');
-    }
-
-    if (member.role === 'owner') {
-      if (!isEffectiveAppOwner(req.access)) {
-        throw new ForbiddenError('Only an owner may remove another owner');
-      }
-      const ownerCount = await ApplicationMember.countDocuments({
-        applicationId: application._id,
-        role: 'owner',
-        status: 'active',
-      });
-      if (ownerCount <= 1) {
-        throw new BadRequestError('Cannot remove the last owner of an application');
-      }
-    }
-
-    member.status = 'removed';
-    await member.save();
-
-    logger.info('Application member removed', {
-      applicationId: application._id.toString(),
-      memberId: member._id.toString(),
-      by: requireUserId(req),
-    });
-
-    res.json({ success: true });
-  })
-);
-
-/**
- * Transfer ownership to another active member (owner only). The current owner
- * is demoted to `admin`; the target is promoted to `owner`.
- */
-router.post(
-  '/:appId/transfer-ownership',
-  validate({ params: appIdRouteParams, body: transferOwnershipSchema }),
-  requireAppPermission('ownership:transfer'),
-  asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
-      throw new NotFoundError('Application not found');
-    }
-    // The explicit per-app membership of the caller (may be absent for a
-    // workspace operator who has `ownership:transfer` via the workspace grant).
-    const callerAppMembership = req.access?.appMembership ?? null;
-
-    const { userId: targetUserId } = req.body as { userId: string };
-    if (!mongoose.isValidObjectId(targetUserId)) {
-      throw new BadRequestError('Invalid userId');
-    }
-
-    const targetMember = await ApplicationMember.findOne({
-      applicationId: application._id,
-      userId: new mongoose.Types.ObjectId(targetUserId),
-      status: 'active',
-    });
-    if (!targetMember) {
-      throw new NotFoundError('Target user is not an active member of this application');
-    }
-
-    if (callerAppMembership && targetMember._id.equals(callerAppMembership._id)) {
-      throw new BadRequestError('You already own this application');
-    }
-
-    targetMember.role = 'owner';
-    targetMember.permissions = permissionsForRole('owner');
-    await targetMember.save();
-
-    // Demote the caller's per-app owner row to admin — but only when the caller
-    // actually holds one. A workspace operator transferring app ownership keeps
-    // their (broader) workspace-derived access untouched.
-    if (callerAppMembership && callerAppMembership.role === 'owner') {
-      callerAppMembership.role = 'admin';
-      callerAppMembership.permissions = permissionsForRole('admin');
-      await callerAppMembership.save();
-    }
-
-    logger.info('Application ownership transferred', {
-      applicationId: application._id.toString(),
-      from: requireUserId(req),
-      to: targetUserId,
     });
 
     res.json({ success: true });
@@ -1153,9 +701,8 @@ router.get(
  * Create a credential.
  *
  * The plaintext `secret` is returned in the response body EXACTLY ONCE and can
- * never be retrieved again — only its SHA-256 hash is persisted. Store it
- * immediately; if lost, rotate the credential to obtain a fresh secret.
- * `public` credentials carry no secret (the `secret` field is `null`).
+ * never be retrieved again — only its SHA-256 hash is persisted. `public`
+ * credentials carry no secret (the `secret` field is `null`).
  */
 router.post(
   '/:appId/credentials',
@@ -1175,17 +722,12 @@ router.post(
     };
 
     // Service credentials mint bearer service tokens for Oxy-to-Oxy / internal
-    // routes. Only platform-trusted applications (first-party / internal /
-    // system / official — all staff-controlled) may hold them; a self-service
-    // third-party application must never be able to create one.
+    // routes. Only platform-trusted applications may hold them.
     if (body.type === 'service' && !isTrustedApplication(application)) {
       throw new ForbiddenError('Service credentials are only available to trusted applications');
     }
 
-    // A credential may never exceed its owning application's authority. Reject
-    // an explicit request for any scope the app does not hold (rather than
-    // silently dropping it) so the developer learns the credential won't carry
-    // it; they must first have the scope granted on the application.
+    // A credential may never exceed its owning application's authority.
     const requestedScopes = body.scopes ?? [];
     const grantableScopes = new Set(application.scopes);
     const ungrantable = requestedScopes.filter((scope) => !grantableScopes.has(scope));
@@ -1201,8 +743,8 @@ router.post(
     const credential = await ApplicationCredential.create({
       applicationId: application._id,
       name: body.name,
-      publicKey,
       secretHash: isPublicClient ? undefined : secretHash,
+      publicKey,
       type: body.type,
       environment: body.environment,
       scopes: requestedScopes,
@@ -1219,26 +761,15 @@ router.post(
 
     res.status(201).json({
       credential: serializeCredential(credential),
-      // Public clients have no secret; only confidential/service credentials do.
       secret: isPublicClient ? null : secret,
     });
   })
 );
 
 /**
- * Rotate a credential — zero-downtime.
- *
- * Rotation does NOT overwrite the existing secret in place. Instead it issues a
- * brand-new credential (fresh `publicKey` + `secret`) that inherits the source
- * credential's `name`, `type`, `environment`, and `scopes`, and links back via
- * `rotatedFromCredentialId`. The previous credential is marked `deprecated` and
- * given an `expiresAt` `CREDENTIAL_ROTATION_GRACE_MS` (7 days) in the future, so
- * it keeps authenticating until then — callers can roll out the new secret with
- * no downtime. Once the grace window elapses (or the old credential is revoked),
- * the previous secret stops working.
- *
- * The new plaintext `secret` is returned EXACTLY ONCE and cannot be retrieved
- * again — only its hash is stored.
+ * Rotate a credential — zero-downtime. Mints a replacement (fresh keys) then
+ * deprecates the previous one with a 7-day grace `expiresAt`. The new plaintext
+ * `secret` is returned EXACTLY ONCE.
  */
 router.post(
   '/:appId/credentials/:credId/rotate',
@@ -1269,9 +800,6 @@ router.post(
 
     const { publicKey, secret, secretHash } = generateCredentialMaterial();
 
-    // Mint the replacement credential first; only then deprecate the old one so
-    // a failure mid-rotation never leaves the application without a usable
-    // credential during the grace window.
     const rotated = await ApplicationCredential.create({
       applicationId: application._id,
       name: previous.name,

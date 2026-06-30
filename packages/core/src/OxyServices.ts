@@ -85,8 +85,9 @@ import { composeOxyServices } from './mixins';
  * - **Payment**: Payment processing
  * - **Reputation**: Reputation system (Oxy Trust)
  * - **Assets**: File upload and asset management
- * - **Applications**: Application, membership, and credential management
- * - **Workspaces**: Workspace and membership management
+ * - **Accounts**: Unified account graph (tree, members, roles, bot credentials)
+ *   and the applications owned within it (Application = OAuth client)
+ * - **Connected apps**: OAuth-consent surface (public app identity, grants)
  * - **Location**: Location-based features
  * - **Analytics**: Analytics tracking
  * - **Devices**: Device management
