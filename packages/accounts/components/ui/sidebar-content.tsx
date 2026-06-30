@@ -52,10 +52,10 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const handlePressIn = useHapticPress();
     const { actingAs, accounts } = useOxy();
 
-    // Compute the acting-as display name for the indicator using the canonical
-    // helper so the fallback chain (name → username → publicKey → "Unnamed")
-    // is identical across the app.
-    const actingAsName = useMemo(() => {
+    // Compute the active (switched-into) account's display name for the context
+    // cue using the canonical helper so the fallback chain (name → username →
+    // publicKey → "Unnamed") is identical across the app.
+    const activeAccountName = useMemo(() => {
         if (!actingAs || !accounts.length) return null;
         const node = accounts.find((a) => a.accountId === actingAs);
         if (!node?.account) return null;
@@ -69,12 +69,12 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
-            {/* Acting-as indicator */}
-            {actingAs && actingAsName && (
+            {/* Active-account context cue — which account the app is using now */}
+            {actingAs && activeAccountName && (
                 <View style={[styles.actingAsContainer, { backgroundColor: colors.sidebarIconSecurity + '14' }]}>
-                    <View style={[styles.actingAsDot, { backgroundColor: colors.success }]} />
+                    <View style={[styles.actingAsDot, { backgroundColor: colors.sidebarIconSecurity }]} />
                     <Text style={[styles.actingAsText, { color: colors.sidebarIconSecurity }]} numberOfLines={1}>
-                        {t('sidebar.actingAs', { name: actingAsName })}
+                        {t('sidebar.actingAs', { name: activeAccountName })}
                     </Text>
                 </View>
             )}

@@ -15,9 +15,10 @@ import { useTranslation } from '@/lib/i18n';
 import type { AccountNode, AccountRole } from '@oxyhq/core';
 import { getAccountDisplayName as coreGetAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
-// Roles that may post/act as the account (delegated identity). Mirrors the
-// `account:act_as` capability mapping in the account role set (owner/admin/editor).
-const ACT_AS_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
+// Roles whose membership carries the `account:act_as` capability — the only
+// roles that can SWITCH INTO the account (selecting it makes the whole app
+// become that account). Mirrors the account role set (owner/admin/editor).
+const SWITCHABLE_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
 // Roles that may manage membership + sharing of the account.
 const MANAGE_MEMBER_ROLES: readonly AccountRole[] = ['owner', 'admin'];
 // Roles that may edit the account's profile.
@@ -64,6 +65,7 @@ export default function ManagedAccountsScreen() {
     isLoading: oxyLoading,
     accounts,
     actingAs,
+    activeAccount,
     setActingAs,
     showBottomSheet,
     oxyServices,
@@ -88,9 +90,20 @@ export default function ManagedAccountsScreen() {
     showBottomSheet?.('CreateAccount');
   }, [showBottomSheet]);
 
-  const handleActAs = useCallback((accountId: string) => {
-    setActingAs(actingAs === accountId ? null : accountId);
-  }, [actingAs, setActingAs]);
+  // True account switch — selecting an account makes the whole app become it.
+  // This is NOT a toggle: returning to the personal account is itself a switch
+  // (via the banner below / `setActingAs(null)`), never an "un-act-as".
+  const handleSwitchTo = useCallback((accountId: string) => {
+    setActingAs(accountId);
+  }, [setActingAs]);
+
+  // The display name of the account currently switched into, for the
+  // "switch back to your personal account" banner. `null` on the personal
+  // account (no banner shown).
+  const activeAccountName = useMemo(
+    () => (actingAs && activeAccount ? coreGetAccountDisplayName(activeAccount, locale) : null),
+    [actingAs, activeAccount, locale],
+  );
 
   const handleManageMembers = useCallback((accountId: string) => {
     showBottomSheet?.({ screen: 'AccountMembers', props: { accountId } });
@@ -144,13 +157,18 @@ export default function ManagedAccountsScreen() {
     // rather than showing "No username set".
     const fallbackHandle = getAccountFallbackHandle(node.account ?? null);
     const role = getNodeRole(node);
-    const isActingAs = actingAs === node.accountId;
+    // "Current" = the account the app is switched INTO. `actingAs` is the id
+    // form of the effective active account (the same value that drives
+    // `activeAccount`); it is the account id, so it matches `node.accountId`
+    // directly. The personal/self account (not listed here) is current when
+    // `actingAs` is null.
+    const isCurrent = actingAs === node.accountId;
     const isArchiving = archivingId === node.accountId;
     const avatarUri = node.account?.avatar
       ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
       : undefined;
     const badgeColor = getRoleBadgeColor(role, colors);
-    const canActAs = ACT_AS_ROLES.includes(role);
+    const canSwitchInto = SWITCHABLE_ROLES.includes(role);
     const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
     const canEdit = EDIT_ROLES.includes(role);
     const canArchive = role === 'owner';
@@ -161,14 +179,7 @@ export default function ManagedAccountsScreen() {
       subtitle: username
         ? `@${username}`
         : (fallbackHandle ?? t('managedAccounts.noUsernameYet')),
-      customIcon: (
-        <View style={styles.avatarContainer}>
-          <Avatar name={name} uri={avatarUri} size={40} />
-          {isActingAs && (
-            <View style={[styles.activeIndicator, { backgroundColor: colors.success }]} />
-          )}
-        </View>
-      ),
+      customIcon: <Avatar name={name} uri={avatarUri} size={40} />,
       customContent: (
         <View style={styles.accountActions}>
           <View style={[styles.roleBadge, { backgroundColor: badgeColor + '20', borderColor: badgeColor + '40' }]}>
@@ -178,23 +189,29 @@ export default function ManagedAccountsScreen() {
             <ActivityIndicator size="small" color={colors.text} />
           ) : (
             <View style={styles.actionButtons}>
-              {canActAs && (
+              {isCurrent ? (
+                // Single "current account" indicator (Gmail-style). Not a toggle:
+                // the account is already active, so there is nothing to press.
+                <View
+                  style={styles.currentIndicator}
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel={t('a11y.stopActingAs')}
+                >
+                  <MaterialCommunityIcons name="check" size={20} color={colors.tint} />
+                </View>
+              ) : canSwitchInto ? (
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: isActingAs ? colors.success + '20' : colors.card }]}
+                  style={[styles.actionButton, { backgroundColor: colors.card }]}
                   onPressIn={handlePressIn}
-                  onPress={() => handleActAs(node.accountId)}
+                  onPress={() => handleSwitchTo(node.accountId)}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={isActingAs ? t('a11y.stopActingAs') : t('a11y.actAs')}
-                  accessibilityState={{ selected: isActingAs }}
+                  accessibilityLabel={t('a11y.actAs')}
                 >
-                  <MaterialCommunityIcons
-                    name={isActingAs ? 'account-check' : 'account-switch'}
-                    size={16}
-                    color={isActingAs ? colors.success : colors.text}
-                  />
+                  <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.text} />
                 </TouchableOpacity>
-              )}
+              ) : null}
               {canManageMembers && (
                 <TouchableOpacity
                   style={[styles.actionButton, { backgroundColor: colors.card }]}
@@ -235,9 +252,18 @@ export default function ManagedAccountsScreen() {
           )}
         </View>
       ),
-      onPress: canActAs ? () => handleActAs(node.accountId) : () => handleManageMembers(node.accountId),
+      // Tapping the row switches INTO the account (Gmail-style). The current
+      // account is not pressable (it is already active); accounts the caller
+      // can't switch into fall back to the manage-members affordance.
+      onPress: isCurrent
+        ? undefined
+        : canSwitchInto
+          ? () => handleSwitchTo(node.accountId)
+          : canManageMembers
+            ? () => handleManageMembers(node.accountId)
+            : undefined,
     };
-  }, [actingAs, archivingId, oxyServices, colors, handlePressIn, handleActAs, handleManageMembers, handleEditProfile, handleArchiveAccount, t, locale]);
+  }, [actingAs, archivingId, oxyServices, colors, handlePressIn, handleSwitchTo, handleManageMembers, handleEditProfile, handleArchiveAccount, t, locale]);
 
   // Partition the accessible forest: accounts the caller owns (grouped by kind)
   // and accounts shared with them via membership. The caller's own personal
@@ -293,11 +319,13 @@ export default function ManagedAccountsScreen() {
             <Section title="">
               <AccountCard>
                 <GroupedSection items={[{
-                  id: 'acting-as-info',
-                  icon: 'information-outline',
+                  id: 'switch-to-personal',
+                  icon: 'account-arrow-left',
                   iconColor: colors.sidebarIconSecurity,
-                  title: t('managedAccounts.actingAsTitle'),
-                  subtitle: t('managedAccounts.actingAsSubtitle'),
+                  title: t('managedAccounts.switchBackTitle'),
+                  subtitle: activeAccountName
+                    ? t('managedAccounts.switchBackSubtitle', { name: activeAccountName })
+                    : undefined,
                   onPress: () => setActingAs(null),
                   showChevron: false,
                 }]} />
@@ -386,19 +414,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  avatarContainer: {
-    position: 'relative',
-  },
-  activeIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
   accountActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -408,6 +423,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  currentIndicator: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionButton: {
     width: 32,

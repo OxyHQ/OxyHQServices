@@ -164,11 +164,22 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
     );
 
     const handleSwitchDevice = useCallback(async (sessionId: string) => {
-        if (sessionId === activeSessionId || busySessionId) return;
+        if (busySessionId) return;
+        // Tapping the already-active sign-in returns to that sign-in's own
+        // personal account (clearing any account-graph switch). When already on
+        // the personal account this just closes.
+        if (sessionId === activeSessionId) {
+            if (actingAs !== null) setActingAs(null);
+            onClose();
+            return;
+        }
         setBusySessionId(sessionId);
         try {
             await onBeforeSessionChange?.();
             await switchSession(sessionId);
+            // The active sign-in changed; any account-graph switch belonged to the
+            // previous sign-in, so the new sign-in starts on its personal account.
+            if (actingAs !== null) setActingAs(null);
             toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
             onClose();
         } catch (error) {
@@ -179,7 +190,7 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
         } finally {
             setBusySessionId(null);
         }
-    }, [activeSessionId, busySessionId, switchSession, t, onClose, onBeforeSessionChange]);
+    }, [activeSessionId, busySessionId, actingAs, setActingAs, switchSession, t, onClose, onBeforeSessionChange]);
 
     const handleRemoveDevice = useCallback(async (sessionId: string) => {
         if (sessionId === activeSessionId || removingSessionId) return;
@@ -322,18 +333,23 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
             {deviceRows.map((row) => {
                 const isBusy = busySessionId === row.sessionId;
                 const isRemoving = removingSessionId === row.sessionId;
+                // The active sign-in is THE current account only when no
+                // account-graph switch is in effect; otherwise a switched-into
+                // account is current and this row reads as the signed-in (but not
+                // active) account — tappable to return to it.
+                const isCurrentAccount = row.isActive && actingAs === null;
                 return (
                     <TouchableOpacity
                         key={`device-${row.sessionId}`}
                         accessibilityRole="menuitem"
                         accessibilityLabel={row.displayName}
-                        accessibilityState={{ selected: row.isActive }}
+                        accessibilityState={{ selected: isCurrentAccount }}
                         onPress={() => handleSwitchDevice(row.sessionId)}
-                        disabled={row.isActive || isBusy || isSwitching}
+                        disabled={isCurrentAccount || isBusy || isSwitching}
                         activeOpacity={0.6}
                         style={[
                             styles.accountRow,
-                            row.isActive && { backgroundColor: colors.primarySubtle },
+                            isCurrentAccount && { backgroundColor: colors.primarySubtle },
                             isSwitching && !row.isActive && styles.rowDisabled,
                         ]}
                     >
@@ -353,8 +369,13 @@ export const AccountSwitcherView: React.FC<AccountSwitcherActions> = ({
                         </View>
                         {isBusy ? (
                             <ActivityIndicator color={colors.primary} size="small" />
-                        ) : row.isActive ? (
+                        ) : isCurrentAccount ? (
                             <Ionicons name="checkmark" size={20} color={colors.primary} />
+                        ) : row.isActive ? (
+                            // Active sign-in while switched into another account:
+                            // no current-checkmark, no sign-out (can't sign out the
+                            // active session here) — tap the row to return to it.
+                            null
                         ) : isRemoving ? (
                             <ActivityIndicator color={colors.textSecondary} size="small" />
                         ) : (

@@ -22,7 +22,14 @@ const isWeb = Platform.OS === 'web';
 
 /**
  * Avatar entry-point that opens the unified {@link AccountSwitcher}. Reads the
- * active account from `useOxy()` — never receive user data via props.
+ * EFFECTIVE active account from `useOxy().activeAccount` — never receives user
+ * data via props.
+ *
+ * The chip reflects the account the user is currently switched into (an org /
+ * project / bot / shared account) exactly as it reflects their personal account:
+ * a switch makes the whole app — including this header avatar — become that
+ * account. `activeAccount` falls back to the personal user when no switch is
+ * active, so the chip always shows the current account.
  *
  * Renders a small avatar chip (top-right friendly). Click → opens the switcher
  * (device sign-ins + account graph). Pure component: owns only the open-state
@@ -34,7 +41,7 @@ const AccountMenuButton: React.FC<AccountMenuButtonProps> = ({
     onNavigateManage,
     onAddAccount,
 }) => {
-    const { user, oxyServices, isAuthenticated } = useOxy();
+    const { activeAccount, oxyServices, isAuthenticated } = useOxy();
     const { t, locale } = useI18n();
     const [open, setOpen] = useState(false);
     const [anchor, setAnchor] = useState<AccountMenuAnchor | null>(null);
@@ -70,9 +77,9 @@ const AccountMenuButton: React.FC<AccountMenuButtonProps> = ({
         }
     }, [measureAnchor, open]);
 
-    const displayName = getAccountDisplayName(user, locale);
-    const avatarUri = user?.avatar
-        ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb')
+    const displayName = getAccountDisplayName(activeAccount, locale);
+    const avatarUri = activeAccount?.avatar
+        ? oxyServices.getFileDownloadUrl(activeAccount.avatar, 'thumb')
         : undefined;
 
     const accessibilityLabel = isAuthenticated
