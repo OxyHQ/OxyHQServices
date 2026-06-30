@@ -943,6 +943,9 @@ router.post(
     // lowercased + validated each entry as a 64-char hex digest.
     const uniqueShas = Array.from(new Set(sha256s));
 
+    // One live record per hash: several File docs can share a sha256 (per-owner),
+    // so the service collapses each hash to a single deterministic representative
+    // (oldest by createdAt/_id) — the sha256 -> id mapping is stable across calls.
     const files = await assetService.findActiveFilesBySha256(uniqueShas);
 
     // Resolve the public CDN URL for active public assets. getPublicCdnUrl gates

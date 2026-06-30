@@ -194,6 +194,7 @@ class PerformanceMonitor {
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 30 * 60 * 1000); // Clean up every 30 minutes
+    this.cleanupInterval.unref?.();
   }
 
   /**

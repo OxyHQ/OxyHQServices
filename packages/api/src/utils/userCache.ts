@@ -12,6 +12,7 @@ class UserCache {
 
   constructor() {
     this.cleanupTimer = setInterval(() => this.cleanupLocal(), 60_000);
+    this.cleanupTimer.unref?.();
   }
 
   get(userId: string): IUser | null {
