@@ -35,6 +35,8 @@ import type { User } from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
+import { isWeb } from '../utils/platform';
+import { logger } from '../utils/loggerUtils';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -520,10 +522,19 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
      * Unlike the removed `X-Acting-As` delegation header, the returned session
      * IS the new identity: this plants `accessToken` as the active token —
      * exactly like `claimSessionByToken` / `verifyChallenge` — so every
-     * subsequent request authenticates as the target account. The refresh token
-     * is the server-set httpOnly `oxy_rt_<authuser>` cookie (never in the body),
-     * so it joins the device multi-account set and survives reload /
-     * `refresh-all` with no extra client work.
+     * subsequent request authenticates as the target account.
+     *
+     * Joining the device multi-account set (so the switch survives a reload and
+     * propagates cross-domain via `/auth/refresh-all`) requires a SECOND call, to
+     * `POST /auth/session`, made here after the token is planted. The switch route
+     * lives at `/accounts/*`, OUTSIDE the `oxy_rt_<authuser>` cookie's `Path=/auth`
+     * scope, so the server never sees the device's existing slots from it and
+     * would clobber slot 0 (destroying the operator's own session). `/auth/session`
+     * runs where those cookies ARE visible, so the server allocates a NEW slot that
+     * coexists with the operator's and returns its `authuser`. This step is
+     * web-only (native multi-account uses stored sessions, not cookies) and
+     * best-effort — a failure leaves the in-session switch intact; the switched
+     * account simply won't survive a reload until the cookie is next established.
      *
      * After planting, the SDK's identity-scoped GET cache is fully cleared so
      * every cached read re-fetches as the new account. (The consuming
@@ -546,10 +557,43 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         // Plant the freshly minted session as the ACTIVE session, mirroring
         // `claimSessionByToken` / `verifyChallenge`: the response body carries
-        // the first access token; the refresh token is the server-set httpOnly
-        // cookie, so there is nothing else to store here.
+        // the first access token. The device refresh cookie is established below.
         if (res?.accessToken) {
           this.setTokens(res.accessToken);
+        }
+
+        // Register the switched session in the device's multi-account set by
+        // establishing its first-party refresh cookie. This MUST be a separate
+        // call to `POST /auth/session`: the switch route is at `/accounts/*`,
+        // outside the `oxy_rt_<authuser>` cookie's `Path=/auth` scope, so it can
+        // never read the device's existing slots and would overwrite slot 0
+        // (destroying the operator's own session). `/auth/session` runs where the
+        // cookies ARE visible, so the server allocates a NEW slot that coexists
+        // with the operator's and returns its `authuser`. Web-only; best-effort.
+        let authuser = res.authuser;
+        if (isWeb()) {
+          try {
+            const established = await this.makeRequest<{ accessToken?: string; authuser?: number }>(
+              'POST',
+              '/auth/session',
+              undefined,
+              { cache: false },
+            );
+            if (typeof established?.authuser === 'number') {
+              authuser = established.authuser;
+            }
+            // /auth/session mints a fresh access token off the same session;
+            // re-plant it so the active token matches the rotated cookie.
+            if (established?.accessToken) {
+              this.setTokens(established.accessToken);
+            }
+          } catch (error) {
+            logger.warn(
+              '[OxyServices] Failed to establish device refresh cookie after account switch; the switch is active in-session but may not survive a reload',
+              { component: 'OxyServices', method: 'switchToAccount' },
+              error,
+            );
+          }
         }
 
         // Identity changed → drop the entire GET response cache so no entry
@@ -561,6 +605,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         return {
           ...res,
+          ...(typeof authuser === 'number' ? { authuser } : {}),
           user: normalizeUserIdentity(res.user),
         };
       } catch (error) {
