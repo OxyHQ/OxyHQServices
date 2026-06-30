@@ -105,7 +105,9 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
   logger.error(
     'Phase 1 (managed → tree) failed',
     error instanceof Error ? error : new Error(String(error)),
