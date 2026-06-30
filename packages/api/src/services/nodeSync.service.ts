@@ -52,6 +52,7 @@
  */
 
 import { canonicalize, computeRecordId } from '@oxyhq/protocol';
+import { NodeClient, type NodeFetch } from '@oxyhq/protocol/node';
 import { safeFetch } from '@oxyhq/core/server';
 import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 import UserNode from '../models/UserNode';
@@ -64,8 +65,6 @@ import { verifyAndStoreRecord } from './signedRecord.service';
 import userCache from '../utils/userCache';
 import { logger } from '../utils/logger';
 import {
-  NODE_OXY_HEAD_PATH,
-  NODE_OXY_LOG_PATH,
   NODE_INGEST_BATCH,
   NODE_INGEST_MAX_ITERATIONS,
   NODE_INGEST_FETCH_TIMEOUT_MS,
@@ -89,72 +88,37 @@ type IngestOutcome =
   | { kind: 'skipped' }
   | { kind: 'stop'; reason: string };
 
-/** A bounded JSON read of a node response (rejects when the cap is exceeded). */
-function readBoundedJson(stream: NodeJS.ReadableStream, maxBytes: number): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    stream.on('data', (chunk: Buffer) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        (stream as { destroy?: () => void }).destroy?.();
-        reject(new Error(`node response exceeded ${maxBytes} bytes`));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    stream.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    });
-    stream.on('error', reject);
-  });
-}
-
 /**
- * Fetch the node's chain head seq via `safeFetch ${endpoint}/oxy/head`. Throws on
- * a non-2xx response, an oversized body, or any fetch/parse error — the caller
- * records that as `lastError` and leaves the mirror stale.
+ * The injected transport for the protocol {@link NodeClient}: a thin adapter over
+ * `@oxyhq/core/server`'s `safeFetch` (HTTPS-only, DNS-pinned, private-IP
+ * denylist, bounded redirects). The client owns the bounded-body reads; this
+ * adapter only hands it the SSRF-safe streamed response. The read-path invariant
+ * still holds — this runs ONLY in the background ingest worker.
  */
-async function fetchNodeHeadSeq(endpoint: string): Promise<number> {
-  const result = await safeFetch(`${endpoint}${NODE_OXY_HEAD_PATH}`, {
-    headersTimeoutMs: NODE_INGEST_FETCH_TIMEOUT_MS,
-    maxRedirects: 1,
-  });
-  if (result.status < 200 || result.status >= 300) {
-    result.response.destroy();
-    throw new Error(`node /oxy/head responded HTTP ${result.status}`);
-  }
-  const body = await readBoundedJson(result.response, 64 * 1024);
-  const seq = (body as { seq?: unknown }).seq;
-  return typeof seq === 'number' && Number.isFinite(seq) ? seq : -1;
-}
-
-/**
- * Fetch one ordered page of the node's log via
- * `safeFetch ${endpoint}/oxy/log?since=<seq>&limit=<n>`. Returns the raw record
- * objects (each is re-validated + re-verified per record by the caller). Throws
- * on a non-2xx / oversized / malformed-envelope response.
- */
-async function fetchNodeLogPage(endpoint: string, sinceSeq: number, limit: number): Promise<unknown[]> {
-  const url = `${endpoint}${NODE_OXY_LOG_PATH}?since=${encodeURIComponent(String(sinceSeq))}&limit=${encodeURIComponent(String(limit))}`;
+const nodeFetch: NodeFetch = async (url, init) => {
   const result = await safeFetch(url, {
+    method: init.method,
+    ...(init.headers ? { headers: init.headers } : {}),
+    headersTimeoutMs: init.headersTimeoutMs,
+    maxRedirects: init.maxRedirects,
+  });
+  return {
+    status: result.status,
+    headers: result.headers,
+    body: result.response,
+    destroy: () => result.response.destroy(),
+  };
+};
+
+/** Build a {@link NodeClient} for a node endpoint with the ingest tunables. */
+function makeNodeClient(endpoint: string): NodeClient {
+  return new NodeClient({
+    baseUrl: endpoint,
+    fetch: nodeFetch,
     headersTimeoutMs: NODE_INGEST_FETCH_TIMEOUT_MS,
     maxRedirects: 1,
+    logMaxBytes: NODE_INGEST_MAX_BYTES,
   });
-  if (result.status < 200 || result.status >= 300) {
-    result.response.destroy();
-    throw new Error(`node /oxy/log responded HTTP ${result.status}`);
-  }
-  const body = await readBoundedJson(result.response, NODE_INGEST_MAX_BYTES);
-  const records = (body as { records?: unknown }).records;
-  if (!Array.isArray(records)) {
-    throw new Error('node /oxy/log returned no records array');
-  }
-  return records;
 }
 
 /**
@@ -366,11 +330,14 @@ export async function ingestFromNode(userId: string): Promise<void> {
       return;
     }
 
+    const client = makeNodeClient(node.endpoint);
+
     // Compare the node's head against Oxy's local head. When Oxy is already at or
     // ahead of the node, there is nothing to pull — just stamp the sync time.
     let remoteHeadSeq: number;
     try {
-      remoteHeadSeq = await fetchNodeHeadSeq(node.endpoint);
+      const head = await client.head();
+      remoteHeadSeq = typeof head.seq === 'number' && Number.isFinite(head.seq) ? head.seq : -1;
     } catch (err) {
       await recordIngestError(userId, err);
       return;
@@ -393,7 +360,7 @@ export async function ingestFromNode(userId: string): Promise<void> {
     for (let iteration = 0; iteration < NODE_INGEST_MAX_ITERATIONS && !stopReason; iteration += 1) {
       let page: unknown[];
       try {
-        page = await fetchNodeLogPage(node.endpoint, cursor, NODE_INGEST_BATCH);
+        page = (await client.log(cursor, NODE_INGEST_BATCH)).records;
       } catch (err) {
         await recordIngestError(userId, err);
         return;

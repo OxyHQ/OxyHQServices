@@ -1,26 +1,30 @@
 /**
- * Owner authorization for node writes.
+ * Owner authorization for node writes — the implementation of `@oxyhq/protocol`'s
+ * injected {@link OwnerAuth}, bound to the node's configured owner public key.
  *
- * Two write paths, both anchored on the node's configured owner public key:
+ * Two write paths, both anchored on the owner key:
  *
  *  1. **Signed records** (`POST /records`, `POST /sync/push`) — self-authenticating.
  *     The envelope is signed by the owner's key, so the owner check is simply
  *     "is `envelope.publicKey` the owner key?" ({@link isOwnerKey}). The signature
- *     itself is verified in {@link ./verify.ts}.
+ *     itself is verified in the protocol record verifier.
  *
  *  2. **Blob pins** (`PUT /blobs/:hash`) — the body is raw bytes, not a signed
  *     envelope, so the owner proves control with a fresh signed header over the
  *     action ({@link verifyOwnerActionSignature}). This reuses the SAME
- *     `@oxyhq/core` `SignatureService` rather than introducing a shared bearer
- *     secret.
+ *     `@oxyhq/protocol` secp256k1 verification rather than a shared bearer secret.
+ *
+ * The owner-auth message format and key-equality helper live HERE (not in
+ * `@oxyhq/protocol`) so the protocol package stays free of `@oxyhq/core` — the
+ * node injects this implementation into `createNodeApp`.
  *
  * Public-key equality is compared with `verifySecret` (`@oxyhq/core/server`) —
  * constant-time and length-guarded, the blessed helper for identity equality.
  */
 
 import { verifySignature } from '@oxyhq/protocol';
+import { OWNER_ACTION_BLOB_PIN, OWNER_AUTH_MAX_AGE_MS, type OwnerAuth } from '@oxyhq/protocol/node';
 import { verifySecret } from '@oxyhq/core/server';
-import { OWNER_AUTH_MAX_AGE_MS } from './constants.js';
 
 /** True iff `publicKey` is the node's configured owner key (case-insensitive, constant-time). */
 export function isOwnerKey(publicKey: string, ownerPublicKey: string): boolean {
@@ -67,4 +71,20 @@ export async function verifyOwnerActionSignature(
   }
   const message = ownerActionMessage(action, auth.timestamp);
   return verifySignature(message, auth.signature, auth.publicKey);
+}
+
+/**
+ * Build the {@link OwnerAuth} the generic `createNodeApp` engine consults, bound
+ * to the node's configured owner public key. The blob-pin action is
+ * `blob-pin:<hash>` (the hash binds the authorization to the specific blob).
+ */
+export function createOwnerAuth(ownerPublicKey: string): OwnerAuth {
+  return {
+    isOwnerKey(publicKey: string): boolean {
+      return isOwnerKey(publicKey, ownerPublicKey);
+    },
+    verifyBlobPin(hash, auth): Promise<boolean> {
+      return verifyOwnerActionSignature(ownerPublicKey, `${OWNER_ACTION_BLOB_PIN}:${hash}`, auth);
+    },
+  };
 }

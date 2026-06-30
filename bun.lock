@@ -225,7 +225,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "6.1.0",
+      "version": "6.0.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "qrcode": "^1.5.4",
@@ -388,7 +388,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "4.0.0",
+      "version": "3.18.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
@@ -555,26 +555,32 @@
         "@biomejs/biome": "^1.9.4",
         "@react-native-async-storage/async-storage": "^2.2.0",
         "@types/elliptic": "^6.4.18",
+        "@types/express": "^4.17.21",
         "@types/node": "^22.0.0",
+        "@types/supertest": "^6.0.2",
         "expo-crypto": "~56.0.3",
         "expo-secure-store": "~56.0.4",
+        "express": "^4.21.2",
         "release-it": "^19.0.6",
+        "supertest": "^7.0.0",
         "typescript": "^5.9.2",
       },
       "peerDependencies": {
         "@react-native-async-storage/async-storage": "*",
         "expo-crypto": "*",
         "expo-secure-store": "*",
+        "express": "^4.18.0 || ^5.0.0",
       },
       "optionalPeers": [
         "@react-native-async-storage/async-storage",
         "expo-crypto",
         "expo-secure-store",
+        "express",
       ],
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "13.0.1",
+      "version": "12.2.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
       },

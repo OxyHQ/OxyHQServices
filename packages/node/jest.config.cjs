@@ -25,6 +25,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {
     '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    '^@oxyhq/protocol/node$': '<rootDir>/../protocol/src/node/index.ts',
     '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
     '^@oxyhq/core/server$': '<rootDir>/../core/src/server/index.ts',
     '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',

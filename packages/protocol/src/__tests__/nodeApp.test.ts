@@ -1,0 +1,261 @@
+/**
+ * `createNodeApp` handler tests — supertest over the generic Express factory,
+ * driven by the in-memory `RecordStore`/`BlobStore` harness + an owner-key
+ * `OwnerAuth`. Covers the well-known manifest, owner-authenticated record writes
+ * (happy path, chaining, wrong-signer + malformed + gap rejection), the
+ * collection allowlist, the batch push, the log cursor/cap, and the blob
+ * pin/serve path with signed-header auth + hash validation.
+ */
+
+import { createHash } from 'node:crypto';
+import request from 'supertest';
+import { createNodeApp, type NodeAppConfig } from '../node/nodeApp';
+import { computeRecordId } from '../envelope/recordId';
+import {
+  buildSignedEnvelope,
+  createInMemoryNodeStore,
+  createTestOwnerAuth,
+  generateKeyPair,
+  signBlobPin,
+  silentLogger,
+  type TestKeyPair,
+} from './nodeHarness';
+
+function makeConfig(nodePublicKey: string, collections: readonly string[] = []): NodeAppConfig {
+  return {
+    wellKnownPath: '/.well-known/oxy-node.json',
+    protocolId: 'oxy-node/1',
+    serviceType: 'OxyPersonalDataNode',
+    mode: 'self-hosted',
+    nodePublicKey,
+    maxBlobBytes: 25 * 1024 * 1024,
+    collections,
+  };
+}
+
+function buildApp(owner: TestKeyPair, collections: readonly string[] = []) {
+  const store = createInMemoryNodeStore();
+  const app = createNodeApp({
+    store,
+    config: makeConfig(owner.publicKey, collections),
+    ownerAuth: createTestOwnerAuth(owner.publicKey),
+    logger: silentLogger,
+  });
+  return { app, store };
+}
+
+describe('createNodeApp', () => {
+  let owner: TestKeyPair;
+
+  beforeEach(() => {
+    owner = generateKeyPair();
+  });
+
+  it('GET /.well-known/oxy-node.json returns identity + liveness (incl. serviceType)', async () => {
+    const { app } = buildApp(owner);
+    const res = await request(app).get('/.well-known/oxy-node.json');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      nodePublicKey: owner.publicKey,
+      mode: 'self-hosted',
+      version: 'oxy-node/1',
+      serviceType: 'OxyPersonalDataNode',
+      head: null,
+    });
+  });
+
+  it('GET /oxy/head reports an empty chain then advances after a write', async () => {
+    const { app } = buildApp(owner);
+    const empty = await request(app).get('/oxy/head');
+    expect(empty.body).toEqual({ seq: null, headRecordId: null, recordCount: 0 });
+
+    const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 0, prev: null });
+    const recordId = await computeRecordId(envelope);
+    const write = await request(app).post('/records').send(envelope);
+    expect(write.status).toBe(201);
+    expect(write.body).toEqual({ recordId, seq: 0 });
+
+    const head = await request(app).get('/oxy/head');
+    expect(head.body).toEqual({ seq: 0, headRecordId: recordId, recordCount: 1 });
+  });
+
+  it('POST /records accepts an owner-signed envelope and chains the next one', async () => {
+    const { app } = buildApp(owner);
+    const genesis = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 0, prev: null });
+    const genesisId = await computeRecordId(genesis);
+    await request(app).post('/records').send(genesis).expect(201);
+
+    const second = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 1, prev: genesisId, record: { step: 2 } });
+    const secondId = await computeRecordId(second);
+    const res = await request(app).post('/records').send(second);
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ recordId: secondId, seq: 1 });
+  });
+
+  it('POST /records rejects a record signed by a NON-owner key (403 not_owner)', async () => {
+    const { app } = buildApp(owner);
+    const attacker = generateKeyPair();
+    const envelope = await buildSignedEnvelope({ privateKey: attacker.privateKey, seq: 0, prev: null });
+    const res = await request(app).post('/records').send(envelope);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'not_owner' });
+  });
+
+  it('POST /records rejects a malformed envelope (400 invalid_envelope)', async () => {
+    const { app } = buildApp(owner);
+    const res = await request(app).post('/records').send({ not: 'an envelope' });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_envelope' });
+  });
+
+  it('POST /records rejects a chain gap (422 chain_gap)', async () => {
+    const { app } = buildApp(owner);
+    const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 3, prev: null });
+    const res = await request(app).post('/records').send(envelope);
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: 'chain_gap' });
+  });
+
+  it('POST /records rejects a foreign collection when an allowlist is set (403)', async () => {
+    const { app } = buildApp(owner, ['app.mention.feed.post']);
+    const inAllow = await buildSignedEnvelope({
+      privateKey: owner.privateKey,
+      seq: 0,
+      prev: null,
+      collection: 'app.mention.feed.post',
+    });
+    await request(app).post('/records').send(inAllow).expect(201);
+
+    const foreign = await buildSignedEnvelope({
+      privateKey: owner.privateKey,
+      seq: 1,
+      prev: await computeRecordId(inAllow),
+      collection: 'app.oxy.identity',
+    });
+    const res = await request(app).post('/records').send(foreign);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'foreign_collection' });
+  });
+
+  it('POST /sync/push verifies + appends a batch in order', async () => {
+    const { app } = buildApp(owner);
+    const genesis = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 0, prev: null });
+    const second = await buildSignedEnvelope({ privateKey: owner.privateKey, seq: 1, prev: await computeRecordId(genesis) });
+    const res = await request(app).post('/sync/push').send({ records: [genesis, second] });
+    expect(res.status).toBe(200);
+    expect(res.body.accepted).toBe(2);
+    expect(res.body.results.every((r: { ok: boolean }) => r.ok)).toBe(true);
+  });
+
+  it('GET /oxy/log returns the ordered log from a cursor and caps the limit', async () => {
+    const { app } = buildApp(owner);
+    let prev: string | null = null;
+    const ids: string[] = [];
+    for (let seq = 0; seq < 4; seq += 1) {
+      const envelope = await buildSignedEnvelope({ privateKey: owner.privateKey, seq, prev, record: { seq } });
+      const id = await computeRecordId(envelope);
+      await request(app).post('/records').send(envelope).expect(201);
+      ids.push(id);
+      prev = id;
+    }
+
+    const full = await request(app).get('/oxy/log');
+    expect(full.body.count).toBe(4);
+    expect(full.body.records.map((entry: { seq: number }) => entry.seq)).toEqual([0, 1, 2, 3]);
+    expect(full.body.records[0].recordId).toBe(ids[0]);
+    expect(full.body.head).toEqual({ seq: 3, headRecordId: ids[3] });
+
+    const capped = await request(app).get('/oxy/log').query({ limit: 2 });
+    expect(capped.body.records.map((entry: { seq: number }) => entry.seq)).toEqual([0, 1]);
+
+    const sinceCursor = await request(app).get('/oxy/log').query({ since: ids[1] });
+    expect(sinceCursor.body.records.map((entry: { seq: number }) => entry.seq)).toEqual([2, 3]);
+
+    const unknownCursor = await request(app).get('/oxy/log').query({ since: 'f'.repeat(64) });
+    expect(unknownCursor.body.records).toEqual([]);
+  });
+
+  it('PUT then GET a blob with owner auth + hash validation', async () => {
+    const { app } = buildApp(owner);
+    const bytes = Buffer.from('a pinned media blob');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+
+    const auth = await signBlobPin(hash, owner);
+    const put = await request(app)
+      .put(`/blobs/${hash}`)
+      .set({
+        'x-oxy-node-public-key': auth.publicKey,
+        'x-oxy-node-signature': auth.signature,
+        'x-oxy-node-timestamp': String(auth.timestamp),
+      })
+      .set('Content-Type', 'application/octet-stream')
+      .send(bytes);
+    expect(put.status).toBe(201);
+    expect(put.body).toEqual({ hash, size: bytes.length });
+
+    const get = await request(app).get(`/blobs/${hash}`).buffer(true).parse((res, cb) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => cb(null, Buffer.concat(chunks)));
+    });
+    expect(get.status).toBe(200);
+    expect(Buffer.isBuffer(get.body) ? get.body : Buffer.from(get.body)).toEqual(bytes);
+  });
+
+  it('GET /blobs/:hash 404s when absent', async () => {
+    const { app } = buildApp(owner);
+    const hash = createHash('sha256').update(Buffer.from('nope')).digest('hex');
+    const res = await request(app).get(`/blobs/${hash}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT /blobs/:hash rejects bytes that do not hash to the address (400 hash_mismatch)', async () => {
+    const { app } = buildApp(owner);
+    const realBytes = Buffer.from('the actual bytes');
+    const claimedHash = createHash('sha256').update(Buffer.from('some other bytes')).digest('hex');
+
+    const auth = await signBlobPin(claimedHash, owner);
+    const res = await request(app)
+      .put(`/blobs/${claimedHash}`)
+      .set({
+        'x-oxy-node-public-key': auth.publicKey,
+        'x-oxy-node-signature': auth.signature,
+        'x-oxy-node-timestamp': String(auth.timestamp),
+      })
+      .set('Content-Type', 'application/octet-stream')
+      .send(realBytes);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'hash_mismatch' });
+  });
+
+  it('PUT /blobs/:hash rejects a non-owner signature (403)', async () => {
+    const { app } = buildApp(owner);
+    const bytes = Buffer.from('blob from an impostor');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const attacker = generateKeyPair();
+
+    const auth = await signBlobPin(hash, attacker);
+    const res = await request(app)
+      .put(`/blobs/${hash}`)
+      .set({
+        'x-oxy-node-public-key': auth.publicKey,
+        'x-oxy-node-signature': auth.signature,
+        'x-oxy-node-timestamp': String(auth.timestamp),
+      })
+      .set('Content-Type', 'application/octet-stream')
+      .send(bytes);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: 'unauthorized' });
+  });
+
+  it('PUT /blobs/:hash requires owner-auth headers (401)', async () => {
+    const { app } = buildApp(owner);
+    const bytes = Buffer.from('unauthenticated');
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const res = await request(app)
+      .put(`/blobs/${hash}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(bytes);
+    expect(res.status).toBe(401);
+  });
+});

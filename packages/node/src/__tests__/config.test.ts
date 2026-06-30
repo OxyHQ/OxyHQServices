@@ -3,7 +3,7 @@
  */
 
 import { ConfigError, loadConfig } from '../config';
-import { DEFAULT_MAX_BLOB_BYTES, DEFAULT_PORT, PROTOCOL_VERSION } from '../constants';
+import { DEFAULT_MAX_BLOB_BYTES, DEFAULT_PORT, PROTOCOL_VERSION } from '@oxyhq/protocol/node';
 import { generateTestKeyPair } from './helpers/signEnvelope';
 
 describe('loadConfig', () => {
@@ -25,7 +25,7 @@ describe('loadConfig', () => {
     expect(config.ownerPublicKey).toBe(owner.publicKey.toLowerCase());
     expect(config.nodePublicKey).toBe(owner.publicKey.toLowerCase());
     expect(config.nodePrivateKey).toBeNull();
-    expect(config.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(config.protocolId).toBe(PROTOCOL_VERSION);
     expect(config.databasePath.endsWith('node.sqlite')).toBe(true);
   });
 
@@ -46,5 +46,51 @@ describe('loadConfig', () => {
   it('rejects an invalid mode and an out-of-range port', () => {
     expect(() => loadConfig({ OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey, OXY_NODE_MODE: 'cloud' })).toThrow(ConfigError);
     expect(() => loadConfig({ OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey, OXY_NODE_PORT: '70000' })).toThrow(ConfigError);
+  });
+
+  it('defaults the namespace/manifest/collections to the Oxy node shape', () => {
+    const config = loadConfig({ OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey });
+    expect(config.appNamespace).toBe('app.oxy');
+    expect(config.collections).toEqual([]);
+    expect(config.wellKnownPath).toBe('/.well-known/oxy-node.json');
+    expect(config.serviceType).toBe('OxyPersonalDataNode');
+    expect(config.envPrefix).toBe('OXY_NODE_');
+  });
+
+  it('parses a collection allowlist within the app namespace', () => {
+    const config = loadConfig({
+      OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey,
+      OXY_NODE_APP_NAMESPACE: 'app.mention',
+      OXY_NODE_COLLECTIONS: 'app.mention.feed.post, app.mention.feed.like',
+    });
+    expect(config.appNamespace).toBe('app.mention');
+    expect(config.collections).toEqual(['app.mention.feed.post', 'app.mention.feed.like']);
+  });
+
+  it('rejects a collection outside the app namespace', () => {
+    expect(() =>
+      loadConfig({
+        OXY_NODE_OWNER_PUBLIC_KEY: owner.publicKey,
+        OXY_NODE_APP_NAMESPACE: 'app.mention',
+        OXY_NODE_COLLECTIONS: 'app.oxy.identity',
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('resolves config from a custom env-var prefix (one base, many app nodes)', () => {
+    const config = loadConfig(
+      {
+        MENTION_NODE_OWNER_PUBLIC_KEY: owner.publicKey,
+        MENTION_NODE_APP_NAMESPACE: 'app.mention',
+        MENTION_NODE_SERVICE_TYPE: 'MentionDataNode',
+        MENTION_NODE_WELL_KNOWN_PATH: '/.well-known/mention-node.json',
+      },
+      'MENTION_NODE_',
+    );
+    expect(config.ownerPublicKey).toBe(owner.publicKey.toLowerCase());
+    expect(config.appNamespace).toBe('app.mention');
+    expect(config.serviceType).toBe('MentionDataNode');
+    expect(config.wellKnownPath).toBe('/.well-known/mention-node.json');
+    expect(config.envPrefix).toBe('MENTION_NODE_');
   });
 });

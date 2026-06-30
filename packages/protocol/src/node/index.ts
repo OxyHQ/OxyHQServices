@@ -1,13 +1,78 @@
 /**
- * `@oxyhq/protocol/node` — Node-only entry point.
+ * `@oxyhq/protocol/node` — the runnable node substrate.
  *
- * Reserved for the runnable node substrate (the Express app factory, the
- * `did:web` resolver, and node-specific constants) extracted from `@oxyhq/node`
- * in a later phase. It is a SEPARATE subpath from the package root so the
- * node's Express factory never enters React Native / web bundles that import
- * `@oxyhq/protocol`.
+ * The Node-only half of the protocol: the Express app factory that backs any
+ * Oxy-protocol data node ({@link createNodeApp}), the HTTP {@link NodeClient}
+ * that drives a node's routes, the `did:web` verification-method resolver, the
+ * record verifier, and the node-protocol shape constants. A SEPARATE subpath
+ * from the package root so this Express/Node-only code never enters React
+ * Native / web bundles that import `@oxyhq/protocol`.
  *
- * Intentionally empty until that phase lands — no exports are wired here yet.
+ * Reused by `@oxyhq/node` (the runnable node), a future `mention-node` (an
+ * env-only deployment of the same base), and oxy-api's node sync (which drives
+ * a node via `NodeClient`).
  */
 
-export {};
+// ── Express app factory ───────────────────────────────────────────────────────
+export { createNodeApp, BlobHashMismatchError } from './nodeApp';
+export type {
+  NodeAppDependencies,
+  NodeAppConfig,
+  NodeStoreLike,
+  OwnerAuth,
+  NodeLogger,
+} from './nodeApp';
+
+// ── Record verification (signature + v2 + content address) ─────────────────────
+export { verifyNodeRecordEnvelope } from './verifyRecord';
+export type { NodeVerifyResult, NodeVerifyRejectionReason } from './verifyRecord';
+
+// ── HTTP client ────────────────────────────────────────────────────────────────
+export { NodeClient, NodeClientError } from './nodeClient';
+export type {
+  NodeClientOptions,
+  NodeHead,
+  NodeLogPage,
+  NodeWriteResult,
+  NodeBlobPutResult,
+  NodeBlobPinAuth,
+} from './nodeClient';
+
+// ── Injected transport contract + bounded readers ──────────────────────────────
+export { readBoundedBytes, readBoundedJson, ResponseTooLargeError } from './httpFetch';
+export type { NodeFetch, NodeFetchInit, NodeFetchResponse } from './httpFetch';
+
+// ── did:web verification-method resolver ───────────────────────────────────────
+export { createDidWebResolver, didWebToUrl } from './didWebResolver';
+export type { DidWebResolverOptions } from './didWebResolver';
+
+// ── Node-protocol shape constants ──────────────────────────────────────────────
+export {
+  PROTOCOL_VERSION,
+  DEFAULT_WELL_KNOWN_PATH,
+  DEFAULT_SERVICE_TYPE,
+  DEFAULT_APP_NAMESPACE,
+  DEFAULT_PORT,
+  DEFAULT_LOG_LIMIT,
+  MAX_LOG_LIMIT,
+  DEFAULT_MAX_BLOB_BYTES,
+  MAX_SYNC_BATCH,
+  JSON_BODY_LIMIT,
+  OWNER_AUTH_HEADERS,
+  OWNER_AUTH_MAX_AGE_MS,
+  NODE_MODES,
+  OWNER_ACTION_BLOB_PIN,
+  SHA256_HEX,
+  NODE_HEAD_PATH,
+  NODE_LOG_PATH,
+  NODE_RECORDS_PATH,
+  NODE_SYNC_PUSH_PATH,
+  NODE_BLOBS_PATH,
+  DEFAULT_CLIENT_TIMEOUT_MS,
+  DEFAULT_CLIENT_MAX_REDIRECTS,
+  DEFAULT_HEAD_MAX_BYTES,
+  DEFAULT_LOG_MAX_BYTES,
+  DEFAULT_WRITE_RESPONSE_MAX_BYTES,
+  DEFAULT_DID_DOC_MAX_BYTES,
+} from './constants';
+export type { NodeMode } from './constants';

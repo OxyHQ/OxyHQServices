@@ -5,8 +5,9 @@
  *
  * This is the crux of the cross-package verification proof: the tests SIGN with
  * the same `@oxyhq/protocol` primitives that the production Commons vault uses,
- * and the node VERIFIES with those same primitives (`src/verify.ts`). A record
- * forged here must verify on the node with no node-local crypto.
+ * and the node VERIFIES with those same primitives (`@oxyhq/protocol/node`'s
+ * `verifyNodeRecordEnvelope`). A record forged here must verify on the node with
+ * no node-local crypto.
  *
  * Not a test file (no `.test.ts` suffix) — imported by the suites.
  */
@@ -41,7 +42,7 @@ export interface BuildEnvelopeOptions {
   issuedAt?: number;
 }
 
-/** Build a fully-signed v2 envelope; verifies against the node's `verifyRecordEnvelope`. */
+/** Build a fully-signed v2 envelope; verifies against `verifyNodeRecordEnvelope`. */
 export async function buildSignedEnvelope(options: BuildEnvelopeOptions): Promise<SignedRecordEnvelope> {
   const subject = options.subject ?? DEFAULT_SUBJECT;
   const fields = {

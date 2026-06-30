@@ -10,6 +10,9 @@ module.exports = {
     // regex below; the contracts source only imports `zod`, which resolves
     // normally from node_modules.
     '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    // The protocol node subpath (NodeClient, used by nodeSync.service) — resolve
+    // from source like the protocol root so the api-test job needs no prior build.
+    '^@oxyhq/protocol/node$': '<rootDir>/../protocol/src/node/index.ts',
     // Same rationale for @oxyhq/protocol (canonicalize / signedRecordSigningInput /
     // computeRecordId, imported by the signed-record + civic + node-sync services):
     // resolve from source so the api-test job needs no prior protocol build.

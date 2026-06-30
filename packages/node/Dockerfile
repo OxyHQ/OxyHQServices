@@ -1,13 +1,21 @@
 ##
-## Dockerfile for the Oxy personal data node (@oxyhq/node).
+## Dockerfile for an Oxy data node (@oxyhq/node) — a reusable multi-app base.
 ##
 ## A small, self-hostable server that stores and serves a user's OWN signed
-## records (their personal repo). Reuses @oxyhq/core for verification, so a
-## record signed on the node verifies in Oxy with no new code.
+## records (their personal repo). The runnable engine is @oxyhq/protocol/node
+## (createNodeApp + the record verifier); this image is the thin deployment
+## (SQLite store + env config + bootstrap), so a record signed on the node
+## verifies with the EXACT @oxyhq/protocol code Oxy uses.
 ##
-## Build context is the MONOREPO ROOT (it copies @oxyhq/core + @oxyhq/contracts
-## as workspace deps). Mirrors the api Dockerfile: node:20-alpine + bun, a lean
-## workspace subset (core + contracts + node only), build-from-source.
+## The SAME image serves many app-node deployments by ENV alone (the env-var
+## prefix + app namespace are config): the default OXY_NODE_* / app.oxy build is
+## the Oxy identity node; a future mention-node is the same base with
+## MENTION_NODE_* / app.mention env (built in workstream B3) — no fork.
+##
+## Build context is the MONOREPO ROOT (it copies @oxyhq/protocol + @oxyhq/core +
+## @oxyhq/contracts as workspace deps). Mirrors the api Dockerfile: node:20-alpine
+## + bun, a lean workspace subset (contracts + protocol + core + node only),
+## build-from-source.
 ##
 ## Build (arm64):
 ##   docker build --platform linux/arm64 -f packages/node/Dockerfile -t oxy-node .

@@ -147,9 +147,11 @@ describe('ingestFromNode — happy path', () => {
 
     await ingestFromNode(USER_ID);
 
-    // Head then log, both via safeFetch (SSRF-safe) — never a raw fetch.
+    // Head then log, both via safeFetch (SSRF-safe) — never a raw fetch. The
+    // first log page omits `since` (a genesis cursor) so the node serves the log
+    // from genesis (`since=-1` is not a valid wire cursor — an absent one is).
     expect(mockSafeFetch).toHaveBeenNthCalledWith(1, 'https://node.example.com/oxy/head', expect.objectContaining({ maxRedirects: 1 }));
-    expect(mockSafeFetch.mock.calls[1][0]).toContain('https://node.example.com/oxy/log?since=-1&limit=100');
+    expect(mockSafeFetch.mock.calls[1][0]).toContain('https://node.example.com/oxy/log?limit=100');
 
     expect(mockVerifyAndStore).toHaveBeenCalledTimes(3);
     expect(mockWitnessCreate).toHaveBeenCalledTimes(3); // one counter-sign per record
