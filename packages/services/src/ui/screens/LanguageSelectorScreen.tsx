@@ -33,8 +33,10 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     onClose,
     theme,
 }) => {
-    // Use useOxy() hook for OxyContext values
-    const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
+    // Use useOxy() hook for OxyContext values. The language preference persists
+    // on the ACTIVE account's profile via the X-Acting-As header, so gate the
+    // server sync on the active account.
+    const { activeAccount, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
@@ -53,7 +55,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             let serverSyncFailed = false;
 
             // If signed in, persist preference to backend user settings
-            if (isAuthenticated && user?.id) {
+            if (isAuthenticated && activeAccount?.id) {
                 try {
                     await oxyServices.updateProfile({ language: languageId });
                 } catch (e: unknown) {
@@ -90,7 +92,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             toast.error(t('language.saveFailed'));
             setIsLoading(false);
         }
-    }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);
+    }, [currentLanguage, isLoading, isAuthenticated, activeAccount?.id, oxyServices, setLanguage, t, onClose, goBack]);
 
     // Filter the supported languages by the search query (name + native name).
     const filteredLanguages = useMemo(() => {

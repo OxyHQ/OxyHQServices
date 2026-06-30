@@ -77,7 +77,9 @@ const LOCKED_OPACITY = 0.5;
 
 const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { t } = useI18n();
-    const { user, oxyServices, isAuthenticated } = useOxy();
+    // Reputation/trust is the ACTIVE account's standing (the org/project/bot
+    // when switched, else the personal user).
+    const { activeAccount, oxyServices, isAuthenticated } = useOxy();
     const [reputationTotal, setReputationTotal] = useState<number>(0);
     const [, setIsLoading] = useState(true);
 
@@ -85,12 +87,12 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const colors = bloomTheme.colors;
 
     useEffect(() => {
-        if (!user || !isAuthenticated) {
+        if (!activeAccount || !isAuthenticated) {
             setIsLoading(false);
             return;
         }
         setIsLoading(true);
-        oxyServices.getReputationBalance(user.id)
+        oxyServices.getReputationBalance(activeAccount.id)
             .then((balance) => {
                 setReputationTotal(balance.total || 0);
             })
@@ -98,7 +100,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                 setReputationTotal(0);
             })
             .finally(() => setIsLoading(false));
-    }, [user, isAuthenticated, oxyServices]);
+    }, [activeAccount, isAuthenticated, oxyServices]);
 
     const achievements: Achievement[] = useMemo(() => [
         {

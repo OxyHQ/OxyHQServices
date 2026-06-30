@@ -65,7 +65,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     goBack,
 }) => {
-    const { oxyServices, user } = useOxy();
+    // Privacy settings belong to the ACTIVE account (the org/project/bot when
+    // switched, else the personal user).
+    const { oxyServices, activeAccount } = useOxy();
     const { t, locale } = useI18n();
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
@@ -77,8 +79,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     const { values: settings, toggle, savingKeys, setValues } = useSettingToggles<PrivacySettings>({
         initialValues: DEFAULT_PRIVACY_SETTINGS,
         onSave: async (key, value) => {
-            if (!user?.id || !oxyServices) return;
-            await oxyServices.updatePrivacySettings({ [key]: value }, user.id);
+            if (!activeAccount?.id || !oxyServices) return;
+            await oxyServices.updatePrivacySettings({ [key]: value }, activeAccount.id);
         },
         errorMessage: t('privacySettings.updateError') || 'Failed to update privacy setting',
     });
@@ -90,8 +92,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         const loadSettings = async () => {
             try {
                 setIsLoading(true);
-                if (user?.id && oxyServices) {
-                    const privacySettings = await oxyServices.getPrivacySettings(user.id);
+                if (activeAccount?.id && oxyServices) {
+                    const privacySettings = await oxyServices.getPrivacySettings(activeAccount.id);
                     if (privacySettings) {
                         setValues(privacySettings);
                     }
@@ -107,7 +109,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadSettings();
-    }, [user?.id, oxyServices, t, setValues]);
+    }, [activeAccount?.id, oxyServices, t, setValues]);
 
     // Load blocked and restricted users
     useEffect(() => {
@@ -131,7 +133,10 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadUsers();
-    }, [oxyServices]);
+        // Re-load when the active account changes so the block/restrict lists
+        // reflect the account currently switched into (they resolve via the
+        // X-Acting-As header).
+    }, [oxyServices, activeAccount?.id]);
 
     const handleUnblock = useCallback(async (userId: string) => {
         if (!oxyServices) return;
