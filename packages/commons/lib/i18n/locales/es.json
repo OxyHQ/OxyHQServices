@@ -1606,7 +1606,8 @@
       },
       "selfHost": {
         "cta": "Conectar mi propio nodo",
-        "ctaSubtitle": "Avanzado: indica a Oxy un nodo que tú operas."
+        "ctaSubtitle": "Avanzado: indica a Oxy un nodo que tú operas.",
+        "webUnavailable": "Conectar tu propio nodo requiere la app móvil de Oxy: debe firmar con la clave de identidad guardada en tu dispositivo. En la web, usa «Crear una bóveda gestionada» para configurar un nodo ahora; podrás cambiar a tu propio nodo desde la app más adelante."
       },
       "form": {
         "title": "Conecta tu nodo",

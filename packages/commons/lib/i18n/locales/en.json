@@ -1606,7 +1606,8 @@
       },
       "selfHost": {
         "cta": "Connect my own node",
-        "ctaSubtitle": "Advanced — point Oxy at a node you run."
+        "ctaSubtitle": "Advanced — point Oxy at a node you run.",
+        "webUnavailable": "Connecting your own node needs the Oxy mobile app — it has to sign with the identity key stored on your device. On the web, use \"Create a managed vault\" to set up a node now; you can switch to your own node from the app later."
       },
       "form": {
         "title": "Connect your node",
