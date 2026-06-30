@@ -17,7 +17,7 @@ configureReanimatedLogger({
 });
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
+import { OxyProvider, ActiveAccountBanner } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { useOxy } from '@oxyhq/services';
@@ -162,7 +162,7 @@ function AppStackContent() {
     <SafeAreaProvider>
       <ScrollProvider>
         <ThemeProvider value={navTheme}>
-          <ActingAsBanner />
+          <ActiveAccountBanner />
           <Stack>
             <Stack.Screen name="(tabs)" redirect={needsAuth} options={{ headerShown: false }} />
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />

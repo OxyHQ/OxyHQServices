@@ -159,16 +159,43 @@ export interface OxyContextState {
 
   // Unified account graph (self, owned orgs/projects/bots, accounts shared with
   // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
-  /** The account id currently being acted-as (`X-Acting-As`), or `null` for the sign-in's own personal account. */
+  //
+  // UX concept: the user picks an account and the WHOLE app becomes that account
+  // — a genuine switch, NOT an "acting on behalf of" delegation. `actingAs` +
+  // `X-Acting-As` remain the underlying transport (the only one that works for
+  // passwordless org/project/bot accounts), but the framing everywhere is simply
+  // "this is the active account". Read {@link activeAccount} for "who am I"
+  // surfaces; `actingAs` is the low-level mechanism state.
+  /**
+   * The id of the account switched INTO (`X-Acting-As`), or `null` when the
+   * active account is the sign-in's own personal account. This is the underlying
+   * mechanism state — UI should present the result through {@link activeAccount}
+   * rather than framing it as delegation.
+   */
   actingAs: string | null;
   /** Every account the caller can access — own personal root, owned, and shared — from `listAccounts()`. */
   accounts: AccountNode[];
   /**
-   * The {@link AccountNode} currently being acted-as, resolved from `accounts`
-   * by `actingAs`. `null` when acting as the sign-in's own personal account, or
-   * when the acting-as id is not (yet) present in the loaded `accounts` list.
+   * The {@link AccountNode} switched into, resolved from `accounts` by
+   * `actingAs`. `null` when the active account is the sign-in's own personal
+   * account, or while the switched-into id has not yet appeared in the loaded
+   * `accounts` list.
    */
   actingAsAccount: AccountNode | null;
+  /**
+   * The effective ACTIVE account presented across the whole app — the account
+   * the user switched into when one is set and resolved, otherwise the signed-in
+   * user's own personal account. This is the single "who am I" source every
+   * identity surface (header avatar/name, profile chrome, context cues) should
+   * read, so a switch is reflected everywhere as a real account change.
+   *
+   * It is a {@link User} (the personal user, or the switched-into account's
+   * embedded user) so every identity surface renders it identically. Falls back
+   * to the personal `user` during the brief window after a switch before
+   * `accounts` has loaded the switched-into node, so the header never flashes
+   * empty. `null` only when signed out.
+   */
+  activeAccount: User | null;
   setActingAs: (accountId: string | null) => void;
   refreshAccounts: () => Promise<void>;
   createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
@@ -1994,6 +2021,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [actingAs, setActingAsState] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountNode[]>([]);
 
+  // Latest `actingAs`, mirrored into a ref so `refreshAccounts` can reconcile a
+  // stale switch without taking `actingAs` as a dependency (which would re-run
+  // the account load on every switch). See the reconciliation block below.
+  const actingAsRef = useRef(actingAs);
+  actingAsRef.current = actingAs;
+  // `setActingAs` is declared after `refreshAccounts`; route the reconciliation
+  // clear through a ref so the load callback can call the latest implementation.
+  const setActingAsRef = useRef<((accountId: string | null) => void) | null>(null);
+
   // Restore actingAs from storage on startup
   useEffect(() => {
     if (!storage || !initialized) return;
@@ -2024,6 +2060,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     try {
       const list = await oxyServices.listAccounts();
       setAccounts(list);
+      // Reconcile a stale switch: if the active account was switched INTO an id
+      // that is no longer accessible (account removed/archived, or it belonged
+      // to a now-inactive sign-in), drop back to the personal account so the
+      // app never keeps sending a dead `X-Acting-As` header. `list` is the
+      // authoritative accessible set on a successful fetch.
+      const current = actingAsRef.current;
+      if (current && !list.some((node) => node.accountId === current)) {
+        setActingAsRef.current?.(null);
+      }
     } catch (err) {
       if (isUnauthorizedStatus(err)) {
         setAccounts([]);
@@ -2058,12 +2103,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     }
   }, [oxyServices, storage, storageKeyPrefix]);
+  setActingAsRef.current = setActingAs;
 
-  // The account currently being acted-as, resolved from the loaded graph.
+  // The account switched into, resolved from the loaded graph.
   const actingAsAccount = useMemo<AccountNode | null>(() => {
     if (!actingAs) return null;
     return accounts.find((node) => node.accountId === actingAs) ?? null;
   }, [actingAs, accounts]);
+
+  // The effective ACTIVE account presented across the app: the switched-into
+  // account's user when a switch is set and resolved, otherwise the signed-in
+  // user's own personal account. Derived (no effect) so identity surfaces always
+  // render the current account without separate syncing. Falls back to `user`
+  // while a just-set switch has not yet resolved in `accounts`, so the header
+  // never flashes empty mid-switch.
+  const activeAccount = useMemo<User | null>(
+    () => (actingAs && actingAsAccount ? actingAsAccount.account : user),
+    [actingAs, actingAsAccount, user],
+  );
 
   const createAccountFn = useCallback(async (data: CreateAccountInput): Promise<AccountNode> => {
     const account = await oxyServices.createAccount(data);
@@ -2116,6 +2173,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     actingAs,
     accounts,
     actingAsAccount,
+    activeAccount,
     setActingAs,
     refreshAccounts,
     createAccount: createAccountFn,
@@ -2162,6 +2220,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     actingAs,
     accounts,
     actingAsAccount,
+    activeAccount,
     setActingAs,
     refreshAccounts,
     createAccountFn,
@@ -2234,6 +2293,7 @@ const LOADING_STATE: OxyContextState = {
   actingAs: null,
   accounts: [],
   actingAsAccount: null,
+  activeAccount: null,
   setActingAs: () => {},
   refreshAccounts: () => rejectMissingProvider<void>(),
   createAccount: () => rejectMissingProvider<AccountNode>(),

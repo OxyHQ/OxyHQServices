@@ -126,7 +126,7 @@
       "managedCount": "{{count}} cuentas gestionadas",
       "managedCount_one": "{{count}} cuenta gestionada",
       "managedSubtitle": "Toca para ver todas",
-      "managedActingAs": "Actuando como otra cuenta",
+      "managedActingAs": "Usando otra cuenta",
       "createNew": "Crear cuenta",
       "manageAll": "Gestionar todas",
       "noManaged": "Aún no tienes cuentas gestionadas",
@@ -408,8 +408,8 @@
     "subtitle": "Gestiona las cuentas que posees y las que comparten contigo. Cada una tiene su propio perfil, nombre de usuario y contenido.",
     "createNew": "Crear cuenta",
     "noUsernameYet": "Aún sin nombre de usuario",
-    "actingAsTitle": "Estás actuando como otra cuenta",
-    "actingAsSubtitle": "Las acciones en otras apps se realizarán como esta cuenta. Toca para detener.",
+    "switchBackTitle": "Vuelve a tu cuenta personal",
+    "switchBackSubtitle": "Actualmente estás usando {{name}}",
     "groups": {
       "organizations": "Organizaciones",
       "projects": "Proyectos",
@@ -697,7 +697,7 @@
     }
   },
   "sidebar": {
-    "actingAs": "Actuando como {{name}}",
+    "actingAs": "Usando {{name}}",
     "managedAccountFallback": "Cuenta gestionada"
   },
   "search": {
@@ -757,8 +757,8 @@
     "removeDevice": "Quitar dispositivo",
     "removeSession": "Quitar sesión",
     "switchSession": "Cambiar a esta sesión",
-    "actAs": "Actuar como esta cuenta",
-    "stopActingAs": "Dejar de actuar como esta cuenta",
+    "actAs": "Cambiar a esta cuenta",
+    "stopActingAs": "Cuenta actual",
     "manageMembers": "Gestionar miembros y uso compartido",
     "editProfile": "Editar perfil",
     "deleteAccount": "Eliminar cuenta",

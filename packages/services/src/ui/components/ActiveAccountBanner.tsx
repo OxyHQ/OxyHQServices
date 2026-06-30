@@ -7,30 +7,39 @@ import {
   Platform,
   Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { getAccountDisplayName } from '@oxyhq/core';
 import { useI18n } from '../hooks/useI18n';
 
 /**
- * ActingAsBanner - Shows a subtle banner when the caller is acting as another
- * account from the account graph (delegated identity via `X-Acting-As`).
+ * ActiveAccountBanner — a subtle context cue shown when the active account is an
+ * account the user switched INTO (an org / project / bot / shared account)
+ * rather than their own personal account.
  *
- * - Tap to open the unified {@link AccountSwitcher}.
- * - Long-press to switch back to the personal account immediately.
+ * Framing: this reads as the CURRENT account, NOT as delegation. There is no
+ * "acting as" / "on behalf of" copy and no "switch back" affordance — switching
+ * into an account makes the whole app become that account, and the banner simply
+ * confirms which account is active. To change accounts (including returning to
+ * the personal account) the user opens the unified account switcher and picks
+ * one; tapping the banner opens it.
  *
- * Place this component in your app's layout where you want the banner to appear
- * (typically at the top of the screen or below the header). The "identity"
- * here is the Account, NOT the cryptographic Commons/DID identity.
+ * Renders nothing on the personal account. Place it in your app's layout where a
+ * persistent "you're in <Account>" cue is useful (typically below the header).
+ * The "account" here is the relational Account, NOT the cryptographic
+ * Commons/DID identity.
  */
-const ActingAsBanner: React.FC = () => {
+const ActiveAccountBanner: React.FC = () => {
   const bloomTheme = useTheme();
-  const { actingAs, actingAsAccount, setActingAs, showBottomSheet, oxyServices } = useOxy();
+  const { actingAsAccount, showBottomSheet, oxyServices } = useOxy();
   const { t, locale } = useI18n();
 
   const account = actingAsAccount?.account ?? null;
 
-  if (!actingAs || !account) {
+  // Only a switched-into account warrants the cue; the personal account is the
+  // default and needs no banner.
+  if (!account) {
     return null;
   }
 
@@ -40,23 +49,15 @@ const ActingAsBanner: React.FC = () => {
     showBottomSheet?.('AccountSwitcher');
   };
 
-  const handleLongPress = () => {
-    setActingAs(null);
-  };
-
-  const label = t('accounts.actingAs.label', { name: displayName }) || `Acting as ${displayName}`;
-  const switchBack = t('accounts.actingAs.switchBack') || 'Switch back';
-
   return (
     <TouchableOpacity
       style={[styles.container, { backgroundColor: `${bloomTheme.colors.primary}14` }]}
       onPress={handlePress}
-      onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={
-        t('accounts.actingAs.a11y', { name: displayName })
-        || `Acting as ${displayName}. Tap to switch accounts, long press to switch back.`
+        t('accounts.activeAccount.a11y', { name: displayName })
+        || `Active account: ${displayName}. Tap to switch accounts.`
       }
     >
       <View style={styles.content}>
@@ -73,15 +74,14 @@ const ActingAsBanner: React.FC = () => {
           </View>
         )}
         <View style={styles.textContainer}>
-          <Text style={[styles.label, { color: bloomTheme.colors.primary }]} numberOfLines={1}>
-            {label}
+          <Text style={[styles.name, { color: bloomTheme.colors.primary }]} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Text style={[styles.caption, { color: bloomTheme.colors.primary }]} numberOfLines={1}>
+            {t('accounts.activeAccount.label') || 'Active account'}
           </Text>
         </View>
-        <View style={[styles.switchBackHint, { borderColor: `${bloomTheme.colors.primary}40` }]}>
-          <Text style={[styles.switchBackText, { color: bloomTheme.colors.primary }]}>
-            {switchBack}
-          </Text>
-        </View>
+        <Ionicons name="chevron-down" size={18} color={bloomTheme.colors.primary} />
       </View>
     </TouchableOpacity>
   );
@@ -116,20 +116,15 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
   },
-  label: {
+  name: {
     fontSize: 14,
-    fontWeight: Platform.OS === 'web' ? '500' : undefined,
+    fontWeight: Platform.OS === 'web' ? '600' : undefined,
   },
-  switchBackHint: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  switchBackText: {
-    fontSize: 12,
-    fontWeight: Platform.OS === 'web' ? '500' : undefined,
+  caption: {
+    fontSize: 11,
+    opacity: 0.8,
+    marginTop: 1,
   },
 });
 
-export default React.memo(ActingAsBanner);
+export default React.memo(ActiveAccountBanner);

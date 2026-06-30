@@ -92,7 +92,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     mutationKey: ['accounts', 'archive', id],
     mutationFn: () => oxyServices.archiveAccount(id),
     onSuccess: () => {
-      // If we were acting as this account, drop back to the personal account.
+      // If this was the active account, drop back to the personal account.
       if (actingAs === id) {
         setActingAs(null);
       }
