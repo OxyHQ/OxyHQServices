@@ -1,4 +1,4 @@
-import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor, ServiceAssetMetadata } from '../models/interfaces';
+import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor, ServiceAssetMetadata, ServiceAssetMetadataBySha } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { isReactNative } from '@oxyhq/protocol';
 import { logger } from '../utils/loggerUtils';
@@ -11,6 +11,21 @@ import { extractErrorStatus } from '../utils/errorUtils';
  * `getUsersByIds`'s `USERS_BY_IDS_CHUNK_SIZE`.
  */
 const SERVICE_ASSET_METADATA_CHUNK_SIZE = 100;
+
+/**
+ * Maximum number of content hashes sent per `POST /assets/service/by-sha256`
+ * request. Matches the server-side cap (the route rejects empty or > 100 hash
+ * arrays with a 400); larger inputs are chunked and merged. Same ceiling as
+ * {@link SERVICE_ASSET_METADATA_CHUNK_SIZE} for the forward id lookup.
+ */
+const SERVICE_ASSET_METADATA_BY_SHA_CHUNK_SIZE = 100;
+
+/**
+ * Lowercase hex SHA-256 digest matcher (exactly 64 hex chars). The reverse
+ * lookup drops non-conforming hashes client-side so a single malformed value
+ * never 400s an otherwise-valid chunk on the server.
+ */
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -249,6 +264,82 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           } catch (error: unknown) {
             logger.warn('getServiceAssetMetadataByIds: chunk failed, continuing with remaining chunks', {
               method: 'getServiceAssetMetadataByIds',
+              chunkSize: chunk.length,
+              status: extractErrorStatus(error),
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          }
+        }),
+      );
+
+      return settled.flat();
+    }
+
+    /**
+     * Reverse content-address lookup: resolve many content `sha256` digests to
+     * the servable Oxy asset holding each, in one round-trip per chunk via
+     * `POST /assets/service/by-sha256` (body `{ sha256s }`).
+     *
+     * This is the INVERSE of {@link getServiceAssetMetadataByIds}: given a
+     * record's `blob.sha256`, it returns the asset's `id`, `mime`, byte `size`,
+     * `status`, and — for active, public, CDN-reachable assets only — a public
+     * `url` (`cloud.oxy.so`). Built for server-to-server callers (e.g. Mention's
+     * MTN materializer / node-blob sync) that hold a content hash and need to
+     * map it back to a servable asset. Hashes are lowercased, validated against
+     * a 64-char hex pattern (malformed entries dropped client-side), and
+     * deduplicated before being split into chunks of
+     * {@link SERVICE_ASSET_METADATA_BY_SHA_CHUNK_SIZE} (the server-side cap). The
+     * server omits unknown/deleted hashes from each chunk's `data`, so the
+     * merged result may be shorter than the requested list and the caller is
+     * expected to map by `sha256`.
+     *
+     * **Service-token auth (required).** `/assets/service/by-sha256` is guarded
+     * by `serviceAuthMiddleware` + the `files:read` scope and is called via
+     * `makeServiceRequest` (`Authorization: Bearer <serviceToken>`, `cache:false`).
+     * The calling client MUST be service-configured (`configureServiceAuth`)
+     * before invoking; a plain user-session request is rejected by the route's
+     * service-auth guard.
+     *
+     * Resilience: chunks are independent. A failed chunk is logged and skipped —
+     * every entry that resolved is still returned. An empty input (or one whose
+     * every value is malformed) resolves immediately with `[]` and performs no
+     * network call.
+     *
+     * Not cached at the SDK layer: it's a POST keyed on a multi-hash body (low
+     * hit rate), mirroring the sibling service/POST methods which never cache.
+     */
+    async getServiceAssetMetadataBySha256(sha256s: string[]): Promise<ServiceAssetMetadataBySha[]> {
+      const uniqueShas = Array.from(
+        new Set(
+          sha256s
+            .filter((sha): sha is string => typeof sha === 'string')
+            .map((sha) => sha.trim().toLowerCase())
+            .filter((sha) => SHA256_HEX_PATTERN.test(sha)),
+        ),
+      );
+      if (uniqueShas.length === 0) {
+        return [];
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueShas.length; i += SERVICE_ASSET_METADATA_BY_SHA_CHUNK_SIZE) {
+        chunks.push(uniqueShas.slice(i, i + SERVICE_ASSET_METADATA_BY_SHA_CHUNK_SIZE));
+      }
+
+      // Run chunks concurrently; a single chunk failure must not sink the rest.
+      const settled = await Promise.all(
+        chunks.map(async (chunk): Promise<ServiceAssetMetadataBySha[]> => {
+          try {
+            const entries = await this.makeServiceRequest<ServiceAssetMetadataBySha[]>(
+              'POST',
+              '/assets/service/by-sha256',
+              { sha256s: chunk },
+            );
+            return Array.isArray(entries) ? entries : [];
+          } catch (error: unknown) {
+            logger.warn('getServiceAssetMetadataBySha256: chunk failed, continuing with remaining chunks', {
+              method: 'getServiceAssetMetadataBySha256',
               chunkSize: chunk.length,
               status: extractErrorStatus(error),
               error: error instanceof Error ? error.message : String(error),

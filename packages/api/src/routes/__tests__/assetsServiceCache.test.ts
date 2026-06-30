@@ -43,6 +43,8 @@ const mockUploadFileDirect = jest.fn();
 const mockGetDeletionSummary = jest.fn();
 const mockDeleteFile = jest.fn();
 const mockGetFilesByIds = jest.fn();
+const mockFindActiveFilesBySha256 = jest.fn();
+const mockGetPublicCdnUrl = jest.fn();
 const mockUserFindOne = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
@@ -85,6 +87,8 @@ jest.mock('../../services/assetServiceSingleton', () => ({
     getDeletionSummary: (...args: unknown[]) => mockGetDeletionSummary(...args),
     deleteFile: (...args: unknown[]) => mockDeleteFile(...args),
     getFilesByIds: (...args: unknown[]) => mockGetFilesByIds(...args),
+    findActiveFilesBySha256: (...args: unknown[]) => mockFindActiveFilesBySha256(...args),
+    getPublicCdnUrl: (...args: unknown[]) => mockGetPublicCdnUrl(...args),
   },
   s3Service: {},
 }));
@@ -107,12 +111,22 @@ interface AssetMetadata {
   status: string;
 }
 
+interface AssetMetadataBySha {
+  sha256: string;
+  id: string;
+  mime: string;
+  size: number;
+  status: string;
+  url?: string;
+}
+
 interface JsonResponse {
   status: number;
   body: {
     data?:
       | { file?: { id?: string; sha256?: string }; message?: string }
-      | AssetMetadata[];
+      | AssetMetadata[]
+      | AssetMetadataBySha[];
     error?: string;
     message?: string;
   };
@@ -209,6 +223,8 @@ beforeEach(() => {
     }),
   });
   mockGetFilesByIds.mockResolvedValue([]);
+  mockFindActiveFilesBySha256.mockResolvedValue([]);
+  mockGetPublicCdnUrl.mockResolvedValue(null);
 
   // Default user principal for session-only routes.
   mockAuthMiddleware.mockImplementation(
@@ -604,6 +620,159 @@ describe('POST /assets/service/by-ids', () => {
 
     expect(res.status).toBe(400);
     expect(mockGetFilesByIds).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /assets/service/by-sha256', () => {
+  const SHA_PUBLIC = 'a'.repeat(64);
+  const SHA_PRIVATE = 'b'.repeat(64);
+  const SHA_UNKNOWN = 'c'.repeat(64);
+  const CDN_URL = `https://cloud.oxy.so/content/2026/06/aa/${'a'.repeat(8)}.png`;
+
+  function postBySha(sha256s: string[]): Promise<JsonResponse> {
+    const payload = Buffer.from(JSON.stringify({ sha256s }));
+    return requestRaw(
+      server,
+      'POST',
+      '/assets/service/by-sha256',
+      { 'content-type': 'application/json', 'content-length': String(payload.length) },
+      payload
+    );
+  }
+
+  // Service principal carrying the files:read scope this route requires (the
+  // shared default principal only carries files:write/federation:write).
+  function grantFilesReadOnce(): void {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['files:read', 'files:write', 'federation:write'],
+        };
+        next();
+      }
+    );
+  }
+
+  it('resolves a known public sha to metadata + CDN url, and a private sha without url', async () => {
+    grantFilesReadOnce();
+    const publicFile = {
+      _id: { toString: () => CACHE_FILE_ID },
+      sha256: SHA_PUBLIC,
+      mime: 'image/png',
+      size: 1234,
+      status: 'active',
+      visibility: 'public',
+      // Fields below must NOT leak into the response.
+      storageKey: 'public/content/2026/06/aa/secret.png',
+      ownerUserId: 'owner-1',
+      links: [{ app: 'mention' }],
+      variants: [{ type: 'thumb', key: 'k' }],
+    };
+    const privateFile = {
+      _id: { toString: () => USER_FILE_ID },
+      sha256: SHA_PRIVATE,
+      mime: 'video/mp4',
+      size: 9999,
+      status: 'active',
+      visibility: 'private',
+      storageKey: 'content/2026/06/bb/secret.mp4',
+    };
+    mockFindActiveFilesBySha256.mockResolvedValueOnce([publicFile, privateFile]);
+    // Public asset → CDN-reachable url; private asset → null (omit url).
+    mockGetPublicCdnUrl.mockImplementation(async (file: { visibility?: string }) =>
+      file.visibility === 'public' ? CDN_URL : null
+    );
+
+    const res = await postBySha([SHA_PUBLIC, SHA_PRIVATE]);
+
+    expect(res.status).toBe(200);
+    expect(mockServiceAuthMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockAuthMiddleware).not.toHaveBeenCalled();
+    expect(mockFindActiveFilesBySha256).toHaveBeenCalledWith([SHA_PUBLIC, SHA_PRIVATE]);
+
+    const data = res.body.data as AssetMetadataBySha[];
+    expect(Array.isArray(data)).toBe(true);
+    expect(data).toHaveLength(2);
+
+    const bySha = Object.fromEntries(data.map((d) => [d.sha256, d]));
+    expect(bySha[SHA_PUBLIC]).toEqual({
+      sha256: SHA_PUBLIC,
+      id: CACHE_FILE_ID,
+      mime: 'image/png',
+      size: 1234,
+      status: 'active',
+      url: CDN_URL,
+    });
+    // Private asset: identical shape minus url.
+    expect(bySha[SHA_PRIVATE]).toEqual({
+      sha256: SHA_PRIVATE,
+      id: USER_FILE_ID,
+      mime: 'video/mp4',
+      size: 9999,
+      status: 'active',
+    });
+    expect(bySha[SHA_PRIVATE].url).toBeUndefined();
+    // Metadata-only contract: no owner/links/variants/storageKey leak.
+    expect(Object.keys(bySha[SHA_PUBLIC]).sort()).toEqual(['id', 'mime', 'sha256', 'size', 'status', 'url']);
+  });
+
+  it('omits unknown hashes (no whole-batch 404)', async () => {
+    grantFilesReadOnce();
+    // Only one of the two requested hashes resolves to a live file.
+    mockFindActiveFilesBySha256.mockResolvedValueOnce([
+      {
+        _id: { toString: () => CACHE_FILE_ID },
+        sha256: SHA_PUBLIC,
+        mime: 'image/jpeg',
+        size: 42,
+        status: 'active',
+        visibility: 'private',
+      },
+    ]);
+
+    const res = await postBySha([SHA_PUBLIC, SHA_UNKNOWN]);
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as AssetMetadataBySha[];
+    expect(data).toHaveLength(1);
+    expect(data[0].sha256).toBe(SHA_PUBLIC);
+  });
+
+  it('requires the files:read service scope', async () => {
+    // Default principal lacks files:read.
+    const res = await postBySha([SHA_PUBLIC]);
+
+    expect(res.status).toBe(403);
+    expect(mockFindActiveFilesBySha256).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty sha256s array with 400', async () => {
+    const res = await postBySha([]);
+
+    expect(res.status).toBe(400);
+    expect(mockFindActiveFilesBySha256).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than 100 hashes with 400', async () => {
+    const shas = Array.from({ length: 101 }, (_v, i) =>
+      i.toString(16).padStart(64, '0')
+    );
+
+    const res = await postBySha(shas);
+
+    expect(res.status).toBe(400);
+    expect(mockFindActiveFilesBySha256).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-hex digest with 400', async () => {
+    grantFilesReadOnce();
+    const res = await postBySha(['not-a-valid-sha']);
+
+    expect(res.status).toBe(400);
+    expect(mockFindActiveFilesBySha256).not.toHaveBeenCalled();
   });
 });
 

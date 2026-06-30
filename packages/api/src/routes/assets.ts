@@ -18,6 +18,7 @@ import {
   updateVisibilitySchema,
   batchAccessSchema,
   assetsByIdsBodySchema,
+  assetsBySha256BodySchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
@@ -853,6 +854,118 @@ router.post(
     logger.debug('POST /assets/service/by-ids', {
       appId: req.serviceApp?.appId,
       requested: ids.length,
+      resolved: data.length,
+    });
+
+    sendSuccess(res, data);
+  })
+);
+
+/**
+ * @openapi
+ * /assets/service/by-sha256:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Reverse content-address resolve assets by SHA-256
+ *     description: >
+ *       Service-token-only batch REVERSE lookup. Given up to 100 lowercase hex
+ *       SHA-256 content hashes, resolves each to the live (non-deleted) Oxy asset
+ *       holding that content: its file `id`, `mime`, byte `size`, `status`, and —
+ *       for ACTIVE, PUBLIC, CDN-reachable assets only — a public `url`
+ *       (`cloud.oxy.so`). This is the inverse of `POST /assets/service/by-ids`:
+ *       callers (e.g. Mention's MTN materializer / node-blob sync) that hold a
+ *       record's `blob.sha256` use it to find the servable asset for that
+ *       content. Private/unlisted assets omit `url`. Unknown, invalid, or deleted
+ *       hashes are silently omitted from `data` (the batch never 404s as a
+ *       whole); the result may be shorter than the requested list — map by
+ *       `sha256`.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sha256s
+ *             properties:
+ *               sha256s:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *                   pattern: '^[a-f0-9]{64}$'
+ *     responses:
+ *       200:
+ *         description: Resolved asset metadata (order not guaranteed).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       sha256:
+ *                         type: string
+ *                       id:
+ *                         type: string
+ *                       mime:
+ *                         type: string
+ *                       size:
+ *                         type: integer
+ *                       status:
+ *                         type: string
+ *                         enum: [active, trash]
+ *                       url:
+ *                         type: string
+ *                         description: Public CDN URL; present only for active, public, CDN-reachable assets.
+ *       400:
+ *         description: Validation failed (empty array, > 100 hashes, or a non-hex digest).
+ *       401:
+ *         description: Missing or expired service token.
+ *       403:
+ *         description: Not a service token, or missing the files:read scope.
+ */
+router.post(
+  '/service/by-sha256',
+  serviceAuthMiddleware,
+  validate({ body: assetsBySha256BodySchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:read');
+
+    const { sha256s } = req.body as { sha256s: string[] };
+
+    // Dedupe so a single batch never issues duplicate work; the schema already
+    // lowercased + validated each entry as a 64-char hex digest.
+    const uniqueShas = Array.from(new Set(sha256s));
+
+    const files = await assetService.findActiveFilesBySha256(uniqueShas);
+
+    // Resolve the public CDN URL for active public assets. getPublicCdnUrl gates
+    // on active+public and verifies CDN reachability (returns null otherwise), so
+    // private/unlisted/non-reachable assets simply omit `url`. Never expose
+    // bytes, owner ids, storage keys, links, or variants.
+    const data = await Promise.all(
+      files.map(async (file) => {
+        const url = await assetService.getPublicCdnUrl(file);
+        return {
+          sha256: file.sha256,
+          id: file._id.toString(),
+          mime: file.mime,
+          size: file.size,
+          status: file.status,
+          ...(url ? { url } : {}),
+        };
+      })
+    );
+
+    logger.debug('POST /assets/service/by-sha256', {
+      appId: req.serviceApp?.appId,
+      requested: uniqueShas.length,
       resolved: data.length,
     });
 

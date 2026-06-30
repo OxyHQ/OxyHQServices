@@ -325,6 +325,7 @@ export type {
     AssetUpdateVisibilityRequest,
     AssetUpdateVisibilityResponse,
     ServiceAssetMetadata,
+    ServiceAssetMetadataBySha,
     AccountStorageCategoryUsage,
     AccountStorageUsageResponse,
     SecurityEventType,
