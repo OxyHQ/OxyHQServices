@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import {
     View,
     Pressable,
+    StyleSheet,
     Platform,
     type StyleProp,
     type ViewStyle,
@@ -85,7 +86,11 @@ export interface ProfileButtonProps {
      * Native (bottom-sheet) is unaffected — this only influences the web popover.
      */
     placement?: 'up' | 'down' | 'auto';
-    /** Extra className applied to the outer trigger. */
+    /**
+     * Extra className applied to the outer trigger. Kept for NativeWind consumers
+     * that layer utility classes on top; the component's own layout is driven by
+     * `StyleSheet` so it renders correctly with or without NativeWind.
+     */
     className?: string;
     /** Extra style applied to the outer trigger. */
     style?: StyleProp<ViewStyle>;
@@ -103,6 +108,12 @@ export interface ProfileButtonProps {
  *    + an `unfold-more-horizontal` chevron. Press opens the menu upward (web)
  *    against the measured trigger, or as a bottom sheet (native).
  *  - **Signed out**: a "Sign in" row that calls `useAuth().signIn()`.
+ *
+ * Styling uses react-native `StyleSheet` + the Bloom theme (via `useTheme`) so
+ * the layout renders identically in EVERY consumer — including apps that do not
+ * use NativeWind (e.g. the accounts app). Only the web hover animation keeps
+ * dynamic inline `style` (the CSS transition/transform values), which is what
+ * the `react-native-web-style.d.ts` augmentation exists for.
  *
  * All display strings resolve through `@oxyhq/core`'s
  * `getAccountDisplayName` / `getAccountFallbackHandle` — no hand-rolled name
@@ -208,8 +219,14 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                 importantForAccessibility="no-hide-descendants"
             >
                 <View
-                    className="rounded-full bg-secondary"
-                    style={{ width: resolvedAvatarSize, height: resolvedAvatarSize }}
+                    style={[
+                        styles.skeletonCircle,
+                        {
+                            width: resolvedAvatarSize,
+                            height: resolvedAvatarSize,
+                            backgroundColor: colors.backgroundSecondary,
+                        },
+                    ]}
                 />
             </View>
         );
@@ -220,15 +237,21 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         const signInLabel = t('common.actions.signIn') || 'Sign in';
         return (
             <Pressable
-                className={`${expanded ? 'w-full ' : ''}flex-row items-center gap-3 rounded-full px-2 py-2 ${className ?? ''}`}
-                style={style}
+                className={className}
+                style={[styles.row, expanded && styles.rowExpanded, style]}
                 onPress={() => { void signIn(); }}
                 accessibilityRole="button"
                 accessibilityLabel={signInLabel}
             >
                 <View
-                    className="items-center justify-center rounded-full bg-secondary"
-                    style={{ width: resolvedAvatarSize, height: resolvedAvatarSize }}
+                    style={[
+                        styles.avatarBadge,
+                        {
+                            width: resolvedAvatarSize,
+                            height: resolvedAvatarSize,
+                            backgroundColor: colors.backgroundSecondary,
+                        },
+                    ]}
                 >
                     <MaterialCommunityIcons
                         name="login"
@@ -238,7 +261,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                 </View>
                 {expanded ? (
                     <Text
-                        className="flex-1 font-semibold text-foreground"
+                        style={[styles.signInLabel, { color: colors.text }]}
                         numberOfLines={1}
                     >
                         {signInLabel}
@@ -296,8 +319,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
             <View className={className} style={style}>
                 <Pressable
                     ref={triggerRef}
-                    className="rounded-full"
-                    style={collapsedBgStyle}
+                    style={[styles.collapsedTrigger, collapsedBgStyle]}
                     onPress={openMenu}
                     accessibilityRole="button"
                     accessibilityLabel={accountLabel}
@@ -329,7 +351,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     // Slide the shrunk avatar left so its visual left edge stays put as it
     // contracts. The avatar loses `size * (1 - scale)` of width; half of that
     // (the left half, since scale is centered) is the offset, plus the row's
-    // left padding (px-2 = 8px) so it hugs the row edge like Bluesky's.
+    // left padding (8px) so it hugs the row edge like Bluesky's.
     const activeAvatarTranslateX =
         -(resolvedAvatarSize * (1 - ACTIVE_AVATAR_SCALE)) / 2 - 8;
 
@@ -378,23 +400,28 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         : undefined;
 
     return (
-        <View className={`w-full ${className ?? ''}`} style={style}>
+        <View className={className} style={[styles.fullWidth, style]}>
             <Pressable
                 ref={triggerRef}
-                className="w-full flex-row items-center gap-3 rounded-full px-2 py-2"
-                style={rowStyle}
+                style={[styles.row, styles.rowExpanded, rowStyle]}
                 onPress={openMenu}
                 accessibilityRole="button"
                 accessibilityLabel={accountLabel}
                 {...webInteractionProps}
             >
                 <View style={avatarWrapperStyle}>{avatarNode}</View>
-                <View className="min-w-0 flex-1" style={identityStyle}>
-                    <Text className="font-bold text-foreground" numberOfLines={1}>
+                <View style={[styles.identity, identityStyle]}>
+                    <Text
+                        style={[styles.displayName, { color: colors.text }]}
+                        numberOfLines={1}
+                    >
                         {displayName}
                     </Text>
                     {handleLine ? (
-                        <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                        <Text
+                            style={[styles.handle, { color: colors.textSecondary }]}
+                            numberOfLines={1}
+                        >
                             {handleLine}
                         </Text>
                     ) : null}
@@ -419,5 +446,56 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         </View>
     );
 };
+
+const styles = StyleSheet.create({
+    fullWidth: {
+        width: '100%',
+    },
+    // Neutral skeleton / signed-out avatar circle (`rounded-full`).
+    skeletonCircle: {
+        borderRadius: 9999,
+    },
+    // Shared trigger row (`flex-row items-center gap-3 rounded-full px-2 py-2`).
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: 9999,
+        paddingHorizontal: 8,
+        paddingVertical: 8,
+    },
+    // `w-full` on the expanded row + its signed-out variant.
+    rowExpanded: {
+        width: '100%',
+    },
+    // Signed-out login badge (`items-center justify-center rounded-full`).
+    avatarBadge: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 9999,
+    },
+    // Signed-out label (`flex-1 font-semibold`).
+    signInLabel: {
+        flex: 1,
+        fontWeight: '600',
+    },
+    // Collapsed avatar-only trigger (`rounded-full`).
+    collapsedTrigger: {
+        borderRadius: 9999,
+    },
+    // Identity block (`min-w-0 flex-1`).
+    identity: {
+        flex: 1,
+        minWidth: 0,
+    },
+    // Display name (`font-bold`).
+    displayName: {
+        fontWeight: '700',
+    },
+    // Handle line (`text-xs`).
+    handle: {
+        fontSize: 12,
+    },
+});
 
 export default ProfileButton;
