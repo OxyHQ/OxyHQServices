@@ -159,7 +159,7 @@ const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                         <SettingsListItem
                             icon={
                                 <SettingsIcon
-                                    name="megaphone"
+                                    name="bullhorn"
                                     color={bloomTheme.colors.secondary}
                                 />
                             }
