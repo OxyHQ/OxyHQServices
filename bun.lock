@@ -605,7 +605,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "13.1.7",
+      "version": "13.3.0",
       "dependencies": {
         "@oxyhq/contracts": "0.7.0",
       },

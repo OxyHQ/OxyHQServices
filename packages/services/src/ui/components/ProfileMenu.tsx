@@ -6,6 +6,7 @@ import {
     Modal,
     ScrollView,
     ActivityIndicator,
+    StyleSheet,
     Platform,
     type ViewStyle,
 } from 'react-native';
@@ -61,8 +62,9 @@ export interface ProfileMenuProps {
 type ProfileMenuContentProps = Omit<ProfileMenuProps, 'open'>;
 
 /**
- * Clean device-account switcher, modeled on the inbox `AccountMenu` but written
- * fresh with NativeWind classNames + Bloom primitives. Lists every account
+ * Clean device-account switcher, modeled on the inbox `AccountMenu` and styled
+ * with react-native `StyleSheet` + the Bloom theme (via `useTheme`) so it
+ * renders in EVERY consumer regardless of NativeWind. Lists every account
  * signed in on this device (from {@link useDeviceAccounts}); tapping a row
  * switches, and each inactive row carries a sign-out icon. Below the list:
  * Add account, Manage account, optional View profile, and Sign out of all.
@@ -175,8 +177,8 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
     return (
         <>
             <ScrollView
-                className="grow-0"
-                contentContainerClassName="py-1"
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
                 {/* 1) Device accounts — active first (checkmark), others switchable. */}
@@ -192,9 +194,11 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                             accessibilityState={{ selected: isActive }}
                             onPress={() => handleSwitch(account.sessionId)}
                             disabled={isActive || isBusy || isSwitching}
-                            className={`flex-row items-center gap-3 px-4 py-2.5 ${
-                                isActive ? 'bg-secondary' : ''
-                            } ${isSwitching && !isActive ? 'opacity-40' : ''}`}
+                            style={[
+                                styles.accountRow,
+                                isActive && { backgroundColor: colors.backgroundSecondary },
+                                isSwitching && !isActive && styles.rowDimmed,
+                            ]}
                         >
                             <Avatar
                                 source={account.user.avatar ?? undefined}
@@ -203,16 +207,19 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                                 name={account.displayName}
                                 size={isActive ? 40 : 32}
                             />
-                            <View className="min-w-0 flex-1">
+                            <View style={styles.accountInfo}>
                                 <Text
-                                    className={`text-foreground ${isActive ? 'font-semibold' : 'font-medium'}`}
+                                    style={[
+                                        isActive ? styles.accountNameActive : styles.accountName,
+                                        { color: colors.text },
+                                    ]}
                                     numberOfLines={1}
                                 >
                                     {account.displayName}
                                 </Text>
                                 {account.email ? (
                                     <Text
-                                        className="text-xs text-muted-foreground"
+                                        style={[styles.accountEmail, { color: colors.textSecondary }]}
                                         numberOfLines={1}
                                     >
                                         {account.email}
@@ -235,7 +242,7 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                                     onPress={() => handleRemove(account.sessionId)}
                                     disabled={actionDisabled}
                                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    className="h-7 w-7 items-center justify-center rounded-full opacity-60"
+                                    style={styles.rowSignOutButton}
                                 >
                                     <MaterialCommunityIcons
                                         name="logout"
@@ -250,9 +257,9 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
 
                 {/* 2) Switching indicator. */}
                 {isSwitching ? (
-                    <View className="flex-row items-center justify-center gap-2 py-2">
+                    <View style={styles.switchingRow}>
                         <ActivityIndicator color={colors.textSecondary} size="small" />
-                        <Text className="text-xs font-medium text-muted-foreground">
+                        <Text style={[styles.switchingText, { color: colors.textSecondary }]}>
                             {t('accountMenu.switching') || 'Switching account…'}
                         </Text>
                     </View>
@@ -264,6 +271,7 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                 <ActionRow
                     icon="account-plus-outline"
                     iconColor={colors.icon}
+                    textColor={colors.text}
                     label={t('accountMenu.addAnother') || 'Add another account'}
                     disabled={actionDisabled}
                     onPress={() => {
@@ -276,6 +284,7 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                 <ActionRow
                     icon="cog-outline"
                     iconColor={colors.icon}
+                    textColor={colors.text}
                     label={t('accountMenu.manage') || 'Manage your Oxy Account'}
                     disabled={actionDisabled}
                     onPress={() => {
@@ -289,6 +298,7 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                     <ActionRow
                         icon="account-outline"
                         iconColor={colors.icon}
+                        textColor={colors.text}
                         label={t('accountMenu.viewProfile') || 'View profile'}
                         disabled={actionDisabled}
                         onPress={() => {
@@ -305,14 +315,14 @@ const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
                     accessibilityLabel={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
                     onPress={() => signOutAllDialog.open()}
                     disabled={actionDisabled}
-                    className={`flex-row items-center gap-3 px-4 py-3 ${actionDisabled ? 'opacity-40' : ''}`}
+                    style={[styles.signOutAllRow, actionDisabled && styles.rowDimmed]}
                 >
                     {signingOutAll ? (
                         <ActivityIndicator color={colors.error} size="small" />
                     ) : (
                         <MaterialCommunityIcons name="logout" size={18} color={colors.error} />
                     )}
-                    <Text className="font-medium" style={{ color: colors.error }}>
+                    <Text style={[styles.actionText, { color: colors.error }]}>
                         {t('accountMenu.signOutAll') || 'Sign out of all accounts'}
                     </Text>
                 </Pressable>
@@ -357,6 +367,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
     onBeforeSessionChange,
 }) => {
     const { t } = useI18n();
+    const { colors } = useTheme();
 
     // Web: anchor the panel to the measured trigger. When the anchor pins `top`
     // the panel opens DOWNWARD from the trigger; otherwise it pins `bottom` and
@@ -385,19 +396,20 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                 accessibilityRole="button"
                 accessibilityLabel={t('common.actions.close') || 'Close'}
                 onPress={onClose}
-                className={isWeb ? 'flex-1 relative' : 'flex-1 justify-end'}
-                style={!isWeb ? styles.nativeScrim : undefined}
+                style={isWeb ? styles.webOverlay : styles.nativeOverlay}
             >
                 <Pressable
                     // Swallow taps inside the panel so they never reach the overlay's
                     // outside-tap-to-close handler.
                     onPress={() => undefined}
-                    className={
-                        isWeb
-                            ? 'overflow-hidden rounded-2xl border border-border bg-background'
-                            : 'overflow-hidden rounded-t-3xl bg-background pb-3'
-                    }
-                    style={[panelAnchorStyle, { maxHeight: '85%' }, styles.shadow]}
+                    style={[
+                        isWeb ? styles.panelWeb : styles.panelNative,
+                        { backgroundColor: colors.background },
+                        isWeb && { borderColor: colors.border },
+                        panelAnchorStyle,
+                        styles.panelBounds,
+                        styles.shadow,
+                    ]}
                     accessibilityRole="menu"
                     accessibilityLabel={t('accountMenu.label') || 'Account menu'}
                 >
@@ -421,36 +433,136 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
 const ActionRow: React.FC<{
     icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     iconColor: string;
+    textColor: string;
     label: string;
     disabled: boolean;
     onPress: () => void;
-}> = ({ icon, iconColor, label, disabled, onPress }) => (
+}> = ({ icon, iconColor, textColor, label, disabled, onPress }) => (
     <Pressable
         accessibilityRole="menuitem"
         accessibilityLabel={label}
         onPress={onPress}
         disabled={disabled}
-        className={`flex-row items-center gap-3 px-4 py-3 ${disabled ? 'opacity-40' : ''}`}
+        style={[styles.actionRow, disabled && styles.rowDimmed]}
     >
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
-        <Text className="font-medium text-foreground">{label}</Text>
+        <Text style={[styles.actionText, { color: textColor }]}>{label}</Text>
     </Pressable>
 );
 
-// The panel's drop shadow and the native scrim are the only values with no
-// NativeWind class equivalent in this package (dynamic elevation + rgba scrim),
-// so they stay as small inline objects rather than raw class-replaceable styles.
-const styles = {
+const styles = StyleSheet.create({
+    // Overlay (`flex-1 relative` web / `flex-1 justify-end` + scrim native).
+    webOverlay: {
+        flex: 1,
+        position: 'relative',
+    },
+    nativeOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.32)',
+    },
+    // Panel shell — web popover (`overflow-hidden rounded-2xl border`).
+    panelWeb: {
+        overflow: 'hidden',
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    // Panel shell — native bottom sheet (`overflow-hidden rounded-t-3xl pb-3`).
+    panelNative: {
+        overflow: 'hidden',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingBottom: 12,
+    },
+    // Shared `maxHeight: '85%'` cap applied to both panel variants.
+    panelBounds: {
+        maxHeight: '85%',
+    },
+    // The panel's drop shadow — dynamic elevation with no class equivalent.
     shadow: {
         shadowColor: '#000',
         shadowOpacity: 0.18,
         shadowRadius: 24,
         shadowOffset: { width: 0, height: 8 },
         elevation: 12,
-    } satisfies ViewStyle,
-    nativeScrim: {
-        backgroundColor: 'rgba(0,0,0,0.32)',
-    } satisfies ViewStyle,
-};
+    },
+    // Scroll region (`grow-0` + `py-1` content).
+    scroll: {
+        flexGrow: 0,
+    },
+    scrollContent: {
+        paddingVertical: 4,
+    },
+    // Account row (`flex-row items-center gap-3 px-4 py-2.5`).
+    accountRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+    },
+    // `opacity-40` dim applied to disabled / non-active-while-switching rows.
+    rowDimmed: {
+        opacity: 0.4,
+    },
+    // Identity block (`min-w-0 flex-1`).
+    accountInfo: {
+        flex: 1,
+        minWidth: 0,
+    },
+    // Inactive account name (`font-medium`).
+    accountName: {
+        fontWeight: '500',
+    },
+    // Active account name (`font-semibold`).
+    accountNameActive: {
+        fontWeight: '600',
+    },
+    // Secondary email line (`text-xs`).
+    accountEmail: {
+        fontSize: 12,
+    },
+    // Per-row sign-out button (`h-7 w-7 items-center justify-center rounded-full opacity-60`).
+    rowSignOutButton: {
+        width: 28,
+        height: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 9999,
+        opacity: 0.6,
+    },
+    // Switching indicator (`flex-row items-center justify-center gap-2 py-2`).
+    switchingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 8,
+    },
+    switchingText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    // Bottom action rows (`flex-row items-center gap-3 px-4 py-3`).
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    // Sign-out-of-all row shares the action-row geometry.
+    signOutAllRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    // Action / sign-out label (`font-medium`).
+    actionText: {
+        fontWeight: '500',
+    },
+});
 
 export default ProfileMenu;
