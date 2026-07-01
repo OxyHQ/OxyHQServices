@@ -52,6 +52,9 @@ export interface ProfileMenuProps {
     onBeforeSessionChange?: () => void | Promise<void>;
 }
 
+/** Everything `ProfileMenuContent` needs, minus the `open` flag (always open). */
+type ProfileMenuContentProps = Omit<ProfileMenuProps, 'open'>;
+
 /**
  * Clean device-account switcher, modeled on the inbox `AccountMenu` but written
  * fresh with NativeWind classNames + Bloom primitives. Lists every account
@@ -59,13 +62,13 @@ export interface ProfileMenuProps {
  * switches, and each inactive row carries a sign-out icon. Below the list:
  * Add account, Manage account, optional View profile, and Sign out of all.
  *
- * Renders as an upward-opening popover anchored to the trigger on web, and a
- * bottom-sheet style modal on native.
+ * Heavy hooks (device accounts / refresh-all, Bloom dialog/toast controls, the
+ * escape-key listener) live here so they run ONLY while the menu is open — the
+ * outer {@link ProfileMenu} mounts this only when `open`. This component may
+ * therefore assume it is always open.
  */
-const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
-    open,
+const ProfileMenuContent: React.FC<ProfileMenuContentProps> = ({
     onClose,
-    anchor,
     onNavigateManage,
     onAddAccount,
     onNavigateProfile,
@@ -148,9 +151,10 @@ const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
         }
     }, [signingOutAll, logoutAll, t, onClose, onBeforeSessionChange]);
 
-    // Escape-to-close (web only).
+    // Escape-to-close (web only). This component only mounts while open, so the
+    // listener is attached exactly for the menu's lifetime.
     useEffect(() => {
-        if (!open || !isWeb || typeof document === 'undefined') {
+        if (!isWeb || typeof document === 'undefined') {
             return undefined;
         }
         const onKey = (event: KeyboardEvent) => {
@@ -161,42 +165,10 @@ const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
         };
         document.addEventListener('keydown', onKey, true);
         return () => document.removeEventListener('keydown', onKey, true);
-    }, [open, onClose]);
+    }, [onClose]);
 
-    if (!open) {
-        return null;
-    }
-
-    // Web: anchor the panel's bottom-left corner to the measured trigger, falling
-    // back to a bottom-left placement when no anchor was captured. Native ignores
-    // this (the panel docks to the bottom via the overlay's flex-end).
-    const panelAnchorStyle: ViewStyle | undefined = isWeb
-        ? {
-            position: 'absolute',
-            width: MENU_WIDTH,
-            left: anchor?.left ?? 8,
-            bottom: anchor?.bottom ?? 8,
-        }
-        : undefined;
-
-    const content = (
-        <Pressable
-            // Swallow taps inside the panel so they never reach the overlay's
-            // outside-tap-to-close handler.
-            onPress={() => undefined}
-            className={
-                isWeb
-                    ? 'overflow-hidden rounded-2xl border border-border bg-background'
-                    : 'overflow-hidden rounded-t-3xl bg-background pb-3'
-            }
-            style={[
-                panelAnchorStyle,
-                !isWeb ? { maxHeight: '85%' } : { maxHeight: '85%' },
-                styles.shadow,
-            ]}
-            accessibilityRole="menu"
-            accessibilityLabel={t('accountMenu.label') || 'Account menu'}
-        >
+    return (
+        <>
             <ScrollView
                 className="grow-0"
                 contentContainerClassName="py-1"
@@ -340,8 +312,58 @@ const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
                     </Text>
                 </Pressable>
             </ScrollView>
-        </Pressable>
+
+            <Dialog
+                control={signOutAllDialog}
+                title={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
+                description={t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?'}
+                actions={[
+                    {
+                        label: t('accountMenu.signOutAll') || 'Sign out of all accounts',
+                        color: 'destructive',
+                        onPress: performSignOutAll,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
+        </>
     );
+};
+
+/**
+ * Public wrapper. The RN `Modal` shell is ALWAYS mounted (only `visible` toggles)
+ * so the react-native-web portal is created up front — mounting a web `Modal`
+ * already-`visible` is fragile (the first interaction can be eaten / the button
+ * "does nothing"). Only the heavy {@link ProfileMenuContent} mounts when open,
+ * keeping the account hooks off the render path when the menu is closed. On
+ * native that closed render is `<Modal visible={false}>{null}</Modal>` → no heavy
+ * hooks run (preserving the native-drawer crash fix).
+ *
+ * This outer component calls ONLY light, always-safe hooks (`useTheme`,
+ * `useI18n` for the overlay a11y label) and computes the panel/overlay layout.
+ */
+const ProfileMenu: React.FC<ProfileMenuProps> = ({
+    open,
+    onClose,
+    anchor,
+    onNavigateManage,
+    onAddAccount,
+    onNavigateProfile,
+    onBeforeSessionChange,
+}) => {
+    const { t } = useI18n();
+
+    // Web: anchor the panel's bottom-left corner to the measured trigger, falling
+    // back to a bottom-left placement when no anchor was captured. Native ignores
+    // this (the panel docks to the bottom via the overlay's flex-end).
+    const panelAnchorStyle: ViewStyle | undefined = isWeb
+        ? {
+            position: 'absolute',
+            width: MENU_WIDTH,
+            left: anchor?.left ?? 8,
+            bottom: anchor?.bottom ?? 8,
+        }
+        : undefined;
 
     return (
         <Modal
@@ -357,22 +379,31 @@ const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
                 className={isWeb ? 'flex-1 relative' : 'flex-1 justify-end'}
                 style={!isWeb ? styles.nativeScrim : undefined}
             >
-                {content}
+                <Pressable
+                    // Swallow taps inside the panel so they never reach the overlay's
+                    // outside-tap-to-close handler.
+                    onPress={() => undefined}
+                    className={
+                        isWeb
+                            ? 'overflow-hidden rounded-2xl border border-border bg-background'
+                            : 'overflow-hidden rounded-t-3xl bg-background pb-3'
+                    }
+                    style={[panelAnchorStyle, { maxHeight: '85%' }, styles.shadow]}
+                    accessibilityRole="menu"
+                    accessibilityLabel={t('accountMenu.label') || 'Account menu'}
+                >
+                    {open ? (
+                        <ProfileMenuContent
+                            onClose={onClose}
+                            anchor={anchor}
+                            onNavigateManage={onNavigateManage}
+                            onAddAccount={onAddAccount}
+                            onNavigateProfile={onNavigateProfile}
+                            onBeforeSessionChange={onBeforeSessionChange}
+                        />
+                    ) : null}
+                </Pressable>
             </Pressable>
-
-            <Dialog
-                control={signOutAllDialog}
-                title={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
-                description={t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?'}
-                actions={[
-                    {
-                        label: t('accountMenu.signOutAll') || 'Sign out of all accounts',
-                        color: 'destructive',
-                        onPress: performSignOutAll,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </Modal>
     );
 };
@@ -411,21 +442,6 @@ const styles = {
     nativeScrim: {
         backgroundColor: 'rgba(0,0,0,0.32)',
     } satisfies ViewStyle,
-};
-
-/**
- * Public wrapper: renders nothing — and runs NO hooks — until `open`. Mounting
- * the body only while open keeps the account hooks (`useDeviceAccounts` /
- * refresh-all, Bloom dialog/toast controls) off the render path when the menu is
- * closed, which is every time the sidebar or native drawer mounts
- * `ProfileButton`. A hook that is unsafe on a given platform (e.g. throws during
- * a native render) therefore never runs unless the user actually opens the menu.
- */
-const ProfileMenu: React.FC<ProfileMenuProps> = (props) => {
-    if (!props.open) {
-        return null;
-    }
-    return <ProfileMenuBody {...props} />;
 };
 
 export default ProfileMenu;

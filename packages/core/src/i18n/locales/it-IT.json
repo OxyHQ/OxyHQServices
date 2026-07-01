@@ -207,6 +207,7 @@
   "accountMenu": {
     "label": "Menu account",
     "manage": "Gestisci il tuo account Oxy",
+    "viewProfile": "Visualizza profilo",
     "addAnother": "Aggiungi un altro account",
     "signOutAll": "Esci da tutti gli account",
     "open": "Menu account",

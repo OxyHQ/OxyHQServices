@@ -207,6 +207,7 @@
   "accountMenu": {
     "label": "Menu da conta",
     "manage": "Gerir a sua conta Oxy",
+    "viewProfile": "Ver perfil",
     "addAnother": "Adicionar outra conta",
     "signOutAll": "Terminar sessão em todas as contas",
     "open": "Menu da conta",

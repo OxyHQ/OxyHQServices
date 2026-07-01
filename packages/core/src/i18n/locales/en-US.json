@@ -1555,6 +1555,7 @@
   "accountMenu": {
     "label": "Account menu",
     "manage": "Manage your Oxy Account",
+    "viewProfile": "View profile",
     "addAnother": "Add another account",
     "signOutAll": "Sign out of all accounts",
     "open": "Account menu",
