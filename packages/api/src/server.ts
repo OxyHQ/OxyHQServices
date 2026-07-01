@@ -6,6 +6,7 @@ import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
+import sessionDeviceRouter from "./routes/sessionDevice";
 import dotenv from "dotenv";
 import User, { IUser } from "./models/User";
 import { ensureFileSha256LiveUniqueIndex } from "./models/File";
@@ -512,6 +513,7 @@ app.use("/profiles", csrfProtection, profilesRouter);
 // the routing topology unambiguous.
 app.use("/users/me/app-data", userRateLimiter, csrfProtection, userDataRouter);
 app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
+app.use("/session/device", userRateLimiter, sessionDeviceRouter);
 app.use("/session", userRateLimiter, csrfProtection, sessionRouter);
 app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
