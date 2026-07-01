@@ -225,7 +225,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "6.1.0",
+      "version": "7.0.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "qrcode": "^1.5.4",
@@ -239,7 +239,7 @@
         "typescript": "^5.9.2",
       },
       "peerDependencies": {
-        "@oxyhq/core": "workspace:*",
+        "@oxyhq/core": "^5.0.0",
         "@tanstack/query-sync-storage-persister": "^5.100",
         "@tanstack/react-query": "^5.100",
         "@tanstack/react-query-persist-client": "^5.100",
