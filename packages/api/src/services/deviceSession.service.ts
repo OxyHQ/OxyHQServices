@@ -33,6 +33,10 @@ function lowestFreeAuthuser(accounts: IDeviceSessionAccount[]): number {
   return i;
 }
 
+export type SwitchActiveResult =
+  | { ok: true; state: DeviceSessionState }
+  | { ok: false; reason: 'not_found' | 'unauthorized' };
+
 class DeviceSessionService {
   private async load(deviceId: string): Promise<IDeviceSession | null> {
     return DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
@@ -40,13 +44,40 @@ class DeviceSessionService {
 
   async getState(deviceId: string): Promise<DeviceSessionState> {
     const existing = await this.load(deviceId);
-    if (existing) return projectState(existing);
+    if (existing) return this.healActiveAccount(existing);
     const created = await DeviceSession.findOneAndUpdate(
       { deviceId },
       { $setOnInsert: { deviceId, accounts: [], activeAccountId: null, revision: 0 } },
       { new: true, upsert: true },
     ).lean<IDeviceSession>();
     return projectState(created as IDeviceSession);
+  }
+
+  // Self-heals a device's active account when it is a managed (act_as)
+  // account whose operator membership has since been revoked.
+  // `resolveActiveToken` already refuses to mint a token for such an account,
+  // but without this the dead account keeps sitting in `accounts`/
+  // `activeAccountId` forever — the client would durably render "logged in
+  // as <org>" while holding the previous account's bearer. One pass only:
+  // drop the revoked account via the existing signout cascade and return the
+  // healed state; a newly-elected active account is left for the *next*
+  // getState call to re-validate rather than re-checked recursively here.
+  // Non-managed (personal) active accounts are never touched by this path —
+  // a personal account with a transiently-unresolvable access token must not
+  // be dropped, only a managed account whose act_as membership check failed.
+  private async healActiveAccount(doc: IDeviceSession): Promise<DeviceSessionState> {
+    const activeId = idToString(doc.activeAccountId);
+    if (!activeId) return projectState(doc);
+    const active = (doc.accounts ?? []).find((a) => idToString(a.accountId) === activeId);
+    const operatedBy = active ? idToString(active.operatedByUserId ?? null) : null;
+    if (!active || !operatedBy) return projectState(doc);
+    const validated = await sessionService.validateSessionById(active.sessionId, false);
+    if (validated) return projectState(doc);
+    logger.info('deviceSession.getState: dropping revoked managed active account', {
+      deviceId: doc.deviceId,
+      accountId: activeId,
+    });
+    return this.signout(doc.deviceId, { accountId: activeId });
   }
 
   async addAccount(
@@ -85,16 +116,27 @@ class DeviceSessionService {
     return projectState(updated as IDeviceSession);
   }
 
-  async switchActive(deviceId: string, accountId: string): Promise<DeviceSessionState | null> {
+  async switchActive(deviceId: string, accountId: string): Promise<SwitchActiveResult> {
     const current = await this.load(deviceId);
-    if (!current || !(current.accounts ?? []).some((a) => idToString(a.accountId) === accountId)) return null;
+    const target = (current?.accounts ?? []).find((a) => idToString(a.accountId) === accountId);
+    if (!current || !target) return { ok: false, reason: 'not_found' };
+
+    // Re-validate the target account's session BEFORE committing the switch.
+    // For a managed account this re-checks the operator's act_as membership
+    // (ensureManagedSessionAuthorized) and rejects the switch instead of
+    // durably pointing the device at an account the caller no longer has
+    // authority over (see resolveActiveToken, which does the same check on
+    // read but can't undo an already-committed activeAccountId).
+    const validated = await sessionService.validateSessionById(target.sessionId, false);
+    if (!validated) return { ok: false, reason: 'unauthorized' };
+
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },
       { $set: { activeAccountId: accountId }, $inc: { revision: 1 } },
       { new: true },
     ).lean<IDeviceSession>();
-    if (!updated) return null;
-    return projectState(updated);
+    if (!updated) return { ok: false, reason: 'not_found' };
+    return { ok: true, state: projectState(updated) };
   }
 
   async resolveActiveToken(state: DeviceSessionState): Promise<{ accessToken: string; expiresAt: string } | null> {

@@ -91,7 +91,7 @@ describe('GET /session/device/state', () => {
 
 describe('POST /session/device/switch', () => {
   it('switches active account and broadcasts', async () => {
-    mockSwitchActive.mockResolvedValueOnce(STATE);
+    mockSwitchActive.mockResolvedValueOnce({ ok: true, state: STATE });
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'a1' });
     expect(res.status).toBe(200);
     expect(mockSwitchActive).toHaveBeenCalledWith('d1', 'a1');
@@ -101,9 +101,17 @@ describe('POST /session/device/switch', () => {
   });
 
   it('404 when the account is not on the device', async () => {
-    mockSwitchActive.mockResolvedValueOnce(null);
+    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'not_found' });
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'ghost' });
     expect(res.status).toBe(404);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('403 when the target account session is not authorized (e.g. revoked act_as membership)', async () => {
+    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'unauthorized' });
+    const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'org1' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Account not authorized');
     expect(mockBroadcast).not.toHaveBeenCalled();
   });
 });

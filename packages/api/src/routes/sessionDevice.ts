@@ -59,10 +59,14 @@ router.post('/switch', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { accountId } = req.body ?? {};
   if (!deviceId) { res.status(401).json({ error: 'No device' }); return; }
   if (!accountId) { res.status(400).json({ error: 'accountId required' }); return; }
-  const state = await deviceSessionService.switchActive(deviceId, accountId);
-  if (!state) { res.status(404).json({ error: 'Account not on this device' }); return; }
-  broadcastDeviceState(state);
-  res.json({ data: await withActiveToken(state) });
+  const outcome = await deviceSessionService.switchActive(deviceId, accountId);
+  if (!outcome.ok) {
+    if (outcome.reason === 'unauthorized') { res.status(403).json({ error: 'Account not authorized' }); return; }
+    res.status(404).json({ error: 'Account not on this device' });
+    return;
+  }
+  broadcastDeviceState(outcome.state);
+  res.json({ data: await withActiveToken(outcome.state) });
 }));
 
 router.post('/signout', asyncHandler(async (req: AuthRequest, res: Response) => {

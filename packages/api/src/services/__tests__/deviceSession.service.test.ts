@@ -203,9 +203,105 @@ describe('signout', () => {
 });
 
 describe('switchActive', () => {
-  it('returns null when the account is not on the device', async () => {
+  it('returns not_found when the account is not on the device', async () => {
     mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0 }));
-    expect(await deviceSessionService.switchActive('d1', 'ghost')).toBeNull();
+    expect(await deviceSessionService.switchActive('d1', 'ghost')).toEqual({ ok: false, reason: 'not_found' });
+    expect(mockValidateSessionById).not.toHaveBeenCalled();
+  });
+
+  it('switches active account and bumps revision when the target session validates', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0, operatedByUserId: null }],
+      activeAccountId: { toString: () => 'other' },
+      revision: 1,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0, operatedByUserId: null }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+      updatedAt: new Date(1720000000000),
+    }));
+    const result = await deviceSessionService.switchActive('d1', 'a1');
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s1', false);
+    expect(result).toEqual({ ok: true, state: expect.objectContaining({ activeAccountId: 'a1', revision: 2 }) });
+  });
+
+  it('returns unauthorized and does not commit the switch when validateSessionById rejects the target session (e.g. revoked act_as membership)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null },
+        { accountId: { toString: () => 'org1' }, sessionId: 's-org', authuser: 1, operatedByUserId: { toString: () => 'op1' } },
+      ],
+      activeAccountId: { toString: () => 'op1' },
+      revision: 1,
+    }));
+    mockValidateSessionById.mockResolvedValueOnce(null);
+    const result = await deviceSessionService.switchActive('d1', 'org1');
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s-org', false);
+    expect(result).toEqual({ ok: false, reason: 'unauthorized' });
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('getState self-heals a revoked managed active account', () => {
+  it('drops the active managed account when its session fails validateSessionById and re-elects the next remaining account', async () => {
+    const doc = {
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null },
+        { accountId: { toString: () => 'org1' }, sessionId: 's-org', authuser: 1, operatedByUserId: { toString: () => 'op1' } },
+      ],
+      activeAccountId: { toString: () => 'org1' },
+      revision: 3,
+    };
+    mockFindOne.mockReturnValueOnce(lean(doc)); // getState's initial load
+    mockValidateSessionById.mockResolvedValueOnce(null); // heal check on org1's session fails
+    mockFindOne.mockReturnValueOnce(lean(doc)); // signout()'s own reload
+    mockDeactivate.mockResolvedValueOnce(true);
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null }],
+      activeAccountId: { toString: () => 'op1' },
+      revision: 4,
+      updatedAt: new Date(1720000000000),
+    }));
+    const state = await deviceSessionService.getState('d1');
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s-org', false);
+    expect(mockDeactivate).toHaveBeenCalledWith('s-org');
+    expect(state.accounts).toHaveLength(1);
+    expect(state.accounts[0].accountId).toBe('op1');
+    expect(state.activeAccountId).toBe('op1');
+  });
+
+  it('keeps a managed active account whose session still validates', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'org1' }, sessionId: 's-org', authuser: 0, operatedByUserId: { toString: () => 'op1' } }],
+      activeAccountId: { toString: () => 'org1' },
+      revision: 1,
+      updatedAt: new Date(1720000000000),
+    }));
+    const state = await deviceSessionService.getState('d1');
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s-org', false);
+    expect(mockDeactivate).not.toHaveBeenCalled();
+    expect(state.activeAccountId).toBe('org1');
+  });
+
+  it('does not touch a personal (non-managed) active account, even without a validateSessionById call', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null }],
+      activeAccountId: { toString: () => 'op1' },
+      revision: 1,
+      updatedAt: new Date(1720000000000),
+    }));
+    const state = await deviceSessionService.getState('d1');
+    expect(mockValidateSessionById).not.toHaveBeenCalled();
+    expect(mockDeactivate).not.toHaveBeenCalled();
+    expect(state.activeAccountId).toBe('op1');
   });
 });
 
