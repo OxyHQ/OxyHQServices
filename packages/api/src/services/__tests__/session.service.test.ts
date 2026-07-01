@@ -344,6 +344,90 @@ describe('Session Service', () => {
     });
   });
 
+  /**
+   * Explicit `deviceId` option (device unification plumbing).
+   *
+   * An explicit central deviceId (e.g. threaded from a FedCM id_token
+   * `deviceId` claim) is used VERBATIM — bypassing both the UA/IP-derived
+   * default and the `stableDeviceKey` derivation. Precedence: deviceId >
+   * stableDeviceKey > UA/IP > random.
+   */
+  describe('createSession with an explicit deviceId (unification)', () => {
+    const SAVED_SALT = process.env.DEVICE_ID_SALT;
+
+    afterEach(() => {
+      if (SAVED_SALT === undefined) {
+        delete process.env.DEVICE_ID_SALT;
+      } else {
+        process.env.DEVICE_ID_SALT = SAVED_SALT;
+      }
+    });
+
+    it('uses the explicit deviceId verbatim as the created session deviceId', async () => {
+      mockFindOneResults.push(null); // isNewDevice check: none
+      mockFindOneResults.push(null); // active-session reuse lookup: none
+      mockSave.mockResolvedValueOnce(undefined);
+
+      const result = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        deviceId: 'central-device-abc123',
+      });
+
+      expect(result.deviceId).toBe('central-device-abc123');
+      const ctorArgs = (Session as unknown as jest.Mock).mock.calls[0][0] as { deviceId?: string };
+      expect(ctorArgs.deviceId).toBe('central-device-abc123');
+    });
+
+    it('takes precedence over stableDeviceKey when both are supplied', async () => {
+      process.env.DEVICE_ID_SALT = 'x'.repeat(48);
+      mockFindOneResults.push(null); // isNewDevice check: none
+      mockFindOneResults.push(null); // active-session reuse lookup: none
+      mockSave.mockResolvedValueOnce(undefined);
+
+      const result = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: 'https://relying.party.example',
+        deviceId: 'central-device-wins',
+      });
+
+      // The explicit deviceId wins outright — it is NOT the 32-hex-char
+      // derived stableDeviceKey id.
+      expect(result.deviceId).toBe('central-device-wins');
+      expect(result.deviceId).not.toMatch(/^[0-9a-f]{32}$/);
+    });
+
+    it('reuses the SAME session across repeated calls with the same explicit deviceId', async () => {
+      mockFindOneResults.push(null); // isNewDevice check: none
+      mockFindOneResults.push(null); // active-session reuse lookup: none
+      mockSave.mockResolvedValueOnce(undefined);
+
+      const first = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        deviceId: 'central-device-reuse',
+      });
+
+      mockFindOneResults.push({ _id: 'mongo-id-123' }); // isNewDevice check: device already seen
+      mockFindOneResults.push(
+        createMockSession({ sessionId: first.sessionId, deviceId: 'central-device-reuse' })
+      );
+      const refreshed = createMockSession({
+        sessionId: first.sessionId,
+        deviceId: 'central-device-reuse',
+        accessToken: 'refreshed-access-token',
+      });
+      mockFindOneAndUpdate.mockResolvedValueOnce(refreshed);
+
+      const second = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        deviceId: 'central-device-reuse',
+      });
+
+      expect(second.sessionId).toBe(first.sessionId);
+      expect(second.accessToken).toBe('refreshed-access-token');
+      expect(mockSave).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('validateSession', () => {
     it('should validate active session', async () => {
       const mockSession = createMockSession();

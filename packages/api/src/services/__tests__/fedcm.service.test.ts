@@ -122,6 +122,7 @@ interface MintTokenOptions {
   exp?: number;
   iat?: number;
   nonce?: string;
+  deviceId?: string;
 }
 
 function mintToken(opts: MintTokenOptions = {}): string {
@@ -134,6 +135,7 @@ function mintToken(opts: MintTokenOptions = {}): string {
       exp: opts.exp ?? Math.floor(Date.now() / 1000) + 60,
       iat: opts.iat ?? Math.floor(Date.now() / 1000),
       nonce: opts.nonce ?? 'nonce-raw-abc',
+      ...(opts.deviceId ? { deviceId: opts.deviceId } : {}),
     })
   );
   const sig = crypto
@@ -279,6 +281,28 @@ describe('FedCM exchangeIdToken (H9)', () => {
       deviceName: 'FedCM Sign-In',
       stableDeviceKey: APPROVED_ORIGIN,
     });
+  });
+
+  it('threads an explicit deviceId claim from the id_token into createSession (device unification)', async () => {
+    const token = mintToken({ deviceId: 'central-device-abc123' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), {
+      deviceName: 'FedCM Sign-In',
+      stableDeviceKey: APPROVED_ORIGIN,
+      deviceId: 'central-device-abc123',
+    });
+  });
+
+  it('omits deviceId from createSession options when the id_token carries no deviceId claim (backward-compat)', async () => {
+    const token = mintToken();
+    await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    const optionsArg = mockCreateSession.mock.calls[0][2] as Record<string, unknown>;
+    expect(optionsArg).not.toHaveProperty('deviceId');
   });
 
   it('accepts a first-party auth.<audience-apex> issuer for multi-domain FedCM', async () => {

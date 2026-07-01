@@ -709,6 +709,7 @@ class FedCMService {
       const session = await sessionService.createSession(userId, req, {
         deviceName: 'FedCM Sign-In',
         stableDeviceKey: clientOrigin,
+        ...(tokenPayload.deviceId ? { deviceId: tokenPayload.deviceId } : {}),
       });
 
       // Record the grant: the user just actively authorized this RP origin via

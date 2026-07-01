@@ -44,6 +44,13 @@ export const fedcmTokenPayloadSchema = z
         exp: z.number().optional(),
         iat: z.number().optional(),
         nonce: z.string().optional(),
+        /**
+         * An explicit central deviceId minted by the IdP, threaded through so the
+         * RP session can inherit a unified device id instead of deriving one from
+         * the (userId, RP origin) stableDeviceKey. Optional and additive — omitted
+         * tokens fall back to the existing stableDeviceKey/UA-IP derivation.
+         */
+        deviceId: z.string().optional(),
     })
     .passthrough();
 

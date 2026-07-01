@@ -406,17 +406,20 @@ class SessionService {
     options: SessionCreateOptions = {}
   ): Promise<ISession> {
     try {
-      const { deviceName, deviceFingerprint, stableDeviceKey, operatedByUserId } = options;
+      const { deviceName, deviceFingerprint, stableDeviceKey, deviceId: explicitDeviceId, operatedByUserId } = options;
       // For IdP/FedCM-issued sessions the request is a server-to-server call
       // from the IdP (UA = 'unknown', egress IP varies per call), so the
       // UA/IP-derived deviceId would be random every time and sprawl a new
       // session per exchange. When a `stableDeviceKey` is supplied, derive a
       // deterministic deviceId from (userId, key) and feed it as the provided
       // deviceId so `extractDeviceInfo` skips the UA/IP derivation entirely —
-      // one (user, RP) then reuses a single session via the lookup below.
-      const stableId = stableDeviceKey
+      // one (user, RP) then reuses a single session via the lookup below. An
+      // explicit `deviceId` (e.g. threaded from a FedCM id_token claim) wins
+      // over the derived stable id, letting the caller stamp a unified central
+      // device id verbatim. Precedence: deviceId > stableDeviceKey > UA/IP > random.
+      const stableId = explicitDeviceId ?? (stableDeviceKey
         ? deriveServiceDeviceId(userId, stableDeviceKey)
-        : undefined;
+        : undefined);
       // Pass userId so the derived deviceId is scoped per-user — two users
       // behind the same NAT on the same Chrome no longer collide on the same
       // device-id (security review H1).
