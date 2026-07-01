@@ -1,5 +1,6 @@
 import { deviceSessionStateSchema, safeParseContract, type DeviceSessionState } from '@oxyhq/contracts';
 import { logger } from '../utils/loggerUtils';
+import { getSocketIO } from './socketLoader';
 import type { MinimalSocket } from './socketLoader';
 
 export interface TokenTransport {
@@ -91,5 +92,50 @@ export class SessionClient {
   async addCurrentAccount(): Promise<void> {
     const raw = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
     this.applyState(raw);
+  }
+
+  async start(): Promise<void> {
+    if (this.started) return;
+    this.started = true;
+    this.tokenUnsub = this.host.onTokensChanged((token) => {
+      if (token && this.socket && !this.socket.connected) {
+        this.socket.connect();
+      }
+    });
+    await this.bootstrap();
+    await this.connectSocket();
+  }
+
+  stop(): void {
+    this.started = false;
+    if (this.tokenUnsub) {
+      this.tokenUnsub();
+      this.tokenUnsub = null;
+    }
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+  }
+
+  private async connectSocket(): Promise<void> {
+    const io = await getSocketIO();
+    if (!io) {
+      logger.warn('[SessionClient] no socket.io-client; running REST-only (no realtime sync)', { component: 'SessionClient' });
+      return;
+    }
+    if (!this.started) return; // stopped while the dynamic import was in flight
+    const hasToken = Boolean(this.host.getAccessToken());
+    const socket = io(this.host.getBaseURL(), {
+      transports: ['websocket'],
+      autoConnect: hasToken,
+      auth: (cb: (data: { token: string }) => void) => {
+        cb({ token: this.host.getAccessToken() ?? '' });
+      },
+    });
+    socket.on('session_state', (payload: unknown) => {
+      this.applyState(payload);
+    });
+    this.socket = socket;
   }
 }
