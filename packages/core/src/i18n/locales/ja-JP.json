@@ -207,6 +207,7 @@
   "accountMenu": {
     "label": "アカウントメニュー",
     "manage": "Oxy アカウントを管理",
+    "viewProfile": "プロフィールを表示",
     "addAnother": "別のアカウントを追加",
     "signOutAll": "すべてのアカウントからログアウト",
     "open": "アカウントメニュー",

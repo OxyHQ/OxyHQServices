@@ -207,6 +207,7 @@
   "accountMenu": {
     "label": "账户菜单",
     "manage": "管理您的 Oxy 账户",
+    "viewProfile": "查看个人资料",
     "addAnother": "添加其他账户",
     "signOutAll": "退出所有账户",
     "open": "账户菜单",
