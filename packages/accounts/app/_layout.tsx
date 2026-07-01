@@ -16,9 +16,11 @@ configureReanimatedLogger({
   strict: false,
 });
 
+import type { ReactNode } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
+import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 
 import { useOxy } from '@oxyhq/services';
 
@@ -110,21 +112,41 @@ function RootLayoutInner() {
             theme mode from ThemeModeProvider. */}
         <BloomThemeProvider mode={themeMode}>
           <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
-            <LocaleProvider>
-              <AppHead />
-              {!appIsReady ? (
-                <AppSplashScreen
-                  startFade={startFade}
-                  onFadeComplete={handleSplashFadeComplete}
-                />
-              ) : (
-                <AppStackContent />
-              )}
-            </LocaleProvider>
+            <AppImageResolver>
+              <LocaleProvider>
+                <AppHead />
+                {!appIsReady ? (
+                  <AppSplashScreen
+                    startFade={startFade}
+                    onFadeComplete={handleSplashFadeComplete}
+                  />
+                ) : (
+                  <AppStackContent />
+                )}
+              </LocaleProvider>
+            </AppImageResolver>
           </OxyProvider>
         </BloomThemeProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * Registers the canonical Oxy `ImageResolver` so every Bloom `Avatar` in the
+ * tree (e.g. the sidebar `ProfileButton`) resolves a bare file id to a
+ * variant-aware URL via `oxyServices.getFileDownloadUrl`. Without it, avatars
+ * fall back to rendering initials. Must live inside `OxyProvider` so `useOxy()`
+ * has a client. Defaults the variant to `thumb` for the small avatar surfaces.
+ */
+function AppImageResolver({ children }: { children: ReactNode }) {
+  const { oxyServices } = useOxy();
+  return (
+    <ImageResolverProvider
+      value={(id, variant) => oxyServices.getFileDownloadUrl(id, variant ?? 'thumb')}
+    >
+      {children}
+    </ImageResolverProvider>
   );
 }
 
