@@ -1538,6 +1538,7 @@ app.post('/fedcm/assertion', async (c) => {
   const assertionName = displayNameOf(user.name);
   if (assertionName) payload.name = assertionName;
   if (user.username) payload.preferred_username = user.username;
+  if (user.deviceId) payload.deviceId = user.deviceId;
 
   const token = await createHS256JWT(payload, fedcmTokenSecret);
 
