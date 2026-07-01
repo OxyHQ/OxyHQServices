@@ -72,4 +72,24 @@ export class SessionClient {
     }
     return true;
   }
+
+  async bootstrap(): Promise<void> {
+    const raw = await this.host.makeRequest<unknown>('GET', '/session/device/state', undefined, { cache: false });
+    this.applyState(raw);
+  }
+
+  async switchAccount(accountId: string): Promise<void> {
+    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/switch', { accountId }, { cache: false });
+    this.applyState(raw);
+  }
+
+  async signOut(target: { accountId: string } | { all: true }): Promise<void> {
+    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/signout', target, { cache: false });
+    this.applyState(raw);
+  }
+
+  async addCurrentAccount(): Promise<void> {
+    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
+    this.applyState(raw);
+  }
 }
