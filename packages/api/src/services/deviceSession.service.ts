@@ -54,7 +54,18 @@ class DeviceSessionService {
     input: { accountId: string; sessionId: string; operatedByUserId?: string },
   ): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
+    const existing = (current?.accounts ?? []).find((a) => idToString(a.accountId) === input.accountId);
     const others = (current?.accounts ?? []).filter((a) => idToString(a.accountId) !== input.accountId);
+    // Replacing an account's session (re-add with a new sessionId) must deactivate
+    // the session it displaces — otherwise a live, server-side session is left
+    // dangling with no device-session entry referencing it.
+    if (existing && existing.sessionId !== input.sessionId) {
+      try {
+        await sessionService.deactivateSession(existing.sessionId);
+      } catch (error) {
+        logger.warn('deviceSession.addAccount: deactivate replaced session failed', { sessionId: existing.sessionId, error });
+      }
+    }
     const authuser = lowestFreeAuthuser(others);
     const account = {
       accountId: input.accountId,
@@ -90,6 +101,12 @@ class DeviceSessionService {
     if (!state.activeAccountId) return null;
     const account = state.accounts.find((a) => a.accountId === state.activeAccountId);
     if (!account) return null;
+    // Re-validate before minting a token: for a managed-account session this
+    // re-checks the operator's act_as membership (ensureManagedSessionAuthorized)
+    // and deactivates+rejects a revoked session instead of handing out a token
+    // for an account the caller no longer has authority over.
+    const validated = await sessionService.validateSessionById(account.sessionId, false);
+    if (!validated) return null;
     const token = await sessionService.getAccessToken(account.sessionId);
     if (!token) return null;
     return { accessToken: token.accessToken, expiresAt: token.expiresAt.toISOString() };
@@ -98,8 +115,26 @@ class DeviceSessionService {
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
     if (!current) return this.getState(deviceId);
-    const removing = 'all' in target ? current.accounts ?? [] : (current.accounts ?? []).filter((a) => idToString(a.accountId) === target.accountId);
-    if (!('all' in target) && removing.length === 0) return projectState(current);
+    const allAccounts = current.accounts ?? [];
+
+    let removingIds: Set<string>;
+    if ('all' in target) {
+      removingIds = new Set(allAccounts.map((a) => idToString(a.accountId) ?? ''));
+    } else {
+      const targetPresent = allAccounts.some((a) => idToString(a.accountId) === target.accountId);
+      if (!targetPresent) return projectState(current);
+      removingIds = new Set([target.accountId]);
+      // Cascade: signing out an operator's own account must also remove every
+      // managed/org account that operator switched into on this device (one
+      // level deep — operated accounts can't themselves operate others).
+      for (const a of allAccounts) {
+        if (idToString(a.operatedByUserId) === target.accountId) {
+          removingIds.add(idToString(a.accountId) ?? '');
+        }
+      }
+    }
+
+    const removing = allAccounts.filter((a) => removingIds.has(idToString(a.accountId) ?? ''));
     for (const a of removing) {
       try {
         await sessionService.deactivateSession(a.sessionId);
@@ -107,7 +142,7 @@ class DeviceSessionService {
         logger.warn('deviceSession.signout: deactivate failed', { sessionId: a.sessionId, error });
       }
     }
-    const remaining = 'all' in target ? [] : (current.accounts ?? []).filter((a) => idToString(a.accountId) !== target.accountId);
+    const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
     const updated = await DeviceSession.findOneAndUpdate(
