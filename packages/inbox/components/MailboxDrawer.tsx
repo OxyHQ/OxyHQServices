@@ -6,7 +6,7 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
@@ -17,7 +17,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, OxySignInButton, showSignInModal, AccountMenu, type AccountMenuAnchor } from '@oxyhq/services';
+import { useOxy, OxySignInButton, showSignInModal, ProfileButton } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -48,7 +48,6 @@ import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
-import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
 import { LogoIcon } from '@/assets/logo';
 
@@ -169,44 +168,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [accountMenuAnchor, setAccountMenuAnchor] = useState<AccountMenuAnchor | null>(null);
-
-  // Trigger refs for the two footer account buttons (expanded row + collapsed
-  // avatar). On web we measure the pressed trigger so the popover anchors to
-  // the bottom-left button and opens upward; native ignores the anchor.
-  const expandedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
-  const collapsedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
-
-  const measureAndOpen = useCallback(
-    (ref: React.RefObject<React.ComponentRef<typeof TouchableOpacity> | null>) => {
-      if (Platform.OS !== 'web') {
-        setAccountMenuAnchor(null);
-        setAccountMenuOpen(true);
-        return;
-      }
-      const node = ref.current;
-      if (!node || typeof node.measure !== 'function' || typeof window === 'undefined') {
-        setAccountMenuAnchor(null);
-        setAccountMenuOpen(true);
-        return;
-      }
-      // RN-Web exposes measure() on host views; use the native API.
-      node.measure((_x, _y, _w, _h, pageX, pageY) => {
-        if (typeof pageX !== 'number' || typeof pageY !== 'number') {
-          setAccountMenuAnchor(null);
-        } else {
-          // Panel is 360 wide; keep an 8px gutter on both sides (368 = 360 + 8).
-          const left = Math.min(Math.max(8, pageX), Math.max(8, window.innerWidth - 368));
-          // Anchor the panel's BOTTOM edge 8px above the button's top → opens upward.
-          const bottom = Math.max(8, window.innerHeight - pageY + 8);
-          setAccountMenuAnchor({ left, bottom });
-        }
-        setAccountMenuOpen(true);
-      });
-    },
-    [],
-  );
 
   const resetInboxForAccountChange = useCallback(() => {
     useEmailStore.getState().resetAccountScopedState();
@@ -216,20 +177,14 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     queryClient.removeQueries({ queryKey: ['message'] });
   }, [queryClient]);
 
-  const handleCloseMenu = useCallback(() => {
-    setAccountMenuOpen(false);
-  }, []);
-
   const handleAddAccount = useCallback(() => {
-    setAccountMenuOpen(false);
-    // Open the sign-in modal to authenticate a new account.
-    // OxyContext picks up the new session and AccountMenu reflects it.
+    // Open the sign-in modal to authenticate a new account. OxyContext picks up
+    // the new session and ProfileButton's menu reflects it.
     resetInboxForAccountChange();
     showSignInModal();
   }, [resetInboxForAccountChange]);
 
   const handleNavigateManage = useCallback(() => {
-    setAccountMenuOpen(false);
     router.push('/settings');
     onClose?.();
   }, [router, onClose]);
@@ -344,11 +299,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   // Real email from the active session's user. Never synthesize `username@oxy.so`.
   // When the user has no email on record, fall back to the `@username` handle.
+  // Shown in the header; the footer identity is owned by `ProfileButton`.
   const emailAddress = user?.email || (user?.username ? `@${user.username}` : '');
-  // Render the API's canonical `name.displayName` directly; only fall back to a
-  // neutral default for the signed-out / not-yet-loaded case (display-name
-  // contract — no recomposition from `username`).
-  const displayName = user?.name.displayName ?? 'Account';
 
   // Check if a mailbox route is active
   const isMailboxActive = useCallback(
@@ -636,33 +588,19 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
        * isn't clipped by the home indicator / Android gesture area.
        */}
       {!collapsed && isAuthenticated && (
-        <View style={styles.footerWrapper}>
-          <View
-            style={[
-              styles.footer,
-              { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
-            ]}
-          >
-            <TouchableOpacity
-              ref={expandedAccountBtnRef}
-              style={styles.accountButton}
-              onPress={() => measureAndOpen(expandedAccountBtnRef)}
-              activeOpacity={0.7}
-              accessibilityLabel={`Switch account, signed in as ${displayName}`}
-              accessibilityRole="button"
-            >
-              <Avatar name={displayName} size={32} />
-              <View style={styles.accountInfo}>
-                <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                <Text style={[styles.accountEmail, { color: colors.secondaryText }]} numberOfLines={1}>
-                  {emailAddress}
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="unfold-more-horizontal" size={18} color={colors.secondaryText} />
-            </TouchableOpacity>
-          </View>
+        <View
+          style={[
+            styles.footer,
+            { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
+          ]}
+        >
+          <ProfileButton
+            expanded
+            avatarSize={32}
+            onNavigateManage={handleNavigateManage}
+            onAddAccount={handleAddAccount}
+            onBeforeSessionChange={resetInboxForAccountChange}
+          />
         </View>
       )}
 
@@ -685,34 +623,18 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         <View
           style={[
             styles.footer,
+            styles.collapsedFooter,
             { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
           ]}
         >
-          <TouchableOpacity
-            ref={collapsedAccountBtnRef}
-            style={styles.collapsedAccountButton}
-            onPress={() => measureAndOpen(collapsedAccountBtnRef)}
-            activeOpacity={0.7}
-            accessibilityLabel={`Switch account, signed in as ${displayName}`}
-            accessibilityRole="button"
-          >
-            <Avatar name={displayName} size={32} />
-          </TouchableOpacity>
+          <ProfileButton
+            expanded={false}
+            avatarSize={32}
+            onNavigateManage={handleNavigateManage}
+            onAddAccount={handleAddAccount}
+            onBeforeSessionChange={resetInboxForAccountChange}
+          />
         </View>
-      )}
-
-      {/* Shared account switcher (only mounted when signed-in). Sources its rows
-          from the SDK's useDeviceAccounts — real shared sessions with real
-          names/emails/avatars. Sign out / Sign out all are handled internally. */}
-      {isAuthenticated && (
-        <AccountMenu
-          open={accountMenuOpen}
-          onClose={handleCloseMenu}
-          onNavigateManage={handleNavigateManage}
-          onAddAccount={handleAddAccount}
-          anchor={accountMenuAnchor}
-          onBeforeSessionChange={resetInboxForAccountChange}
-        />
       )}
     </View>
   );
@@ -903,37 +825,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  footerWrapper: {
-    position: 'relative',
-  },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
-  accountButton: {
-    flexDirection: 'row',
+  collapsedFooter: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 10,
-  },
-  collapsedAccountButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  accountInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  accountEmail: {
-    fontSize: 11,
-    marginTop: 1,
   },
 });
