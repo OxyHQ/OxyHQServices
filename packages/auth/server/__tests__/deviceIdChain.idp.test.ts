@@ -11,6 +11,11 @@
  * Backward-compat: when `/session/validate` omits `deviceId` (an older API
  * deployment), the minted `id_token` must carry NO `deviceId` claim at all.
  *
+ * Also covers `POST /fedcm/assertion` — the direct-Chrome per-apex FedCM path
+ * (no `mintSessionForClient` involved) — so its minted `id_token` carries the
+ * SAME `deviceId` claim, unifying the device id across all four token-mint
+ * sites (`/sso`, `/auth/silent`, `/sso/establish`, `/fedcm/assertion`).
+ *
  * Run with `bun test`. Mirrors the stubbing pattern in
  * `server/__tests__/fedcm.idp.test.ts`.
  */
@@ -150,6 +155,60 @@ describe('mintSessionForClient chains central deviceId (via GET /auth/silent)', 
 
     expect(typeof capturedExchangeIdToken).toBe('string');
     const payload = decodeIdTokenPayload(capturedExchangeIdToken as string);
+    expect('deviceId' in payload).toBe(false);
+  });
+});
+
+describe('POST /fedcm/assertion chains central deviceId (Chrome direct-FedCM path)', () => {
+  const WEBIDENTITY = { 'sec-fetch-dest': 'webidentity' } as Record<string, string>;
+
+  it('embeds the deviceId from /session/validate into the minted id_token', async () => {
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: RP_ORIGIN,
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: RP_ORIGIN,
+        nonce: 'rp-nonce-device-assertion',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string };
+    const payload = decodeIdTokenPayload(body.token);
+    expect(payload.deviceId).toBe('dev-central-xyz');
+    // The rest of the assertion contract is untouched.
+    expect(payload.sub).toBe(TEST_USER_ID);
+    expect(payload.aud).toBe(RP_ORIGIN);
+  });
+
+  it('omits the deviceId claim entirely when /session/validate returns no deviceId (backward-compat)', async () => {
+    stubbedDeviceId = undefined;
+    installApiStub();
+
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: RP_ORIGIN,
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: RP_ORIGIN,
+        nonce: 'rp-nonce-no-device-assertion',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string };
+    const payload = decodeIdTokenPayload(body.token);
     expect('deviceId' in payload).toBe(false);
   });
 });
