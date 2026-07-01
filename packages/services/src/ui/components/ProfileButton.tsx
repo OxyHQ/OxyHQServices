@@ -372,7 +372,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                 </View>
                 <View style={chevronStyle}>
                     <MaterialCommunityIcons
-                        name="unfold-more-horizontal"
+                        name="dots-horizontal"
                         size={18}
                         color={colors.textSecondary}
                     />
