@@ -6,6 +6,7 @@ import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
+import sessionDeviceRouter from "./routes/sessionDevice";
 import dotenv from "dotenv";
 import User, { IUser } from "./models/User";
 import { ensureFileSha256LiveUniqueIndex } from "./models/File";
@@ -74,7 +75,7 @@ import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { refreshOriginRegistry } from './config/dynamicOriginRegistry';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
-import { initializeIO } from './utils/socket';
+import { initializeIO, deviceRoomFor } from './utils/socket';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -224,6 +225,7 @@ app.set('io', io);
 interface AuthenticatedSocket extends Socket {
   user?: {
     id: string;
+    deviceId?: string;
     [key: string]: any;
   };
 }
@@ -268,7 +270,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.join(room);
     logger.debug('User joined notification room', { userId: socket.user.id, room });
   }
-  
+
+  const deviceRoom = socket.user ? deviceRoomFor(socket.user) : null;
+  if (deviceRoom) socket.join(deviceRoom);
+
   socket.on('disconnect', () => {
     logger.debug('Socket disconnected', { socketId: socket.id });
   });
@@ -512,6 +517,7 @@ app.use("/profiles", csrfProtection, profilesRouter);
 // the routing topology unambiguous.
 app.use("/users/me/app-data", userRateLimiter, csrfProtection, userDataRouter);
 app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
+app.use("/session/device", userRateLimiter, sessionDeviceRouter);
 app.use("/session", userRateLimiter, csrfProtection, sessionRouter);
 app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);

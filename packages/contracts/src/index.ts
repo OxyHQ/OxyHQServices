@@ -201,3 +201,17 @@ export type {
     LinkPreviewBatchRequest,
     LinkPreviewBatchResponse,
 } from './links';
+
+export {
+    sessionAccountSchema,
+    deviceSessionStateSchema,
+    activeTokenSchema,
+    deviceSessionSyncSchema,
+} from './deviceSession';
+
+export type {
+    SessionAccount,
+    DeviceSessionState,
+    ActiveToken,
+    DeviceSessionSync,
+} from './deviceSession';

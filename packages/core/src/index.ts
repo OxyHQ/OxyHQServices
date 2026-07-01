@@ -562,6 +562,12 @@ export type {
     RunColdBootOptions,
 } from './utils/coldBoot';
 
+// ---------------------------------------------------------------------------
+// Session sync (device-scoped multi-account session client)
+// ---------------------------------------------------------------------------
+export { SessionClient } from './session/SessionClient';
+export type { TokenTransport, SessionClientHost, SessionClientOptions } from './session/SessionClient';
+
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every
 // client SDK. Import them directly from `@oxyhq/contracts`; `@oxyhq/core` does NOT
