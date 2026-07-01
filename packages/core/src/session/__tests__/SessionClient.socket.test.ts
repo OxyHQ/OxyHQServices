@@ -21,7 +21,8 @@ jest.mock('socket.io-client', () => ({ __esModule: true, io: (...args: unknown[]
 import { SessionClient, type SessionClientHost } from '../SessionClient';
 
 const STATE = (rev: number): DeviceSessionState => ({ deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: rev, updatedAt: 1720000000000 });
-const SYNC = (rev: number) => ({ state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } });
+// The server wraps the sync payload in a REST `{ data }` envelope; makeRequest does NOT unwrap it.
+const SYNC = (rev: number) => ({ data: { state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } } });
 
 function makeHost(over: Partial<SessionClientHost> = {}): SessionClientHost {
   return {
@@ -69,6 +70,25 @@ describe('SessionClient socket', () => {
     fakeSocket.trigger('session_state', STATE(9));
     await Promise.resolve();
     expect(makeRequest).toHaveBeenCalledWith('GET', '/session/device/state', undefined, { cache: false });
+    c.stop();
+  });
+
+  it('C1 regression: plants the active token on a socket-pushed switch even when the post-push bootstrap returns the SAME revision as the push', async () => {
+    const setTokens = jest.fn();
+    const makeRequest = jest
+      .fn()
+      .mockResolvedValueOnce(SYNC(1)) // initial bootstrap in start()
+      .mockResolvedValue(SYNC(9)); // post-push bootstrap: same revision as the socket push below
+    const host = makeHost({ makeRequest, setTokens, getCurrentAccountId: () => 'other-account' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    setTokens.mockClear();
+    fakeSocket.trigger('session_state', STATE(9));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(makeRequest).toHaveBeenCalledWith('GET', '/session/device/state', undefined, { cache: false });
+    expect(setTokens).toHaveBeenCalledWith('jwt-9');
     c.stop();
   });
 

@@ -16,7 +16,8 @@ function makeHost(makeRequest: jest.Mock): SessionClientHost {
   };
 }
 
-const SYNC = (rev: number) => ({ state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } });
+// The server wraps the sync payload in a REST `{ data }` envelope; makeRequest does NOT unwrap it.
+const SYNC = (rev: number) => ({ data: { state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } } });
 
 describe('SessionClient REST', () => {
   it('bootstrap GETs /session/device/state and applies it', async () => {
@@ -68,7 +69,7 @@ describe('SessionClient REST', () => {
   });
 
   it('applies state but does not plant a token when activeToken is null', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce({ state: STATE(7), activeToken: null });
+    const makeRequest = jest.fn().mockResolvedValueOnce({ data: { state: STATE(7), activeToken: null } });
     const host = makeHost(makeRequest);
     const c = new SessionClient(host);
     await c.bootstrap();

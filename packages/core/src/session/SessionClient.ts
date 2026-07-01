@@ -81,37 +81,43 @@ export class SessionClient {
     return true;
   }
 
-  /** Validate `{ state, activeToken }`, apply the state, and plant the active token host-side. */
+  /**
+   * Validate `{ state, activeToken }`, apply the state, and plant the active token host-side.
+   * Token-planting is decoupled from whether `applyState` advanced the revision: a socket push
+   * followed by this same `GET /state` fetch returns the SAME revision (applyState no-ops), but
+   * the token still needs to be planted. The account-match guard rejects a stale response for an
+   * account that is no longer active.
+   */
   private applySync(raw: unknown): void {
     const sync = safeParseContract(deviceSessionSyncSchema, raw);
     if (!sync) {
       logger.warn('[SessionClient] discarded invalid session sync');
       return;
     }
-    const applied = this.applyState(sync.state);
-    if (applied && sync.activeToken) {
+    this.applyState(sync.state);
+    if (sync.activeToken && this.state && sync.state.activeAccountId === this.state.activeAccountId) {
       this.host.setTokens(sync.activeToken.accessToken);
     }
   }
 
   async bootstrap(): Promise<void> {
-    const raw = await this.host.makeRequest<unknown>('GET', '/session/device/state', undefined, { cache: false });
-    this.applySync(raw);
+    const res = await this.host.makeRequest<{ data?: unknown }>('GET', '/session/device/state', undefined, { cache: false });
+    this.applySync(res?.data);
   }
 
   async switchAccount(accountId: string): Promise<void> {
-    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/switch', { accountId }, { cache: false });
-    this.applySync(raw);
+    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/switch', { accountId }, { cache: false });
+    this.applySync(res?.data);
   }
 
   async signOut(target: { accountId: string } | { all: true }): Promise<void> {
-    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/signout', target, { cache: false });
-    this.applySync(raw);
+    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/signout', target, { cache: false });
+    this.applySync(res?.data);
   }
 
   async addCurrentAccount(): Promise<void> {
-    const raw = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
-    this.applySync(raw);
+    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/add', undefined, { cache: false });
+    this.applySync(res?.data);
   }
 
   async start(): Promise<void> {

@@ -7,6 +7,8 @@ function makeHost(): SessionClientHost {
     getBaseURL: () => 'http://test.invalid',
     getAccessToken: () => 't',
     onTokensChanged: () => () => undefined,
+    setTokens: jest.fn(),
+    getCurrentAccountId: () => null,
   };
 }
 const STATE = (rev: number, active: string | null = 'a1'): DeviceSessionState => ({
