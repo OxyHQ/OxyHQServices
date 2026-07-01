@@ -379,7 +379,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
 
 /** Bottom-section action row (Add account / Manage / View profile). */
 const ActionRow: React.FC<{
-    icon: string;
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     iconColor: string;
     label: string;
     disabled: boolean;
