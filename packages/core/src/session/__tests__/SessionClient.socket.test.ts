@@ -21,13 +21,16 @@ jest.mock('socket.io-client', () => ({ __esModule: true, io: (...args: unknown[]
 import { SessionClient, type SessionClientHost } from '../SessionClient';
 
 const STATE = (rev: number): DeviceSessionState => ({ deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: rev, updatedAt: 1720000000000 });
+const SYNC = (rev: number) => ({ state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } });
 
 function makeHost(over: Partial<SessionClientHost> = {}): SessionClientHost {
   return {
-    makeRequest: jest.fn().mockResolvedValue(STATE(1)),
+    makeRequest: jest.fn().mockResolvedValue(SYNC(1)),
     getBaseURL: () => 'http://test.invalid',
     getAccessToken: () => 'tok',
     onTokensChanged: () => () => undefined,
+    setTokens: jest.fn(),
+    getCurrentAccountId: () => 'a1',
     ...over,
   };
 }
@@ -54,6 +57,30 @@ describe('SessionClient socket', () => {
     await c.start();
     fakeSocket.trigger('session_state', STATE(9));
     expect(c.getState()?.revision).toBe(9);
+    c.stop();
+  });
+
+  it('fetches the active token via bootstrap when a pushed state changes the active account', async () => {
+    const makeRequest = jest.fn().mockResolvedValue(SYNC(1));
+    const host = makeHost({ makeRequest, getCurrentAccountId: () => 'other-account' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    fakeSocket.trigger('session_state', STATE(9));
+    await Promise.resolve();
+    expect(makeRequest).toHaveBeenCalledWith('GET', '/session/device/state', undefined, { cache: false });
+    c.stop();
+  });
+
+  it('does not re-fetch when the pushed active account matches the host-held account', async () => {
+    const makeRequest = jest.fn().mockResolvedValue(SYNC(1));
+    const host = makeHost({ makeRequest, getCurrentAccountId: () => 'a1' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    fakeSocket.trigger('session_state', STATE(9));
+    await Promise.resolve();
+    expect(makeRequest).not.toHaveBeenCalled();
     c.stop();
   });
 

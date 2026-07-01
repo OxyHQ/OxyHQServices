@@ -6,42 +6,55 @@ const STATE = (rev: number): DeviceSessionState => ({
 });
 
 function makeHost(makeRequest: jest.Mock): SessionClientHost {
-  return { makeRequest, getBaseURL: () => 'http://test.invalid', getAccessToken: () => 't', onTokensChanged: () => () => undefined };
+  return {
+    makeRequest,
+    getBaseURL: () => 'http://test.invalid',
+    getAccessToken: () => 't',
+    onTokensChanged: () => () => undefined,
+    setTokens: jest.fn(),
+    getCurrentAccountId: () => null,
+  };
 }
+
+const SYNC = (rev: number) => ({ state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } });
 
 describe('SessionClient REST', () => {
   it('bootstrap GETs /session/device/state and applies it', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce(STATE(3));
-    const c = new SessionClient(makeHost(makeRequest));
+    const makeRequest = jest.fn().mockResolvedValueOnce(SYNC(3));
+    const host = makeHost(makeRequest);
+    const c = new SessionClient(host);
     await c.bootstrap();
     expect(makeRequest).toHaveBeenCalledWith('GET', '/session/device/state', undefined, { cache: false });
     expect(c.getState()?.revision).toBe(3);
+    expect(host.setTokens).toHaveBeenCalledWith('jwt-3');
   });
 
   it('switchAccount POSTs and applies the returned state', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce(STATE(4));
-    const c = new SessionClient(makeHost(makeRequest));
+    const makeRequest = jest.fn().mockResolvedValueOnce(SYNC(4));
+    const host = makeHost(makeRequest);
+    const c = new SessionClient(host);
     await c.switchAccount('a1');
     expect(makeRequest).toHaveBeenCalledWith('POST', '/session/device/switch', { accountId: 'a1' }, { cache: false });
     expect(c.getState()?.revision).toBe(4);
+    expect(host.setTokens).toHaveBeenCalledWith('jwt-4');
   });
 
   it('signOut one account POSTs { accountId }', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce(STATE(5));
+    const makeRequest = jest.fn().mockResolvedValueOnce(SYNC(5));
     const c = new SessionClient(makeHost(makeRequest));
     await c.signOut({ accountId: 'a1' });
     expect(makeRequest).toHaveBeenCalledWith('POST', '/session/device/signout', { accountId: 'a1' }, { cache: false });
   });
 
   it('signOut all POSTs { all: true }', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce(STATE(6));
+    const makeRequest = jest.fn().mockResolvedValueOnce(SYNC(6));
     const c = new SessionClient(makeHost(makeRequest));
     await c.signOut({ all: true });
     expect(makeRequest).toHaveBeenCalledWith('POST', '/session/device/signout', { all: true }, { cache: false });
   });
 
   it('addCurrentAccount POSTs /session/device/add with no body', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce(STATE(2));
+    const makeRequest = jest.fn().mockResolvedValueOnce(SYNC(2));
     const c = new SessionClient(makeHost(makeRequest));
     await c.addCurrentAccount();
     expect(makeRequest).toHaveBeenCalledWith('POST', '/session/device/add', undefined, { cache: false });
@@ -52,5 +65,14 @@ describe('SessionClient REST', () => {
     const c = new SessionClient(makeHost(makeRequest));
     await c.bootstrap();
     expect(c.getState()).toBeNull();
+  });
+
+  it('applies state but does not plant a token when activeToken is null', async () => {
+    const makeRequest = jest.fn().mockResolvedValueOnce({ state: STATE(7), activeToken: null });
+    const host = makeHost(makeRequest);
+    const c = new SessionClient(host);
+    await c.bootstrap();
+    expect(c.getState()?.revision).toBe(7);
+    expect(host.setTokens).not.toHaveBeenCalled();
   });
 });

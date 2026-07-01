@@ -1,4 +1,9 @@
-import { deviceSessionStateSchema, safeParseContract, type DeviceSessionState } from '@oxyhq/contracts';
+import {
+  deviceSessionStateSchema,
+  deviceSessionSyncSchema,
+  safeParseContract,
+  type DeviceSessionState,
+} from '@oxyhq/contracts';
 import { logger } from '../utils/loggerUtils';
 import { getSocketIO } from './socketLoader';
 import type { MinimalSocket } from './socketLoader';
@@ -13,6 +18,8 @@ export interface SessionClientHost {
   getBaseURL(): string;
   getAccessToken(): string | null;
   onTokensChanged(listener: (token: string | null) => void): () => void;
+  setTokens(accessToken: string): void;
+  getCurrentAccountId(): string | null;
 }
 
 export interface SessionClientOptions {
@@ -74,24 +81,37 @@ export class SessionClient {
     return true;
   }
 
+  /** Validate `{ state, activeToken }`, apply the state, and plant the active token host-side. */
+  private applySync(raw: unknown): void {
+    const sync = safeParseContract(deviceSessionSyncSchema, raw);
+    if (!sync) {
+      logger.warn('[SessionClient] discarded invalid session sync');
+      return;
+    }
+    const applied = this.applyState(sync.state);
+    if (applied && sync.activeToken) {
+      this.host.setTokens(sync.activeToken.accessToken);
+    }
+  }
+
   async bootstrap(): Promise<void> {
     const raw = await this.host.makeRequest<unknown>('GET', '/session/device/state', undefined, { cache: false });
-    this.applyState(raw);
+    this.applySync(raw);
   }
 
   async switchAccount(accountId: string): Promise<void> {
     const raw = await this.host.makeRequest<unknown>('POST', '/session/device/switch', { accountId }, { cache: false });
-    this.applyState(raw);
+    this.applySync(raw);
   }
 
   async signOut(target: { accountId: string } | { all: true }): Promise<void> {
     const raw = await this.host.makeRequest<unknown>('POST', '/session/device/signout', target, { cache: false });
-    this.applyState(raw);
+    this.applySync(raw);
   }
 
   async addCurrentAccount(): Promise<void> {
     const raw = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
-    this.applyState(raw);
+    this.applySync(raw);
   }
 
   async start(): Promise<void> {
@@ -134,7 +154,15 @@ export class SessionClient {
       },
     });
     socket.on('session_state', (payload: unknown) => {
-      this.applyState(payload);
+      const applied = this.applyState(payload);
+      if (applied) {
+        const active = this.state?.activeAccountId ?? null;
+        if (active && active !== this.host.getCurrentAccountId()) {
+          void this.bootstrap().catch((error) => {
+            logger.warn('[SessionClient] post-push token fetch failed', { component: 'SessionClient' }, error);
+          });
+        }
+      }
     });
     this.socket = socket;
   }
