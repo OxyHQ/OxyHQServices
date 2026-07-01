@@ -75,7 +75,7 @@ import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { refreshOriginRegistry } from './config/dynamicOriginRegistry';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
-import { initializeIO } from './utils/socket';
+import { initializeIO, deviceRoomFor } from './utils/socket';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -269,7 +269,10 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     socket.join(room);
     logger.debug('User joined notification room', { userId: socket.user.id, room });
   }
-  
+
+  const deviceRoom = deviceRoomFor(socket.user ?? {});
+  if (deviceRoom) socket.join(deviceRoom);
+
   socket.on('disconnect', () => {
     logger.debug('Socket disconnected', { socketId: socket.id });
   });

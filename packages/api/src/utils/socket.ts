@@ -27,3 +27,7 @@ export function broadcastDeviceState(state: DeviceSessionState): void {
   }
   server.to(`device:${state.deviceId}`).emit('session_state', state);
 }
+
+export function deviceRoomFor(decoded: { deviceId?: string | null }): string | null {
+  return decoded?.deviceId ? `device:${decoded.deviceId}` : null;
+}
