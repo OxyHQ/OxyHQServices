@@ -86,6 +86,15 @@ class DeviceSessionService {
     return projectState(updated);
   }
 
+  async resolveActiveToken(state: DeviceSessionState): Promise<{ accessToken: string; expiresAt: string } | null> {
+    if (!state.activeAccountId) return null;
+    const account = state.accounts.find((a) => a.accountId === state.activeAccountId);
+    if (!account) return null;
+    const token = await sessionService.getAccessToken(account.sessionId);
+    if (!token) return null;
+    return { accessToken: token.accessToken, expiresAt: token.expiresAt.toISOString() };
+  }
+
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
     if (!current) return this.getState(deviceId);

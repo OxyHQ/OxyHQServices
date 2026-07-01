@@ -1,6 +1,7 @@
 const mockFindOne = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 const mockDeactivate = jest.fn();
+const mockGetAccessToken = jest.fn();
 
 jest.mock('../../models/DeviceSession', () => ({
   __esModule: true,
@@ -11,7 +12,10 @@ jest.mock('../../models/DeviceSession', () => ({
 }));
 jest.mock('../session.service', () => ({
   __esModule: true,
-  default: { deactivateSession: (...a: unknown[]) => mockDeactivate(...a) },
+  default: {
+    deactivateSession: (...a: unknown[]) => mockDeactivate(...a),
+    getAccessToken: (...a: unknown[]) => mockGetAccessToken(...a),
+  },
 }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
@@ -81,5 +85,21 @@ describe('switchActive', () => {
   it('returns null when the account is not on the device', async () => {
     mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0 }));
     expect(await deviceSessionService.switchActive('d1', 'ghost')).toBeNull();
+  });
+});
+
+describe('resolveActiveToken', () => {
+  const STATE = { deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: 1, updatedAt: 1720000000000 };
+  it('mints the active account token', async () => {
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'jwt', expiresAt: new Date('2026-07-07T00:00:00.000Z') });
+    expect(await deviceSessionService.resolveActiveToken(STATE as never)).toEqual({ accessToken: 'jwt', expiresAt: '2026-07-07T00:00:00.000Z' });
+    expect(mockGetAccessToken).toHaveBeenCalledWith('s1');
+  });
+  it('returns null when there is no active account', async () => {
+    expect(await deviceSessionService.resolveActiveToken({ ...STATE, activeAccountId: null } as never)).toBeNull();
+  });
+  it('returns null when the session cannot mint a token', async () => {
+    mockGetAccessToken.mockResolvedValueOnce(null);
+    expect(await deviceSessionService.resolveActiveToken(STATE as never)).toBeNull();
   });
 });

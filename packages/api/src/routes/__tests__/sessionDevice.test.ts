@@ -7,6 +7,7 @@ const mockGetState = jest.fn();
 const mockAddAccount = jest.fn();
 const mockSwitchActive = jest.fn();
 const mockSignout = jest.fn();
+const mockResolveActiveToken = jest.fn();
 const mockBroadcast = jest.fn();
 const mockDecodeToken = jest.fn();
 
@@ -28,6 +29,7 @@ jest.mock('../../services/deviceSession.service', () => ({
     addAccount: (...a: unknown[]) => mockAddAccount(...a),
     switchActive: (...a: unknown[]) => mockSwitchActive(...a),
     signout: (...a: unknown[]) => mockSignout(...a),
+    resolveActiveToken: (...a: unknown[]) => mockResolveActiveToken(...a),
   },
 }));
 jest.mock('../../utils/socket', () => ({ broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a) }));
@@ -63,14 +65,18 @@ beforeAll((done) => {
   server = app.listen(0, '127.0.0.1', done);
 });
 afterAll((done) => { server.close(done); });
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockResolveActiveToken.mockResolvedValue({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
+});
 
 describe('GET /session/device/state', () => {
   it('returns the device state', async () => {
     mockGetState.mockResolvedValueOnce(STATE);
     const res = await requestJson(server, 'GET', '/session/device/state');
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual(STATE);
+    expect(res.body.data.state).toEqual(STATE);
+    expect(res.body.data.activeToken).toEqual({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
     expect(mockGetState).toHaveBeenCalledWith('d1');
   });
 });
@@ -82,6 +88,8 @@ describe('POST /session/device/switch', () => {
     expect(res.status).toBe(200);
     expect(mockSwitchActive).toHaveBeenCalledWith('d1', 'a1');
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
+    expect(res.body.data.state).toEqual(STATE);
+    expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });
 
   it('404 when the account is not on the device', async () => {
@@ -100,6 +108,7 @@ describe('POST /session/device/signout', () => {
     expect(res.status).toBe(200);
     expect(mockSignout).toHaveBeenCalledWith('d1', { accountId: 'a1' });
     expect(mockBroadcast).toHaveBeenCalledWith(after);
+    expect(res.body.data.state).toEqual(after);
   });
 
   it('signs out all when { all: true }', async () => {
@@ -118,5 +127,7 @@ describe('POST /session/device/add', () => {
     expect(res.status).toBe(200);
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
+    expect(res.body.data.state).toEqual(STATE);
+    expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });
 });
