@@ -25,6 +25,11 @@ export interface SessionCreateOptions {
    */
   stableDeviceKey?: string;
   /**
+   * An explicit central deviceId, used verbatim (bypasses stableDeviceKey/UA-IP
+   * derivation). Precedence: deviceId > stableDeviceKey > UA/IP > random.
+   */
+  deviceId?: string;
+  /**
    * The OPERATOR user id when this session is minted by switching INTO a managed
    * account (`userId` = the managed account). Recorded on the session for audit
    * and to bind its validity to the operator's `account:act_as` membership.

@@ -292,6 +292,11 @@ interface ResolvedUser {
    */
   name?: UserNameResponse;
   avatar?: string;
+  /**
+   * Central device id from `/session/validate`, chained into minted
+   * assertions for cross-apex device unification.
+   */
+  deviceId?: string;
 }
 
 /**
@@ -379,6 +384,7 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
     if (!user || typeof userId !== 'string' || !userId) return null;
 
     const username = user.username as string | undefined;
+    const deviceId = typeof payload.deviceId === 'string' ? payload.deviceId : undefined;
 
     return {
       id: userId,
@@ -386,6 +392,7 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
       username,
       name: structuredName(user.name, username, userId),
       avatar: user.avatar as string | undefined,
+      ...(deviceId ? { deviceId } : {}),
     };
   } catch {
     return null;
@@ -662,6 +669,7 @@ async function mintSessionForClient(
     const idTokenName = displayNameOf(user.name);
     if (idTokenName) idTokenPayload.name = idTokenName;
     if (user.username) idTokenPayload.preferred_username = user.username;
+    if (user.deviceId) idTokenPayload.deviceId = user.deviceId;
     const idToken = await createHS256JWT(idTokenPayload, fedcmTokenSecret);
 
     // 3. Exchange for a real Oxy session. The API re-verifies everything.
