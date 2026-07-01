@@ -10,6 +10,7 @@ const mockSignout = jest.fn();
 const mockResolveActiveToken = jest.fn();
 const mockBroadcast = jest.fn();
 const mockDecodeToken = jest.fn();
+const mockGetSession = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...a: unknown[]) => mockAuthMiddleware(...a),
@@ -30,6 +31,12 @@ jest.mock('../../services/deviceSession.service', () => ({
     switchActive: (...a: unknown[]) => mockSwitchActive(...a),
     signout: (...a: unknown[]) => mockSignout(...a),
     resolveActiveToken: (...a: unknown[]) => mockResolveActiveToken(...a),
+  },
+}));
+jest.mock('../../services/session.service', () => ({
+  __esModule: true,
+  default: {
+    getSession: (...a: unknown[]) => mockGetSession(...a),
   },
 }));
 jest.mock('../../utils/socket', () => ({ broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a) }));
@@ -68,6 +75,7 @@ afterAll((done) => { server.close(done); });
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveActiveToken.mockResolvedValue({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
+  mockGetSession.mockResolvedValue(null);
 });
 
 describe('GET /session/device/state', () => {
@@ -83,7 +91,7 @@ describe('GET /session/device/state', () => {
 
 describe('POST /session/device/switch', () => {
   it('switches active account and broadcasts', async () => {
-    mockSwitchActive.mockResolvedValueOnce(STATE);
+    mockSwitchActive.mockResolvedValueOnce({ ok: true, state: STATE });
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'a1' });
     expect(res.status).toBe(200);
     expect(mockSwitchActive).toHaveBeenCalledWith('d1', 'a1');
@@ -93,9 +101,17 @@ describe('POST /session/device/switch', () => {
   });
 
   it('404 when the account is not on the device', async () => {
-    mockSwitchActive.mockResolvedValueOnce(null);
+    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'not_found' });
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'ghost' });
     expect(res.status).toBe(404);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('403 when the target account session is not authorized (e.g. revoked act_as membership)', async () => {
+    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'unauthorized' });
+    const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'org1' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Account not authorized');
     expect(mockBroadcast).not.toHaveBeenCalled();
   });
 });
@@ -125,9 +141,25 @@ describe('POST /session/device/add', () => {
     mockAddAccount.mockResolvedValueOnce(STATE);
     const res = await requestJson(server, 'POST', '/session/device/add', {});
     expect(res.status).toBe(200);
+    expect(mockGetSession).toHaveBeenCalledWith('s1', true);
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
     expect(res.body.data.state).toEqual(STATE);
     expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
+  });
+
+  it('passes the operator id through to addAccount for a managed-account session', async () => {
+    mockGetSession.mockResolvedValueOnce({ operatedByUserId: { toString: () => 'op1' } });
+    mockAddAccount.mockResolvedValueOnce(STATE);
+    const res = await requestJson(server, 'POST', '/session/device/add', {});
+    expect(res.status).toBe(200);
+    expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1', operatedByUserId: 'op1' });
+  });
+
+  it('does not forward operatedByUserId for an ordinary first-party session', async () => {
+    mockGetSession.mockResolvedValueOnce({ operatedByUserId: null });
+    mockAddAccount.mockResolvedValueOnce(STATE);
+    await requestJson(server, 'POST', '/session/device/add', {});
+    expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
   });
 });

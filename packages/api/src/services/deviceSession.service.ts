@@ -33,6 +33,10 @@ function lowestFreeAuthuser(accounts: IDeviceSessionAccount[]): number {
   return i;
 }
 
+export type SwitchActiveResult =
+  | { ok: true; state: DeviceSessionState }
+  | { ok: false; reason: 'not_found' | 'unauthorized' };
+
 class DeviceSessionService {
   private async load(deviceId: string): Promise<IDeviceSession | null> {
     return DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
@@ -40,7 +44,7 @@ class DeviceSessionService {
 
   async getState(deviceId: string): Promise<DeviceSessionState> {
     const existing = await this.load(deviceId);
-    if (existing) return projectState(existing);
+    if (existing) return this.healActiveAccount(existing);
     const created = await DeviceSession.findOneAndUpdate(
       { deviceId },
       { $setOnInsert: { deviceId, accounts: [], activeAccountId: null, revision: 0 } },
@@ -49,12 +53,50 @@ class DeviceSessionService {
     return projectState(created as IDeviceSession);
   }
 
+  // Self-heals a device's active account when it is a managed (act_as)
+  // account whose operator membership has since been revoked.
+  // `resolveActiveToken` already refuses to mint a token for such an account,
+  // but without this the dead account keeps sitting in `accounts`/
+  // `activeAccountId` forever — the client would durably render "logged in
+  // as <org>" while holding the previous account's bearer. One pass only:
+  // drop the revoked account via the existing signout cascade and return the
+  // healed state; a newly-elected active account is left for the *next*
+  // getState call to re-validate rather than re-checked recursively here.
+  // Non-managed (personal) active accounts are never touched by this path —
+  // a personal account with a transiently-unresolvable access token must not
+  // be dropped, only a managed account whose act_as membership check failed.
+  private async healActiveAccount(doc: IDeviceSession): Promise<DeviceSessionState> {
+    const activeId = idToString(doc.activeAccountId);
+    if (!activeId) return projectState(doc);
+    const active = (doc.accounts ?? []).find((a) => idToString(a.accountId) === activeId);
+    const operatedBy = active ? idToString(active.operatedByUserId ?? null) : null;
+    if (!active || !operatedBy) return projectState(doc);
+    const validated = await sessionService.validateSessionById(active.sessionId, false);
+    if (validated) return projectState(doc);
+    logger.info('deviceSession.getState: dropping revoked managed active account', {
+      deviceId: doc.deviceId,
+      accountId: activeId,
+    });
+    return this.signout(doc.deviceId, { accountId: activeId });
+  }
+
   async addAccount(
     deviceId: string,
     input: { accountId: string; sessionId: string; operatedByUserId?: string },
   ): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
+    const existing = (current?.accounts ?? []).find((a) => idToString(a.accountId) === input.accountId);
     const others = (current?.accounts ?? []).filter((a) => idToString(a.accountId) !== input.accountId);
+    // Replacing an account's session (re-add with a new sessionId) must deactivate
+    // the session it displaces — otherwise a live, server-side session is left
+    // dangling with no device-session entry referencing it.
+    if (existing && existing.sessionId !== input.sessionId) {
+      try {
+        await sessionService.deactivateSession(existing.sessionId);
+      } catch (error) {
+        logger.warn('deviceSession.addAccount: deactivate replaced session failed', { sessionId: existing.sessionId, error });
+      }
+    }
     const authuser = lowestFreeAuthuser(others);
     const account = {
       accountId: input.accountId,
@@ -74,22 +116,39 @@ class DeviceSessionService {
     return projectState(updated as IDeviceSession);
   }
 
-  async switchActive(deviceId: string, accountId: string): Promise<DeviceSessionState | null> {
+  async switchActive(deviceId: string, accountId: string): Promise<SwitchActiveResult> {
     const current = await this.load(deviceId);
-    if (!current || !(current.accounts ?? []).some((a) => idToString(a.accountId) === accountId)) return null;
+    const target = (current?.accounts ?? []).find((a) => idToString(a.accountId) === accountId);
+    if (!current || !target) return { ok: false, reason: 'not_found' };
+
+    // Re-validate the target account's session BEFORE committing the switch.
+    // For a managed account this re-checks the operator's act_as membership
+    // (ensureManagedSessionAuthorized) and rejects the switch instead of
+    // durably pointing the device at an account the caller no longer has
+    // authority over (see resolveActiveToken, which does the same check on
+    // read but can't undo an already-committed activeAccountId).
+    const validated = await sessionService.validateSessionById(target.sessionId, false);
+    if (!validated) return { ok: false, reason: 'unauthorized' };
+
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },
       { $set: { activeAccountId: accountId }, $inc: { revision: 1 } },
       { new: true },
     ).lean<IDeviceSession>();
-    if (!updated) return null;
-    return projectState(updated);
+    if (!updated) return { ok: false, reason: 'not_found' };
+    return { ok: true, state: projectState(updated) };
   }
 
   async resolveActiveToken(state: DeviceSessionState): Promise<{ accessToken: string; expiresAt: string } | null> {
     if (!state.activeAccountId) return null;
     const account = state.accounts.find((a) => a.accountId === state.activeAccountId);
     if (!account) return null;
+    // Re-validate before minting a token: for a managed-account session this
+    // re-checks the operator's act_as membership (ensureManagedSessionAuthorized)
+    // and deactivates+rejects a revoked session instead of handing out a token
+    // for an account the caller no longer has authority over.
+    const validated = await sessionService.validateSessionById(account.sessionId, false);
+    if (!validated) return null;
     const token = await sessionService.getAccessToken(account.sessionId);
     if (!token) return null;
     return { accessToken: token.accessToken, expiresAt: token.expiresAt.toISOString() };
@@ -98,8 +157,26 @@ class DeviceSessionService {
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
     if (!current) return this.getState(deviceId);
-    const removing = 'all' in target ? current.accounts ?? [] : (current.accounts ?? []).filter((a) => idToString(a.accountId) === target.accountId);
-    if (!('all' in target) && removing.length === 0) return projectState(current);
+    const allAccounts = current.accounts ?? [];
+
+    let removingIds: Set<string>;
+    if ('all' in target) {
+      removingIds = new Set(allAccounts.map((a) => idToString(a.accountId) ?? ''));
+    } else {
+      const targetPresent = allAccounts.some((a) => idToString(a.accountId) === target.accountId);
+      if (!targetPresent) return projectState(current);
+      removingIds = new Set([target.accountId]);
+      // Cascade: signing out an operator's own account must also remove every
+      // managed/org account that operator switched into on this device (one
+      // level deep — operated accounts can't themselves operate others).
+      for (const a of allAccounts) {
+        if (idToString(a.operatedByUserId) === target.accountId) {
+          removingIds.add(idToString(a.accountId) ?? '');
+        }
+      }
+    }
+
+    const removing = allAccounts.filter((a) => removingIds.has(idToString(a.accountId) ?? ''));
     for (const a of removing) {
       try {
         await sessionService.deactivateSession(a.sessionId);
@@ -107,7 +184,7 @@ class DeviceSessionService {
         logger.warn('deviceSession.signout: deactivate failed', { sessionId: a.sessionId, error });
       }
     }
-    const remaining = 'all' in target ? [] : (current.accounts ?? []).filter((a) => idToString(a.accountId) !== target.accountId);
+    const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
     const updated = await DeviceSession.findOneAndUpdate(

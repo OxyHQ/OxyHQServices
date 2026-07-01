@@ -4,6 +4,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
 import deviceSessionService from '../services/deviceSession.service';
+import sessionService from '../services/session.service';
 import { broadcastDeviceState } from '../utils/socket';
 import { asyncHandler } from '../utils/asyncHandler';
 
@@ -39,7 +40,16 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
   const session = resolveCallerSession(req);
   const accountId = req.user?._id?.toString();
   if (!session?.deviceId || !accountId || !session.sessionId) { res.status(401).json({ error: 'Invalid session' }); return; }
-  const state = await deviceSessionService.addAccount(session.deviceId, { accountId, sessionId: session.sessionId });
+  // The bearer JWT does not carry `operatedByUserId` (it is session-doc-only),
+  // so a managed-account sign-in must be resolved from the session record
+  // itself to bind the device-session entry to its operator.
+  const sessionDoc = await sessionService.getSession(session.sessionId, true);
+  const operatedByUserId = sessionDoc?.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
+  const state = await deviceSessionService.addAccount(session.deviceId, {
+    accountId,
+    sessionId: session.sessionId,
+    ...(operatedByUserId ? { operatedByUserId } : {}),
+  });
   broadcastDeviceState(state);
   res.json({ data: await withActiveToken(state) });
 }));
@@ -49,10 +59,14 @@ router.post('/switch', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { accountId } = req.body ?? {};
   if (!deviceId) { res.status(401).json({ error: 'No device' }); return; }
   if (!accountId) { res.status(400).json({ error: 'accountId required' }); return; }
-  const state = await deviceSessionService.switchActive(deviceId, accountId);
-  if (!state) { res.status(404).json({ error: 'Account not on this device' }); return; }
-  broadcastDeviceState(state);
-  res.json({ data: await withActiveToken(state) });
+  const outcome = await deviceSessionService.switchActive(deviceId, accountId);
+  if (!outcome.ok) {
+    if (outcome.reason === 'unauthorized') { res.status(403).json({ error: 'Account not authorized' }); return; }
+    res.status(404).json({ error: 'Account not on this device' });
+    return;
+  }
+  broadcastDeviceState(outcome.state);
+  res.json({ data: await withActiveToken(outcome.state) });
 }));
 
 router.post('/signout', asyncHandler(async (req: AuthRequest, res: Response) => {
