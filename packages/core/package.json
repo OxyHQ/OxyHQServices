@@ -136,7 +136,7 @@
     "expo-crypto": "~56.0.3",
     "expo-secure-store": "~56.0.4",
     "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
+    "express-rate-limit": "^8.5.2",
     "release-it": "^19.0.6",
     "typescript": "^5.9.2"
   }
