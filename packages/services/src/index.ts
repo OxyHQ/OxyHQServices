@@ -22,7 +22,6 @@
  */
 
 /// <reference path="./types/react-native-classname.d.ts" />
-/// <reference path="./types/react-native-web-style.d.ts" />
 
 import { setPlatformOS, type PlatformOS } from '@oxyhq/core';
 import { Platform } from 'react-native';
@@ -62,7 +61,6 @@ export {
 // ---------------------------------------------------------------------------
 // Session / asset hooks
 // ---------------------------------------------------------------------------
-export { useSessionSocket } from './ui/hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 export { useFileDownloadUrl } from './ui/hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './ui/hooks/useFollow';
