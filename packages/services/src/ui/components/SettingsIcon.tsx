@@ -5,7 +5,7 @@ import { darkenColor } from '../utils/colorUtils';
 
 interface SettingsIconProps {
     /** MaterialCommunityIcons icon name */
-    name: string;
+    name: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     /** Background color for the circle */
     color: string;
     /** Icon size (default 14, fits bloom's 20x20 container) */
@@ -26,7 +26,7 @@ const SettingsIconComponent: React.FC<SettingsIconProps> = ({
     size = 20,
 }) => (
     <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: color }]}>
-        <MaterialCommunityIcons name={name as any} size={iconSize} color={darkenColor(color)} />
+        <MaterialCommunityIcons name={name} size={iconSize} color={darkenColor(color)} />
     </View>
 );
 

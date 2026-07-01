@@ -1,4 +1,6 @@
+import type React from 'react';
 import type { Animated } from 'react-native';
+import type { Ionicons } from '@expo/vector-icons';
 
 export type PaymentItem = {
     type: 'product' | 'subscription' | 'service' | 'fee' | string;
@@ -25,7 +27,7 @@ export interface CardDetails {
 export interface PaymentMethod {
     key: string;
     label: string;
-    icon: string;
+    icon: React.ComponentProps<typeof Ionicons>['name'];
     description: string;
 }
 

@@ -211,6 +211,14 @@ export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/Accoun
 export { default as AccountMenuButton } from './ui/components/AccountMenuButton';
 export type { AccountMenuButtonProps } from './ui/components/AccountMenuButton';
 
+// Sidebar account button + its device-account switcher menu (Bluesky-style
+// ProfileCard). `ProfileButton` owns its own open state + anchor measurement
+// and opens `ProfileMenu` upward from a sidebar footer.
+export { default as ProfileButton } from './ui/components/ProfileButton';
+export type { ProfileButtonProps } from './ui/components/ProfileButton';
+export { default as ProfileMenu } from './ui/components/ProfileMenu';
+export type { ProfileMenuProps, ProfileMenuAnchor } from './ui/components/ProfileMenu';
+
 // Unified account switcher (device sign-ins + account graph). `AccountMenuButton`
 // opens this; the `AccountSwitcherView` body also backs the `AccountSwitcher`
 // bottom-sheet route.

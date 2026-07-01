@@ -12,7 +12,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { normalizeTheme } from '@oxyhq/core';
 import { packageInfo } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { H2, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
@@ -38,7 +38,7 @@ const LAST_STEP_INDEX = TOTAL_STEPS - 1;
 const SUCCESS_RESET_DELAY_MS = 3000;
 
 /** Maps each feedback type to a Bloom theme role + MaterialCommunityIcons glyph. */
-const TYPE_ICON_GLYPH: Record<FeedbackData['type'], string> = {
+const TYPE_ICON_GLYPH: Record<FeedbackData['type'], React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
     bug: 'bug',
     feature: 'lightbulb-on',
     general: 'chat',
@@ -46,7 +46,7 @@ const TYPE_ICON_GLYPH: Record<FeedbackData['type'], string> = {
 };
 
 /** Maps each priority level to a MaterialCommunityIcons glyph. */
-const PRIORITY_ICON_GLYPH: Record<FeedbackData['priority'], string> = {
+const PRIORITY_ICON_GLYPH: Record<FeedbackData['priority'], React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
     low: 'arrow-down',
     medium: 'minus',
     high: 'arrow-up',
