@@ -10,10 +10,7 @@
  * resolve the per-apex IdP `auth.mention.earth`.
  */
 import type { OxyServices } from '@oxyhq/core';
-import {
-  mintSessionViaPerApexIframe,
-  selectActiveRefreshAccount,
-} from '../../src/ui/context/silentSessionRestore';
+import { mintSessionViaPerApexIframe } from '../../src/ui/context/silentSessionRestore';
 
 interface SilentStub {
   silentSignIn: jest.Mock;
@@ -46,25 +43,5 @@ describe('mintSessionViaPerApexIframe', () => {
 
     expect(await mintSessionViaPerApexIframe(asOxy(noUser), 4000)).toBeNull();
     expect(await mintSessionViaPerApexIframe(asOxy(noSession), 4000)).toBeNull();
-  });
-});
-
-describe('selectActiveRefreshAccount', () => {
-  const accounts = [
-    { authuser: 0, accessToken: 'T0' },
-    { authuser: 1, accessToken: 'T1' },
-    { authuser: 2, accessToken: 'T2' },
-  ];
-
-  it('picks the persisted authuser slot when it matches a returned account', () => {
-    expect(selectActiveRefreshAccount(accounts, 1)).toBe(accounts[1]);
-  });
-
-  it('falls back to the lowest slot ([0]) when no authuser is persisted', () => {
-    expect(selectActiveRefreshAccount(accounts, null)).toBe(accounts[0]);
-  });
-
-  it('falls back to the lowest slot ([0]) when the persisted authuser is absent', () => {
-    expect(selectActiveRefreshAccount(accounts, 9)).toBe(accounts[0]);
   });
 });

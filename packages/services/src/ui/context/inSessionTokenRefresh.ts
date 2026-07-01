@@ -15,10 +15,10 @@
  *
  *  1. {@link createInSessionRefreshHandler} — an `AuthRefreshHandler` installed
  *     on the owner client. It re-mints a fresh access token WITHOUT a page
- *     reload by composing the SAME silent-restore primitives cold boot uses
- *     ({@link mintSessionViaPerApexIframe}, {@link selectActiveRefreshAccount}) —
- *     not a copy. The linked client (`createLinkedClient`) inherits the fix for
- *     free: its refresh delegates back to the owner's `refreshAccessToken`.
+ *     reload by composing the SAME silent-restore primitive cold boot uses
+ *     ({@link mintSessionViaPerApexIframe}) — not a copy. The linked client
+ *     (`createLinkedClient`) inherits the fix for free: its refresh delegates
+ *     back to the owner's `refreshAccessToken`.
  *
  *  2. {@link startTokenRefreshScheduler} — a proactive scheduler that refreshes
  *     ~{@link TOKEN_REFRESH_LEAD_MS} before expiry (and on web tab-focus / native
@@ -29,6 +29,14 @@
  * (single in-flight `tokenRefreshPromise` + cooldown) — this module does not
  * reimplement them, so the timer / foreground / per-request triggers collapse to
  * one network attempt (no refresh storm).
+ *
+ * NOTE (session-sync cutover, Task 5): the web arm chain used to fall through
+ * to a same-apex `oxy_rt` refresh-cookie arm (`refreshAllSessions` +
+ * `selectActiveRefreshAccount`). That arm is DELETED — the device account set
+ * is now server-authoritative via `SessionClient` (`@oxyhq/core`), which
+ * `OxyContext` bootstraps/reprojects independently of in-session token
+ * refresh. `selectActiveRefreshAccount` had no other caller and was deleted
+ * with it.
  */
 import type {
   OxyServices,
@@ -38,8 +46,7 @@ import type {
 import { logger as loggerUtil } from '@oxyhq/core';
 import { AppState, type AppStateStatus } from 'react-native';
 import { isWebBrowser } from '../hooks/useWebSSO';
-import { readActiveAuthuser } from '../utils/activeAuthuser';
-import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silentSessionRestore';
+import { mintSessionViaPerApexIframe } from './silentSessionRestore';
 
 /**
  * Per-arm fail-fast budget (ms) for the web first-party `/auth/silent` iframe
@@ -50,14 +57,6 @@ import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silen
  * returns well before this.
  */
 const SILENT_IFRAME_REFRESH_TIMEOUT = 4000;
-
-/**
- * Per-arm fail-fast budget (ms) for the same-apex refresh-cookie arm
- * (`refreshAllSessions`). On a cross-apex RP the `Domain=oxy.so` cookie never
- * reaches `api.<apex>`, so this returns `{accounts:[]}` quickly; the bound only
- * matters if that endpoint stalls.
- */
-const COOKIE_REFRESH_TIMEOUT = 4000;
 
 /**
  * Lead time (ms) before access-token expiry at which the proactive scheduler
@@ -95,17 +94,12 @@ type RefreshArm = () => Promise<string | null>;
  *        (shared verbatim with cold boot). The durable cross-apex path; also
  *        covers `*.oxy.so` (the per-apex host IS the central host there).
  *     2. FedCM silent re-auth (Chrome) — `silentSignInWithFedCM`.
- *     3. Same-apex refresh cookie — `refreshAllSessions` + the shared
- *        {@link selectActiveRefreshAccount}; plant the active account's rotated
- *        token. On a cross-apex RP it returns `{accounts:[]}` (clean no-op).
- *        Unlike the cold-boot cookie restore this does NOT rebuild multi-session
- *        state — an in-session refresh only needs a fresh bearer.
  *
  * NO RECURSION: no arm issues a request through the authed client's
  * `refreshAccessToken` path. The iframe/FedCM transports are postMessage /
  * credential APIs; the follow-up `/session/user` fetch inside `silentSignIn`
  * runs against the just-planted FULL-TTL token (≫ the preflight lead), so it
- * never re-enters the refresh path; `refreshAllSessions` uses a raw `fetch`.
+ * never re-enters the refresh path.
  */
 export function createInSessionRefreshHandler(oxyServices: OxyServices): AuthRefreshHandler {
   const runArm = async (label: string, reason: AuthRefreshReason, arm: RefreshArm): Promise<string | null> => {
@@ -134,15 +128,6 @@ export function createInSessionRefreshHandler(oxyServices: OxyServices): AuthRef
         return null;
       }
       return (await oxyServices.silentSignInWithFedCM?.()) ? oxyServices.getAccessToken() : null;
-    }],
-    ['refresh-cookie', async () => {
-      const snapshot = await oxyServices.refreshAllSessions({ timeout: COOKIE_REFRESH_TIMEOUT });
-      if (snapshot.accounts.length === 0) {
-        return null;
-      }
-      const active = selectActiveRefreshAccount(snapshot.accounts, readActiveAuthuser());
-      oxyServices.httpService.setTokens(active.accessToken);
-      return oxyServices.getAccessToken();
     }],
   ];
 
