@@ -225,6 +225,7 @@ app.set('io', io);
 interface AuthenticatedSocket extends Socket {
   user?: {
     id: string;
+    deviceId?: string;
     [key: string]: any;
   };
 }
@@ -270,7 +271,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
     logger.debug('User joined notification room', { userId: socket.user.id, room });
   }
 
-  const deviceRoom = deviceRoomFor(socket.user ?? {});
+  const deviceRoom = socket.user ? deviceRoomFor(socket.user) : null;
   if (deviceRoom) socket.join(deviceRoom);
 
   socket.on('disconnect', () => {
