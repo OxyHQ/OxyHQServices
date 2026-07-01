@@ -191,7 +191,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         const signInLabel = t('common.actions.signIn') || 'Sign in';
         return (
             <Pressable
-                className={`flex-row items-center gap-3 rounded-full px-2 py-2 ${className ?? ''}`}
+                className={`${expanded ? 'w-full ' : ''}flex-row items-center gap-3 rounded-full px-2 py-2 ${className ?? ''}`}
                 style={style}
                 onPress={() => { void signIn(); }}
                 accessibilityRole="button"
@@ -349,10 +349,10 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         : undefined;
 
     return (
-        <View className={className} style={style}>
+        <View className={`w-full ${className ?? ''}`} style={style}>
             <Pressable
                 ref={triggerRef}
-                className="flex-row items-center gap-3 rounded-full px-2 py-2"
+                className="w-full flex-row items-center gap-3 rounded-full px-2 py-2"
                 style={rowStyle}
                 onPress={openMenu}
                 accessibilityRole="button"

@@ -62,7 +62,7 @@ export interface ProfileMenuProps {
  * Renders as an upward-opening popover anchored to the trigger on web, and a
  * bottom-sheet style modal on native.
  */
-const ProfileMenu: React.FC<ProfileMenuProps> = ({
+const ProfileMenuBody: React.FC<ProfileMenuProps> = ({
     open,
     onClose,
     anchor,
@@ -411,6 +411,21 @@ const styles = {
     nativeScrim: {
         backgroundColor: 'rgba(0,0,0,0.32)',
     } satisfies ViewStyle,
+};
+
+/**
+ * Public wrapper: renders nothing — and runs NO hooks — until `open`. Mounting
+ * the body only while open keeps the account hooks (`useDeviceAccounts` /
+ * refresh-all, Bloom dialog/toast controls) off the render path when the menu is
+ * closed, which is every time the sidebar or native drawer mounts
+ * `ProfileButton`. A hook that is unsafe on a given platform (e.g. throws during
+ * a native render) therefore never runs unless the user actually opens the menu.
+ */
+const ProfileMenu: React.FC<ProfileMenuProps> = (props) => {
+    if (!props.open) {
+        return null;
+    }
+    return <ProfileMenuBody {...props} />;
 };
 
 export default ProfileMenu;
