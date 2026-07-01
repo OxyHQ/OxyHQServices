@@ -14,6 +14,13 @@ function resolveCallerDeviceId(req: AuthRequest): string | null {
   return decoded?.deviceId ?? null;
 }
 
+function resolveCallerSession(req: AuthRequest): { deviceId: string; sessionId: string } | null {
+  const token = extractTokenFromRequest(req);
+  const decoded = token ? decodeToken(token) : null;
+  if (!decoded?.deviceId || !decoded?.sessionId) return null;
+  return { deviceId: decoded.deviceId, sessionId: decoded.sessionId };
+}
+
 router.use(requireSameSiteOrigin, authMiddleware);
 
 router.get('/state', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -23,11 +30,10 @@ router.get('/state', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const deviceId = resolveCallerDeviceId(req);
-  const { accountId, sessionId, operatedByUserId } = req.body ?? {};
-  if (!deviceId) { res.status(401).json({ error: 'No device' }); return; }
-  if (!accountId || !sessionId) { res.status(400).json({ error: 'accountId and sessionId required' }); return; }
-  const state = await deviceSessionService.addAccount(deviceId, { accountId, sessionId, operatedByUserId });
+  const session = resolveCallerSession(req);
+  const accountId = req.user?._id?.toString();
+  if (!session?.deviceId || !accountId || !session.sessionId) { res.status(401).json({ error: 'Invalid session' }); return; }
+  const state = await deviceSessionService.addAccount(session.deviceId, { accountId, sessionId: session.sessionId });
   broadcastDeviceState(state);
   res.json({ data: state });
 }));

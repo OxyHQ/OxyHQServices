@@ -114,9 +114,9 @@ describe('POST /session/device/signout', () => {
 describe('POST /session/device/add', () => {
   it('adds an account and broadcasts', async () => {
     mockAddAccount.mockResolvedValueOnce(STATE);
-    const res = await requestJson(server, 'POST', '/session/device/add', { accountId: 'a1', sessionId: 's1' });
+    const res = await requestJson(server, 'POST', '/session/device/add', {});
     expect(res.status).toBe(200);
-    expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: 'a1', sessionId: 's1', operatedByUserId: undefined });
+    expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
   });
 });

@@ -82,13 +82,15 @@ class DeviceSessionService {
       { $set: { activeAccountId: accountId }, $inc: { revision: 1 } },
       { new: true },
     ).lean<IDeviceSession>();
-    return projectState(updated as IDeviceSession);
+    if (!updated) return null;
+    return projectState(updated);
   }
 
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {
     const current = await this.load(deviceId);
     if (!current) return this.getState(deviceId);
     const removing = 'all' in target ? current.accounts ?? [] : (current.accounts ?? []).filter((a) => idToString(a.accountId) === target.accountId);
+    if (!('all' in target) && removing.length === 0) return projectState(current);
     for (const a of removing) {
       try {
         await sessionService.deactivateSession(a.sessionId);
