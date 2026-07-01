@@ -1,4 +1,4 @@
-import { deviceSessionStateSchema, sessionAccountSchema, safeParseContract } from '../index';
+import { deviceSessionStateSchema, sessionAccountSchema, deviceSessionSyncSchema, safeParseContract } from '../index';
 
 describe('deviceSessionStateSchema', () => {
   const account = { accountId: 'a1', sessionId: 's1', authuser: 0 };
@@ -25,5 +25,19 @@ describe('deviceSessionStateSchema', () => {
   it('rejects a state missing revision', () => {
     const { revision, ...noRev } = state;
     expect(safeParseContract(deviceSessionStateSchema, noRev)).toBeNull();
+  });
+});
+
+describe('deviceSessionSyncSchema', () => {
+  const state = { deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: 1, updatedAt: 1720000000000 };
+  it('parses { state, activeToken }', () => {
+    const v = { state, activeToken: { accessToken: 'jwt', expiresAt: '2026-07-07T00:00:00.000Z' } };
+    expect(safeParseContract(deviceSessionSyncSchema, v)).toEqual(v);
+  });
+  it('accepts activeToken=null', () => {
+    expect(safeParseContract(deviceSessionSyncSchema, { state, activeToken: null })?.activeToken).toBeNull();
+  });
+  it('rejects a state-less sync', () => {
+    expect(safeParseContract(deviceSessionSyncSchema, { activeToken: null })).toBeNull();
   });
 });

@@ -15,5 +15,17 @@ export const deviceSessionStateSchema = z.object({
   updatedAt: z.number(),
 });
 
+export const activeTokenSchema = z.object({
+  accessToken: z.string(),
+  expiresAt: z.string(),
+});
+
+export const deviceSessionSyncSchema = z.object({
+  state: deviceSessionStateSchema,
+  activeToken: activeTokenSchema.nullable(),
+});
+
 export type SessionAccount = z.infer<typeof sessionAccountSchema>;
 export type DeviceSessionState = z.infer<typeof deviceSessionStateSchema>;
+export type ActiveToken = z.infer<typeof activeTokenSchema>;
+export type DeviceSessionSync = z.infer<typeof deviceSessionSyncSchema>;
