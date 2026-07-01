@@ -102,7 +102,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     }, [imageDimensions, containerWidth]);
 
     const fileDetailItems = useMemo(() => {
-        const items: Array<{ id: string; iconName: string; iconColor: string; title: string; description: string }> = [
+        const items: Array<{ id: string; iconName: React.ComponentProps<typeof MaterialCommunityIcons>['name']; iconColor: string; title: string; description: string }> = [
             {
                 id: 'filename',
                 iconName: 'file-document',
