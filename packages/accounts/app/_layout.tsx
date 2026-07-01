@@ -1,6 +1,7 @@
 import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
+import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
@@ -31,10 +32,20 @@ import { AppInitializer } from '@/lib/appInitializer';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
-import * as SplashScreen from 'expo-splash-screen';
+import {
+  preventNativeSplashAutoHide,
+  useHideNativeSplashWhenReady,
+} from '@oxyhq/expo-splash';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete
-SplashScreen.preventAutoHideAsync();
+// NATIVE ONLY: hold the OS splash so it stays visible until the app has finished
+// running init, then hide it once `appIsReady` flips (via
+// `useHideNativeSplashWhenReady`). This makes the native OS splash the SINGLE
+// splash on native — the Oxy mark (white silhouette) centered on the dark brand
+// background with the Oxy symbol pinned to the bottom (configured by
+// `@oxyhq/expo-splash` in app.config.js). The custom `AppSplashScreen` React
+// overlay is gated to web only. No-op on web (the shared helper guards
+// `Platform.OS === 'web'`).
+preventNativeSplashAutoHide();
 
 // Get API URL from environment variable with fallback
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
@@ -88,9 +99,34 @@ function RootLayoutInner() {
     return result;
   }, []);
 
-  // Derive splash progression from state
+  // Derive the web splash fade trigger from state. `startFade` is fully derived
+  // from initialization completing — there is no other trigger.
   const startFade = splashState.initializationComplete;
-  const appIsReady = splashState.initializationComplete && splashState.fadeComplete;
+
+  const [appIsReady, setAppIsReady] = useState(false);
+
+  // Readiness gate.
+  // - WEB keeps the fade-gated flow: the custom <AppSplashScreen> renders, fades
+  //   out when init completes, and its `onFadeComplete` sets `fadeComplete`, so
+  //   web readiness = init complete AND the custom splash finished fading.
+  // - NATIVE renders NO custom splash (the held OS splash covers the screen), so
+  //   `onFadeComplete` never fires; native readiness = init complete ONLY, else
+  //   the OS splash would hang forever.
+  useEffect(() => {
+    if (appIsReady) return;
+    const ready =
+      Platform.OS === 'web'
+        ? splashState.initializationComplete && splashState.fadeComplete
+        : splashState.initializationComplete;
+    if (ready) {
+      setAppIsReady(true);
+    }
+  }, [splashState.initializationComplete, splashState.fadeComplete, appIsReady]);
+
+  // NATIVE ONLY: once ready, hide the held OS splash. The shared helper is a
+  // no-op on web (the OS splash was never held; the custom overlay handles the
+  // transition there).
+  useHideNativeSplashWhenReady(appIsReady);
 
   // Fire-and-forget initializer once per mount. A ref guard is required for
   // React 19 Strict Mode, which intentionally double-invokes effects in
@@ -116,10 +152,16 @@ function RootLayoutInner() {
               <LocaleProvider>
                 <AppHead />
                 {!appIsReady ? (
-                  <AppSplashScreen
-                    startFade={startFade}
-                    onFadeComplete={handleSplashFadeComplete}
-                  />
+                  // WEB: the custom splash covers init and fades out; its
+                  // `onFadeComplete` gates `appIsReady`. NATIVE renders null
+                  // here — the held OS splash is on top, so nothing underneath
+                  // needs to paint.
+                  Platform.OS === 'web' ? (
+                    <AppSplashScreen
+                      startFade={startFade}
+                      onFadeComplete={handleSplashFadeComplete}
+                    />
+                  ) : null
                 ) : (
                   <AppStackContent />
                 )}
