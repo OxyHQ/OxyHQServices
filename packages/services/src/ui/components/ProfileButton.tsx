@@ -73,6 +73,18 @@ export interface ProfileButtonProps {
     onNavigateProfile?: () => void;
     /** Called before the active identity changes so apps can clear scoped state. */
     onBeforeSessionChange?: () => void | Promise<void>;
+    /**
+     * Web-only popover direction relative to the trigger:
+     *  - `'up'` (default): the menu opens UPWARD, for a trigger placed at the
+     *    BOTTOM of a sidebar (the footer pattern). Pixel-identical to prior
+     *    behavior.
+     *  - `'down'`: the menu opens DOWNWARD, for a trigger placed at the TOP of a
+     *    sidebar (the accounts app pattern).
+     *  - `'auto'`: opens downward when there is more room below the trigger than
+     *    above, otherwise upward.
+     * Native (bottom-sheet) is unaffected — this only influences the web popover.
+     */
+    placement?: 'up' | 'down' | 'auto';
     /** Extra className applied to the outer trigger. */
     className?: string;
     /** Extra style applied to the outer trigger. */
@@ -104,6 +116,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     onAddAccount,
     onNavigateProfile,
     onBeforeSessionChange,
+    placement = 'up',
     className,
     style,
 }) => {
@@ -143,7 +156,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
             setMenuOpen(true);
             return;
         }
-        node.measure((_x, _y, _w, _h, pageX, pageY) => {
+        node.measure((_x, _y, _w, height, pageX, pageY) => {
             if (typeof pageX !== 'number' || typeof pageY !== 'number') {
                 setAnchor(null);
             } else {
@@ -153,17 +166,33 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                     window.innerWidth - MENU_WIDTH - VIEWPORT_GUTTER,
                 );
                 const left = Math.min(Math.max(VIEWPORT_GUTTER, pageX), maxLeft);
-                // Anchor the panel's BOTTOM edge just above the trigger top so
-                // the menu opens upward from this footer button.
-                const bottom = Math.max(
-                    VIEWPORT_GUTTER,
-                    window.innerHeight - pageY + VIEWPORT_GUTTER,
-                );
-                setAnchor({ left, bottom });
+                // Bottom edge of the trigger in page coordinates. `height` is a
+                // number for host views; guard defensively for non-web shims.
+                const triggerBottom = pageY + (typeof height === 'number' ? height : 0);
+                // Resolve `'auto'` by comparing the room below the trigger with
+                // the room above it; pick whichever direction has more space.
+                const openDown =
+                    placement === 'down' ||
+                    (placement === 'auto' &&
+                        window.innerHeight - triggerBottom > pageY);
+                if (openDown) {
+                    // Anchor the panel's TOP edge just below the trigger bottom so
+                    // the menu opens downward from a top-of-sidebar trigger.
+                    const top = Math.max(VIEWPORT_GUTTER, triggerBottom + VIEWPORT_GUTTER);
+                    setAnchor({ left, top });
+                } else {
+                    // Anchor the panel's BOTTOM edge just above the trigger top so
+                    // the menu opens upward from this footer button.
+                    const bottom = Math.max(
+                        VIEWPORT_GUTTER,
+                        window.innerHeight - pageY + VIEWPORT_GUTTER,
+                    );
+                    setAnchor({ left, bottom });
+                }
             }
             setMenuOpen(true);
         });
-    }, []);
+    }, [placement]);
 
     const handleClose = useCallback(() => {
         setMenuOpen(false);
