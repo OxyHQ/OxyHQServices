@@ -1273,10 +1273,11 @@ export class SessionController {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
 
-      res.json({ 
+      res.json({
         valid: true,
         expiresAt: result.session.expiresAt.toISOString(),
         lastActivity: result.session.deviceInfo.lastActive.toISOString(),
+        deviceId: result.session.deviceId,
         user: userData
       });
     } catch (error) {
@@ -1320,10 +1321,11 @@ export class SessionController {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
 
-      res.json({ 
+      res.json({
         valid: true,
         expiresAt: result.session.expiresAt.toISOString(),
         lastActivity: result.session.deviceInfo.lastActive.toISOString(),
+        deviceId: result.session.deviceId,
         user: userData,
         sessionId: result.session.sessionId
       });

@@ -116,7 +116,7 @@ jest.mock('../../server', () => ({
   emitSessionUpdate: jest.fn(),
 }));
 
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { SessionController } from '../session.controller';
 import type { AuthRequest } from '../../middleware/auth';
 
@@ -219,5 +219,64 @@ describe('SessionController.getUserSessions (C1)', () => {
     expect(res.json).toHaveBeenCalledWith([
       expect.objectContaining({ sessionId: TARGET_SESSION_ID, deviceId: 'dev-1' }),
     ]);
+  });
+});
+
+describe('SessionController.validateSession (deviceId chaining)', () => {
+  it('includes deviceId in the response so the IdP can chain it into new sessions', async () => {
+    const expiresAt = new Date('2026-08-01T00:00:00.000Z');
+    const lastActive = new Date('2026-07-01T00:00:00.000Z');
+    mockValidateSessionById.mockResolvedValueOnce({
+      session: {
+        userId: SESSION_OWNER_ID,
+        sessionId: TARGET_SESSION_ID,
+        deviceId: 'dev-xyz',
+        expiresAt,
+        deviceInfo: { lastActive },
+      },
+      user: { _id: SESSION_OWNER_ID, username: 'me' },
+    });
+    const req = { params: { sessionId: TARGET_SESSION_ID }, header: jest.fn().mockReturnValue(undefined) } as unknown as Request;
+    const res = createMockRes();
+
+    await SessionController.validateSession(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      valid: true,
+      expiresAt: expiresAt.toISOString(),
+      lastActivity: lastActive.toISOString(),
+      deviceId: 'dev-xyz',
+      user: { id: SESSION_OWNER_ID, username: 'me' },
+    });
+  });
+});
+
+describe('SessionController.validateSessionFromHeader (deviceId chaining)', () => {
+  it('includes deviceId in the response so the IdP can chain it into new sessions', async () => {
+    const expiresAt = new Date('2026-08-01T00:00:00.000Z');
+    const lastActive = new Date('2026-07-01T00:00:00.000Z');
+    mockValidateSessionById.mockResolvedValueOnce({
+      session: {
+        userId: SESSION_OWNER_ID,
+        sessionId: TARGET_SESSION_ID,
+        deviceId: 'dev-xyz',
+        expiresAt,
+        deviceInfo: { lastActive },
+      },
+      user: { _id: SESSION_OWNER_ID, username: 'me' },
+    });
+    const req = { params: { sessionId: TARGET_SESSION_ID }, header: jest.fn().mockReturnValue(undefined) } as unknown as Request;
+    const res = createMockRes();
+
+    await SessionController.validateSessionFromHeader(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      valid: true,
+      expiresAt: expiresAt.toISOString(),
+      lastActivity: lastActive.toISOString(),
+      deviceId: 'dev-xyz',
+      user: { id: SESSION_OWNER_ID, username: 'me' },
+      sessionId: TARGET_SESSION_ID,
+    });
   });
 });
