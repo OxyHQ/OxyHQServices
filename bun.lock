@@ -430,6 +430,28 @@
         "express",
       ],
     },
+    "packages/expo-splash": {
+      "name": "@oxyhq/expo-splash",
+      "version": "0.1.0",
+      "dependencies": {
+        "@expo/image-utils": ">=0.7.0",
+        "xml2js": "^0.6.0",
+      },
+      "devDependencies": {
+        "@types/react": "*",
+        "expo": "*",
+        "expo-splash-screen": "*",
+        "react": "*",
+        "react-native": "*",
+        "typescript": "^5.9.2",
+      },
+      "peerDependencies": {
+        "expo": ">=51.0.0",
+        "expo-splash-screen": ">=0.27.0",
+        "react": ">=18.0.0",
+        "react-native": ">=0.74.0",
+      },
+    },
     "packages/inbox": {
       "name": "inbox",
       "version": "1.0.0",
@@ -1603,6 +1625,7 @@
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
 
+    "@oxyhq/expo-splash": ["@oxyhq/expo-splash@workspace:packages/expo-splash"],
     "@oxyhq/node": ["@oxyhq/node@workspace:packages/node"],
 
     "@oxyhq/protocol": ["@oxyhq/protocol@workspace:packages/protocol"],
