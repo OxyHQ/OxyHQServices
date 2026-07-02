@@ -87,7 +87,7 @@ interface UsageStats {
 
 function PlaygroundPage() {
   const { data: modelsData, isLoading: modelsLoading } = useModelsStats();
-  const { authManager, isAuthenticated } = useAuth();
+  const { oxyServices, isAuthenticated } = useAuth();
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -117,7 +117,14 @@ function PlaygroundPage() {
       return;
     }
 
-    const token = await authManager.getAccessToken();
+    let token = oxyServices.getAccessToken();
+    const expSeconds = token ? oxyServices.getAccessTokenExpiry() : null;
+    if (token && expSeconds !== null && expSeconds * 1000 - Date.now() < 60_000) {
+      // Expiring within the next minute — refresh before this direct fetch
+      // (WebOxyProvider's own proactive scheduler usually beats this, but a
+      // manual bearer read for a raw `fetch` call still checks defensively).
+      token = (await oxyServices.httpService.refreshAccessToken('preflight')) ?? token;
+    }
     if (!token) {
       toast.error('Authentication expired. Please sign in again.');
       return;
@@ -213,7 +220,7 @@ function PlaygroundPage() {
     userInput,
     isStreaming,
     isAuthenticated,
-    authManager,
+    oxyServices,
     messages,
     systemPrompt,
     selectedModel,
