@@ -53,6 +53,12 @@ jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
 }));
 
+const mockDecodeToken = jest.fn();
+jest.mock('../../middleware/authUtils', () => ({
+  decodeToken: (...args: unknown[]) => mockDecodeToken(...args),
+  extractTokenFromRequest: () => 'tkn',
+}));
+
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
@@ -132,6 +138,10 @@ beforeEach(() => {
   mockVerifyActingAs.mockReset();
   mockFindById.mockReset();
   mockCreateSession.mockReset();
+  // Default: the operator's bearer decodes to a device id — the switch must
+  // inherit it so the org session lands on the SAME device doc as the operator.
+  mockDecodeToken.mockReset();
+  mockDecodeToken.mockReturnValue({ sessionId: 'op-sess', deviceId: 'dev-op' });
 });
 
 describe('POST /accounts/:id/switch', () => {
@@ -183,7 +193,37 @@ describe('POST /accounts/:id/switch', () => {
     expect(res.body.user?.username).toBe('acme-org');
     expect(res.body.sessionId).toBe('sess-1');
     expect(res.body.accessToken).toBe('acc-1');
-    // Operator recorded on the minted session.
+    // Operator recorded on the minted session, AND the operator's deviceId is
+    // inherited so the org session joins the operator's existing device doc
+    // (not a fresh device the browser never restores from on reload).
+    expect(mockCreateSession).toHaveBeenCalledWith(ORG_ID, expect.anything(), {
+      operatedByUserId: OPERATOR_ID,
+      deviceId: 'dev-op',
+    });
+  });
+
+  it('falls back to a fresh device when the bearer has no resolvable deviceId', async () => {
+    // No decodable deviceId on the caller's bearer → keep today's behavior
+    // (let createSession derive/allocate a device) rather than passing undefined.
+    mockDecodeToken.mockReturnValue(null);
+    mockVerifyActingAs.mockResolvedValue('admin');
+    mockFindById.mockResolvedValue({
+      _id: new Types.ObjectId(ORG_ID),
+      username: 'acme-org',
+      kind: 'organization',
+      accountStatus: 'active',
+    });
+    mockCreateSession.mockResolvedValue({
+      sessionId: 'sess-1',
+      deviceId: 'dev-fresh',
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      accessToken: 'acc-1',
+    });
+
+    const res = await post(server, `/accounts/${ORG_ID}/switch`);
+
+    expect(res.status).toBe(200);
+    // No deviceId key threaded — the switch still mints a session.
     expect(mockCreateSession).toHaveBeenCalledWith(ORG_ID, expect.anything(), { operatedByUserId: OPERATOR_ID });
   });
 

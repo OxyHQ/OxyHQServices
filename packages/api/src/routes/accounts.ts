@@ -12,6 +12,8 @@ import { User, IUser } from '../models/User';
 import { IAccountMember } from '../models/AccountMember';
 import { IAccountCredential } from '../models/AccountCredential';
 import sessionService from '../services/session.service';
+import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
+import { logger } from '../utils/logger';
 import type { SessionAuthResponse } from '../types/session';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
@@ -53,6 +55,17 @@ function requireUserId(req: AuthRequest): string {
     throw new UnauthorizedError('Authentication required');
   }
   return userId;
+}
+
+/**
+ * Resolve the caller's central deviceId from their verified bearer (the access
+ * token embeds a `deviceId` claim). Returns null when the token is absent or
+ * undecodable. Mirrors `resolveCallerDeviceId` in sessionDevice.ts.
+ */
+function resolveCallerDeviceId(req: AuthRequest): string | null {
+  const token = extractTokenFromRequest(req);
+  const decoded = token ? decodeToken(token) : null;
+  return decoded?.deviceId ?? null;
 }
 
 /** Per-user (or per-IP when anonymous) rate-limit key for a scope. */
@@ -325,8 +338,25 @@ router.post(
 
     // Mint a REAL session for the managed account, recording the operator so the
     // session's validity stays bound to their act_as membership.
+    //
+    // Inherit the OPERATOR's central deviceId so the org session joins the SAME
+    // device doc as the operator's own session. Without this the switch mints a
+    // fresh deviceId (UA/IP-derived), the org lands in a device doc the browser
+    // never restores from on reload (it restores via the operator's personal
+    // session), and the switch silently reverts. If the caller's bearer has no
+    // decodable deviceId, keep today's behavior (let createSession allocate one).
+    const callerDeviceId = resolveCallerDeviceId(req);
+    if (!callerDeviceId) {
+      logger.warn('[accounts] switch: no deviceId on operator bearer — org session gets a fresh device', {
+        component: 'accounts',
+        method: 'switch',
+        operatorId,
+        targetAccountId: id,
+      });
+    }
     const session = await sessionService.createSession(account._id.toString(), req, {
       operatedByUserId: operatorId,
+      ...(callerDeviceId ? { deviceId: callerDeviceId } : {}),
     });
 
     const userData = formatUserResponse(account);
