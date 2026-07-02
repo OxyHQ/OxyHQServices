@@ -12,34 +12,21 @@
  *   0. sso-return     — parse `location.hash`; on `ok` exchange the opaque code
  *                       and commit; on `none`/`error`/mismatch set NO_SESSION.
  *   1. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so` (Chrome).
- *   2. silent-iframe  — first-party `/auth/silent` iframe at the PER-APEX IdP
- *                       (the durable cross-domain AND same-apex reload-restore
- *                       path). REPLACES the retired `cookie-restore` step — the
- *                       ladder no longer reads the oxy_rt refresh cookie.
+ *   2. cookie-restore — refresh-cookie restore (first-party only on *.oxy.so).
  *   3. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
  *
  * These tests pin the contract:
  *   1. The first step that yields a real session wins; later steps never run.
- *   2. `silent-iframe` MUST hydrate a real user (non-empty id + sessionId)
- *      before committing — a placeholder user is never exposed (R4).
+ *   2. `cookie-restore` MUST hydrate a real user (non-empty id) before
+ *      committing — a placeholder user is never exposed (R4).
  *   3. `sso-return` `ok` exchanges the code and commits; `none` and
  *      state-mismatch set the NO_SESSION flag and skip.
  *   4. `sso-bounce` fires exactly ONCE for a logged-out visitor (loop proof),
  *      and is disabled once NO_SESSION is set.
- *   5. Once a session is committed (any ladder step) the post-ladder
- *      `SessionClient` handoff registers the account (`addCurrentAccount`),
- *      starts the client (`start`), and projects its state — but ONLY when a
- *      session was actually acquired; an anonymous visitor never touches the
- *      client's `start`/`addCurrentAccount`.
  *
  * `@oxyhq/core` is mocked so the orchestration can be observed deterministically
  * while the REAL `runColdBoot`, `resolveCentralAuthUrl`, `CENTRAL_AUTH_URL`,
- * `parseSsoReturnFragment`, and `logger` run. `createSessionClient` is the ONE
- * mocked seam (mirrors `sessionClientWiring.test.tsx`) — swapped per-test for a
- * controllable fake client so the post-ladder handoff can be asserted
- * precisely; every test that doesn't care about it gets a harmless default fake
- * (via `beforeEach`) whose `addCurrentAccount`/`start` resolve without altering
- * state.
+ * `parseSsoReturnFragment`, and `logger` run.
  *
  * The fixed jsdom origin is a cross-domain RP (`mention.earth`) so the
  * `sso-bounce` step (disabled on the central IdP itself) is exercisable. The
@@ -48,9 +35,8 @@
  * run-once tests, which deliberately reuse one key to prove deduplication.
  */
 
-import { render, waitFor, act } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import type { SessionLoginResponse, User } from '@oxyhq/core';
-import type { DeviceSessionState } from '@oxyhq/contracts';
 
 // ---------------------------------------------------------------------------
 // Controllable @oxyhq/core mock. Real cold-boot + SSO helpers; stubbed
@@ -63,10 +49,10 @@ interface CoreStubs {
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
   isFedCMSupported: jest.Mock<boolean, []>;
   silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
-  silentSignIn: jest.Mock<Promise<SessionLoginResponse | null>, [unknown?]>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
-  getUsersByIds: jest.Mock<Promise<User[]>, [string[]]>;
+  managerInitialize: jest.Mock<Promise<User | null>, []>;
+  getActiveAccount: jest.Mock<{ sessionId: string } | null, []>;
   baseURL: string;
 }
 
@@ -75,10 +61,10 @@ const stubs: CoreStubs = {
   handleRedirectCallback: jest.fn(() => null),
   isFedCMSupported: jest.fn(() => false),
   silentSignInWithFedCM: jest.fn(async () => null),
-  silentSignIn: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
-  getUsersByIds: jest.fn(async () => []),
+  managerInitialize: jest.fn(async () => null),
+  getActiveAccount: jest.fn(() => null),
   baseURL: 'https://api.oxy.so',
 };
 
@@ -87,10 +73,10 @@ function resetStubs(baseURL: string): void {
   stubs.handleRedirectCallback = jest.fn(() => null);
   stubs.isFedCMSupported = jest.fn(() => false);
   stubs.silentSignInWithFedCM = jest.fn(async () => null);
-  stubs.silentSignIn = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
-  stubs.getUsersByIds = jest.fn(async () => []);
+  stubs.managerInitialize = jest.fn(async () => null);
+  stubs.getActiveAccount = jest.fn(() => null);
   stubs.baseURL = baseURL;
 }
 
@@ -121,30 +107,8 @@ jest.mock('@oxyhq/core', () => {
     allowSsoBounce: actual.allowSsoBounce,
     buildSsoBounceUrl: actual.buildSsoBounceUrl,
     logger: actual.logger,
-    // Pure host-detection helper — REAL implementation. Deterministic given
-    // the fixed jsdom origin (`mention.earth` → `https://auth.mention.earth`);
-    // no network/DOM side effects on its own.
-    autoDetectAuthWebUrl: actual.autoDetectAuthWebUrl,
-    // Pure projection helpers — REAL implementations (mirrors
-    // `sessionClientWiring.test.tsx`).
-    deviceStateToClientSessions: actual.deviceStateToClientSessions,
-    activeSessionIdOf: actual.activeSessionIdOf,
-    activeUserOf: actual.activeUserOf,
-    accountIdsOf: actual.accountIdsOf,
-    // `createSessionClient` is the ONE mocked seam — swapped per-test for a
-    // controllable fake client/host pair (mirrors `sessionClientWiring.test.tsx`).
-    createSessionClient: jest.fn(),
-    // Stubbed service / auth surfaces. No `AuthManager`/`createAuthManager`
-    // export: `WebOxyProvider` no longer imports them (Fase 4 cutover, Task
-    // 5) — if it ever did again, this suite would fail immediately with a
-    // hard runtime error instead of silently reintroducing the retired
-    // hybrid.
+    // Stubbed service / auth surfaces.
     OxyServices: class {
-      _accessToken: string | null = null;
-      httpService = {
-        setAuthRefreshHandler: (_handler: unknown) => undefined,
-        refreshAccessToken: async () => null,
-      };
       getBaseURL(): string {
         return stubs.baseURL;
       }
@@ -157,29 +121,11 @@ jest.mock('@oxyhq/core', () => {
       silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
         return stubs.silentSignInWithFedCM();
       }
-      silentSignIn(options?: unknown): Promise<SessionLoginResponse | null> {
-        return stubs.silentSignIn(options);
-      }
       exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
         return stubs.exchangeSsoCode(code);
       }
       generateSsoState(): string {
         return stubs.generateSsoState();
-      }
-      setTokens(token: string): void {
-        this._accessToken = token;
-      }
-      getAccessToken(): string | null {
-        return this._accessToken;
-      }
-      getAccessTokenExpiry(): number | null {
-        return null;
-      }
-      onTokensChanged(_listener: (token: string | null) => void): () => void {
-        return () => undefined;
-      }
-      getUsersByIds(ids: string[]): Promise<User[]> {
-        return stubs.getUsersByIds(ids);
       }
     },
     CrossDomainAuth: class {
@@ -187,13 +133,24 @@ jest.mock('@oxyhq/core', () => {
         return stubs.handleRedirectCallback();
       }
     },
+    AuthManager: class {},
+    createAuthManager: () => ({
+      initialize: () => stubs.managerInitialize(),
+      getActiveAccount: () => stubs.getActiveAccount(),
+      getAccounts: () => [],
+      getActiveAuthuser: () => null,
+      handleAuthSuccess: jest.fn(async () => undefined),
+      restoreFromCookies: jest.fn(async () => undefined),
+      signOutAllViaCookies: jest.fn(async () => undefined),
+      destroy: jest.fn(),
+    }),
   };
 });
 
 // Import AFTER the mock is registered. The SSO helpers resolve to the REAL
 // `@oxyhq/core` implementations (passed through the mock above) — the same ones
 // the provider consumes — so the per-origin keys and bounce URL match exactly.
-import { WebOxyProvider, useAuth, useWebOxy, type WebOxyContextValue } from '../src/WebOxyProvider';
+import { WebOxyProvider, useAuth } from '../src/WebOxyProvider';
 import {
   ssoStateKey,
   ssoNoSessionKey,
@@ -204,10 +161,7 @@ import {
   ssoSignedOutKey,
   SSO_CALLBACK_PATH,
   buildSsoBounceUrl,
-  createSessionClient,
 } from '@oxyhq/core';
-
-const mockedCreateSessionClient = createSessionClient as jest.MockedFunction<typeof createSessionClient>;
 
 const ORIGIN = 'https://mention.earth';
 const realUser: User = { id: 'u1', username: 'tester' } as User;
@@ -221,78 +175,15 @@ function makeSession(user: Partial<User>): SessionLoginResponse {
   };
 }
 
-type StateListener = (state: DeviceSessionState | null) => void;
-
-/**
- * A controllable stand-in for `SessionClient`, mirroring
- * `sessionClientWiring.test.tsx`'s `buildFakeClient` plus the two methods the
- * Fase 4 cold-boot handoff now calls: `addCurrentAccount` and `start`. Both
- * default to resolving without altering `state` and without notifying
- * subscribers — tests that care about the projection call `setState` +
- * `fire()` (or configure `onAddCurrentAccount`/`onStart`) explicitly.
- */
-function buildFakeClient(options: {
-  initialState?: DeviceSessionState | null;
-  onAddCurrentAccount?: () => void;
-  onStart?: () => void;
-} = {}) {
-  let state = options.initialState ?? null;
-  const listeners = new Set<StateListener>();
-  const fire = () => {
-    for (const listener of listeners) listener(state);
-  };
-  return {
-    fakeClient: {
-      getState: () => state,
-      subscribe: (listener: StateListener) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-      addCurrentAccount: jest.fn(async () => {
-        options.onAddCurrentAccount?.();
-        fire();
-      }),
-      start: jest.fn(async () => {
-        options.onStart?.();
-        fire();
-      }),
-      stop: jest.fn(),
-    },
-    setState(next: DeviceSessionState | null) {
-      state = next;
-    },
-    fire,
-  };
-}
-
-function buildDeviceState(accountId: string): DeviceSessionState {
-  return {
-    deviceId: 'dev-1',
-    accounts: [{ accountId, sessionId: 'sess_1', authuser: 0 }],
-    activeAccountId: accountId,
-    revision: 1,
-    updatedAt: Date.now(),
-  };
-}
-
 interface ProbeState {
   isAuthenticated: boolean;
   userId: string | null;
   isLoading: boolean;
-  /** Only asserted by the SessionClient-handoff tests; omitted elsewhere. */
-  sessionsLength?: number;
-  activeSessionId?: string | null;
 }
 
 function Probe({ onState }: { onState: (s: ProbeState) => void }) {
-  const { isAuthenticated, user, isLoading, sessions, activeSessionId } = useAuth();
-  onState({
-    isAuthenticated,
-    userId: user?.id ?? null,
-    isLoading,
-    sessionsLength: sessions.length,
-    activeSessionId,
-  });
+  const { isAuthenticated, user, isLoading } = useAuth();
+  onState({ isAuthenticated, userId: user?.id ?? null, isLoading });
   return null;
 }
 
@@ -302,13 +193,6 @@ function renderProvider(baseURL: string, onState: (s: ProbeState) => void) {
       <Probe onState={onState} />
     </WebOxyProvider>
   );
-}
-
-/** Captures the full context (including `commitClaimedSession`) for direct invocation. */
-function CaptureContext({ onReady }: { onReady: (ctx: WebOxyContextValue) => void }) {
-  const ctx = useWebOxy();
-  onReady(ctx);
-  return null;
 }
 
 // jsdom navigates legitimately via `history.replaceState`/`pushState`, which
@@ -346,15 +230,6 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     window.localStorage.setItem(ssoPriorSessionKey(ORIGIN), '1');
     // Reset the URL/hash to the bare RP origin between tests.
     setLocation(`${ORIGIN}/`);
-    // Default SessionClient fake: harmless no-op `addCurrentAccount`/`start`
-    // that never alter/notify state. Tests exercising the post-ladder handoff
-    // override this per-test with `mockedCreateSessionClient.mockReturnValue`.
-    mockedCreateSessionClient.mockReset();
-    const defaultFake = buildFakeClient();
-    mockedCreateSessionClient.mockReturnValue({
-      client: defaultFake.fakeClient as never,
-      host: { setCurrentAccountId: jest.fn() } as never,
-    });
   });
 
   it('0) legacy redirect callback data is not committed by cold boot', async () => {
@@ -459,6 +334,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
 
     await waitFor(() => expect(latest.isAuthenticated).toBe(true));
     expect(latest.userId).toBe('u1');
+    expect(stubs.managerInitialize).not.toHaveBeenCalled();
     expect(bounced()).toBe(false);
   });
 
@@ -480,31 +356,61 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(latest.isAuthenticated).toBe(false);
   });
 
-  it('6) silent-iframe hydrates a real user and commits when prior steps skip (replaces retired cookie-restore)', async () => {
-    resetStubs('https://api.test-6');
-    stubs.silentSignIn.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
+  it('5c) DELIBERATELY-SIGNED-OUT gate: cookie-restore is SKIPPED when the signed-out flag is set', async () => {
+    resetStubs('https://api.test-5c');
+    // The refresh cookie is STILL present (PR #455: the primary web session joins
+    // the device `oxy_rt` set), so `authManager.initialize()` WOULD restore a real
+    // user — but the user deliberately signed out, so the cookie-restore step must
+    // NOT run and must NOT silently re-log them in on this cold boot.
+    stubs.isFedCMSupported.mockReturnValue(false);
+    stubs.managerInitialize.mockResolvedValue(realUser);
+    stubs.getActiveAccount.mockReturnValue({ sessionId: 'sess_cookie' });
+    stubs.getCurrentUser.mockResolvedValue(realUser);
+    window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    // The chain falls through to the terminal bounce (the beforeEach seeds the
+    // returning-visitor hint), proving cookie-restore did not silently restore.
+    await waitFor(() => expect(bounced()).toBe(true));
+    expect(stubs.managerInitialize).not.toHaveBeenCalled();
+    expect(latest.isAuthenticated).toBe(false);
+  });
+
+  it('5d) deliberate sign-in CLEARS the signed-out flag → cookie-restore restores again on the next boot', async () => {
+    resetStubs('https://api.test-5d');
+    // Arm the signed-out flag, then clear it (simulating a deliberate sign-in /
+    // account switch, which both call `clearSignedOut*`). The very next cold boot
+    // must restore normally — there is no "stuck signed out" state.
+    window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
+    window.localStorage.removeItem(ssoSignedOutKey(ORIGIN));
+    stubs.isFedCMSupported.mockReturnValue(false);
+    stubs.managerInitialize.mockResolvedValue(realUser);
+    stubs.getActiveAccount.mockReturnValue({ sessionId: 'sess_cookie' });
+    stubs.getCurrentUser.mockResolvedValue(realUser);
 
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
     await waitFor(() => expect(latest.isAuthenticated).toBe(true));
     expect(latest.userId).toBe('u1');
-    // The per-apex host (mention.earth's registrable apex) is passed as the
-    // override — the CENTRAL auth URL cannot read the per-apex cookie.
-    expect(stubs.silentSignIn).toHaveBeenCalledWith(
-      expect.objectContaining({ authWebUrlOverride: 'https://auth.mention.earth' }),
-    );
+    expect(stubs.managerInitialize).toHaveBeenCalled();
     expect(bounced()).toBe(false);
   });
 
-  it('6b) silent-iframe skips (falls through to bounce) when it returns no session', async () => {
-    resetStubs('https://api.test-6b');
-    stubs.silentSignIn.mockResolvedValue(null);
+  it('6) cookie-restore hydrates a real user and commits when prior steps skip', async () => {
+    resetStubs('https://api.test-6');
+    stubs.managerInitialize.mockResolvedValue(realUser);
+    stubs.getActiveAccount.mockReturnValue({ sessionId: 'sess_cookie' });
+    stubs.getCurrentUser.mockResolvedValue(realUser);
 
-    renderProvider(stubs.baseURL, () => undefined);
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
 
-    await waitFor(() => expect(bounced()).toBe(true));
-    expect(stubs.silentSignIn).toHaveBeenCalled();
+    await waitFor(() => expect(latest.isAuthenticated).toBe(true));
+    expect(latest.userId).toBe('u1');
+    expect(bounced()).toBe(false);
   });
 
   it('7) LOOP PROOF: a logged-out visitor bounces exactly ONCE and sets guard/state/dest', async () => {
@@ -620,107 +526,5 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
       r.unmount();
     }
     expect(stubs.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
-  });
-
-  // -------------------------------------------------------------------------
-  // Post-ladder SessionClient handoff (Task 2 of the Fase 4 cutover): once the
-  // token-acquisition ladder above acquires a session, `addCurrentAccount` +
-  // `start` + `syncFromClient` register/bootstrap/project the server-authoritative
-  // device-session set. These tests swap in a CONTROLLABLE fake client (via the
-  // mocked `createSessionClient` seam) to assert the handoff precisely.
-  // -------------------------------------------------------------------------
-
-  it('a) fedcm-silent win: post-ladder handoff registers via addCurrentAccount, then starts the client, and projects state', async () => {
-    resetStubs('https://api.test-handoff-a');
-    stubs.isFedCMSupported.mockReturnValue(true);
-    stubs.silentSignInWithFedCM.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
-    stubs.getUsersByIds.mockResolvedValue([{ id: 'u1', username: 'tester' } as User]);
-
-    const fake = buildFakeClient({
-      onAddCurrentAccount: () => fake.setState(buildDeviceState('u1')),
-    });
-    mockedCreateSessionClient.mockReturnValue({
-      client: fake.fakeClient as never,
-      host: { setCurrentAccountId: jest.fn() } as never,
-    });
-
-    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
-    renderProvider(stubs.baseURL, (s) => { latest = s; });
-
-    await waitFor(() => expect(latest.isAuthenticated).toBe(true));
-    await waitFor(() => expect(fake.fakeClient.addCurrentAccount).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(fake.fakeClient.start).toHaveBeenCalledTimes(1));
-
-    // `addCurrentAccount` registers BEFORE `start` bootstraps (handleAuthSuccess
-    // registers inline; the post-ladder handoff then only calls `start`, skipping
-    // a redundant second `addCurrentAccount` via `registeredDuringBootRef`).
-    const addOrder = fake.fakeClient.addCurrentAccount.mock.invocationCallOrder[0];
-    const startOrder = fake.fakeClient.start.mock.invocationCallOrder[0];
-    expect(addOrder).toBeLessThan(startOrder);
-
-    // The resulting DeviceSessionState projects onto sessions/activeSessionId.
-    await waitFor(() => expect(latest.sessionsLength).toBe(1));
-    expect(latest.activeSessionId).toBe('sess_1');
-    expect(stubs.getUsersByIds).toHaveBeenCalledWith(['u1']);
-    expect(bounced()).toBe(false);
-  });
-
-  it('b) commitClaimedSession (Commons device-flow) registers via addCurrentAccount — commit, not switch', async () => {
-    resetStubs('https://api.test-handoff-b');
-    const fake = buildFakeClient();
-    const switchAccountSpy = jest.fn();
-    mockedCreateSessionClient.mockReturnValue({
-      client: { ...fake.fakeClient, switchAccount: switchAccountSpy } as never,
-      host: { setCurrentAccountId: jest.fn() } as never,
-    });
-
-    let ctx: WebOxyContextValue | null = null;
-    render(
-      <WebOxyProvider baseURL={stubs.baseURL}>
-        <CaptureContext onReady={(c) => { ctx = c; }} />
-      </WebOxyProvider>,
-    );
-
-    // Let the (unrelated) cold boot settle first — nothing wins this boot, so
-    // it reaches the terminal bounce (the beforeEach seeds the returning-user
-    // hint). The claim below arrives out-of-band, independent of the ladder.
-    await waitFor(() => expect(bounced()).toBe(true));
-    if (!ctx) {
-      throw new Error('WebOxyProvider context was never captured');
-    }
-
-    await act(async () => {
-      if (!ctx) {
-        throw new Error('WebOxyProvider context was never captured');
-      }
-      await ctx.commitClaimedSession({
-        accessToken: 'tok-claim',
-        sessionId: 'sess_claim',
-        deviceId: 'dev_claim',
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        user: { id: 'u9', username: 'claimed' } as User,
-      });
-    });
-
-    // Registration (commit), never an account-SWITCH — a freshly-claimed
-    // session is not yet a member of this device's session set.
-    expect(fake.fakeClient.addCurrentAccount).toHaveBeenCalledTimes(1);
-    expect(switchAccountSpy).not.toHaveBeenCalled();
-  });
-
-  it('c) no session recovered: the handoff never touches the client (start/addCurrentAccount are never called)', async () => {
-    resetStubs('https://api.test-handoff-c');
-    const fake = buildFakeClient();
-    mockedCreateSessionClient.mockReturnValue({
-      client: fake.fakeClient as never,
-      host: { setCurrentAccountId: jest.fn() } as never,
-    });
-
-    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
-    renderProvider(stubs.baseURL, (s) => { latest = s; });
-
-    await waitFor(() => expect(latest.isLoading).toBe(false));
-    expect(fake.fakeClient.start).not.toHaveBeenCalled();
-    expect(fake.fakeClient.addCurrentAccount).not.toHaveBeenCalled();
   });
 });

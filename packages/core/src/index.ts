@@ -568,20 +568,6 @@ export type {
 export { SessionClient } from './session/SessionClient';
 export type { TokenTransport, SessionClientHost, SessionClientOptions } from './session/SessionClient';
 
-// Shared SessionClient integration layer: the host adapter, the pure
-// DeviceSessionState projection helpers, and the client factory are defined
-// ONCE here so `@oxyhq/services` and `@oxyhq/auth` both reuse them instead of
-// duplicating a local copy. Each consumer supplies its own `TokenTransport`
-// (native vs. web mint strategies differ) to `createSessionClient`.
-export { createSessionClientHost } from './session/sessionClientHost';
-export { createSessionClient } from './session/createSessionClient';
-export {
-    deviceStateToClientSessions,
-    activeSessionIdOf,
-    activeUserOf,
-    accountIdsOf,
-} from './session/projectSessionState';
-
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every
 // client SDK. Import them directly from `@oxyhq/contracts`; `@oxyhq/core` does NOT

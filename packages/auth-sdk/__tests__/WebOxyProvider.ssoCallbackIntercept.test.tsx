@@ -34,6 +34,10 @@ interface CoreStubs {
   silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
+  managerInitialize: jest.Mock<Promise<User | null>, []>;
+  managerHandleAuthSuccess: jest.Mock<Promise<void>, [SessionLoginResponse, 'fedcm' | 'redirect' | 'credentials']>;
+  managerRestoreFromCookies: jest.Mock<Promise<void>, []>;
+  getActiveAccount: jest.Mock<{ sessionId: string } | null, []>;
   baseURL: string;
 }
 
@@ -44,6 +48,10 @@ const stubs: CoreStubs = {
   silentSignInWithFedCM: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
+  managerInitialize: jest.fn(async () => null),
+  managerHandleAuthSuccess: jest.fn(async () => undefined),
+  managerRestoreFromCookies: jest.fn(async () => undefined),
+  getActiveAccount: jest.fn(() => null),
   baseURL: 'https://api.oxy.so',
 };
 
@@ -54,6 +62,10 @@ function resetStubs(baseURL: string): void {
   stubs.silentSignInWithFedCM = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
+  stubs.managerInitialize = jest.fn(async () => null);
+  stubs.managerHandleAuthSuccess = jest.fn(async () => undefined);
+  stubs.managerRestoreFromCookies = jest.fn(async () => undefined);
+  stubs.getActiveAccount = jest.fn(() => null);
   stubs.baseURL = baseURL;
 }
 
@@ -76,24 +88,7 @@ jest.mock('@oxyhq/core', () => {
     guardActive: actual.guardActive,
     buildSsoBounceUrl: actual.buildSsoBounceUrl,
     logger: actual.logger,
-    // Session-sync integration layer (Fase 4 wiring, additive + inert this
-    // task): the REAL factory + pure projection helpers. `createSessionClient`
-    // is never invoked with a live backend in these tests — it is only
-    // constructed (never `.start()`ed), so wiring it through as the real
-    // implementation is side-effect-free here.
-    createSessionClient: actual.createSessionClient,
-    deviceStateToClientSessions: actual.deviceStateToClientSessions,
-    activeSessionIdOf: actual.activeSessionIdOf,
-    activeUserOf: actual.activeUserOf,
-    accountIdsOf: actual.accountIdsOf,
-    // No `AuthManager`/`createAuthManager` export: `WebOxyProvider` no longer
-    // imports them (Fase 4 cutover, Task 5).
     OxyServices: class {
-      _accessToken: string | null = null;
-      httpService = {
-        setAuthRefreshHandler: (_handler: unknown) => undefined,
-        refreshAccessToken: async () => null,
-      };
       getBaseURL(): string {
         return stubs.baseURL;
       }
@@ -112,31 +107,23 @@ jest.mock('@oxyhq/core', () => {
       generateSsoState(): string {
         return stubs.generateSsoState();
       }
-      setTokens(token: string): void {
-        this._accessToken = token;
-      }
-      getAccessToken(): string | null {
-        return this._accessToken;
-      }
-      getAccessTokenExpiry(): number | null {
-        return null;
-      }
-      onTokensChanged(_listener: (token: string | null) => void): () => void {
-        return () => undefined;
-      }
-      // The REAL `createSessionClient` factory is wired through in this
-      // suite (see above) — its `SessionClientHost.makeRequest` reaches this.
-      // A rejected promise (not a real backend) is caught by
-      // `handleAuthSuccess`'s best-effort registration try/catch.
-      makeRequest(): Promise<never> {
-        return Promise.reject(new Error('not implemented in test'));
-      }
     },
     CrossDomainAuth: class {
       handleRedirectCallback(): SessionLoginResponse | null {
         return stubs.handleRedirectCallback();
       }
     },
+    AuthManager: class {},
+    createAuthManager: () => ({
+      initialize: () => stubs.managerInitialize(),
+      getActiveAccount: () => stubs.getActiveAccount(),
+      getAccounts: () => [],
+      getActiveAuthuser: () => null,
+      handleAuthSuccess: (session: SessionLoginResponse, method: 'fedcm' | 'redirect' | 'credentials') => stubs.managerHandleAuthSuccess(session, method),
+      restoreFromCookies: () => stubs.managerRestoreFromCookies(),
+      signOutAllViaCookies: jest.fn(async () => undefined),
+      destroy: jest.fn(),
+    }),
   };
 
 });
@@ -245,9 +232,9 @@ describe('WebOxyProvider eager SSO callback interception', () => {
 
     await waitFor(() => expect(latest.userId).toBe('user-1'));
 
-    // Exchanged exactly once despite the eager interceptor and the cold-boot
-    // `sso-return` step both racing to consume the same callback.
     expect(stubs.exchangeSsoCode).toHaveBeenCalledTimes(1);
+    expect(stubs.managerHandleAuthSuccess).toHaveBeenCalledTimes(1);
+    expect(stubs.managerRestoreFromCookies).toHaveBeenCalledTimes(1);
     expect(latest.isAuthenticated).toBe(true);
   });
 

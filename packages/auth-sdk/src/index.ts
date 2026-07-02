@@ -145,6 +145,8 @@ export type {
 // Custom hooks
 // ---------------------------------------------------------------------------
 export { useWebSSO, isWebBrowser } from './hooks/useWebSSO';
+export { useSessionSocket } from './hooks/useSessionSocket';
+export type { UseSessionSocketOptions } from './hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './hooks/useAssets';
 export { useFileDownloadUrl } from './hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './hooks/useFollow';
