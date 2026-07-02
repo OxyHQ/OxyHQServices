@@ -13,6 +13,7 @@ import {
   DeviceFingerprint
 } from '../utils/deviceUtils';
 import { generateSessionTokens, validateAccessToken, validateRefreshToken } from '../utils/sessionUtils';
+import deviceSessionService from './deviceSession.service';
 import { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -417,9 +418,15 @@ class SessionService {
       // explicit `deviceId` (e.g. threaded from a FedCM id_token claim) wins
       // over the derived stable id, letting the caller stamp a unified central
       // device id verbatim. Precedence: deviceId > stableDeviceKey > UA/IP > random.
-      const stableId = explicitDeviceId ?? (stableDeviceKey
+      // The origin-derived stable id (per (user, RP)). Kept SEPARATELY from the
+      // attribution id below so we can still locate a LEGACY per-origin session
+      // — one minted before deviceId unification, pinned to this synthetic
+      // origin device — and MIGRATE it onto the caller's central device instead
+      // of orphaning it (which sprawled one graveyard doc per historical mint).
+      const originDeviceId = stableDeviceKey
         ? deriveServiceDeviceId(userId, stableDeviceKey)
-        : undefined);
+        : undefined;
+      const stableId = explicitDeviceId ?? originDeviceId;
       // Pass userId so the derived deviceId is scoped per-user — two users
       // behind the same NAT on the same Chrome no longer collide on the same
       // device-id (security review H1).
@@ -456,18 +463,48 @@ class SessionService {
         deviceId: deviceInfo.deviceId,
       }).select('_id').lean());
 
-      const existingSession = await Session.findOne({
+      // Reuse an existing active session. Prefer one already attributed to the
+      // caller's (central) device; fall back to a LEGACY per-origin session so a
+      // pre-unification session HOPS onto the central device (below) instead of
+      // orphaning. Once migrated it's found by the primary lookup on subsequent
+      // mints — the fallback can't re-sprawl.
+      let existingSession = await Session.findOne({
         userId,
         deviceId: deviceInfo.deviceId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).select('_id sessionId deviceInfo').lean();
+      }).select('_id sessionId deviceId deviceInfo').lean();
+
+      if (!existingSession && originDeviceId && originDeviceId !== deviceInfo.deviceId) {
+        existingSession = await Session.findOne({
+          userId,
+          deviceId: originDeviceId,
+          isActive: true,
+          expiresAt: { $gt: new Date() }
+        }).select('_id sessionId deviceId deviceInfo').lean();
+      }
 
       if (existingSession) {
         const sessionId = existingSession.sessionId;
         const expiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
         const now = new Date();
+        // Tokens are re-minted with the ATTRIBUTION deviceId (the explicit
+        // central id when supplied), so the reused access token's `deviceId`
+        // claim addresses the caller's real device — the room the client's
+        // SessionClient joins and where cross-domain broadcasts land.
         const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, deviceInfo.deviceId);
+
+        // Migrate a reused session onto the caller's central device when an
+        // explicit deviceId was supplied and the reused session still sits on a
+        // different (legacy per-origin) device. Without this the session — and
+        // thus the RP's socket room + DeviceSession doc — stays pinned to a
+        // stale synthetic device and never receives the real device's
+        // cross-domain broadcasts. No explicit deviceId ⇒ no hop (UA/IP/random
+        // fallbacks must never move a session).
+        const previousDeviceId = existingSession.deviceId;
+        const migrateToDeviceId = explicitDeviceId && previousDeviceId !== explicitDeviceId
+          ? explicitDeviceId
+          : null;
 
         const updated = await Session.findOneAndUpdate(
           { _id: existingSession._id },
@@ -477,6 +514,7 @@ class SessionService {
               refreshToken,
               expiresAt,
               lastRefresh: now,
+              ...(migrateToDeviceId ? { deviceId: migrateToDeviceId } : {}),
               'deviceInfo.lastActive': now,
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
               'deviceInfo.ipAddress': deviceInfo.ipAddress,
@@ -493,6 +531,32 @@ class SessionService {
 
         if (updated) {
           sessionCache.set(sessionId, updated as ISession);
+          if (migrateToDeviceId) {
+            logger.info('[SessionService] Migrated reused session onto caller device', {
+              component: 'SessionService',
+              method: 'createSession',
+              userId,
+              sessionId: sessionId.substring(0, 8),
+              fromDeviceId: previousDeviceId.substring(0, 8),
+              toDeviceId: migrateToDeviceId.substring(0, 8),
+            });
+            // Best-effort: drop this account's entry from the OLD device doc so
+            // the graveyard doc stops advertising a live-looking account. The
+            // migrated session is preserved (it now lives on the caller's
+            // device); detach only deactivates a DIFFERENT stale session the old
+            // doc referenced. Never fail the mint on cleanup errors.
+            try {
+              await deviceSessionService.detachMigratedAccount(previousDeviceId, userId, sessionId);
+            } catch (error) {
+              logger.warn('[SessionService] Failed to detach migrated account from old device doc', {
+                component: 'SessionService',
+                method: 'createSession',
+                userId,
+                fromDeviceId: previousDeviceId.substring(0, 8),
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
           return updated as ISession;
         }
       }

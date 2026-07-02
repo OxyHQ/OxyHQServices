@@ -8,6 +8,7 @@ const mockSave = jest.fn();
 const mockUpdateOne = jest.fn();
 const mockUpdateMany = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
+const mockDetachMigratedAccount = jest.fn();
 
 /**
  * Creates a chainable mock that supports .select().lean() and .lean() patterns.
@@ -128,11 +129,22 @@ jest.mock('../securityActivityService', () => ({
   },
 }));
 
+// The reused-session deviceId migration best-effort detaches the account from
+// the OLD device doc via deviceSessionService — mock it to observe the call
+// without touching the DeviceSession model.
+jest.mock('../deviceSession.service', () => ({
+  __esModule: true,
+  default: {
+    detachMigratedAccount: mockDetachMigratedAccount,
+  },
+}));
+
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import sessionService from '../session.service';
 import Session from '../../models/Session';
 import sessionCache from '../../utils/sessionCache';
-import { validateAccessToken } from '../../utils/sessionUtils';
+import { generateSessionTokens, validateAccessToken } from '../../utils/sessionUtils';
+import { deriveServiceDeviceId } from '../../utils/deviceUtils';
 import { Request } from 'express';
 
 function createMockSession(overrides: Record<string, unknown> = {}) {
@@ -173,6 +185,7 @@ describe('Session Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFindOneResults.length = 0;
+    mockDetachMigratedAccount.mockResolvedValue(undefined);
     const cache = (sessionCache as unknown as { _cache: Map<string, unknown> })._cache;
     cache.clear();
   });
@@ -425,6 +438,118 @@ describe('Session Service', () => {
       expect(second.sessionId).toBe(first.sessionId);
       expect(second.accessToken).toBe('refreshed-access-token');
       expect(mockSave).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * Reused-session deviceId migration.
+   *
+   * When a caller supplies an explicit central deviceId (e.g. the FedCM/SSO
+   * exchange threading a real device from the id_token) but the reused session
+   * sits on a DIFFERENT legacy per-origin device, the session must HOP onto the
+   * caller's device: its stored deviceId is updated, the re-minted access token
+   * carries the new deviceId, and the account is detached from the old device
+   * doc so the graveyard doc stops advertising a live-looking account. No hop
+   * when no explicit deviceId is given, or when it already matches.
+   */
+  describe('createSession deviceId migration on reuse', () => {
+    const SAVED_SALT = process.env.DEVICE_ID_SALT;
+    const RP = 'https://console.oxy.so';
+    const CENTRAL = 'central-device-real';
+
+    beforeEach(() => {
+      process.env.DEVICE_ID_SALT = 'x'.repeat(48);
+    });
+
+    afterEach(() => {
+      if (SAVED_SALT === undefined) {
+        delete process.env.DEVICE_ID_SALT;
+      } else {
+        process.env.DEVICE_ID_SALT = SAVED_SALT;
+      }
+    });
+
+    it('migrates a reused legacy per-origin session onto the caller central device', async () => {
+      const originDeviceId = deriveServiceDeviceId('user-123', RP);
+      expect(originDeviceId).not.toBe(CENTRAL);
+
+      // isNewDevice check (keyed on the central target) → none.
+      mockFindOneResults.push(null);
+      // PRIMARY reuse lookup (central target) → none: nothing on the real device yet.
+      mockFindOneResults.push(null);
+      // SECONDARY legacy lookup (origin-derived device) → HIT: the pre-unification session.
+      mockFindOneResults.push(
+        createMockSession({ sessionId: 'legacy-sess', deviceId: originDeviceId })
+      );
+      const migrated = createMockSession({
+        sessionId: 'legacy-sess',
+        deviceId: CENTRAL,
+        accessToken: 'migrated-access-token',
+      });
+      mockFindOneAndUpdate.mockResolvedValueOnce(migrated);
+
+      const result = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP,
+        deviceId: CENTRAL,
+      });
+
+      // Same session row reused (no new row minted), now on the central device.
+      expect(mockSave).not.toHaveBeenCalled();
+      expect(result.sessionId).toBe('legacy-sess');
+      expect(result.deviceId).toBe(CENTRAL);
+
+      // The reuse update $set migrated the stored deviceId to the central id.
+      const updateArg = mockFindOneAndUpdate.mock.calls[0][1] as { $set: Record<string, unknown> };
+      expect(updateArg.$set.deviceId).toBe(CENTRAL);
+
+      // The re-minted JWT embeds the NEW deviceId (3rd generateSessionTokens arg).
+      const tokenCalls = (generateSessionTokens as jest.Mock).mock.calls;
+      expect(tokenCalls[tokenCalls.length - 1][2]).toBe(CENTRAL);
+
+      // The old device doc's entry for this account is detached; the migrated
+      // session id is preserved (never deactivated).
+      expect(mockDetachMigratedAccount).toHaveBeenCalledWith(originDeviceId, 'user-123', 'legacy-sess');
+    });
+
+    it('does NOT migrate on reuse when no explicit deviceId is supplied', async () => {
+      // Pure stableDeviceKey path: the reuse lookup keys on the origin-derived
+      // device and any UA/IP mismatch must NOT move the session.
+      mockFindOneResults.push({ _id: 'mongo-id-123' }); // isNewDevice: seen
+      mockFindOneResults.push(
+        createMockSession({ sessionId: 'sess-x', deviceId: 'device-old' })
+      ); // PRIMARY reuse lookup: HIT
+      mockFindOneAndUpdate.mockResolvedValueOnce(
+        createMockSession({ sessionId: 'sess-x', deviceId: 'device-old' })
+      );
+
+      await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP,
+      });
+
+      const updateArg = mockFindOneAndUpdate.mock.calls[0][1] as { $set: Record<string, unknown> };
+      expect(updateArg.$set.deviceId).toBeUndefined();
+      expect(mockDetachMigratedAccount).not.toHaveBeenCalled();
+    });
+
+    it('performs NO migration side-effects when the explicit deviceId already matches', async () => {
+      mockFindOneResults.push({ _id: 'mongo-id-123' }); // isNewDevice: seen
+      mockFindOneResults.push(
+        createMockSession({ sessionId: 'sess-y', deviceId: CENTRAL })
+      ); // PRIMARY reuse lookup: HIT, already on the central device
+      mockFindOneAndUpdate.mockResolvedValueOnce(
+        createMockSession({ sessionId: 'sess-y', deviceId: CENTRAL })
+      );
+
+      await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        deviceId: CENTRAL,
+      });
+
+      const updateArg = mockFindOneAndUpdate.mock.calls[0][1] as { $set: Record<string, unknown> };
+      expect(updateArg.$set.deviceId).toBeUndefined();
+      expect(mockDetachMigratedAccount).not.toHaveBeenCalled();
     });
   });
 
