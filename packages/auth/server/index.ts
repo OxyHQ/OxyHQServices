@@ -400,20 +400,38 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
 }
 
 /**
- * Fetch the RP origins this user has previously granted via FedCM. These
- * populate the spec's optional `approved_clients` array on the accounts
- * response so Chrome treats the account as a *returning* account for those RPs
- * — skipping the disclosure UI and (critically) allowing `mediation: 'silent'`
- * to resolve across apps. Without it every RP is treated as first-time and
- * cross-app silent SSO never completes.
- *
- * Best-effort: any failure yields an empty list (the account is still returned,
- * just without the returning-account optimization). The API endpoint is
- * cookie-less but returns private per-user RP grant metadata, so the IdP must
- * present the internal shared secret on this server-to-server call.
+ * TTL (ms) for the per-user grants cache. Grants change on an explicit user
+ * consent action, so the window is kept SHORT (30s) — long enough to absorb the
+ * burst of grant lookups a single SSO/silent flow fans out from shared egress
+ * IPs, short enough that a freshly-granted RP starts resolving silently within
+ * seconds. Deliberately much tighter than the 60s approved-clients TTL.
  */
-async function fetchApprovedClients(config: ResolvedConfig, userId: string): Promise<string[]> {
-  if (!config.ssoInternalSecret) return [];
+const GRANTS_TTL_MS = 30_000;
+
+interface GrantsCacheEntry {
+  origins: string[];
+  fetchedAt: number;
+}
+
+/**
+ * Per-user cache of granted RP origins, keyed by userId. POSITIVE results only
+ * (including a legitimately-empty grant list — an authenticated 200 with
+ * `origins: []` is a real "no grants yet" state). A FAILED lookup is NEVER
+ * cached and NEVER served stale: grants gate consent, so a transient error must
+ * fall through to the fail-closed empty list, exactly as before caching.
+ */
+const grantsCache = new Map<string, GrantsCacheEntry>();
+
+/** In-flight grants fetch de-dup, keyed by userId — concurrent lookups share one round-trip. */
+const grantsInFlight = new Map<string, Promise<string[] | null>>();
+
+/**
+ * Raw grants fetch. Returns the parsed origin list on a successful, well-formed
+ * response (possibly empty), or `null` on ANY failure (missing secret, non-2xx,
+ * malformed body, network/timeout). The `null` vs `[]` distinction is what lets
+ * the caller cache a genuine empty result while refusing to cache a failure.
+ */
+async function fetchGrantsFromApi(config: ResolvedConfig, userId: string): Promise<string[] | null> {
   try {
     const url = `${config.apiBaseUrl}/fedcm/grants/${encodeURIComponent(userId)}`;
     const res = await fetch(url, {
@@ -423,14 +441,70 @@ async function fetchApprovedClients(config: ResolvedConfig, userId: string): Pro
       },
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const data = await res.json() as Record<string, unknown>;
     const origins = data.origins;
-    if (!Array.isArray(origins)) return [];
+    if (!Array.isArray(origins)) return null;
     return origins.filter((o): o is string => typeof o === 'string' && o.length > 0);
   } catch {
-    return [];
+    return null;
   }
+}
+
+/**
+ * Fetch the RP origins this user has previously granted via FedCM. These
+ * populate the spec's optional `approved_clients` array on the accounts
+ * response so Chrome treats the account as a *returning* account for those RPs
+ * — skipping the disclosure UI and (critically) allowing `mediation: 'silent'`
+ * to resolve across apps. Without it every RP is treated as first-time and
+ * cross-app silent SSO never completes.
+ *
+ * Cached for {@link GRANTS_TTL_MS} per userId with single-flight de-dup so a
+ * burst of grant lookups (accounts + each silent-restore consent check) does
+ * not hammer the API from shared egress IPs. Best-effort: any failure yields an
+ * empty list (the account is still returned, just without the returning-account
+ * optimization) and is NOT cached — a stale grant must never gate consent, so
+ * failures always fail closed rather than serving a prior list. The API
+ * endpoint is cookie-less but returns private per-user RP grant metadata, so the
+ * IdP must present the internal shared secret on this server-to-server call.
+ *
+ * `forceRefresh` bypasses the fresh-cache short-circuit for the ONE security
+ * re-check whose entire purpose is to observe a state change: the `/sso/establish`
+ * grant re-check must catch a grant REVOKED between the central `/sso` hop and
+ * the per-apex establish hop, so it cannot be served the value the central hop
+ * just cached. It still refreshes the cache and shares any truly-concurrent
+ * in-flight fetch.
+ */
+async function fetchApprovedClients(
+  config: ResolvedConfig,
+  userId: string,
+  forceRefresh = false
+): Promise<string[]> {
+  if (!config.ssoInternalSecret) return [];
+
+  if (!forceRefresh) {
+    const cached = grantsCache.get(userId);
+    if (cached && Date.now() - cached.fetchedAt < GRANTS_TTL_MS) {
+      return cached.origins;
+    }
+  }
+
+  let inFlight = grantsInFlight.get(userId);
+  if (!inFlight) {
+    inFlight = fetchGrantsFromApi(config, userId).finally(() => {
+      grantsInFlight.delete(userId);
+    });
+    grantsInFlight.set(userId, inFlight);
+  }
+  const fetched = await inFlight;
+
+  // `[]` (empty array) is truthy → a successful empty grant list IS cached;
+  // only a `null` (failed) lookup is refused and falls through to fail-closed.
+  if (fetched) {
+    grantsCache.set(userId, { origins: fetched, fetchedAt: Date.now() });
+    return fetched;
+  }
+  return [];
 }
 
 /**
@@ -445,13 +519,18 @@ async function fetchApprovedClients(config: ResolvedConfig, userId: string): Pro
  * Fails CLOSED: any failure in the per-user grant lookup yields an empty list
  * (treated as "no grant"), so a transient API error blocks silent restore
  * rather than handing a session to an un-consented RP.
+ *
+ * `forceRefresh` is threaded through to {@link fetchApprovedClients} for the
+ * `/sso/establish` re-check, which must observe a grant revoked between hops
+ * rather than the value the central `/sso` hop just cached.
  */
 async function userHasGrantedClient(
   config: ResolvedConfig,
   userId: string,
-  clientOrigin: string
+  clientOrigin: string,
+  forceRefresh = false
 ): Promise<boolean> {
-  const grantedOrigins = await fetchApprovedClients(config, userId);
+  const grantedOrigins = await fetchApprovedClients(config, userId, forceRefresh);
   return grantedOrigins.some((origin) => normaliseOrigin(origin) === clientOrigin);
 }
 
@@ -557,24 +636,50 @@ function normaliseOrigin(value: string): string | null {
 }
 
 /**
- * Validate a candidate RP `client_id` against the authoritative approved-
- * clients allow-list served by the Oxy API (`GET /fedcm/clients/approved`).
- * This is the SAME list `/fedcm/exchange` enforces via `isClientApproved`, so
- * the silent path cannot deliver a token to any origin the FedCM path would
- * itself reject. Returns the normalised, approved origin or `null`.
- *
- * Fails CLOSED: any network/parse error yields `null` (no token issued). The
- * endpoint is cookie-less and the response carries only public approved
- * origins, so no auth token is needed for this server-to-server call.
+ * TTL (ms) for the FRESH approved-clients cache. Matches the API's own
+ * `approvedClientsCache` window (60s) so the worker never holds a view staler
+ * than the API would itself serve fresh. Within this window a repeated lookup
+ * (every /sso, /sso/establish, /auth/silent, /fedcm request) is served from
+ * memory with zero API round-trips.
  */
-async function resolveApprovedClientOrigin(
-  apiBaseUrl: string,
-  clientId: string | undefined
-): Promise<string | null> {
-  if (!clientId) return null;
-  const candidate = normaliseOrigin(clientId);
-  if (!candidate) return null;
+const APPROVED_CLIENTS_TTL_MS = 60_000;
 
+/**
+ * Hard cap (ms) on serving a STALE approved-clients list while the upstream
+ * fetch is failing. Bounded staleness (up to 10 min) beats the fails-closed
+ * collapse we saw live: when shared egress IPs get 429'd, a null list bounced
+ * every RP with `invalid_request` in a reload loop. Past this cap we fail closed
+ * again — a genuinely long API outage should not indefinitely honour a list that
+ * may no longer be authoritative. The API re-validates every client at
+ * `/sso/code` and `/fedcm/exchange`, so bounded-stale here can never approve a
+ * client the API itself would reject.
+ */
+const APPROVED_CLIENTS_STALE_CAP_MS = 10 * 60_000;
+
+interface ApprovedClientsCache {
+  list: string[];
+  fetchedAt: number;
+}
+
+/**
+ * Module-level cache of the approved-clients allow-list. POSITIVE, non-empty
+ * results only — a failed fetch (`null`) or an empty list (`[]`, never the real
+ * production state and far more likely a transient API glitch) is treated as
+ * non-authoritative and never stored as truth.
+ */
+let approvedClientsCache: ApprovedClientsCache | null = null;
+
+/** In-flight approved-clients fetch de-dup — concurrent callers share one round-trip. */
+let approvedClientsInFlight: Promise<string[] | null> | null = null;
+
+/**
+ * Raw approved-clients fetch. Returns the parsed origin list on a successful,
+ * well-formed response (possibly empty), or `null` on ANY failure (non-2xx,
+ * malformed body, network/timeout). The `null` vs `[]` distinction lets the
+ * caller keep serving a prior good list on failure while never caching an empty
+ * fetch as truth.
+ */
+async function fetchApprovedClientsList(apiBaseUrl: string): Promise<string[] | null> {
   try {
     const res = await fetch(`${apiBaseUrl}/fedcm/clients/approved`, {
       headers: { Accept: 'application/json' },
@@ -586,14 +691,77 @@ async function resolveApprovedClientOrigin(
     // `origins` alias defensively in case the shape ever changes.
     const list = (Array.isArray(data.clients) ? data.clients : data.origins) as unknown;
     if (!Array.isArray(list)) return null;
-    for (const entry of list) {
-      if (typeof entry !== 'string') continue;
-      if (normaliseOrigin(entry) === candidate) return candidate;
-    }
-    return null;
+    return list.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve the approved-clients allow-list through the module cache:
+ *   1. FRESH cache (age < {@link APPROVED_CLIENTS_TTL_MS}) → return it, no fetch.
+ *   2. Otherwise fetch (concurrent callers share ONE in-flight round-trip).
+ *      - a non-empty list → refresh the cache and return it.
+ *      - a failed/empty fetch → serve the prior list if it is within
+ *        {@link APPROVED_CLIENTS_STALE_CAP_MS} (bounded staleness), else return
+ *        the fetched value (null/empty) so the caller fails closed.
+ */
+async function getApprovedClientOrigins(apiBaseUrl: string): Promise<string[] | null> {
+  const now = Date.now();
+  if (approvedClientsCache && now - approvedClientsCache.fetchedAt < APPROVED_CLIENTS_TTL_MS) {
+    return approvedClientsCache.list;
+  }
+
+  if (!approvedClientsInFlight) {
+    approvedClientsInFlight = fetchApprovedClientsList(apiBaseUrl).finally(() => {
+      approvedClientsInFlight = null;
+    });
+  }
+  const fetched = await approvedClientsInFlight;
+
+  if (fetched && fetched.length > 0) {
+    approvedClientsCache = { list: fetched, fetchedAt: Date.now() };
+    return fetched;
+  }
+
+  // Non-authoritative outcome (failed or empty): prefer a bounded-stale prior
+  // list over the fails-closed collapse. Only within the stale cap.
+  if (
+    approvedClientsCache &&
+    Date.now() - approvedClientsCache.fetchedAt < APPROVED_CLIENTS_STALE_CAP_MS
+  ) {
+    return approvedClientsCache.list;
+  }
+  return fetched;
+}
+
+/**
+ * Validate a candidate RP `client_id` against the authoritative approved-
+ * clients allow-list served by the Oxy API (`GET /fedcm/clients/approved`),
+ * sourced through the module cache ({@link getApprovedClientOrigins}). This is
+ * the SAME list `/fedcm/exchange` enforces via `isClientApproved`, so the silent
+ * path cannot deliver a token to any origin the FedCM path would itself reject.
+ * Returns the normalised, approved origin or `null`.
+ *
+ * Fails CLOSED: with no usable (fresh or bounded-stale) list, any network/parse
+ * error yields `null` (no token issued). The endpoint is cookie-less and the
+ * response carries only public approved origins, so no auth token is needed for
+ * this server-to-server call.
+ */
+async function resolveApprovedClientOrigin(
+  apiBaseUrl: string,
+  clientId: string | undefined
+): Promise<string | null> {
+  if (!clientId) return null;
+  const candidate = normaliseOrigin(clientId);
+  if (!candidate) return null;
+
+  const list = await getApprovedClientOrigins(apiBaseUrl);
+  if (!list) return null;
+  for (const entry of list) {
+    if (normaliseOrigin(entry) === candidate) return candidate;
+  }
+  return null;
 }
 
 /**
@@ -2038,7 +2206,10 @@ app.get('/sso/establish', async (c) => {
   //    between the two hops. Re-check here BEFORE planting the durable
   //    first-party cookie or minting a session/code — an un-granted RP gets the
   //    same no-session outcome as a logged-out user and NO cookie is planted.
-  if (!(await userHasGrantedClient(config, user.id, approvedOrigin))) {
+  //    `forceRefresh: true` — this re-check's whole purpose is to observe a
+  //    between-hops revocation, so it MUST bypass the 30s grants cache the
+  //    central hop just populated and read the live grant.
+  if (!(await userHasGrantedClient(config, user.id, approvedOrigin, true))) {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
@@ -2097,3 +2268,18 @@ app.get('/sso/establish', async (c) => {
 // (`server/worker.ts`) and the local Node entry (`server/node.ts`).
 export { app, readEnv };
 export type { WorkerEnv };
+
+// Cache internals exported for unit tests only. `resolveApprovedClientOrigin`
+// and `fetchApprovedClients` are exercised directly to assert TTL/stale/single-
+// flight behaviour; `__resetSsoCachesForTests` clears the module-level caches
+// between cases (the caches are process-global, so every test file that touches
+// the SSO endpoints must reset them in `beforeEach` for isolation — mirrors the
+// `__resetBloomCSSForTests` pattern).
+export { resolveApprovedClientOrigin, fetchApprovedClients };
+
+export function __resetSsoCachesForTests(): void {
+  approvedClientsCache = null;
+  approvedClientsInFlight = null;
+  grantsCache.clear();
+  grantsInFlight.clear();
+}

@@ -108,11 +108,16 @@ function installApiStub(): void {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let app: { request: (path: string, init?: RequestInit) => Promise<Response> };
+// The worker's approved-clients + grants caches are process-global (shared with
+// every other test file that imports `../index`); reset before each case so a
+// cached list from another test can't suppress this file's stubbed API calls.
+let resetSsoCaches: () => void = () => {};
 
 beforeAll(async () => {
   installApiStub();
   const mod = await import('../index');
   app = mod.app as typeof app;
+  resetSsoCaches = mod.__resetSsoCachesForTests;
 });
 
 afterAll(() => {
@@ -120,6 +125,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  resetSsoCaches();
   stubbedDeviceId = 'dev-central-xyz';
   installApiStub();
 });

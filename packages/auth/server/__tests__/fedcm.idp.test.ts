@@ -188,11 +188,16 @@ function installApiStub(): void {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let app: { request: (path: string, init?: RequestInit) => Promise<Response> };
+// The worker's approved-clients + grants caches are process-global; reset them
+// before each case so a prior test's cached list can't leak into (or suppress
+// the API call of) the next. Mirrors the `__resetBloomCSSForTests` pattern.
+let resetSsoCaches: () => void = () => {};
 
 beforeAll(async () => {
   installApiStub();
   const mod = await import('../index');
   app = mod.app as typeof app;
+  resetSsoCaches = mod.__resetSsoCachesForTests;
 });
 
 afterAll(() => {
@@ -200,6 +205,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  resetSsoCaches();
   stubbedGrantedOrigins = [RP_ORIGIN];
   stubbedApprovedClients = [RP_ORIGIN];
   stubbedSsoCode = STUB_SSO_CODE;
