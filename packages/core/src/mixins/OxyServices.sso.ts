@@ -49,6 +49,11 @@ interface SsoExchangeWireResponse {
   authuser?: number;
 }
 
+/** Wire shape of `POST /sso/establish-token`. */
+interface SsoEstablishTokenWireResponse {
+  establishUrl: string;
+}
+
 /**
  * Generate a cryptographically secure state value for the SSO bounce.
  *
@@ -201,6 +206,56 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
       };
 
       return session;
+    }
+
+    /**
+     * Mint a server-formed `/sso/establish` URL for the caller's OWN session,
+     * bound to an approved RP `origin`.
+     *
+     * Bearer-authenticated (the session id is taken from the caller's own
+     * bearer, server-side — never from any argument). The server validates that
+     * `origin` is an approved client origin (and matches the request `Origin`),
+     * derives the per-apex IdP host (`auth.<apex>`), mints a short-lived HS256
+     * establish-token, and returns a fully-formed
+     * `https://<auth-host>/sso/establish?et=…&return_to=<origin>/__oxy/sso-callback&state=<state>`.
+     *
+     * Used AFTER a web device-flow claim to plant the durable first-party
+     * `fedcm_session` cookie so a reload can re-mint a token (see
+     * {@link establishIdpSessionAfterClaim}). Cache-free (a POST is never
+     * cached, but `cache: false` is explicit).
+     *
+     * @param origin - The RP origin (`window.location.origin`) to establish for.
+     * @param state - The CSRF state echoed back in the callback fragment; the
+     *   caller persists the SAME value under `ssoStateKey(origin)` so the
+     *   post-bounce `sso-return` step validates it.
+     */
+    public async requestSsoEstablishUrl(
+      origin: string,
+      state: string,
+    ): Promise<{ establishUrl: string }> {
+      if (typeof origin !== 'string' || origin.length === 0) {
+        throw this.handleError(new Error('requestSsoEstablishUrl requires a non-empty origin'));
+      }
+      if (typeof state !== 'string' || state.length === 0) {
+        throw this.handleError(new Error('requestSsoEstablishUrl requires a non-empty state'));
+      }
+
+      const response = await this.makeRequest<SsoEstablishTokenWireResponse>(
+        'POST',
+        '/sso/establish-token',
+        { origin, state },
+        { cache: false },
+      );
+
+      if (
+        !response ||
+        typeof response.establishUrl !== 'string' ||
+        response.establishUrl.length === 0
+      ) {
+        throw this.handleError(new Error('SSO establish-token returned no establishUrl'));
+      }
+
+      return { establishUrl: response.establishUrl };
     }
   };
 }

@@ -30,7 +30,7 @@ import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
 import fedcmRoutes from './routes/fedcm';
-import ssoRoutes, { ssoExchangeCors } from './routes/sso';
+import ssoRoutes, { ssoExchangeCors, ssoEstablishTokenCors } from './routes/sso';
 import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import reputationService from './services/reputation.service';
@@ -196,6 +196,13 @@ app.use(performanceMiddleware);
 // the OPTIONS preflight itself. The global middleware below is credentialed and
 // apex-scoped, which is the wrong policy for this token-in-body endpoint.
 app.use('/sso/exchange', ssoExchangeCors);
+
+// Dedicated CORS for the bearer-authenticated establish-token mint — same
+// before-global-CORS rationale as `/sso/exchange`, but it additionally allows
+// the `Authorization` request header (credentials:false; the bearer is in the
+// header, not a cookie) and echoes any origin on the FedCM approved-clients
+// allow-list (cross-apex RPs the apex-scoped global policy would reject).
+app.use('/sso/establish-token', ssoEstablishTokenCors);
 
 // CORS middleware - reflects request origin with credentials
 app.use(createCorsMiddleware());
