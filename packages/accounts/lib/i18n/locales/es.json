@@ -43,25 +43,9 @@
     "signIn": {
       "title": "Inicia sesión en tu cuenta",
       "subtitle": "Usa tu cuenta de Oxy para gestionar tu perfil, seguridad y apps conectadas.",
-      "identifierLabel": "Correo o nombre de usuario",
-      "passwordLabel": "Contraseña",
-      "submit": "Iniciar sesión",
-      "or": "o",
       "withOxy": "Iniciar sesión con Oxy",
       "noAccount": "¿Aún no tienes una cuenta de Oxy?",
-      "getTheApp": "Descarga la app para crear una",
-      "twoFactor": {
-        "title": "Autenticación en dos pasos",
-        "subtitle": "Introduce el código de 6 dígitos de tu app de autenticación.",
-        "codeLabel": "Código de verificación",
-        "verify": "Verificar",
-        "back": "Atrás"
-      },
-      "errors": {
-        "credentials": "No se pudo iniciar sesión. Revisa tu usuario y contraseña.",
-        "generic": "No se pudo iniciar sesión. Inténtalo de nuevo.",
-        "twoFactor": "La verificación falló. Revisa el código e inténtalo de nuevo."
-      }
+      "getTheApp": "Descarga la app para crear una"
     }
   },
   "home": {

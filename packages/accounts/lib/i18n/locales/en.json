@@ -43,25 +43,9 @@
     "signIn": {
       "title": "Sign in to your account",
       "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
-      "identifierLabel": "Email or username",
-      "passwordLabel": "Password",
-      "submit": "Sign in",
-      "or": "or",
       "withOxy": "Sign in with Oxy",
       "noAccount": "Don't have an Oxy account yet?",
-      "getTheApp": "Get the app to create one",
-      "twoFactor": {
-        "title": "Two-factor authentication",
-        "subtitle": "Enter the 6-digit code from your authenticator app.",
-        "codeLabel": "Verification code",
-        "verify": "Verify",
-        "back": "Back"
-      },
-      "errors": {
-        "credentials": "Sign-in failed. Check your username and password.",
-        "generic": "Sign-in failed. Please try again.",
-        "twoFactor": "Verification failed. Check the code and try again."
-      }
+      "getTheApp": "Get the app to create one"
     }
   },
   "home": {
