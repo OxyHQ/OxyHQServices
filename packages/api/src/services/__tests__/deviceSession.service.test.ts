@@ -50,7 +50,7 @@ describe('projectState', () => {
 });
 
 describe('addAccount', () => {
-  it('adds a new account at authuser 0, sets it active, bumps revision', async () => {
+  it('adds a new account at authuser 0, sets it active, bumps revision (changed)', async () => {
     mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0 }));
     mockFindOneAndUpdate.mockReturnValueOnce(lean({
       deviceId: 'd1',
@@ -59,7 +59,8 @@ describe('addAccount', () => {
       revision: 1,
       updatedAt: new Date(1720000000000),
     }));
-    const state = await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's1' });
+    const { state, changed } = await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's1' });
+    expect(changed).toBe(true);
     expect(state.activeAccountId).toBe('a1');
     expect(state.accounts[0].authuser).toBe(0);
     expect(state.revision).toBe(1);
@@ -74,7 +75,8 @@ describe('addAccount', () => {
       revision: 1,
       updatedAt: new Date(1720000000000),
     }));
-    const state = await deviceSessionService.addAccount('d1', { accountId: 'org1', sessionId: 's-org', operatedByUserId: 'op1' });
+    const { state, changed } = await deviceSessionService.addAccount('d1', { accountId: 'org1', sessionId: 's-org', operatedByUserId: 'op1' });
+    expect(changed).toBe(true);
     expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
       { deviceId: 'd1' },
       expect.objectContaining({
@@ -87,41 +89,69 @@ describe('addAccount', () => {
     expect(state.accounts[0].operatedByUserId).toBe('op1');
   });
 
-  it('deactivates the replaced session when re-adding the same account with a different sessionId', async () => {
+  it('re-adding the same account with a DIFFERENT sessionId replaces the session, sets active, bumps revision, deactivates the displaced session (changed)', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's-old', authuser: 0, operatedByUserId: null }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 1,
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's-old', authuser: 0, operatedByUserId: null },
+        { accountId: { toString: () => 'b1' }, sessionId: 's-b', authuser: 1, operatedByUserId: null },
+      ],
+      activeAccountId: { toString: () => 'b1' },
+      revision: 5,
     }));
     mockDeactivate.mockResolvedValueOnce(true);
     mockFindOneAndUpdate.mockReturnValueOnce(lean({
       deviceId: 'd1',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's-new', authuser: 0, operatedByUserId: null }],
+      accounts: [
+        { accountId: { toString: () => 'b1' }, sessionId: 's-b', authuser: 1, operatedByUserId: null },
+        { accountId: { toString: () => 'a1' }, sessionId: 's-new', authuser: 0, operatedByUserId: null },
+      ],
       activeAccountId: { toString: () => 'a1' },
-      revision: 2,
+      revision: 6,
       updatedAt: new Date(1720000000000),
     }));
-    await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's-new' });
+    const { state, changed } = await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's-new' });
     expect(mockDeactivate).toHaveBeenCalledWith('s-old');
+    expect(changed).toBe(true);
+    expect(state.activeAccountId).toBe('a1');
+    expect(state.revision).toBe(6);
   });
 
-  it('does not deactivate anything when re-adding the same account with the same sessionId', async () => {
+  it('idempotent re-register: re-adding the same account with the SAME sessionId is a pure no-op (no deactivate, no write, no revision bump, changed=false)', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0, operatedByUserId: null }],
       activeAccountId: { toString: () => 'a1' },
       revision: 1,
-    }));
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'd1',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0, operatedByUserId: null }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 2,
       updatedAt: new Date(1720000000000),
     }));
-    await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's1' });
+    const { state, changed } = await deviceSessionService.addAccount('d1', { accountId: 'a1', sessionId: 's1' });
+    expect(changed).toBe(false);
     expect(mockDeactivate).not.toHaveBeenCalled();
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(state.activeAccountId).toBe('a1');
+    expect(state.revision).toBe(1);
+  });
+
+  it('REGRESSION: an idempotent re-register of a NON-active account never steals active from the current active account (the reload-handoff bug)', async () => {
+    // Device: A (active session s-A) was switched away from — B is now active.
+    // The cold-boot handoff re-registers the still-restored A session on reload.
+    // A must NOT become active again; the switch to B must survive.
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'A' }, sessionId: 's-A', authuser: 0, operatedByUserId: null },
+        { accountId: { toString: () => 'B' }, sessionId: 's-B', authuser: 1, operatedByUserId: null },
+      ],
+      activeAccountId: { toString: () => 'B' },
+      revision: 77,
+      updatedAt: new Date(1720000000000),
+    }));
+    const { state, changed } = await deviceSessionService.addAccount('d1', { accountId: 'A', sessionId: 's-A' });
+    expect(changed).toBe(false);
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(state.activeAccountId).toBe('B');
+    expect(state.revision).toBe(77);
   });
 });
 

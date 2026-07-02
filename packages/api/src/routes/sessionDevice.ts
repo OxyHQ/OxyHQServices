@@ -49,12 +49,13 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
   // deactivated) — such a session must NOT be re-added to the device set.
   if (!sessionDoc) { res.status(401).json({ error: 'Invalid session' }); return; }
   const operatedByUserId = sessionDoc.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
-  const state = await deviceSessionService.addAccount(session.deviceId, {
+  const { state, changed } = await deviceSessionService.addAccount(session.deviceId, {
     accountId,
     sessionId: session.sessionId,
     ...(operatedByUserId ? { operatedByUserId } : {}),
   });
-  broadcastDeviceState(state);
+  // An idempotent re-register (reload handoff) changes nothing — do not broadcast.
+  if (changed) broadcastDeviceState(state);
   res.json({ data: await withActiveToken(state) });
 }));
 

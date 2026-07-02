@@ -38,6 +38,11 @@ export type SwitchActiveResult =
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'unauthorized'; state: DeviceSessionState };
 
+// `changed` is false only for an idempotent re-register (same account, same
+// session) — the cold-boot reload handoff. The route uses it to skip the
+// device-state broadcast when nothing actually changed.
+export type AddAccountResult = { state: DeviceSessionState; changed: boolean };
+
 class DeviceSessionService {
   private async load(deviceId: string): Promise<IDeviceSession | null> {
     return DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
@@ -81,16 +86,34 @@ class DeviceSessionService {
     return this.signout(doc.deviceId, { accountId: activeId });
   }
 
+  // Registering a session into the device set. Reload ≠ sign-in: the client
+  // cold-boot handoff calls this on EVERY reload with the RESTORED session to
+  // re-register it, so this must be idempotent and must NOT steal the device's
+  // active account. Three cases:
+  //   1. Same account + SAME session already present  → pure no-op: return the
+  //      current state untouched (no active flip, no revision bump, no write).
+  //      This is the reload handoff; flipping active here silently reverted a
+  //      prior account switch on the next reload.
+  //   2. Same account + DIFFERENT session (deliberate re-auth of that account)
+  //      → replace the session (deactivating the displaced one), set active,
+  //      bump revision.
+  //   3. New account (fresh sign-in / first-entry mint) → add, set active, bump.
   async addAccount(
     deviceId: string,
     input: { accountId: string; sessionId: string; operatedByUserId?: string },
-  ): Promise<DeviceSessionState> {
+  ): Promise<AddAccountResult> {
     const current = await this.load(deviceId);
     const existing = (current?.accounts ?? []).find((a) => idToString(a.accountId) === input.accountId);
+
+    // Case 1 — idempotent re-register (the cold-boot reload handoff).
+    if (current && existing && existing.sessionId === input.sessionId) {
+      return { state: projectState(current), changed: false };
+    }
+
     const others = (current?.accounts ?? []).filter((a) => idToString(a.accountId) !== input.accountId);
-    // Replacing an account's session (re-add with a new sessionId) must deactivate
-    // the session it displaces — otherwise a live, server-side session is left
-    // dangling with no device-session entry referencing it.
+    // Case 2 — replacing an account's session (re-add with a new sessionId) must
+    // deactivate the session it displaces — otherwise a live, server-side session
+    // is left dangling with no device-session entry referencing it.
     if (existing && existing.sessionId !== input.sessionId) {
       try {
         await sessionService.deactivateSession(existing.sessionId);
@@ -114,7 +137,7 @@ class DeviceSessionService {
       },
       { new: true, upsert: true },
     ).lean<IDeviceSession>();
-    return projectState(updated as IDeviceSession);
+    return { state: projectState(updated as IDeviceSession), changed: true };
   }
 
   async switchActive(deviceId: string, accountId: string): Promise<SwitchActiveResult> {
