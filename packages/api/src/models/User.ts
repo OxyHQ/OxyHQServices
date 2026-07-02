@@ -268,6 +268,7 @@ export interface IUser extends Document {
     muteKeywords: boolean;
     discoverableByEmail?: boolean;
     discoverableByPhone?: boolean;
+    fediverseSharing: boolean;
   };
   // Avatar file ID referencing assets collection
   avatar?: string; // file id
@@ -570,6 +571,7 @@ const UserSchema: Schema = new Schema(
       // target user explicitly chooses to be discoverable by that channel.
       discoverableByEmail: { type: Boolean, default: false },
       discoverableByPhone: { type: Boolean, default: false },
+      fediverseSharing: { type: Boolean, default: true },
     },
   avatar: { type: String },
     color: {

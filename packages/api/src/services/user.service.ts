@@ -1423,6 +1423,11 @@ export class UserService {
       response.federation = userAny.federation;
     }
     response.isFederated = userAny.type === 'federated';
+    // Public, derived: whether this account participates in fediverse sharing.
+    // Intentionally public (like isFederated) — the state is observable anyway
+    // (the AP actor 404s when off). The rest of privacySettings stays private.
+    const privacySettings = userAny.privacySettings as { fediverseSharing?: boolean } | undefined;
+    response.fediverseSharing = privacySettings?.fediverseSharing !== false;
 
     if (stats) {
       response._count = stats;
