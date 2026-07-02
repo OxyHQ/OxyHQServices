@@ -142,8 +142,8 @@ describe('POST /session/device/signout', () => {
 });
 
 describe('POST /session/device/add', () => {
-  it('adds an account and broadcasts', async () => {
-    mockAddAccount.mockResolvedValueOnce(STATE);
+  it('adds an account and broadcasts when the state changed', async () => {
+    mockAddAccount.mockResolvedValueOnce({ state: STATE, changed: true });
     const res = await requestJson(server, 'POST', '/session/device/add', {});
     expect(res.status).toBe(200);
     expect(mockGetSession).toHaveBeenCalledWith('s1', true);
@@ -153,9 +153,18 @@ describe('POST /session/device/add', () => {
     expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });
 
+  it('does NOT broadcast on an idempotent re-register (changed=false) but still returns the current state', async () => {
+    mockAddAccount.mockResolvedValueOnce({ state: STATE, changed: false });
+    const res = await requestJson(server, 'POST', '/session/device/add', {});
+    expect(res.status).toBe(200);
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(res.body.data.state).toEqual(STATE);
+    expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
+  });
+
   it('passes the operator id through to addAccount for a managed-account session', async () => {
     mockGetSession.mockResolvedValueOnce({ operatedByUserId: { toString: () => 'op1' } });
-    mockAddAccount.mockResolvedValueOnce(STATE);
+    mockAddAccount.mockResolvedValueOnce({ state: STATE, changed: true });
     const res = await requestJson(server, 'POST', '/session/device/add', {});
     expect(res.status).toBe(200);
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1', operatedByUserId: 'op1' });
@@ -163,7 +172,7 @@ describe('POST /session/device/add', () => {
 
   it('does not forward operatedByUserId for an ordinary first-party session', async () => {
     mockGetSession.mockResolvedValueOnce({ operatedByUserId: null });
-    mockAddAccount.mockResolvedValueOnce(STATE);
+    mockAddAccount.mockResolvedValueOnce({ state: STATE, changed: true });
     await requestJson(server, 'POST', '/session/device/add', {});
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
   });
