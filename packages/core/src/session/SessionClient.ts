@@ -91,7 +91,19 @@ export class SessionClient {
   private applySync(raw: unknown): void {
     const sync = safeParseContract(deviceSessionSyncSchema, raw);
     if (!sync) {
-      logger.warn('[SessionClient] discarded invalid session sync');
+      const parsed = deviceSessionSyncSchema.safeParse(raw);
+      // Log field-level type diagnostics ONLY — never values. The payload carries tokens and
+      // session ids; issue.path/code and the invalid_type expected/received TYPE names are safe,
+      // but zod messages can embed offending values for other codes, so they are omitted.
+      const issues = parsed.success
+        ? []
+        : parsed.error.issues.map((issue) =>
+            issue.code === 'invalid_type'
+              ? { path: issue.path.join('.'), code: issue.code, expected: issue.expected, received: issue.received }
+              : { path: issue.path.join('.'), code: issue.code },
+          );
+      const keys = raw && typeof raw === 'object' ? Object.keys(raw) : [];
+      logger.warn('[SessionClient] discarded invalid session sync', { component: 'SessionClient', issues, keys });
       return;
     }
     this.applyState(sync.state);
