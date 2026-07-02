@@ -62,6 +62,14 @@ export const MUTUAL_COUNT_WINDOW = 300;
 /** Max followed accounts to feed the mutual-overlap aggregation. */
 export const MAX_FOLLOWING_FOR_MUTUALS = 2000;
 
+/**
+ * Hard cap on the viewer's own mutual-follow id set (`getMutualUserIds`, which
+ * powers Mention's "Mutuals" feed). Bounds BOTH the following window scanned and
+ * the number of ids returned, so the `$in` query and the response payload stay
+ * small regardless of how many accounts the viewer follows.
+ */
+export const MAX_MUTUAL_IDS = 5000;
+
 /** Max app-signal candidates pulled into the candidate union per request. */
 export const MAX_APP_SIGNAL_CANDIDATES = 500;
 

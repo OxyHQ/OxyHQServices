@@ -29,7 +29,7 @@ import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
-import { MAX_FOLLOWING_FOR_MUTUALS } from '../utils/recommendationWeights';
+import { MAX_FOLLOWING_FOR_MUTUALS, MAX_MUTUAL_IDS } from '../utils/recommendationWeights';
 
 interface UserWithCount {
   _count?: {
@@ -604,6 +604,75 @@ export class UserService {
       limit,
       offset,
     };
+  }
+
+  /**
+   * Get the VIEWER's OWN mutual-follow user ids — the accounts the viewer follows
+   * that ALSO follow the viewer back (a bidirectional follow edge). This is the
+   * SELF intersection `following(viewer) ∩ followers(viewer)`.
+   *
+   * Distinct from {@link getUserMutuals} ("followers you know" about ANOTHER
+   * profile, which returns hydrated DTOs and is empty for a self-target). This
+   * method is lean and ids-only on purpose: it SEEDS Mention's "Mutuals" feed,
+   * which then hydrates and ranks the mutuals' posts itself, so shipping bare ids
+   * (not profile DTOs) keeps the payload small.
+   *
+   * The viewer id is ALWAYS derived server-side by the route (`resolveViewerId`),
+   * never a client param. An anonymous caller (or a service token with no user
+   * context) has no "you follow" set ⇒ empty. A viewer who follows nobody
+   * short-circuits before the second query.
+   *
+   * Bounded by `MAX_MUTUAL_IDS`: both the following window scanned AND the number
+   * of ids returned are capped, so the `$in` and the payload stay small. When the
+   * viewer has more mutuals than the cap, the most-recently-established mutuals
+   * are returned first (`createdAt` desc).
+   */
+  async getMutualUserIds(
+    viewerId: string | undefined,
+    params: { limit?: number } = {}
+  ): Promise<string[]> {
+    if (!viewerId) {
+      return [];
+    }
+
+    const limit = Math.min(
+      params.limit && params.limit > 0 ? params.limit : MAX_MUTUAL_IDS,
+      MAX_MUTUAL_IDS
+    );
+
+    // 1. The viewer's following set (bounded so the `$in` below stays small).
+    const viewerFollowing = await Follow.find({
+      followerUserId: viewerId,
+      followType: FollowType.USER,
+    })
+      .select('followedId')
+      .limit(MAX_MUTUAL_IDS)
+      .lean();
+
+    const followingIds = viewerFollowing
+      .map((follow) => follow.followedId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+
+    if (followingIds.length === 0) {
+      return [];
+    }
+
+    // 2. Of those, the accounts that follow the viewer BACK — the bidirectional
+    //    edges — most-recently-established first.
+    const mutualFollows = await Follow.find({
+      followedId: viewerId,
+      followType: FollowType.USER,
+      followerUserId: { $in: followingIds },
+    })
+      .select('followerUserId')
+      .limit(limit)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return mutualFollows
+      .map((follow) => follow.followerUserId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+      .map((id) => id.toString());
   }
 
   /**
