@@ -18,7 +18,7 @@
  * ```
  *
  * Cross-domain SSO:
- * - Web: Automatic via FedCM (Chrome 108+, Safari 16.4+)
+ * - Web: Automatic via the per-apex `/auth/silent` iframe + terminal `/sso` bounce (SDK cold boot)
  * - Native: Automatic via shared Keychain/Account Manager
  * - Manual sign-in: signIn() redirects to the IdP (web) or opens the auth sheet (native)
  */
@@ -150,8 +150,9 @@ export function useAuth(): UseAuthReturn {
     const isIdentityProvider = isWebBrowser() &&
       window.location.hostname === idpHostname;
 
-    // Web (not on IdP): use the tokenless redirect SSO flow. FedCM / silent SSO
-    // already run on page load; an explicit click needs interactive auth.
+    // Web (not on IdP): use the tokenless redirect SSO flow. The silent
+    // cross-domain restore (per-apex `/auth/silent` iframe + `/sso` bounce)
+    // already ran on page load; an explicit click needs interactive auth.
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
       oxyServices.signInWithRedirect?.({
         redirectUri: window.location.href,

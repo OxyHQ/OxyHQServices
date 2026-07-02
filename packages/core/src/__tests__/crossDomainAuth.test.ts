@@ -6,6 +6,7 @@ interface MockServices {
   signInWithFedCM: jest.Mock;
   signInWithRedirect: jest.Mock;
   silentSignInWithFedCM: jest.Mock;
+  silentSignIn: jest.Mock;
   isFedCMSupported: jest.Mock;
   getCurrentUser: jest.Mock;
   handleAuthCallback: jest.Mock;
@@ -28,6 +29,7 @@ function createMockServices(overrides: Partial<MockServices> = {}): MockServices
     signInWithFedCM: jest.fn(async () => fakeSession('fedcm-sess')),
     signInWithRedirect: jest.fn(),
     silentSignInWithFedCM: jest.fn(async () => null),
+    silentSignIn: jest.fn(async () => null),
     isFedCMSupported: jest.fn(() => true),
     getCurrentUser: jest.fn(),
     handleAuthCallback: jest.fn(() => null),
@@ -62,28 +64,10 @@ describe('CrossDomainAuth', () => {
     });
   });
 
-  it('uses FedCM first in auto mode when supported', async () => {
-    const services = createMockServices();
+  it('auto mode goes straight to redirect and never calls FedCM, even when FedCM is supported', async () => {
+    const services = createMockServices({ isFedCMSupported: jest.fn(() => true) });
     const auth = new CrossDomainAuth(services as unknown as OxyServices);
     const selected: string[] = [];
-
-    const session = await auth.signIn({
-      method: 'auto',
-      onMethodSelected: (method) => selected.push(method),
-    });
-
-    expect(session?.sessionId).toBe('fedcm-sess');
-    expect(selected).toEqual(['fedcm']);
-    expect(services.signInWithRedirect).not.toHaveBeenCalled();
-  });
-
-  it('falls back to redirect in auto mode when FedCM fails', async () => {
-    const services = createMockServices({
-      signInWithFedCM: jest.fn(async () => { throw new Error('fedcm fail'); }),
-    });
-    const auth = new CrossDomainAuth(services as unknown as OxyServices);
-    const selected: string[] = [];
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     const result = await auth.signIn({
       method: 'auto',
@@ -91,9 +75,42 @@ describe('CrossDomainAuth', () => {
     });
 
     expect(result).toBeNull();
-    expect(selected).toEqual(['fedcm', 'redirect']);
+    expect(selected).toEqual(['redirect']);
+    expect(services.signInWithFedCM).not.toHaveBeenCalled();
     expect(services.signInWithRedirect).toHaveBeenCalledTimes(1);
+  });
 
-    warnSpy.mockRestore();
+  it('autoSignIn does not call FedCM (goes to redirect) regardless of browser support', async () => {
+    const services = createMockServices({
+      isFedCMSupported: jest.fn(() => true),
+      signInWithFedCM: jest.fn(async () => {
+        throw new Error('autoSignIn must never call signInWithFedCM');
+      }),
+    });
+    const auth = new CrossDomainAuth(services as unknown as OxyServices);
+
+    const result = await auth.signIn({ method: 'auto' });
+
+    expect(result).toBeNull();
+    expect(services.signInWithFedCM).not.toHaveBeenCalled();
+    expect(services.isFedCMSupported).not.toHaveBeenCalled();
+    expect(services.signInWithRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it('getRecommendedMethod always recommends redirect', () => {
+    const services = createMockServices({ isFedCMSupported: jest.fn(() => true) });
+    const auth = new CrossDomainAuth(services as unknown as OxyServices);
+
+    expect(auth.getRecommendedMethod().method).toBe('redirect');
+    expect(services.isFedCMSupported).not.toHaveBeenCalled();
+  });
+
+  it('silentSignIn falls back to iframe-based silent auth without ever calling FedCM', async () => {
+    const services = createMockServices({ isFedCMSupported: jest.fn(() => true) });
+    const auth = new CrossDomainAuth(services as unknown as OxyServices);
+
+    await auth.silentSignIn();
+
+    expect(services.silentSignInWithFedCM).not.toHaveBeenCalled();
   });
 });

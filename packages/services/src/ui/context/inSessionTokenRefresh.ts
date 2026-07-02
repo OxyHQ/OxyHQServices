@@ -89,15 +89,17 @@ type RefreshArm = () => Promise<string | null>;
  *     sign-in) so a genuinely dead session reconciles to logged-out rather than
  *     staying a zombie.
  *
- *   WEB, in order:
- *     1. Per-apex `/auth/silent` iframe — {@link mintSessionViaPerApexIframe}
- *        (shared verbatim with cold boot). The durable cross-apex path; also
- *        covers `*.oxy.so` (the per-apex host IS the central host there).
- *     2. FedCM silent re-auth (Chrome) — `silentSignInWithFedCM`.
+ *   WEB: Per-apex `/auth/silent` iframe — {@link mintSessionViaPerApexIframe}
+ *     (shared verbatim with cold boot). The durable cross-apex path; also
+ *     covers `*.oxy.so` (the per-apex host IS the central host there). There
+ *     is no FedCM arm — FedCM was removed from the client sign-in/refresh path
+ *     entirely (Chrome-only; see `CrossDomainAuth`'s doc comment in
+ *     `@oxyhq/core` for the production sign-in loop that motivated the
+ *     removal).
  *
  * NO RECURSION: no arm issues a request through the authed client's
- * `refreshAccessToken` path. The iframe/FedCM transports are postMessage /
- * credential APIs; the follow-up `/session/user` fetch inside `silentSignIn`
+ * `refreshAccessToken` path. The iframe transport is postMessage-based; the
+ * follow-up `/session/user` fetch inside `silentSignIn`
  * runs against the just-planted FULL-TTL token (≫ the preflight lead), so it
  * never re-enters the refresh path.
  */
@@ -123,12 +125,6 @@ export function createInSessionRefreshHandler(oxyServices: OxyServices): AuthRef
         ? oxyServices.getAccessToken()
         : null,
     ],
-    ['fedcm-silent', async () => {
-      if (oxyServices.isFedCMSupported?.() !== true) {
-        return null;
-      }
-      return (await oxyServices.silentSignInWithFedCM?.()) ? oxyServices.getAccessToken() : null;
-    }],
   ];
 
   return async (reason: AuthRefreshReason): Promise<string | null> => {

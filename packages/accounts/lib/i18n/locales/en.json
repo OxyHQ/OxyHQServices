@@ -48,8 +48,6 @@
       "submit": "Sign in",
       "or": "or",
       "withOxy": "Sign in with Oxy",
-      "fedcm": "Continue with your browser",
-      "unsupported": "Your browser doesn't support secure sign-in. Please update it or use the Oxy app.",
       "noAccount": "Don't have an Oxy account yet?",
       "getTheApp": "Get the app to create one",
       "twoFactor": {

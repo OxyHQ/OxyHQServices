@@ -48,8 +48,6 @@
       "submit": "Iniciar sesión",
       "or": "o",
       "withOxy": "Iniciar sesión con Oxy",
-      "fedcm": "Continuar con tu navegador",
-      "unsupported": "Tu navegador no admite el inicio de sesión seguro. Actualízalo o usa la app de Oxy.",
       "noAccount": "¿Aún no tienes una cuenta de Oxy?",
       "getTheApp": "Descarga la app para crear una",
       "twoFactor": {

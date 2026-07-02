@@ -3,7 +3,7 @@
  *
  * `qrcode` is loaded lazily via dynamic `import()` so it never enters the
  * module graph unless a consumer actually renders a QR — keeping the headless
- * `@oxyhq/auth` bundle lean for apps that only use FedCM / redirect auth.
+ * `@oxyhq/auth` bundle lean for apps that only use redirect / SSO auth.
  *
  * ESM/CJS safety: a dynamic `import('qrcode')` stays an `import()` in the ESM
  * build (no bare `require`, per the package's ESM contract) and transpiles to a

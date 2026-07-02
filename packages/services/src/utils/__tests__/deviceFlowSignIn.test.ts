@@ -19,7 +19,7 @@
  *   session that was never registered — surfacing as "Authorization
  *   successful but failed to complete sign in." The fix commits the claimed
  *   session through `commitSession` (`useOxy().handleWebSession`) instead —
- *   the same path a fresh password/FedCM sign-in uses to register the account
+ *   the same path a fresh password sign-in uses to register the account
  *   into the device's session set.
  *
  *   These tests pin the order (claim before commit), the fail-fast behaviour

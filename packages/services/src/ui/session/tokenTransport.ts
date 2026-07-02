@@ -8,7 +8,7 @@ import { isWebBrowser } from '../hooks/useWebSSO';
  * none is currently held, reusing the SAME primitives `OxyContext`'s cold
  * boot already relies on (never re-implemented here):
  *
- * - web: `oxyServices.silentSignIn()` (per-apex iframe / FedCM silent).
+ * - web: `oxyServices.silentSignIn()` (per-apex `/auth/silent` iframe).
  * - native: `oxyServices.signInWithSharedIdentity()` (app-group keychain).
  *
  * Both primitives plant the token internally on success (the "Sign-In Token

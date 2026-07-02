@@ -286,8 +286,9 @@ export function useOxyAuthSession(
   // sits "Waiting for authorization..." forever. Once `claimSessionByToken`
   // plants the tokens in the HttpService, the claimed session is committed via
   // `commitSession` (`useOxy().handleWebSession`) — the SAME path a fresh
-  // password/FedCM sign-in uses to register the account into the device's
-  // server-authoritative session set. It is NOT yet a member of that set, so
+  // password sign-in or a silent cross-domain restore uses to register the
+  // account into the device's server-authoritative session set. It is NOT yet a
+  // member of that set, so
   // `switchSession` (an account-SWITCH between accounts already on the
   // device) is the wrong primitive here. Shared with both containers via
   // `completeDeviceFlowSignIn` so the two paths cannot drift.

@@ -4,40 +4,31 @@ import {
     getAccountDisplayName,
     getAccountFallbackHandle,
 } from '@oxyhq/core';
-import type {
-    RefreshAllAccountUser,
-    User,
-    ClientSession,
-} from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from './useI18n';
 import { queryKeys } from './queries/queryKeys';
 
 /**
- * The per-account user shape carried by a {@link DeviceAccount}. Either:
- *  - the minimal projection returned by `POST /auth/refresh-all`
- *    ({@link RefreshAllAccountUser}, the shared apex path), or
- *  - the SDK's canonical {@link User} document (the active row on the local
- *    fallback path, which already has the full user loaded in `useOxy()`).
- *
- * Both satisfy `getAccountDisplayName`'s `DisplayNameUserShape`, so display
- * resolution is uniform across paths.
+ * The per-account user shape carried by a {@link DeviceAccount}. The SDK's
+ * canonical {@link User} document — either the freshest `useOxy().user` (the
+ * active row) or a profile resolved via `oxyServices.getUsersByIds()` (every
+ * other row).
  */
-export type DeviceAccountUser = RefreshAllAccountUser | User;
+export type DeviceAccountUser = User;
 
 /**
  * One signed-in account on this device, fully hydrated for the account
- * chooser. Unlike the old `AccountMenu` behaviour (which only carried the
- * ACTIVE session's user), EVERY entry here carries real per-account
- * `displayName` / `email` / `avatarUrl` / `color`.
+ * chooser. Every entry carries real per-account `displayName` / `email` /
+ * `avatarUrl` / `color` — not just the active session's user.
  */
 export interface DeviceAccount {
-    /** Session id used to switch to this account on native. */
+    /** Session id used to switch to this account. */
     sessionId: string;
     /**
-     * Device-local refresh-cookie slot index (0..N-1), present only on the
-     * shared apex path. Web silent-switch (`refreshTokenViaCookie({ authuser }`)
-     * keys off this; absent on the local fallback and on native.
+     * Device-local refresh-cookie slot index (0..N-1), when the underlying
+     * `ClientSession` carries one (web silent-switch via
+     * `refreshTokenViaCookie({ authuser })`). Absent on native.
      */
     authuser?: number;
     /** Whether this account is the currently-active session. */
@@ -54,37 +45,28 @@ export interface DeviceAccount {
     avatarUrl?: string;
     /** Account's preferred Bloom color preset, or `null` when unset. */
     color: string | null;
-    /** The underlying per-account user payload (shared projection or full User). */
+    /** The underlying per-account user payload. */
     user: DeviceAccountUser;
 }
 
 export interface UseDeviceAccountsResult {
-    /** Every account signed in on this device, current one(s) flagged `isCurrent`. */
+    /** Every account signed in on this device, current one flagged `isCurrent`. */
     accounts: DeviceAccount[];
-    /** True until the first detection settles. */
+    /** True until the per-account profile fetch settles. */
     isLoading: boolean;
     /** The currently-active session id (mirrors `useOxy().activeSessionId`). */
     currentSessionId: string | null;
-    /**
-     * `true` when the list came from the shared apex path
-     * (`refreshAllSessions()` returned >0 accounts — the cross-domain SSO cookie
-     * set on `*.oxy.so`). `false` when it came from the local `useOxy()`
-     * fallback (native, or cross-domain web where the apex cookie is absent).
-     */
-    fromSharedApex: boolean;
 }
 
 /**
  * Resolve which entries are the current account, robustly.
  *
- * Primary signal: `entry.sessionId === activeSessionId`. On the web shared-apex
- * path, `refreshAllSessions()` returns SERVER-side session ids that may not
- * equal the locally-stored `activeSessionId` (a different storage namespace /
- * server perspective), so a pure `sessionId` match can flag NO row as current —
- * the bug that surfaced as "Not signed in" even while authenticated.
- *
- * Fallbacks, applied only when the `sessionId` match found nothing AND the user
- * is authenticated:
+ * Primary signal: `entry.sessionId === activeSessionId` — both are projected
+ * from the same `SessionClient` state (`deviceStateToClientSessions` +
+ * `activeSessionIdOf`), so this normally matches exactly. Fallbacks exist only
+ * to bridge the brief window between the two sequential `updateSessions` /
+ * `setActiveSessionId` calls in `OxyContext.syncFromClient`, applied only when
+ * the `sessionId` match found nothing AND the user is authenticated:
  *  1. Match the live `user.id` against each entry's per-account user id.
  *  2. If still nothing and there is exactly one account, mark that one current.
  *
@@ -124,7 +106,7 @@ export function markCurrentAccount(
     }
 
     // Authenticated, nothing matched, but there is exactly one account → it must
-    // be the current one (single-account shared-apex / cross-domain case).
+    // be the current one.
     if (bySession.length === 1) {
         return [{ ...bySession[0], isCurrent: true }];
     }
@@ -136,54 +118,32 @@ export function markCurrentAccount(
  * Resolve every account signed in on this device for the unified account
  * switcher, with real per-account name / email / avatar / color.
  *
- * ## Data sources (web vs native)
+ * ## Data source (server-authoritative via `SessionClient`)
  *
- * - **Web on a `*.oxy.so` host** → `oxyServices.refreshAllSessions()` returns
- *   the full apex device-account list (identical to what `auth.oxy.so` sees,
- *   because the `Domain=oxy.so` refresh cookies reach `api.oxy.so`). Used
- *   directly — this is the `fromSharedApex: true` path.
- * - **Cross-domain web (non-`oxy.so` apex)** OR **native (no browser cookies)**
- *   → `refreshAllSessions()` yields `{ accounts: [] }` (the apex cookies never
- *   reach the request: cross-domain by `Domain`, native by having no cookie
- *   jar at all; a 401 is also normalised to `{ accounts: [] }` inside the
- *   core mixin). In that case we FALL BACK to the SDK's local multi-account
- *   list from `useOxy()` (`sessions` + `activeSessionId` + the active `user`).
- *   This is the `fromSharedApex: false` path.
+ * The device account SET is `useOxy().sessions` — a `ClientSession[]`
+ * projected by `OxyContext.syncFromClient` from the server-authoritative
+ * `SessionClient` device state (see `deviceStateToClientSessions` in
+ * `@oxyhq/core`). Each `ClientSession` carries only `sessionId` + `userId` (no
+ * profile fields), so this hook additionally fetches every account's profile
+ * via `oxyServices.getUsersByIds()` and hydrates each row from the result.
  *
- * The fallback decision is purely data-driven: **if `refreshAllSessions()`
- * returns >0 accounts, use the shared path; otherwise fall back to local
- * `useOxy()` sessions.** No host sniffing is needed — the cookie scoping does
- * the discrimination for us, and the same code path works on native (where the
- * fetch returns `{ accounts: [] }`).
+ * The ACTIVE session's row always uses `useOxy().user` directly rather than
+ * the fetched map — it is already loaded and is the freshest copy (kept live
+ * by every profile-mutating flow), so there is no reason to wait on the batch
+ * fetch for it. Every OTHER row is hydrated once its profile resolves.
  *
- * ## Why React Query (not a `useRef`/`useState` start-once like the auth app)
- *
- * The auth app's `use-device-accounts.ts` hand-rolls a `startedRef` because it
- * has no React Query. The SDK does. `refreshAllSessions()` ROTATES single-use
- * refresh cookies on every call, so it must run AT MOST ONCE per page load:
- * we model that with `staleTime: Infinity` + `gcTime: Infinity` +
- * `refetchOnWindowFocus/Reconnect/Mount: false` + `retry: false`. React Query
- * dedupes concurrent mounts and caches the single result for the page's
- * lifetime — the exact "run once" guarantee the auth app documents, but
- * without the manual ref/state machinery.
- *
- * ## Validation note (intentionally NO zod re-parse)
- *
- * The auth app's hook calls `fetch` directly, so IT must `safeParse` the wire
- * response with `@oxyhq/contracts`. This hook calls
- * `oxyServices.refreshAllSessions()`, whose core mixin ALREADY validates and
- * normalises the wire response (skips entries missing required fields,
- * normalises `authuser` null→0, builds the `RefreshAllAccountUser` shape) — the
- * mixin is the single source of truth. Re-validating the SDK's own already-typed
- * output here would be redundant double-validation, so we do not re-parse.
+ * This supersedes the retired `oxyServices.refreshAllSessions()` cross-domain
+ * `oxy_rt` cookie path — the device account set is now sourced from the
+ * `SessionClient` alone, on every platform, with no host-sniffing or
+ * shared-apex/local-fallback dichotomy.
  *
  * ## Error handling
  *
- * `refreshAllSessions()` already maps 401/404/abort to `{ accounts: [] }`
- * internally. Any OTHER failure (network, 5xx) propagates as a thrown error and
- * is surfaced by React Query (`query.isError`) — never swallowed. Callers that
- * don't care can ignore it; the hook still returns the local fallback list so
- * the chooser stays usable.
+ * `getUsersByIds()` already resolves to `[]` on a failed chunk (logged
+ * internally) rather than throwing — see its doc comment in
+ * `OxyServices.user.ts`. Accounts whose profile could not be resolved are
+ * simply omitted from the list (except the active one, which never depends on
+ * this fetch) until a subsequent fetch succeeds.
  */
 export function useDeviceAccounts(): UseDeviceAccountsResult {
     const {
@@ -195,118 +155,83 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
     } = useOxy();
     const { locale } = useI18n();
 
-    // Stable, per-API-origin query key. `refreshAllSessions` resolves against
-    // the session base url derived from `getBaseURL()`, so keying on it scopes
-    // the cached result to the API the provider is pointed at.
-    const baseURL = oxyServices.getBaseURL();
+    // Every distinct account id carried by the device's session set, sorted for
+    // a stable query key regardless of session ordering.
+    const accountIds = useMemo<string[]>(() => {
+        const ids = new Set<string>();
+        for (const session of sessions ?? []) {
+            if (session.userId) {
+                ids.add(session.userId);
+            }
+        }
+        return Array.from(ids).sort();
+    }, [sessions]);
 
-    const query = useQuery({
-        queryKey: [...queryKeys.accounts.all, 'deviceAccounts', baseURL] as const,
-        queryFn: () => oxyServices.refreshAllSessions(),
-        // Only attempt the shared apex path while signed in. When logged out
-        // there is nothing to enumerate and the fallback (also empty) is used.
-        enabled: isAuthenticated,
-        // Single-use cookie rotation → run at most once per page load.
-        staleTime: Number.POSITIVE_INFINITY,
-        gcTime: Number.POSITIVE_INFINITY,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        refetchOnMount: false,
-        retry: false,
+    const profilesQuery = useQuery({
+        queryKey: queryKeys.users.list(accountIds),
+        queryFn: () => oxyServices.getUsersByIds(accountIds),
+        enabled: isAuthenticated && accountIds.length > 0,
+        staleTime: 5 * 60 * 1000, // 5 minutes — matches useUserProfile's convention
+        gcTime: 30 * 60 * 1000, // 30 minutes
     });
 
-    const sharedAccounts = query.data?.accounts ?? [];
-    const fromSharedApex = sharedAccounts.length > 0;
+    const profilesById = useMemo<Map<string, User>>(() => {
+        const map = new Map<string, User>();
+        for (const profile of profilesQuery.data ?? []) {
+            map.set(profile.id, profile);
+        }
+        return map;
+    }, [profilesQuery.data]);
 
     const accounts = useMemo<DeviceAccount[]>(() => {
         const resolveAvatarUrl = (avatar: string | null | undefined): string | undefined =>
             avatar ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
 
-        // Build a single current-account row from the live `useOxy().user`. Used
-        // as a last-resort fallback when neither the shared-apex probe nor the
-        // local session store yielded a row but the user IS authenticated (e.g.
-        // a cross-domain host where the apex probe returned empty before the
-        // local session store hydrated). The signed-in user must ALWAYS be
-        // represented. Email is the REAL email or the `@handle` line — never a
-        // synthesized `username@oxy.so`.
+        const toDeviceAccount = (
+            sessionId: string,
+            authuser: number | undefined,
+            accountUser: User,
+        ): DeviceAccount => {
+            const displayName = getAccountDisplayName(accountUser, locale);
+            const handle = getAccountFallbackHandle(accountUser);
+            const secondaryHandle = handle ? `@${handle}` : null;
+            return {
+                sessionId,
+                authuser,
+                isCurrent: sessionId === activeSessionId,
+                displayName,
+                // Real email, or null (NEVER synthesized). The UI uses the
+                // `@handle` line only when email is genuinely absent.
+                email: accountUser.email ?? secondaryHandle,
+                avatarUrl: resolveAvatarUrl(accountUser.avatar),
+                color: accountUser.color ?? null,
+                user: accountUser,
+            };
+        };
+
+        // The signed-in user must ALWAYS be represented, even before the device
+        // session set has synced (e.g. immediately after cold boot). Synthesize
+        // a single current row from the live `useOxy().user` in that case.
         const liveUserRow = (): DeviceAccount[] => {
             if (!isAuthenticated || !user || !activeSessionId) {
                 return [];
             }
-            const displayName = getAccountDisplayName(user, locale);
-            const handle = getAccountFallbackHandle(user);
-            const secondaryHandle = handle ? `@${handle}` : null;
-            return [{
-                sessionId: activeSessionId,
-                authuser: undefined,
-                isCurrent: true,
-                displayName,
-                email: user.email ?? secondaryHandle,
-                avatarUrl: resolveAvatarUrl(user.avatar),
-                color: user.color ?? null,
-                user,
-            }];
+            return [toDeviceAccount(activeSessionId, undefined, user)];
         };
 
-        let built: DeviceAccount[];
+        const built = (sessions ?? []).flatMap((session): DeviceAccount[] => {
+            const isCurrent = session.sessionId === activeSessionId;
+            // The active row always uses the live `user` — freshest available —
+            // regardless of whether the batch profile fetch has resolved yet.
+            const accountUser: User | undefined = isCurrent && user
+                ? user
+                : (session.userId ? profilesById.get(session.userId) : undefined);
+            if (!accountUser) {
+                return [];
+            }
+            return [toDeviceAccount(session.sessionId, session.authuser, accountUser)];
+        });
 
-        if (fromSharedApex) {
-            // Shared apex path: every entry carries a real per-account user.
-            built = sharedAccounts.flatMap((entry): DeviceAccount[] => {
-                if (!entry.user) {
-                    return [];
-                }
-                const accountUser: DeviceAccountUser = entry.user;
-                const displayName = getAccountDisplayName(accountUser, locale);
-                const handle = getAccountFallbackHandle(accountUser);
-                const email = entry.user.email ?? null;
-                const secondaryHandle = handle ? `@${handle}` : null;
-                return [{
-                    sessionId: entry.sessionId,
-                    authuser: entry.authuser,
-                    // Provisional; finalised by `markCurrentAccount` below so the
-                    // shared-apex path is robust to server/local session-id skew.
-                    isCurrent: false,
-                    displayName,
-                    // Real email, or null (NEVER synthesized). The UI uses the
-                    // `@handle` line only when email is genuinely absent.
-                    email: email ?? secondaryHandle,
-                    avatarUrl: resolveAvatarUrl(entry.user.avatar),
-                    color: entry.user.color ?? null,
-                    user: accountUser,
-                }];
-            });
-        } else {
-            // Local fallback path: build from the SDK's multi-session store. The
-            // active session row gets the full loaded `user`; inactive fallback
-            // rows carry only what the `ClientSession` exposes (no synthesized
-            // identity — they show the active user's data only when active).
-            built = (sessions ?? []).flatMap((session: ClientSession): DeviceAccount[] => {
-                const isCurrent = session.sessionId === activeSessionId;
-                if (!isCurrent || !user) {
-                    return [];
-                }
-                const accountUser: DeviceAccountUser = user;
-                const displayName = getAccountDisplayName(accountUser, locale);
-                const handle = getAccountFallbackHandle(accountUser);
-                const email = user.email ?? null;
-                const secondaryHandle = handle ? `@${handle}` : null;
-                return [{
-                    sessionId: session.sessionId,
-                    authuser: session.authuser,
-                    isCurrent,
-                    displayName,
-                    email: email ?? secondaryHandle,
-                    avatarUrl: resolveAvatarUrl(user.avatar),
-                    color: user.color ?? null,
-                    user: accountUser,
-                }];
-            });
-        }
-
-        // Robust current-account detection: tolerate server/local session-id
-        // skew on the shared-apex path by falling back to the live user's id and
-        // the single-account heuristic.
         const flagged = markCurrentAccount(
             built,
             activeSessionId,
@@ -314,31 +239,15 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
             isAuthenticated,
         );
 
-        // The signed-in user must ALWAYS be represented. If detection produced
-        // an empty list yet the user is authenticated, synthesize a single
-        // current row from the live `useOxy().user`.
         if (flagged.length === 0) {
             return liveUserRow();
         }
         return flagged;
-    }, [
-        fromSharedApex,
-        sharedAccounts,
-        sessions,
-        activeSessionId,
-        user,
-        isAuthenticated,
-        locale,
-        oxyServices,
-    ]);
+    }, [sessions, activeSessionId, user, isAuthenticated, profilesById, locale, oxyServices]);
 
     return {
         accounts,
-        // `isLoading` only reflects the shared probe while it's the relevant
-        // source. Once we know we're on the fallback (probe settled with 0
-        // accounts) the local list is synchronously available.
-        isLoading: isAuthenticated && query.isLoading,
+        isLoading: isAuthenticated && accountIds.length > 0 && profilesQuery.isLoading,
         currentSessionId: activeSessionId ?? null,
-        fromSharedApex,
     };
 }
