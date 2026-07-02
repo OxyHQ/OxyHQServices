@@ -224,14 +224,16 @@ export type { ProfileMenuProps, ProfileMenuAnchor } from './ui/components/Profil
 export { default as AccountSwitcher, AccountSwitcherView } from './ui/components/AccountSwitcher';
 export type { AccountSwitcherProps, AccountSwitcherActions } from './ui/components/AccountSwitcher';
 
-// Unified device-account hook (hydrates every signed-in account on the device
-// with real name/email/avatar/color for the account switcher).
-export { useDeviceAccounts } from './ui/hooks/useDeviceAccounts';
+// Unified switchable-accounts hook — the single source of everything the user
+// can switch into: device sign-ins AND linked graph accounts (owned orgs +
+// shared-with-you), deduped by account id and hydrated with real
+// name/email/avatar/color. Every switch routes through `switchToAccount`.
+export { useSwitchableAccounts } from './ui/hooks/useSwitchableAccounts';
 export type {
-    DeviceAccount,
-    DeviceAccountUser,
-    UseDeviceAccountsResult,
-} from './ui/hooks/useDeviceAccounts';
+    SwitchableAccount,
+    SwitchableAccountUser,
+    UseSwitchableAccountsResult,
+} from './ui/hooks/useSwitchableAccounts';
 
 // Unified "Manage your Oxy Account" screen (the caller's own personal account)
 export { default as ManageAccountScreen } from './ui/screens/ManageAccountScreen';
