@@ -62,7 +62,7 @@ const SignInModal: React.FC = () => {
 
     const insets = useSafeAreaInsets();
     const theme = useTheme();
-    const { oxyServices, switchSession, clientId } = useOxy();
+    const { oxyServices, handleWebSession, clientId } = useOxy();
 
     // Register the imperative visibility callback.
     useEffect(() => {
@@ -83,7 +83,7 @@ const SignInModal: React.FC = () => {
             theme={theme}
             insets={insets}
             oxyServices={oxyServices}
-            switchSession={switchSession}
+            handleWebSession={handleWebSession}
             clientId={clientId}
         />
     );
@@ -93,7 +93,7 @@ interface SignInModalContentProps {
     theme: ReturnType<typeof useTheme>;
     insets: ReturnType<typeof useSafeAreaInsets>;
     oxyServices: ReturnType<typeof useOxy>['oxyServices'];
-    switchSession: ReturnType<typeof useOxy>['switchSession'];
+    handleWebSession: ReturnType<typeof useOxy>['handleWebSession'];
     clientId: ReturnType<typeof useOxy>['clientId'];
 }
 
@@ -101,13 +101,13 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
     theme,
     insets,
     oxyServices,
-    switchSession,
+    handleWebSession,
     clientId,
 }) => {
     const { qrData, qrPayload, isLoading, error, isWaiting, openAuthApproval, openSameDeviceApproval, retry } = useOxyAuthSession(
         oxyServices,
         clientId,
-        switchSession,
+        handleWebSession,
         { onSignedIn: hideSignInModal },
     );
 
