@@ -80,6 +80,14 @@ const SILENT_IFRAME_REFRESH_TIMEOUT = 4000;
  */
 export const TOKEN_REFRESH_LEAD_MS = 60_000;
 
+/**
+ * Max `setTimeout` delay (2^31 − 1 ms, ~24.8 days). A larger delay overflows
+ * the browser/Node int32 timer field and fires IMMEDIATELY — with a long-TTL
+ * token that turns the reschedule-on-finish loop into a tight busy refresh.
+ * Clamp the computed delay to this ceiling.
+ */
+const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
+
 /** A single refresh arm: mints a session, or resolves to `null` to fall through to the next arm. */
 type RefreshArm = () => Promise<SessionLoginResponse | null>;
 
@@ -215,7 +223,7 @@ export function startTokenRefreshScheduler(oxyServices: OxyServices): TokenRefre
       return;
     }
     const fireInMs = expSeconds * 1000 - Date.now() - TOKEN_REFRESH_LEAD_MS;
-    timer = setTimeout(runRefresh, Math.max(fireInMs, 0));
+    timer = setTimeout(runRefresh, Math.min(Math.max(fireInMs, 0), MAX_TIMEOUT_DELAY_MS));
   };
 
   const onFocus = (): void => {

@@ -619,22 +619,46 @@ export function WebOxyProvider({
       await clearSessionState();
       return;
     }
+    // LAST-WRITE-WINS GUARD: `syncFromClient` runs concurrently — once per
+    // socket `notify()` push AND once per direct post-mutation call — and each
+    // invocation captures `state` before the async profile fetch. Capture the
+    // revision this fetch is FOR, then re-read the client's current state after
+    // the await and bail if it has moved on, so a SLOWER, OLDER fetch cannot
+    // clobber `user`/`sessions`/`accounts` back to an outdated projection.
+    const capturedRevision = state.revision;
     const ids = accountIdsOf(state);
-    const users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
+    let users: User[] = [];
+    try {
+      users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
+    } catch (fetchError) {
+      // Fire-and-forget from the `sessionClient.subscribe` callback, so a
+      // rejected fetch would surface as an unhandled rejection. Log and bail;
+      // the next `notify()`/mutation re-projects the current truth.
+      logger.warn(
+        'syncFromClient: failed to resolve account profiles',
+        { component: 'WebOxyProvider', method: 'syncFromClient' },
+        fetchError as unknown,
+      );
+      return;
+    }
+    const latest = sessionClient.getState();
+    if (!latest || latest.revision !== capturedRevision) {
+      return;
+    }
     const usersById = new Map(users.map((resolvedUser) => [resolvedUser.id, resolvedUser]));
-    setClientProjectedSessions(deviceStateToClientSessions(state, usersById));
-    setActiveSessionId(activeSessionIdOf(state));
-    const activeUser = activeUserOf(state, usersById);
+    setClientProjectedSessions(deviceStateToClientSessions(latest, usersById));
+    setActiveSessionId(activeSessionIdOf(latest));
+    const activeUser = activeUserOf(latest, usersById);
     if (activeUser) {
       setUser(activeUser);
     }
     const expSeconds = oxyServices.getAccessTokenExpiry();
-    setAccounts(projectAuthManagerAccounts(state, usersById, {
+    setAccounts(projectAuthManagerAccounts(latest, usersById, {
       accessToken: oxyServices.getAccessToken(),
       expiresAt: expSeconds !== null ? new Date(expSeconds * 1000).toISOString() : null,
     }));
-    setActiveAuthuserState(activeAuthuserOf(state));
-    sessionClientHost.setCurrentAccountId(state.activeAccountId);
+    setActiveAuthuserState(activeAuthuserOf(latest));
+    sessionClientHost.setCurrentAccountId(latest.activeAccountId);
   }, [oxyServices, sessionClient, sessionClientHost, clearSessionState]);
 
   useEffect(() => {

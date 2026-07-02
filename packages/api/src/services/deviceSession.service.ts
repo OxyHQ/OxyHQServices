@@ -35,7 +35,8 @@ function lowestFreeAuthuser(accounts: IDeviceSessionAccount[]): number {
 
 export type SwitchActiveResult =
   | { ok: true; state: DeviceSessionState }
-  | { ok: false; reason: 'not_found' | 'unauthorized' };
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'unauthorized'; state: DeviceSessionState };
 
 class DeviceSessionService {
   private async load(deviceId: string): Promise<IDeviceSession | null> {
@@ -128,7 +129,15 @@ class DeviceSessionService {
     // authority over (see resolveActiveToken, which does the same check on
     // read but can't undo an already-committed activeAccountId).
     const validated = await sessionService.validateSessionById(target.sessionId, false);
-    if (!validated) return { ok: false, reason: 'unauthorized' };
+    if (!validated) {
+      // The target session is revoked (e.g. the operator's act_as membership
+      // was pulled). Leaving it in the device set strands a dead account the
+      // device can never switch into. Heal by removing it through the SAME
+      // signout cascade a normal removal uses, and return the healed state so
+      // the route can broadcast it to the device's other tabs/connections.
+      const state = await this.signout(deviceId, { accountId });
+      return { ok: false, reason: 'unauthorized', state };
+    }
 
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },

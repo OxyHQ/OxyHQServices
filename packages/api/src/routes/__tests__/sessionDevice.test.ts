@@ -75,7 +75,9 @@ afterAll((done) => { server.close(done); });
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveActiveToken.mockResolvedValue({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
-  mockGetSession.mockResolvedValue(null);
+  // Default to an active first-party session; individual tests override this
+  // to exercise managed sessions or the expired/revoked (null) 401 path.
+  mockGetSession.mockResolvedValue({ operatedByUserId: null });
 });
 
 describe('GET /session/device/state', () => {
@@ -107,12 +109,15 @@ describe('POST /session/device/switch', () => {
     expect(mockBroadcast).not.toHaveBeenCalled();
   });
 
-  it('403 when the target account session is not authorized (e.g. revoked act_as membership)', async () => {
-    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'unauthorized' });
+  it('403 and broadcasts the healed state when the target session is revoked (act_as membership pulled)', async () => {
+    const healed = { ...STATE, accounts: [], activeAccountId: null, revision: 2 };
+    mockSwitchActive.mockResolvedValueOnce({ ok: false, reason: 'unauthorized', state: healed });
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'org1' });
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Account not authorized');
-    expect(mockBroadcast).not.toHaveBeenCalled();
+    // switchActive healed the device set (dropped the revoked account); the
+    // route broadcasts that healed state so the device's other tabs converge.
+    expect(mockBroadcast).toHaveBeenCalledWith(healed);
   });
 });
 
@@ -161,5 +166,14 @@ describe('POST /session/device/add', () => {
     mockAddAccount.mockResolvedValueOnce(STATE);
     await requestJson(server, 'POST', '/session/device/add', {});
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
+  });
+
+  it('401s and never adds the account when the session is expired/revoked (getSession returns null)', async () => {
+    mockGetSession.mockResolvedValueOnce(null);
+    const res = await requestJson(server, 'POST', '/session/device/add', {});
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid session');
+    expect(mockAddAccount).not.toHaveBeenCalled();
+    expect(mockBroadcast).not.toHaveBeenCalled();
   });
 });
