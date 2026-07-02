@@ -26,15 +26,20 @@ const isWeb = Platform.OS === 'web';
 const MENU_WIDTH = 300;
 
 /**
- * Web-only anchor. `ProfileButton` measures its trigger and anchors the panel's
- * BOTTOM-LEFT corner so the menu opens UPWARD from the sidebar footer. Native
- * ignores the anchor and docks the panel to the bottom as a sheet.
+ * Web-only anchor. `ProfileButton` measures its trigger and anchors the panel to
+ * one corner so the menu opens either UPWARD (footer trigger) or DOWNWARD (a
+ * trigger at the top of a sidebar). Exactly ONE vertical edge is pinned:
+ *  - `bottom` set → the panel's BOTTOM edge is anchored, so it opens UPWARD.
+ *  - `top` set → the panel's TOP edge is anchored, so it opens DOWNWARD.
+ * Native ignores the anchor and docks the panel to the bottom as a sheet.
  */
 export interface ProfileMenuAnchor {
     /** Distance from the viewport left, for the panel's LEFT edge. */
     left: number;
     /** Distance from the viewport bottom, for the panel's BOTTOM edge (opens upward). */
-    bottom: number;
+    bottom?: number;
+    /** Distance from the viewport top, for the panel's TOP edge (opens downward). */
+    top?: number;
 }
 
 export interface ProfileMenuProps {
@@ -178,15 +183,19 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
         return null;
     }
 
-    // Web: anchor the panel's bottom-left corner to the measured trigger, falling
-    // back to a bottom-left placement when no anchor was captured. Native ignores
-    // this (the panel docks to the bottom via the overlay's flex-end).
+    // Web: anchor the panel to the measured trigger. When the anchor pins `top`
+    // the panel opens DOWNWARD from the trigger; otherwise it pins `bottom` and
+    // opens UPWARD (the default footer behavior). With no anchor captured, fall
+    // back to a bottom-left placement. Native ignores this (the panel docks to
+    // the bottom via the overlay's flex-end).
     const panelAnchorStyle: ViewStyle | undefined = isWeb
         ? {
             position: 'absolute',
             width: MENU_WIDTH,
             left: anchor?.left ?? 8,
-            bottom: anchor?.bottom ?? 8,
+            ...(typeof anchor?.top === 'number'
+                ? { top: anchor.top }
+                : { bottom: anchor?.bottom ?? 8 }),
         }
         : undefined;
 
