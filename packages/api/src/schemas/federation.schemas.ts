@@ -66,6 +66,27 @@ export const signRequestSchema = z.object({
     }),
 });
 
+/** A MongoDB ObjectId rendered as a 24-character hex string. */
+const objectIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[a-f0-9]{24}$/i, 'must be a 24-character hex ObjectId');
+
+/**
+ * POST /federation/follow
+ *
+ * Moves a single Oxy follow-graph edge on behalf of a FEDERATED actor: a remote
+ * actor that Follows/Unfollows a local user over ActivityPub. `followerUserId`
+ * is the (federated) remote actor's Oxy user id and `targetUserId` is the local
+ * user being followed; the route enforces those type constraints.
+ */
+export const federationFollowSchema = z.object({
+  followerUserId: objectIdSchema,
+  targetUserId: objectIdSchema,
+  action: z.enum(['follow', 'unfollow']),
+});
+
 export type PublicKeyParams = z.infer<typeof publicKeyParamsSchema>;
 export type PublicKeyQuery = z.infer<typeof publicKeyQuerySchema>;
 export type SignRequestBody = z.infer<typeof signRequestSchema>;
+export type FederationFollowBody = z.infer<typeof federationFollowSchema>;

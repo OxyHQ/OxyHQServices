@@ -5,18 +5,22 @@ import { validate } from '../middleware/validate';
 import { ForbiddenError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
 import Application from '../models/Application';
+import User from '../models/User';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import {
   getUserPublicKey,
   signWithKeyId,
 } from '../services/federation.service';
+import { userService } from '../services/user.service';
 import {
   publicKeyParamsSchema,
   publicKeyQuerySchema,
   signRequestSchema,
+  federationFollowSchema,
   type PublicKeyParams,
   type PublicKeyQuery,
   type SignRequestBody,
+  type FederationFollowBody,
 } from '../schemas/federation.schemas';
 
 const router = Router();
@@ -168,6 +172,59 @@ router.post(
       algorithm: 'rsa-sha256',
       signature,
     });
+  }),
+);
+
+/**
+ * POST /federation/follow
+ *
+ * Mirrors an inbound ActivityPub Follow/Undo-Follow into the Oxy follow graph on
+ * behalf of a FEDERATED actor: when a remote actor follows (or unfollows) a
+ * local user, Mention's backend calls this to create/remove the corresponding
+ * Oxy edge. Idempotent — repeated calls never double-move the follower/following
+ * counters.
+ *
+ * ANTI-IMPERSONATION: `followerUserId` MUST resolve to a `type:'federated'`
+ * user. A service credential must never be able to move a LOCAL user's follow
+ * graph — only the user themselves (via their own session) may do that. The
+ * target must be a real, non-federated (local) user.
+ */
+router.post(
+  '/follow',
+  serviceAuthMiddleware,
+  validate({ body: federationFollowSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertFederationScope(req);
+
+    const { followerUserId, targetUserId, action } = req.body as FederationFollowBody;
+
+    const [follower, target] = await Promise.all([
+      User.findById(followerUserId).select('type').lean(),
+      User.findById(targetUserId).select('type').lean(),
+    ]);
+
+    if (!follower) {
+      throw new NotFoundError('follower user not found');
+    }
+    // Only a federated actor's graph may be moved by a service credential.
+    if (follower.type !== 'federated') {
+      throw new ForbiddenError('follower must be a federated user');
+    }
+    if (!target) {
+      throw new NotFoundError('target user not found');
+    }
+    // A federated actor may only follow a local user through this bridge.
+    if (target.type === 'federated') {
+      throw new ForbiddenError('target must be a local (non-federated) user');
+    }
+
+    if (action === 'follow') {
+      const { created, counts } = await userService.followUser(followerUserId, targetUserId);
+      return sendSuccess(res, { created, counts });
+    }
+
+    const { removed, counts } = await userService.unfollowUser(followerUserId, targetUserId);
+    return sendSuccess(res, { removed, counts });
   }),
 );
 

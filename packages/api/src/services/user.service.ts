@@ -92,6 +92,34 @@ export interface BulkUnfollowResult {
   unfollowedCount: number;
 }
 
+/** Follower/following totals for the two sides of a follow edge. */
+export interface FollowCounts {
+  followers: number;
+  following: number;
+}
+
+/**
+ * Result of the `followUser` primitive. `created` is `true` only when THIS call
+ * inserted the edge; a repeated call on an already-existing edge is an
+ * idempotent no-op that reports `created: false` and leaves the counters
+ * untouched.
+ */
+export interface FollowUserResult {
+  created: boolean;
+  counts: FollowCounts;
+}
+
+/**
+ * Result of the `unfollowUser` primitive. `removed` is `true` only when THIS
+ * call deleted the edge; unfollowing an edge that does not exist is an
+ * idempotent no-op that reports `removed: false` and leaves the counters
+ * untouched.
+ */
+export interface UnfollowUserResult {
+  removed: boolean;
+  counts: FollowCounts;
+}
+
 /**
  * Shape of a Mongoose bulk-write / insertMany error. `insertMany` with
  * `{ ordered: false }` surfaces per-document failures under `writeErrors`,
@@ -579,31 +607,136 @@ export class UserService {
   }
 
   /**
-   * Follow or unfollow a user
+   * Read the current follower/following totals for the two sides of a follow
+   * edge. Called AFTER a follow/unfollow mutation so the returned counts reflect
+   * the post-write state.
    */
-  async toggleFollow(
-    currentUserId: string,
-    targetUserId: string
-  ): Promise<FollowActionResult> {
-    if (currentUserId === targetUserId) {
+  private async readFollowCounts(
+    targetId: string,
+    followerId: string
+  ): Promise<FollowCounts> {
+    const [updatedTarget, updatedCurrent] = await Promise.all([
+      User.findById(targetId).select('_count').lean(),
+      User.findById(followerId).select('_count').lean(),
+    ]);
+
+    const targetCounts = (updatedTarget as UserWithCount)?._count;
+    const currentCounts = (updatedCurrent as UserWithCount)?._count;
+
+    return {
+      followers: targetCounts?.followers ?? 0,
+      following: currentCounts?.following ?? 0,
+    };
+  }
+
+  /**
+   * Idempotently create a follow edge from `followerId` to `targetId`.
+   *
+   * The unique compound index on `Follow` is the atomic arbiter of
+   * "created vs already-following": a concurrent duplicate insert fails with
+   * E11000 and is treated as a no-op, so the follower/followed counters can only
+   * ever move once for a given edge. Counters are incremented ONLY on a genuine
+   * insert.
+   */
+  async followUser(
+    followerId: string,
+    targetId: string
+  ): Promise<FollowUserResult> {
+    if (followerId === targetId) {
       throw new Error('Cannot follow yourself');
     }
 
-    // Verify both users exist
     const [targetUser, currentUser] = await Promise.all([
-      User.findById(targetUserId),
-      User.findById(currentUserId),
+      User.findById(targetId),
+      User.findById(followerId),
     ]);
 
     if (!targetUser || !currentUser) {
       throw new Error('User not found');
     }
 
-    // Federated users are always public — their privacy settings are governed
-    // by their home instance, not by Oxy privacy controls.
-    const isFederatedTarget = (targetUser as unknown as { type?: string }).type === 'federated';
+    let created = false;
+    try {
+      await Follow.create({
+        followerUserId: followerId,
+        followType: FollowType.USER,
+        followedId: targetId,
+      });
+      created = true;
+    } catch (error: unknown) {
+      // A duplicate-key error means the edge already exists (or was just
+      // created by a concurrent request) — an idempotent no-op, not a failure.
+      // Any other error is genuine and must surface.
+      const isDuplicate =
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: number }).code === 11000;
+      if (!isDuplicate) {
+        throw error;
+      }
+    }
 
-    // Check existing follow relationship
+    if (created) {
+      await Promise.all([
+        User.findByIdAndUpdate(targetId, { $inc: { '_count.followers': 1 } }),
+        User.findByIdAndUpdate(followerId, { $inc: { '_count.following': 1 } }),
+      ]);
+    }
+
+    const counts = await this.readFollowCounts(targetId, followerId);
+    return { created, counts };
+  }
+
+  /**
+   * Idempotently remove a follow edge from `followerId` to `targetId`.
+   *
+   * `deleteOne` reports whether a document was actually removed; counters are
+   * decremented ONLY when a real edge was deleted, so unfollowing an edge that
+   * does not exist is a safe no-op that never drives counts negative.
+   */
+  async unfollowUser(
+    followerId: string,
+    targetId: string
+  ): Promise<UnfollowUserResult> {
+    if (followerId === targetId) {
+      throw new Error('Cannot follow yourself');
+    }
+
+    const [targetUser, currentUser] = await Promise.all([
+      User.findById(targetId),
+      User.findById(followerId),
+    ]);
+
+    if (!targetUser || !currentUser) {
+      throw new Error('User not found');
+    }
+
+    const { deletedCount } = await Follow.deleteOne({
+      followerUserId: followerId,
+      followType: FollowType.USER,
+      followedId: targetId,
+    });
+    const removed = deletedCount === 1;
+
+    if (removed) {
+      await Promise.all([
+        User.findByIdAndUpdate(targetId, { $inc: { '_count.followers': -1 } }),
+        User.findByIdAndUpdate(followerId, { $inc: { '_count.following': -1 } }),
+      ]);
+    }
+
+    const counts = await this.readFollowCounts(targetId, followerId);
+    return { removed, counts };
+  }
+
+  /**
+   * Follow or unfollow a user, toggling on the current relationship. Thin
+   * dispatcher over the idempotent `followUser` / `unfollowUser` primitives.
+   */
+  async toggleFollow(
+    currentUserId: string,
+    targetUserId: string
+  ): Promise<FollowActionResult> {
     const existingFollow = await Follow.findOne({
       followerUserId: currentUserId,
       followType: FollowType.USER,
@@ -611,56 +744,12 @@ export class UserService {
     });
 
     if (existingFollow) {
-      // Unfollow
-      await Promise.all([
-        Follow.deleteOne({ _id: existingFollow._id }),
-        User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': -1 } }),
-        User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': -1 } }),
-      ]);
-
-      const [updatedTarget, updatedCurrent] = await Promise.all([
-        User.findById(targetUserId).select('_count').lean(),
-        User.findById(currentUserId).select('_count').lean(),
-      ]);
-
-      const targetCounts = (updatedTarget as UserWithCount)?._count;
-      const currentCounts = (updatedCurrent as UserWithCount)?._count;
-
-      return {
-        action: 'unfollow',
-        counts: {
-          followers: targetCounts?.followers ?? 0,
-          following: currentCounts?.following ?? 0,
-        },
-      };
+      const { counts } = await this.unfollowUser(currentUserId, targetUserId);
+      return { action: 'unfollow', counts };
     }
 
-    // Follow
-    await Promise.all([
-      Follow.create({
-        followerUserId: currentUserId,
-        followType: FollowType.USER,
-        followedId: targetUserId,
-      }),
-      User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': 1 } }),
-      User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': 1 } }),
-    ]);
-
-    const [updatedTarget, updatedCurrent] = await Promise.all([
-      User.findById(targetUserId).select('_count').lean(),
-      User.findById(currentUserId).select('_count').lean(),
-    ]);
-
-    const targetCounts = (updatedTarget as UserWithCount)?._count;
-    const currentCounts = (updatedCurrent as UserWithCount)?._count;
-
-    return {
-      action: 'follow',
-      counts: {
-        followers: targetCounts?.followers ?? 0,
-        following: currentCounts?.following ?? 0,
-      },
-    };
+    const { counts } = await this.followUser(currentUserId, targetUserId);
+    return { action: 'follow', counts };
   }
 
   /**

@@ -54,6 +54,19 @@ jest.mock('../../models/Application', () => ({
   default: { findById: jest.fn() },
 }));
 
+// User + userService are used only by POST /federation/follow, which this suite
+// does not exercise — stub them so importing the router never reaches the
+// mongoose mock or the full user-service graph.
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  default: { findById: jest.fn() },
+}));
+
+jest.mock('../../services/user.service', () => ({
+  __esModule: true,
+  userService: { followUser: jest.fn(), unfollowUser: jest.fn() },
+}));
+
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
