@@ -172,4 +172,33 @@ describe('establishIdpSessionAfterClaim', () => {
     expect(navigated).toEqual([]);
     expect(map.size).toBe(0);
   });
+
+  it.each([
+    ['unparseable', 'not a url'],
+    ['non-https (http)', 'http://auth.oxy.so/sso/establish?et=x&state=s'],
+    ['wrong path', 'https://auth.oxy.so/evil?et=x&state=s'],
+    ['non-auth host', 'https://evil.oxy.so/sso/establish?et=x&state=s'],
+  ])(
+    'aborts silently (no navigation, no state) for a %s establish URL',
+    async (_label, badUrl) => {
+      const { storage, map } = makeStorage();
+      const navigated: string[] = [];
+      const requestSsoEstablishUrl = jest.fn(async () => ({ establishUrl: badUrl }));
+
+      const result = await establishIdpSessionAfterClaim(
+        { requestSsoEstablishUrl },
+        {
+          isWeb: () => true,
+          storage,
+          location: { origin: RP_ORIGIN, href: RP_HREF },
+          navigate: (url) => navigated.push(url),
+          generateState: () => 'state-xyz',
+        },
+      );
+
+      expect(result).toBe(false);
+      expect(navigated).toEqual([]);
+      expect(map.size).toBe(0);
+    },
+  );
 });

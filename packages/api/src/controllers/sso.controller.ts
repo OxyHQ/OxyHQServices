@@ -293,18 +293,25 @@ export async function issueEstablishToken(req: AuthRequest, res: Response) {
       return res.status(400).json({ message: 'origin is not a valid origin' });
     }
 
-    // 3. When present (always, for a browser CORS call) the Origin header MUST
-    //    match the target origin — a page can only establish for itself.
+    // 3. The Origin header MUST be present AND equal the target origin — a page
+    //    can only establish for itself. A missing/empty Origin means a
+    //    NON-browser caller (this endpoint is only ever reached via a browser
+    //    CORS request); treat it as hostile per lock-down-by-default (mirrors the
+    //    FedCM `/fedcm/exchange` missing-Origin guard). This check runs BEFORE
+    //    any grant write so a bearer-holding server-side caller can never record
+    //    a grant for an origin it is not actually running on (consent bypass).
     const originHeader = req.headers.origin;
-    if (typeof originHeader === 'string' && originHeader.length > 0) {
-      const normalisedHeader = normaliseOrigin(originHeader);
-      if (!normalisedHeader || normalisedHeader !== normalisedOrigin) {
-        logger.warn('SSO establish-token Origin header does not match target origin', {
-          originHeader,
-          target: normalisedOrigin,
-        });
-        return res.status(403).json({ message: 'Origin mismatch' });
-      }
+    if (typeof originHeader !== 'string' || originHeader.length === 0) {
+      logger.warn('SSO establish-token missing Origin header');
+      return res.status(403).json({ message: 'Origin required' });
+    }
+    const normalisedHeader = normaliseOrigin(originHeader);
+    if (!normalisedHeader || normalisedHeader !== normalisedOrigin) {
+      logger.warn('SSO establish-token Origin header does not match target origin', {
+        originHeader,
+        target: normalisedOrigin,
+      });
+      return res.status(403).json({ message: 'Origin mismatch' });
     }
 
     // 4. Authoritative approved-clients allow-list (cache-respecting — same

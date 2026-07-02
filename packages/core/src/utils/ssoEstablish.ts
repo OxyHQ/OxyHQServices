@@ -137,9 +137,28 @@ export async function establishIdpSessionAfterClaim(
     }
     establishUrl = result.establishUrl;
 
-    // Persist the bounce state ONLY now that the request has succeeded and we
-    // WILL navigate — so a failed request never leaves stale state behind. This
-    // is the exact contract the terminal `/sso` bounce primes via
+    // Defense-in-depth before a TOP-LEVEL navigation: the establish URL is
+    // server-formed, but never follow anything that is not a well-formed https
+    // `/sso/establish` on an `auth.` host. A malformed or unexpected URL aborts
+    // silently (no navigation, no state persisted) — same total/no-throw
+    // contract — rather than navigating the document somewhere unintended.
+    let parsedEstablishUrl: URL;
+    try {
+      parsedEstablishUrl = new URL(establishUrl);
+    } catch {
+      return false;
+    }
+    if (
+      parsedEstablishUrl.protocol !== 'https:' ||
+      parsedEstablishUrl.pathname !== '/sso/establish' ||
+      !parsedEstablishUrl.hostname.toLowerCase().startsWith('auth.')
+    ) {
+      return false;
+    }
+
+    // Persist the bounce state ONLY now that the request has succeeded and the
+    // URL is validated — so a failed/rejected request never leaves stale state
+    // behind. This is the exact contract the terminal `/sso` bounce primes via
     // `buildSsoBounceUrl`, so the post-bounce `sso-return` step (`consumeSsoReturn`)
     // validates `state`, exchanges the returned code, and restores the dest.
     storage.setItem(ssoStateKey(origin), state);

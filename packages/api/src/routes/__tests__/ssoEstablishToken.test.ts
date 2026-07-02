@@ -181,6 +181,22 @@ describe('POST /sso/establish-token', () => {
     expect(recordGrant).not.toHaveBeenCalled();
   });
 
+  it('returns 403 when the Origin header is absent (non-browser caller) and records NO grant', async () => {
+    // A missing Origin means a non-browser caller. Without this guard a
+    // bearer-holding server-side caller could record a FedCM grant for ANY
+    // approved origin in the body → silent /sso sign-in (consent bypass). The
+    // grant write MUST be skipped.
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/establish-token',
+      { origin: 'https://accounts.oxy.so', state: 'state-xyz' },
+      { authorization: bearer() }, // no Origin header
+    );
+    expect(res.status).toBe(403);
+    expect(recordGrant).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when origin or state is missing', async () => {
     const res = await requestJson(
       server,
