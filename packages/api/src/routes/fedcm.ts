@@ -10,6 +10,7 @@ import {
   revokeMyAuthorizedApp,
 } from '../controllers/fedcm.controller';
 import { rateLimit } from '../middleware/rateLimiter';
+import { idpServiceLimiter } from '../middleware/security';
 import { authMiddleware, serviceAuthMiddleware } from '../middleware/auth';
 
 const router = express.Router();
@@ -125,7 +126,9 @@ router.post('/exchange', exchangeIdToken);
  *                   items:
  *                     type: string
  */
-router.get('/clients/approved', getApprovedClients);
+// Excluded from rl:general (IdP worker server-to-server; see
+// isIdpServiceToServicePath). idpServiceLimiter is this route's sole per-IP cap.
+router.get('/clients/approved', idpServiceLimiter, getApprovedClients);
 
 /**
  * @openapi
@@ -174,7 +177,9 @@ router.get('/clients/approved', getApprovedClients);
  *       404:
  *         description: Internal shared secret missing or invalid.
  */
-router.get('/grants/:userId', getUserGrants);
+// Excluded from rl:general (IdP worker server-to-server, X-Oxy-Internal gated;
+// see isIdpServiceToServicePath). idpServiceLimiter is this route's sole per-IP cap.
+router.get('/grants/:userId', idpServiceLimiter, getUserGrants);
 
 /**
  * @openapi
