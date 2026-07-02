@@ -1,22 +1,17 @@
 /**
- * Web-only helpers around the retired `oxy_rt_${authuser}` multi-slot
- * refresh-cookie scheme, PLUS the (unrelated, still load-bearing) deliberate
- * sign-out / SSO-bounce gates.
+ * Web-only persistence of the active multi-account slot index.
  *
- * NOTE (session-sync cutover, Task 5): the device account SET is now
- * server-authoritative via `SessionClient` (`@oxyhq/core`) — nothing in
- * `@oxyhq/services` writes the persisted active-`authuser`-slot key anymore
- * (`writeActiveAuthuser`/`clearActiveAuthuser` were deleted; their only
- * callers were the deleted `establishDeviceRefreshSlot` sign-in registration
- * and the deleted `switchToAccount`/`switchSession` slot bookkeeping).
- * {@link readActiveAuthuser} is KEPT: `OxyContext`'s `restoreStoredSession`
- * cold-boot step still reads it as part of a deliberate, test-locked gate —
- * on web, a bare stored session id with neither a live in-memory bearer nor
- * this hint is NOT validated locally; recovery instead defers to the
- * authoritative FedCM-silent / per-apex-iframe / SSO-bounce chain. Since
- * nothing writes the key anymore that branch is now permanently dormant, but
- * the gate itself remains correct and is exercised by
- * `coldBootOrder.test.tsx`.
+ * Google-style multi-account sign-in stores ONE refresh cookie per device
+ * slot (`oxy_rt_${authuser}`, where `authuser` is an integer 0..N). The
+ * server's `/auth/refresh-all` returns one entry per valid cookie; the
+ * client must remember WHICH slot is currently active across reloads so
+ * that the cold-boot snapshot resolves to the user's last selection
+ * rather than always defaulting to slot 0.
+ *
+ * The persisted value is JUST the slot INDEX (a small integer) — never an
+ * access token, refresh token, session id, or any user-identifying secret.
+ * It is read by both `OxyContext` (cold-boot active selection) and the
+ * session-management / auth-operations hooks (switch / logout).
  *
  * Native (React Native) has no equivalent of these device-local cookies
  * and uses bearer-protected session ids directly, so these helpers no-op
@@ -35,8 +30,22 @@ import {
 
 const ACTIVE_AUTHUSER_KEY = 'oxy_active_authuser';
 
-function hasLocalStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+/**
+ * Safely resolve `window.localStorage`, returning `null` when it is
+ * unavailable. The PROPERTY ACCESS itself (`window.localStorage`) can throw a
+ * `SecurityError` synchronously in opaque-origin / sandboxed iframes or when
+ * storage is disabled — even `typeof window.localStorage` evaluates the getter
+ * and throws. Every read/write in this module routes through here so the getter
+ * throw is caught once, at the source, and callers stay clean. Returns `null`
+ * off-web and on any access failure (fail safe).
+ */
+function getLocalStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function getSessionStorage(): Storage | null {
@@ -56,17 +65,49 @@ function getSessionStorage(): Storage | null {
  * fall back to deterministic selection (lowest authuser).
  */
 export function readActiveAuthuser(): number | null {
-  if (!hasLocalStorage()) {
+  const storage = getLocalStorage();
+  if (!storage) {
     return null;
   }
   try {
-    const raw = window.localStorage.getItem(ACTIVE_AUTHUSER_KEY);
+    const raw = storage.getItem(ACTIVE_AUTHUSER_KEY);
     if (raw === null) return null;
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isFinite(parsed) || parsed < 0) return null;
     return parsed;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Persist the active `authuser` slot index. No-ops on native and on any
+ * storage failure (e.g. Safari private mode). Callers MUST NOT depend on
+ * this succeeding — it is best-effort UX persistence, not authoritative.
+ */
+export function writeActiveAuthuser(authuser: number): void {
+  if (!Number.isFinite(authuser) || authuser < 0) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(ACTIVE_AUTHUSER_KEY, String(authuser));
+  } catch {
+    // Best-effort persistence; swallow QuotaExceededError / SecurityError.
+  }
+}
+
+/**
+ * Clear the persisted active `authuser` slot index. Called on full sign-out
+ * (logoutAll) so that the next cold boot doesn't try to resurrect a
+ * cleared slot.
+ */
+export function clearActiveAuthuser(): void {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(ACTIVE_AUTHUSER_KEY);
+  } catch {
+    // Best-effort.
   }
 }
 
@@ -79,9 +120,10 @@ export function readActiveAuthuser(): number | null {
  * failure (best-effort).
  */
 export function markSignedOut(): void {
-  if (!hasLocalStorage()) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.setItem(ssoSignedOutKey(window.location.origin), '1');
+    storage.setItem(ssoSignedOutKey(window.location.origin), '1');
   } catch {
     // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
   }
@@ -94,9 +136,10 @@ export function markSignedOut(): void {
  * state. No-ops on native / storage failure.
  */
 export function clearSignedOut(): void {
-  if (!hasLocalStorage()) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    window.localStorage.removeItem(ssoSignedOutKey(window.location.origin));
+    storage.removeItem(ssoSignedOutKey(window.location.origin));
   } catch {
     // Best-effort.
   }
@@ -110,8 +153,9 @@ export function clearSignedOut(): void {
  * `fedcm-silent` and `silent-iframe` cold-boot steps.
  */
 export function isSilentRestoreSuppressed(): boolean {
-  if (!hasLocalStorage()) return false;
-  return silentRestoreSuppressed(window.localStorage, window.location.origin);
+  const storage = getLocalStorage();
+  if (!storage) return false;
+  return silentRestoreSuppressed(storage, window.location.origin);
 }
 
 /**
@@ -136,3 +180,5 @@ export function clearSsoBounceState(): void {
     // Best-effort; swallow SecurityError (e.g. Safari private mode).
   }
 }
+
+export { ACTIVE_AUTHUSER_KEY };

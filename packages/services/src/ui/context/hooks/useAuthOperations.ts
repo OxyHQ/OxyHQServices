@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import type { ApiError, SessionClient, User } from '@oxyhq/core';
+import { useCallback, useRef } from 'react';
+import type { ApiError, User } from '@oxyhq/core';
 import type { AuthState } from '../../stores/authStore';
 import type { ClientSession, SessionLoginResponse } from '@oxyhq/core';
 import { DeviceManager } from '@oxyhq/core';
@@ -10,7 +10,9 @@ import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
 import { isWebBrowser } from '../../hooks/useWebSSO';
 import {
+  clearActiveAuthuser,
   clearSsoBounceState,
+  writeActiveAuthuser,
   markSignedOut,
   clearSignedOut,
 } from '../../utils/activeAuthuser';
@@ -19,6 +21,7 @@ import { isCrossApexWeb, CrossApexDirectSignInError } from '../../../utils/cross
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
   storage: StorageInterface | null;
+  sessions: ClientSession[];
   activeSessionId: string | null;
   setActiveSessionId: (sessionId: string | null) => void;
   updateSessions: (sessions: ClientSession[], options?: { merge?: boolean }) => void;
@@ -32,17 +35,7 @@ export interface UseAuthOperationsOptions {
    * expired session still recovers via a returning-user bounce. Best-effort.
    */
   clearPriorSessionHint: () => Promise<void>;
-  /** Used only by `performSignIn`'s same-user duplicate-session dedup (legacy session-validate path; unrelated to the SessionClient device-account set). */
   switchSession: (sessionId: string) => Promise<User>;
-  /**
-   * The Fase 3-A/3-B `SessionClient` (server-authoritative device account
-   * set). `logout` / `logoutAll` route SERVER-side revocation through
-   * `sessionClient.signOut(...)` instead of the bearer/cookie logout
-   * endpoints.
-   */
-  sessionClient: SessionClient;
-  /** Reprojects `sessionClient.getState()` onto sessions/activeSessionId/user (Task 1's callback). Awaited after a partial `signOut` so the exposed state reflects the server truth before the call resolves. */
-  syncFromClient: () => Promise<void>;
   applyLanguagePreference: (user: User) => Promise<void>;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
@@ -74,13 +67,8 @@ const LOGOUT_ALL_ERROR_CODE = 'LOGOUT_ALL_ERROR';
  * best-effort storage write. The clear is invoked synchronously (so unit tests
  * can assert it ran) but its async settle is detached; any rejection is logged,
  * never thrown.
- *
- * Exported so `OxyContext`'s `syncFromClient` zero-account branch (a REMOTE
- * full sign-out) can invoke the EXACT same cleanup as the LOCAL `logout` /
- * `logoutAll` paths below — a remote sign-out must be indistinguishable from
- * a local one to the next cold boot.
  */
-export function clearPriorSessionHintSafe(
+function clearPriorSessionHintSafe(
   clearPriorSessionHint: () => Promise<void>,
   logger?: (message: string, error?: unknown) => void,
 ): void {
@@ -95,6 +83,7 @@ export function clearPriorSessionHintSafe(
  */
 export const useAuthOperations = ({
   oxyServices,
+  sessions,
   activeSessionId,
   setActiveSessionId,
   updateSessions,
@@ -102,8 +91,6 @@ export const useAuthOperations = ({
   clearSessionState,
   clearPriorSessionHint,
   switchSession,
-  sessionClient,
-  syncFromClient,
   applyLanguagePreference,
   onAuthStateChange,
   onError,
@@ -113,6 +100,10 @@ export const useAuthOperations = ({
   setAuthState,
   logger,
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
+  // Ref to avoid recreating callbacks when sessions change
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+
   /**
    * Internal function to perform challenge-response sign in.
    */
@@ -153,19 +144,16 @@ export const useAuthOperations = ({
       // the `fedcm-silent` / per-apex iframe cold-boot steps.
       clearSignedOut();
 
-      // Register this recovered account+session into the server-authoritative
-      // device-session set: `sessionClient.addCurrentAccount()` ->
-      // `POST /session/device/add` derives identity from the bearer
-      // `verifyChallenge` already planted internally, then `syncFromClient()`
-      // reprojects the resulting server state onto the exposed
-      // sessions/activeSessionId/user. Best-effort: a failure here must NEVER
-      // fail the sign-in itself — cold boot re-registers this account into the
-      // device set on the next load regardless.
-      try {
-        await sessionClient.addCurrentAccount();
-        await syncFromClient();
-      } catch (registrationError) {
-        logger?.('Failed to register sign-in into device session set', registrationError);
+      // Register this primary session in the device's first-party multi-account
+      // refresh-cookie set so a web key-based sign-in survives reload via
+      // `refresh-all` and coexists with switched accounts. `/auth/verify` mints the
+      // session but (unlike `/auth/login` / `/fedcm/exchange`) does NOT plant an
+      // `oxy_rt_<authuser>` slot, so we establish it here through the shared
+      // `POST /auth/session` primitive. No-op on native and cross-apex (returns
+      // `null`); records the active slot when one is genuinely allocated.
+      const verifyAuthuser = await oxyServices.establishDeviceRefreshSlot();
+      if (typeof verifyAuthuser === 'number') {
+        writeActiveAuthuser(verifyAuthuser);
       }
 
       // Get full user data
@@ -228,10 +216,8 @@ export const useAuthOperations = ({
       onAuthStateChange,
       oxyServices,
       saveActiveSessionId,
-      sessionClient,
       setActiveSessionId,
       switchSession,
-      syncFromClient,
       updateSessions,
     ],
   );
@@ -278,37 +264,38 @@ export const useAuthOperations = ({
 
       try {
         const sessionToLogout = targetSessionId || activeSessionId;
-
-        // Resolve the device account backing this session from the
-        // server-authoritative `SessionClient` state — SERVER revocation now
-        // goes through `sessionClient.signOut(...)` instead of the
-        // bearer/cookie logout endpoints.
-        const targetAccountId = sessionClient
-          .getState()
-          ?.accounts.find((account) => account.sessionId === sessionToLogout)?.accountId;
-        if (!targetAccountId) {
-          throw new Error(`No device account found for session "${sessionToLogout}"`);
+        // Web multi-account sessions carry an `authuser` slot index backed by
+        // an httpOnly `oxy_rt_${n}` cookie. Native sessions fall through to the
+        // bearer-protected endpoint.
+        const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionToLogout);
+        const targetAuthuser = targetSession?.authuser;
+        if (isWebBrowser() && typeof targetAuthuser === 'number') {
+          await oxyServices.logoutSessionByAuthuser(targetAuthuser);
+        } else {
+          await oxyServices.logoutSession(activeSessionId, sessionToLogout);
         }
 
-        await sessionClient.signOut({ accountId: targetAccountId });
+        const filteredSessions = sessionsRef.current.filter((session) => session.sessionId !== sessionToLogout);
+        updateSessions(filteredSessions, { merge: false });
 
-        // The server has already decided what (if anything) remains active on
-        // this device; reproject that truth onto the exposed sessions /
-        // activeSessionId / user before deciding whether additional LOCAL
-        // teardown is needed.
-        const remainingAccounts = sessionClient.getState()?.accounts ?? [];
-        await syncFromClient();
-
-        if (sessionToLogout === activeSessionId && remainingAccounts.length === 0) {
-          // Genuine FULL sign-out (no sessions remain): clear the per-origin
-          // SSO bounce state so a fresh deliberate sign-in can re-probe, and
-          // SET the deliberately-signed-out flag so the silent cold-boot steps
-          // (`fedcm-silent` / per-apex iframe) do not re-mint a session from a
-          // still-live IdP session on the next reload (mirrors `logoutAll`).
-          markSignedOut();
-          clearSsoBounceState();
-          clearPriorSessionHintSafe(clearPriorSessionHint, logger);
-          await clearSessionState();
+        if (sessionToLogout === activeSessionId) {
+          if (filteredSessions.length > 0) {
+            await switchSession(filteredSessions[0].sessionId);
+          } else {
+            // Genuine FULL sign-out (no sessions remain): clear the per-origin
+            // SSO bounce state so a fresh deliberate sign-in can re-probe, drop
+            // the persisted active device slot so the next cold boot does not
+            // prioritize a now-signed-out `oxy_active_authuser`, and SET the
+            // deliberately-signed-out flag so the silent cold-boot steps
+            // (`fedcm-silent` / per-apex iframe) do not re-mint a session from a
+            // still-live IdP session on the next reload (mirrors `logoutAll`).
+            markSignedOut();
+            clearActiveAuthuser();
+            clearSsoBounceState();
+            clearPriorSessionHintSafe(clearPriorSessionHint, logger);
+            await clearSessionState();
+            return;
+          }
         }
       } catch (error) {
         const isInvalid = isInvalidSessionError(error);
@@ -337,9 +324,10 @@ export const useAuthOperations = ({
       clearPriorSessionHint,
       logger,
       onError,
-      sessionClient,
+      oxyServices,
       setAuthState,
-      syncFromClient,
+      switchSession,
+      updateSessions,
     ],
   );
 
@@ -355,12 +343,15 @@ export const useAuthOperations = ({
     }
 
     try {
-      // Server-side revocation of every account on this device now flows
-      // through the SessionClient (`POST /session/device/signout` with
-      // `{ all: true }`) — replaces the bearer `logoutAllSessions` +
-      // web-cookie `logoutAllSessionsViaCookie` pair.
-      await sessionClient.signOut({ all: true });
+      // Always invoke the bearer-protected global endpoint first: the public
+      // `logoutAll`/`signOutAll` contract means revoking this user's sessions
+      // across devices, not just clearing refresh cookies presented by the
+      // current browser. On web, follow up with the cookie endpoint so every
+      // device-local account slot is expired in the browser as well.
+      await oxyServices.logoutAllSessions(activeSessionId);
       if (isWebBrowser()) {
+        await oxyServices.logoutAllSessionsViaCookie();
+        clearActiveAuthuser();
         // Deliberate full sign-out: suppress automatic silent restore on the next
         // cold boot so a still-live IdP session does not re-mint a session.
         markSignedOut();
@@ -382,7 +373,7 @@ export const useAuthOperations = ({
       });
       throw error instanceof Error ? error : new Error('Logout all failed');
     }
-  }, [activeSessionId, clearSessionState, clearPriorSessionHint, logger, onError, sessionClient, setAuthState]);
+  }, [activeSessionId, clearSessionState, clearPriorSessionHint, logger, onError, oxyServices, setAuthState]);
 
   return {
     signIn,

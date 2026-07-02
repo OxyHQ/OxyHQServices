@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDev, type ApiError, type User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
-import { fetchSessionsWithFallback } from '../utils/sessionHelpers';
+import { fetchSessionsWithFallback, validateSessionBatch } from '../utils/sessionHelpers';
 import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
 import { isWebBrowser } from './useWebSSO';
+import { writeActiveAuthuser } from '../utils/activeAuthuser';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;
@@ -228,18 +229,68 @@ export const useSessionManagement = ({
     };
   }, []);
 
+  const findReplacementSession = useCallback(
+    async (sessionIds: string[]): Promise<User | null> => {
+      if (!sessionIds.length) {
+        return null;
+      }
+
+      const validationResults = await validateSessionBatch(oxyServices, sessionIds, {
+        maxConcurrency: 3,
+      });
+
+      const validSession = validationResults.find((result) => result.valid);
+      if (!validSession) {
+        return null;
+      }
+
+      const validation = await oxyServices.validateSession(validSession.sessionId, {
+        useHeaderValidation: true,
+      });
+
+      if (!validation?.valid || !validation.user) {
+        return null;
+      }
+
+      const user = validation.user as User;
+      await activateSession(validSession.sessionId, user);
+      return user;
+    },
+    [activateSession, oxyServices],
+  );
+
   const switchSession = useCallback(
     async (sessionId: string): Promise<User> => {
       try {
-        // On web, the bearer must already be in memory (planted by
-        // `claimSessionByToken`, a cold-boot silent-restore step, or a prior
-        // `SessionClient` sync) before validating — there is no client-side
-        // `oxy_rt` refresh-cookie slot to fall back on; the device account SET
-        // is server-authoritative via `SessionClient` now. The native path
-        // arrives here only after a bearer has been planted by
+        // Web multi-account: when the target session was sourced from
+        // `refreshAllSessions` it carries its `authuser` slot index. We
+        // proactively plant that slot's access token via the httpOnly
+        // refresh cookie BEFORE validating, so the bearer-protected
+        // validate/getCurrentUser calls have the correct in-memory token
+        // after a cold reload or account switch in another tab. The native
+        // path arrives here only after a bearer has been planted by
         // `claimSessionByToken` or secure shared-session restore.
-        if (isWebBrowser() && !oxyServices.getAccessToken()) {
-          throw new Error('Session is invalid or expired');
+        if (isWebBrowser()) {
+          const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionId);
+          const targetAuthuser = targetSession?.authuser;
+          if (typeof targetAuthuser === 'number') {
+            const refreshed = await oxyServices.refreshTokenViaCookie({ authuser: targetAuthuser });
+            if (refreshed === null) {
+              // Slot's refresh cookie is missing / expired / reused. Fall
+              // through to the invalid-session branch below by throwing the
+              // canonical invalid-session error.
+              throw new Error('Session is invalid or expired');
+            }
+            // Plant the slot's fresh access token; subsequent bearer calls
+            // (`validateSession`, `getCurrentUser`) will use it. The server
+            // also rotated the cookie at this point.
+            oxyServices.httpService.setTokens(refreshed.accessToken);
+            writeActiveAuthuser(targetAuthuser);
+          }
+
+          if (!oxyServices.getAccessToken()) {
+            throw new Error('Session is invalid or expired');
+          }
         }
 
         const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
@@ -271,12 +322,22 @@ export const useSessionManagement = ({
         const invalidSession = isInvalidSessionError(error);
 
         if (invalidSession) {
-          // Server authority (`SessionClient` bootstrap/sync) reconciles which
-          // account is actually active — just drop the invalid session from
-          // the local view rather than guessing at a replacement.
           updateSessions(sessionsRef.current.filter((session) => session.sessionId !== sessionId), {
             merge: false,
           });
+          if (sessionId === activeSessionIdRef.current) {
+            const otherSessionIds = sessionsRef.current
+              .filter(
+                (session) =>
+                  session.sessionId !== sessionId && !removedSessionsRef.current.has(session.sessionId),
+              )
+              .map((session) => session.sessionId);
+
+            const replacementUser = await findReplacementSession(otherSessionIds);
+            if (replacementUser) {
+              return replacementUser;
+            }
+          }
         }
 
         handleAuthError(error, {
@@ -291,6 +352,7 @@ export const useSessionManagement = ({
     },
     [
       activateSession,
+      findReplacementSession,
       logger,
       onError,
       oxyServices,
@@ -327,10 +389,18 @@ export const useSessionManagement = ({
           updateSessions(deviceSessions, { merge: true });
         } catch (error) {
           if (isInvalidSessionError(error)) {
-            // Server authority (`SessionClient` bootstrap/sync) reconciles
-            // which account is actually active — just clear local state
-            // rather than guessing at a replacement session.
-            await clearSessionState();
+            const otherSessions = sessionsRef.current
+              .filter(
+                (session) =>
+                  session.sessionId !== activeSessionId &&
+                  !removedSessionsRef.current.has(session.sessionId),
+              )
+              .map((session) => session.sessionId);
+
+            const replacementUser = await findReplacementSession(otherSessions);
+            if (!replacementUser) {
+              await clearSessionState();
+            }
             return;
           }
 
@@ -352,6 +422,7 @@ export const useSessionManagement = ({
     },
     [
       clearSessionState,
+      findReplacementSession,
       logger,
       onError,
       oxyServices,

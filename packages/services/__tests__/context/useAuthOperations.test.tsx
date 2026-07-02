@@ -10,15 +10,10 @@
  * the OxyServices network methods are mocked so the test exercises the
  * orchestration logic only — actual network and crypto work belongs to
  * `@oxyhq/core` and is covered by its own tests.
- *
- * `logout` / `logoutAll` route SERVER-side revocation through a mocked
- * `SessionClient` (Fase 3-B Task 3) rather than the bearer/cookie logout
- * endpoints — see `buildFakeSessionClient` below, a controllable stand-in
- * mirroring the pattern in `coldBootSessionClient.test.tsx`.
  */
 
 import { renderHook, waitFor, act } from '@testing-library/react';
-import type { SessionLoginResponse, User } from '@oxyhq/core';
+import type { ClientSession, SessionLoginResponse, User } from '@oxyhq/core';
 
 jest.mock('@oxyhq/core', () => {
   return {
@@ -63,9 +58,14 @@ import * as sessionHelpers from '../../src/ui/utils/sessionHelpers';
 interface FakeServices {
   requestChallenge: jest.Mock;
   verifyChallenge: jest.Mock;
+  establishDeviceRefreshSlot: jest.Mock;
   setTokens: jest.Mock;
   getUserBySession: jest.Mock;
   logoutSession: jest.Mock;
+  logoutAllSessions: jest.Mock;
+  logoutSessionByAuthuser: jest.Mock;
+  logoutAllSessionsViaCookie: jest.Mock;
+  refreshTokenViaCookie: jest.Mock;
 }
 
 const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices => ({
@@ -83,54 +83,30 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
     refreshToken: 'verify-refresh-token',
     user: { id: 'user-1', username: 'alice' },
   })),
+  // `/auth/verify` mints the session but does NOT plant the device refresh slot,
+  // so `performSignIn` registers it via this shared primitive. Mock resolves
+  // `null` (its real return off a registrable-apex-less jsdom origin / native).
+  establishDeviceRefreshSlot: jest.fn(async (): Promise<number | null> => null),
   setTokens: jest.fn(),
   getUserBySession: jest.fn(async (): Promise<User> => ({
     id: 'user-1',
     username: 'alice',
     privacySettings: {},
   } as User)),
-  // Still used by `performSignIn`'s same-user duplicate-session dedup path —
-  // unrelated to the SessionClient-routed `logout`/`logoutAll`.
   logoutSession: jest.fn(async () => undefined),
+  logoutAllSessions: jest.fn(async () => undefined),
+  // Web multi-account cookie endpoints — used when `isWebBrowser()` is true
+  // (jest's jsdom env) and the target session has an `authuser` slot.
+  logoutSessionByAuthuser: jest.fn(async () => undefined),
+  logoutAllSessionsViaCookie: jest.fn(async () => undefined),
+  refreshTokenViaCookie: jest.fn(async () => ({ accessToken: 'cookie-refreshed', expiresAt: '2030-01-01' })),
   ...overrides,
 });
 
-/** A device account tracked by the (mocked) `SessionClient`. */
-interface FakeSessionAccount {
-  accountId: string;
-  sessionId: string;
-  authuser: number;
-}
-
-/**
- * A controllable stand-in for `SessionClient`, mirroring
- * `coldBootSessionClient.test.tsx`'s `buildFakeClient`. `signOut` mutates the
- * tracked account list the same way the real server would, so `getState()`
- * (read by `logout`/`logoutAll` both before AND after the call) reflects the
- * removal.
- */
-function buildFakeSessionClient(initialAccounts: FakeSessionAccount[]) {
-  let accounts = [...initialAccounts];
-  const signOut = jest.fn(async (target: { accountId: string } | { all: true }) => {
-    accounts = 'all' in target ? [] : accounts.filter((account) => account.accountId !== target.accountId);
-  });
-  const switchAccount = jest.fn(async () => undefined);
-  const addCurrentAccount = jest.fn(async () => undefined);
-  const getState = jest.fn(() => ({
-    deviceId: 'dev-1',
-    accounts,
-    activeAccountId: accounts[0]?.accountId ?? null,
-    revision: 1,
-    updatedAt: Date.now(),
-  }));
-  return { signOut, switchAccount, addCurrentAccount, getState };
-}
-
 interface SetupOpts {
   oxyServices?: Partial<FakeServices>;
+  sessions?: ClientSession[];
   activeSessionId?: string | null;
-  sessionClient?: ReturnType<typeof buildFakeSessionClient>;
-  syncFromClient?: jest.Mock<Promise<void>, []>;
 }
 
 const setup = (opts: SetupOpts = {}) => {
@@ -153,8 +129,6 @@ const setup = (opts: SetupOpts = {}) => {
   const logoutStore = jest.fn();
   const setAuthState = jest.fn();
   const logger = jest.fn();
-  const sessionClient = opts.sessionClient ?? buildFakeSessionClient([]);
-  const syncFromClient = opts.syncFromClient ?? jest.fn(async () => undefined);
 
   // Reset session helper mocks
   (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValue([]);
@@ -164,6 +138,7 @@ const setup = (opts: SetupOpts = {}) => {
       // biome-ignore lint/suspicious/noExplicitAny: fake services match the runtime interface but TypeScript can't see through mixin composition
       oxyServices: oxyServices as any,
       storage: null,
+      sessions: opts.sessions ?? [],
       activeSessionId: opts.activeSessionId ?? null,
       setActiveSessionId,
       updateSessions,
@@ -171,8 +146,6 @@ const setup = (opts: SetupOpts = {}) => {
       clearSessionState,
       clearPriorSessionHint,
       switchSession,
-      sessionClient: sessionClient as never,
-      syncFromClient,
       applyLanguagePreference,
       onAuthStateChange,
       onError,
@@ -187,8 +160,6 @@ const setup = (opts: SetupOpts = {}) => {
   return {
     result,
     oxyServices,
-    sessionClient,
-    syncFromClient,
     setActiveSessionId,
     updateSessions,
     saveActiveSessionId,
@@ -226,11 +197,6 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
     // ...and critically must not depend on any legacy session-id token fetch.
     expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
-    // The recovered account+session is registered into the server-authoritative
-    // device-session set (replaces the deleted `establishDeviceRefreshSlot`
-    // oxy_rt slot registration).
-    expect(helpers.sessionClient.addCurrentAccount).toHaveBeenCalledTimes(1);
-    expect(helpers.syncFromClient).toHaveBeenCalledTimes(1);
     expect(helpers.setActiveSessionId).toHaveBeenCalledWith('new-session');
     expect(helpers.saveActiveSessionId).toHaveBeenCalledWith('new-session');
     expect(helpers.loginSuccess).toHaveBeenCalled();
@@ -238,31 +204,6 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(signedInUser?.id).toBe('user-1');
     expect(helpers.setAuthState).toHaveBeenCalledWith({ isLoading: true, error: null });
     expect(helpers.setAuthState).toHaveBeenLastCalledWith({ isLoading: false });
-  });
-
-  it('does not fail sign-in when device-session registration fails (best-effort)', async () => {
-    (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValueOnce([
-      { sessionId: 'new-session', deviceId: 'device-1', userId: 'user-1', isCurrent: true },
-    ]);
-
-    const sessionClient = buildFakeSessionClient([]);
-    sessionClient.addCurrentAccount.mockRejectedValueOnce(new Error('network down'));
-    const helpers = setup({ sessionClient });
-
-    let signedInUser: User | undefined;
-    await act(async () => {
-      signedInUser = await helpers.result.current.signIn('pubkey-1');
-    });
-
-    expect(signedInUser?.id).toBe('user-1');
-    expect(helpers.loginSuccess).toHaveBeenCalled();
-    expect(helpers.logger).toHaveBeenCalledWith(
-      'Failed to register sign-in into device session set',
-      expect.any(Error),
-    );
-    // The registration failure must not have cascaded into re-throwing / a
-    // failed sign-in.
-    expect(helpers.loginFailure).not.toHaveBeenCalled();
   });
 
   it('continues sign-in when the verify response omits an access token', async () => {
@@ -387,81 +328,98 @@ describe('useAuthOperations.signIn — requestChallenge failures', () => {
 });
 
 describe('useAuthOperations.logout', () => {
-  const twoDeviceAccounts: FakeSessionAccount[] = [
-    { accountId: 'acc-1', sessionId: 'session-1', authuser: 0 },
-    { accountId: 'acc-2', sessionId: 'session-2', authuser: 1 },
+  const currentSessions: ClientSession[] = [
+    { sessionId: 'session-1', deviceId: 'd1', expiresAt: '2030', lastActive: '2025', userId: 'u1', isCurrent: true },
+    { sessionId: 'session-2', deviceId: 'd1', expiresAt: '2030', lastActive: '2025', userId: 'u1', isCurrent: false },
   ];
 
   it('no-ops when there is no active session', async () => {
-    const sessionClient = buildFakeSessionClient(twoDeviceAccounts);
-    const helpers = setup({ activeSessionId: null, sessionClient });
+    const helpers = setup({ activeSessionId: null });
     await act(async () => {
       await helpers.result.current.logout();
     });
-    expect(sessionClient.signOut).not.toHaveBeenCalled();
+    expect(helpers.oxyServices.logoutSession).not.toHaveBeenCalled();
     expect(helpers.clearSessionState).not.toHaveBeenCalled();
   });
 
-  it('signs out the active account via SessionClient and reprojects when other accounts remain', async () => {
-    const sessionClient = buildFakeSessionClient(twoDeviceAccounts);
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
+  it('switches to the next session when logging out the active one', async () => {
+    const helpers = setup({ activeSessionId: 'session-1', sessions: currentSessions });
     await act(async () => {
       await helpers.result.current.logout();
     });
-    expect(sessionClient.signOut).toHaveBeenCalledWith({ accountId: 'acc-1' });
-    expect(helpers.syncFromClient).toHaveBeenCalledTimes(1);
+    expect(helpers.oxyServices.logoutSession).toHaveBeenCalledWith('session-1', 'session-1');
+    expect(helpers.updateSessions).toHaveBeenCalledWith(
+      [expect.objectContaining({ sessionId: 'session-2' })],
+      { merge: false },
+    );
+    expect(helpers.switchSession).toHaveBeenCalledWith('session-2');
     expect(helpers.clearSessionState).not.toHaveBeenCalled();
   });
 
-  it('clears local state (full sign-out) when the last device account is signed out', async () => {
-    const sessionClient = buildFakeSessionClient([{ accountId: 'acc-1', sessionId: 'session-1', authuser: 0 }]);
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
+  it('clears session state when the last session is logged out', async () => {
+    const helpers = setup({ activeSessionId: 'session-1', sessions: [currentSessions[0]] });
     await act(async () => {
       await helpers.result.current.logout();
     });
-    expect(sessionClient.signOut).toHaveBeenCalledWith({ accountId: 'acc-1' });
-    expect(helpers.syncFromClient).toHaveBeenCalledTimes(1);
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
+    expect(helpers.switchSession).not.toHaveBeenCalled();
     // Genuine FULL sign-out → the durable returning-user hint is dropped so the
     // next cold boot is treated as a first-time anonymous visitor.
     expect(helpers.clearPriorSessionHint).toHaveBeenCalledTimes(1);
   });
 
   it('logs out a specific non-active session without disturbing the active one', async () => {
-    const sessionClient = buildFakeSessionClient(twoDeviceAccounts);
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
+    const helpers = setup({ activeSessionId: 'session-1', sessions: currentSessions });
     await act(async () => {
       await helpers.result.current.logout('session-2');
     });
-    expect(sessionClient.signOut).toHaveBeenCalledWith({ accountId: 'acc-2' });
-    expect(helpers.syncFromClient).toHaveBeenCalledTimes(1);
+    expect(helpers.oxyServices.logoutSession).toHaveBeenCalledWith('session-1', 'session-2');
+    expect(helpers.switchSession).not.toHaveBeenCalled();
     expect(helpers.clearSessionState).not.toHaveBeenCalled();
-    // A partial sign-out (other accounts remain) must NOT clear the hint — the
+    // A partial sign-out (other sessions remain) must NOT clear the hint — the
     // user is still a returning user on this device.
     expect(helpers.clearPriorSessionHint).not.toHaveBeenCalled();
+    expect(helpers.updateSessions).toHaveBeenCalledWith(
+      [expect.objectContaining({ sessionId: 'session-1' })],
+      { merge: false },
+    );
   });
 
-  it('reports a clear error (no silent no-op) when the target session has no matching device account', async () => {
-    const sessionClient = buildFakeSessionClient([{ accountId: 'acc-1', sessionId: 'session-1', authuser: 0 }]);
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
+  // Web multi-account: when the target session has an `authuser` slot index
+  // (i.e. it was sourced from `POST /auth/refresh-all`), `logout` routes to
+  // the cookie-cleared endpoint so the device-local `oxy_rt_${n}` is wiped
+  // by `Set-Cookie` AND the family is revoked. Sessions without an
+  // `authuser` (legacy / native) still take the bearer endpoint.
+  it('routes the cookie endpoint when the target session has an authuser slot (web)', async () => {
+    const sessionsWithAuthuser: ClientSession[] = [
+      { sessionId: 'session-1', deviceId: 'd-1', expiresAt: '2030', lastActive: '2025', userId: 'user-1', authuser: 0 },
+      { sessionId: 'session-2', deviceId: 'd-1', expiresAt: '2030', lastActive: '2025', userId: 'user-2', authuser: 1 },
+    ];
+    const helpers = setup({ activeSessionId: 'session-1', sessions: sessionsWithAuthuser });
     await act(async () => {
-      await helpers.result.current.logout('session-unknown');
+      await helpers.result.current.logout('session-2');
     });
-    expect(sessionClient.signOut).not.toHaveBeenCalled();
-    expect(helpers.clearSessionState).not.toHaveBeenCalled();
-    expect(helpers.onError).toHaveBeenCalledWith(expect.objectContaining({
-      code: 'LOGOUT_ERROR',
-    }));
+    expect(helpers.oxyServices.logoutSessionByAuthuser).toHaveBeenCalledWith(1);
+    // The bearer endpoint is NOT used when the cookie path applies.
+    expect(helpers.oxyServices.logoutSession).not.toHaveBeenCalled();
+    expect(helpers.updateSessions).toHaveBeenCalledWith(
+      [expect.objectContaining({ sessionId: 'session-1' })],
+      { merge: false },
+    );
   });
 
   it('clears local state when the server reports the session as invalid (401 fast-path)', async () => {
-    const sessionClient = buildFakeSessionClient([{ accountId: 'acc-1', sessionId: 'session-1', authuser: 0 }]);
-    sessionClient.signOut.mockImplementationOnce(async () => {
-      const err: Error & { status?: number } = new Error('HTTP 401: invalid session');
-      err.status = 401;
-      throw err;
+    const helpers = setup({
+      activeSessionId: 'session-1',
+      sessions: currentSessions,
+      oxyServices: {
+        logoutSession: jest.fn(async () => {
+          const err: Error & { status?: number } = new Error('HTTP 401: invalid session');
+          err.status = 401;
+          throw err;
+        }),
+      },
     });
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
 
     await act(async () => {
       await helpers.result.current.logout('session-1');
@@ -472,11 +430,15 @@ describe('useAuthOperations.logout', () => {
   });
 
   it('reports unexpected errors via onError', async () => {
-    const sessionClient = buildFakeSessionClient([{ accountId: 'acc-1', sessionId: 'session-1', authuser: 0 }]);
-    sessionClient.signOut.mockImplementationOnce(async () => {
-      throw new Error('boom');
+    const helpers = setup({
+      activeSessionId: 'session-1',
+      sessions: currentSessions,
+      oxyServices: {
+        logoutSession: jest.fn(async () => {
+          throw new Error('boom');
+        }),
+      },
     });
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
 
     await act(async () => {
       await helpers.result.current.logout('session-1');
@@ -503,17 +465,15 @@ describe('useAuthOperations.logoutAll', () => {
   });
 
   // Under jest's jsdom env `isWebBrowser()` returns true, so `logoutAll`
-  // clears the device-local active-authuser slot too.
-  it('revokes every device account via SessionClient and clears local state on success (web)', async () => {
-    const sessionClient = buildFakeSessionClient([
-      { accountId: 'acc-1', sessionId: 'session-1', authuser: 0 },
-      { accountId: 'acc-2', sessionId: 'session-2', authuser: 1 },
-    ]);
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
+  // must revoke the active user's sessions across devices first, then clear
+  // every device-local cookie slot from this browser.
+  it('revokes global sessions and clears every device-local cookie on success (web)', async () => {
+    const helpers = setup({ activeSessionId: 'session-1' });
     await act(async () => {
       await helpers.result.current.logoutAll();
     });
-    expect(sessionClient.signOut).toHaveBeenCalledWith({ all: true });
+    expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
+    expect(helpers.oxyServices.logoutAllSessionsViaCookie).toHaveBeenCalledTimes(1);
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
     // logoutAll is ALWAYS a full sign-out → the durable returning-user hint is
     // dropped (no forced `/sso` bounce on the next cold boot).
@@ -523,13 +483,20 @@ describe('useAuthOperations.logoutAll', () => {
     expect(window.localStorage.getItem('oxy_active_authuser')).toBeNull();
   });
 
-  it('re-throws and reports when SessionClient.signOut({ all: true }) fails', async () => {
-    const sessionClient = buildFakeSessionClient([{ accountId: 'acc-1', sessionId: 'session-1', authuser: 0 }]);
-    sessionClient.signOut.mockImplementationOnce(async () => {
-      throw new Error('server down');
+  it('re-throws and reports when the cookie cleanup fails after global revocation', async () => {
+    const helpers = setup({
+      activeSessionId: 'session-1',
+      oxyServices: {
+        logoutAllSessionsViaCookie: jest.fn(async () => {
+          throw new Error('server down');
+        }),
+      },
     });
-    const helpers = setup({ activeSessionId: 'session-1', sessionClient });
 
+    // The global revoke now runs before the cookie cleanup, so the rejection
+    // arrives one microtask later than the legacy cookie-only flow. Capture the
+    // rejection inside `act` so the catch block's synchronous `onError` report
+    // is flushed within the same act scope before we assert on it.
     let caught: unknown;
     await act(async () => {
       try {
@@ -540,11 +507,9 @@ describe('useAuthOperations.logoutAll', () => {
     });
 
     expect((caught as Error).message).toBe('server down');
-    expect(sessionClient.signOut).toHaveBeenCalledWith({ all: true });
+    expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
     expect(helpers.onError).toHaveBeenCalledWith(expect.objectContaining({
       code: 'LOGOUT_ALL_ERROR',
     }));
-    // The failed revoke must NOT run the local teardown.
-    expect(helpers.clearSessionState).not.toHaveBeenCalled();
   });
 });
