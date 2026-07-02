@@ -29,6 +29,32 @@ export const Button = ({
 
 export const Loading = () => createElement('span', null, 'loading');
 
+/**
+ * Minimal stubs for the Bloom primitives the account switchers render
+ * (`@oxyhq/bloom/avatar`, `@oxyhq/bloom/typography`, `@oxyhq/bloom/divider`, and
+ * the root `Dialog` / `useDialogControl`). All bloom subpaths map to this file,
+ * so a component under test resolves these names here. `Avatar` renders no text
+ * so it never collides with `getByText(displayName)` queries.
+ */
+export const Avatar = () => createElement('span', { 'aria-hidden': 'true' });
+
+export const Text = ({ children }: { children?: ReactNode }) =>
+  createElement('span', null, children);
+
+export const Divider = () => createElement('hr', null);
+
+export const Dialog = () => null;
+
+export const useDialogControl = (): {
+  open: () => void;
+  close: () => void;
+  isOpen: boolean;
+} => ({
+  open: jest.fn(),
+  close: jest.fn(),
+  isOpen: false,
+});
+
 export const toast: {
   (message: string, options?: Record<string, unknown>): void;
   success: ToastFn;

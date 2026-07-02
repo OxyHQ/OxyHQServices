@@ -97,3 +97,63 @@ export const Text = ({
 
 export const ActivityIndicator = (props: Record<string, unknown>) =>
   React.createElement('span', { ...props, role: 'status' });
+
+/**
+ * Keep only DOM-safe props for the layout-primitive stubs below. RN passes
+ * `style` arrays, `hitSlop`/`accessibilityState` objects, `className`, etc. that
+ * would warn or throw when spread onto a jsdom host node — forward just the
+ * accessibility label (as `aria-label`) and test id.
+ */
+const domSafeProps = (props: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  if (typeof props.accessibilityLabel === 'string') {
+    out['aria-label'] = props.accessibilityLabel;
+  }
+  if (typeof props.testID === 'string') {
+    out['data-testid'] = props.testID;
+  }
+  return out;
+};
+
+export const View = ({
+  children,
+  ...props
+}: {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => React.createElement('div', domSafeProps(props), children);
+
+export const ScrollView = ({
+  children,
+  ...props
+}: {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => React.createElement('div', domSafeProps(props), children);
+
+export const Modal = ({
+  children,
+  visible = true,
+  ...props
+}: {
+  children?: React.ReactNode;
+  visible?: boolean;
+  [key: string]: unknown;
+}) => (visible ? React.createElement('div', domSafeProps(props), children) : null);
+
+export const Pressable = ({
+  children,
+  onPress,
+  disabled,
+  ...props
+}: {
+  children?: React.ReactNode | ((state: { pressed: boolean }) => React.ReactNode);
+  onPress?: () => void;
+  disabled?: boolean;
+  [key: string]: unknown;
+}) =>
+  React.createElement(
+    'button',
+    { type: 'button', disabled, onClick: onPress, ...domSafeProps(props) },
+    typeof children === 'function' ? children({ pressed: false }) : children,
+  );

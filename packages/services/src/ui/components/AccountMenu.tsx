@@ -20,8 +20,7 @@ import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { isDev, logger as loggerUtil } from '@oxyhq/core';
-import { buildAccountRows, type AccountRow } from './accountMenuRows';
-import { useDeviceAccounts } from '../hooks/useDeviceAccounts';
+import { useSwitchableAccounts, type SwitchableAccount } from '../hooks/useSwitchableAccounts';
 
 /**
  * Web-only anchor for the popover panel. Each field anchors the panel against
@@ -66,9 +65,11 @@ const PANEL_WIDTH = 360;
 /**
  * Unified, canonical account switcher for the Oxy ecosystem. Gmail-style: the
  * accounts list sits at the top (current account first, with a checkmark), then
- * "Add another account", "Manage account", and the sign-out actions.
+ * "Add another account", "Manage account", and the sign-out actions. Lists EVERY
+ * switchable account (device sign-ins AND linked graph accounts) and routes every
+ * switch through the single `switchToAccount(accountId)` path.
  *
- * Reads everything it needs from `useOxy()` / `useDeviceAccounts()` — never
+ * Reads everything it needs from `useOxy()` / `useSwitchableAccounts()` — never
  * receives a session via props. Renders as a popover anchored to the trigger on
  * web, and as a full-width bottom-sheet style modal on native.
  */
@@ -81,8 +82,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     onBeforeSessionChange,
 }) => {
     const {
-        activeSessionId,
-        switchSession,
+        switchToAccount,
         logout,
         logoutAll,
         removeSession,
@@ -91,14 +91,15 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     const bloomTheme = useTheme();
     const colors = bloomTheme.colors;
 
-    // Source EVERY account's real name/email/avatar/color from the unified
-    // device-account hook (shared apex `refresh-all` path on `*.oxy.so`, local
-    // `useOxy()` fallback on cross-domain web / native). This also synthesises a
-    // live-user row when the probe is empty, so the signed-in user is always
-    // represented (no "Not signed in" false negative).
-    const { accounts: deviceAccounts } = useDeviceAccounts();
+    // Source EVERY switchable account — device sign-ins AND linked graph
+    // accounts (owned orgs + shared-with-you) — from the single
+    // `useSwitchableAccounts` hook, each hydrated with real
+    // name/email/avatar/color. It also synthesises a live-user row when the
+    // device set has not synced yet, so the signed-in user is always represented
+    // (no "Not signed in" false negative).
+    const { accounts } = useSwitchableAccounts();
 
-    const [busySessionId, setBusySessionId] = useState<string | null>(null);
+    const [switchingAccountId, setSwitchingAccountId] = useState<string | null>(null);
     const [removingSessionId, setRemovingSessionId] = useState<string | null>(null);
     const [signingOut, setSigningOut] = useState(false);
     const [signingOutAll, setSigningOutAll] = useState(false);
@@ -108,34 +109,44 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
 
     const containerRef = useRef<View | null>(null);
 
-    // Current account first, then the rest in their existing order — matching
-    // the Gmail-style chooser the inbox design ports from.
-    const rows = useMemo<AccountRow[]>(() => {
-        const built = buildAccountRows({ accounts: deviceAccounts });
-        const current = built.filter((row) => row.isActive);
-        const others = built.filter((row) => !row.isActive);
-        return [...current, ...others];
-    }, [deviceAccounts]);
+    // Current account first, then the remaining device sign-ins, then the linked
+    // graph accounts — matching the Gmail-style chooser the inbox design ports.
+    const rows = useMemo<SwitchableAccount[]>(() => {
+        const device = accounts.filter((account) => account.onDevice);
+        const graph = accounts.filter((account) => !account.onDevice);
+        const current = device.filter((account) => account.isCurrent);
+        const others = device.filter((account) => !account.isCurrent);
+        return [...current, ...others, ...graph];
+    }, [accounts]);
 
-    const isSwitching = busySessionId !== null;
+    // "Sign out of all accounts" only applies to real device sessions.
+    const deviceCount = useMemo(
+        () => accounts.filter((account) => account.onDevice).length,
+        [accounts],
+    );
 
-    // Switch to a non-active account. We route ALL rows through
-    // `useOxy().switchSession(sessionId)` — the SDK's canonical switch path. On
-    // WEB it already performs the same silent activation the auth chooser uses:
-    // when the target `ClientSession` carries an `authuser` slot, it rotates that
-    // slot via `oxyServices.refreshTokenViaCookie({ authuser })` and plants the
-    // fresh access token before validating (see `useSessionManagement.switchSession`).
-    // On NATIVE it validates the session id directly. There is no separate
-    // "activate by authuser" SDK entry point, so reusing `switchSession`
-    // (rather than inventing a parallel mechanism) keeps a single source of truth.
-    const handleSwitch = useCallback(async (sessionId: string) => {
-        if (sessionId === activeSessionId || busySessionId) {
+    // Account ids currently listed — used to indent a graph-only row whose parent
+    // account is also shown.
+    const listedAccountIds = useMemo(
+        () => new Set(rows.map((row) => row.accountId)),
+        [rows],
+    );
+
+    const isSwitching = switchingAccountId !== null;
+
+    // The ONE uniform switch path: every row (device sign-in or linked graph
+    // account) routes through `useOxy().switchToAccount(accountId)`. It reuses
+    // the device session when the account is already signed in here, and mints a
+    // real session only on the first switch into a graph account — a single
+    // source of truth for every switch.
+    const handleSwitch = useCallback(async (account: SwitchableAccount) => {
+        if (account.isCurrent || switchingAccountId) {
             return;
         }
-        setBusySessionId(sessionId);
+        setSwitchingAccountId(account.accountId);
         try {
             await onBeforeSessionChange?.();
-            await switchSession(sessionId);
+            await switchToAccount(account.accountId);
             toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
             onClose();
         } catch (error) {
@@ -144,9 +155,9 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
             }
             toast.error(t('accountSwitcher.toasts.switchFailed') || 'Failed to switch account');
         } finally {
-            setBusySessionId(null);
+            setSwitchingAccountId(null);
         }
-    }, [activeSessionId, busySessionId, switchSession, t, onClose, onBeforeSessionChange]);
+    }, [switchingAccountId, switchToAccount, t, onClose, onBeforeSessionChange]);
 
     // Sign out a SPECIFIC inactive account from its per-row icon. `removeSession`
     // is the SDK's canonical per-session sign-out: it targets the given session
@@ -154,7 +165,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     // otherwise) and removes ONLY that account without switching/clearing the
     // active session. The menu stays open so the user can keep managing accounts.
     const handleRemove = useCallback(async (sessionId: string) => {
-        if (sessionId === activeSessionId || removingSessionId) {
+        if (removingSessionId) {
             return;
         }
         setRemovingSessionId(sessionId);
@@ -167,7 +178,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         } finally {
             setRemovingSessionId(null);
         }
-    }, [activeSessionId, removingSessionId, removeSession, t]);
+    }, [removingSessionId, removeSession, t]);
 
     const performSignOut = useCallback(async () => {
         if (signingOut) {
@@ -272,64 +283,81 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* 1) Accounts list — current first (checkmark), then others. */}
+                {/* 1) Accounts list — current first (checkmark), then the other
+                    device sign-ins, then linked graph accounts (role badge,
+                    indented under their parent). Every row switches the same way. */}
                 {rows.map((row) => {
-                    const isBusy = busySessionId === row.sessionId;
-                    const isRemoving = removingSessionId === row.sessionId;
+                    const sessionId = row.sessionId;
+                    const isBusy = switchingAccountId === row.accountId;
+                    const isRemoving = sessionId ? removingSessionId === sessionId : false;
+                    const isChild = Boolean(
+                        row.parentAccountId && listedAccountIds.has(row.parentAccountId),
+                    );
+                    const role = row.callerMembership?.role;
                     return (
                         <TouchableOpacity
-                            key={`account-${row.sessionId}`}
+                            key={`account-${row.accountId}`}
                             accessibilityRole="menuitem"
                             accessibilityLabel={row.displayName}
-                            accessibilityState={{ selected: row.isActive }}
-                            onPress={() => handleSwitch(row.sessionId)}
-                            disabled={row.isActive || isBusy || isSwitching}
+                            accessibilityState={{ selected: row.isCurrent }}
+                            onPress={() => handleSwitch(row)}
+                            disabled={row.isCurrent || isBusy || isSwitching}
                             activeOpacity={0.6}
                             style={[
                                 styles.accountRow,
-                                row.isActive && { backgroundColor: colors.primarySubtle },
-                                isSwitching && !row.isActive && styles.rowDisabled,
+                                isChild && styles.childRow,
+                                row.isCurrent && { backgroundColor: colors.primarySubtle },
+                                isSwitching && !row.isCurrent && styles.rowDisabled,
                             ]}
                         >
                             <Avatar
-                                uri={row.avatarUri}
+                                uri={row.avatarUrl}
                                 name={row.displayName}
-                                size={row.isActive ? 40 : 32}
+                                size={row.isCurrent ? 40 : isChild ? 28 : 32}
                             />
                             <View style={styles.accountInfo}>
-                                <Text
-                                    style={[
-                                        styles.accountName,
-                                        { color: colors.text },
-                                        row.isActive && styles.accountNameActive,
-                                    ]}
-                                    numberOfLines={1}
-                                >
-                                    {row.displayName}
-                                </Text>
-                                {row.secondary ? (
+                                <View style={styles.nameRow}>
+                                    <Text
+                                        style={[
+                                            styles.accountName,
+                                            { color: colors.text },
+                                            row.isCurrent && styles.accountNameActive,
+                                        ]}
+                                        numberOfLines={1}
+                                    >
+                                        {row.displayName}
+                                    </Text>
+                                    {role ? (
+                                        <View style={[styles.roleBadge, { backgroundColor: colors.card }]}>
+                                            <Text style={[styles.roleBadgeText, { color: colors.textSecondary }]}>
+                                                {t(`accounts.roles.${role}.label`) || role}
+                                            </Text>
+                                        </View>
+                                    ) : null}
+                                </View>
+                                {row.email ? (
                                     <Text
                                         style={[styles.accountEmail, { color: colors.textSecondary }]}
                                         numberOfLines={1}
                                     >
-                                        {row.secondary}
+                                        {row.email}
                                     </Text>
                                 ) : null}
                             </View>
                             {isBusy ? (
                                 <ActivityIndicator color={colors.primary} size="small" />
-                            ) : row.isActive ? (
+                            ) : row.isCurrent ? (
                                 <Ionicons name="checkmark" size={20} color={colors.primary} />
                             ) : isRemoving ? (
                                 <ActivityIndicator color={colors.textSecondary} size="small" />
-                            ) : (
+                            ) : sessionId ? (
                                 <TouchableOpacity
                                     accessibilityRole="button"
                                     accessibilityLabel={
                                         t('accountMenu.signOutAccount', { name: row.displayName })
                                         || `Sign out ${row.displayName}`
                                     }
-                                    onPress={() => handleRemove(row.sessionId)}
+                                    onPress={() => handleRemove(sessionId)}
                                     disabled={isSwitching || removingSessionId !== null}
                                     activeOpacity={0.6}
                                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -341,7 +369,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                                         color={colors.textSecondary}
                                     />
                                 </TouchableOpacity>
-                            )}
+                            ) : null}
                         </TouchableOpacity>
                     );
                 })}
@@ -415,8 +443,8 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                     </Text>
                 </TouchableOpacity>
 
-                {/* 6) Sign out of all accounts (only when >1 account). */}
-                {rows.length > 1 ? (
+                {/* 6) Sign out of all accounts (only when >1 device sign-in). */}
+                {deviceCount > 1 ? (
                     <TouchableOpacity
                         accessibilityRole="menuitem"
                         accessibilityLabel={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
@@ -545,6 +573,9 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         gap: 10,
     },
+    childRow: {
+        paddingLeft: 34,
+    },
     rowDisabled: {
         opacity: 0.4,
     },
@@ -552,12 +583,28 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: 0,
     },
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
     accountName: {
         fontSize: 13,
         fontWeight: '500',
+        flexShrink: 1,
     },
     accountNameActive: {
         fontWeight: '600',
+    },
+    roleBadge: {
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 8,
+    },
+    roleBadgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+        textTransform: 'capitalize',
     },
     accountEmail: {
         fontSize: 11,
