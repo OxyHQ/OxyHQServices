@@ -63,3 +63,15 @@ export type { OxyCorsOptions } from './cors';
 
 // Constant-time secret comparison.
 export { verifySecret } from './verifySecret';
+
+// Registrable-apex (eTLD+1) derivation via the Public Suffix List — the SINGLE
+// SOURCE OF TRUTH shared with the IdP worker and the client FAPI auto-detect.
+// Pure host handling (no browser deps), so it is safe on the server subpath and
+// lets `@oxyhq/api` derive `auth.<apex>` without duplicating PSL logic.
+export { registrableApex } from '../utils/fapiAutoDetect';
+
+// The single RP callback path the IdP redirects back to. A pure wire-contract
+// constant (no browser deps at module top level), re-used server-side so the
+// `/sso/establish-token` `return_to` cannot drift from what `/sso/establish`
+// validates.
+export { SSO_CALLBACK_PATH } from '../utils/ssoBounce';

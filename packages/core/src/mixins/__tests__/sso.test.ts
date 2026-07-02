@@ -166,6 +166,47 @@ describe('OxyServices.exchangeSsoCode', () => {
   });
 });
 
+describe('OxyServices.requestSsoEstablishUrl', () => {
+  const ESTABLISH_URL =
+    'https://auth.oxy.so/sso/establish?et=jwt&return_to=https%3A%2F%2Faccounts.oxy.so%2F__oxy%2Fsso-callback&state=s';
+
+  it('POSTs origin + state to /sso/establish-token (bearer, cache-free) and returns the URL', async () => {
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const spy = jest
+      .spyOn(oxy, 'makeRequest')
+      .mockResolvedValue({ establishUrl: ESTABLISH_URL } as never);
+
+    const result = await oxy.requestSsoEstablishUrl('https://accounts.oxy.so', 's');
+
+    expect(result).toEqual({ establishUrl: ESTABLISH_URL });
+    expect(spy).toHaveBeenCalledWith(
+      'POST',
+      '/sso/establish-token',
+      { origin: 'https://accounts.oxy.so', state: 's' },
+      { cache: false },
+    );
+    spy.mockRestore();
+  });
+
+  it('rejects an empty origin or state without calling the API', async () => {
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const spy = jest.spyOn(oxy, 'makeRequest');
+
+    await expect(oxy.requestSsoEstablishUrl('', 's')).rejects.toThrow();
+    await expect(oxy.requestSsoEstablishUrl('https://accounts.oxy.so', '')).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('throws when the server returns no establishUrl', async () => {
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const spy = jest.spyOn(oxy, 'makeRequest').mockResolvedValue({} as never);
+
+    await expect(oxy.requestSsoEstablishUrl('https://accounts.oxy.so', 's')).rejects.toThrow();
+    spy.mockRestore();
+  });
+});
+
 describe('generateSsoState', () => {
   it('returns a non-empty unique string (module-level helper)', () => {
     const a = generateSsoState();

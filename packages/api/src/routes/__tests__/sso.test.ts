@@ -49,6 +49,15 @@ jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
+// `sso.ts` imports `authMiddleware` (for the bearer-gated `/sso/establish-token`
+// route), which pulls the mongoose model chain the global mongoose mock cannot
+// load at import time. This suite exercises only the internal `/sso/code` +
+// public `/sso/exchange` routes, so stub the auth middleware to a no-op — it is
+// never mounted on the routes under test here.
+jest.mock('../../middleware/auth', () => ({
+  authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 // Approved-clients allow-list: only https://mention.earth is approved.
 const APPROVED = new Set(['https://mention.earth']);
 jest.mock('../../services/fedcm.service', () => ({

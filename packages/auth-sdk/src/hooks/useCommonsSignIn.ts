@@ -29,6 +29,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OxyServices, User, CommonsSignInStatus } from '@oxyhq/core';
+import { establishIdpSessionAfterClaim } from '@oxyhq/core';
 import { renderQrDataUrl } from '../utils/qrCode';
 import { useWebOxyOptional } from '../WebOxyProvider';
 
@@ -188,6 +189,15 @@ export function useCommonsSignIn(
         if (runId !== runIdRef.current || !mountedRef.current) return;
         setPhase('authorized');
         await onAuthenticatedRef.current?.(result);
+        // WEB durable-session hop (shared core primitive — identical to the
+        // `@oxyhq/services` device-flow path). A QR claim plants only in-memory
+        // tokens: no IdP `fedcm_session` cookie, so a reload would lose the
+        // session. Now that the session is committed + durably persisted by
+        // `onAuthenticated`, plant the per-apex IdP cookie via ONE establish hop.
+        // Total (never throws) and no-op on the IdP origin; a single attempt that
+        // navigates away on success. Not fired for the SSO-return/silent paths —
+        // only this device-flow claim needs it.
+        await establishIdpSessionAfterClaim(svc, {});
       } catch (err) {
         fail(runId, err instanceof Error ? err.message : 'Failed to complete sign in.');
       }
