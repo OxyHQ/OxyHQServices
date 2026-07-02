@@ -530,6 +530,10 @@ export { parseSsoReturnFragment, consumeSsoReturn } from './utils/ssoReturn';
 export type { SsoReturnKind, SsoReturnResult, ConsumeSsoReturnDeps } from './utils/ssoReturn';
 export { generateSsoState } from './mixins/OxyServices.sso';
 
+// Post-claim durable-session establish hop (web device-flow / QR sign-in).
+export { establishIdpSessionAfterClaim } from './utils/ssoEstablish';
+export type { SsoEstablishClient, EstablishAfterClaimDeps } from './utils/ssoEstablish';
+
 // SSO bounce — per-origin sessionStorage keys, bounce URL builder, predicates
 export {
     SSO_CALLBACK_PATH,

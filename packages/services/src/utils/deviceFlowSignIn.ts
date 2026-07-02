@@ -31,7 +31,15 @@
  * unit-testable.
  */
 
-import { KeyManager, type MinimalUserData, type SessionLoginResponse, type User } from '@oxyhq/core';
+import {
+  KeyManager,
+  establishIdpSessionAfterClaim,
+  type EstablishAfterClaimDeps,
+  type MinimalUserData,
+  type SessionLoginResponse,
+  type SsoEstablishClient,
+  type User,
+} from '@oxyhq/core';
 
 interface DeviceFlowClaimResult {
   accessToken?: string;
@@ -46,8 +54,11 @@ interface DeviceFlowClaimResult {
  * structural type (rather than importing the full client) so the helper is
  * trivially unit-testable with a stub and never pulls the RN/Expo runtime into
  * a test bundle.
+ *
+ * Extends {@link SsoEstablishClient} (`requestSsoEstablishUrl`) so the WEB
+ * post-claim durable-session hop can be driven off the same client.
  */
-export interface DeviceFlowClient {
+export interface DeviceFlowClient extends SsoEstablishClient {
   /**
    * Exchange the device-flow `sessionToken` for the first access + refresh
    * token, planting them on the client. Single-use; replay is rejected by the
@@ -74,6 +85,13 @@ export interface CompleteDeviceFlowSignInOptions {
    * bearer is planted so its bearer-protected calls succeed.
    */
   commitSession: (session: SessionLoginResponse) => Promise<void>;
+  /**
+   * Injectable web seams for the post-claim durable-session establish hop
+   * ({@link establishIdpSessionAfterClaim}). Omit in production — the defaults
+   * resolve to `window.*` (and no-op off-web / on native). Tests inject fakes to
+   * drive the web path deterministically.
+   */
+  establishDeps?: EstablishAfterClaimDeps;
 }
 
 /**
@@ -90,6 +108,7 @@ export async function completeDeviceFlowSignIn({
   sessionId,
   sessionToken,
   commitSession,
+  establishDeps,
 }: CompleteDeviceFlowSignInOptions): Promise<User> {
   // 1) Plant the bearer + refresh tokens. The claim response is also persisted
   //    to native shared secure storage so a later cold boot has a bearer before
@@ -124,6 +143,17 @@ export async function completeDeviceFlowSignIn({
     user: minimalUser,
     accessToken: claimed.accessToken,
   });
+
+  // 3) WEB durable-session hop (no-op on native). A device-flow claim plants
+  //    ONLY in-memory tokens — no IdP `fedcm_session` cookie is ever planted, so
+  //    a reload cannot re-mint a token and the session is lost. Now that the
+  //    session is committed AND durably persisted (step 2), plant the per-apex
+  //    IdP cookie via ONE top-level establish hop. Single attempt; total (never
+  //    throws) — an establish failure leaves the committed session as-is. On web
+  //    success it navigates away, so it is the LAST step: the browser tears the
+  //    page down on the next tick, after `claimed.user` is returned to the
+  //    caller's `onSignedIn`.
+  await establishIdpSessionAfterClaim(oxyServices, establishDeps ?? {});
 
   return claimed.user;
 }

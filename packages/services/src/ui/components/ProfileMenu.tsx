@@ -7,6 +7,7 @@ import {
     ScrollView,
     ActivityIndicator,
     Platform,
+    StyleSheet,
     type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -58,8 +59,10 @@ export interface ProfileMenuProps {
 }
 
 /**
- * Clean account switcher, written with NativeWind classNames + Bloom
- * primitives. Lists EVERY switchable account from {@link useSwitchableAccounts}
+ * Clean account switcher, written with react-native `StyleSheet` + Bloom
+ * theme colors (the package convention — no NativeWind, which is only an
+ * optional peer and absent in the primary `accounts` consumer). Lists EVERY
+ * switchable account from {@link useSwitchableAccounts}
  * — device sign-ins AND linked graph accounts (owned orgs + shared-with-you) —
  * and routes EVERY switch through the context's single
  * `switchToAccount(accountId)` dispatcher (there is no separate device-only
@@ -204,22 +207,20 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
             // Swallow taps inside the panel so they never reach the overlay's
             // outside-tap-to-close handler.
             onPress={() => undefined}
-            className={
-                isWeb
-                    ? 'overflow-hidden rounded-2xl border border-border bg-background'
-                    : 'overflow-hidden rounded-t-3xl bg-background pb-3'
-            }
             style={[
+                isWeb ? styles.panelWeb : styles.panelNative,
+                { backgroundColor: colors.background },
+                isWeb ? { borderColor: colors.border } : null,
                 panelAnchorStyle,
-                !isWeb ? { maxHeight: '85%' } : { maxHeight: '85%' },
+                styles.panelBounds,
                 styles.shadow,
             ]}
             accessibilityRole="menu"
             accessibilityLabel={t('accountMenu.label') || 'Account menu'}
         >
             <ScrollView
-                className="grow-0"
-                contentContainerClassName="py-1"
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
                 {/* 1) Every switchable account — device sign-ins AND linked graph
@@ -244,9 +245,12 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                             accessibilityState={{ selected: isActive }}
                             onPress={() => handleSwitch(account)}
                             disabled={isActive || isBusy || isSwitching}
-                            className={`flex-row items-center gap-3 px-4 py-2.5 ${isChild ? 'pl-10' : ''} ${
-                                isActive ? 'bg-secondary' : ''
-                            } ${isSwitching && !isActive ? 'opacity-40' : ''}`}
+                            style={[
+                                styles.accountRow,
+                                isChild && styles.childRow,
+                                isActive && { backgroundColor: colors.backgroundSecondary },
+                                isSwitching && !isActive && styles.rowDimmed,
+                            ]}
                         >
                             <Avatar
                                 source={account.user.avatar ?? undefined}
@@ -255,17 +259,21 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                                 name={account.displayName}
                                 size={isActive ? 40 : isChild ? 28 : 32}
                             />
-                            <View className="min-w-0 flex-1">
-                                <View className="flex-row items-center gap-2">
+                            <View style={styles.accountInfo}>
+                                <View style={styles.nameRow}>
                                     <Text
-                                        className={`shrink text-foreground ${isActive ? 'font-semibold' : 'font-medium'}`}
+                                        style={[
+                                            styles.accountName,
+                                            { color: colors.text },
+                                            isActive && styles.accountNameActive,
+                                        ]}
                                         numberOfLines={1}
                                     >
                                         {account.displayName}
                                     </Text>
                                     {role ? (
-                                        <View className="rounded-md bg-secondary px-1.5 py-0.5">
-                                            <Text className="text-[10px] font-semibold uppercase text-muted-foreground">
+                                        <View style={[styles.roleBadge, { backgroundColor: colors.card }]}>
+                                            <Text style={[styles.roleBadgeText, { color: colors.textSecondary }]}>
                                                 {t(`accounts.roles.${role}.label`) || role}
                                             </Text>
                                         </View>
@@ -273,7 +281,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                                 </View>
                                 {account.email ? (
                                     <Text
-                                        className="text-xs text-muted-foreground"
+                                        style={[styles.accountEmail, { color: colors.textSecondary }]}
                                         numberOfLines={1}
                                     >
                                         {account.email}
@@ -296,7 +304,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                                     onPress={() => handleRemove(sessionId)}
                                     disabled={actionDisabled}
                                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    className="h-7 w-7 items-center justify-center rounded-full opacity-60"
+                                    style={styles.rowSignOutButton}
                                 >
                                     <MaterialCommunityIcons
                                         name="logout"
@@ -311,9 +319,9 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
 
                 {/* 2) Switching indicator. */}
                 {isSwitching ? (
-                    <View className="flex-row items-center justify-center gap-2 py-2">
+                    <View style={styles.switchingRow}>
                         <ActivityIndicator color={colors.textSecondary} size="small" />
-                        <Text className="text-xs font-medium text-muted-foreground">
+                        <Text style={[styles.switchingText, { color: colors.textSecondary }]}>
                             {t('accountMenu.switching') || 'Switching account…'}
                         </Text>
                     </View>
@@ -325,6 +333,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                 <ActionRow
                     icon="account-plus-outline"
                     iconColor={colors.icon}
+                    textColor={colors.text}
                     label={t('accountMenu.addAnother') || 'Add another account'}
                     disabled={actionDisabled}
                     onPress={() => {
@@ -337,6 +346,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                 <ActionRow
                     icon="cog-outline"
                     iconColor={colors.icon}
+                    textColor={colors.text}
                     label={t('accountMenu.manage') || 'Manage your Oxy Account'}
                     disabled={actionDisabled}
                     onPress={() => {
@@ -350,6 +360,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                     <ActionRow
                         icon="account-outline"
                         iconColor={colors.icon}
+                        textColor={colors.text}
                         label={t('accountMenu.viewProfile') || 'View profile'}
                         disabled={actionDisabled}
                         onPress={() => {
@@ -366,14 +377,14 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                     accessibilityLabel={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
                     onPress={() => signOutAllDialog.open()}
                     disabled={actionDisabled}
-                    className={`flex-row items-center gap-3 px-4 py-3 ${actionDisabled ? 'opacity-40' : ''}`}
+                    style={[styles.actionRow, actionDisabled && styles.rowDimmed]}
                 >
                     {signingOutAll ? (
                         <ActivityIndicator color={colors.error} size="small" />
                     ) : (
                         <MaterialCommunityIcons name="logout" size={18} color={colors.error} />
                     )}
-                    <Text className="font-medium" style={{ color: colors.error }}>
+                    <Text style={[styles.actionText, { color: colors.error }]}>
                         {t('accountMenu.signOutAll') || 'Sign out of all accounts'}
                     </Text>
                 </Pressable>
@@ -392,8 +403,7 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
                 accessibilityRole="button"
                 accessibilityLabel={t('common.actions.close') || 'Close'}
                 onPress={onClose}
-                className={isWeb ? 'flex-1 relative' : 'flex-1 justify-end'}
-                style={!isWeb ? styles.nativeScrim : undefined}
+                style={isWeb ? styles.webOverlay : styles.nativeOverlay}
             >
                 {content}
             </Pressable>
@@ -419,36 +429,136 @@ const ProfileMenu: React.FC<ProfileMenuProps> = ({
 const ActionRow: React.FC<{
     icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
     iconColor: string;
+    textColor: string;
     label: string;
     disabled: boolean;
     onPress: () => void;
-}> = ({ icon, iconColor, label, disabled, onPress }) => (
+}> = ({ icon, iconColor, textColor, label, disabled, onPress }) => (
     <Pressable
         accessibilityRole="menuitem"
         accessibilityLabel={label}
         onPress={onPress}
         disabled={disabled}
-        className={`flex-row items-center gap-3 px-4 py-3 ${disabled ? 'opacity-40' : ''}`}
+        style={[styles.actionRow, disabled && styles.rowDimmed]}
     >
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
-        <Text className="font-medium text-foreground">{label}</Text>
+        <Text style={[styles.actionText, { color: textColor }]}>{label}</Text>
     </Pressable>
 );
 
-// The panel's drop shadow and the native scrim are the only values with no
-// NativeWind class equivalent in this package (dynamic elevation + rgba scrim),
-// so they stay as small inline objects rather than raw class-replaceable styles.
-const styles = {
+const styles = StyleSheet.create({
+    // Overlay: web is a positioning context for the anchored panel; native dims
+    // the backdrop and docks the sheet to the bottom.
+    webOverlay: {
+        flex: 1,
+        position: 'relative',
+    },
+    nativeOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: 'rgba(0,0,0,0.32)',
+    },
+    // Panel shell — web popover / native bottom sheet.
+    panelWeb: {
+        overflow: 'hidden',
+        borderRadius: 16,
+        borderWidth: 1,
+    },
+    panelNative: {
+        overflow: 'hidden',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingBottom: 12,
+    },
+    // Shared height cap applied to both panel variants.
+    panelBounds: {
+        maxHeight: '85%',
+    },
+    // The panel's drop shadow (dynamic elevation).
     shadow: {
         shadowColor: '#000',
         shadowOpacity: 0.18,
         shadowRadius: 24,
         shadowOffset: { width: 0, height: 8 },
         elevation: 12,
-    } satisfies ViewStyle,
-    nativeScrim: {
-        backgroundColor: 'rgba(0,0,0,0.32)',
-    } satisfies ViewStyle,
-};
+    },
+    scroll: {
+        flexGrow: 0,
+    },
+    scrollContent: {
+        paddingVertical: 4,
+    },
+    accountRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+    },
+    childRow: {
+        paddingLeft: 40,
+    },
+    rowDimmed: {
+        opacity: 0.4,
+    },
+    accountInfo: {
+        flex: 1,
+        minWidth: 0,
+    },
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    accountName: {
+        fontWeight: '500',
+        flexShrink: 1,
+    },
+    accountNameActive: {
+        fontWeight: '600',
+    },
+    accountEmail: {
+        fontSize: 12,
+    },
+    roleBadge: {
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 8,
+    },
+    roleBadgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+        textTransform: 'capitalize',
+    },
+    rowSignOutButton: {
+        width: 28,
+        height: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 9999,
+        opacity: 0.6,
+    },
+    switchingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 8,
+    },
+    switchingText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    actionText: {
+        fontWeight: '500',
+    },
+});
 
 export default ProfileMenu;
