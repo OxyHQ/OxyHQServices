@@ -13,7 +13,6 @@
  */
 
 /// <reference path="../types/react-native-classname.d.ts" />
-/// <reference path="../types/react-native-web-style.d.ts" />
 
 // Components
 export { default as OxyProvider } from './components/OxyProvider';

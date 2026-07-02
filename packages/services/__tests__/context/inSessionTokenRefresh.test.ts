@@ -10,8 +10,10 @@
  *
  * These pin the two cooperating pieces wired from OxyContext:
  *   - the handler re-mints a fresh token from the durable silent-restore arms
- *     (web: per-apex iframe → FedCM → refresh-cookie; native: shared-key), first
- *     to yield a token wins; all-fail → null (so the session reconciles);
+ *     (web: per-apex iframe → FedCM; native: shared-key), first to yield a
+ *     token wins; all-fail → null (so the session reconciles). There is no
+ *     `oxy_rt` refresh-cookie arm — the device account set is
+ *     server-authoritative via `SessionClient` now;
  *   - the scheduler fires a preflight refresh ~lead before expiry, no-ops with no
  *     token, and tears down cleanly.
  *
@@ -41,16 +43,7 @@ import {
   TOKEN_REFRESH_LEAD_MS,
 } from '../../src/ui/context/inSessionTokenRefresh';
 
-const ACTIVE_AUTHUSER_KEY = 'oxy_active_authuser';
 const FRESH_TOKEN = 'FRESH_ACCESS_TOKEN';
-
-interface RefreshAllAccountStub {
-  authuser: number;
-  accessToken: string;
-  expiresAt: string;
-  sessionId: string;
-  user: { id: string; username: string; avatar: null; color: null };
-}
 
 interface StubShape {
   getAccessToken: jest.Mock<string | null, []>;
@@ -59,7 +52,6 @@ interface StubShape {
   isFedCMSupported: jest.Mock<boolean, []>;
   silentSignIn: jest.Mock;
   silentSignInWithFedCM: jest.Mock;
-  refreshAllSessions: jest.Mock;
   signInWithSharedIdentity: jest.Mock;
   httpService: {
     setTokens: jest.Mock;
@@ -76,7 +68,6 @@ function buildStub(overrides: Partial<StubShape> = {}): StubShape {
     isFedCMSupported: jest.fn(() => false),
     silentSignIn: jest.fn(async () => null),
     silentSignInWithFedCM: jest.fn(async () => null),
-    refreshAllSessions: jest.fn(async () => ({ accounts: [] as RefreshAllAccountStub[] })),
     signInWithSharedIdentity: jest.fn(async () => null),
     httpService: {
       setTokens: jest.fn(),
@@ -90,16 +81,6 @@ function buildStub(overrides: Partial<StubShape> = {}): StubShape {
 const asOxy = (stub: StubShape): OxyServices => stub as unknown as OxyServices;
 
 const sessionResult = { sessionId: 's1', user: { id: 'u1' }, accessToken: FRESH_TOKEN };
-
-function account(authuser: number, accessToken: string): RefreshAllAccountStub {
-  return {
-    authuser,
-    accessToken,
-    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-    sessionId: `sess_${authuser}`,
-    user: { id: `user_${authuser}`, username: `u${authuser}`, avatar: null, color: null },
-  };
-}
 
 beforeEach(() => {
   mockIsWebBrowser = true;
@@ -120,7 +101,6 @@ describe('createInSessionRefreshHandler — web arms', () => {
       authWebUrlOverride: 'https://auth.mention.earth',
     });
     expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
-    expect(stub.refreshAllSessions).not.toHaveBeenCalled();
   });
 
   it('arm 2: falls through to FedCM silent when the iframe finds nothing', async () => {
@@ -136,26 +116,12 @@ describe('createInSessionRefreshHandler — web arms', () => {
     expect(token).toBe(FRESH_TOKEN);
     expect(stub.silentSignIn).toHaveBeenCalledTimes(1);
     expect(stub.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
-    expect(stub.refreshAllSessions).not.toHaveBeenCalled();
-  });
-
-  it('arm 3: falls through to the same-apex refresh cookie and plants the active account token', async () => {
-    window.localStorage.setItem(ACTIVE_AUTHUSER_KEY, '1');
-    const stub = buildStub({
-      refreshAllSessions: jest.fn(async () => ({
-        accounts: [account(0, 'TOKEN_0'), account(1, 'TOKEN_1')],
-      })),
-    });
-    const handler = createInSessionRefreshHandler(asOxy(stub));
-
-    const token = await handler('response-401');
-
-    expect(token).toBe(FRESH_TOKEN);
-    // The PERSISTED authuser (slot 1) token is planted, not slot 0.
-    expect(stub.httpService.setTokens).toHaveBeenCalledWith('TOKEN_1');
   });
 
   it('returns null when every web arm fails (so the dead session reconciles)', async () => {
+    // FedCM unsupported (default) so both arms fail: no `oxy_rt` refresh-cookie
+    // arm exists anymore to fall through to — the device account set is
+    // server-authoritative via `SessionClient`, not this handler.
     const stub = buildStub();
     const handler = createInSessionRefreshHandler(asOxy(stub));
 
@@ -163,7 +129,6 @@ describe('createInSessionRefreshHandler — web arms', () => {
 
     expect(token).toBeNull();
     expect(stub.silentSignIn).toHaveBeenCalledTimes(1);
-    expect(stub.refreshAllSessions).toHaveBeenCalledTimes(1);
     expect(stub.httpService.setTokens).not.toHaveBeenCalled();
   });
 
@@ -172,14 +137,15 @@ describe('createInSessionRefreshHandler — web arms', () => {
       silentSignIn: jest.fn(async () => {
         throw new Error('iframe blocked');
       }),
-      refreshAllSessions: jest.fn(async () => ({ accounts: [account(0, 'TOKEN_0')] })),
+      isFedCMSupported: jest.fn(() => true),
+      silentSignInWithFedCM: jest.fn(async () => sessionResult),
     });
     const handler = createInSessionRefreshHandler(asOxy(stub));
 
     const token = await handler('preflight');
 
     expect(token).toBe(FRESH_TOKEN);
-    expect(stub.httpService.setTokens).toHaveBeenCalledWith('TOKEN_0');
+    expect(stub.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -198,7 +164,6 @@ describe('createInSessionRefreshHandler — native arm', () => {
     expect(stub.signInWithSharedIdentity).toHaveBeenCalledTimes(1);
     expect(stub.silentSignIn).not.toHaveBeenCalled();
     expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
-    expect(stub.refreshAllSessions).not.toHaveBeenCalled();
   });
 
   it('returns null when the device holds no shared identity', async () => {
