@@ -70,6 +70,7 @@ const ATTEMPTED_KEY_PREFIX = 'oxy_sso_attempted:';
 const CALLBACK_BOOTSTRAP_KEY_PREFIX = 'oxy_sso_callback_bootstrap:';
 const PRIOR_SESSION_KEY_PREFIX = 'oxy_sso_prior_session:';
 const SIGNED_OUT_KEY_PREFIX = 'oxy_signed_out:';
+const OUTCOME_KEY_PREFIX = 'oxy_sso_outcome:';
 
 /** Per-origin CSRF state key (matched on return to defeat fragment forgery). */
 export function ssoStateKey(origin: string): string {
@@ -155,6 +156,27 @@ export function ssoPriorSessionKey(origin: string): string {
  */
 export function ssoSignedOutKey(origin: string): string {
   return `${SIGNED_OUT_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Per-origin key holding the LAST consumed SSO-return outcome (`ok` | `none` |
+ * `error`, plus an optional machine-readable `reason` on the non-`ok` outcomes).
+ *
+ * Lives in per-tab `sessionStorage` like the other loop-breaker keys, and for
+ * the same reason: a `none`/`error` return HARD-navigates the RP off the
+ * internal callback path back to its real destination (a fresh document load),
+ * so the outcome an RP wants to render ("the central IdP had no session — show a
+ * branded sign-in screen instead of bouncing again") must survive that
+ * round-trip. The RP reads it on the destination load to decide whether an
+ * AUTOMATIC (guard-driven) sign-in should re-bounce or defer to a user gesture.
+ *
+ * Written as a small JSON blob (`{kind, reason?}`). Set whenever a return is
+ * consumed; cleared on a successful session commit and on an explicit
+ * user-gesture sign-in / full sign-out (so a deliberate retry is never
+ * suppressed by a prior automatic none/error).
+ */
+export function ssoOutcomeKey(origin: string): string {
+  return `${OUTCOME_KEY_PREFIX}${origin}`;
 }
 
 /**
