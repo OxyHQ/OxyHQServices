@@ -1102,6 +1102,8 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(frag.get('oxy_sso')).toBe('none');
     expect(frag.get('state')).toBe('st-5');
     expect(frag.get('code')).toBeNull();
+    // Diagnostic reason: no fedcm_session cookie at the IdP.
+    expect(frag.get('reason')).toBe('no_cookie');
     // No session minting/code attempted for a logged-out bounce.
     expect(capturedExchange).toBeUndefined();
     expect(capturedSsoCode).toBeUndefined();
@@ -1168,6 +1170,8 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(frag.get('oxy_sso')).toBe('none');
     expect(frag.get('state')).toBe('st-no-grant');
     expect(frag.get('code')).toBeNull();
+    // Diagnostic reason: valid session but this user has not granted the RP.
+    expect(frag.get('reason')).toBe('no_grant');
     // No session minting and no code mint for an un-granted RP.
     expect(capturedExchange).toBeUndefined();
     expect(capturedSsoCode).toBeUndefined();
@@ -1320,6 +1324,8 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     const { frag } = parseSsoRedirect(res);
     expect(frag.get('oxy_sso')).toBe('none');
     expect(frag.get('state')).toBe('st-9');
+    // Diagnostic reason: cookie present but the session no longer validates.
+    expect(frag.get('reason')).toBe('stale_session');
   });
 
   it('renders an HTML 400 when required state is missing', async () => {
@@ -1470,6 +1476,9 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
     expect(frag.get('oxy_sso')).toBe('none');
     expect(frag.get('state')).toBe('xd-no-grant');
     expect(frag.get('code')).toBeNull();
+    // The central /sso gate fires BEFORE the establish hop, so the reason is the
+    // central no-grant code (not the establish-hop variant).
+    expect(frag.get('reason')).toBe('no_grant');
     expect(capturedSsoCode).toBeUndefined();
   });
 
@@ -1500,6 +1509,9 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
     expect(frag.get('oxy_sso')).toBe('none');
     expect(frag.get('state')).toBe('xd-revoked');
     expect(frag.get('code')).toBeNull();
+    // Diagnostic reason: grant revoked between the central hop and this establish
+    // hop (live re-check with forceRefresh).
+    expect(frag.get('reason')).toBe('no_grant_establish');
     expect(capturedSsoCode).toBeUndefined();
   });
 
