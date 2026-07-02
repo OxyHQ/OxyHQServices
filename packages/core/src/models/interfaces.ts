@@ -93,6 +93,8 @@ export interface PrivacySettings {
   sensitiveContent?: boolean;
   autoFilter?: boolean;
   muteKeywords?: boolean;
+  /** Allow sharing this user's content on the fediverse. Defaults to true. */
+  fediverseSharing?: boolean;
 }
 
 export interface User {
@@ -139,6 +141,8 @@ export interface User {
   // User type and external account support
   type?: 'local' | 'federated' | 'agent' | 'automated';
   isFederated?: boolean;
+  /** Allow sharing this user's content on the fediverse. Defaults to true. */
+  fediverseSharing?: boolean;
   isAgent?: boolean;
   isAutomated?: boolean;
   instance?: string;
