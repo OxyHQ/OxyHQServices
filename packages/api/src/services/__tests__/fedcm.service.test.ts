@@ -22,6 +22,7 @@ const mockClientFindOneAndUpdate = jest.fn();
 const mockAppFind = jest.fn();
 const mockUserFindById = jest.fn();
 const mockCreateSession = jest.fn();
+const mockResolveRegisteredSession = jest.fn();
 const mockGrantFindOneAndUpdate = jest.fn();
 const mockGrantFind = jest.fn();
 const mockCacheInvalidate = jest.fn();
@@ -93,6 +94,11 @@ jest.mock('../../models/User', () => ({
 jest.mock('../session.service', () => ({
   __esModule: true,
   default: { createSession: mockCreateSession },
+}));
+
+jest.mock('../deviceSession.service', () => ({
+  __esModule: true,
+  default: { resolveRegisteredSession: mockResolveRegisteredSession },
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -179,6 +185,9 @@ beforeEach(() => {
     expiresAt: new Date(Date.now() + 60_000),
     accessToken: 'token-xyz',
   });
+  // Default: the caller's device has NO registered session for this account, so
+  // the exchange falls through to the create/reuse path. Reuse tests override.
+  mockResolveRegisteredSession.mockResolvedValue(null);
   // Grant recording succeeds by default.
   mockGrantFindOneAndUpdate.mockResolvedValue({});
   // Grant lookup: no prior grants by default (overridden per-test).
@@ -405,6 +414,105 @@ describe('FedCM exchangeIdToken (H9)', () => {
 
     expect('error' in result).toBe(false);
     if ('error' in result) return;
+    expect(result.sessionId).toBe('sess-123');
+  });
+});
+
+/**
+ * ONE session per account per device (cross-domain session sync).
+ *
+ * When the id_token carries the caller's central deviceId AND that device
+ * already has a session REGISTERED for this account (via /session/device/add),
+ * the exchange REUSES that registered session verbatim instead of minting a
+ * separate per-origin `stableDeviceKey` session. Per-origin sessions can never
+ * converge onto the single sessionId the DeviceSession account entry holds, so
+ * each RP origin would join a DIFFERENT socket room and never receive the real
+ * device's cross-domain broadcasts. Only when the device has NO (valid) entry
+ * for the account does the exchange fall through to today's create/reuse path.
+ */
+describe('FedCM exchangeIdToken — device-registered session reuse', () => {
+  it('(a) reuses the DEVICE-REGISTERED session — no per-origin session minted', async () => {
+    mockResolveRegisteredSession.mockResolvedValueOnce({
+      sessionId: 'registered-sess',
+      deviceId: 'central-device-abc123',
+      accessToken: 'registered-token',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const token = mintToken({ deviceId: 'central-device-abc123' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    // The returned session IS the registered one on the central device.
+    expect(result.sessionId).toBe('registered-sess');
+    expect(result.deviceId).toBe('central-device-abc123');
+    expect(result.accessToken).toBe('registered-token');
+    // Looked up by the id_token's central deviceId + the token subject.
+    expect(mockResolveRegisteredSession).toHaveBeenCalledWith('central-device-abc123', 'user-123');
+    // The per-origin stable session was NEVER created/touched.
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    // Still emits the canonical structured session-user (a `name` object, never a
+    // bare string) so the SDK's `userResponseSchema` accepts it on reuse too.
+    expect(result.user.id).toBe('user-123');
+    expect(result.user.username).toBe('alice');
+    expect(typeof result.user.name).toBe('object');
+  });
+
+  it('(a) still records the grant when reusing a registered session', async () => {
+    mockResolveRegisteredSession.mockResolvedValueOnce({
+      sessionId: 'registered-sess',
+      deviceId: 'central-device-abc123',
+      accessToken: 'registered-token',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const token = mintToken({ deviceId: 'central-device-abc123' });
+    await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect(mockGrantFindOneAndUpdate).toHaveBeenCalled();
+  });
+
+  it('(b) falls through to createSession (threading the deviceId) when the device has NO registered entry', async () => {
+    mockResolveRegisteredSession.mockResolvedValueOnce(null);
+
+    const token = mintToken({ deviceId: 'central-device-abc123' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(mockResolveRegisteredSession).toHaveBeenCalledWith('central-device-abc123', 'user-123');
+    // First sign-in on the device → create the session, threading the deviceId so
+    // /session/device/add registers it under the central device.
+    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), {
+      deviceName: 'FedCM Sign-In',
+      stableDeviceKey: APPROVED_ORIGIN,
+      deviceId: 'central-device-abc123',
+    });
+    expect(result.sessionId).toBe('sess-123');
+  });
+
+  it('(c) never consults the registry when the id_token carries no deviceId claim (fully unchanged)', async () => {
+    const token = mintToken();
+    await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect(mockResolveRegisteredSession).not.toHaveBeenCalled();
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    const optionsArg = mockCreateSession.mock.calls[0][2] as Record<string, unknown>;
+    expect(optionsArg).not.toHaveProperty('deviceId');
+  });
+
+  it('(d) falls through to create when the registered session is inactive (resolver returns null — never resurrect)', async () => {
+    // The resolver itself refuses to mint a token for a dead session and returns
+    // null; the exchange then mints a fresh session rather than failing.
+    mockResolveRegisteredSession.mockResolvedValueOnce(null);
+
+    const token = mintToken({ deviceId: 'central-device-abc123' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
     expect(result.sessionId).toBe('sess-123');
   });
 });

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 import { normaliseOrigin } from '../utils/origin';
 import approvedClientsCache from '../utils/approvedClientsCache';
 import sessionService from './session.service';
+import deviceSessionService from './deviceSession.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { fedcmTokenPayloadSchema, type FedcmTokenPayload, type UserNameResponse } from '@oxyhq/contracts';
@@ -699,26 +700,6 @@ class FedCMService {
         return { error: 'user_not_found' };
       }
 
-      // Create (or reuse) a session for this user. `req` here is the IdP
-      // Cloudflare Worker's server-to-server request (UA = 'unknown', egress
-      // IP varies per call), so we pass a `stableDeviceKey` of the RP origin:
-      // the deviceId is derived deterministically from (userId, clientOrigin)
-      // so a given (user, RP) reuses ONE session that just refreshes its
-      // tokens/expiry on each silent-auth / SSO bounce — instead of minting a
-      // brand-new "FedCM Sign-In" session every exchange.
-      const session = await sessionService.createSession(userId, req, {
-        deviceName: 'FedCM Sign-In',
-        stableDeviceKey: clientOrigin,
-        ...(tokenPayload.deviceId ? { deviceId: tokenPayload.deviceId } : {}),
-      });
-
-      // Record the grant: the user just actively authorized this RP origin via
-      // FedCM, so it belongs in `approved_clients` for future returning-account
-      // / silent-SSO flows. Best-effort — never blocks the issued session.
-      await this.recordGrant(userId, clientOrigin);
-
-      logger.info('FedCM: Session created via token exchange', { clientOrigin });
-
       const userDoc = user as {
         _id?: { toString(): string };
         id?: string;
@@ -739,18 +720,76 @@ class FedCMService {
         username: userDoc.username,
         publicKey: userDoc.publicKey,
       });
+      const sessionUser = {
+        id: idValue,
+        username: userDoc.username,
+        email: userDoc.email,
+        avatar: userDoc.avatar,
+        name,
+      };
+
+      // ONE session per account per device (cross-domain session sync). When the
+      // id_token carries the caller's CENTRAL deviceId AND that device already
+      // has a session REGISTERED for this account (added via
+      // `/session/device/add`), REUSE it verbatim — mint/rotate its access token
+      // and return it — instead of minting a separate per-origin `stableDeviceKey`
+      // session. Per-origin sessions can never converge onto the single sessionId
+      // the DeviceSession account entry holds, so each RP origin would join a
+      // DIFFERENT socket room and never receive the real device's cross-domain
+      // broadcasts. The reused access token carries the registered session's
+      // central deviceId claim, so the RP's SessionClient joins the real device
+      // room. A no-longer-valid registered session yields null (never resurrect a
+      // dead session) and falls through to the create path below.
+      if (tokenPayload.deviceId) {
+        const registered = await deviceSessionService.resolveRegisteredSession(
+          tokenPayload.deviceId,
+          userId,
+        );
+        if (registered) {
+          // The user actively authorized this RP via FedCM — record the grant for
+          // future returning-account / silent-SSO flows. Best-effort.
+          await this.recordGrant(userId, clientOrigin);
+          logger.info('FedCM: Reused device-registered session on exchange (no per-origin mint)', { clientOrigin });
+          return {
+            sessionId: registered.sessionId,
+            deviceId: registered.deviceId,
+            expiresAt: registered.expiresAt.toISOString(),
+            accessToken: registered.accessToken,
+            user: sessionUser,
+          };
+        }
+      }
+
+      // First sign-in for this account on this device (or no central deviceId
+      // claim). Create (or reuse) a session. `req` here is the IdP Cloudflare
+      // Worker's server-to-server request (UA = 'unknown', egress IP varies per
+      // call), so we pass a `stableDeviceKey` of the RP origin: the deviceId is
+      // derived deterministically from (userId, clientOrigin) so a given
+      // (user, RP) reuses ONE session that just refreshes its tokens/expiry on
+      // each silent-auth / SSO bounce — instead of minting a brand-new
+      // "FedCM Sign-In" session every exchange. When the central deviceId is
+      // threaded it wins over the derived id, so `/session/device/add` registers
+      // the session under the central device and the reuse path above catches it
+      // on subsequent exchanges.
+      const session = await sessionService.createSession(userId, req, {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: clientOrigin,
+        ...(tokenPayload.deviceId ? { deviceId: tokenPayload.deviceId } : {}),
+      });
+
+      // Record the grant: the user just actively authorized this RP origin via
+      // FedCM, so it belongs in `approved_clients` for future returning-account
+      // / silent-SSO flows. Best-effort — never blocks the issued session.
+      await this.recordGrant(userId, clientOrigin);
+
+      logger.info('FedCM: Session created via token exchange', { clientOrigin });
+
       return {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         accessToken: session.accessToken,
-        user: {
-          id: idValue,
-          username: userDoc.username,
-          email: userDoc.email,
-          avatar: userDoc.avatar,
-          name,
-        },
+        user: sessionUser,
       };
     } catch (error) {
       logger.error('FedCM: Token exchange failed', error);

@@ -228,6 +228,49 @@ class DeviceSessionService {
   }
 
   /**
+   * Resolve the session ALREADY REGISTERED for `accountId` on `deviceId` (added
+   * via `/session/device/add`) so an IdP mint can REUSE it instead of minting a
+   * separate per-origin session. This enforces the "ONE session per account per
+   * device" invariant: every RP origin that authenticates this account on this
+   * device converges on the SAME sessionId the DeviceSession entry holds — they
+   * join one socket room and see each other's cross-domain broadcasts. Without
+   * it each origin gets its own per-origin session, and the device doc (which
+   * stores ONE sessionId per account) can never make them converge.
+   *
+   * Returns null — the caller falls through to a fresh create — when the device
+   * has no entry for the account (true first sign-in on this device), the
+   * registered session is no longer valid (signed out, or a managed act_as
+   * membership was revoked), or the token machinery cannot mint. NEVER
+   * resurrects a dead session: validation runs BEFORE any token is minted. The
+   * access token is minted/rotated through the standard `getAccessToken` path,
+   * so it carries the registered session's central `deviceId` claim.
+   */
+  async resolveRegisteredSession(
+    deviceId: string,
+    accountId: string,
+  ): Promise<{ sessionId: string; deviceId: string; accessToken: string; expiresAt: Date } | null> {
+    const current = await this.load(deviceId);
+    if (!current) return null;
+    const entry = (current.accounts ?? []).find((a) => idToString(a.accountId) === accountId);
+    if (!entry) return null;
+
+    // Re-validate before minting: for a managed-account session this re-checks
+    // the operator's act_as membership and refuses a revoked session. A dead
+    // session yields null (fall through to create) — it is never resurrected.
+    const validated = await sessionService.validateSessionById(entry.sessionId, false);
+    if (!validated) return null;
+    const token = await sessionService.getAccessToken(entry.sessionId);
+    if (!token) return null;
+
+    return {
+      sessionId: entry.sessionId,
+      deviceId: validated.session.deviceId,
+      accessToken: token.accessToken,
+      expiresAt: token.expiresAt,
+    };
+  }
+
+  /**
    * Detach an account from a device doc after its session MIGRATED to another
    * device (see the deviceId migration in `sessionService.createSession`).
    * Removes the account's entry from THIS device's `accounts[]` so the stale
