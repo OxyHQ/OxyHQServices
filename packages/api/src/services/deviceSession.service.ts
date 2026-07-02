@@ -226,6 +226,44 @@ class DeviceSessionService {
     ).lean<IDeviceSession>();
     return projectState(updated as IDeviceSession);
   }
+
+  /**
+   * Detach an account from a device doc after its session MIGRATED to another
+   * device (see the deviceId migration in `sessionService.createSession`).
+   * Removes the account's entry from THIS device's `accounts[]` so the stale
+   * (graveyard) doc stops advertising a live-looking account, and deactivates
+   * the session the doc referenced — UNLESS it is `preserveSessionId`, the
+   * session that just moved (which stays active on its new device). Best-effort
+   * cleanup: a no-op when the doc is absent or the account is not listed. Never
+   * throws for a missing account so callers can fire it without guarding.
+   */
+  async detachMigratedAccount(deviceId: string, accountId: string, preserveSessionId: string): Promise<void> {
+    const current = await this.load(deviceId);
+    if (!current) return;
+    const accounts = current.accounts ?? [];
+    const entry = accounts.find((a) => idToString(a.accountId) === accountId);
+    if (!entry) return;
+
+    // Deactivate a DIFFERENT (genuinely stale) session the doc referenced —
+    // never the one that just migrated and is now live on the caller's device.
+    if (entry.sessionId && entry.sessionId !== preserveSessionId) {
+      try {
+        await sessionService.deactivateSession(entry.sessionId);
+      } catch (error) {
+        logger.warn('deviceSession.detachMigratedAccount: deactivate failed', { sessionId: entry.sessionId, error });
+      }
+    }
+
+    const remaining = accounts.filter((a) => idToString(a.accountId) !== accountId);
+    const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
+    const nextActive = activeStillPresent
+      ? idToString(current.activeAccountId)
+      : (remaining[0] ? idToString(remaining[0].accountId) : null);
+    await DeviceSession.updateOne(
+      { deviceId },
+      { $set: { accounts: remaining, activeAccountId: nextActive }, $inc: { revision: 1 } },
+    );
+  }
 }
 
 const deviceSessionService = new DeviceSessionService();

@@ -1,5 +1,6 @@
 const mockFindOne = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
+const mockUpdateOne = jest.fn();
 const mockDeactivate = jest.fn();
 const mockGetAccessToken = jest.fn();
 const mockValidateSessionById = jest.fn();
@@ -9,6 +10,7 @@ jest.mock('../../models/DeviceSession', () => ({
   default: {
     findOne: (...a: unknown[]) => mockFindOne(...a),
     findOneAndUpdate: (...a: unknown[]) => mockFindOneAndUpdate(...a),
+    updateOne: (...a: unknown[]) => mockUpdateOne(...a),
   },
 }));
 jest.mock('../session.service', () => ({
@@ -374,5 +376,70 @@ describe('resolveActiveToken', () => {
     mockValidateSessionById.mockResolvedValueOnce(null);
     expect(await deviceSessionService.resolveActiveToken(STATE as never)).toBeNull();
     expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+});
+
+describe('detachMigratedAccount', () => {
+  it('drops the account entry WITHOUT deactivating the migrated (preserved) session', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'oldDevice',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 'migrated-sess', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 3,
+    }));
+
+    await deviceSessionService.detachMigratedAccount('oldDevice', 'a1', 'migrated-sess');
+
+    // The migrated session lives on its new device — never deactivated here.
+    expect(mockDeactivate).not.toHaveBeenCalled();
+    // The account entry is pulled and active reassigned to the remaining one.
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0] as [
+      Record<string, unknown>,
+      { $set: { accounts: Array<{ sessionId: string }>; activeAccountId: string | null }; $inc: { revision: number } },
+    ];
+    expect(filter).toEqual({ deviceId: 'oldDevice' });
+    expect(update.$set.accounts.map((a) => a.sessionId)).toEqual(['s2']);
+    expect(update.$set.activeAccountId).toBe('a2');
+    expect(update.$inc).toEqual({ revision: 1 });
+  });
+
+  it('deactivates a DIFFERENT stale session the old doc referenced for that account', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'oldDevice',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 'stale-sess', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 1,
+    }));
+
+    await deviceSessionService.detachMigratedAccount('oldDevice', 'a1', 'migrated-sess');
+
+    expect(mockDeactivate).toHaveBeenCalledWith('stale-sess');
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { deviceId: 'oldDevice' },
+      { $set: { accounts: [], activeAccountId: null }, $inc: { revision: 1 } },
+    );
+  });
+
+  it('is a no-op when the device doc is absent', async () => {
+    mockFindOne.mockReturnValueOnce(lean(null));
+    await deviceSessionService.detachMigratedAccount('oldDevice', 'a1', 'migrated-sess');
+    expect(mockDeactivate).not.toHaveBeenCalled();
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when the account is not listed on the doc', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'oldDevice',
+      accounts: [{ accountId: { toString: () => 'other' }, sessionId: 's-other', authuser: 0 }],
+      activeAccountId: { toString: () => 'other' },
+      revision: 1,
+    }));
+    await deviceSessionService.detachMigratedAccount('oldDevice', 'a1', 'migrated-sess');
+    expect(mockDeactivate).not.toHaveBeenCalled();
+    expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });
