@@ -26,6 +26,19 @@ export interface FetchSessionsWithFallbackOptions {
   logger?: (message: string, error?: unknown) => void;
 }
 
+export interface ValidateSessionBatchOptions {
+  useHeaderValidation?: boolean;
+  maxConcurrency?: number;
+}
+
+export interface SessionValidationResult {
+  sessionId: string;
+  valid: boolean;
+  user?: unknown;
+  raw?: unknown;
+  error?: unknown;
+}
+
 /**
  * Normalize backend session payloads into `ClientSession` objects.
  *
@@ -85,4 +98,57 @@ export const fetchSessionsWithFallback = async (
     return mapSessionsToClient(userSessions, fallbackDeviceId, fallbackUserId);
   }
 };
+
+/**
+ * Validate multiple sessions concurrently with configurable concurrency.
+ *
+ * @param oxyServices - Oxy service instance
+ * @param sessionIds - Session identifiers to validate
+ * @param options - Validation options
+ */
+export const validateSessionBatch = async (
+  oxyServices: OxyServicesAny,
+  sessionIds: string[],
+  { useHeaderValidation = true, maxConcurrency = 5 }: ValidateSessionBatchOptions = {},
+): Promise<SessionValidationResult[]> => {
+  if (!sessionIds.length) {
+    return [];
+  }
+
+  const uniqueSessionIds = Array.from(new Set(sessionIds));
+  const safeConcurrency = Math.max(1, Math.min(maxConcurrency, uniqueSessionIds.length));
+  const results: SessionValidationResult[] = [];
+  let index = 0;
+
+  const worker = async () => {
+    while (index < uniqueSessionIds.length) {
+      const currentIndex = index;
+      index += 1;
+      const sessionId = uniqueSessionIds[currentIndex];
+
+      try {
+        const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation });
+        const valid = Boolean(validation?.valid);
+
+        results.push({
+          sessionId,
+          valid,
+          user: validation?.user,
+          raw: validation,
+        });
+      } catch (error) {
+        results.push({
+          sessionId,
+          valid: false,
+          error,
+        });
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: safeConcurrency }, worker));
+
+  return results;
+};
+
 

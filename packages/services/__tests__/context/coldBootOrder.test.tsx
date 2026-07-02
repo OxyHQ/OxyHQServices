@@ -9,21 +9,19 @@
  * cross-domain (mention.earth) ordering contract for the CENTRAL-SSO design:
  *
  *   Order (web): redirect → sso-return → stored-session → fedcm-silent →
- *   silent-iframe → sso-bounce (terminal). This is a pure TOKEN-ACQUISITION
- *   ladder (Fase 3-B) — there is no oxy_rt refresh-cookie restore step;
- *   `refreshAllSessions` is never called anywhere in cold boot.
+ *   silent-iframe → cookie-restore → sso-bounce (terminal).
  *
  *   LATENCY FIX (A): `stored-session` runs BEFORE the slow no-redirect probes
- *   (`fedcm-silent`, `silent-iframe`) so a normal reload with a valid local
- *   bearer wins in one round-trip and the slow probes never run.
+ *   (`fedcm-silent`, `silent-iframe`, `cookie-restore`) so a normal reload with
+ *   a valid local bearer wins in one round-trip and the slow probes never run.
  *
  *   1. HAS LOCAL SESSION reload: `stored-session` wins → the FedCM-silent /
- *      bounce steps NEVER run (FIX A + FIX B). `silentSignInWithFedCM` and
- *      `refreshAllSessions` are never called; no bounce.
- *   2. FedCM silent short-circuits when there is NO local session, FedCM is
- *      supported, and silent reauthn returns a session — the terminal
- *      `sso-bounce` is never reached. This proves the cross-domain fallback
- *      chain is preserved.
+ *      cookie / bounce steps NEVER run (FIX A + FIX B). `silentSignInWithFedCM`
+ *      and `refreshAllSessions` are never called; no bounce.
+ *   2. FedCM silent short-circuits BEFORE the cookie step when there is NO local
+ *      session, FedCM is supported, and silent reauthn returns a session —
+ *      `refreshAllSessions` and the terminal `sso-bounce` are never reached.
+ *      This proves the cross-domain fallback chain is preserved.
  *   3. When every recovery step skips on a logged-out cross-domain RP, the
  *      TERMINAL `sso-bounce` step fires exactly once: it records the CSRF state
  *      + guard + destination in `sessionStorage` and top-level-navigates to the
@@ -247,12 +245,10 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     renderProvider(stub, baseURL);
 
     // FIRST-VISIT-NO-LOCAL-SESSION fallback (preserved): stored-session skips
-    // (no stored ids), FedCM is unsupported, the silent iframe skips, then the
-    // terminal bounce fires. There is no oxy_rt refresh-cookie restore step in
-    // the token-acquisition ladder (Fase 3-B) — `refreshAllSessions` is never
-    // called anywhere in cold boot.
+    // (no stored ids), FedCM is unsupported, the silent iframe skips, the cookie
+    // step is reached and returns no accounts, then the terminal bounce fires.
     await waitFor(() => expect(assignSpy).toHaveBeenCalledTimes(1));
-    expect(refreshAllSessions).not.toHaveBeenCalled();
+    expect(refreshAllSessions).toHaveBeenCalledTimes(1);
 
     // The bounce targets the central IdP /sso with prompt=none + the RP origin.
     const assigned = new URL(assignSpy.mock.calls[0][0] as string);
@@ -278,5 +274,73 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     // browser; jsdom keeps it alive).
     expect(captured.isAuthenticated).toBe(false);
     expect(setTokensSpy).not.toHaveBeenCalled();
+  });
+
+  it('DELIBERATELY-SIGNED-OUT: every silent restore step is gated → NO step restores and NO bounce', async () => {
+    // After a deliberate full sign-out the durable signed-out flag is set AND the
+    // returning-user hint is cleared (both done by the sign-out path). The stored
+    // session + a still-present refresh cookie (PR #455: the primary joins the
+    // device `oxy_rt` set) would otherwise let `stored-session` / `cookie-restore`
+    // silently re-log the user in. Gmail-style: nothing may restore on reload.
+    const STORED_SESSION_ID = 'sess_signed_out';
+    window.localStorage.setItem('oxy_session_session_ids', JSON.stringify([STORED_SESSION_ID]));
+    window.localStorage.setItem('oxy_session_active_session_id', STORED_SESSION_ID);
+    // The sign-out path clears the returning-user hint, so the terminal bounce is
+    // self-suppressed too — the user simply stays signed out.
+    window.localStorage.removeItem('oxy_session_prior_session');
+    window.localStorage.setItem(oxyCore.ssoSignedOutKey('https://app.mention.earth'), '1');
+
+    const { stub, refreshAllSessions, baseURL } = buildStub({
+      fedcmSupported: true,
+      silentFedCM: fedcmSession,
+      // The refresh cookie WOULD resurrect an account — but the gate must skip it.
+      refreshAllResult: async () => ({ accounts: [{ authuser: 0, username: 'tester' }] }),
+      currentUserId: FEDCM_USER_ID,
+      initialAccessToken: 'stored.access.token',
+      baseURL: 'https://api.mention.earth/case-signed-out',
+    });
+
+    renderProvider(stub, baseURL);
+
+    // Auth resolves (the loading gate clears) but to the SIGNED-OUT state.
+    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    expect(captured.isAuthenticated).toBe(false);
+    // NOT ONE silent restore step ran: stored-session (bearer validation),
+    // fedcm-silent, the per-apex iframe, and cookie-restore are all gated off.
+    expect(stub.validateSession).not.toHaveBeenCalled();
+    expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(stub.silentSignIn).not.toHaveBeenCalled();
+    expect(refreshAllSessions).not.toHaveBeenCalled();
+    // No terminal bounce (the sign-out cleared the returning-user hint).
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it('deliberate sign-in CLEARS the flag → stored-session restores normally on the next boot (no stuck state)', async () => {
+    // Arm then clear the signed-out flag, simulating sign-out followed by a
+    // deliberate sign-in (which calls `clearSignedOut`). The next cold boot must
+    // restore the local session exactly as before — there is no "stuck signed out".
+    const STORED_SESSION_ID = 'sess_resignin';
+    window.localStorage.setItem('oxy_session_session_ids', JSON.stringify([STORED_SESSION_ID]));
+    window.localStorage.setItem('oxy_session_active_session_id', STORED_SESSION_ID);
+    window.localStorage.setItem(oxyCore.ssoSignedOutKey('https://app.mention.earth'), '1');
+    window.localStorage.removeItem(oxyCore.ssoSignedOutKey('https://app.mention.earth'));
+
+    const { stub, refreshAllSessions, baseURL } = buildStub({
+      fedcmSupported: true,
+      silentFedCM: fedcmSession,
+      currentUserId: FEDCM_USER_ID,
+      initialAccessToken: 'stored.access.token',
+      baseURL: 'https://api.mention.earth/case-resignin',
+    });
+
+    renderProvider(stub, baseURL);
+
+    await waitFor(() => expect(captured.isAuthenticated).toBe(true));
+    expect(captured.userId).toBe(FEDCM_USER_ID);
+    // stored-session won (its bearer was validated); the slow probes never ran.
+    expect(stub.validateSession).toHaveBeenCalled();
+    expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(refreshAllSessions).not.toHaveBeenCalled();
+    expect(assignSpy).not.toHaveBeenCalled();
   });
 });
