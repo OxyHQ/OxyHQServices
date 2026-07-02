@@ -9,6 +9,7 @@
 import {
   fetchSessionsWithFallback,
   mapSessionsToClient,
+  validateSessionBatch,
 } from '../../src/utils/sessionHelpers';
 
 describe('mapSessionsToClient (auth-sdk)', () => {
@@ -81,5 +82,38 @@ describe('fetchSessionsWithFallback (auth-sdk)', () => {
     const result = await fetchSessionsWithFallback(oxy, 's1');
     expect(oxy.getSessionsBySessionId).toHaveBeenCalled();
     expect(result).toHaveLength(1);
+  });
+});
+
+describe('validateSessionBatch (auth-sdk)', () => {
+  it('returns [] for empty input', async () => {
+    expect(await validateSessionBatch({ validateSession: jest.fn() }, [])).toEqual([]);
+  });
+
+  it('dedupes session ids', async () => {
+    const validateSession = jest.fn().mockResolvedValue({ valid: true });
+    await validateSessionBatch({ validateSession }, ['s1', 's1', 's2']);
+    expect(validateSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks failures as invalid', async () => {
+    const validateSession = jest.fn().mockImplementation((id: string) => {
+      if (id === 'bad') return Promise.reject(new Error('boom'));
+      return Promise.resolve({ valid: true });
+    });
+    const result = await validateSessionBatch({ validateSession }, ['good', 'bad']);
+    expect(result.find((r) => r.sessionId === 'good')?.valid).toBe(true);
+    expect(result.find((r) => r.sessionId === 'bad')?.valid).toBe(false);
+  });
+
+  it('honors maxConcurrency without dropping results', async () => {
+    const validateSession = jest.fn().mockResolvedValue({ valid: true });
+    const result = await validateSessionBatch(
+      { validateSession },
+      ['a', 'b', 'c', 'd', 'e'],
+      { maxConcurrency: 2 },
+    );
+    expect(result).toHaveLength(5);
+    expect(validateSession).toHaveBeenCalledTimes(5);
   });
 });
