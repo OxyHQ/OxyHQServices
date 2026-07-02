@@ -25,8 +25,8 @@
  *     nothing calls `client.start()` in this task) firing the subscriber is a
  *     no-op — the existing state is left untouched.
  *
- * The rest of the cold boot (SSO return / fedcm-silent / cookie-restore /
- * sso-bounce) is neutralized the same way `WebOxyProvider.coldBoot.test.tsx`
+ * The rest of the cold boot (SSO return / silent-iframe / sso-bounce) is
+ * neutralized the same way `WebOxyProvider.coldBoot.test.tsx`
  * does — stubbed `OxyServices`/`CrossDomainAuth`/`AuthManager` surfaces so the
  * provider settles deterministically to `unauthenticated` without a backend,
  * leaving `sessions`/`activeSessionId`/`user` solely a function of the
@@ -43,8 +43,6 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
 interface CoreStubs {
   getCurrentUser: jest.Mock<Promise<User | null>, []>;
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
-  isFedCMSupported: jest.Mock<boolean, []>;
-  silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
   getUsersByIds: jest.Mock<Promise<User[]>, [string[]]>;
@@ -54,8 +52,6 @@ interface CoreStubs {
 const stubs: CoreStubs = {
   getCurrentUser: jest.fn(async () => null),
   handleRedirectCallback: jest.fn(() => null),
-  isFedCMSupported: jest.fn(() => false),
-  silentSignInWithFedCM: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
   getUsersByIds: jest.fn(async () => []),
@@ -65,8 +61,6 @@ const stubs: CoreStubs = {
 function resetStubs(): void {
   stubs.getCurrentUser = jest.fn(async () => null);
   stubs.handleRedirectCallback = jest.fn(() => null);
-  stubs.isFedCMSupported = jest.fn(() => false);
-  stubs.silentSignInWithFedCM = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
   stubs.getUsersByIds = jest.fn(async () => []);
@@ -78,8 +72,8 @@ jest.mock('@oxyhq/core', () => {
     __esModule: true,
     // Real cold-boot primitives + SSO helpers — same subset
     // `WebOxyProvider.coldBoot.test.tsx` wires through, so the cold boot
-    // resolves deterministically to `unauthenticated` (no fragment, FedCM
-    // unsupported, no cookie, no prior-session hint → no bounce).
+    // resolves deterministically to `unauthenticated` (no fragment, no
+    // silent-iframe session, no cookie, no prior-session hint → no bounce).
     runColdBoot: actual.runColdBoot,
     resolveCentralAuthUrl: actual.resolveCentralAuthUrl,
     CENTRAL_AUTH_URL: actual.CENTRAL_AUTH_URL,
@@ -123,12 +117,6 @@ jest.mock('@oxyhq/core', () => {
       }
       getCurrentUser(): Promise<User | null> {
         return stubs.getCurrentUser();
-      }
-      isFedCMSupported(): boolean {
-        return stubs.isFedCMSupported();
-      }
-      silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
-        return stubs.silentSignInWithFedCM();
       }
       exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
         return stubs.exchangeSsoCode(code);
@@ -253,8 +241,8 @@ describe('SessionClient wiring into WebOxyProvider (Task 1 — additive, inert u
     let latest: ProbeState = { isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null };
     renderProvider((s) => { latest = s; });
 
-    // Let the cold boot settle first (unauthenticated: no fragment, no FedCM,
-    // no cookie, no prior-session hint → no bounce).
+    // Let the cold boot settle first (unauthenticated: no fragment, no
+    // silent-iframe session, no cookie, no prior-session hint → no bounce).
     await waitFor(() => expect(latest.isAuthenticated).toBe(false));
 
     act(() => {

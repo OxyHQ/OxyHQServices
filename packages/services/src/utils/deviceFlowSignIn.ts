@@ -19,7 +19,7 @@
  * `switchSessionForContext`), and throws `No device account found for
  * session "..."` for anything else, surfacing as "Authorization successful
  * but failed to complete sign in." Instead the claimed session must be
- * committed through the SAME path a fresh password/FedCM sign-in uses —
+ * committed through the SAME path a fresh password sign-in uses —
  * `useOxy().handleWebSession` (`OxyContext`'s `handleWebSSOSession`) — which
  * registers the account into the device set, persists it durably, and
  * hydrates the full user profile.
@@ -68,7 +68,7 @@ export interface CompleteDeviceFlowSignInOptions {
   sessionToken: string;
   /**
    * `useOxy().handleWebSession` — commits the freshly-claimed session into
-   * context state through the SAME path a password/FedCM sign-in uses:
+   * context state through the SAME path a password sign-in uses:
    * registers the account into the device's server-authoritative session set,
    * persists it durably, and hydrates the full user profile. Runs AFTER the
    * bearer is planted so its bearer-protected calls succeed.

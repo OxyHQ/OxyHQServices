@@ -3,8 +3,8 @@
  *
  * Task 5.2 (Fase 4 `WebOxyProvider` cutover): integration-level proof that
  * `WebOxyProvider` actually WIRES the in-session refresh handler + scheduler
- * from `./session/tokenRefresh.ts` into `oxyServices.httpService` — the arms'
- * own logic (silent-iframe / FedCM fall-through, scheduler timer math) is
+ * from `./session/tokenRefresh.ts` into `oxyServices.httpService` — the arm's
+ * own logic (silent-iframe re-mint, scheduler timer math) is
  * covered in isolation by `__tests__/session/tokenRefresh.test.ts`. This file
  * only asserts the WIRING: install on mount, uninstall on unmount, and that
  * invoking the installed handler re-mints + registers the recovered account
@@ -30,8 +30,6 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
 interface CoreStubs {
   getCurrentUser: jest.Mock<Promise<User | null>, []>;
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
-  isFedCMSupported: jest.Mock<boolean, []>;
-  silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
   silentSignIn: jest.Mock<Promise<SessionLoginResponse | null>, [unknown?]>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
@@ -43,8 +41,6 @@ interface CoreStubs {
 const stubs: CoreStubs = {
   getCurrentUser: jest.fn(async () => null),
   handleRedirectCallback: jest.fn(() => null),
-  isFedCMSupported: jest.fn(() => false),
-  silentSignInWithFedCM: jest.fn(async () => null),
   silentSignIn: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
@@ -56,8 +52,6 @@ const stubs: CoreStubs = {
 function resetStubs(): void {
   stubs.getCurrentUser = jest.fn(async () => null);
   stubs.handleRedirectCallback = jest.fn(() => null);
-  stubs.isFedCMSupported = jest.fn(() => false);
-  stubs.silentSignInWithFedCM = jest.fn(async () => null);
   stubs.silentSignIn = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
@@ -109,12 +103,6 @@ jest.mock('@oxyhq/core', () => {
       }
       getCurrentUser(): Promise<User | null> {
         return stubs.getCurrentUser();
-      }
-      isFedCMSupported(): boolean {
-        return stubs.isFedCMSupported();
-      }
-      silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
-        return stubs.silentSignInWithFedCM();
       }
       silentSignIn(options?: unknown): Promise<SessionLoginResponse | null> {
         return stubs.silentSignIn(options);

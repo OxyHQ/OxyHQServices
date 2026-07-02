@@ -2,7 +2,10 @@
  * @oxyhq/auth — Web Authentication Provider
  *
  * Clean implementation with ZERO React Native dependencies.
- * Provides FedCM and redirect authentication methods.
+ * Provides cross-domain SSO via a full-page redirect through the central IdP
+ * (FedCM was removed from the client sign-in/cold-boot path — Chrome-only and
+ * a source of a real production sign-in loop; see `CrossDomainAuth`'s doc
+ * comment in `@oxyhq/core`).
  * Session state (accounts, active session/token, sign-out, in-session token
  * refresh) is owned entirely by the server-authoritative `SessionClient`
  * (`@oxyhq/core`) — there is no local `AuthManager` / `oxy_rt` cookie-slot
@@ -97,10 +100,12 @@ export interface WebAuthState {
 
 export interface WebAuthActions {
   /**
-   * Sign in via the preferred method (auto / fedcm / redirect).
+   * Sign in via the preferred method — always a full-page redirect to the
+   * central IdP (`preferredAuthMethod="auto"` / `"redirect"`; both redirect).
+   * FedCM is not part of the client sign-in path — see the removal note in
+   * `CrossDomainAuth`'s doc comment in `@oxyhq/core`.
    */
   signIn: () => Promise<void>;
-  signInWithFedCM: () => Promise<void>;
   signInWithRedirect: () => void;
   /**
    * Sign out of this device entirely: revokes every account this device
@@ -111,7 +116,6 @@ export interface WebAuthActions {
    * shared helper.
    */
   signOut: () => Promise<void>;
-  isFedCMSupported: () => boolean;
   /**
    * Switch to a different device session by its server-side session id.
    * Resolves the target account from the `SessionClient` device state and
@@ -155,8 +159,8 @@ export interface WebAuthActions {
   /**
    * Commit a session claimed out-of-band by the "Sign in with Oxy" (QR)
    * handoff — `useCommonsSignIn` calls this after `claimSessionByToken` so the
-   * device-flow result flows through the SAME commit path as FedCM / redirect
-   * (token plant + device-set registration). Surfaced on the context so the
+   * device-flow result flows through the SAME commit path as redirect/SSO
+   * sign-in (token plant + device-set registration). Surfaced on the context so the
    * hook can default to it when used zero-config inside the provider.
    */
   commitClaimedSession: (claimed: CommonsClaimResult) => Promise<void>;
@@ -175,7 +179,7 @@ const WebOxyContext = createContext<WebOxyContextValue | null>(null);
  * per-branch commit — every winning ladder step funnels through
  * `handleAuthSuccess` (which now also registers the recovered account into
  * the server-authoritative `SessionClient` device-session set):
- *   - `redirect` / `fedcm` → `handleAuthSuccess(session, method)`.
+ *   - `redirect` → `handleAuthSuccess(session, method)`.
  *   - `sso` → `commitSsoSessionOnceRef.current(session)` (itself a thin
  *     dedup wrapper over `handleAuthSuccess(session, 'credentials')`).
  *   - `silent-iframe` → `handleAuthSuccess(session, 'credentials')` — a
@@ -185,10 +189,12 @@ const WebOxyContext = createContext<WebOxyContextValue | null>(null);
  * Every variant carries a fully-hydrated `SessionLoginResponse` (real user,
  * never the empty-id placeholder). There is no `cookie` variant anymore — the
  * oxy_rt refresh-cookie cold-boot restore was retired in favour of the
- * `silent-iframe` step (see the steps array below for the rationale).
+ * `silent-iframe` step (see the steps array below for the rationale). There is
+ * no `fedcm` variant — no cold-boot step attempts FedCM (see `CrossDomainAuth`'s
+ * doc comment in `@oxyhq/core`).
  */
 type ColdBootSession = {
-  method: 'redirect' | 'fedcm' | 'sso' | 'silent-iframe';
+  method: 'redirect' | 'sso' | 'silent-iframe';
   session: SessionLoginResponse;
 };
 
@@ -199,24 +205,6 @@ type ColdBootSession = {
  * full {@link ColdBootSession} union.
  */
 type SsoReturnSession = { method: 'sso'; session: SessionLoginResponse };
-
-/**
- * Module-level run-once guard for the central FedCM silent sign-in step.
- *
- * The init effect runs again whenever the provider remounts (route change,
- * StrictMode double-invoke, error-boundary recovery). The redirect-callback
- * and silent-iframe steps are cheap and idempotent, but the FedCM silent step
- * triggers `navigator.credentials.get` (`mediation: 'silent'`) against the
- * central IdP, which must fire AT MOST ONCE per page load. Otherwise a remount
- * storm becomes a credential-request storm.
- *
- * Keyed on `origin|baseURL` (the same signature `useWebSSO.ssoSignature` uses)
- * so two providers on the same origin pointed at different APIs each get their
- * own one-shot budget, while same-origin same-API remounts share one. The set
- * is intentionally never cleared: only a fresh page load (a fresh module scope)
- * can change the IdP session state.
- */
-const fedcmSilentSignInAttempted = new Set<string>();
 
 /**
  * Per-step fail-fast budget for the cold-boot silent iframe (`silentSignIn`
@@ -235,12 +223,12 @@ const SILENT_IFRAME_TIMEOUT = 2500;
  * HARD overall deadline (ms) for the entire cold-boot step loop —
  * defense-in-depth so a single non-settling step can never hang auth
  * resolution forever (mirrors the services `OxyContext` regression this
- * guards against: a `navigator.credentials.get()` that ignored its abort
+ * guards against: a browser silent-restore probe that ignored its own abort
  * signal left a step's promise unsettled, so `runColdBoot` never advanced to
  * the terminal `/sso` bounce).
  *
- * Every step already bounds its own network work (`SILENT_IFRAME_TIMEOUT`,
- * FedCM's own settle budget), so on a healthy load the first recovering step
+ * Every step already bounds its own network work (`SILENT_IFRAME_TIMEOUT`
+ * plus its own hard settle), so on a healthy load the first recovering step
  * wins in a single round-trip and the chain short-circuits long before this
  * fires. Chosen smaller than the outer `INIT_TIMEOUT_MS` safety net below so
  * that, on regression, `runColdBoot` still unwinds to the terminal
@@ -261,21 +249,6 @@ const COLD_BOOT_OVERALL_DEADLINE = 12000;
  * Mirrors the services `OxyContext` constant of the same name.
  */
 const SESSION_HANDOFF_DEADLINE = 6000;
-
-/**
- * Build the run-once signature for the silent sign-in guard. Matches
- * `useWebSSO.ssoSignature` exactly: `${origin}|${baseURL}`.
- */
-function silentSignInKey(oxyServices: OxyServices): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
-  let baseURL = '';
-  try {
-    baseURL = oxyServices.getBaseURL?.() ?? '';
-  } catch {
-    baseURL = '';
-  }
-  return `${origin}|${baseURL}`;
-}
 
 /**
  * Clear all per-origin SSO bounce sessionStorage keys. Called ONLY on EXPLICIT
@@ -367,9 +340,10 @@ function clearPriorSessionWeb(): void {
 /**
  * Set the durable "deliberately signed out" flag (core {@link ssoSignedOutKey}).
  * Called ONLY on EXPLICIT full sign-out so the next cold boot does not silently
- * re-mint a session from a still-live IdP session via `fedcm-silent`. Cleared by
- * any deliberate sign-in (see {@link clearSignedOutWeb}). No-ops off-web / on
- * storage failure (best-effort).
+ * re-mint a session from a still-live IdP session via the `silent-iframe`
+ * cold-boot step. Cleared by any deliberate sign-in (see
+ * {@link clearSignedOutWeb}). No-ops off-web / on storage failure
+ * (best-effort).
  */
 function markSignedOutWeb(): void {
   if (!isWebBrowser()) return;
@@ -397,7 +371,7 @@ function clearSignedOutWeb(): void {
 /**
  * Whether AUTOMATIC silent restore is suppressed because the user deliberately
  * signed out (durable flag, read via the core {@link silentRestoreSuppressed}
- * predicate). Gates the `fedcm-silent` cold-boot step. Returns `false` off-web /
+ * predicate). Gates the `silent-iframe` cold-boot step. Returns `false` off-web /
  * on storage failure (fail safe toward normal restore).
  */
 function silentRestoreSuppressedWeb(): boolean {
@@ -419,7 +393,7 @@ export interface WebOxyProviderProps {
    * The FAPI (Federated Auth API / IdP) origin. When omitted, the provider
    * auto-detects `https://auth.<rp-domain>` from `window.location.hostname`
    * so an RP only needs to CNAME `auth.<rp-domain>` → the central IdP and
-   * everything else (FedCM config URL, redirect URL) follows.
+   * everything else (silent-restore iframe origin, redirect URL) follows.
    * Pass explicitly to override (e.g. point at a staging IdP).
    */
   authWebUrl?: string;
@@ -434,7 +408,7 @@ export interface WebOxyProviderProps {
   clientId?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: Error) => void;
-  preferredAuthMethod?: 'auto' | 'fedcm' | 'redirect';
+  preferredAuthMethod?: 'auto' | 'redirect';
   skipAutoCheck?: boolean;
 }
 
@@ -442,7 +416,7 @@ export interface WebOxyProviderProps {
  * Web-only Oxy Provider
  *
  * Provides authentication context for pure web applications (React, Next.js, Vite).
- * Supports FedCM and redirect authentication methods.
+ * Cross-domain sign-in uses a full-page redirect through the central IdP.
  *
  * @example
  * ```tsx
@@ -595,8 +569,8 @@ export function WebOxyProvider({
     // after an explicit sign-out). The passive cookie-expiry path leaves it
     // intact so an expired session still recovers via a returning-user bounce.
     clearPriorSessionWeb();
-    // Set the durable "deliberately signed out" flag so the `fedcm-silent` /
-    // `silent-iframe` cold-boot steps do not silently re-mint a session from a
+    // Set the durable "deliberately signed out" flag so the `silent-iframe`
+    // cold-boot step does not silently re-mint a session from a
     // still-live IdP session on the next reload. Cleared on any deliberate
     // sign-in.
     markSignedOutWeb();
@@ -605,7 +579,7 @@ export function WebOxyProvider({
   /**
    * Cold-boot registration dedup. `handleAuthSuccess` is the single commit
    * funnel for every web ladder step that mints a session (`sso-return`,
-   * `fedcm-silent`, `silent-iframe`) — it registers the recovered account into
+   * `silent-iframe`) — it registers the recovered account into
    * the device set itself (`sessionClient.addCurrentAccount()`). The post-ladder
    * handoff below ALSO registers, but only as a fallback for the case where
    * `initAuth` finds an access token already planted from a prior render
@@ -669,12 +643,14 @@ export function WebOxyProvider({
     });
   }, [sessionClient, syncFromClient]);
 
-  // Mutex: prevents concurrent sign-in attempts (FedCM + redirect)
+  // Mutex: prevents concurrent/repeated sign-in attempts. Deliberately NOT
+  // reset after a redirect is initiated — see the `signIn` doc comment below
+  // for why (the production sign-in loop this prevents).
   const signingInRef = useRef(false);
 
   const handleAuthSuccess = useCallback(async (
     session: SessionLoginResponse,
-    method: 'fedcm' | 'redirect' | 'credentials' = 'credentials'
+    method: 'redirect' | 'credentials' = 'credentials'
   ) => {
     // Access tokens are memory-only, planted directly on `oxyServices`
     // (never written to JS-accessible storage). This is the single chokepoint
@@ -704,11 +680,11 @@ export function WebOxyProvider({
     // A session is now established — set the durable returning-user hint so a
     // future cold boot whose cross-domain cookie restore comes back empty still
     // earns ONE `/sso` establish bounce. Every first-party commit path
-    // (FedCM / redirect / SSO return / claimed device-flow) funnels through
+    // (redirect / SSO return / claimed device-flow) funnels through
     // here, so this is the single chokepoint for the hint.
     markPriorSessionWeb();
     // A committed session re-enables automatic silent restore: clear the durable
-    // "deliberately signed out" flag. The `fedcm-silent` step is GATED on the
+    // "deliberately signed out" flag. The `silent-iframe` step is GATED on the
     // flag, so when it is set that step never runs and never reaches here — this
     // clear is only hit on a genuine (re-)sign-in or when restore was permitted.
     clearSignedOutWeb();
@@ -716,8 +692,8 @@ export function WebOxyProvider({
     // Register this recovered account+session into the server-authoritative
     // device-session set (Fase 4 cutover — mirrors the services `OxyContext`
     // `handleWebSSOSession`). Every winning cold-boot ladder step
-    // (`sso-return`, `fedcm-silent`, `silent-iframe`), every interactive
-    // sign-in (`signIn`/`signInWithFedCM`), AND the Commons device-flow commit
+    // (`sso-return`, `silent-iframe`), every interactive
+    // sign-in (`signIn`), AND the Commons device-flow commit
     // (`commitClaimedSession`) funnel through here, so this is the single
     // chokepoint that registers the account into the device's `DeviceSession`
     // doc. This MUST be a registration (`addCurrentAccount`), never an
@@ -745,7 +721,7 @@ export function WebOxyProvider({
    * device-flow claim ({@link OxyServices.claimSessionByToken}) already returns
    * a fully-hydrated session; project it into a {@link SessionLoginResponse} and
    * funnel it through `handleAuthSuccess` so it is indistinguishable from a
-   * FedCM / redirect login (same token plant + device-set registration).
+   * redirect login (same token plant + device-set registration).
    * Tagged `credentials` like the other first-party commit paths.
    */
   const commitClaimedSession = useCallback(async (claimed: CommonsClaimResult) => {
@@ -781,7 +757,7 @@ export function WebOxyProvider({
   //   1. The reactive handler installed on `oxyServices.httpService` — fires
   //      on a per-request preflight (token expiring within HttpService's own
   //      lead window) or a genuine 401. Silently re-mints via the per-apex
-  //      `/auth/silent` iframe, then FedCM silent, committing exactly like a
+  //      `/auth/silent` iframe, committing exactly like a
   //      winning cold-boot ladder step would (`handleAuthSuccessRef`).
   //   2. The proactive scheduler — fires `TOKEN_REFRESH_LEAD_MS` before the
   //      current token's `exp` so the common case never even reaches the
@@ -943,8 +919,7 @@ export function WebOxyProvider({
     window.sessionStorage.setItem(ssoAttemptedKey(origin), '1');
 
     // Honour an explicit `authWebUrl` override (e.g. a staging IdP) for the
-    // SSO bounce exactly as it drives FedCM — mirroring the services
-    // `OxyContext`, which builds from
+    // SSO bounce — mirroring the services `OxyContext`, which builds from
     // `resolveCentralAuthUrl(oxyServices.config?.authWebUrl)`. The constructor
     // above already resolved `config.authWebUrl` to the central default when no
     // override was supplied, so reading it here is sufficient.
@@ -976,21 +951,24 @@ export function WebOxyProvider({
       //   0. sso-return     — parse `window.location.hash`; on `ok` exchange the
       //                       opaque code via `oxyServices.exchangeSsoCode` and
       //                       commit; on `none`/`error` set the no-rebounce flag.
-      //   1. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so`
-      //                       (Chrome enhancement). Fires once per page load.
-      //   2. silent-iframe  — first-party `/auth/silent` iframe at the PER-APEX
+      //   1. silent-iframe  — first-party `/auth/silent` iframe at the PER-APEX
       //                       IdP (durable cross-domain AND same-apex reload
       //                       restore). This IS cold boot's durable
       //                       reload-restore path — there is no `oxy_rt`
-      //                       cookie read anywhere during cold boot.
-      //   3. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+      //                       cookie read anywhere during cold boot. There is
+      //                       no FedCM step — FedCM was removed from the
+      //                       client sign-in/cold-boot path entirely
+      //                       (Chrome-only; see `CrossDomainAuth`'s doc
+      //                       comment in `@oxyhq/core` for the production
+      //                       sign-in loop that motivated the removal).
+      //   2. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
       //
       // NOTE: the services `OxyContext` has an additional `stored-session`
       // bearer-restore step (native's ONLY restore path, which also runs BEFORE
       // the slow web probes so a local reload wins fast). `WebOxyProvider` is
       // web-only and never persists a bearer session to JS-accessible storage,
       // so that step is a guaranteed no-op here and is omitted; the effective
-      // web durable-restore is the `silent-iframe` step (step 2). The early
+      // web durable-restore is the `silent-iframe` step (step 1). The early
       // `setIsLoading(false)` inside `handleAuthSuccess` already gives
       // WebOxyProvider the "flip loading the instant a session commits"
       // behaviour inherently (each commit branch flips loading immediately;
@@ -998,13 +976,12 @@ export function WebOxyProvider({
       //
       // CRITICAL: every winning step MUST hydrate a REAL user before claiming a
       // session. A placeholder user (empty id) is never exposed (R4).
-      const ssoKey = silentSignInKey(oxyServices);
 
       // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
-      // central IdP session can still be live, so the silent `fedcm-silent` /
-      // `silent-iframe` steps below would re-mint a session on the next cold boot
+      // per-apex `fedcm_session` cookie can still be live, so the `silent-iframe`
+      // step below would re-mint a session on the next cold boot
       // and sign the user back in without intent. Read the durable flag ONCE here
-      // (synchronously usable by each step's `enabled` gate) and skip both steps
+      // (synchronously usable by the step's `enabled` gate) and skip that step
       // while it is set. Any deliberate sign-in clears it. The terminal
       // `sso-bounce` is already self-suppressed after sign-out (its
       // prior-session hint is cleared).
@@ -1023,31 +1000,7 @@ export function WebOxyProvider({
           },
         },
         {
-          // 1) FedCM silent reauthn (Chrome) against the CENTRAL IdP
-          // (`auth.oxy.so`). Fires `navigator.credentials.get` with
-          // `mediation: 'silent'`, which must happen AT MOST ONCE per page
-          // load — gate on the module-level run-once guard. This is the
-          // FedCM-only silent path. Cross-domain restore on non-FedCM browsers is
-          // owned by the `silent-iframe` / `sso-bounce` steps below. Only runs
-          // where FedCM is supported.
-          id: 'fedcm-silent',
-          enabled: () =>
-            isWebBrowser() &&
-            !silentRestoreBlocked &&
-            oxyServices.isFedCMSupported() === true &&
-            !fedcmSilentSignInAttempted.has(ssoKey),
-          run: async () => {
-            fedcmSilentSignInAttempted.add(ssoKey);
-            const session = await oxyServices.silentSignInWithFedCM();
-            if (!session?.user) return { kind: 'skip' };
-            return {
-              kind: 'session',
-              session: { method: 'fedcm', session },
-            };
-          },
-        },
-        {
-          // 2) First-party silent iframe at the PER-APEX IdP — the DURABLE
+          // 1) First-party silent iframe at the PER-APEX IdP — the DURABLE
           // cross-domain (and same-apex) reload-restore path. The durable
           // session lives as a first-party `fedcm_session` cookie on
           // `auth.<rp-apex>` (e.g. `auth.mention.earth`), established during
@@ -1087,7 +1040,7 @@ export function WebOxyProvider({
           },
         },
         {
-          // 3) SSO bounce (TERMINAL, once). No local session was recovered by
+          // 2) SSO bounce (TERMINAL, once). No local session was recovered by
           // any prior step. Navigate top-level to the central IdP's `/sso`
           // endpoint with `prompt=none`. The document is torn down, so `run`
           // returns `skip` only if `assign` no-ops (e.g. blocked navigation).
@@ -1104,7 +1057,7 @@ export function WebOxyProvider({
         steps,
         onStepError: (id, err) => {
           // Cold-boot step errors are the EXPECTED branch for logged-out
-          // visitors and FedCM-less browsers — log at debug so they don't
+          // visitors — log at debug so they don't
           // spam the console every page load.
           logger.debug(
             'cold-boot step did not resolve a session',
@@ -1143,7 +1096,6 @@ export function WebOxyProvider({
             await handleAuthSuccess(outcome.session.session, 'credentials');
             break;
           case 'redirect':
-          case 'fedcm':
             await handleAuthSuccess(outcome.session.session, outcome.session.method);
             break;
         }
@@ -1231,7 +1183,7 @@ export function WebOxyProvider({
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, crossDomainAuth, skipAutoCheck, handleAuthSuccess, handleAuthError, evaluateSsoBounce, runSsoBounce, sessionClient, syncFromClient]);
+  }, [oxyServices, skipAutoCheck, handleAuthSuccess, handleAuthError, evaluateSsoBounce, runSsoBounce, sessionClient, syncFromClient]);
 
   // bfcache restore handler — registered ONCE, OUTSIDE the cold boot.
   //
@@ -1274,7 +1226,7 @@ export function WebOxyProvider({
     return () => {
       window.removeEventListener('pageshow', onPageShow);
     };
-  }, [handleAuthSuccess, evaluateSsoBounce, runSsoBounce, user]);
+  }, [evaluateSsoBounce, runSsoBounce, user]);
 
   // EAGER, universal SSO-callback interception (web only, once on mount).
   //
@@ -1332,6 +1284,32 @@ export function WebOxyProvider({
     onAuthStateChange?.(user);
   }, [user, onAuthStateChange]);
 
+  /**
+   * Sign in — always a full-page redirect to the central IdP (FedCM is not
+   * part of the client sign-in path; see `CrossDomainAuth`'s doc comment in
+   * `@oxyhq/core`). `crossDomainAuth.signIn({ method })` resolves to `null`
+   * for the redirect path (the automatic method), so the `session` branch
+   * below is only reached by a future non-redirect method.
+   *
+   * ROOT CAUSE OF A REAL PRODUCTION SIGN-IN LOOP (fixed here): a redirect
+   * resolves `crossDomainAuth.signIn()` to `null` the instant the top-level
+   * navigation is KICKED OFF — the browser has not actually torn the page
+   * down yet. The previous implementation unconditionally called
+   * `setIsLoading(false)` in that branch, which flips `isReady` back to
+   * `true` (with the user still unauthenticated) before the real navigation
+   * lands. A caller's auth-guard effect
+   * (`if (isReady && !isAuthenticated) signIn()`, e.g. the Console app)
+   * observed that transient "ready + unauthenticated" state and invoked
+   * `signIn()` again — which called `signInWithRedirect()` a second time.
+   * `window.location.assign()` ABORTS an in-flight navigation when called
+   * again, so the redirect never actually completed and the effect kept
+   * re-firing every render (~200ms in production — the cadence of the
+   * now-removed FedCM attempt that used to run before the redirect call). The
+   * fix: once a redirect has been initiated, leave `isLoading`/`signingInRef`
+   * exactly as they are ("true") — the page is navigating away, so a
+   * re-invoked `signIn()` is a no-op (short-circuited by the mutex) until the
+   * real navigation lands and tears the whole page down.
+   */
   const signIn = useCallback(async () => {
     if (signingInRef.current) {
       return;
@@ -1341,52 +1319,27 @@ export function WebOxyProvider({
     setError(null);
     setIsLoading(true);
 
-    let selectedMethod: 'fedcm' | 'redirect' = 'redirect';
-
     try {
-      const session = await crossDomainAuth.signIn({
-        method: preferredAuthMethod,
-        onMethodSelected: (method) => {
-          selectedMethod = method;
-        },
-      });
+      const session = await crossDomainAuth.signIn({ method: preferredAuthMethod });
 
       if (session) {
-        await handleAuthSuccess(session, selectedMethod);
-      } else {
-        setIsLoading(false);
+        await handleAuthSuccess(session, 'redirect');
+        signingInRef.current = false;
       }
+      // No session: a top-level redirect was just initiated (see the doc
+      // comment above) — intentionally leave `isLoading`/`signingInRef` as
+      // "true" rather than resetting them.
     } catch (err) {
       handleAuthError(err);
-    } finally {
       signingInRef.current = false;
     }
   }, [crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
-
-  const signInWithFedCM = useCallback(async () => {
-    if (signingInRef.current) return;
-    signingInRef.current = true;
-    setError(null);
-    setIsLoading(true);
-    try {
-      const session = await crossDomainAuth.signInWithFedCM();
-      await handleAuthSuccess(session, 'fedcm');
-    } catch (err) {
-      handleAuthError(err);
-    } finally {
-      signingInRef.current = false;
-    }
-  }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
   const signInWithRedirect = useCallback(() => {
     setError(null);
     crossDomainAuth.signInWithRedirect({
       redirectUri: typeof window !== 'undefined' ? window.location.href : undefined,
     });
-  }, [crossDomainAuth]);
-
-  const isFedCMSupported = useCallback(() => {
-    return crossDomainAuth.isFedCMSupported();
   }, [crossDomainAuth]);
 
   const signOut = useCallback(async () => {
@@ -1542,10 +1495,8 @@ export function WebOxyProvider({
     oxyServices,
     crossDomainAuth,
     signIn,
-    signInWithFedCM,
     signInWithRedirect,
     signOut,
-    isFedCMSupported,
     switchSession,
     switchAccount,
     signOutAccount,
@@ -1556,8 +1507,8 @@ export function WebOxyProvider({
     user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
     accounts, activeAuthuser,
     oxyServices, crossDomainAuth,
-    signIn, signInWithFedCM, signInWithRedirect,
-    signOut, isFedCMSupported, switchSession,
+    signIn, signInWithRedirect,
+    signOut, switchSession,
     switchAccount, signOutAccount, signOutAll, clearSessionState,
     commitClaimedSession,
   ]);
@@ -1634,10 +1585,8 @@ export function useAuth() {
     accounts: ctx.accounts,
     activeAuthuser: ctx.activeAuthuser,
     signIn: ctx.signIn,
-    signInWithFedCM: ctx.signInWithFedCM,
     signInWithRedirect: ctx.signInWithRedirect,
     signOut: ctx.signOut,
-    isFedCMSupported: ctx.isFedCMSupported,
     switchSession: ctx.switchSession,
     switchAccount: ctx.switchAccount,
     signOutAccount: ctx.signOutAccount,

@@ -155,11 +155,11 @@ function buildStub(baseURL: string) {
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      isFedCMSupported: jest.fn(() => true),
       handleAuthCallback: jest.fn(() => null),
-      silentSignInWithFedCM: jest.fn(async () => bootSession),
-      silentSignIn: jest.fn(async () => null),
-      refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
+      // The `silent-iframe` cold-boot step (per-apex `/auth/silent`) is the web
+      // restore path now that FedCM is gone: it mints via `silentSignIn`, so
+      // returning `bootSession` here is what recovers a session on boot.
+      silentSignIn: jest.fn(async () => bootSession),
       generateSsoState: jest.fn(() => 'state-token-xyz'),
       exchangeSsoCode: jest.fn(async () => null),
       getCurrentUser: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
@@ -212,10 +212,11 @@ function renderProvider(oxyServices: unknown, baseURL: string) {
   );
 }
 
-// `useWebSSO`'s silent-SSO run-once guard is a MODULE-LEVEL `Set` keyed by
-// `origin|baseURL` (cross-mount dedup by design). Every test in this file
-// mounts a fresh provider and expects a fresh `fedcm-silent` win, so each boot
-// needs a distinct `baseURL` (mirrors `mutationsSessionClient.test.tsx`).
+// Each test mounts a fresh provider and boots through the cold-boot ladder,
+// whose per-origin SSO/session state lives in `sessionStorage` keyed by origin.
+// A distinct `baseURL` per boot keeps those keys isolated across mounts so one
+// test's bounce/attempt guards never leak into the next
+// (mirrors `mutationsSessionClient.test.tsx`).
 let bootCounter = 0;
 function nextBaseURL(): string {
   bootCounter += 1;
@@ -223,10 +224,10 @@ function nextBaseURL(): string {
 }
 
 /**
- * Boots the provider through the real cold-boot token ladder (a `fedcm-silent`
- * win recovers `bootSession`), then hands off to the fake `SessionClient`,
- * whose `start()` seeds `deviceState` and notifies — projecting it onto the
- * exposed context exactly like the real Task 2 handoff.
+ * Boots the provider through the real cold-boot token ladder (the web
+ * `silent-iframe` step's `silentSignIn` recovers `bootSession`), then hands off
+ * to the fake `SessionClient`, whose `start()` seeds `deviceState` and notifies
+ * — projecting it onto the exposed context exactly like the real Task 2 handoff.
  */
 async function bootWithDeviceState(deviceState: DeviceSessionState) {
   const fake = buildFakeClient(deviceState);
@@ -306,7 +307,7 @@ describe('SessionClient socket replaces per-domain useSessionSocket (Task 4)', (
     const { fake } = await bootWithDeviceState(twoAccountDeviceState());
     const storageKeys = getStorageKeys(STORAGE_KEY_PREFIX);
 
-    // Precondition: the cold-boot fedcm-silent win committed a session, which
+    // Precondition: the cold-boot silent-iframe win committed a session, which
     // durably sets the "this device has had a signed-in Oxy session before"
     // hint — exactly like a real returning device.
     await waitFor(() =>

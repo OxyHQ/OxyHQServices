@@ -32,8 +32,6 @@ const mockedAutoDetect = autoDetectAuthWebUrl as jest.MockedFunction<typeof auto
 
 interface FakeOxyServices {
   silentSignIn: jest.Mock<Promise<SessionLoginResponse | null>, [unknown?]>;
-  silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
-  isFedCMSupported: jest.Mock<boolean, []>;
   setTokens: (token: string) => void;
   getAccessToken: () => string | null;
   setExpirySeconds: (value: number | null) => void;
@@ -51,8 +49,6 @@ function buildFakeOxyServices(): FakeOxyServices {
   const tokenListeners = new Set<(token: string | null) => void>();
   return {
     silentSignIn: jest.fn(async () => null),
-    silentSignInWithFedCM: jest.fn(async () => null),
-    isFedCMSupported: jest.fn(() => false),
     setTokens: (token: string) => {
       accessToken = token;
       for (const listener of tokenListeners) listener(token);
@@ -106,54 +102,12 @@ describe('createWebAuthRefreshHandler', () => {
       expect.objectContaining({ authWebUrlOverride: 'https://auth.example.test' }),
     );
     expect(commitSilentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-refresh' }), 'credentials');
-    expect(fake.silentSignInWithFedCM).not.toHaveBeenCalled();
     expect(token).toBe('tok-refresh');
   });
 
-  it('falls through to FedCM silent when the iframe arm yields no session', async () => {
+  it('resolves to null when the silent-iframe arm yields no session (there is NO FedCM fallback)', async () => {
     const fake = buildFakeOxyServices();
     fake.silentSignIn.mockResolvedValue(null);
-    fake.isFedCMSupported.mockReturnValue(true);
-    fake.silentSignInWithFedCM.mockResolvedValue(makeSession({ accessToken: 'tok-fedcm' }));
-    const commitSilentSession = jest.fn(async (session: SessionLoginResponse) => {
-      fake.setTokens(session.accessToken ?? '');
-    });
-
-    const handler = createWebAuthRefreshHandler({
-      oxyServices: fake as unknown as OxyServices,
-      commitSilentSession,
-    });
-
-    const token = await handler('response-401');
-
-    expect(commitSilentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-refresh' }), 'fedcm');
-    expect(token).toBe('tok-fedcm');
-  });
-
-  it('falls through to FedCM when the iframe arm THROWS (never lets one arm crash the chain)', async () => {
-    const fake = buildFakeOxyServices();
-    fake.silentSignIn.mockRejectedValue(new Error('iframe blocked'));
-    fake.isFedCMSupported.mockReturnValue(true);
-    fake.silentSignInWithFedCM.mockResolvedValue(makeSession({ accessToken: 'tok-fedcm' }));
-    const commitSilentSession = jest.fn(async (session: SessionLoginResponse) => {
-      fake.setTokens(session.accessToken ?? '');
-    });
-
-    const handler = createWebAuthRefreshHandler({
-      oxyServices: fake as unknown as OxyServices,
-      commitSilentSession,
-    });
-
-    const token = await handler('response-401');
-
-    expect(token).toBe('tok-fedcm');
-  });
-
-  it('skips the silent-iframe arm entirely when autoDetectAuthWebUrl bails (e.g. localhost)', async () => {
-    mockedAutoDetect.mockReturnValue(null);
-    const fake = buildFakeOxyServices();
-    fake.isFedCMSupported.mockReturnValue(true);
-    fake.silentSignInWithFedCM.mockResolvedValue(makeSession({ accessToken: 'tok-fedcm' }));
     const commitSilentSession = jest.fn(async () => undefined);
 
     const handler = createWebAuthRefreshHandler({
@@ -161,16 +115,58 @@ describe('createWebAuthRefreshHandler', () => {
       commitSilentSession,
     });
 
-    await handler('preflight');
+    const token = await handler('response-401');
 
+    // The silent-iframe arm is the ONLY arm — a null session exhausts the
+    // chain. FedCM was removed from the client refresh path, so there is no
+    // second arm to fall through to; the handler resolves to null and never
+    // commits.
+    expect(token).toBeNull();
+    expect(commitSilentSession).not.toHaveBeenCalled();
+  });
+
+  it('contains a throw in the silent-iframe arm (never crashes the chain) and resolves to null', async () => {
+    const fake = buildFakeOxyServices();
+    fake.silentSignIn.mockRejectedValue(new Error('iframe blocked'));
+    const commitSilentSession = jest.fn(async () => undefined);
+
+    const handler = createWebAuthRefreshHandler({
+      oxyServices: fake as unknown as OxyServices,
+      commitSilentSession,
+    });
+
+    // A throw in the sole arm is caught + treated as a fall-through, never
+    // propagated out of the handler; with no further arm the chain resolves
+    // to null.
+    const token = await handler('response-401');
+
+    expect(token).toBeNull();
+    expect(commitSilentSession).not.toHaveBeenCalled();
+  });
+
+  it('returns null without minting when autoDetectAuthWebUrl bails (e.g. localhost) — the iframe arm is skipped and there is no FedCM fallback', async () => {
+    mockedAutoDetect.mockReturnValue(null);
+    const fake = buildFakeOxyServices();
+    const commitSilentSession = jest.fn(async () => undefined);
+
+    const handler = createWebAuthRefreshHandler({
+      oxyServices: fake as unknown as OxyServices,
+      commitSilentSession,
+    });
+
+    const token = await handler('preflight');
+
+    // No per-apex IdP to query → the iframe arm short-circuits without calling
+    // `silentSignIn`, and there is no FedCM arm behind it, so the handler
+    // resolves to null.
     expect(fake.silentSignIn).not.toHaveBeenCalled();
-    expect(fake.silentSignInWithFedCM).toHaveBeenCalled();
+    expect(token).toBeNull();
+    expect(commitSilentSession).not.toHaveBeenCalled();
   });
 
   it('resolves to null when every arm is exhausted (never mints a session)', async () => {
     const fake = buildFakeOxyServices();
     fake.silentSignIn.mockResolvedValue(null);
-    fake.isFedCMSupported.mockReturnValue(false);
     const commitSilentSession = jest.fn(async () => undefined);
 
     const handler = createWebAuthRefreshHandler({

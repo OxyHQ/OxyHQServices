@@ -56,8 +56,7 @@ import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '@oxyhq/core';
-import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
-import { buildSilentGuardKey } from '../../utils/silentGuardKey';
+import { isWebBrowser } from '../hooks/useWebSSO';
 import { isCrossApexWeb, CrossApexDirectSignInError } from '../../utils/crossApex';
 import { createInSessionRefreshHandler, startTokenRefreshScheduler } from './inSessionTokenRefresh';
 import { mintSessionViaPerApexIframe } from './silentSessionRestore';
@@ -111,9 +110,10 @@ export interface OxyContextState {
   /**
    * Sign in with a username/email + password.
    *
-   * Commits a successful session into context state through the SAME path FedCM
-   * / SSO use (so `isAuthenticated` / `user` update and the session is persisted
-   * durably). Returns a discriminated result so the caller can branch on the
+   * Commits a successful session into context state through the SAME path the
+   * SSO / silent-restore steps use (so `isAuthenticated` / `user` update and
+   * the session is persisted durably). Returns a discriminated result so the
+   * caller can branch on the
    * two-factor-required case — which creates NO session; the caller completes
    * the 2FA challenge with the returned `loginToken`.
    *
@@ -205,8 +205,8 @@ const OxyContext = createContext<OxyContextState | null>(null);
  * Result of {@link OxyContextState.signInWithPassword}.
  *
  * `'ok'` — the password was accepted and the resulting session has been
- * committed into context state (the SAME path FedCM / SSO sessions use), so
- * `isAuthenticated` / `user` are updated and the session is durably persisted;
+ * committed into context state (the SAME path SSO / silent-restore sessions
+ * use), so `isAuthenticated` / `user` are updated and the session is durably persisted;
  * the caller can proceed (e.g. navigate into the app).
  *
  * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
@@ -235,41 +235,6 @@ export interface OxyContextProviderProps {
   clientId?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
-}
-
-/**
- * Module-level run-once guard for the cold-boot `fedcm-silent` step.
- *
- * The FedCM silent step triggers a one-shot `navigator.credentials.get`
- * handshake that must fire AT MOST ONCE per page load — otherwise a provider
- * remount storm (route churn, StrictMode double-invoke, error-boundary
- * recovery) becomes a credential request storm. A per-instance ref resets on
- * every remount, so the guard must live at module scope. Keyed on
- * `origin|baseURL` so two providers pointed at the same API from the same
- * origin share one attempt; never cleared because only a fresh page load can
- * change the central IdP session state, and a fresh page load starts a fresh
- * module scope.
- *
- * This is a dedicated set — distinct from `useWebSSO`'s `silentSSOAttempted`
- * (which guards the post-boot INTERACTIVE button path) and never a core
- * module-level singleton (that re-evaluates under Metro web bundling and the
- * guard would not hold).
- */
-const servicesSilentAttempted = new Set<string>();
-
-/**
- * Build the `origin|baseURL` signature used as the silent-cold-boot guard key.
- */
-function silentColdBootKey(oxyServices: OxyServices): string {
-  // `buildSilentGuardKey` reads `window.location.origin` behind a guard that
-  // also verifies `window.location` exists. This is critical: it runs
-  // UNCONDITIONALLY at the top of `restoreSessionsFromStorage` (before the
-  // cold-boot try/catch) on EVERY platform, and React Native aliases a global
-  // `window` with NO `window.location`. Without that guard the read threw
-  // `Cannot read property 'origin' of undefined` on native, escaping the
-  // restore path so `markAuthResolved` never ran and stored-session restore was
-  // never reached.
-  return buildSilentGuardKey(() => oxyServices.getBaseURL?.());
 }
 
 /**
@@ -303,15 +268,14 @@ const SHARED_KEY_SIGNIN_TIMEOUT = 8000;
 /**
  * HARD overall deadline (ms) for the entire cold-boot step loop —
  * defense-in-depth so a single non-settling step can NEVER hang auth resolution
- * forever (the production regression: a `navigator.credentials.get()` that
- * ignored its abort signal left the `fedcm-silent` step's promise unsettled, so
- * `runColdBoot` never advanced to the terminal `/sso` bounce and auth hung
- * indefinitely).
+ * forever (the production regression this guards against: a browser silent
+ * credential/iframe probe that ignored its own abort signal left a step's
+ * promise unsettled, so `runColdBoot` never advanced to the terminal `/sso`
+ * bounce and auth hung indefinitely).
  *
  * Every step ALREADY bounds its own network work (the stored-session bearer
- * validation at 8s, the silent iframe at `SILENT_IFRAME_TIMEOUT`, FedCM
- * silent at `FEDCM_SILENT_TIMEOUT` plus its hard settle). On a healthy load
- * the FIRST recovering step wins in a
+ * validation at 8s, the silent iframe at `SILENT_IFRAME_TIMEOUT` plus its hard
+ * settle). On a healthy load the FIRST recovering step wins in a
  * single round-trip (1–3s) and the chain short-circuits long before this fires.
  * This budget only trips when one of those per-step bounds regresses.
  *
@@ -625,9 +589,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // hooks below. But it is `null` for a brief window after mount while
   // `createPlatformStorage()` resolves (a microtask on web; a dynamic
   // `import()` on native). Any persistence path that fires during that window
-  // — e.g. an interactive FedCM sign-in the instant the screen mounts — would
-  // read `storage === null` and SILENTLY skip writing the session, leaving the
-  // user signed-in in-memory but with nothing to restore on reload.
+  // — e.g. an interactive password sign-in the instant the screen mounts —
+  // would read `storage === null` and SILENTLY skip writing the session,
+  // leaving the user signed-in in-memory but with nothing to restore on
+  // reload.
   //
   // To make persistence robust regardless of timing we ALSO expose the storage
   // as an awaitable promise (`getReadyStorage`). Persistence code awaits the
@@ -772,8 +737,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Cold-boot registration dedup (Task 5). `handleWebSSOSession` (declared
   // below) is the single commit funnel for every web ladder step that mints a
-  // session (`sso-return`, `shared-key-signin`, `fedcm-silent`,
-  // `silent-iframe`) — it registers the recovered account into the device set
+  // session (`sso-return`, `shared-key-signin`, `silent-iframe`) — it registers
+  // the recovered account into the device set
   // itself (`sessionClient.addCurrentAccount()`). The cold-boot post-ladder
   // handoff ALSO registers, but only as a FALLBACK for the `stored-session`
   // step, which commits through a completely different path
@@ -807,10 +772,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // arrived — is just as terminal as a local `logout()`/`logoutAll()`, so it
   // sets the SAME durable "deliberately signed out" flag (web-only,
   // best-effort) that those two callers set directly. Without this, a remote
-  // full wipe would leave the flag unset, and the `fedcm-silent`/`silent-iframe`
-  // cold-boot steps AND the `useWebSSO` post-boot safety net could silently
-  // re-mint a session from a still-live FedCM credential right after this
-  // device was authoritatively signed out everywhere.
+  // full wipe would leave the flag unset, and the `silent-iframe` cold-boot
+  // step could silently re-mint a session from a still-live per-apex
+  // `fedcm_session` cookie right after this device was authoritatively signed
+  // out everywhere.
   //
   // REMOTE-SIGN-OUT SUPPRESSION FIX (review H1): the terminal `sso-bounce`
   // cold-boot step is gated on the durable prior-session hint
@@ -1031,7 +996,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // init. Callers MUST invoke this BEFORE any work that can trigger a route
   // navigation (`onAuthStateChange`) — navigation can interrupt a still-pending
   // async write, which is exactly what once left `session_ids` empty after a
-    // successful sign-in. Shared by the FedCM/SSO path and the cold-boot
+    // successful sign-in. Shared by the SSO/silent-restore path and the cold-boot
   // refresh-cookie restore so both land the same durable record.
   const persistSessionDurably = useCallback(async (sessionId: string): Promise<void> => {
     const readyStorage = await getReadyStorage();
@@ -1050,7 +1015,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // A session is now durably committed — set the returning-user hint so a
     // future cold boot whose local session has lapsed still gets ONE `/sso`
     // establish bounce (see `markPriorSessionHint`). Every web commit path
-    // (FedCM / silent iframe / SSO return / password / cookie restore) funnels
+    // (silent iframe / SSO return / password / cookie restore) funnels
     // through here, so this is the single chokepoint for the hint.
     await readyStorage.setItem(storageKeys.priorSession, '1');
   }, [getReadyStorage, logger, storageKeys.activeSessionId, storageKeys.sessionIds, storageKeys.priorSession]);
@@ -1069,7 +1034,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Idempotent and monotonic via `authResolvedRef`: the first call wins and the
   // setters fire at most once, so the restore `finally` backstop becomes a no-op
   // once a commit site has already marked resolution. Called from EVERY place a
-  // user is actually committed (the FedCM/iframe/SSO path
+  // user is actually committed (the iframe/SSO path
   // `handleWebSSOSession` and the stored-session path) so the common reload
   // case unblocks the loading gate without sitting behind the remaining
   // (now-skipped) cold-boot steps.
@@ -1085,7 +1050,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   markAuthResolvedRef.current = markAuthResolved;
 
   // `handleWebSSOSession` is declared further down (it depends on values that
-  // are only available there). The FedCM/iframe cold-boot steps need to commit
+  // are only available there). The iframe/SSO cold-boot steps need to commit
   // a recovered session through it, so we route the call through a ref that is
   // populated once the callback exists. The ref is assigned synchronously on
   // every render before the cold-boot effect can fire (the effect is gated on
@@ -1310,24 +1275,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // `stored-session` runs.
   //
   // Order (web): SSO return → stored session → shared-key sign-in (native
-  // only, disabled here) → FedCM silent (central) → silent iframe (per-apex,
-  // the durable reload path) → SSO bounce (terminal). This is a pure
-  // TOKEN-ACQUISITION ladder — it mints the first per-domain access token by
-  // whichever means recovers one fastest. Once a token is acquired (or the
-  // ladder exhausts), the SERVER-authoritative `SessionClient` takes over:
-  // `addCurrentAccount` + `start` bootstrap the device session set and
-  // multi-account/active-account state from `GET /session/device/state`, so
-  // WHICH account is active is decided server-side, not by a client-persisted
-  // slot. There is no oxy_rt refresh-cookie restore step in this ladder.
+  // only, disabled here) → silent iframe (per-apex, the durable reload path)
+  // → SSO bounce (terminal). This is a pure TOKEN-ACQUISITION ladder — it
+  // mints the first per-domain access token by whichever means recovers one
+  // fastest. Once a token is acquired (or the ladder exhausts), the
+  // SERVER-authoritative `SessionClient` takes over: `addCurrentAccount` +
+  // `start` bootstrap the device session set and multi-account/active-account
+  // state from `GET /session/device/state`, so WHICH account is active is
+  // decided server-side, not by a client-persisted slot. There is no oxy_rt
+  // refresh-cookie restore step in this ladder, and no FedCM step — FedCM was
+  // removed from the client sign-in/cold-boot path entirely (Chrome-only, and
+  // its fast/silent failure mode combined with a caller's auth-guard effect
+  // could re-trigger sign-in in a tight loop; see `CrossDomainAuth`'s doc
+  // comment in `@oxyhq/core`).
   //
-  // LATENCY (FIX A): `stored-session` runs BEFORE the slow no-redirect probes
-  // (`fedcm-silent`, `silent-iframe`). On a normal reload the local bearer
-  // validates in one round-trip and wins, so `runColdBoot` short-circuits and
-  // never sits through those probes' timeouts (the prior serial sum was a
-  // ~20-30s stall). `sso-return` MUST stay first — it consumes the URL
-  // fragment before anything can strip it. On a first visit with no local
-  // session, `stored-session` skips and the cross-domain fallback chain
-  // (fedcm → iframe → sso-bounce) runs exactly as before; the per-apex silent
+  // LATENCY (FIX A): `stored-session` runs BEFORE the slow no-redirect
+  // `silent-iframe` probe. On a normal reload the local bearer validates in
+  // one round-trip and wins, so `runColdBoot` short-circuits and never sits
+  // through that probe's timeout. `sso-return` MUST stay first — it consumes
+  // the URL fragment before anything can strip it. On a first visit with no
+  // local session, `stored-session` skips and the cross-domain fallback chain
+  // (silent-iframe → sso-bounce) runs exactly as before; the per-apex silent
   // iframe still restores a durable cross-domain session on reload WITHOUT a
   // top-level bounce, so when it wins `sso-bounce` never fires (no flash, no
   // loop).
@@ -1343,17 +1311,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     registeredDuringBootRef.current = false;
 
     const commitWebSession = handleWebSSOSessionRef.current;
-    const silentKey = silentColdBootKey(oxyServices);
-    const fedcmSupported = isWebBrowser() && oxyServices.isFedCMSupported?.() === true;
 
     // FIX-B precondition flag: set true the instant the (now-earlier)
-    // `stored-session` step recovers a local bearer session. The slow web-only
-    // probes (`fedcm-silent`, `silent-iframe`) AND `enabled` on `!storedSessionRestored`
-    // so they are explicitly skipped once a local session won. `runColdBoot`
+    // `stored-session` step recovers a local bearer session. The slow
+    // web-only `silent-iframe` probe is `enabled` on `!storedSessionRestored`
+    // so it is explicitly skipped once a local session won. `runColdBoot`
     // already short-circuits on the first `{kind:'session'}`, so on a winning
-    // reload those `enabled` bodies are never even reached — this flag makes the
+    // reload that `enabled` body is never even reached — this flag makes the
     // intent explicit and is redundant-safe. On a first-visit-no-local-session,
-    // `stored-session` skips, this stays false, and the probes run as before.
+    // `stored-session` skips, this stays false, and the probe runs as before.
     let storedSessionRestored = false;
 
     // FIX-B smart-gate input: has this device/app EVER had a signed-in Oxy
@@ -1378,15 +1344,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
 
     // DELIBERATELY-SIGNED-OUT gate (web): when the user pressed "Sign out", the
-    // central IdP session (FedCM credential association / per-apex `fedcm_session`
-    // cookie) can still be live, so the AUTOMATIC silent steps below
-    // (`fedcm-silent`, `silent-iframe`) would re-mint a session on the very next
-    // cold boot and sign the user back in without intent. Read the durable flag
-    // ONCE here (synchronously usable by the step `enabled` gates) and skip those
-    // two steps while it is set. Any deliberate sign-in clears it. The `sso-bounce`
-    // step is already self-suppressed after sign-out (its `hasPriorSession` hint is
-    // cleared), and the local `stored-session` restore step is unaffected — a
-    // deliberate sign-out clears those credentials anyway.
+    // per-apex `fedcm_session` cookie can still be live, so the AUTOMATIC
+    // `silent-iframe` step below would re-mint a session on the very next cold
+    // boot and sign the user back in without intent. Read the durable flag
+    // ONCE here (synchronously usable by the step `enabled` gate) and skip
+    // that step while it is set. Any deliberate sign-in clears it. The
+    // `sso-bounce` step is already self-suppressed after sign-out (its
+    // `hasPriorSession` hint is cleared), and the local `stored-session`
+    // restore step is unaffected — a deliberate sign-out clears those
+    // credentials anyway.
     const silentRestoreBlocked = isSilentRestoreSuppressed();
 
     try {
@@ -1412,15 +1378,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // common WEB reload winner.
             //
             // ORDERING (FIX A): this step now runs BEFORE the slow web-only
-            // probes (`fedcm-silent`, `silent-iframe`). On a normal reload the
-            // local bearer validates in one round-trip and wins; `runColdBoot`
+            // `silent-iframe` probe. On a normal reload the local bearer
+            // validates in one round-trip and wins; `runColdBoot`
             // then short-circuits and never even evaluates the slow
-            // no-redirect probes that would otherwise time out (the ~20-30s
+            // no-redirect probe that would otherwise time out (the ~20-30s
             // serial stall). The `sso-return` step stays AHEAD of this one —
             // it must consume the URL fragment before any later step (or
             // anything else) strips it. On a first visit with no local
             // session this step skips and the cross-domain fallback chain
-            // (fedcm → iframe → sso-bounce) runs exactly as before.
+            // (silent-iframe → sso-bounce) runs exactly as before.
             id: 'stored-session',
             run: async () => {
               const restored = await restoreStoredSession();
@@ -1484,34 +1450,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
-            // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
-            // internally; we commit the returned session via
-            // `handleWebSSOSession`. Guarded so it fires at most once per page
-            // load across remounts. This is an enhancement layered above the
-            // opaque-code bounce: when it succeeds the bounce never fires.
-            //
-            // FIX-B: additionally skipped when the earlier `stored-session` step
-            // already recovered a local session — the probe cannot improve on a
-            // valid local bearer, and skipping it avoids the silent round-trip.
-            id: 'fedcm-silent',
-            enabled: () =>
-              !storedSessionRestored &&
-              !silentRestoreBlocked &&
-              fedcmSupported &&
-              !servicesSilentAttempted.has(silentKey),
-            run: async () => {
-              servicesSilentAttempted.add(silentKey);
-              const session = await oxyServices.silentSignInWithFedCM?.();
-              if (!session || !commitWebSession) {
-                return { kind: 'skip' };
-              }
-              await commitWebSession(session);
-              return { kind: 'session', session: true };
-            },
-          },
-          {
-            // 4) First-party silent iframe at the PER-APEX IdP — the DURABLE
+            // 3) First-party silent iframe at the PER-APEX IdP — the DURABLE
             // cross-domain reload-restore path. The durable session lives as a
             // first-party `fedcm_session` cookie on `auth.<rp-apex>` (e.g.
             // `auth.mention.earth`), established during the `/sso` bounce's
@@ -1552,7 +1491,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 5) SSO bounce (TERMINAL, web only, at most once). No local session
+            // 4) SSO bounce (TERMINAL, web only, at most once). No local session
             // was found by any step above. Top-level navigate to the central
             // `auth.oxy.so/sso?prompt=none` so the IdP can either mint a session
             // (returning an opaque code we exchange on the callback) or report
@@ -1630,9 +1569,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             );
           }
         },
-        // Defense-in-depth: a single step whose promise never settles (the
-        // production FedCM-silent hang) can no longer block the chain forever.
-        // On expiry the runner keeps iterating to the terminal `sso-bounce`
+        // Defense-in-depth: a single step whose promise never settles can no
+        // longer block the chain forever. On expiry the runner keeps iterating
+        // to the terminal `sso-bounce`
         // step so a genuine no-local-session visit still reaches the
         // cross-domain `/sso` fallback; the `finally` backstop flips
         // `authResolved` regardless. See `COLD_BOOT_OVERALL_DEADLINE`.
@@ -1675,8 +1614,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // already `true` — every ladder step except `stored-session` commits
       // through `handleWebSSOSession`, which registers the account itself
       // (see its own `sessionClient.addCurrentAccount()` call). Without this
-      // guard a winning `sso-return` / `shared-key-signin` / `fedcm-silent` /
-      // `silent-iframe` step would register the SAME account twice
+      // guard a winning `sso-return` / `shared-key-signin` / `silent-iframe`
+      // step would register the SAME account twice
       // (`POST /session/device/add` called back-to-back). `start()` and
       // `syncFromClient()` still always run — `start()` is idempotent
       // (no-ops once already started) and is what connects the realtime
@@ -1860,7 +1799,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     // A committed web session re-enables automatic silent restore: clear the
     // durable "deliberately signed out" flag. This funnel is reached by deliberate
-    // sign-ins (password, interactive FedCM, `/sso` return) AND by the silent
+    // sign-ins (password, `/sso` return) AND by the silent
     // cold-boot steps — but those are GATED on the flag, so when it is set they
     // never run and never reach here; clearing is therefore only hit on a genuine
     // (re-)sign-in or when restore was already permitted, both correct.
@@ -1868,7 +1807,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     // Register this recovered account+session into the server-authoritative
     // device-session set. Every web primary-session restore funnels through
-    // here — FedCM silent (`/fedcm/exchange`), per-apex `/auth/silent` iframe,
+    // here — per-apex `/auth/silent` iframe,
     // central `/sso` return, and keyless password sign-in — and each of them
     // needs the resulting account added to the device's `DeviceSession` doc so
     // the sign-in persists across reload / other tabs / devices and the
@@ -1913,7 +1852,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // because `onAuthStateChange` triggers a route navigation that can
     // interrupt/supersede a still-pending async write. Persisting first
     // guarantees the durable record lands; that is exactly what was missing
-    // when `oxy_session_session_ids` came back empty after a successful FedCM
+    // when `oxy_session_session_ids` came back empty after a successful SSO
     // sign-in (the user appeared logged in until reload, then had no session to
     // restore). `persistSessionDurably` awaits the READY storage instance rather
     // than reading the possibly-null `storage` state, so a sign-in fired the
@@ -1937,14 +1876,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       fullUser = session.user as unknown as User;
     }
     loginSuccess(fullUser);
-    // A session is now committed (FedCM silent / per-apex iframe /
+    // A session is now committed (per-apex iframe /
     // SSO-return all funnel through here) — unblock the auth-resolution
     // gate immediately, ahead of the cold-boot chain returning (idempotent).
     markAuthResolvedRef.current();
     onAuthStateChange?.(fullUser);
   }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, persistSessionDurably, sessionClient, syncFromClient]);
 
-  // Expose `handleWebSSOSession` to the cold-boot FedCM/iframe/SSO steps,
+  // Expose `handleWebSSOSession` to the cold-boot iframe/SSO steps,
   // which reference it through a ref because they are declared above this
   // callback. Assigned synchronously on every render so the ref is populated
   // before the cold-boot effect (gated on `storage`/`initialized`) can fire.
@@ -1952,7 +1891,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Keyless native sign-in: username/email + password. The slimmed Accounts app
   // (which no longer holds a local identity key) uses this; it commits a
-  // successful session through the SAME `handleWebSSOSession` path FedCM / SSO
+  // successful session through the SAME `handleWebSSOSession` path SSO
   // use, so state, durable persistence, profile fetch, and `markAuthResolved`
   // all run identically. The API returns either a full session OR a two-factor
   // handoff (`{ twoFactorRequired, loginToken }`) — we surface the latter as a
@@ -1995,44 +1934,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [oxyServices, handleWebSSOSession],
   );
 
-  // Cross-domain silent SSO is now owned by the `fedcm-silent` / `silent-iframe`
-  // cold-boot steps above (the ordered `runColdBoot` sequence). `useWebSSO`
-  // remains mounted for its module-level run-once guard and its interactive
-  // FedCM helpers, and as a bounded post-boot safety net: it can fire at most
-  // once per page load (its own module guard), and only AFTER cold boot has
-  // finished (`tokenReady`) with no user recovered. We deliberately keep
-  // `shouldTryWebSSO` as `tokenReady && !user && initialized` — it is NOT
-  // loosened; cold boot runs while `tokenReady` is false, so this never races
-  // the cold-boot silent step.
-  //
-  // DELIBERATE-SIGN-OUT GUARD (session-sync cutover, Task 5): `tokenReady`
-  // does not reset to `false` when a session that was already established
-  // ENDS (local `logout()`/`logoutAll()`, or a remote full sign-out pushed
-  // over the `SessionClient` socket — see `syncFromClient`'s zero-accounts
-  // branch below) — only `user` goes back to `null`. Without this guard,
-  // `shouldTryWebSSO` would flip true for the FIRST time at the moment of
-  // that sign-out (since it had never been true before while authenticated)
-  // and this "post-boot safety net" would fire `useWebSSO`'s still-unconsumed
-  // module-level guard, silently re-minting a session from a still-live
-  // FedCM credential — undoing the sign-out the instant it completes. Both
-  // sign-out paths set the durable deliberately-signed-out flag (`markSignedOut`
-  // — directly on local logout, or via `syncFromClient` on a remote wipe), so
-  // gating on `!isSilentRestoreSuppressed()` here closes the gap the same way
-  // the cold-boot `fedcm-silent`/`silent-iframe` steps already do
-  // (`silentRestoreBlocked`).
-  const shouldTryWebSSO =
-    isWebBrowser() && tokenReady && !user && initialized && !isSilentRestoreSuppressed();
-
-  useWebSSO({
-    oxyServices,
-    onSessionFound: handleWebSSOSession,
-    onError: (error) => {
-      if (__DEV__) {
-        loggerUtil.debug('Web SSO check failed (non-critical)', { component: 'OxyContext' }, error);
-      }
-    },
-    enabled: shouldTryWebSSO,
-  });
+  // Cross-domain silent SSO is owned ENTIRELY by the `silent-iframe` cold-boot
+  // step above (the ordered `runColdBoot` sequence) plus the terminal
+  // `sso-bounce` fallback. There is no post-boot safety net here: the FedCM
+  // silent post-boot retry that used to run via `useWebSSO` was removed along
+  // with the rest of the client FedCM surface (Chrome-only; see
+  // `CrossDomainAuth`'s doc comment in `@oxyhq/core` for the production
+  // incident that motivated the removal).
 
   // IdP session validation via lightweight iframe check
   // When user returns to tab, verify auth.oxy.so still has their session

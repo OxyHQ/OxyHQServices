@@ -135,18 +135,18 @@ export function ssoPriorSessionKey(origin: string): string {
  * per-tab `sessionStorage` the loop-breaker keys use — it must survive a reload.
  *
  * It exists purely to suppress AUTOMATIC silent restore after a deliberate
- * sign-out: a still-live IdP session (the central `fedcm_session` / the FedCM
- * credential association) would otherwise let `fedcm-silent` / the per-apex
- * `/auth/silent` iframe re-mint a session on the very next cold boot, so a user
- * who pressed "Sign out" gets silently signed back in on reload. With this flag
- * set, those silent cold-boot steps are skipped while the Gmail-style
- * returning-account fast-path is otherwise preserved.
+ * sign-out: a still-live IdP session (the central `fedcm_session`) would
+ * otherwise let the per-apex `/auth/silent` iframe re-mint a session on the
+ * very next cold boot, so a user who pressed "Sign out" gets silently signed
+ * back in on reload. With this flag set, that silent cold-boot step is
+ * skipped while the Gmail-style returning-account fast-path is otherwise
+ * preserved.
  *
  * Lifecycle (mirrors the existing gate machinery — set on a definitive event,
  * cleared on its inverse):
  *   - SET on EXPLICIT full sign-out (alongside clearing the prior-session hint
  *     and the SSO bounce state).
- *   - CLEARED on ANY deliberate sign-in (password, FedCM, account switch, device
+ *   - CLEARED on ANY deliberate sign-in (password, account switch, device
  *     claim) so a real sign-in fully re-enables silent restore — there is no
  *     "stuck signed out" state.
  *
@@ -303,8 +303,8 @@ export function guardActive(
  * Whether AUTOMATIC silent restore is SUPPRESSED for this origin because the
  * user deliberately signed out (the durable {@link ssoSignedOutKey} flag).
  *
- * When `true`, the silent cold-boot steps that can re-mint a session from a
- * still-live IdP session WITHOUT user intent — `fedcm-silent` and the per-apex
+ * When `true`, the silent cold-boot step that can re-mint a session from a
+ * still-live IdP session WITHOUT user intent — the per-apex
  * `/auth/silent` iframe — MUST be skipped, so a user who pressed "Sign out" is
  * not silently signed back in on the next reload. Interactive sign-in clears the
  * flag, so this never blocks a deliberate re-sign-in.

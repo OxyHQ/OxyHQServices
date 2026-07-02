@@ -6,9 +6,9 @@ import { ErrorFallback } from '@/components/error-fallback';
  *
  * Accounts is a management-only app — identity CREATION lives in the Commons
  * app. The `(auth)` group is therefore sign-in ONLY: a single `index` route
- * that authenticates the user (password / FedCM / "Sign in with Oxy" handoff)
- * against an account whose keys live in Commons. There is no welcome,
- * create-identity, or import-identity flow here.
+ * that authenticates the user (password / "Sign in with Oxy" handoff) against
+ * an account whose keys live in Commons. There is no welcome, create-identity,
+ * or import-identity flow here.
  */
 export default function AuthLayout() {
     return (

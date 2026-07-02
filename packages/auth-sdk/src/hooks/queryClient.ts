@@ -2,7 +2,7 @@
  * Web QueryClient with offline-first defaults + localStorage persistence.
  *
  * Mirrors the persistence behaviour in `@oxyhq/services/queryClient` so
- * web auth apps (FedCM and redirect flows) survive a page reload with
+ * web auth apps (redirect / SSO flows) survive a page reload with
  * cached identity + paused mutations intact.
  *
  * Persistence is opt-in via `attachQueryPersistence(...)` so SSR callers

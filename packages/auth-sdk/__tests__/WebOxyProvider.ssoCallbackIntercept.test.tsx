@@ -30,8 +30,6 @@ import type { SessionLoginResponse, User } from '@oxyhq/core';
 interface CoreStubs {
   getCurrentUser: jest.Mock<Promise<User | null>, []>;
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
-  isFedCMSupported: jest.Mock<boolean, []>;
-  silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
   baseURL: string;
@@ -40,8 +38,6 @@ interface CoreStubs {
 const stubs: CoreStubs = {
   getCurrentUser: jest.fn(async () => null),
   handleRedirectCallback: jest.fn(() => null),
-  isFedCMSupported: jest.fn(() => false),
-  silentSignInWithFedCM: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
   baseURL: 'https://api.oxy.so',
@@ -50,8 +46,6 @@ const stubs: CoreStubs = {
 function resetStubs(baseURL: string): void {
   stubs.getCurrentUser = jest.fn(async () => null);
   stubs.handleRedirectCallback = jest.fn(() => null);
-  stubs.isFedCMSupported = jest.fn(() => false);
-  stubs.silentSignInWithFedCM = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
   stubs.baseURL = baseURL;
@@ -99,12 +93,6 @@ jest.mock('@oxyhq/core', () => {
       }
       getCurrentUser(): Promise<User | null> {
         return stubs.getCurrentUser();
-      }
-      isFedCMSupported(): boolean {
-        return stubs.isFedCMSupported();
-      }
-      silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
-        return stubs.silentSignInWithFedCM();
       }
       exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
         return stubs.exchangeSsoCode(code);

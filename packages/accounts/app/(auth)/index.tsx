@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Platform, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Linking, ScrollView } from 'react-native';
 import { toast } from '@oxyhq/bloom';
 import { TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useOxy, LogoText, showSignInModal } from '@oxyhq/services';
@@ -15,14 +15,17 @@ import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
  *
  * Accounts is a management-only app: a user's cryptographic identity (private
  * keys, recovery phrase) lives in the Commons app, never here. This screen
- * authenticates the user against an existing Oxy account and offers three
- * paths, all under the unified "Sign in with Oxy" umbrella:
+ * authenticates the user against an existing Oxy account and offers two
+ * paths, both under the unified "Sign in with Oxy" umbrella:
  *
  *   1. Username/email + password (`useOxy().signInWithPassword`) — with the
  *      2FA challenge handled inline via `POST /security/2fa/verify-login`.
  *   2. "Sign in with Oxy" handoff — the SDK's `SignInModal` (QR for another
  *      device + same-device deep-link to the Oxy app + one-tap approval).
- *   3. FedCM (web only, when the browser supports it).
+ *
+ * Cross-domain web restore (per-apex `/auth/silent` iframe + `/sso` bounce) is
+ * owned entirely by the SDK's `OxyProvider` cold boot — this screen never wires
+ * it. There is no FedCM path: FedCM was removed from the client sign-in surface.
  *
  * The root Stack (`app/_layout.tsx`) owns the `(auth)`↔`(tabs)` swap keyed on
  * session, so this screen never navigates across that boundary itself: it
@@ -51,7 +54,6 @@ export default function SignInScreen() {
   const [loginToken, setLoginToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fedCMSupported = Platform.OS === 'web' && oxyServices.isFedCMSupported();
   const canSubmitCredentials = identifier.trim().length > 0 && password.length > 0;
 
   const handlePasswordSignIn = useCallback(async () => {
@@ -111,26 +113,6 @@ export default function SignInScreen() {
     setCode('');
     setLoginToken(null);
   }, []);
-
-  const handleFedCMSignIn = useCallback(async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-      const session = await oxyServices.signInWithFedCM();
-      if (session) {
-        await handleWebSession(session);
-      }
-    } catch (error) {
-      logger.error(
-        'SignInScreen: FedCM sign-in failed',
-        error instanceof Error ? error : new Error(String(error)),
-        { component: 'SignInScreen' },
-      );
-      toast.error(extractAuthErrorMessage(error, t('auth.signIn.errors.generic')));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [isSubmitting, oxyServices, handleWebSession, t]);
 
   const handleSignInWithOxy = useCallback(() => {
     // Opens the SDK's shared sign-in surface: QR for another device, a
@@ -237,24 +219,6 @@ export default function SignInScreen() {
               >
                 {t('auth.signIn.withOxy')}
               </Button>
-
-              {Platform.OS === 'web' && (
-                fedCMSupported ? (
-                  <Button
-                    variant="ghost"
-                    onPress={handleFedCMSignIn}
-                    disabled={isSubmitting}
-                    style={styles.secondaryButton}
-                    testID="sign-in-fedcm"
-                  >
-                    {t('auth.signIn.fedcm')}
-                  </Button>
-                ) : (
-                  <Text style={[styles.unsupported, { color: colors.textSecondary }]}>
-                    {t('auth.signIn.unsupported')}
-                  </Text>
-                )
-              )}
             </View>
           </>
         ) : (
@@ -382,11 +346,6 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     width: '100%',
-  },
-  unsupported: {
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
   },
   footer: {
     paddingHorizontal: 24,

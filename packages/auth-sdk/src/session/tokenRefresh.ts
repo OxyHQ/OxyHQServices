@@ -40,12 +40,15 @@ import { autoDetectAuthWebUrl, logger } from '@oxyhq/core';
  *
  *  1. {@link createWebAuthRefreshHandler} — an `AuthRefreshHandler` installed
  *     on `oxyServices.httpService`. It re-mints a fresh access token WITHOUT
- *     a page reload by composing the SAME silent-restore primitives cold
- *     boot already relies on (per-apex `/auth/silent` iframe, then FedCM
- *     silent) — not a copy — and commits the result exactly like a winning
+ *     a page reload by composing the SAME silent-restore primitive cold
+ *     boot already relies on (the per-apex `/auth/silent` iframe) — not a
+ *     copy — and commits the result exactly like a winning
  *     cold-boot ladder step would (via the caller-supplied
  *     `commitSilentSession`, which registers the recovered account into the
- *     `SessionClient` device set).
+ *     `SessionClient` device set). There is no FedCM arm — FedCM was removed
+ *     from the client sign-in/refresh path entirely (Chrome-only; see
+ *     `CrossDomainAuth`'s doc comment in `@oxyhq/core` for the production
+ *     sign-in loop that motivated the removal).
  *
  *  2. {@link startTokenRefreshScheduler} — a proactive scheduler that
  *     refreshes ~{@link TOKEN_REFRESH_LEAD_MS} before expiry (and on web
@@ -92,7 +95,7 @@ export interface WebAuthRefreshHandlerDeps {
    */
   commitSilentSession: (
     session: SessionLoginResponse,
-    method: 'fedcm' | 'credentials',
+    method: 'credentials',
   ) => Promise<void>;
 }
 
@@ -115,8 +118,7 @@ export function createWebAuthRefreshHandler(deps: WebAuthRefreshHandlerDeps): Au
       if (!session) {
         return null;
       }
-      const method: 'fedcm' | 'credentials' = label === 'fedcm-silent' ? 'fedcm' : 'credentials';
-      await deps.commitSilentSession(session, method);
+      await deps.commitSilentSession(session, 'credentials');
       return deps.oxyServices.getAccessToken();
     } catch (error) {
       logger.debug(
@@ -139,13 +141,6 @@ export function createWebAuthRefreshHandler(deps: WebAuthRefreshHandlerDeps): Au
         timeout: SILENT_IFRAME_REFRESH_TIMEOUT,
       });
       return session?.user && session.sessionId ? session : null;
-    }],
-    ['fedcm-silent', async () => {
-      if (deps.oxyServices.isFedCMSupported() !== true) {
-        return null;
-      }
-      const session = await deps.oxyServices.silentSignInWithFedCM();
-      return session?.user ? session : null;
     }],
   ];
 

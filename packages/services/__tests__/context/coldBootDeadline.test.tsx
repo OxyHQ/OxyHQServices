@@ -3,8 +3,8 @@
  *
  * Cold-boot HARD OVERALL DEADLINE — production-hang regression.
  *
- * A cold-boot step whose `run()` promise NEVER settles (the production
- * `navigator.credentials.get()` that ignored its abort signal) must NOT be able
+ * A cold-boot step whose `run()` promise NEVER settles (e.g. a browser silent
+ * restore probe that ignores its own abort signal) must NOT be able
  * to hang the whole cold boot forever. `runColdBoot` is given an
  * `overallDeadlineMs` (`COLD_BOOT_OVERALL_DEADLINE`) in `OxyContext`: when a step
  * exceeds it, the runner abandons that step, falls through to the terminal
@@ -53,12 +53,12 @@ function buildHangingStub() {
     setTokens: jest.fn(),
     clearTokens: jest.fn(),
     clearCache: jest.fn(),
-    // FedCM supported + no stored session → the chain reaches `fedcm-silent`.
-    isFedCMSupported: jest.fn(() => true),
+    // No stored session → the chain reaches `silent-iframe`. FedCM is no
+    // longer part of the cold-boot ladder at all (see `CrossDomainAuth`'s doc
+    // comment in `@oxyhq/core`).
     handleAuthCallback: jest.fn(() => null),
-    // The production hang: the FedCM-silent step's promise NEVER settles.
-    silentSignInWithFedCM: jest.fn(() => new Promise<SessionLoginResponse | null>(() => {})),
-    silentSignIn: jest.fn(async () => null),
+    // The production hang: the silent-iframe step's promise NEVER settles.
+    silentSignIn: jest.fn(() => new Promise<SessionLoginResponse | null>(() => {})),
     refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
     generateSsoState: jest.fn(() => 'state-token-hang'),
     exchangeSsoCode: jest.fn(async () => null),
@@ -91,13 +91,10 @@ describe('Cold-boot overall deadline (production hang regression)', () => {
     assignSpy.mockRestore();
   });
 
-  it('a never-settling fedcm-silent step cannot hang cold boot — the deadline trips, the terminal /sso bounce still fires, and auth resolves', async () => {
+  it('a never-settling silent-iframe step cannot hang cold boot — the deadline trips, the terminal /sso bounce still fires, and auth resolves', async () => {
     jest.useFakeTimers();
     try {
       const stub = buildHangingStub();
-      // Seed a login hint so `silentSignInWithFedCM` would NOT fast-skip
-      // (mirrors a real associated browser); the stub itself models the hang.
-      window.localStorage.setItem('oxy_fedcm_login_hint', 'prior-user');
 
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       render(
@@ -109,14 +106,14 @@ describe('Cold-boot overall deadline (production hang regression)', () => {
       );
 
       // Drain storage-init + the early cold-boot steps so the chain reaches the
-      // hung `fedcm-silent` step. The deferred + several awaits resolve across
+      // hung `silent-iframe` step. The deferred + several awaits resolve across
       // multiple event-loop turns; advance in small slices until it is in flight.
-      for (let i = 0; i < 20 && (stub.silentSignInWithFedCM as jest.Mock).mock.calls.length === 0; i++) {
+      for (let i = 0; i < 20 && (stub.silentSignIn as jest.Mock).mock.calls.length === 0; i++) {
         await jest.advanceTimersByTimeAsync(50);
       }
 
       // The hung step is in flight; nothing has resolved yet (auth undetermined).
-      expect(stub.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
+      expect(stub.silentSignIn).toHaveBeenCalledTimes(1);
       expect(assignSpy).not.toHaveBeenCalled();
       expect(captured.isAuthResolved).toBe(false);
 

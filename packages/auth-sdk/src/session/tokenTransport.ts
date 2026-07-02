@@ -8,8 +8,8 @@ import { logger } from '@oxyhq/core';
  *
  * Mints an access token when none is currently held, reusing the SAME
  * primitive the provider's cold boot already relies on for silent restore:
- * `oxyServices.silentSignIn()` (FedCM silent / first-party `/auth/silent`
- * per-apex iframe). There is deliberately NO native branch here — `@oxyhq/auth`
+ * `oxyServices.silentSignIn()` (first-party `/auth/silent` per-apex iframe).
+ * There is deliberately NO native branch here — `@oxyhq/auth`
  * must never import `react-native`/`expo-*`, and `WebOxyProvider` is web-only
  * by construction. This mirrors
  * `packages/services/src/ui/session/tokenTransport.ts`'s `createTokenTransport`

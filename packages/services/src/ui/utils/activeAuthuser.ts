@@ -13,7 +13,7 @@
  * cold-boot step still reads it as part of a deliberate, test-locked gate —
  * on web, a bare stored session id with neither a live in-memory bearer nor
  * this hint is NOT validated locally; recovery instead defers to the
- * authoritative FedCM-silent / per-apex-iframe / SSO-bounce chain. Since
+ * authoritative per-apex-iframe / SSO-bounce chain. Since
  * nothing writes the key anymore that branch is now permanently dormant, but
  * the gate itself remains correct and is exercised by
  * `coldBootOrder.test.tsx`.
@@ -74,7 +74,7 @@ export function readActiveAuthuser(): number | null {
  * Mark this origin as DELIBERATELY signed out (durable `localStorage`, via the
  * core {@link ssoSignedOutKey}). Called ONLY on EXPLICIT full sign-out so that
  * the next cold boot does NOT silently re-mint a session from a still-live IdP
- * session (`fedcm-silent` / per-apex `/auth/silent` iframe). Cleared by any
+ * session (the per-apex `/auth/silent` iframe cold-boot step). Cleared by any
  * deliberate sign-in (see {@link clearSignedOut}). No-ops on native / storage
  * failure (best-effort).
  */
@@ -89,7 +89,7 @@ export function markSignedOut(): void {
 
 /**
  * Clear the durable deliberately-signed-out flag. Called on ANY deliberate
- * sign-in (password, FedCM, account switch, device claim) so a real sign-in
+ * sign-in (password, account switch, device claim) so a real sign-in
  * fully re-enables automatic silent restore — there is no "stuck signed out"
  * state. No-ops on native / storage failure.
  */
@@ -107,7 +107,7 @@ export function clearSignedOut(): void {
  * the user deliberately signed out. Reads the durable flag through the core
  * {@link silentRestoreSuppressed} predicate. Returns `false` off-web and on any
  * storage failure (fail safe toward normal restore). Used to gate the
- * `fedcm-silent` and `silent-iframe` cold-boot steps.
+ * `silent-iframe` cold-boot step.
  */
 export function isSilentRestoreSuppressed(): boolean {
   if (!hasLocalStorage()) return false;

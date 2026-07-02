@@ -4,19 +4,22 @@
  * Cold-boot orchestration for `WebOxyProvider` — TRUE central cross-domain SSO.
  *
  * The provider drives session recovery through `runColdBoot` (from
- * `@oxyhq/core`) with four ordered steps that mirror the web-only subset of
+ * `@oxyhq/core`) with three ordered steps that mirror the web-only subset of
  * services `OxyContext` (consistency mandate). The legacy access-token redirect
  * callback is intentionally not a session source anymore; redirect auth returns
- * through the opaque-code SSO fragment consumed by `sso-return`.
+ * through the opaque-code SSO fragment consumed by `sso-return`. FedCM was
+ * removed from the client cold-boot path entirely (Chrome-only; the source of a
+ * real production sign-in loop — see `CrossDomainAuth`'s doc comment in
+ * `@oxyhq/core`), so there is NO `fedcm-silent` step.
  *
  *   0. sso-return     — parse `location.hash`; on `ok` exchange the opaque code
  *                       and commit; on `none`/`error`/mismatch set NO_SESSION.
- *   1. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so` (Chrome).
- *   2. silent-iframe  — first-party `/auth/silent` iframe at the PER-APEX IdP
+ *   1. silent-iframe  — first-party `/auth/silent` iframe at the PER-APEX IdP
  *                       (the durable cross-domain AND same-apex reload-restore
- *                       path). REPLACES the retired `cookie-restore` step — the
- *                       ladder no longer reads the oxy_rt refresh cookie.
- *   3. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+ *                       path). This IS cold boot's durable restore path — the
+ *                       ladder never reads the oxy_rt refresh cookie and never
+ *                       attempts FedCM.
+ *   2. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
  *
  * These tests pin the contract:
  *   1. The first step that yields a real session wins; later steps never run.
@@ -42,10 +45,9 @@
  * state.
  *
  * The fixed jsdom origin is a cross-domain RP (`mention.earth`) so the
- * `sso-bounce` step (disabled on the central IdP itself) is exercisable. The
- * `fedcm-silent` run-once guard is module-level and keyed on `origin|baseURL`;
- * each test uses a UNIQUE `baseURL` to get an independent budget — except the
- * run-once tests, which deliberately reuse one key to prove deduplication.
+ * `sso-bounce` step (disabled on the central IdP itself) is exercisable. Each
+ * test uses a UNIQUE `baseURL` so the per-origin bounce sessionStorage keys
+ * (state/guard/dest/attempted) never leak between tests.
  */
 
 import { render, waitFor, act } from '@testing-library/react';
@@ -61,8 +63,6 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
 interface CoreStubs {
   getCurrentUser: jest.Mock<Promise<User | null>, []>;
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
-  isFedCMSupported: jest.Mock<boolean, []>;
-  silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
   silentSignIn: jest.Mock<Promise<SessionLoginResponse | null>, [unknown?]>;
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
@@ -73,8 +73,6 @@ interface CoreStubs {
 const stubs: CoreStubs = {
   getCurrentUser: jest.fn(async () => null),
   handleRedirectCallback: jest.fn(() => null),
-  isFedCMSupported: jest.fn(() => false),
-  silentSignInWithFedCM: jest.fn(async () => null),
   silentSignIn: jest.fn(async () => null),
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
@@ -85,8 +83,6 @@ const stubs: CoreStubs = {
 function resetStubs(baseURL: string): void {
   stubs.getCurrentUser = jest.fn(async () => null);
   stubs.handleRedirectCallback = jest.fn(() => null);
-  stubs.isFedCMSupported = jest.fn(() => false);
-  stubs.silentSignInWithFedCM = jest.fn(async () => null);
   stubs.silentSignIn = jest.fn(async () => null);
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
@@ -150,12 +146,6 @@ jest.mock('@oxyhq/core', () => {
       }
       getCurrentUser(): Promise<User | null> {
         return stubs.getCurrentUser();
-      }
-      isFedCMSupported(): boolean {
-        return stubs.isFedCMSupported();
-      }
-      silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
-        return stubs.silentSignInWithFedCM();
       }
       silentSignIn(options?: unknown): Promise<SessionLoginResponse | null> {
         return stubs.silentSignIn(options);
@@ -370,7 +360,6 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(latest.userId).toBeNull();
     expect(stubs.handleRedirectCallback).not.toHaveBeenCalled();
     expect(stubs.exchangeSsoCode).not.toHaveBeenCalled();
-    expect(stubs.silentSignInWithFedCM).not.toHaveBeenCalled();
   });
 
   it('1) legacy redirect placeholder data is never exposed when hydration fails — R4', async () => {
@@ -381,7 +370,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
-    // No SSO fragment, FedCM unsupported, no cookie → falls through to bounce.
+    // No SSO fragment, no silent-iframe session, no cookie → falls through to bounce.
     await waitFor(() => expect(bounced()).toBe(true));
     // A placeholder session must NEVER be committed.
     expect(latest.isAuthenticated).toBe(false);
@@ -449,34 +438,21 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(bounced()).toBe(false);
   });
 
-  it('5) fedcm-silent step wins when prior steps skip (carries real user)', async () => {
-    resetStubs('https://api.test-5');
-    stubs.isFedCMSupported.mockReturnValue(true);
-    stubs.silentSignInWithFedCM.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
-
-    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
-    renderProvider(stubs.baseURL, (s) => { latest = s; });
-
-    await waitFor(() => expect(latest.isAuthenticated).toBe(true));
-    expect(latest.userId).toBe('u1');
-    expect(bounced()).toBe(false);
-  });
-
-  it('5b) DELIBERATELY-SIGNED-OUT gate: fedcm-silent is SKIPPED when the signed-out flag is set', async () => {
+  it('5b) DELIBERATELY-SIGNED-OUT gate: silent-iframe is SKIPPED when the signed-out flag is set', async () => {
     resetStubs('https://api.test-5b');
-    // FedCM WOULD succeed — but the user deliberately signed out, so silent
-    // restore must NOT run and must NOT sign them back in on this cold boot.
-    stubs.isFedCMSupported.mockReturnValue(true);
-    stubs.silentSignInWithFedCM.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
+    // The silent-iframe restore WOULD succeed — but the user deliberately
+    // signed out, so silent restore must NOT run and must NOT sign them back
+    // in on this cold boot.
+    stubs.silentSignIn.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
     window.localStorage.setItem(ssoSignedOutKey(ORIGIN), '1');
 
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
     // The chain falls through to the terminal bounce (the beforeEach seeds the
-    // returning-visitor hint), proving fedcm-silent did not silently restore.
+    // returning-visitor hint), proving silent-iframe did not silently restore.
     await waitFor(() => expect(bounced()).toBe(true));
-    expect(stubs.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(stubs.silentSignIn).not.toHaveBeenCalled();
     expect(latest.isAuthenticated).toBe(false);
   });
 
@@ -511,7 +487,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     resetStubs('https://api.test-7');
     // Land on a real destination so the dest capture is meaningful.
     setLocation(`${ORIGIN}/feed?tab=home`);
-    // Everything skips: no redirect, no fragment, no FedCM, no cookie.
+    // Everything skips: no redirect, no fragment, no silent-iframe session, no cookie.
 
     renderProvider(stubs.baseURL, () => undefined);
 
@@ -579,7 +555,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
   it('12) SMART GATE: a truly first-time anonymous visitor (no prior-session hint) does NOT bounce', async () => {
     resetStubs('https://api.test-12');
     // Override the beforeEach default: NO prior-signed-in hint → first-time
-    // visitor. Everything else skips (no redirect, fragment, FedCM, cookie).
+    // visitor. Everything else skips (no redirect, fragment, silent-iframe, cookie).
     window.localStorage.removeItem(ssoPriorSessionKey(ORIGIN));
 
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
@@ -606,22 +582,6 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
-  it('10) fedcm-silent fires AT MOST ONCE across remounts (origin|baseURL guard)', async () => {
-    resetStubs('https://api.test-10');
-    stubs.isFedCMSupported.mockReturnValue(true);
-    stubs.silentSignInWithFedCM.mockResolvedValue(null);
-
-    const first = renderProvider(stubs.baseURL, () => undefined);
-    await waitFor(() => expect(stubs.silentSignInWithFedCM).toHaveBeenCalledTimes(1));
-    first.unmount();
-
-    for (let i = 0; i < 5; i++) {
-      const r = renderProvider(stubs.baseURL, () => undefined);
-      r.unmount();
-    }
-    expect(stubs.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
-  });
-
   // -------------------------------------------------------------------------
   // Post-ladder SessionClient handoff (Task 2 of the Fase 4 cutover): once the
   // token-acquisition ladder above acquires a session, `addCurrentAccount` +
@@ -630,10 +590,9 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
   // mocked `createSessionClient` seam) to assert the handoff precisely.
   // -------------------------------------------------------------------------
 
-  it('a) fedcm-silent win: post-ladder handoff registers via addCurrentAccount, then starts the client, and projects state', async () => {
+  it('a) silent-iframe win: post-ladder handoff registers via addCurrentAccount, then starts the client, and projects state', async () => {
     resetStubs('https://api.test-handoff-a');
-    stubs.isFedCMSupported.mockReturnValue(true);
-    stubs.silentSignInWithFedCM.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
+    stubs.silentSignIn.mockResolvedValue(makeSession({ id: 'u1', username: 'tester' }));
     stubs.getUsersByIds.mockResolvedValue([{ id: 'u1', username: 'tester' } as User]);
 
     const fake = buildFakeClient({

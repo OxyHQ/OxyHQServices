@@ -150,7 +150,7 @@ export const useAuthOperations = ({
 
       // Deliberate sign-in re-enables automatic silent restore: clear the durable
       // "deliberately signed out" flag so a prior sign-out no longer suppresses
-      // the `fedcm-silent` / per-apex iframe cold-boot steps.
+      // the per-apex iframe cold-boot step.
       clearSignedOut();
 
       // Register this recovered account+session into the server-authoritative
@@ -302,8 +302,8 @@ export const useAuthOperations = ({
         if (sessionToLogout === activeSessionId && remainingAccounts.length === 0) {
           // Genuine FULL sign-out (no sessions remain): clear the per-origin
           // SSO bounce state so a fresh deliberate sign-in can re-probe, and
-          // SET the deliberately-signed-out flag so the silent cold-boot steps
-          // (`fedcm-silent` / per-apex iframe) do not re-mint a session from a
+          // SET the deliberately-signed-out flag so the silent cold-boot step
+          // (per-apex iframe) does not re-mint a session from a
           // still-live IdP session on the next reload (mirrors `logoutAll`).
           markSignedOut();
           clearSsoBounceState();

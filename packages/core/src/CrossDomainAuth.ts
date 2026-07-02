@@ -1,11 +1,19 @@
 /**
  * Cross-Domain Authentication Helper
  *
- * Provides a simplified API for cross-domain SSO authentication that automatically
- * selects the best authentication method based on browser capabilities:
+ * Provides a simplified API for cross-domain SSO authentication. The
+ * automatic sign-in path uses a full-page redirect through the central IdP
+ * (`auth.oxy.so`) — a tokenless, universal mechanism that works in every
+ * browser.
  *
- * 1. FedCM (if supported) - Modern, Google-style browser-native auth
- * 2. Redirect (fallback) - Tokenless central SSO full-page redirect
+ * FedCM (`signInWithFedCM`) is intentionally NOT part of the automatic
+ * (`'auto'`) path: it is a Chrome-only browser API, and a misconfigured or
+ * unreachable FedCM endpoint fails fast and silently, which — combined with a
+ * caller's auth-guard effect re-invoking `signIn()` whenever the user is still
+ * unauthenticated — produced a real production incident (an accelerating
+ * `autoSignIn` → FedCM-fails → redirect retry loop). `signInWithFedCM` remains
+ * available for callers that want to opt into it EXPLICITLY
+ * (`signIn({ method: 'fedcm' })`).
  *
  * Usage:
  * ```typescript
@@ -13,7 +21,7 @@
  *
  * const auth = new CrossDomainAuth(oxyServices);
  *
- * // Automatic method selection
+ * // Automatic method selection (always redirect)
  * const session = await auth.signIn();
  *
  * // Or use a specific method
@@ -54,11 +62,11 @@ export class CrossDomainAuth {
   constructor(private oxyServices: OxyServices) {}
 
   /**
-   * Sign in with automatic method selection
+   * Sign in with automatic method selection.
    *
-   * Tries methods in this order:
-   * 1. FedCM (if supported and not in private browsing)
-   * 2. Redirect (always works)
+   * Auto mode always uses the full-page redirect (see the class doc comment
+   * for why FedCM was removed from this path). Pass `{ method: 'fedcm' }` to
+   * opt into FedCM explicitly.
    *
    * @param options - Authentication options
    * @returns Session with user data and access token
@@ -80,22 +88,18 @@ export class CrossDomainAuth {
   }
 
   /**
-   * Automatic sign-in with progressive enhancement
+   * Automatic sign-in.
+   *
+   * Goes straight to the full-page redirect — the sole automatic method.
+   * FedCM is deliberately NOT attempted here (see the class doc comment):
+   * it is Chrome-only, and its fast/silent failure mode combined with a
+   * caller's auth-guard effect re-invoking `signIn()` produced a real
+   * production sign-in loop. Use `signIn({ method: 'fedcm' })` to opt in
+   * explicitly.
    *
    * @private
    */
   private async autoSignIn(options: CrossDomainAuthOptions): Promise<SessionLoginResponse | null> {
-    // 1. Try FedCM first (best UX, most modern)
-    if (this.isFedCMSupported()) {
-      try {
-        options.onMethodSelected?.('fedcm');
-        return await this.signInWithFedCM(options);
-      } catch (error) {
-        logger.warn('FedCM failed, falling back to redirect', { component: 'CrossDomainAuth', method: 'autoSignIn' }, error);
-      }
-    }
-
-    // 2. Fallback to redirect (always works)
     options.onMethodSelected?.('redirect');
     this.signInWithRedirect(options);
     return null;
@@ -136,25 +140,13 @@ export class CrossDomainAuth {
   /**
    * Silent sign-in (check for existing session)
    *
-   * Tries to automatically sign in without user interaction.
-   * Works with FedCM and iframe-based silent auth.
+   * Tries to automatically sign in without user interaction, via the
+   * iframe-based silent auth against the per-apex `/auth/silent` IdP host.
+   * FedCM is deliberately NOT attempted here (see the class doc comment).
    *
    * @returns Session if user is already signed in, null otherwise
    */
   async silentSignIn(): Promise<SessionLoginResponse | null> {
-    // Try FedCM silent sign-in first (if supported)
-    if (this.isFedCMSupported()) {
-      try {
-        const session = await this.oxyServices.silentSignInWithFedCM();
-        if (session) {
-          return session;
-        }
-      } catch (error) {
-        logger.debug('FedCM silent sign-in did not resolve', { component: 'CrossDomainAuth', method: 'silentSignIn' }, error);
-      }
-    }
-
-    // Fallback to iframe-based silent auth
     try {
       return await this.oxyServices.silentSignIn();
     } catch (error) {
@@ -185,16 +177,13 @@ export class CrossDomainAuth {
   /**
    * Get recommended authentication method for current environment
    *
+   * Redirect is the sole recommended automatic method — it works in every
+   * browser, unlike FedCM (Chrome-only). Callers that want FedCM must opt in
+   * explicitly via `signIn({ method: 'fedcm' })`.
+   *
    * @returns Recommended method name and reason
    */
-  getRecommendedMethod(): { method: 'fedcm' | 'redirect'; reason: string } {
-    if (this.isFedCMSupported()) {
-      return {
-        method: 'fedcm',
-        reason: 'FedCM is supported - provides best UX with browser-native auth',
-      };
-    }
-
+  getRecommendedMethod(): { method: 'redirect'; reason: string } {
     if (typeof window !== 'undefined') {
       return {
         method: 'redirect',

@@ -6,7 +6,8 @@
  *
  * `restoreSessionsFromStorage`'s 8-step cold boot (Task pre-existing) is now a
  * PURE token-acquisition ladder (`sso-return`, `stored-session`,
- * `shared-key-signin`, `fedcm-silent`, `silent-iframe`, `sso-bounce`) — the two
+ * `shared-key-signin`, `silent-iframe`, `sso-bounce` — there is no FedCM step;
+ * see `CrossDomainAuth`'s doc comment in `@oxyhq/core`) — the two
  * `oxy_rt` refresh-cookie restore steps (`cookie-restore-active`,
  * `cookie-restore`) and the `restoreViaRefreshCookie` function they called are
  * DELETED. Once the ladder yields a session (or an access token is already
@@ -44,15 +45,15 @@ import { createSessionClient } from '../../src/ui/session';
 const mockedCreateSessionClient = createSessionClient as jest.MockedFunction<typeof createSessionClient>;
 
 const API_BASE_URL = 'https://api.mention.earth';
-const FEDCM_USER_ID = 'fedcm_user_1';
-const DEVICE_ACCOUNT_ID = 'account_fedcm_1';
+const SILENT_USER_ID = 'silent_user_1';
+const DEVICE_ACCOUNT_ID = 'account_silent_1';
 
-const fedcmSession: SessionLoginResponse = {
-  sessionId: 'sess_fedcm',
-  deviceId: 'dev_fedcm',
-  accessToken: 'fedcm.access.token',
+const silentIframeSession: SessionLoginResponse = {
+  sessionId: 'sess_silent',
+  deviceId: 'dev_silent',
+  accessToken: 'silent.access.token',
   expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-  user: { id: FEDCM_USER_ID, username: 'fedcmuser' },
+  user: { id: SILENT_USER_ID, username: 'silentuser' },
 } as SessionLoginResponse;
 
 interface CapturedState {
@@ -110,8 +111,8 @@ function buildFakeClient(deviceState: DeviceSessionState) {
 
 function buildDeviceState(): DeviceSessionState {
   return {
-    deviceId: 'dev_fedcm',
-    accounts: [{ accountId: DEVICE_ACCOUNT_ID, sessionId: 'sess_fedcm', authuser: 0 }],
+    deviceId: 'dev_silent',
+    accounts: [{ accountId: DEVICE_ACCOUNT_ID, sessionId: 'sess_silent', authuser: 0 }],
     activeAccountId: DEVICE_ACCOUNT_ID,
     revision: 1,
     updatedAt: Date.now(),
@@ -119,8 +120,7 @@ function buildDeviceState(): DeviceSessionState {
 }
 
 interface StubConfig {
-  fedcmSupported: boolean;
-  silentFedCM?: SessionLoginResponse | null;
+  silentIframeSession?: SessionLoginResponse | null;
   currentUserId?: string;
   initialAccessToken?: string | null;
   baseURL: string;
@@ -145,20 +145,18 @@ function buildStub(cfg: StubConfig) {
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      isFedCMSupported: jest.fn(() => cfg.fedcmSupported),
       handleAuthCallback: jest.fn(() => null),
-      silentSignInWithFedCM: jest.fn(async () => cfg.silentFedCM ?? null),
-      silentSignIn: jest.fn(async () => null),
+      silentSignIn: jest.fn(async () => cfg.silentIframeSession ?? null),
       refreshAllSessions,
       generateSsoState: jest.fn(() => 'state-token-xyz'),
       exchangeSsoCode: jest.fn(async () => null),
       getCurrentUser: jest.fn(
-        async (): Promise<User> => ({ id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } as User),
+        async (): Promise<User> => ({ id: cfg.currentUserId ?? SILENT_USER_ID, username: 'tester' } as User),
       ),
-      validateSession: jest.fn(async () => ({ valid: true, user: { id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } })),
+      validateSession: jest.fn(async () => ({ valid: true, user: { id: cfg.currentUserId ?? SILENT_USER_ID, username: 'tester' } })),
       getDeviceSessions: jest.fn(async () => []),
       getSessionsBySessionId: jest.fn(async () => []),
-      getUserBySession: jest.fn(async (): Promise<User> => ({ id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } as User)),
+      getUserBySession: jest.fn(async (): Promise<User> => ({ id: cfg.currentUserId ?? SILENT_USER_ID, username: 'tester' } as User)),
       refreshTokenViaCookie: jest.fn(async () => null),
       listAccounts: jest.fn(async () => []),
       getUsersByIds,
@@ -186,7 +184,7 @@ describe('Cold-boot cutover: token ladder -> SessionClient.start (Task 2)', () =
     mockedCreateSessionClient.mockReset();
   });
 
-  it('a fedcm-silent win hands off to SessionClient: addCurrentAccount then start (in order), then syncFromClient projects the server state', async () => {
+  it('a silent-iframe win hands off to SessionClient: addCurrentAccount then start (in order), then syncFromClient projects the server state', async () => {
     const deviceState = buildDeviceState();
     const fake = buildFakeClient(deviceState);
     const setCurrentAccountId = jest.fn();
@@ -196,15 +194,14 @@ describe('Cold-boot cutover: token ladder -> SessionClient.start (Task 2)', () =
     });
 
     const { stub, refreshAllSessions, getUsersByIds } = buildStub({
-      fedcmSupported: true,
-      silentFedCM: fedcmSession,
-      currentUserId: FEDCM_USER_ID,
-      baseURL: 'https://api.mention.earth/case-fedcm-handoff',
+      silentIframeSession,
+      currentUserId: SILENT_USER_ID,
+      baseURL: 'https://api.mention.earth/case-silent-iframe-handoff',
     });
 
-    renderProvider(stub, 'https://api.mention.earth/case-fedcm-handoff');
+    renderProvider(stub, 'https://api.mention.earth/case-silent-iframe-handoff');
 
-    // The ladder recovers a session (fedcm-silent) — isAuthenticated flips via
+    // The ladder recovers a session (silent-iframe) — isAuthenticated flips via
     // the existing `handleWebSSOSession` commit path.
     await waitFor(() => expect(captured.isAuthenticated).toBe(true));
 
@@ -233,7 +230,6 @@ describe('Cold-boot cutover: token ladder -> SessionClient.start (Task 2)', () =
     });
 
     const { stub, refreshAllSessions } = buildStub({
-      fedcmSupported: false,
       baseURL: 'https://api.mention.earth/case-no-session',
     });
 
