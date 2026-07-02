@@ -818,7 +818,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // fresher call has already applied (or will apply) the current truth.
     const capturedRevision = state.revision;
     const ids = accountIdsOf(state);
-    const users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
+    let users: User[] = [];
+    try {
+      users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
+    } catch (fetchError) {
+      // Invoked fire-and-forget from the socket `notify()` subscription, so a
+      // rejected profile fetch would surface as an unhandled rejection. Log and
+      // bail; the next `notify()`/mutation will re-project the current truth.
+      logger('Failed to resolve account profiles during syncFromClient', fetchError);
+      return;
+    }
     const latest = sessionClient.getState();
     if (!latest || latest.revision !== capturedRevision) {
       return;
@@ -1627,7 +1636,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         const handoff = (async () => {
           try {
             if (!registeredDuringBootRef.current) {
-              await sessionClient.addCurrentAccount();
+              // Nested guard: registering this account into the device set is
+              // best-effort. If it throws, `start()` must STILL run so the
+              // realtime socket connects and state projects — cold boot
+              // re-registers the account into the device set on the next load.
+              try {
+                await sessionClient.addCurrentAccount();
+              } catch (addAccountErr) {
+                loggerUtil.warn(
+                  'cold-boot: addCurrentAccount failed; continuing to start()',
+                  { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
+                  addAccountErr as unknown,
+                );
+              }
             }
             await sessionClient.start();
             await syncFromClient();
@@ -2200,9 +2221,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // `oxyServices.switchToAccount` already planted above) and reproject
     // state, so the switch persists across reload / other tabs / devices
     // instead of only living in this provider's local session-management
-    // state.
-    await sessionClient.addCurrentAccount();
-    await syncFromClient();
+    // state. Best-effort: the token for the new account is already planted, so
+    // a transient failure here must NEVER reject the switch — fall through to
+    // `loginSuccess`/`onAuthStateChange` so the UI reflects the switched-to
+    // account (cold boot re-registers into the device set on next load).
+    // Mirrors the same guard in `handleWebSSOSession`.
+    try {
+      await sessionClient.addCurrentAccount();
+      await syncFromClient();
+    } catch (registrationError) {
+      loggerUtil.warn(
+        'switchToAccount: failed to register account into device set',
+        { component: 'OxyContext', method: 'switchToAccount' },
+        registrationError as unknown,
+      );
+    }
 
     // Fetch the canonical User for the new account (the switch result carries
     // only MinimalUserData); fall back to that minimal shape if the profile

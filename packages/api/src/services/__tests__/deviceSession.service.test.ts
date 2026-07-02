@@ -228,8 +228,8 @@ describe('switchActive', () => {
     expect(result).toEqual({ ok: true, state: expect.objectContaining({ activeAccountId: 'a1', revision: 2 }) });
   });
 
-  it('returns unauthorized and does not commit the switch when validateSessionById rejects the target session (e.g. revoked act_as membership)', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
+  it('heals a revoked target: removes the account from the device set and returns the healed state (does NOT commit the switch)', async () => {
+    const doc = {
       deviceId: 'd1',
       accounts: [
         { accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null },
@@ -237,12 +237,32 @@ describe('switchActive', () => {
       ],
       activeAccountId: { toString: () => 'op1' },
       revision: 1,
+    };
+    mockFindOne.mockReturnValueOnce(lean(doc)); // switchActive's initial load
+    mockValidateSessionById.mockResolvedValueOnce(null); // target session revoked
+    mockFindOne.mockReturnValueOnce(lean(doc)); // signout()'s own reload
+    mockDeactivate.mockResolvedValueOnce(true);
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'op1' }, sessionId: 's-op', authuser: 0, operatedByUserId: null }],
+      activeAccountId: { toString: () => 'op1' },
+      revision: 2,
+      updatedAt: new Date(1720000000000),
     }));
-    mockValidateSessionById.mockResolvedValueOnce(null);
     const result = await deviceSessionService.switchActive('d1', 'org1');
     expect(mockValidateSessionById).toHaveBeenCalledWith('s-org', false);
-    expect(result).toEqual({ ok: false, reason: 'unauthorized' });
-    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    // The revoked account's session is deactivated and the account dropped from
+    // the set; the healed state is returned so the route can broadcast it. The
+    // switch itself is NOT committed (activeAccountId stays on op1).
+    expect(mockDeactivate).toHaveBeenCalledWith('s-org');
+    expect(result).toEqual({
+      ok: false,
+      reason: 'unauthorized',
+      state: expect.objectContaining({
+        accounts: [expect.objectContaining({ accountId: 'op1' })],
+        activeAccountId: 'op1',
+      }),
+    });
   });
 });
 

@@ -245,6 +245,27 @@ describe('startTokenRefreshScheduler', () => {
     handle.dispose();
   });
 
+  it('clamps an over-int32 delay so a long-TTL token does not fire immediately (int32 overflow → tight refresh loop)', () => {
+    const fake = buildFakeOxyServices();
+    fake.setTokens('tok-long');
+    // Expiry ~30 days out: fireInMs (minus the 60s lead) exceeds the 2^31-1 ms
+    // setTimeout ceiling. Without clamping, that overflows the int32 timer field
+    // and the timer fires immediately — a busy refresh loop.
+    fake.setExpirySeconds(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60);
+    const handle = startTokenRefreshScheduler(fake as unknown as OxyServices);
+
+    // A short advance must NOT fire: proof the delay was clamped to the ceiling
+    // rather than overflowing to an immediate fire.
+    jest.advanceTimersByTime(TOKEN_REFRESH_LEAD_MS);
+    expect(fake.httpService.refreshAccessToken).not.toHaveBeenCalled();
+
+    // It fires once the clamped ceiling delay (2^31 - 1 ms) elapses.
+    jest.advanceTimersByTime(2_147_483_647);
+    expect(fake.httpService.refreshAccessToken).toHaveBeenCalledWith('preflight');
+
+    handle.dispose();
+  });
+
   it('dispose() tears down the timer — no refresh fires after disposal', () => {
     const fake = buildFakeOxyServices();
     fake.setTokens('tok-1');

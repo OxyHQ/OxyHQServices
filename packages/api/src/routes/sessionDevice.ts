@@ -44,7 +44,11 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
   // so a managed-account sign-in must be resolved from the session record
   // itself to bind the device-session entry to its operator.
   const sessionDoc = await sessionService.getSession(session.sessionId, true);
-  const operatedByUserId = sessionDoc?.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
+  // The session record must still be active. `getSession` returns null for an
+  // expired/revoked session (JWT not yet expired but the session doc
+  // deactivated) — such a session must NOT be re-added to the device set.
+  if (!sessionDoc) { res.status(401).json({ error: 'Invalid session' }); return; }
+  const operatedByUserId = sessionDoc.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
   const state = await deviceSessionService.addAccount(session.deviceId, {
     accountId,
     sessionId: session.sessionId,
@@ -61,7 +65,14 @@ router.post('/switch', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!accountId) { res.status(400).json({ error: 'accountId required' }); return; }
   const outcome = await deviceSessionService.switchActive(deviceId, accountId);
   if (!outcome.ok) {
-    if (outcome.reason === 'unauthorized') { res.status(403).json({ error: 'Account not authorized' }); return; }
+    if (outcome.reason === 'unauthorized') {
+      // The target session was revoked; `switchActive` healed the device set by
+      // removing the dead account. Broadcast the healed state so the device's
+      // other tabs drop it too, then reject the switch.
+      broadcastDeviceState(outcome.state);
+      res.status(403).json({ error: 'Account not authorized' });
+      return;
+    }
     res.status(404).json({ error: 'Account not on this device' });
     return;
   }

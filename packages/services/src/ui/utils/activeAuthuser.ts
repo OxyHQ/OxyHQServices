@@ -110,7 +110,10 @@ export function clearSignedOut(): void {
  * `silent-iframe` cold-boot step.
  */
 export function isSilentRestoreSuppressed(): boolean {
-  if (!hasLocalStorage()) return false;
+  // Unlike its try/catch-wrapped siblings this reads `window.location.origin`
+  // directly, so guard it: an RN polyfill can expose `localStorage` without a
+  // `location`, which would throw here. Fail safe toward normal restore.
+  if (!hasLocalStorage() || typeof window.location === 'undefined') return false;
   return silentRestoreSuppressed(window.localStorage, window.location.origin);
 }
 
