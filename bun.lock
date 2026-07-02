@@ -391,7 +391,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "5.2.1",
+      "version": "5.3.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
