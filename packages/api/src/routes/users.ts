@@ -74,6 +74,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 };
 
 import { PAGINATION } from '../utils/constants';
+import { MAX_MUTUAL_IDS } from '../utils/recommendationWeights';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
 
 // Initialize router and controller
@@ -539,6 +540,52 @@ router.post(
 
     logger.debug('POST /users/by-ids', { requested: ids.length, resolved: users.length });
     sendSuccess(res, users);
+  })
+);
+
+/**
+ * GET /users/mutual-ids
+ *
+ * The authenticated VIEWER's OWN mutual-follow user ids — the accounts the viewer
+ * follows that ALSO follow the viewer back. Lean, ids-only, bounded payload built
+ * to SEED Mention's "Mutuals" feed (which then hydrates and ranks the posts
+ * itself), so it returns bare ids rather than the hydrated DTOs of
+ * `GET /users/:userId/mutuals` ("followers you know" about ANOTHER profile).
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutuals` and `/by-ids`) — never a client-supplied id,
+ * and there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics: an
+ * anonymous caller (or a service token with no user context) has no "you follow"
+ * set → `{ data: [] }`.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `mutual-ids` as a `:userId` value.
+ *
+ * @query {number} limit - Max ids to return (capped at MAX_MUTUAL_IDS).
+ * @returns {{ data: string[] }} The viewer's mutual-follow user ids.
+ */
+router.get(
+  '/mutual-ids',
+  optionalUserOrServiceAuth,
+  validatePagination,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+    const { limit } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_MUTUAL_IDS)
+      : MAX_MUTUAL_IDS;
+
+    const ids = await userService.getMutualUserIds(viewerId, { limit: parsedLimit });
+
+    logger.debug('GET /users/mutual-ids', {
+      viewerId,
+      limit: parsedLimit,
+      count: ids.length,
+    });
+
+    sendSuccess(res, ids);
   })
 );
 

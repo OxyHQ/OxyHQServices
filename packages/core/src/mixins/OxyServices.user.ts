@@ -797,6 +797,32 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Get the authenticated VIEWER's OWN mutual-follow user ids — the accounts the
+     * viewer follows that ALSO follow the viewer back (a bidirectional follow
+     * edge). The viewer is derived server-side from the SDK's auth token (never a
+     * param), so there is no target id to pass.
+     *
+     * Returns a bounded, lean list of ids meant to SEED a "Mutuals" feed (the
+     * consumer hydrates/ranks the posts itself) — distinct from
+     * {@link getUserMutuals}, which returns hydrated "followers you know" DTOs
+     * about ANOTHER profile. An anonymous caller resolves to an empty array.
+     */
+    async getMutualUserIds(
+      params?: { limit?: number }
+    ): Promise<string[]> {
+      try {
+        const query = buildPaginationParams(params || {});
+        const response = await this.makeRequest<{ data: string[] }>('GET', '/users/mutual-ids', query, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        return response.data || [];
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Get notifications
      */
     async getNotifications(): Promise<Notification[]> {
