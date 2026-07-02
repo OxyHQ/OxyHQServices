@@ -1015,16 +1015,41 @@ function apexAuthHostForClient(clientOrigin: string): string | null {
 type SsoOutcome = 'ok' | 'none' | 'error';
 
 /**
- * Build the fragment params for the RP callback redirect. `state` is always
- * echoed verbatim; `code` is present only on the `ok` outcome. The order is
- * stable (oxy_sso, then code, then state) so the fragment is deterministic.
+ * Machine-readable reason for a `none` outcome. A fixed, closed enum of
+ * diagnostic codes (NEVER user data) so the RP-side and CF worker logs can tell
+ * which no-session branch fired without ambiguity:
+ *   - `no_cookie`          — no fedcm_session cookie at the central IdP.
+ *   - `stale_session`      — cookie present but the session no longer validates
+ *                            (fetchUserFromAPI null → cookie deleted).
+ *   - `no_grant`           — valid session but THIS user has not granted the RP
+ *                            (central /sso hop, before the establish hop).
+ *   - `no_grant_establish` — grant was revoked between the two hops (live
+ *                            re-check on /sso/establish, forceRefresh).
  */
-function buildSsoFragment(outcome: SsoOutcome, state: string, code?: string): Record<string, string> {
+type SsoNoneReason = 'no_cookie' | 'stale_session' | 'no_grant' | 'no_grant_establish';
+
+/**
+ * Build the fragment params for the RP callback redirect. `state` is always
+ * echoed verbatim; `code` is present only on the `ok` outcome; `reason` (a
+ * closed diagnostic enum) is present only on the `none` outcome. The order is
+ * stable (oxy_sso, then code, then state, then reason) so the fragment is
+ * deterministic. The RP parser (`parseSsoReturnFragment` in @oxyhq/core) reads
+ * only `oxy_sso`/`code`/`state` and ignores the extra `reason` param.
+ */
+function buildSsoFragment(
+  outcome: SsoOutcome,
+  state: string,
+  code?: string,
+  reason?: SsoNoneReason
+): Record<string, string> {
   const frag: Record<string, string> = { oxy_sso: outcome };
   if (outcome === 'ok' && typeof code === 'string' && code.length > 0) {
     frag.code = code;
   }
   frag.state = state;
+  if (outcome === 'none' && reason) {
+    frag.reason = reason;
+  }
   return frag;
 }
 
@@ -2038,7 +2063,8 @@ app.get('/sso', async (c) => {
   //    an immediate logged-out bounce — NEVER show a login UI.
   const sessionId = getCookie(c, COOKIE_NAME);
   if (!sessionId) {
-    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+    console.log('sso:none', 'no_cookie', approvedOrigin);
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state, undefined, 'no_cookie'));
   }
 
   // 7. Resolve the cookie → user via the public, cookie-less endpoint. A stale
@@ -2046,7 +2072,8 @@ app.get('/sso', async (c) => {
   const user = await fetchUserFromAPI(config.apiBaseUrl, sessionId);
   if (!user) {
     deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
-    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+    console.log('sso:none', 'stale_session', approvedOrigin);
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state, undefined, 'stale_session'));
   }
 
   // 8. Silent SSO (prompt=none) is only for RETURNING RPs. A globally approved
@@ -2057,7 +2084,8 @@ app.get('/sso', async (c) => {
   //    gate runs BEFORE the establish hop so no cross-apex establish-token is
   //    ever minted for an un-consented RP.
   if (!(await userHasGrantedClient(config, user.id, approvedOrigin))) {
-    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+    console.log('sso:none', 'no_grant', approvedOrigin);
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state, undefined, 'no_grant'));
   }
 
   // 9. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
@@ -2210,7 +2238,8 @@ app.get('/sso/establish', async (c) => {
   //    between-hops revocation, so it MUST bypass the 30s grants cache the
   //    central hop just populated and read the live grant.
   if (!(await userHasGrantedClient(config, user.id, approvedOrigin, true))) {
-    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+    console.log('sso:none', 'no_grant_establish', approvedOrigin);
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state, undefined, 'no_grant_establish'));
   }
 
   // 7. PLANT THE DURABLE FIRST-PARTY CREDENTIAL. Set the host-only
