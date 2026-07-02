@@ -4,7 +4,7 @@ import { createSessionClient } from '../createSessionClient';
 function fakeOxy() {
   const listeners = new Set<(t: string | null) => void>();
   return {
-    makeRequest: jest.fn().mockResolvedValue({ data: undefined }),
+    makeRequest: jest.fn().mockResolvedValue(undefined),
     getBaseURL: jest.fn().mockReturnValue('https://api.oxy.so'),
     getAccessToken: jest.fn().mockReturnValue(null),
     setTokens: jest.fn(),

@@ -32,7 +32,7 @@ describe('SessionClient sync diagnostics', () => {
     // authuser must be a non-negative integer; a string trips invalid_type at accounts[0].authuser.
     const badAuthuser = { accountId: 'a1', sessionId: 's1', authuser: 'not-a-number' };
     const state = { ...STATE(3), accounts: [badAuthuser] };
-    const makeRequest = jest.fn().mockResolvedValueOnce({ data: { state, activeToken: null } });
+    const makeRequest = jest.fn().mockResolvedValueOnce({ state, activeToken: null });
     const c = new SessionClient(makeHost(makeRequest));
 
     await c.bootstrap();
@@ -60,7 +60,8 @@ describe('SessionClient sync diagnostics', () => {
     // A valid-looking accessToken alongside an otherwise-invalid state must not surface in the log.
     const secretToken = 'jwt-SUPER-SECRET-ACCESS-TOKEN-abc123';
     const makeRequest = jest.fn().mockResolvedValueOnce({
-      data: { state: { deviceId: 'd1' /* missing required fields */ }, activeToken: { accessToken: secretToken, expiresAt: 'x' } },
+      state: { deviceId: 'd1' /* missing required fields */ },
+      activeToken: { accessToken: secretToken, expiresAt: 'x' },
     });
     const c = new SessionClient(makeHost(makeRequest));
 
@@ -73,7 +74,7 @@ describe('SessionClient sync diagnostics', () => {
   });
 
   it('reports envelope drift via keys and a top-level invalid_type when raw is undefined', async () => {
-    const makeRequest = jest.fn().mockResolvedValueOnce({ notData: true });
+    const makeRequest = jest.fn().mockResolvedValueOnce(undefined);
     const c = new SessionClient(makeHost(makeRequest));
 
     await c.bootstrap();

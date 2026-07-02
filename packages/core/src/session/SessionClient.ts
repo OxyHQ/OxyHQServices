@@ -113,23 +113,23 @@ export class SessionClient {
   }
 
   async bootstrap(): Promise<void> {
-    const res = await this.host.makeRequest<{ data?: unknown }>('GET', '/session/device/state', undefined, { cache: false });
-    this.applySync(res?.data);
+    const res = await this.host.makeRequest<unknown>('GET', '/session/device/state', undefined, { cache: false });
+    this.applySync(res);
   }
 
   async switchAccount(accountId: string): Promise<void> {
-    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/switch', { accountId }, { cache: false });
-    this.applySync(res?.data);
+    const res = await this.host.makeRequest<unknown>('POST', '/session/device/switch', { accountId }, { cache: false });
+    this.applySync(res);
   }
 
   async signOut(target: { accountId: string } | { all: true }): Promise<void> {
-    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/signout', target, { cache: false });
-    this.applySync(res?.data);
+    const res = await this.host.makeRequest<unknown>('POST', '/session/device/signout', target, { cache: false });
+    this.applySync(res);
   }
 
   async addCurrentAccount(): Promise<void> {
-    const res = await this.host.makeRequest<{ data?: unknown }>('POST', '/session/device/add', undefined, { cache: false });
-    this.applySync(res?.data);
+    const res = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
+    this.applySync(res);
   }
 
   async start(): Promise<void> {

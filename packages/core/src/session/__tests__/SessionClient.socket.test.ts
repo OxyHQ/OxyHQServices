@@ -21,8 +21,9 @@ jest.mock('socket.io-client', () => ({ __esModule: true, io: (...args: unknown[]
 import { SessionClient, type SessionClientHost } from '../SessionClient';
 
 const STATE = (rev: number): DeviceSessionState => ({ deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: rev, updatedAt: 1720000000000 });
-// The server wraps the sync payload in a REST `{ data }` envelope; makeRequest does NOT unwrap it.
-const SYNC = (rev: number) => ({ data: { state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } } });
+// `makeRequest` (HttpService) already strips the server's outer `{ data }` envelope, so it
+// returns the unwrapped sync body directly — that is exactly what SessionClient consumes.
+const SYNC = (rev: number) => ({ state: STATE(rev), activeToken: { accessToken: `jwt-${rev}`, expiresAt: 'x' } });
 
 function makeHost(over: Partial<SessionClientHost> = {}): SessionClientHost {
   return {

@@ -191,7 +191,7 @@ describe('createSessionClient', () => {
 
   test('uses the injected transport (not a hard-coded one) when the client bootstraps', async () => {
     const oxy = fakeOxy();
-    oxy.makeRequest.mockResolvedValue({ data: { state, activeToken: null } });
+    oxy.makeRequest.mockResolvedValue({ state, activeToken: null });
     const transport = fakeTransport();
 
     const { client } = createSessionClient(oxy as never, transport);
