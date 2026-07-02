@@ -33,12 +33,12 @@ import { isCrossApexWeb } from '../../utils/crossApex';
 
 const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, switchSession, clientId } = useOxy();
+  const { oxyServices, handleWebSession, clientId } = useOxy();
 
   const { qrData, qrPayload, isLoading, error, isWaiting, openAuthApproval, openSameDeviceApproval, retry } = useOxyAuthSession(
     oxyServices,
     clientId,
-    switchSession,
+    handleWebSession,
     { onSignedIn: onAuthenticated },
   );
 

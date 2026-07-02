@@ -23,7 +23,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Linking, Platform } from 'react-native';
 import io, { type Socket } from 'socket.io-client';
-import type { OxyServices, User } from '@oxyhq/core';
+import type { OxyServices, SessionLoginResponse, User } from '@oxyhq/core';
 import { createDebugLogger } from '@oxyhq/core';
 import { completeDeviceFlowSignIn } from '../../utils/deviceFlowSignIn';
 
@@ -232,7 +232,7 @@ function generateSessionToken(): string {
 export function useOxyAuthSession(
   oxyServices: OxyServices,
   clientId: string | null,
-  switchSession: ((sessionId: string) => Promise<User>) | undefined,
+  commitSession: ((session: SessionLoginResponse) => Promise<void>) | undefined,
   options: UseOxyAuthSessionOptions = {},
 ): UseOxyAuthSessionResult {
   const { onSignedIn } = options;
@@ -284,8 +284,12 @@ export function useOxyAuthSession(
   // Without that exchange the SDK has no bearer token — the session is
   // authorized server-side but the app never becomes authenticated and the UI
   // sits "Waiting for authorization..." forever. Once `claimSessionByToken`
-  // plants the tokens in the HttpService, the rest of the session wiring flows
-  // through the normal `switchSession` path. Shared with both containers via
+  // plants the tokens in the HttpService, the claimed session is committed via
+  // `commitSession` (`useOxy().handleWebSession`) — the SAME path a fresh
+  // password/FedCM sign-in uses to register the account into the device's
+  // server-authoritative session set. It is NOT yet a member of that set, so
+  // `switchSession` (an account-SWITCH between accounts already on the
+  // device) is the wrong primitive here. Shared with both containers via
   // `completeDeviceFlowSignIn` so the two paths cannot drift.
   const handleAuthSuccess = useCallback(
     async (sessionId: string, sessionToken: string) => {
@@ -293,14 +297,14 @@ export function useOxyAuthSession(
       isProcessingRef.current = true;
 
       try {
-        if (!switchSession) {
-          throw new Error('Session management unavailable');
+        if (!commitSession) {
+          throw new Error('Session commit unavailable');
         }
         const user = await completeDeviceFlowSignIn({
           oxyServices,
           sessionId,
           sessionToken,
-          switchSession,
+          commitSession,
         });
         onSignedInRef.current?.(user);
       } catch (err) {
@@ -309,7 +313,7 @@ export function useOxyAuthSession(
         isProcessingRef.current = false;
       }
     },
-    [oxyServices, switchSession],
+    [oxyServices, commitSession],
   );
 
   // Start polling for authorization.
