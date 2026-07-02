@@ -101,12 +101,23 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     declare _serviceApiSecret: string | null;
 
     /**
-     * Get profile by username
+     * Get profile by username.
+     *
+     * @param username - The profile's username.
+     * @param options.cache - Defaults to `true` (5-minute TTL), matching prior
+     *   behavior. Pass `{ cache: false }` to force a registry-fresh read: the
+     *   request bypasses BOTH the cache lookup and the post-fetch cache write
+     *   (see {@link HttpService.request}'s `cache` handling), so it neither
+     *   serves nor overwrites any entry already cached for this key — a
+     *   previously cached response (if one exists) is left in place until its
+     *   own TTL expires or is explicitly invalidated elsewhere. Use this when a
+     *   caller must observe a just-written change (e.g. a privacy/consent flag)
+     *   that would otherwise be masked by the TTL window.
      */
-    async getProfileByUsername(username: string): Promise<User> {
+    async getProfileByUsername(username: string, options?: { cache?: boolean }): Promise<User> {
       try {
         const user = await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
-          cache: true,
+          cache: options?.cache ?? true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
         });
         return normalizeUserIdentity(user);
@@ -335,12 +346,23 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user by ID
+     * Get user by ID.
+     *
+     * @param userId - The target user's id.
+     * @param options.cache - Defaults to `true` (5-minute TTL), matching prior
+     *   behavior. Pass `{ cache: false }` to force a registry-fresh read: the
+     *   request bypasses BOTH the cache lookup and the post-fetch cache write
+     *   (see {@link HttpService.request}'s `cache` handling), so it neither
+     *   serves nor overwrites any entry already cached for this key — a
+     *   previously cached response (if one exists) is left in place until its
+     *   own TTL expires or is explicitly invalidated elsewhere. Use this when a
+     *   caller must observe a just-written change (e.g. a privacy/consent flag)
+     *   that would otherwise be masked by the TTL window.
      */
-    async getUserById(userId: string): Promise<User> {
+    async getUserById(userId: string, options?: { cache?: boolean }): Promise<User> {
       try {
         const user = await this.makeRequest<User>('GET', `/users/${userId}`, undefined, {
-          cache: true,
+          cache: options?.cache ?? true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache
         });
         return normalizeUserIdentity(user);
