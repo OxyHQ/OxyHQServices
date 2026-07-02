@@ -823,6 +823,34 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Get the authenticated VIEWER's bounded "follows-of-follows" user ids — the
+     * union of the accounts followed by the accounts the viewer follows (a
+     * two-hop walk of the follow graph), MINUS the viewer's own follows and the
+     * viewer themselves. The viewer is derived server-side from the SDK's auth
+     * token (never a param), so there is no target id to pass.
+     *
+     * Returns a bounded, lean list of ids meant to SEED a friends-of-friends
+     * feed (the consumer hydrates/ranks the posts itself), ordered by frequency
+     * (accounts followed by more of the viewer's follows first), then recency.
+     * An anonymous caller resolves to an empty array. Mirrors
+     * {@link getMutualUserIds}'s caching posture.
+     */
+    async getFollowsOfFollowsIds(
+      params?: { limit?: number }
+    ): Promise<string[]> {
+      try {
+        const query = buildPaginationParams(params || {});
+        const response = await this.makeRequest<{ data: string[] }>('GET', '/users/follows-of-follows-ids', query, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        return response.data || [];
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Get notifications
      */
     async getNotifications(): Promise<Notification[]> {

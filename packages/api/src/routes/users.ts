@@ -74,7 +74,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 };
 
 import { PAGINATION } from '../utils/constants';
-import { MAX_MUTUAL_IDS } from '../utils/recommendationWeights';
+import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
 
 // Initialize router and controller
@@ -580,6 +580,54 @@ router.get(
     const ids = await userService.getMutualUserIds(viewerId, { limit: parsedLimit });
 
     logger.debug('GET /users/mutual-ids', {
+      viewerId,
+      limit: parsedLimit,
+      count: ids.length,
+    });
+
+    sendSuccess(res, ids);
+  })
+);
+
+/**
+ * GET /users/follows-of-follows-ids
+ *
+ * The authenticated VIEWER's bounded "follows-of-follows" user ids — the union
+ * of the accounts followed by the accounts the viewer follows (a two-hop walk of
+ * the follow graph), MINUS the viewer's own follows and the viewer themselves.
+ * Lean, ids-only, bounded payload built to SEED Mention's friends-of-friends
+ * feed (which then hydrates and ranks the posts itself), so it returns bare ids
+ * rather than hydrated DTOs. Candidates are ordered by frequency (accounts
+ * followed by more of the viewer's follows first), then recency.
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutual-ids` and `/by-ids`) — never a client-supplied
+ * id, and there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics:
+ * an anonymous caller (or a service token with no user context) has no "you
+ * follow" set → `{ data: [] }`.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `follows-of-follows-ids` as a `:userId` value.
+ *
+ * @query {number} limit - Max ids to return (capped at MAX_FOLLOWS_OF_FOLLOWS_IDS).
+ * @returns {{ data: string[] }} The viewer's follows-of-follows user ids.
+ */
+router.get(
+  '/follows-of-follows-ids',
+  optionalUserOrServiceAuth,
+  validatePagination,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+    const { limit } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_FOLLOWS_OF_FOLLOWS_IDS)
+      : MAX_FOLLOWS_OF_FOLLOWS_IDS;
+
+    const ids = await userService.getFollowsOfFollowsIds(viewerId, { limit: parsedLimit });
+
+    logger.debug('GET /users/follows-of-follows-ids', {
       viewerId,
       limit: parsedLimit,
       count: ids.length,
