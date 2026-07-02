@@ -29,7 +29,12 @@ import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
-import { MAX_FOLLOWING_FOR_MUTUALS, MAX_MUTUAL_IDS } from '../utils/recommendationWeights';
+import {
+  MAX_FOLLOWING_FOR_MUTUALS,
+  MAX_MUTUAL_IDS,
+  MAX_FOLLOWS_OF_FOLLOWS_IDS,
+  MAX_FOF_FIRST_HOP,
+} from '../utils/recommendationWeights';
 
 interface UserWithCount {
   _count?: {
@@ -45,6 +50,17 @@ interface UserWithCount {
 interface FollowCountRow {
   _id: Types.ObjectId;
   count: number;
+}
+
+/**
+ * One row of the follows-of-follows aggregation: a candidate user id, how many
+ * of the viewer's follows follow that candidate (frequency), and the most-recent
+ * time any of them did so (the recency tiebreak).
+ */
+interface FollowsOfFollowsRow {
+  _id: Types.ObjectId;
+  followerCount: number;
+  lastFollowedAt: Date;
 }
 
 /**
@@ -671,6 +687,97 @@ export class UserService {
 
     return mutualFollows
       .map((follow) => follow.followerUserId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+      .map((id) => id.toString());
+  }
+
+  /**
+   * Get the VIEWER's bounded "follows-of-follows" user ids — the union of the
+   * accounts followed by the accounts the viewer follows (a two-hop walk of the
+   * follow graph), MINUS the viewer's own follows and the viewer themselves.
+   * This SEEDS Mention's friends-of-friends feed, which hydrates and ranks the
+   * posts itself, so the payload is lean and ids-only (no hydrated DTOs, no
+   * `User` lookup) — mirroring {@link getMutualUserIds}.
+   *
+   * The viewer id is ALWAYS derived server-side by the route (`resolveViewerId`),
+   * never a client param. An anonymous caller (or a service token with no user
+   * context) has no "you follow" set ⇒ empty. A viewer who follows nobody
+   * short-circuits before the aggregation.
+   *
+   * Bounded so the fan-out cannot blow up:
+   *  - the viewer's following set (used for exclusion) is scanned most-recent
+   *    first and capped at `MAX_FOLLOWS_OF_FOLLOWS_IDS`;
+   *  - only the `MAX_FOF_FIRST_HOP` most-recent of those follows seed the second
+   *    hop, so the `$in` over the Follow collection stays small no matter how
+   *    many accounts the viewer follows;
+   *  - the returned set is capped at `MAX_FOLLOWS_OF_FOLLOWS_IDS`.
+   *
+   * Ordering: candidates are ranked by how many of the viewer's sampled follows
+   * follow each one (frequency — the strongest friends-of-friends signal), with
+   * the most-recently-established edge breaking ties (recency).
+   */
+  async getFollowsOfFollowsIds(
+    viewerId: string | undefined,
+    params: { limit?: number } = {}
+  ): Promise<string[]> {
+    if (!viewerId) {
+      return [];
+    }
+
+    const limit = Math.min(
+      params.limit && params.limit > 0 ? params.limit : MAX_FOLLOWS_OF_FOLLOWS_IDS,
+      MAX_FOLLOWS_OF_FOLLOWS_IDS
+    );
+
+    // 1. The viewer's following set, most-recent first. Bounded so both the
+    //    exclusion set and the first-hop seed stay small.
+    const viewerFollowing = await Follow.find({
+      followerUserId: viewerId,
+      followType: FollowType.USER,
+    })
+      .select('followedId')
+      .sort({ createdAt: -1 })
+      .limit(MAX_FOLLOWS_OF_FOLLOWS_IDS)
+      .lean();
+
+    const followingIds = viewerFollowing
+      .map((follow) => follow.followedId)
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+
+    if (followingIds.length === 0) {
+      return [];
+    }
+
+    // 2. Seed the second hop with only the most-recent follows to cap the
+    //    fan-out. Everything the viewer already follows, plus the viewer, is
+    //    excluded from the result — a follow-of-follow the viewer already
+    //    follows is not a recommendation.
+    const firstHopIds = followingIds.slice(0, MAX_FOF_FIRST_HOP);
+    const excludeIds = [new Types.ObjectId(viewerId), ...followingIds];
+
+    // 3. Union of the accounts THOSE follows follow, ranked by how many of the
+    //    viewer's follows follow each candidate (frequency), then recency.
+    const rows = await Follow.aggregate<FollowsOfFollowsRow>([
+      {
+        $match: {
+          followerUserId: { $in: firstHopIds },
+          followType: FollowType.USER,
+          followedId: { $nin: excludeIds },
+        },
+      },
+      {
+        $group: {
+          _id: '$followedId',
+          followerCount: { $sum: 1 },
+          lastFollowedAt: { $max: '$createdAt' },
+        },
+      },
+      { $sort: { followerCount: -1, lastFollowedAt: -1 } },
+      { $limit: limit },
+    ]);
+
+    return rows
+      .map((row) => row._id)
       .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
       .map((id) => id.toString());
   }

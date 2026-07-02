@@ -70,6 +70,24 @@ export const MAX_FOLLOWING_FOR_MUTUALS = 2000;
  */
 export const MAX_MUTUAL_IDS = 5000;
 
+/**
+ * Hard cap on the viewer's "follows-of-follows" id set (`getFollowsOfFollowsIds`,
+ * which SEEDS Mention's friends-of-friends feed). Bounds BOTH the viewer's own
+ * following set scanned for exclusion AND the number of ids returned, so the
+ * `$nin`/`$in` clauses and the response payload stay small regardless of how many
+ * accounts the viewer follows.
+ */
+export const MAX_FOLLOWS_OF_FOLLOWS_IDS = 5000;
+
+/**
+ * Max first-hop follows sampled (most-recent first) as the seed set for the
+ * second hop of `getFollowsOfFollowsIds`. Caps the fan-out: without it a viewer
+ * who follows tens of thousands of accounts would scan every one of their
+ * follows' following edges. The sample is the viewer's most-recent follows, so
+ * the recommendation tracks their current interests.
+ */
+export const MAX_FOF_FIRST_HOP = 500;
+
 /** Max app-signal candidates pulled into the candidate union per request. */
 export const MAX_APP_SIGNAL_CANDIDATES = 500;
 
