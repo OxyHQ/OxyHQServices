@@ -1072,9 +1072,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
     const storedSessionIdsFromStorage: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
     let storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
+    // OPTIONAL HINT ONLY (no longer a gate). Nothing writes the active-`authuser`
+    // marker since the SessionClient cutover (`writeActiveAuthuser` was deleted),
+    // so it is `null` on every fresh install; when a legacy value is present it
+    // is used purely to backfill `clientSession.authuser` for the active session
+    // below. It MUST NOT decide whether restore is attempted — see the guard.
     const storedActiveAuthuser = isWebBrowser() ? readActiveAuthuser() : null;
 
-    if (isWebBrowser() && !oxyServices.getAccessToken() && (storedActiveSessionId === null || storedActiveAuthuser === null)) {
+    // On web with no in-memory bearer, bail ONLY when there is genuinely nothing
+    // to restore — neither a stored active id NOR any stored session ids. A
+    // surviving `sessionIds` list (e.g. the active-id key was removed after a
+    // server-side revocation while sibling sessions remain) MUST still be
+    // validated over the network and have a valid session elected as active
+    // below. The old guard also required the deleted `activeAuthuser` marker,
+    // which since the cutover is never written — that made EVERY web reload
+    // whose local bearer had lapsed bail before any validation. Native always
+    // proceeds (it plants the shared KeyManager bearer next).
+    if (
+      isWebBrowser() &&
+      !oxyServices.getAccessToken() &&
+      storedActiveSessionId === null &&
+      storedSessionIdsFromStorage.length === 0
+    ) {
       return false;
     }
 
@@ -1175,20 +1194,56 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       } catch (switchError) {
         // Silently handle expected errors (invalid sessions, timeouts, network issues)
         if (isInvalidSessionError(switchError)) {
+          // The stored active id was rejected server-side. Clear it and drop the
+          // dead session from the local view, then FALL THROUGH to the election
+          // below to promote a surviving valid session — a stale/removed active
+          // marker must not strand the other still-valid accounts.
           await storage.removeItem(storageKeys.activeSessionId);
-          updateSessionsRef.current(
-            validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
-            { merge: false, preserveSessionIds: unvalidatedSessionIds },
-          );
+          validSessions = validSessions.filter((session) => session.sessionId !== storedActiveSessionId);
+          updateSessionsRef.current(validSessions, {
+            merge: false,
+            preserveSessionIds: unvalidatedSessionIds,
+          });
           // Don't log expected session errors during restoration
         } else if (isTimeoutOrNetworkError(switchError)) {
-          // Timeout/network error - non-critical, don't block
+          // Timeout/network — the stored active session may still be valid; we
+          // just could not confirm it. Do NOT elect a different session (that
+          // could switch accounts under the user); leave restore to a retry / the
+          // remaining cold-boot steps.
           if (__DEV__) {
             loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreStoredSession' }, switchError as unknown);
           }
+          return false;
         } else {
-          // Only log unexpected errors
+          // Only log unexpected errors, and do not elect on an ambiguous failure.
           logger('Active session validation error', switchError);
+          return false;
+        }
+      }
+    }
+
+    // Election fallback. Reached when there is no usable stored active id —
+    // either it was never persisted (e.g. removed after a server-side revocation
+    // while sibling sessions survived) or it was just rejected as invalid above.
+    // Promote the FIRST validated session to active and commit it through the
+    // same `switchSession` path. The server owns which account is truly active,
+    // so any valid session is a safe provisional active — the post-restore
+    // SessionClient handoff reconciles the real active account immediately after.
+    const electedSession = validSessions[0];
+    if (electedSession) {
+      try {
+        await switchSessionRef.current(electedSession.sessionId);
+        await storage.setItem(storageKeys.activeSessionId, electedSession.sessionId);
+        await storage.setItem(storageKeys.priorSession, '1');
+        markAuthResolvedRef.current();
+        return true;
+      } catch (electionError) {
+        // Activation requires an in-memory bearer on web; without one (a plain
+        // web reload) the switch throws and recovery defers to the cross-domain
+        // cold-boot steps. Invalid/timeout/network are expected here — surface
+        // only genuinely unexpected failures.
+        if (!isInvalidSessionError(electionError) && !isTimeoutOrNetworkError(electionError)) {
+          logger('Elected session activation error', electionError);
         }
       }
     }

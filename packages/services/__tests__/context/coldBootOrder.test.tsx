@@ -193,7 +193,7 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     expect(assignSpy).not.toHaveBeenCalled();
   });
 
-  it('web stored-session without bearer or authuser skips, then the silent iframe can recover a real token', async () => {
+  it('web stored-session without a bearer validates but cannot activate, then the silent iframe recovers a real token', async () => {
     const STORED_SESSION_ID = 'sess_stored_without_token';
     window.localStorage.setItem('oxy_session_session_ids', JSON.stringify([STORED_SESSION_ID]));
     window.localStorage.setItem('oxy_session_active_session_id', STORED_SESSION_ID);
@@ -210,7 +210,13 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     await waitFor(() => expect(captured.isAuthenticated).toBe(true));
     expect(captured.userId).toBe(SILENT_USER_ID);
 
-    expect(stub.validateSession).not.toHaveBeenCalled();
+    // The stored-session step no longer bails on the (deleted) `activeAuthuser`
+    // marker: it now validates the surviving session over the network. But
+    // `switchSession` requires an in-memory bearer on web — with none, activation
+    // throws and the step yields no session, so recovery correctly defers to the
+    // per-apex silent iframe (which mints a real token). This is the P0 fix: the
+    // gate that previously skipped validation entirely is gone.
+    expect(stub.validateSession).toHaveBeenCalledWith(STORED_SESSION_ID, { useHeaderValidation: true });
     expect(stub.silentSignIn).toHaveBeenCalledTimes(1);
     expect(refreshAllSessions).not.toHaveBeenCalled();
     expect(assignSpy).not.toHaveBeenCalled();

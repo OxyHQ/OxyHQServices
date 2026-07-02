@@ -9,14 +9,15 @@
  * (`writeActiveAuthuser`/`clearActiveAuthuser` were deleted; their only
  * callers were the deleted `establishDeviceRefreshSlot` sign-in registration
  * and the deleted `switchToAccount`/`switchSession` slot bookkeeping).
- * {@link readActiveAuthuser} is KEPT: `OxyContext`'s `restoreStoredSession`
- * cold-boot step still reads it as part of a deliberate, test-locked gate —
- * on web, a bare stored session id with neither a live in-memory bearer nor
- * this hint is NOT validated locally; recovery instead defers to the
- * authoritative per-apex-iframe / SSO-bounce chain. Since
- * nothing writes the key anymore that branch is now permanently dormant, but
- * the gate itself remains correct and is exercised by
- * `coldBootOrder.test.tsx`.
+ * {@link readActiveAuthuser} is KEPT purely as an OPTIONAL restore hint:
+ * `OxyContext`'s `restoreStoredSession` cold-boot step reads it only to
+ * backfill `clientSession.authuser` for the active session when a legacy value
+ * happens to be present. It NO LONGER gates whether restore is attempted — the
+ * old guard that also required this marker made every web reload with a lapsed
+ * local bearer bail before any network validation (P0), and was replaced by a
+ * "bail only when there is nothing to restore" guard plus a valid-session
+ * election. Since nothing writes the key anymore, the backfill is dormant on
+ * fresh installs; it stays for legacy installs and costs nothing.
  *
  * Native (React Native) has no equivalent of these device-local cookies
  * and uses bearer-protected session ids directly, so these helpers no-op
