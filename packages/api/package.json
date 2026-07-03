@@ -108,7 +108,6 @@
     "@types/gridfs-stream": "^0.5.39",
     "@types/http-errors": "^2.0.4",
     "@types/mongodb": "^4.0.7",
-    "@types/socket.io-client": "^1.4.36",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.0.0",

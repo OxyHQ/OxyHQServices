@@ -61,6 +61,7 @@ import type {
   ColdBootOutcome,
   SsoReturnKind,
 } from '@oxyhq/core';
+import { io } from 'socket.io-client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, clearQueryCache, createQueryClient } from './hooks/queryClient';
 import { isWebBrowser } from './hooks/useWebSSO';
@@ -629,7 +630,12 @@ export function WebOxyProvider({
   // fall back to or go stale against.
   const sessionClientPairRef = useRef<ReturnType<typeof createSessionClient> | null>(null);
   if (!sessionClientPairRef.current) {
-    sessionClientPairRef.current = createSessionClient(oxyServices, createWebTokenTransport(oxyServices));
+    // `io` (socket.io-client, a real @oxyhq/auth dependency) is STATICALLY
+    // imported and injected as the SessionClient socketFactory so realtime
+    // session sync survives Vite/Rolldown bundling of the published core dist —
+    // core's lazy dynamic `import('socket.io-client')` of a bare specifier does
+    // not resolve reliably there.
+    sessionClientPairRef.current = createSessionClient(oxyServices, createWebTokenTransport(oxyServices), io);
   }
   const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
 
