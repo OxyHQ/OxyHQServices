@@ -76,7 +76,7 @@ import {
 } from '../schemas/auth.schemas';
 import { AppGrant } from '../models/AppGrant';
 import { FedCMGrant } from '../models/FedCMGrant';
-import { normaliseOrigin } from '../utils/origin';
+import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
 import { formatUserNameResponse } from '../utils/displayName';
@@ -1497,7 +1497,13 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   // accepted as-is — the device-flow consent screen still authorises every
   // session interactively.
   if (isTrustedApplication(resolvedApp) && hasBrowserContext(req)) {
-    if (!boundOrigin || !applicationAllowsOrigin(resolvedApp, boundOrigin)) {
+    // Loopback dev origins (http://localhost, 127.0.0.1, [::1] on any port) are
+    // allowed to START the QR flow for a trusted app even though they are not
+    // registered redirect origins — otherwise no local dev server could sign in.
+    // This is only a gate to begin the flow; `originVerified` below stays false
+    // for loopback (it keys off applicationAllowsOrigin ONLY), so the Commons
+    // approval UI still shows its anti-phishing warning for an unverified origin.
+    if (!boundOrigin || (!applicationAllowsOrigin(resolvedApp, boundOrigin) && !isLoopbackOrigin(boundOrigin))) {
       throw new ForbiddenError('Application origin is not allowed');
     }
   }

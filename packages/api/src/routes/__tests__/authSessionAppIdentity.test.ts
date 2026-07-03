@@ -578,6 +578,87 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
   });
 });
 
+describe('POST /auth/session/create — loopback dev origins (Sign in with Oxy QR)', () => {
+  // A loopback dev server (e.g. Allo web on http://localhost:8081) is NOT one of
+  // a trusted app's registered redirect origins, but it must still be able to
+  // START the QR sign-in flow. The guard lets loopback through; originVerified
+  // stays false so Commons still shows its anti-phishing warning.
+  it('allows a trusted/official app to start the flow from an unregistered loopback origin, but leaves originVerified=false', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-loopback', clientId: 'oxy_dk_client' },
+      { origin: 'http://localhost:8081' },
+    );
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as {
+      applicationId: { toString: () => string };
+      boundOrigin?: string;
+      originVerified?: boolean;
+    };
+    expect(created.applicationId.toString()).toBe(OFFICIAL_APP_ID);
+    expect(created.boundOrigin).toBe('http://localhost:8081');
+    // Loopback is allowed to START the flow but is NOT a verified official origin.
+    expect(created.originVerified).toBe(false);
+  });
+
+  it('allows a trusted/official app from its OWN registered redirect origin with originVerified=true (regression guard — unchanged behavior)', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-registered-origin', clientId: 'oxy_dk_client' },
+      { origin: 'https://accounts.oxy.so' },
+    );
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { originVerified?: boolean };
+    expect(created.originVerified).toBe(true);
+  });
+
+  it('still rejects a trusted app from a non-loopback, non-registered browser origin', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-foreign-origin', clientId: 'oxy_dk_client' },
+      { origin: 'https://evil.example' },
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('Application origin is not allowed');
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT treat https://localhost as loopback — an unregistered https loopback origin is still rejected', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/create',
+      { sessionToken: 'tok-create-https-loopback', clientId: 'oxy_dk_client' },
+      { origin: 'https://localhost:8081' },
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe('Application origin is not allowed');
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
+  });
+});
+
 describe('POST /auth/session/authorize-signed/:authorizeCode — route mapping (C2)', () => {
   it('maps an ok outcome to 200 and notifies the originator over the socket', async () => {
     mockAuthorizeSigned.mockResolvedValueOnce({
