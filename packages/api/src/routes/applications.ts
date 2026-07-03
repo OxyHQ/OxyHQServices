@@ -160,10 +160,34 @@ function resolveRedirectUris(input: { redirectUris?: string[] }): string[] | und
  * Enforce the staff-only privileged-scope gate when an actor sets an
  * application's scopes.
  *
- * Privileged scopes ({@link isPrivilegedScope}, e.g. `federation:write`) confer
- * act-on-behalf authority and are NOT self-grantable. A NON-STAFF caller is
- * REJECTED with 403 if the scope set they submit adds a privileged scope that
- * was not already present on the application. Returns the validated scope list.
+ * Privileged scopes ({@link isPrivilegedScope}, e.g. `federation:write`,
+ * `signals:write`) confer act-on-behalf authority and are ENTIRELY
+ * staff-controlled: a non-staff caller may neither grant NOR revoke them. Only
+ * platform staff may change an application's privileged-scope set.
+ *
+ * Because `PATCH /:appId` (and create) replace `application.scopes` wholesale
+ * with the submitted array, a naive "reject on newly-added privileged scope"
+ * check would still let a non-staff caller SILENTLY DROP an already-granted
+ * privileged scope simply by omitting it from the payload — e.g. a console
+ * scope-picker form whose canonical option list predates a newly-added
+ * privileged scope submits a set that no longer contains it, and the
+ * authoritative replace revokes it. That is exactly how Mention's granted,
+ * in-use `signals:write` was being wiped on routine app edits, breaking
+ * recommendation signal pushes at the next service-token mint (the mint
+ * intersects credential scopes with app scopes, so losing it on the app loses
+ * it for every credential).
+ *
+ * The gate is therefore symmetric for non-staff callers:
+ * - Adding a privileged scope not already present → 403 (unchanged).
+ * - Omitting an already-granted privileged scope → the scope is PRESERVED
+ *   (re-added to the result), never silently revoked. Removing a privileged
+ *   scope requires staff.
+ *
+ * `previousScopes` supplies the currently-granted set to reconcile against; it
+ * is empty on create (nothing to preserve) and the stored scopes on update.
+ * Staff callers get an authoritative replace of exactly what they submit,
+ * including intentional privileged-scope removal. Returns the validated,
+ * deduplicated scope list.
  */
 function authorizeRequestedScopes(
   req: AuthRequest,
@@ -177,6 +201,8 @@ function authorizeRequestedScopes(
   }
 
   const previouslyGranted = new Set(previousScopes);
+  const requested = new Set(deduped);
+
   const newlyAddedPrivileged = deduped.filter(
     (scope) => isPrivilegedScope(scope) && !previouslyGranted.has(scope)
   );
@@ -191,7 +217,20 @@ function authorizeRequestedScopes(
     );
   }
 
-  return deduped;
+  // Preserve already-granted privileged scopes a non-staff caller omitted:
+  // revoking a privileged scope is a staff-only mutation, so an omission is
+  // treated as "leave it untouched" rather than a silent revoke.
+  const preservedPrivileged = Array.from(previouslyGranted).filter(
+    (scope) => isPrivilegedScope(scope) && !requested.has(scope)
+  );
+  if (preservedPrivileged.length > 0) {
+    logger.warn('Preserving already-granted privileged application scope omitted by non-staff actor', {
+      userId: requireUserId(req),
+      scopes: preservedPrivileged,
+    });
+  }
+
+  return [...deduped, ...preservedPrivileged];
 }
 
 /**

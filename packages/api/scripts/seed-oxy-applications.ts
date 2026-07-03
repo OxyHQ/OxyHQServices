@@ -37,7 +37,10 @@ import AccountMember from '../src/models/AccountMember';
 import { User } from '../src/models/User';
 import { permissionsForAccountRole } from '../src/utils/accountRoles';
 import { logger } from '../src/utils/logger';
-import type { ApplicationScope } from '../src/utils/applicationScopes';
+import {
+  unionValidScopes,
+  type ApplicationScope,
+} from '../src/utils/applicationScopes';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -128,8 +131,12 @@ const SEED_APPS: SeedAppSpec[] = [
     // resolves federated users. The mint intersects credential scopes with these
     // app scopes, so the app MUST carry federation:write for the credential's
     // federation:write to survive. files:write is needed for federated-media S3
-    // caching (POST /assets/service/cache).
-    scopes: ['user:read', 'files:write', 'federation:write'],
+    // caching (POST /assets/service/cache); files:read for reading cached assets
+    // back (GET /assets/service/*). signals:write lets Mention push cross-app
+    // recommendation signals (interest + interaction-affinity edges) — the
+    // credential already carries it, so the app MUST declare it or the mint's
+    // intersection drops it.
+    scopes: ['user:read', 'files:read', 'files:write', 'federation:write', 'signals:write'],
   },
   {
     name: 'Homiio',
@@ -405,7 +412,9 @@ async function seed(): Promise<void> {
       application.isInternal = desiredAppFields.isInternal;
       application.capabilities = desiredAppFields.capabilities;
       application.redirectUris = desiredAppFields.redirectUris;
-      application.scopes = desiredAppFields.scopes;
+      // Additive union: keep any valid already-granted scope so a re-run never
+      // silently revokes an out-of-band grant (e.g. Mention's signals:write).
+      application.scopes = unionValidScopes(desiredAppFields.scopes, application.scopes);
       application.ownerAccountId = desiredAppFields.ownerAccountId;
       if (application.isModified()) {
         await application.save();
