@@ -304,6 +304,16 @@ export function LoginForm({
             if (deviceFingerprint) {
                 body.deviceFingerprint = deviceFingerprint
             }
+            // When an account is already signed in on this browser, thread its
+            // active device session so the API joins the new account to the SAME
+            // central device (server-validated — never a raw deviceId). This is
+            // the id `useDeviceAccounts` already resolved from the device's
+            // refresh cookies; it is the same central device the `fedcm_session`
+            // cookie points at, so every open app converges via the socket
+            // broadcast instead of splitting into a fresh fingerprint device.
+            if (currentSessionId) {
+                body.priorSessionId = currentSessionId
+            }
             const response = await fetch(buildAuthUrl("/login"), {
                 method: "POST",
                 headers: await withCsrfHeader({ "content-type": "application/json" }),
@@ -355,6 +365,9 @@ export function LoginForm({
         const body: Record<string, string> = { loginToken }
         if (useBackupCode) body.backupCode = backupCode.trim()
         else body.token = otpValue
+        // Same central device-join as the password path: a 2FA-completed login on
+        // a browser that already has an account joins that account's device.
+        if (currentSessionId) body.priorSessionId = currentSessionId
 
         try {
             // Correct endpoint: /security/2fa/verify-login (creates session)

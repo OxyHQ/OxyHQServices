@@ -13,6 +13,8 @@ import { emitSessionUpdate } from '../server';
 import Notification from '../models/Notification';
 import SignatureService from '../services/signature.service';
 import sessionService from '../services/session.service';
+import deviceSessionService from '../services/deviceSession.service';
+import { broadcastDeviceState } from '../utils/socket';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { formatUserResponse, type UserLike } from '../utils/userTransform';
@@ -179,8 +181,49 @@ export function buildSessionAuthResponse(session: { sessionId: string; deviceId:
   };
 }
 
+/**
+ * Resolve the central deviceId of an ACTIVE prior session so a new sign-in on
+ * the same browser JOINS the browser's existing device instead of sprawling a
+ * fresh (UA/fingerprint-derived) one. The caller passes an OPTIONAL
+ * `priorSessionId` — the sessionId of an account already signed in on this
+ * device (the IdP threads the active device account's id from
+ * `useDeviceAccounts`). We NEVER trust a client-supplied deviceId: a deviceId is
+ * enumerable, but the sessionId is a bearer-equivalent secret that we
+ * re-validate server-side. `sessionService.getSession` only returns an ACTIVE,
+ * unexpired session, so a non-null result means the caller controls that
+ * session — we read ITS deviceId. Returns null when the id is absent, not a
+ * string, or the session is inactive/expired; the caller then falls through to
+ * today's device derivation with no join.
+ */
+export async function resolvePriorDeviceId(priorSessionId: unknown): Promise<string | null> {
+  if (typeof priorSessionId !== 'string' || priorSessionId.length === 0) return null;
+  const prior = await sessionService.getSession(priorSessionId, true);
+  return prior?.deviceId ?? null;
+}
+
+/**
+ * Register a deliberate sign-in into the central device authority — exactly what
+ * an app does via `POST /session/device/add`. The freshly-authenticated account
+ * is added to the device (becoming its active account, addAccount case-3
+ * semantics) and, when the device state actually changed, the new state is
+ * broadcast to the device room so every already-open app on this browser
+ * converges on the same account list. Only invoked once a sign-in has inherited
+ * a resolved prior device (`resolvePriorDeviceId`). Best-effort: a failure here
+ * must never break sign-in — the app re-registers on its next cold boot.
+ */
+export async function joinDeviceAfterSignIn(
+  deviceId: string,
+  accountId: string,
+  sessionId: string
+): Promise<void> {
+  const { state, changed } = await deviceSessionService.addAccount(deviceId, { accountId, sessionId });
+  // Mirror POST /session/device/add: an idempotent re-register changes nothing,
+  // so skip the broadcast.
+  if (changed) broadcastDeviceState(state);
+}
+
 export class SessionController {
-  
+
   /**
    * Register a new user with public key authentication
    * No passwords needed - identity is verified via signature
@@ -331,7 +374,7 @@ export class SessionController {
    */
   static async signUp(req: Request, res: Response) {
     try {
-      const { email, username, password, name, deviceName, deviceFingerprint } = req.body;
+      const { email, username, password, name, deviceName, deviceFingerprint, priorSessionId } = req.body;
 
       if (
         !email ||
@@ -412,15 +455,34 @@ export class SessionController {
         });
       }
 
+      // A signup performed while another account is already signed in on this
+      // browser (the IdP threads its active device session as `priorSessionId`)
+      // joins the SAME central device — same rule as sign-in. The id is
+      // re-validated server-side; a client-supplied deviceId is never trusted.
+      const priorDeviceId = await resolvePriorDeviceId(priorSessionId);
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        priorDeviceId
+          ? { deviceName, deviceId: priorDeviceId }
+          : { deviceName, deviceFingerprint }
       );
 
       const response = buildSessionAuthResponse(session, user);
       if (!response) {
         return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
+      if (priorDeviceId) {
+        try {
+          await joinDeviceAfterSignIn(session.deviceId, user._id.toString(), session.sessionId);
+        } catch (error) {
+          logger.error('Failed to join device after signup', error instanceof Error ? error : new Error(String(error)), {
+            component: 'SessionController',
+            method: 'signUp',
+            userId: user._id.toString(),
+          });
+        }
       }
 
       try {
@@ -660,7 +722,7 @@ export class SessionController {
    */
   static async signIn(req: Request, res: Response) {
     try {
-      const { identifier, email, username, password, deviceName, deviceFingerprint } = req.body;
+      const { identifier, email, username, password, deviceName, deviceFingerprint, priorSessionId } = req.body;
       const loginIdentifier = identifier || email || username;
 
       if (!loginIdentifier || !password || typeof password !== 'string') {
@@ -741,10 +803,19 @@ export class SessionController {
         req
       );
 
+      // When this browser already has an account signed in (the IdP threads its
+      // active device session as `priorSessionId`), inherit that session's
+      // central deviceId so the new account joins the SAME device instead of
+      // sprawling a fresh one. The id is re-validated server-side; a
+      // client-supplied deviceId is never trusted. When a prior device is
+      // resolved, the explicit deviceId wins over any fingerprint hint.
+      const priorDeviceId = await resolvePriorDeviceId(priorSessionId);
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        priorDeviceId
+          ? { deviceName, deviceId: priorDeviceId }
+          : { deviceName, deviceFingerprint }
       );
 
       const baseResponse = buildSessionAuthResponse(session, user);
@@ -799,6 +870,23 @@ export class SessionController {
           method: 'signIn',
           userId: user._id.toString(),
         });
+      }
+
+      // Register the new account into the central device authority so every
+      // app already open on this browser converges on the same account list —
+      // exactly what an app does via POST /session/device/add. Only when the
+      // sign-in inherited a resolved prior device; best-effort (never breaks
+      // sign-in).
+      if (priorDeviceId) {
+        try {
+          await joinDeviceAfterSignIn(session.deviceId, user._id.toString(), session.sessionId);
+        } catch (error) {
+          logger.error('Failed to join device after sign-in', error instanceof Error ? error : new Error(String(error)), {
+            component: 'SessionController',
+            method: 'signIn',
+            userId: user._id.toString(),
+          });
+        }
       }
 
       const signinResponseWithAuthuser: typeof response & { authuser?: number } =

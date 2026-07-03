@@ -107,6 +107,18 @@ jest.mock('../../services/signature.service', () => ({
   default: {},
 }));
 
+// session.controller imports deviceSession.service for the central device-join
+// path; mock it (and the socket broadcast helper) so the DeviceSession model —
+// which touches the mocked Mongoose Schema.Types — is never loaded here.
+jest.mock('../../services/deviceSession.service', () => ({
+  __esModule: true,
+  default: { addAccount: jest.fn() },
+}));
+
+jest.mock('../../utils/socket', () => ({
+  broadcastDeviceState: jest.fn(),
+}));
+
 jest.mock('../../utils/deviceUtils', () => ({
   getDeviceActiveSessions: jest.fn(),
   logoutAllDeviceSessions: jest.fn(),

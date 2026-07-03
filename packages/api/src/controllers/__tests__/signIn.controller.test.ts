@@ -16,6 +16,9 @@ const mockVerifyPassword = jest.fn();
 const mockHashPassword = jest.fn();
 const mockValidatePasswordStrength = jest.fn();
 const mockCreateSession = jest.fn();
+const mockGetSession = jest.fn();
+const mockAddAccount = jest.fn();
+const mockBroadcastDeviceState = jest.fn();
 const mockCheckForAnomalies = jest.fn().mockResolvedValue({ hasAnomalies: false });
 const mockIsLockedOut = jest.fn();
 const mockRecordFailure = jest.fn();
@@ -57,7 +60,16 @@ jest.mock('../../utils/password', () => ({
 
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
-  default: { createSession: mockCreateSession },
+  default: { createSession: mockCreateSession, getSession: mockGetSession },
+}));
+
+jest.mock('../../services/deviceSession.service', () => ({
+  __esModule: true,
+  default: { addAccount: mockAddAccount },
+}));
+
+jest.mock('../../utils/socket', () => ({
+  broadcastDeviceState: mockBroadcastDeviceState,
 }));
 
 jest.mock('../../services/anomalyDetection.service', () => ({
@@ -217,6 +229,119 @@ describe('SessionController.signIn (H5)', () => {
     expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'login', identifier: 'alice' });
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 's1', accessToken: 'tok' })
+    );
+  });
+});
+
+describe('SessionController.signIn — central device join (priorSessionId)', () => {
+  const activeUser = {
+    _id: { toString: () => 'user-1' },
+    password: 'real-hash',
+    username: 'alice',
+    twoFactorAuth: { enabled: false },
+  };
+  const createdSession = {
+    sessionId: 'new-sess',
+    deviceId: 'device-A',
+    expiresAt: new Date(Date.now() + 60_000),
+    accessToken: 'tok',
+    deviceInfo: { deviceName: 'x', deviceType: 'desktop', platform: 'web' },
+  };
+
+  beforeEach(() => {
+    mockVerifyPassword.mockResolvedValue(true);
+    mockCreateSession.mockResolvedValue(createdSession);
+    mockAddAccount.mockResolvedValue({ state: { deviceId: 'device-A' }, changed: true });
+  });
+
+  it('inherits the prior ACTIVE session deviceId, registers the account, and broadcasts', async () => {
+    mockUserFindOne.mockReturnValueOnce(makeQuery(activeUser));
+    // getSession only returns ACTIVE, unexpired sessions.
+    mockGetSession.mockResolvedValueOnce({ sessionId: 'prior-sess', deviceId: 'device-A' });
+
+    const res = createMockRes();
+    await SessionController.signIn(
+      createReq({ identifier: 'alice', password: 'right', priorSessionId: 'prior-sess' }),
+      res
+    );
+
+    // The prior sessionId is re-validated server-side (never a client deviceId).
+    expect(mockGetSession).toHaveBeenCalledWith('prior-sess', true);
+    // createSession inherits the prior device's central deviceId verbatim.
+    expect(mockCreateSession).toHaveBeenCalledWith(
+      'user-1',
+      expect.anything(),
+      expect.objectContaining({ deviceId: 'device-A' })
+    );
+    // The freshly-authenticated account is registered into the device authority.
+    expect(mockAddAccount).toHaveBeenCalledWith(
+      'device-A',
+      expect.objectContaining({ accountId: 'user-1', sessionId: 'new-sess' })
+    );
+    // A changed device state is broadcast to the device room.
+    expect(mockBroadcastDeviceState).toHaveBeenCalledTimes(1);
+    // Response shape is unchanged (still the session auth response).
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'new-sess', accessToken: 'tok' })
+    );
+  });
+
+  it('does not broadcast when addAccount reports no change (idempotent re-register)', async () => {
+    mockUserFindOne.mockReturnValueOnce(makeQuery(activeUser));
+    mockGetSession.mockResolvedValueOnce({ sessionId: 'prior-sess', deviceId: 'device-A' });
+    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'device-A' }, changed: false });
+
+    const res = createMockRes();
+    await SessionController.signIn(
+      createReq({ identifier: 'alice', password: 'right', priorSessionId: 'prior-sess' }),
+      res
+    );
+
+    expect(mockAddAccount).toHaveBeenCalledTimes(1);
+    expect(mockBroadcastDeviceState).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'new-sess' })
+    );
+  });
+
+  it('ignores an INACTIVE prior session — no device join, no error', async () => {
+    mockUserFindOne.mockReturnValueOnce(makeQuery(activeUser));
+    // getSession returns null for a signed-out / expired session.
+    mockGetSession.mockResolvedValueOnce(null);
+
+    const res = createMockRes();
+    await SessionController.signIn(
+      createReq({ identifier: 'alice', password: 'right', priorSessionId: 'dead-sess' }),
+      res
+    );
+
+    expect(mockGetSession).toHaveBeenCalledWith('dead-sess', true);
+    // No inherited deviceId is threaded into createSession.
+    const createOptions = mockCreateSession.mock.calls[0][2];
+    expect(createOptions.deviceId).toBeUndefined();
+    expect(mockAddAccount).not.toHaveBeenCalled();
+    expect(mockBroadcastDeviceState).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'new-sess' })
+    );
+  });
+
+  it('is a no-op device-wise when no priorSessionId is supplied (today\'s behavior)', async () => {
+    mockUserFindOne.mockReturnValueOnce(makeQuery(activeUser));
+
+    const res = createMockRes();
+    await SessionController.signIn(
+      createReq({ identifier: 'alice', password: 'right' }),
+      res
+    );
+
+    expect(mockGetSession).not.toHaveBeenCalled();
+    const createOptions = mockCreateSession.mock.calls[0][2];
+    expect(createOptions.deviceId).toBeUndefined();
+    expect(mockAddAccount).not.toHaveBeenCalled();
+    expect(mockBroadcastDeviceState).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'new-sess' })
     );
   });
 });

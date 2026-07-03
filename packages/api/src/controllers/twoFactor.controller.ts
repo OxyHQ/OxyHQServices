@@ -5,7 +5,7 @@ import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
-import { buildSessionAuthResponse } from './session.controller';
+import { buildSessionAuthResponse, resolvePriorDeviceId, joinDeviceAfterSignIn } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
 
@@ -294,7 +294,7 @@ export async function verify2FAToken(req: Request, res: Response) {
  */
 export async function verify2FALogin(req: Request, res: Response) {
   try {
-    const { loginToken, token, backupCode, deviceName, deviceFingerprint } = req.body;
+    const { loginToken, token, backupCode, deviceName, deviceFingerprint, priorSessionId } = req.body;
 
     if (!loginToken) {
       return res.status(400).json({ message: 'Login token is required' });
@@ -394,16 +394,35 @@ export async function verify2FALogin(req: Request, res: Response) {
     user.twoFactorAuth.verifiedAt = new Date();
     await user.save();
 
-    // Create session (same as signIn would)
+    // Create session (same as signIn would). When the 2FA challenge completes a
+    // login on a browser that already has an account signed in (the IdP threads
+    // its active device session as `priorSessionId`), inherit that session's
+    // central deviceId so the account joins the SAME device. The id is
+    // re-validated server-side; a client-supplied deviceId is never trusted.
+    const priorDeviceId = await resolvePriorDeviceId(priorSessionId);
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      { deviceName, deviceFingerprint }
+      priorDeviceId
+        ? { deviceName, deviceId: priorDeviceId }
+        : { deviceName, deviceFingerprint }
     );
 
     const response = buildSessionAuthResponse(session, user);
     if (!response) {
       return res.status(500).json({ message: 'Failed to format user data' });
+    }
+
+    if (priorDeviceId) {
+      try {
+        await joinDeviceAfterSignIn(session.deviceId, user._id.toString(), session.sessionId);
+      } catch (error) {
+        logger.error('Failed to join device after 2FA sign-in', error instanceof Error ? error : new Error(String(error)), {
+          component: 'TwoFactorController',
+          method: 'verify2FALogin',
+          userId: user._id.toString(),
+        });
+      }
     }
 
     try {
