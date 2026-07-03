@@ -507,6 +507,83 @@ describe('GET/PATCH/DELETE /applications/:appId — account-derived RBAC', () =>
 });
 
 // ---------------------------------------------------------------------------
+// PATCH scopes — privileged-scope reconciliation
+//
+// Regression coverage for the root cause of Mention losing its granted, in-use
+// `signals:write` scope: `PATCH /:appId` replaces `application.scopes` with the
+// submitted array, so a non-staff caller submitting a stale/partial scope list
+// (e.g. a console scope-picker whose canonical options omit a newly-added
+// privileged scope) MUST NOT silently revoke an already-granted privileged
+// scope. Non-staff callers can neither add nor drop privileged scopes.
+// ---------------------------------------------------------------------------
+
+describe('PATCH /applications/:appId — privileged scope reconciliation', () => {
+  it('preserves an already-granted privileged scope a non-staff owner omits', async () => {
+    const app = seedApp({ scopes: ['user:read', 'files:write', 'signals:write'] });
+
+    // Simulates the console form re-submitting a canonical list that includes a
+    // newly-added non-privileged scope (files:read) but drops signals:write.
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'files:write', 'files:read'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(app.scopes).toContain('signals:write');
+    expect(app.scopes).toEqual(
+      expect.arrayContaining(['user:read', 'files:write', 'files:read', 'signals:write'])
+    );
+    expect(res.body.application?.scopes).toContain('signals:write');
+  });
+
+  it('preserves multiple already-granted privileged scopes on a scope edit', async () => {
+    const app = seedApp({ scopes: ['user:read', 'signals:write', 'federation:write'] });
+
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(app.scopes).toEqual(
+      expect.arrayContaining(['user:read', 'signals:write', 'federation:write'])
+    );
+  });
+
+  it('still rejects a non-staff caller adding a new privileged scope', async () => {
+    seedApp({ scopes: ['user:read'] });
+
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'signals:write'],
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('lets a STAFF caller intentionally revoke a privileged scope', async () => {
+    actAs(OWNER_ID, true);
+    const app = seedApp({ scopes: ['user:read', 'signals:write'] });
+
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(app.scopes).not.toContain('signals:write');
+    expect(app.scopes).toEqual(['user:read']);
+  });
+
+  it('does not duplicate a privileged scope the non-staff caller kept', async () => {
+    const app = seedApp({ scopes: ['user:read', 'signals:write'] });
+
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'signals:write'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(app.scopes.filter((s: string) => s === 'signals:write')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
 

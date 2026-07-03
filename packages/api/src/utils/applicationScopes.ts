@@ -114,3 +114,34 @@ export function intersectScopes(
   }
   return result;
 }
+
+/**
+ * Reconcile a canonical (declarative) scope set with the scopes already granted
+ * on a stored application ADDITIVELY: the result is the UNION of both, in a
+ * stable order (canonical first, then any additional already-granted scope),
+ * de-duplicated, with unknown/legacy scopes dropped.
+ *
+ * This is the single authority for any "rebuild an application's scopes from a
+ * canonical list" path (the official-app seed today; any future ensure/rebuild
+ * routine). A destructive replace of `application.scopes` with only the
+ * canonical list silently REVOKES a legitimately-granted, in-use scope that was
+ * added out-of-band — and because {@link intersectScopes} intersects credential
+ * scopes with app scopes at every service-token mint, the credential loses the
+ * scope too. Using a union makes it IMPOSSIBLE for a granted, valid scope to
+ * vanish on the next rebuild. Intentionally REMOVING a scope is therefore an
+ * explicit operation on the app record, never a side effect of a rebuild.
+ */
+export function unionValidScopes(
+  canonicalScopes: readonly string[],
+  existingScopes: readonly string[]
+): ApplicationScope[] {
+  const result: ApplicationScope[] = [];
+  const seen = new Set<string>();
+  for (const scope of [...canonicalScopes, ...existingScopes]) {
+    if (seen.has(scope)) continue;
+    if (!isValidApplicationScope(scope)) continue;
+    seen.add(scope);
+    result.push(scope);
+  }
+  return result;
+}
