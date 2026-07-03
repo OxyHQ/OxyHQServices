@@ -66,6 +66,7 @@ jest.mock('@oxyhq/core', () => {
     ssoGuardKey: actual.ssoGuardKey,
     ssoDestKey: actual.ssoDestKey,
     ssoAttemptedKey: actual.ssoAttemptedKey,
+    ssoOutcomeKey: actual.ssoOutcomeKey,
     isCentralIdPOrigin: actual.isCentralIdPOrigin,
     guardActive: actual.guardActive,
     buildSsoBounceUrl: actual.buildSsoBounceUrl,

@@ -443,3 +443,84 @@ describe('detachMigratedAccount', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });
+
+describe('resolveRegisteredSession', () => {
+  it('reuses the session REGISTERED for the account on the device — validated + freshly-minted token', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'central-device',
+      accounts: [
+        { accountId: { toString: () => 'other' }, sessionId: 's-other', authuser: 0 },
+        { accountId: { toString: () => 'acct-1' }, sessionId: 'registered-sess', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'other' },
+      revision: 4,
+    }));
+    // The registered session validates (managed act_as re-check passes) and
+    // reports its own stored deviceId — the central device it was minted on.
+    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'central-device' } });
+    const expiresAt = new Date(Date.now() + 60_000);
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'fresh-token', expiresAt });
+
+    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
+
+    expect(result).toEqual({
+      sessionId: 'registered-sess',
+      deviceId: 'central-device',
+      accessToken: 'fresh-token',
+      expiresAt,
+    });
+    // Validated + minted against the REGISTERED session id, not the active one.
+    expect(mockValidateSessionById).toHaveBeenCalledWith('registered-sess', false);
+    expect(mockGetAccessToken).toHaveBeenCalledWith('registered-sess');
+  });
+
+  it('returns null when the device doc is absent (first sign-in on the device)', async () => {
+    mockFindOne.mockReturnValueOnce(lean(null));
+    const result = await deviceSessionService.resolveRegisteredSession('unknown-device', 'acct-1');
+    expect(result).toBeNull();
+    expect(mockValidateSessionById).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the account is not registered on the device', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'central-device',
+      accounts: [{ accountId: { toString: () => 'other' }, sessionId: 's-other', authuser: 0 }],
+      activeAccountId: { toString: () => 'other' },
+      revision: 1,
+    }));
+    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
+    expect(result).toBeNull();
+    expect(mockValidateSessionById).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('returns null WITHOUT minting a token when the registered session is no longer valid (never resurrect a dead session)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'central-device',
+      accounts: [{ accountId: { toString: () => 'acct-1' }, sessionId: 'dead-sess', authuser: 0 }],
+      activeAccountId: { toString: () => 'acct-1' },
+      revision: 1,
+    }));
+    mockValidateSessionById.mockResolvedValueOnce(null);
+
+    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
+
+    expect(result).toBeNull();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the token machinery cannot mint an access token', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'central-device',
+      accounts: [{ accountId: { toString: () => 'acct-1' }, sessionId: 'registered-sess', authuser: 0 }],
+      activeAccountId: { toString: () => 'acct-1' },
+      revision: 1,
+    }));
+    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'central-device' } });
+    mockGetAccessToken.mockResolvedValueOnce(null);
+
+    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
+    expect(result).toBeNull();
+  });
+});

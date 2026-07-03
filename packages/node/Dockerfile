@@ -29,6 +29,15 @@ FROM node:20-alpine AS builder
 RUN apk add --no-cache python3 make g++
 RUN npm install -g bun
 
+# Pin node-gyp to a known-good version. better-sqlite3 has no prebuilt binary for
+# this Node/musl target, so it compiles from source. Bun's default addon build
+# fetches `bunx node-gyp@latest` — currently node-gyp@13, whose bundled undici
+# calls `webidl.util.markAsUncloneable`, which throws on Node 20 and fails the
+# install. Installing node-gyp globally puts a known-good `node-gyp` on PATH, and
+# `npm_config_node_gyp` makes bun use it directly instead of the volatile @latest.
+RUN npm install -g node-gyp@11.5.0
+ENV npm_config_node_gyp=/usr/local/lib/node_modules/node-gyp/bin/node-gyp.js
+
 WORKDIR /app
 
 # Narrow the workspaces to the lean subset this image needs, then drop the
@@ -63,6 +72,12 @@ FROM node:20-alpine
 
 RUN apk add --no-cache python3 make g++ curl
 RUN npm install -g bun
+
+# better-sqlite3 (a runtime dependency) compiles from source in the production
+# install too; pin node-gyp so bun does not fetch the broken `node-gyp@latest`.
+# See the builder stage above for the full rationale.
+RUN npm install -g node-gyp@11.5.0
+ENV npm_config_node_gyp=/usr/local/lib/node_modules/node-gyp/bin/node-gyp.js
 
 WORKDIR /app
 
