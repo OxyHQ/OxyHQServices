@@ -26,6 +26,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, setSy
 
 const RP_ORIGIN = 'https://accounts.oxy.so';
 const OTHER_ORIGIN = 'https://console.oxy.so';
+const THIRD_PARTY_ORIGIN = 'https://third-party.example';
 const API_BASE = 'https://api.oxy.so';
 const USER_A = '507f1f77bcf86cd799439011';
 const USER_B = '507f1f77bcf86cd799439012';
@@ -56,6 +57,9 @@ type StubMode = 'ok' | 'fail' | 'empty';
 let approvedFetchCount = 0;
 let approvedMode: StubMode = 'ok';
 let approvedList: string[] = [RP_ORIGIN];
+// The trusted (consent-skip) subset returned alongside `clients`. Empty by
+// default so the existing cache/resolve tests keep the full grant gate.
+let trustedList: string[] = [];
 let grantsFetchCount = 0;
 let grantsMode: StubMode = 'ok';
 let grantsList: string[] = [RP_ORIGIN];
@@ -82,7 +86,7 @@ function installStub(): void {
         return new Response('err', { status: 500 });
       }
       const clients = approvedMode === 'empty' ? [] : approvedList;
-      return new Response(JSON.stringify({ success: true, clients }), {
+      return new Response(JSON.stringify({ success: true, clients, trusted: trustedList }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -113,6 +117,12 @@ let fetchApprovedClients: (
   userId: string,
   forceRefresh?: boolean
 ) => Promise<string[]>;
+let userHasGrantedClient: (
+  config: typeof CONFIG,
+  userId: string,
+  clientOrigin: string,
+  forceRefresh?: boolean
+) => Promise<boolean>;
 let resetSsoCaches: () => void = () => {};
 
 beforeAll(async () => {
@@ -120,6 +130,7 @@ beforeAll(async () => {
   const mod = await import('../index');
   resolveApprovedClientOrigin = mod.resolveApprovedClientOrigin;
   fetchApprovedClients = mod.fetchApprovedClients;
+  userHasGrantedClient = mod.userHasGrantedClient;
   resetSsoCaches = mod.__resetSsoCachesForTests;
 });
 
@@ -133,6 +144,7 @@ beforeEach(() => {
   approvedFetchCount = 0;
   approvedMode = 'ok';
   approvedList = [RP_ORIGIN];
+  trustedList = [];
   grantsFetchCount = 0;
   grantsMode = 'ok';
   grantsList = [RP_ORIGIN];
@@ -329,5 +341,84 @@ describe('grants cache (30s TTL, NO stale-on-failure)', () => {
     const liveRead = await fetchApprovedClients(CONFIG, USER_A, true);
     expect(liveRead).toEqual([RP_ORIGIN]); // revocation observed
     expect(grantsFetchCount).toBe(2);
+  });
+});
+
+/**
+ * Trusted-origin short-circuit in `userHasGrantedClient`.
+ *
+ * A first-party / official RP the API marks `trusted` NEVER requires a per-user
+ * FedCM grant — official ecosystem apps sign in with zero consent friction. Such
+ * an origin (e.g. console.oxy.so, which has no flow that records a grant and
+ * would otherwise be stuck on `no_grant`) resolves TRUE without ANY per-user
+ * grant fetch. Third-party origins keep the full grant gate; a missing/absent
+ * `trusted` array (older API) fails closed to that gate.
+ */
+describe('userHasGrantedClient — trusted-origin short-circuit', () => {
+  it('returns true for a trusted origin WITHOUT any per-user grant fetch', async () => {
+    // console.oxy.so is an official app: approved AND trusted, but the user has
+    // NEVER granted it (grants list is empty).
+    approvedList = [RP_ORIGIN, OTHER_ORIGIN];
+    trustedList = [OTHER_ORIGIN];
+    grantsMode = 'empty';
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, OTHER_ORIGIN);
+    expect(granted).toBe(true);
+    // The grant endpoint was NEVER hit — the trusted list alone authorised it.
+    expect(grantsFetchCount).toBe(0);
+  });
+
+  it('applies the trusted short-circuit even with forceRefresh (the /sso/establish re-check)', async () => {
+    approvedList = [RP_ORIGIN, OTHER_ORIGIN];
+    trustedList = [OTHER_ORIGIN];
+    grantsMode = 'empty';
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, OTHER_ORIGIN, true);
+    expect(granted).toBe(true);
+    expect(grantsFetchCount).toBe(0); // trusted origins carry no grant to re-check
+  });
+
+  it('still fetches the per-user grant for a NON-trusted (third-party) approved origin', async () => {
+    // Third-party origin: approved (may start SSO) but NOT trusted → the grant
+    // gate applies. With a matching grant it passes, but the grant WAS fetched.
+    approvedList = [RP_ORIGIN, THIRD_PARTY_ORIGIN];
+    trustedList = [OTHER_ORIGIN]; // does NOT include the third-party origin
+    grantsList = [THIRD_PARTY_ORIGIN];
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, THIRD_PARTY_ORIGIN);
+    expect(granted).toBe(true);
+    expect(grantsFetchCount).toBe(1); // grant gate enforced (fetch happened)
+  });
+
+  it('denies a NON-trusted approved origin the user has not granted', async () => {
+    approvedList = [RP_ORIGIN, THIRD_PARTY_ORIGIN];
+    trustedList = [OTHER_ORIGIN];
+    grantsMode = 'empty'; // user has granted nothing
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, THIRD_PARTY_ORIGIN);
+    expect(granted).toBe(false);
+    expect(grantsFetchCount).toBe(1); // full gate ran and denied
+  });
+
+  it('fails closed to the grant gate when the API omits a trusted array (older API)', async () => {
+    // trustedList stays [] → even an official origin falls through to the grant
+    // gate. Today's behaviour: without a trust signal, no consent-skip.
+    approvedList = [RP_ORIGIN, OTHER_ORIGIN];
+    trustedList = [];
+    grantsMode = 'empty';
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, OTHER_ORIGIN);
+    expect(granted).toBe(false);
+    expect(grantsFetchCount).toBe(1); // grant gate enforced (fail closed)
+  });
+
+  it('fails closed to the grant gate when the approved/trusted snapshot cannot be fetched', async () => {
+    // No prior cache AND the approved-clients fetch fails → isTrustedClientOrigin
+    // returns false → the grant gate runs (which also fails closed to empty).
+    approvedMode = 'fail';
+    grantsMode = 'fail';
+
+    const granted = await userHasGrantedClient(CONFIG, USER_A, OTHER_ORIGIN);
+    expect(granted).toBe(false);
   });
 });

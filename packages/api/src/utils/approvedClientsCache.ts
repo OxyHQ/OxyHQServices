@@ -10,6 +10,20 @@ const LOCAL_KEY = 'approved:origins';
 const LOG_COMPONENT = 'ApprovedClientsCache';
 
 /**
+ * Cached approved-clients snapshot. `origins` is the full approved-clients
+ * allow-list (dev/native + trusted-Application origins + manual escape-hatch
+ * rows); `trusted` is the strict subset of first-party/official/internal
+ * origins the API classifies as never requiring per-user FedCM consent (see
+ * `isTrustedApplication`). Both derive from ONE Mongo read and are cached
+ * together so the IdP worker can consume both from a single `/fedcm/clients/approved`
+ * fetch.
+ */
+export interface ApprovedClientsData {
+  origins: string[];
+  trusted: string[];
+}
+
+/**
  * In-process cache for NON-AUTHORITATIVE FedCM approved-client list reads.
  *
  * Collapses the redundant `FedCMClient`/`Application` reads per SSO/FedCM
@@ -31,7 +45,7 @@ const LOG_COMPONENT = 'ApprovedClientsCache';
  * further when Valkey is reachable.
  */
 class ApprovedClientsCache {
-  private local: Map<string, { origins: string[]; timestamp: number; ttl: number }> = new Map();
+  private local: Map<string, { data: ApprovedClientsData; timestamp: number; ttl: number }> = new Map();
   private cleanupTimer: NodeJS.Timeout;
 
   constructor() {
@@ -40,18 +54,18 @@ class ApprovedClientsCache {
   }
 
   /**
-   * Return the cached approved-origins list when a fresh local entry exists,
-   * otherwise invoke `loader()` (the uncached Mongo read), store the result,
-   * and return it. The loader is fail-soft (returns `[]` on Mongo error) so a
-   * cache miss never throws here.
+   * Return the cached approved-clients snapshot (`{ origins, trusted }`) when a
+   * fresh local entry exists, otherwise invoke `loader()` (the uncached Mongo
+   * read), store the result, and return it. The loader is fail-soft (returns the
+   * dev/native fallback on Mongo error) so a cache miss never throws here.
    */
-  async getApprovedOrigins(loader: () => Promise<string[]>): Promise<string[]> {
+  async getApprovedData(loader: () => Promise<ApprovedClientsData>): Promise<ApprovedClientsData> {
     const local = this.getLocal();
     if (local) return local;
 
-    const origins = await loader();
-    this.setLocal(origins);
-    return origins;
+    const data = await loader();
+    this.setLocal(data);
+    return data;
   }
 
   /**
@@ -75,19 +89,19 @@ class ApprovedClientsCache {
 
   // --- Local cache helpers ---
 
-  private getLocal(): string[] | null {
+  private getLocal(): ApprovedClientsData | null {
     const cached = this.local.get(LOCAL_KEY);
     if (!cached) return null;
     if (Date.now() - cached.timestamp > cached.ttl) {
       this.local.delete(LOCAL_KEY);
       return null;
     }
-    return cached.origins;
+    return cached.data;
   }
 
-  private setLocal(origins: string[]): void {
+  private setLocal(data: ApprovedClientsData): void {
     this.local.set(LOCAL_KEY, {
-      origins,
+      data,
       timestamp: Date.now(),
       ttl: DEFAULT_TTL,
     });
@@ -95,7 +109,7 @@ class ApprovedClientsCache {
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
       const ttlSec = Math.ceil(DEFAULT_TTL / 1000);
-      redis.setex(REDIS_KEY, ttlSec, JSON.stringify(origins)).catch((err) => {
+      redis.setex(REDIS_KEY, ttlSec, JSON.stringify(data)).catch((err) => {
         logger.warn('approvedClientsCache: Redis setex failed', {
           component: LOG_COMPONENT,
           err: err instanceof Error ? err.message : String(err),

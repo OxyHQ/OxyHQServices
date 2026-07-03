@@ -516,13 +516,22 @@ async function fetchApprovedClients(
  * already consented to. First-time RPs get a no-session outcome so the RP falls
  * back to an interactive sign-in/consent flow.
  *
+ * TRUSTED-ORIGIN SHORT-CIRCUIT: a first-party / official RP the API classifies
+ * as trusted (`isTrustedApplication`) NEVER requires per-user consent — official
+ * ecosystem apps must sign in with zero consent friction. Such origins (e.g.
+ * console.oxy.so, which has no flow that records a FedCM grant and would
+ * otherwise be permanently stuck on `no_grant`) return `true` here BEFORE any
+ * per-user grant fetch. Only origins the API marks trusted qualify; a
+ * missing/absent trusted array fails closed to the full grant gate below.
+ *
  * Fails CLOSED: any failure in the per-user grant lookup yields an empty list
  * (treated as "no grant"), so a transient API error blocks silent restore
  * rather than handing a session to an un-consented RP.
  *
  * `forceRefresh` is threaded through to {@link fetchApprovedClients} for the
  * `/sso/establish` re-check, which must observe a grant revoked between hops
- * rather than the value the central `/sso` hop just cached.
+ * rather than the value the central `/sso` hop just cached. (Trusted origins
+ * carry no per-user grant to revoke, so the short-circuit is unaffected by it.)
  */
 async function userHasGrantedClient(
   config: ResolvedConfig,
@@ -530,6 +539,11 @@ async function userHasGrantedClient(
   clientOrigin: string,
   forceRefresh = false
 ): Promise<boolean> {
+  // First-party/official origins skip the per-user grant gate entirely — the
+  // API is the sole trust authority (worker never hardcodes an origin).
+  if (await isTrustedClientOrigin(config.apiBaseUrl, clientOrigin)) {
+    return true;
+  }
   const grantedOrigins = await fetchApprovedClients(config, userId, forceRefresh);
   return grantedOrigins.some((origin) => normaliseOrigin(origin) === clientOrigin);
 }
@@ -656,30 +670,46 @@ const APPROVED_CLIENTS_TTL_MS = 60_000;
  */
 const APPROVED_CLIENTS_STALE_CAP_MS = 10 * 60_000;
 
+/**
+ * The approved-clients snapshot served by `GET /fedcm/clients/approved`:
+ *   - `clients` — the FULL approved-clients allow-list (what `resolveApprovedClientOrigin`
+ *     validates a candidate RP `client_id` against).
+ *   - `trusted` — the strict subset of first-party/official origins the API
+ *     classifies (via `isTrustedApplication`) as NEVER requiring per-user FedCM
+ *     consent. `userHasGrantedClient` short-circuits its grant gate for these.
+ *
+ * `trusted` is ADDITIVE: an older API that omits it yields `[]`, which reinstates
+ * the full per-user grant gate for every origin (today's behaviour, fails closed).
+ */
+interface ApprovedClientsData {
+  clients: string[];
+  trusted: string[];
+}
+
 interface ApprovedClientsCache {
-  list: string[];
+  data: ApprovedClientsData;
   fetchedAt: number;
 }
 
 /**
- * Module-level cache of the approved-clients allow-list. POSITIVE, non-empty
- * results only — a failed fetch (`null`) or an empty list (`[]`, never the real
- * production state and far more likely a transient API glitch) is treated as
- * non-authoritative and never stored as truth.
+ * Module-level cache of the approved-clients snapshot. POSITIVE, non-empty
+ * allow-lists only — a failed fetch (`null`) or an empty `clients` list (`[]`,
+ * never the real production state and far more likely a transient API glitch) is
+ * treated as non-authoritative and never stored as truth.
  */
 let approvedClientsCache: ApprovedClientsCache | null = null;
 
 /** In-flight approved-clients fetch de-dup — concurrent callers share one round-trip. */
-let approvedClientsInFlight: Promise<string[] | null> | null = null;
+let approvedClientsInFlight: Promise<ApprovedClientsData | null> | null = null;
 
 /**
- * Raw approved-clients fetch. Returns the parsed origin list on a successful,
- * well-formed response (possibly empty), or `null` on ANY failure (non-2xx,
- * malformed body, network/timeout). The `null` vs `[]` distinction lets the
- * caller keep serving a prior good list on failure while never caching an empty
- * fetch as truth.
+ * Raw approved-clients fetch. Returns the parsed `{ clients, trusted }` snapshot
+ * on a successful, well-formed response (possibly with an empty `clients` list),
+ * or `null` on ANY failure (non-2xx, malformed body, network/timeout). The `null`
+ * vs empty distinction lets the caller keep serving a prior good list on failure
+ * while never caching an empty fetch as truth.
  */
-async function fetchApprovedClientsList(apiBaseUrl: string): Promise<string[] | null> {
+async function fetchApprovedClientsList(apiBaseUrl: string): Promise<ApprovedClientsData | null> {
   try {
     const res = await fetch(`${apiBaseUrl}/fedcm/clients/approved`, {
       headers: { Accept: 'application/json' },
@@ -687,29 +717,40 @@ async function fetchApprovedClientsList(apiBaseUrl: string): Promise<string[] | 
     });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, unknown>;
-    // The controller responds `{ success, clients: string[] }`; tolerate an
-    // `origins` alias defensively in case the shape ever changes.
-    const list = (Array.isArray(data.clients) ? data.clients : data.origins) as unknown;
-    if (!Array.isArray(list)) return null;
-    return list.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+    // The controller responds `{ success, clients: string[], trusted: string[] }`;
+    // tolerate an `origins` alias for `clients` defensively in case the shape ever changes.
+    const rawClients = (Array.isArray(data.clients) ? data.clients : data.origins) as unknown;
+    if (!Array.isArray(rawClients)) return null;
+    const clients = rawClients.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0
+    );
+    // `trusted` is additive/optional — an API that predates it yields `[]`, which
+    // keeps the full per-user grant gate for EVERY origin (fails closed). We never
+    // synthesize trust the API did not assert (no worker-side hardcode).
+    const trusted = Array.isArray(data.trusted)
+      ? (data.trusted as unknown[]).filter(
+          (entry): entry is string => typeof entry === 'string' && entry.length > 0
+        )
+      : [];
+    return { clients, trusted };
   } catch {
     return null;
   }
 }
 
 /**
- * Resolve the approved-clients allow-list through the module cache:
+ * Resolve the approved-clients snapshot through the module cache:
  *   1. FRESH cache (age < {@link APPROVED_CLIENTS_TTL_MS}) → return it, no fetch.
  *   2. Otherwise fetch (concurrent callers share ONE in-flight round-trip).
- *      - a non-empty list → refresh the cache and return it.
- *      - a failed/empty fetch → serve the prior list if it is within
+ *      - a non-empty `clients` list → refresh the cache and return it.
+ *      - a failed/empty fetch → serve the prior snapshot if it is within
  *        {@link APPROVED_CLIENTS_STALE_CAP_MS} (bounded staleness), else return
  *        the fetched value (null/empty) so the caller fails closed.
  */
-async function getApprovedClientOrigins(apiBaseUrl: string): Promise<string[] | null> {
+async function getApprovedClientData(apiBaseUrl: string): Promise<ApprovedClientsData | null> {
   const now = Date.now();
   if (approvedClientsCache && now - approvedClientsCache.fetchedAt < APPROVED_CLIENTS_TTL_MS) {
-    return approvedClientsCache.list;
+    return approvedClientsCache.data;
   }
 
   if (!approvedClientsInFlight) {
@@ -719,18 +760,18 @@ async function getApprovedClientOrigins(apiBaseUrl: string): Promise<string[] | 
   }
   const fetched = await approvedClientsInFlight;
 
-  if (fetched && fetched.length > 0) {
-    approvedClientsCache = { list: fetched, fetchedAt: Date.now() };
+  if (fetched && fetched.clients.length > 0) {
+    approvedClientsCache = { data: fetched, fetchedAt: Date.now() };
     return fetched;
   }
 
   // Non-authoritative outcome (failed or empty): prefer a bounded-stale prior
-  // list over the fails-closed collapse. Only within the stale cap.
+  // snapshot over the fails-closed collapse. Only within the stale cap.
   if (
     approvedClientsCache &&
     Date.now() - approvedClientsCache.fetchedAt < APPROVED_CLIENTS_STALE_CAP_MS
   ) {
-    return approvedClientsCache.list;
+    return approvedClientsCache.data;
   }
   return fetched;
 }
@@ -738,7 +779,7 @@ async function getApprovedClientOrigins(apiBaseUrl: string): Promise<string[] | 
 /**
  * Validate a candidate RP `client_id` against the authoritative approved-
  * clients allow-list served by the Oxy API (`GET /fedcm/clients/approved`),
- * sourced through the module cache ({@link getApprovedClientOrigins}). This is
+ * sourced through the module cache ({@link getApprovedClientData}). This is
  * the SAME list `/fedcm/exchange` enforces via `isClientApproved`, so the silent
  * path cannot deliver a token to any origin the FedCM path would itself reject.
  * Returns the normalised, approved origin or `null`.
@@ -756,12 +797,31 @@ async function resolveApprovedClientOrigin(
   const candidate = normaliseOrigin(clientId);
   if (!candidate) return null;
 
-  const list = await getApprovedClientOrigins(apiBaseUrl);
-  if (!list) return null;
-  for (const entry of list) {
+  const data = await getApprovedClientData(apiBaseUrl);
+  if (!data) return null;
+  for (const entry of data.clients) {
     if (normaliseOrigin(entry) === candidate) return candidate;
   }
   return null;
+}
+
+/**
+ * Whether `clientOrigin` is a TRUSTED (first-party / official / internal /
+ * system) RP origin the API classifies as never requiring per-user FedCM
+ * consent. Sourced from the SAME cached `/fedcm/clients/approved` snapshot
+ * `resolveApprovedClientOrigin` reads (the API is the sole trust authority — the
+ * worker never hardcodes an origin here).
+ *
+ * Fails CLOSED: with no usable snapshot (network/parse error) or an absent
+ * `trusted` array (older API), this returns `false`, so the caller falls through
+ * to the full per-user grant gate — today's behaviour. `clientOrigin` is already
+ * a normalised, approved origin at every call site; we still normalise each
+ * trusted entry for the comparison.
+ */
+async function isTrustedClientOrigin(apiBaseUrl: string, clientOrigin: string): Promise<boolean> {
+  const data = await getApprovedClientData(apiBaseUrl);
+  if (!data) return false;
+  return data.trusted.some((entry) => normaliseOrigin(entry) === clientOrigin);
 }
 
 /**
@@ -2300,11 +2360,12 @@ export type { WorkerEnv };
 
 // Cache internals exported for unit tests only. `resolveApprovedClientOrigin`
 // and `fetchApprovedClients` are exercised directly to assert TTL/stale/single-
-// flight behaviour; `__resetSsoCachesForTests` clears the module-level caches
-// between cases (the caches are process-global, so every test file that touches
-// the SSO endpoints must reset them in `beforeEach` for isolation — mirrors the
-// `__resetBloomCSSForTests` pattern).
-export { resolveApprovedClientOrigin, fetchApprovedClients };
+// flight behaviour; `userHasGrantedClient` is exercised to assert the trusted
+// short-circuit skips the per-user grant fetch; `__resetSsoCachesForTests`
+// clears the module-level caches between cases (the caches are process-global,
+// so every test file that touches the SSO endpoints must reset them in
+// `beforeEach` for isolation — mirrors the `__resetBloomCSSForTests` pattern).
+export { resolveApprovedClientOrigin, fetchApprovedClients, userHasGrantedClient };
 
 export function __resetSsoCachesForTests(): void {
   approvedClientsCache = null;
