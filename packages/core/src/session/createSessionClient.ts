@@ -1,5 +1,6 @@
 import type { OxyServices } from '../OxyServices';
 import { SessionClient, type TokenTransport } from './SessionClient';
+import type { SocketIOFactory } from './socketLoader';
 import { createSessionClientHost } from './sessionClientHost';
 
 /**
@@ -17,15 +18,22 @@ import { createSessionClientHost } from './sessionClientHost';
  * The host is returned alongside the client (not just the client) so the
  * caller can call `host.setCurrentAccountId(...)` as the active account
  * changes.
+ *
+ * `socketFactory` is the statically-injected `socket.io-client` `io` export.
+ * Consumers that bundle socket.io-client as a real dependency pass it so
+ * realtime sync never depends on core's lazy dynamic import of a bare
+ * specifier (bundler-fragile in Metro/Expo-web and Vite against the published
+ * dist). When omitted, the client falls back to the lazy loader.
  */
 export function createSessionClient(
   oxyServices: OxyServices,
   transport: TokenTransport,
+  socketFactory?: SocketIOFactory,
 ): {
   client: SessionClient;
   host: ReturnType<typeof createSessionClientHost>;
 } {
   const host = createSessionClientHost(oxyServices);
-  const client = new SessionClient(host, { transport });
+  const client = new SessionClient(host, { transport, socketFactory });
   return { client, host };
 }

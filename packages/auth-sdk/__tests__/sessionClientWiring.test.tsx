@@ -278,4 +278,26 @@ describe('SessionClient wiring into WebOxyProvider (Task 1 — additive, inert u
     expect(latest.userId).toBeNull();
     expect(stubs.getUsersByIds).not.toHaveBeenCalled();
   });
+
+  it('injects the statically-imported socket.io factory as the third createSessionClient argument', async () => {
+    // Realtime sync must not rely on core's lazy dynamic import of a bare
+    // specifier under Vite: WebOxyProvider statically imports `io` from
+    // socket.io-client (a real @oxyhq/auth dependency) and passes it through as
+    // the SessionClient socketFactory.
+    const fake = buildFakeClient(null);
+    mockedCreateSessionClient.mockReturnValue({
+      client: fake.fakeClient as never,
+      host: { setCurrentAccountId: jest.fn() } as never,
+    });
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null };
+    renderProvider((s) => { latest = s; });
+    await waitFor(() => expect(latest.isAuthenticated).toBe(false));
+
+    expect(mockedCreateSessionClient).toHaveBeenCalledTimes(1);
+    const args = mockedCreateSessionClient.mock.calls[0];
+    expect(args).toHaveLength(3);
+    // The third positional arg is the injected socket.io `io` factory.
+    expect(typeof args[2]).toBe('function');
+  });
 });

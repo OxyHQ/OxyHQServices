@@ -6,7 +6,7 @@ import {
 } from '@oxyhq/contracts';
 import { logger } from '../utils/loggerUtils';
 import { getSocketIO } from './socketLoader';
-import type { MinimalSocket } from './socketLoader';
+import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 
 export interface TokenTransport {
   /** Ensure this app holds a per-domain access token for state.activeAccountId (mint via FedCM/silent/sso/keychain). Best-effort. */
@@ -24,6 +24,18 @@ export interface SessionClientHost {
 
 export interface SessionClientOptions {
   transport?: TokenTransport;
+  /**
+   * Statically-injected `socket.io-client` factory (its `io` export).
+   * `@oxyhq/services` and `@oxyhq/auth` list `socket.io-client` as a real
+   * dependency and pass `io` in directly, so realtime session sync never
+   * depends on a runtime dynamic `import('socket.io-client')` of a bare
+   * specifier — which is bundler-fragile in Metro/Expo-web and Vite when
+   * `@oxyhq/core` is consumed as its published dist (the import resolves to
+   * nothing → `connectSocket` warns and falls back to REST-only). When this is
+   * provided, `connectSocket` uses it and never touches the lazy loader; when
+   * absent it falls back to `getSocketIO()`.
+   */
+  socketFactory?: SocketIOFactory;
 }
 
 type StateListener = (state: DeviceSessionState | null) => void;
@@ -157,7 +169,10 @@ export class SessionClient {
   }
 
   private async connectSocket(): Promise<void> {
-    const io = await getSocketIO();
+    // Prefer a statically-injected factory (services/auth-sdk bundle
+    // socket.io-client as a real dep); fall back to the lazy loader — and warn
+    // if THAT yields nothing — only when no factory was injected.
+    const io = this.options.socketFactory ?? (await getSocketIO());
     if (!io) {
       logger.warn('[SessionClient] no socket.io-client; running REST-only (no realtime sync)', { component: 'SessionClient' });
       return;
