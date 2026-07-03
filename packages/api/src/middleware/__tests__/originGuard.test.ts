@@ -2,9 +2,9 @@
  * Origin guard tests (MED-1 CSRF hardening, Phase A)
  *
  * `isAllowedOrigin`: strict allowlist — exact first-party app origins,
- * dev-only localhost, and validated
- * `OXY_EXTRA_ALLOWED_ORIGINS` entries. Suffix-spoofing, case tricks, and
- * homograph hosts must all fail.
+ * loopback localhost / 127.0.0.1 / [::1] (unconditional, all envs), and
+ * validated `OXY_EXTRA_ALLOWED_ORIGINS` entries. Suffix-spoofing, case tricks,
+ * and homograph hosts must all fail.
  *
  * `requireSameSiteOrigin`: blocks non-safe methods from non-allowlisted
  * browser contexts (Origin header, with Sec-Fetch-Site as fallback) and
@@ -108,17 +108,26 @@ describe('isAllowedOrigin', () => {
     expect(isAllowedOrigin(origin)).toBe(false);
   });
 
-  it('allows localhost / 127.0.0.1 outside production', () => {
+  it('allows localhost / 127.0.0.1 / [::1] outside production', () => {
     process.env.NODE_ENV = 'development';
     expect(isAllowedOrigin('http://localhost:3000')).toBe(true);
     expect(isAllowedOrigin('http://localhost')).toBe(true);
     expect(isAllowedOrigin('http://127.0.0.1:8081')).toBe(true);
+    expect(isAllowedOrigin('http://[::1]:19006')).toBe(true);
   });
 
-  it('rejects localhost / 127.0.0.1 in production', () => {
+  it('allows localhost / 127.0.0.1 / [::1] in production too (owner-approved)', () => {
     process.env.NODE_ENV = 'production';
-    expect(isAllowedOrigin('http://localhost:3000')).toBe(false);
-    expect(isAllowedOrigin('http://127.0.0.1:8081')).toBe(false);
+    expect(isAllowedOrigin('http://localhost:8081')).toBe(true);
+    expect(isAllowedOrigin('http://localhost')).toBe(true);
+    expect(isAllowedOrigin('http://localhost:54321')).toBe(true);
+    expect(isAllowedOrigin('http://127.0.0.1:3000')).toBe(true);
+    expect(isAllowedOrigin('http://[::1]:19006')).toBe(true);
+  });
+
+  it('rejects https loopback (loopback is http-only)', () => {
+    process.env.NODE_ENV = 'production';
+    expect(isAllowedOrigin('https://localhost:8081')).toBe(false);
   });
 
   it('rejects localhost lookalikes even in development', () => {
@@ -251,10 +260,10 @@ describe('requireSameSiteOrigin', () => {
     expect(res.status).toBe(200);
   });
 
-  it('rejects http localhost origins in production', async () => {
+  it('passes http localhost origins in production too (owner-approved)', async () => {
     process.env.NODE_ENV = 'production';
     const res = await request('POST', { origin: 'http://localhost:3000' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it.each(['PUT', 'DELETE'])('applies to %s requests', async (method) => {

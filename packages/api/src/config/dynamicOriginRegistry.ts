@@ -40,7 +40,7 @@
 import mongoose from 'mongoose';
 import type { ApplicationType } from '../models/Application';
 import { isTrustedApplication } from '../utils/trustedApplication';
-import { normaliseOrigin } from '../utils/origin';
+import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { isValidHostname } from './env';
 import { logger } from '../utils/logger';
 
@@ -251,7 +251,11 @@ class DynamicOriginRegistry {
   }
 
   getCorsDecision(origin: string): CorsDecision {
-    if (this.trustedOrigins.has(origin)) {
+    // Loopback dev origins ALWAYS get the credentialed lane, and win over the
+    // third-party lane below: a localhost origin that a third-party app happens
+    // to register as a redirectUri must still be able to send credentialed
+    // requests (SDK `credentials:'include'` fetch of `/csrf-token`).
+    if (this.trustedOrigins.has(origin) || isLoopbackOrigin(origin)) {
       return { allow: true, credentials: true };
     }
     if (this.thirdPartyOrigins.has(origin)) {
