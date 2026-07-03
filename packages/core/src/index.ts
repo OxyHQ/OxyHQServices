@@ -545,6 +545,7 @@ export {
     ssoAttemptedKey,
     ssoPriorSessionKey,
     ssoSignedOutKey,
+    ssoOutcomeKey,
     ssoCallbackBootstrapKey,
     ssoNavigate,
     getSsoCallbackBootstrapScript,

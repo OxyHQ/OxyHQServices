@@ -37,12 +37,14 @@ import {
   ssoAttemptedKey,
   ssoPriorSessionKey,
   ssoSignedOutKey,
+  ssoOutcomeKey,
   silentRestoreSuppressed,
   isCentralIdPOrigin,
   guardActive,
   allowSsoBounce,
   buildSsoBounceUrl,
   consumeSsoReturn,
+  parseSsoReturnFragment,
   createSessionClient,
   deviceStateToClientSessions,
   activeSessionIdOf,
@@ -57,6 +59,7 @@ import type {
   AuthManagerAccount,
   ColdBootStep,
   ColdBootOutcome,
+  SsoReturnKind,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, clearQueryCache, createQueryClient } from './hooks/queryClient';
@@ -96,6 +99,21 @@ export interface WebAuthState {
   accounts: AuthManagerAccount[];
   /** The active account's `authuser` slot, or `null` when no account is signed in. */
   activeAuthuser: number | null;
+  /**
+   * The outcome of the LAST cross-domain SSO return consumed this tab, or `null`
+   * when none has been (a fresh visit, or after a successful commit / explicit
+   * sign-in cleared it). `'none'` / `'error'` mean the central IdP had no
+   * session for a silent (`prompt=none`) probe — an RP can render a branded
+   * sign-in screen instead of letting an auth-guard re-bounce forever. Survives
+   * the callback → destination hard navigation via per-tab `sessionStorage`.
+   */
+  lastSsoOutcome: SsoReturnKind | null;
+  /**
+   * Machine-readable reason accompanying a `'none'` / `'error'`
+   * {@link lastSsoOutcome} when the IdP supplied one (e.g. `no_cookie`,
+   * `stale_session`, `no_grant`, `no_grant_establish`); `null` otherwise.
+   */
+  lastSsoOutcomeReason: string | null;
 }
 
 export interface WebAuthActions {
@@ -104,8 +122,17 @@ export interface WebAuthActions {
    * central IdP (`preferredAuthMethod="auto"` / `"redirect"`; both redirect).
    * FedCM is not part of the client sign-in path — see the removal note in
    * `CrossDomainAuth`'s doc comment in `@oxyhq/core`.
+   *
+   * `interactive` (default `true`) distinguishes a deliberate user gesture (a
+   * "Sign in" button) from an AUTOMATIC invocation by a caller's auth-guard
+   * effect. A user gesture ALWAYS (re)navigates and clears the per-tab
+   * last-outcome. An automatic invocation (`interactive: false`) refuses to
+   * re-navigate once a prior automatic probe this tab already returned
+   * `none`/`error` — the loop breaker for the `console.oxy.so` pattern
+   * `if (isReady && !isAuthenticated) signIn()`, whose direct call would
+   * otherwise bypass the cold-boot bounce guard and re-bounce every render.
    */
-  signIn: () => Promise<void>;
+  signIn: (opts?: { interactive?: boolean }) => Promise<void>;
   signInWithRedirect: () => void;
   /**
    * Sign out of this device entirely: revokes every account this device
@@ -380,6 +407,74 @@ function silentRestoreSuppressedWeb(): boolean {
   return silentRestoreSuppressed(storage, window.location.origin);
 }
 
+/**
+ * The parsed shape of the LAST consumed SSO-return outcome — the exposed
+ * `lastSsoOutcome` / `lastSsoOutcomeReason` context fields, and the signal the
+ * automatic-sign-in loop guard reads.
+ */
+interface SsoOutcomeSnapshot {
+  kind: SsoReturnKind;
+  reason: string | null;
+}
+
+/**
+ * Read the LAST consumed SSO-return outcome persisted for this origin (core
+ * {@link ssoOutcomeKey}). It survives the hard navigation `consumeSsoReturn`
+ * performs off the internal callback path back to the app destination, so the
+ * destination load can surface it. Returns `null` off-web, when nothing was
+ * recorded, or on any parse/storage error — fail safe toward "no prior outcome"
+ * so a first automatic probe is never wrongly suppressed.
+ */
+function readSsoOutcomeWeb(): SsoOutcomeSnapshot | null {
+  if (!isWebBrowser()) return null;
+  try {
+    const raw = window.sessionStorage.getItem(ssoOutcomeKey(window.location.origin));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { kind?: unknown; reason?: unknown };
+    if (parsed.kind !== 'ok' && parsed.kind !== 'none' && parsed.kind !== 'error') {
+      return null;
+    }
+    return {
+      kind: parsed.kind,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist the LAST consumed SSO-return outcome for this origin so it survives
+ * the callback → destination hard navigation. Best-effort; no-ops off-web and
+ * swallows storage errors.
+ */
+function persistSsoOutcomeWeb(kind: SsoReturnKind, reason: string | null): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.sessionStorage.setItem(
+      ssoOutcomeKey(window.location.origin),
+      JSON.stringify(reason ? { kind, reason } : { kind }),
+    );
+  } catch {
+    // Best-effort; swallow QuotaExceededError / SecurityError (private mode).
+  }
+}
+
+/**
+ * Clear the persisted SSO-return outcome for this origin. Called on a successful
+ * session commit and on an explicit user-gesture sign-in / full sign-out, so a
+ * deliberate retry is never suppressed by a prior automatic none/error. No-ops
+ * off-web / on storage failure.
+ */
+function clearSsoOutcomeWeb(): void {
+  if (!isWebBrowser()) return;
+  try {
+    window.sessionStorage.removeItem(ssoOutcomeKey(window.location.origin));
+  } catch {
+    // Best-effort.
+  }
+}
+
 function isOnSsoCallbackPath(): boolean {
   return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
 }
@@ -500,6 +595,14 @@ export function WebOxyProvider({
   const [accounts, setAccounts] = useState<AuthManagerAccount[]>([]);
   const [activeAuthuser, setActiveAuthuserState] = useState<number | null>(null);
 
+  // Last consumed SSO-return outcome (`lastSsoOutcome` / `lastSsoOutcomeReason`
+  // on the context). Lazily seeded from per-tab `sessionStorage` so a
+  // destination load AFTER the callback → destination hard navigation observes
+  // the outcome the callback page consumed (there is no fragment left to parse
+  // by then). Refreshed by `runSsoReturn` when a fragment is present, and
+  // cleared on a successful commit / explicit sign-in / sign-out.
+  const [ssoOutcome, setSsoOutcome] = useState<SsoOutcomeSnapshot | null>(() => readSsoOutcomeWeb());
+
   /**
    * Sessions projected from the `SessionClient`. `null` until `syncFromClient`
    * has applied a state at least once (before cold boot resolves); the public
@@ -574,6 +677,10 @@ export function WebOxyProvider({
     // still-live IdP session on the next reload. Cleared on any deliberate
     // sign-in.
     markSignedOutWeb();
+    // Drop any persisted SSO-return outcome so a fresh visit / next deliberate
+    // sign-in starts from a clean slate (no stale sign-in screen, guard re-armed).
+    clearSsoOutcomeWeb();
+    setSsoOutcome(null);
   }, [queryClient, sessionClientHost]);
 
   /**
@@ -712,6 +819,12 @@ export function WebOxyProvider({
     // flag, so when it is set that step never runs and never reaches here — this
     // clear is only hit on a genuine (re-)sign-in or when restore was permitted.
     clearSignedOutWeb();
+    // A successful commit supersedes any prior `none`/`error` SSO return: clear
+    // the persisted last-outcome so the automatic-sign-in loop guard re-arms
+    // (a later session drop may legitimately probe once again) and no stale
+    // sign-in screen lingers.
+    clearSsoOutcomeWeb();
+    setSsoOutcome(null);
 
     // Register this recovered account+session into the server-authoritative
     // device-session set (Fase 4 cutover — mirrors the services `OxyContext`
@@ -859,6 +972,22 @@ export function WebOxyProvider({
   const runSsoReturn = useCallback((): Promise<SsoReturnSession | null> => {
     if (inFlightSsoReturnRef.current) {
       return inFlightSsoReturnRef.current;
+    }
+    // Capture the return OUTCOME from the fragment BEFORE `consumeSsoReturn`
+    // strips it. `runSsoReturn` is the single funnel for every SSO return (eager
+    // callback interceptor, cold-boot `sso-return` step, bfcache pageshow), and
+    // the memo guard above ensures the body runs once per return — so this
+    // records the outcome exactly once. Persist it per-tab so it survives the
+    // hard navigation `consumeSsoReturn` performs off the callback path back to
+    // the app destination; the destination load reads it back to surface
+    // `lastSsoOutcome` and to gate automatic sign-in.
+    if (isWebBrowser()) {
+      const parsed = parseSsoReturnFragment(window.location.hash);
+      if (parsed) {
+        const reason = parsed.reason ?? null;
+        persistSsoOutcomeWeb(parsed.kind, reason);
+        setSsoOutcome({ kind: parsed.kind, reason });
+      }
     }
     const inFlight = consumeSsoReturn(oxyServices, {
       isWeb: isWebBrowser,
@@ -1334,9 +1463,36 @@ export function WebOxyProvider({
    * re-invoked `signIn()` is a no-op (short-circuited by the mutex) until the
    * real navigation lands and tears the whole page down.
    */
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async (opts?: { interactive?: boolean }) => {
+    // Default to interactive: existing call sites (buttons) pass nothing and
+    // must keep their always-navigate behaviour. Only guard/effect callers that
+    // explicitly pass `interactive: false` opt into the loop breaker.
+    const interactive = opts?.interactive !== false;
+
     if (signingInRef.current) {
       return;
+    }
+
+    if (interactive) {
+      // Deliberate user gesture: always (re)navigate. Clear the per-tab
+      // last-outcome so a prior automatic `none`/`error` never suppresses a
+      // deliberate retry, and so an RP's sign-in screen does not linger after
+      // the user pressed "Sign in".
+      clearSsoOutcomeWeb();
+      setSsoOutcome(null);
+    } else {
+      // AUTOMATIC (guard/effect) invocation: refuse to re-navigate when a prior
+      // automatic probe THIS TAB already came back `none`/`error`. This is the
+      // loop breaker for the `console.oxy.so` pattern — an auth-guard effect
+      // `if (isReady && !isAuthenticated) signIn()` whose direct call would
+      // otherwise bypass the cold-boot bounce guard and re-bounce to the IdP
+      // every time the `prompt=none` probe returns no session. Read the DURABLE
+      // per-tab outcome (survives the callback → destination hard navigation),
+      // not React state, so the refusal holds across that reload.
+      const prior = readSsoOutcomeWeb();
+      if (prior && (prior.kind === 'none' || prior.kind === 'error')) {
+        return;
+      }
     }
 
     signingInRef.current = true;
@@ -1516,6 +1672,8 @@ export function WebOxyProvider({
     sessions,
     accounts,
     activeAuthuser,
+    lastSsoOutcome: ssoOutcome?.kind ?? null,
+    lastSsoOutcomeReason: ssoOutcome?.reason ?? null,
     oxyServices,
     crossDomainAuth,
     signIn,
@@ -1529,7 +1687,7 @@ export function WebOxyProvider({
     commitClaimedSession,
   }), [
     user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
-    accounts, activeAuthuser,
+    accounts, activeAuthuser, ssoOutcome,
     oxyServices, crossDomainAuth,
     signIn, signInWithRedirect,
     signOut, switchSession,
@@ -1608,6 +1766,8 @@ export function useAuth() {
     sessions: ctx.sessions,
     accounts: ctx.accounts,
     activeAuthuser: ctx.activeAuthuser,
+    lastSsoOutcome: ctx.lastSsoOutcome,
+    lastSsoOutcomeReason: ctx.lastSsoOutcomeReason,
     signIn: ctx.signIn,
     signInWithRedirect: ctx.signInWithRedirect,
     signOut: ctx.signOut,

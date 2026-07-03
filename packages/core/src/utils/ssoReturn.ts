@@ -41,12 +41,22 @@ export type SsoReturnKind = 'ok' | 'none' | 'error';
  * The parsed result of an SSO return fragment.
  *
  * `code` is present only for `kind: 'ok'`. `state` echoes the CSRF state the RP
- * generated for the bounce (when the IdP round-tripped it).
+ * generated for the bounce (when the IdP round-tripped it). `reason` is present
+ * only for a NON-`ok` outcome when the IdP supplied one.
  */
 export interface SsoReturnResult {
   kind: SsoReturnKind;
   code?: string;
   state?: string;
+  /**
+   * Machine-readable reason accompanying a NON-`ok` outcome, when the central
+   * IdP supplies one (e.g. `no_cookie` | `stale_session` | `no_grant` |
+   * `no_grant_establish` on a `none` bounce). Purely informational: it lets a
+   * Relying Party surface WHY a silent probe returned no session (e.g. to brand
+   * a "sign in" screen) without re-deriving it. Absent on `ok`, and whenever the
+   * IdP did not include a `reason` param.
+   */
+  reason?: string;
 }
 
 const VALID_KINDS: ReadonlySet<string> = new Set<SsoReturnKind>(['ok', 'none', 'error']);
@@ -98,6 +108,13 @@ export function parseSsoReturnFragment(hash: string | undefined | null): SsoRetu
     const code = params.get('code');
     if (code !== null && code.length > 0) {
       result.code = code;
+    }
+  } else {
+    // A machine-readable reason accompanies a NON-`ok` outcome when the IdP
+    // supplies one. Success carries no reason, so it is only read here.
+    const reason = params.get('reason');
+    if (reason !== null && reason.length > 0) {
+      result.reason = reason;
     }
   }
 

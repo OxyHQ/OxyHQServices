@@ -67,6 +67,7 @@ jest.mock('@oxyhq/core', () => {
     ssoAttemptedKey: actual.ssoAttemptedKey,
     ssoPriorSessionKey: actual.ssoPriorSessionKey,
     ssoSignedOutKey: actual.ssoSignedOutKey,
+    ssoOutcomeKey: actual.ssoOutcomeKey,
     silentRestoreSuppressed: actual.silentRestoreSuppressed,
     isCentralIdPOrigin: actual.isCentralIdPOrigin,
     guardActive: actual.guardActive,
@@ -139,8 +140,11 @@ jest.mock('@oxyhq/core', () => {
 });
 
 import { WebOxyProvider, useAuth } from '../src/WebOxyProvider';
+import { ssoOutcomeKey } from '@oxyhq/core';
 
 const ORIGIN = 'https://console.oxy.so';
+
+type AuthApi = ReturnType<typeof useAuth>;
 
 interface Snapshot {
   isReady: boolean;
@@ -242,5 +246,121 @@ describe('WebOxyProvider — console sign-in loop regression', () => {
       await captured.signIn?.();
     });
     expect(signInMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The definitive loop breaker for the console `AuthGuard`'s DIRECT interactive
+ * `signIn()` call (which bypasses the cold-boot bounce guard): once a prior
+ * AUTOMATIC probe this tab has come back `none`/`error`, an automatic
+ * `signIn({ interactive: false })` refuses to re-navigate, while a deliberate
+ * user-gesture `signIn()` always does. Backed by the per-tab
+ * `sessionStorage` outcome (core `ssoOutcomeKey`) so the refusal survives the
+ * callback → destination hard navigation and holds across the reload.
+ */
+describe('WebOxyProvider — automatic signIn loop guard (lastSsoOutcome)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.history.replaceState(null, '', `${ORIGIN}/`);
+    signInMock.mockClear();
+    silentSignInMock.mockClear();
+    signInMock.mockImplementation(async () => null);
+    silentSignInMock.mockImplementation(async () => null);
+  });
+
+  /** Renders the provider and captures the live `useAuth()` value. */
+  function renderCapture(): { current: AuthApi | null } {
+    const captured: { current: AuthApi | null } = { current: null };
+    function Capture() {
+      captured.current = useAuth();
+      return null;
+    }
+    render(
+      <WebOxyProvider baseURL="https://api.oxy.so">
+        <Capture />
+      </WebOxyProvider>,
+    );
+    return captured;
+  }
+
+  it('surfaces the persisted none outcome and refuses automatic signIn across two invocations', async () => {
+    // Simulate the destination load AFTER a prompt=none probe returned no
+    // session: the callback page persisted a `none` outcome (with reason) that
+    // survives the hard navigation back to the app root.
+    window.sessionStorage.setItem(
+      ssoOutcomeKey(ORIGIN),
+      JSON.stringify({ kind: 'none', reason: 'no_cookie' }),
+    );
+
+    const captured = renderCapture();
+    await waitFor(() => expect(captured.current).not.toBeNull());
+
+    // The provider exposes the outcome so an RP can render a branded sign-in
+    // screen instead of bouncing again.
+    expect(captured.current?.lastSsoOutcome).toBe('none');
+    expect(captured.current?.lastSsoOutcomeReason).toBe('no_cookie');
+
+    // Two automatic invocations (an auth-guard effect that re-fires) must NOT
+    // re-navigate — reverting the guard makes the count climb here.
+    await act(async () => {
+      await captured.current?.signIn({ interactive: false });
+    });
+    await act(async () => {
+      await captured.current?.signIn({ interactive: false });
+    });
+    expect(signInMock).not.toHaveBeenCalled();
+  });
+
+  it('allows the FIRST automatic signIn (no prior outcome) to navigate exactly once', async () => {
+    const captured = renderCapture();
+    await waitFor(() => expect(captured.current).not.toBeNull());
+    expect(captured.current?.lastSsoOutcome).toBeNull();
+
+    // First automatic probe is permitted (a truly fresh visit has no prior
+    // none/error). It initiates the redirect and resolves null.
+    await act(async () => {
+      await captured.current?.signIn({ interactive: false });
+    });
+    expect(signInMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a user-gesture signIn() always navigates after a none outcome and clears the persisted outcome', async () => {
+    window.sessionStorage.setItem(
+      ssoOutcomeKey(ORIGIN),
+      JSON.stringify({ kind: 'none', reason: 'no_cookie' }),
+    );
+
+    const captured = renderCapture();
+    await waitFor(() => expect(captured.current).not.toBeNull());
+    expect(captured.current?.lastSsoOutcome).toBe('none');
+
+    // A deliberate gesture (default interactive) ignores the prior outcome.
+    await act(async () => {
+      await captured.current?.signIn();
+    });
+    expect(signInMock).toHaveBeenCalledTimes(1);
+    // ...and it cleared the per-tab outcome so the sign-in screen no longer
+    // lingers and the guard re-arms.
+    expect(window.sessionStorage.getItem(ssoOutcomeKey(ORIGIN))).toBeNull();
+  });
+
+  it('a successful commit clears the persisted once-flag (guard re-arms)', async () => {
+    // A prior none outcome is present, then cold boot recovers a session via the
+    // silent-iframe step. The commit must supersede + clear the outcome.
+    window.sessionStorage.setItem(ssoOutcomeKey(ORIGIN), JSON.stringify({ kind: 'none' }));
+    silentSignInMock.mockImplementation(async () =>
+      ({
+        sessionId: 'sess-1',
+        user: { id: 'u1', username: 'u1' } as unknown as User,
+        accessToken: 'tok-1',
+      }) as SessionLoginResponse,
+    );
+
+    const captured = renderCapture();
+
+    await waitFor(() => expect(captured.current?.isAuthenticated).toBe(true));
+    expect(window.sessionStorage.getItem(ssoOutcomeKey(ORIGIN))).toBeNull();
+    expect(captured.current?.lastSsoOutcome).toBeNull();
   });
 });

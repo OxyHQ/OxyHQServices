@@ -70,6 +70,13 @@ describe('parseSsoReturnFragment', () => {
 
       expect(result).toEqual({ kind: 'ok', code: 'a+b/c', state: 's t' });
     });
+
+    it('ignores a stray reason on an ok outcome', () => {
+      const result = parseSsoReturnFragment('#oxy_sso=ok&code=abc123&state=xyz&reason=no_cookie');
+
+      expect(result).toEqual({ kind: 'ok', code: 'abc123', state: 'xyz' });
+      expect(result?.reason).toBeUndefined();
+    });
   });
 
   describe('none', () => {
@@ -85,6 +92,18 @@ describe('parseSsoReturnFragment', () => {
       expect(result).toEqual({ kind: 'none', state: 'xyz' });
       expect(result?.code).toBeUndefined();
     });
+
+    it('carries a machine-readable reason on a none outcome', () => {
+      const result = parseSsoReturnFragment('#oxy_sso=none&reason=no_cookie&state=xyz');
+
+      expect(result).toEqual({ kind: 'none', state: 'xyz', reason: 'no_cookie' });
+    });
+
+    it('omits reason when the none outcome carries none', () => {
+      const result = parseSsoReturnFragment('#oxy_sso=none&state=xyz');
+
+      expect(result?.reason).toBeUndefined();
+    });
   });
 
   describe('error', () => {
@@ -99,6 +118,12 @@ describe('parseSsoReturnFragment', () => {
 
       expect(result).toEqual({ kind: 'error' });
       expect(result?.code).toBeUndefined();
+    });
+
+    it('carries a machine-readable reason on an error outcome', () => {
+      const result = parseSsoReturnFragment('#oxy_sso=error&reason=no_grant_establish');
+
+      expect(result).toEqual({ kind: 'error', reason: 'no_grant_establish' });
     });
   });
 
