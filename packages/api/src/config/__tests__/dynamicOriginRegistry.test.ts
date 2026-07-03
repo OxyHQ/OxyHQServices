@@ -40,6 +40,7 @@ import {
   getExtraAllowedOrigins,
   BOOTSTRAP_CORE_ORIGINS,
 } from '../dynamicOriginRegistry';
+import { isLoopbackOrigin } from '../../utils/origin';
 
 interface AppRow {
   redirectUris?: string[];
@@ -205,6 +206,49 @@ describe('OXY_EXTRA_ALLOWED_ORIGINS', () => {
       allow: true,
       credentials: true,
     });
+  });
+});
+
+describe('loopback (local dev) origins — always credentialed', () => {
+  it.each([
+    'http://localhost:8081',
+    'http://localhost',
+    'http://localhost:54321',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1',
+    'http://[::1]:19006',
+    'http://[::1]',
+  ])('grants the credentialed lane to %s', (origin) => {
+    expect(getCorsDecision(origin)).toEqual({ allow: true, credentials: true });
+  });
+
+  it('lets a loopback origin win even when it is also in the third-party snapshot', () => {
+    setOriginSnapshotForTests([], ['http://localhost:8081']);
+    expect(getCorsDecision('http://localhost:8081')).toEqual({
+      allow: true,
+      credentials: true,
+    });
+  });
+
+  it('does not treat https loopback as a loopback origin (falls through to deny)', () => {
+    expect(isLoopbackOrigin('https://localhost:8081')).toBe(false);
+    expect(getCorsDecision('https://localhost:8081')).toEqual({
+      allow: false,
+      credentials: false,
+    });
+  });
+
+  it('rejects loopback lookalikes', () => {
+    expect(isLoopbackOrigin('http://localhost.evil.com')).toBe(false);
+    expect(isLoopbackOrigin('http://localhost.evil.com:3000')).toBe(false);
+    expect(isLoopbackOrigin('http://127.0.0.1.evil.com')).toBe(false);
+    expect(isLoopbackOrigin('not a url')).toBe(false);
+    expect(isLoopbackOrigin('')).toBe(false);
+  });
+
+  it('normalises scheme/host casing and trailing path before matching', () => {
+    expect(isLoopbackOrigin('HTTP://LOCALHOST:3000')).toBe(true);
+    expect(isLoopbackOrigin('http://localhost:3000/callback?x=1')).toBe(true);
   });
 });
 

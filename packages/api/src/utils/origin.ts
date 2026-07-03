@@ -26,3 +26,31 @@ export function normaliseOrigin(value: string): string | null {
     return null;
   }
 }
+
+/**
+ * Loopback (local development) origin predicate. Matches `http://localhost`,
+ * `http://127.0.0.1`, and `http://[::1]` with an OPTIONAL `:<port>` (any 1–5
+ * digit port). HTTP only — loopback dev servers are served over http, so an
+ * `https://localhost` origin is deliberately NOT a loopback match.
+ *
+ * The input is normalised first (via {@link normaliseOrigin}), so scheme/host
+ * casing and trailing paths/queries never defeat the check, and only the
+ * `scheme://host[:port]` triple is tested. Fails closed: returns `false` for any
+ * unparseable input.
+ *
+ * @example
+ *   isLoopbackOrigin('http://localhost:8081')  // true
+ *   isLoopbackOrigin('http://127.0.0.1')       // true
+ *   isLoopbackOrigin('http://[::1]:19006')     // true
+ *   isLoopbackOrigin('https://localhost:8081') // false (https)
+ *   isLoopbackOrigin('http://localhost.evil.com') // false
+ */
+const LOOPBACK_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/;
+
+export function isLoopbackOrigin(origin: string): boolean {
+  const normalised = normaliseOrigin(origin);
+  if (normalised === null) {
+    return false;
+  }
+  return LOOPBACK_ORIGIN_PATTERN.test(normalised);
+}
