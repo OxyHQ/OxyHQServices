@@ -68,11 +68,11 @@ jest.mock('../../models/Application', () => ({
 // Pass-through cache for non-authoritative list reads (the uncached Mongo read
 // driven by the Application/FedCMClient mocks above). Authorization decisions
 // (`isClientApproved`) bypass this cache and read the canonical registry
-// directly; only `getApprovedOrigins` (list reads) and `invalidate` are needed.
+// directly; only `getApprovedData` (snapshot reads) and `invalidate` are needed.
 jest.mock('../../utils/approvedClientsCache', () => ({
   __esModule: true,
   default: {
-    getApprovedOrigins: (loader: () => Promise<string[]>) => loader(),
+    getApprovedData: (loader: () => Promise<unknown>) => loader(),
     invalidate: mockCacheInvalidate,
   },
 }));
@@ -696,6 +696,83 @@ describe('FedCM approved-origins derivation (trusted Application registry + manu
     for (const dev of DEV_NATIVE) {
       expect(origins).toContain(dev);
     }
+  });
+});
+
+/**
+ * Trusted (consent-skip) subset — `getApprovedClientData().trusted`.
+ *
+ * The IdP worker skips its per-user FedCM grant gate for these origins so
+ * first-party / official apps (e.g. console.oxy.so, which never records a grant)
+ * restore silently. The trusted set is derived ONLY from Applications the shared
+ * `isTrustedApplication` predicate marks first-party/internal/system/official —
+ * the SAME classifier the OAuth consent auto-approve path uses. Dev/native
+ * origins and manual escape-hatch rows are approved (in `clients`) but NOT
+ * trusted (never in `trusted`).
+ */
+describe('FedCM trusted-client derivation (consent-skip subset)', () => {
+  const DEV_NATIVE = ['http://localhost:3000', 'http://localhost:8081', 'astro://auth'];
+
+  it('includes official / first-party / internal / system app origins in trusted', async () => {
+    mockAppFind.mockReturnValueOnce(
+      leanQuery([
+        { name: 'Oxy Console', type: 'first_party', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Website', isOfficial: true, redirectUris: ['https://oxy.so/__oxy/sso-callback'] },
+        { name: 'Internal Svc', isInternal: true, redirectUris: ['https://internal.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Auth', type: 'system', redirectUris: ['https://auth.oxy.so/__oxy/sso-callback'] },
+      ])
+    );
+
+    const { trusted } = await fedcmService.getApprovedClientData();
+
+    for (const expected of [
+      'https://console.oxy.so',
+      'https://oxy.so',
+      'https://internal.oxy.so',
+      'https://auth.oxy.so',
+    ]) {
+      expect(trusted).toContain(expected);
+    }
+  });
+
+  it('trusted is a strict subset of clients (every trusted origin is also approved)', async () => {
+    mockAppFind.mockReturnValueOnce(
+      leanQuery([
+        { name: 'Oxy Console', type: 'first_party', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+      ])
+    );
+
+    const { origins, trusted } = await fedcmService.getApprovedClientData();
+    for (const t of trusted) {
+      expect(origins).toContain(t);
+    }
+    expect(trusted).toContain('https://console.oxy.so');
+    expect(origins).toContain('https://console.oxy.so');
+  });
+
+  it('does NOT mark dev/native origins as trusted (approved, but no consent-skip)', async () => {
+    mockAppFind.mockReturnValueOnce(leanQuery([])); // no apps
+    const { origins, trusted } = await fedcmService.getApprovedClientData();
+    for (const dev of DEV_NATIVE) {
+      expect(origins).toContain(dev); // approved
+      expect(trusted).not.toContain(dev); // but never trusted for consent-skip
+    }
+  });
+
+  it('does NOT mark manual FedCMClient escape-hatch origins as trusted', async () => {
+    mockAppFind.mockReturnValueOnce(leanQuery([]));
+    mockClientFind.mockReturnValueOnce(leanQuery([{ origin: 'https://manual.example' }]));
+    const { origins, trusted } = await fedcmService.getApprovedClientData();
+    expect(origins).toContain('https://manual.example'); // approved via escape hatch
+    expect(trusted).not.toContain('https://manual.example'); // never a consent-skip
+  });
+
+  it('yields an empty trusted set (fail-closed) when the registry read throws', async () => {
+    mockAppFind.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('db down')) }),
+    });
+    const { trusted } = await fedcmService.getApprovedClientData();
+    expect(trusted).toEqual([]);
   });
 });
 

@@ -5,7 +5,8 @@ import { Application } from '../models/Application';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import { normaliseOrigin } from '../utils/origin';
-import approvedClientsCache from '../utils/approvedClientsCache';
+import approvedClientsCache, { type ApprovedClientsData } from '../utils/approvedClientsCache';
+import { isTrustedApplication } from '../utils/trustedApplication';
 import sessionService from './session.service';
 import deviceSessionService from './deviceSession.service';
 import { Request } from 'express';
@@ -19,7 +20,7 @@ import { formatUserNameResponse } from '../utils/displayName';
  * a registered {@link Application} — local dev servers and the native app
  * callback scheme. These are intentionally a small, explicit constant: every
  * trusted PRODUCTION RP origin is derived from staff-approved Application
- * metadata instead (see `fetchApprovedClientOrigins`), so user-created
+ * metadata instead (see `fetchApprovedClientData`), so user-created
  * third-party apps cannot self-approve SSO origins.
  */
 const DEV_NATIVE_APPROVED_ORIGINS = [
@@ -201,15 +202,15 @@ function verifyIdToken(token: string): FedcmTokenPayload {
  */
 class FedCMService {
   /**
-   * Uncached read of all approved client origins straight from Mongo.
+   * Uncached read of the approved-clients snapshot straight from Mongo:
+   * `{ origins, trusted }`.
    *
-   * Single source of truth for production first-party RP origins: derive origins
-   * from the canonical {@link Application} registry, but only for active apps
-   * whose staff-controlled trust fields mark them as platform-approved. Normal
-   * user-created third-party apps are active too, so `status: 'active'` alone is
-   * not a trust boundary for FedCM/SSO session minting.
-   *
-   * Unioned with:
+   * `origins` — the FULL approved-clients allow-list. Single source of truth for
+   * production first-party RP origins: derive origins from the canonical
+   * {@link Application} registry, but only for active apps whose staff-controlled
+   * trust fields mark them as platform-approved. Normal user-created third-party
+   * apps are active too, so `status: 'active'` alone is not a trust boundary for
+   * FedCM/SSO session minting. Unioned with:
    *  - {@link DEV_NATIVE_APPROVED_ORIGINS} (localhost dev + native scheme — not
    *    modelled as Applications);
    *  - any explicitly `approved` {@link FedCMClient} rows — the admin escape
@@ -217,14 +218,26 @@ class FedCMService {
    *    (yet) have an Application. `seedApprovedClients` only ever seeds the
    *    dev/native entries here.
    *
-   * Fail-soft: returns the dev/native fallback on error so callers (and the
-   * cache loader) never throw on a transient DB hiccup; the FedCM exchange
-   * remains fail-closed for everything else (an unknown origin is rejected).
+   * `trusted` — the strict subset of `origins` derived from Applications the
+   * platform classifies as first-party / internal / system / official via the
+   * shared {@link isTrustedApplication} predicate (the SAME classifier the
+   * `/auth/oauth/consent` auto-approve path uses — `packages/api/src/routes/auth.ts`
+   * line 2596). These NEVER require per-user FedCM consent, so the IdP worker
+   * short-circuits its per-user grant gate for them. Dev/native origins and
+   * manual escape-hatch rows are deliberately NOT trusted: only staff-controlled
+   * Application trust fields grant the consent-skip.
+   *
+   * Fail-soft: returns the dev/native fallback (with an empty `trusted`) on error
+   * so callers (and the cache loader) never throw on a transient DB hiccup; the
+   * FedCM exchange remains fail-closed for everything else (an unknown origin is
+   * rejected).
    */
-  private async fetchApprovedClientOrigins(): Promise<string[]> {
+  private async fetchApprovedClientData(): Promise<ApprovedClientsData> {
     const origins = new Set<string>();
+    const trusted = new Set<string>();
 
-    // Dev/native origins are always approved (a small, explicit constant).
+    // Dev/native origins are always approved (a small, explicit constant) — but
+    // NOT trusted for the consent-skip; only registered Applications are.
     for (const dev of DEV_NATIVE_APPROVED_ORIGINS) {
       const normalised = normaliseOrigin(dev);
       if (normalised) origins.add(normalised);
@@ -232,15 +245,24 @@ class FedCMService {
 
     try {
       const [apps, manualClients] = await Promise.all([
-        Application.find(TRUSTED_APPLICATION_FEDCM_FILTER).select('redirectUris').lean(),
+        Application.find(TRUSTED_APPLICATION_FEDCM_FILTER)
+          .select('isOfficial isInternal type redirectUris')
+          .lean(),
         // Manual/admin-approved escape-hatch entries (not Applications).
         FedCMClient.find({ approved: true }).select('origin').lean(),
       ]);
 
       for (const app of apps) {
+        // `TRUSTED_APPLICATION_FEDCM_FILTER` already restricts the query to the
+        // trusted set; re-applying the shared predicate makes the trust
+        // classification explicit in code (single source of truth with the
+        // OAuth consent auto-approve path) and robust to any future query drift.
+        const appIsTrusted = isTrustedApplication(app);
         for (const uri of app.redirectUris ?? []) {
           const normalised = normaliseOrigin(uri);
-          if (normalised) origins.add(normalised);
+          if (!normalised) continue;
+          origins.add(normalised);
+          if (appIsTrusted) trusted.add(normalised);
         }
       }
 
@@ -254,7 +276,7 @@ class FedCMService {
       // the cache loader, still fail-closed for any origin not in the set.
     }
 
-    return Array.from(origins);
+    return { origins: Array.from(origins), trusted: Array.from(trusted) };
   }
 
   /**
@@ -292,10 +314,19 @@ class FedCMService {
   }
 
   /**
+   * Get the approved-clients snapshot `{ origins, trusted }` (short-TTL cached —
+   * see approvedClientsCache). ONE Mongo read serves both the full allow-list and
+   * the trusted (consent-skip) subset.
+   */
+  async getApprovedClientData(): Promise<ApprovedClientsData> {
+    return approvedClientsCache.getApprovedData(() => this.fetchApprovedClientData());
+  }
+
+  /**
    * Get all approved client origins (short-TTL cached — see approvedClientsCache).
    */
   async getApprovedClientOrigins(): Promise<string[]> {
-    return approvedClientsCache.getApprovedOrigins(() => this.fetchApprovedClientOrigins());
+    return (await this.getApprovedClientData()).origins;
   }
 
   /**
@@ -316,7 +347,7 @@ class FedCMService {
    */
   async isClientApproved(origin: string): Promise<boolean> {
     try {
-      const origins = await this.fetchApprovedClientOrigins();
+      const { origins } = await this.fetchApprovedClientData();
       return origins.includes(origin);
     } catch (error) {
       logger.error('Error checking FedCM client approval:', error);
@@ -329,7 +360,7 @@ class FedCMService {
    *
    * PRODUCTION RP origins are NOT seeded here: trusted first-party/internal
    * origins are derived live from the {@link Application} registry by
-   * {@link fetchApprovedClientOrigins}. This
+   * {@link fetchApprovedClientData}. This
    * function only persists the small {@link DEV_NATIVE_APPROVED_ORIGINS} set
    * (localhost + native scheme) as {@link FedCMClient} rows so they survive in
    * the admin-visible collection and the `getUserAuthorizedApps` catalog.

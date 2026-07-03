@@ -155,11 +155,15 @@ export async function getUserGrants(req: Request, res: Response) {
  */
 export async function getApprovedClients(req: Request, res: Response) {
   try {
-    const origins = await fedcmService.getApprovedClientOrigins();
+    const { origins, trusted } = await fedcmService.getApprovedClientData();
 
+    // `clients` is the full approved-clients allow-list (unchanged, back-compat).
+    // `trusted` is the additive subset of first-party/official origins the IdP
+    // worker may silently restore WITHOUT a per-user FedCM grant.
     return res.json({
       success: true,
       clients: origins,
+      trusted,
     });
   } catch (error) {
     logger.error('Get approved FedCM clients error:', error);

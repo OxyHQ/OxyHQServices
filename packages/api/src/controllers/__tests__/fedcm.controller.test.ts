@@ -13,7 +13,7 @@ import type { Request, Response } from 'express';
 const mockMintNonce = jest.fn();
 const mockExchangeIdToken = jest.fn();
 const mockGetUserGrantedOrigins = jest.fn();
-const mockGetApprovedClientOrigins = jest.fn();
+const mockGetApprovedClientData = jest.fn();
 const mockAddApprovedClient = jest.fn();
 const mockRemoveApprovedClient = jest.fn();
 const mockGetUserAuthorizedApps = jest.fn();
@@ -25,7 +25,7 @@ jest.mock('../../services/fedcm.service', () => ({
     mintNonce: mockMintNonce,
     exchangeIdToken: mockExchangeIdToken,
     getUserGrantedOrigins: mockGetUserGrantedOrigins,
-    getApprovedClientOrigins: mockGetApprovedClientOrigins,
+    getApprovedClientData: mockGetApprovedClientData,
     addApprovedClient: mockAddApprovedClient,
     removeApprovedClient: mockRemoveApprovedClient,
     getUserAuthorizedApps: mockGetUserAuthorizedApps,
@@ -229,16 +229,23 @@ describe('getUserGrants', () => {
 });
 
 describe('getApprovedClients', () => {
-  it('returns the approved origins on success', async () => {
-    mockGetApprovedClientOrigins.mockResolvedValueOnce(['https://mention.earth']);
+  it('returns clients (full allow-list) + trusted (consent-skip subset) on success', async () => {
+    mockGetApprovedClientData.mockResolvedValueOnce({
+      origins: ['https://mention.earth', 'https://console.oxy.so'],
+      trusted: ['https://console.oxy.so'],
+    });
     const res = createRes();
     await getApprovedClients(createReq(), res as unknown as Response);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ success: true, clients: ['https://mention.earth'] });
+    expect(res.body).toEqual({
+      success: true,
+      clients: ['https://mention.earth', 'https://console.oxy.so'],
+      trusted: ['https://console.oxy.so'],
+    });
   });
 
   it('returns 500 when the service throws', async () => {
-    mockGetApprovedClientOrigins.mockRejectedValueOnce(new Error('db down'));
+    mockGetApprovedClientData.mockRejectedValueOnce(new Error('db down'));
     const res = createRes();
     await getApprovedClients(createReq(), res as unknown as Response);
     expect(res.statusCode).toBe(500);
