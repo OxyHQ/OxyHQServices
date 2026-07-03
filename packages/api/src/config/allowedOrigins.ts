@@ -13,8 +13,10 @@
  *  - active first-party / internal / system / official Applications'
  *    `redirectUris` origins (auto-authorized by registering the app in Console),
  *  - validated `OXY_EXTRA_ALLOWED_ORIGINS` (emergency escape hatch),
- * with `http://localhost[:port]` / `http://127.0.0.1[:port]` ONLY outside
- * production.
+ * with `http://localhost[:port]` / `http://127.0.0.1[:port]` / `http://[::1][:port]`
+ * trusted UNCONDITIONALLY in ALL environments (including production) — an
+ * approved posture so a developer's loopback dev server can make credentialed /
+ * state-changing requests against prod (owner-approved).
  *
  * Registering a NEW first-party frontend now authorizes its origin
  * automatically via the Application registry — no code edit here. The bootstrap
@@ -25,8 +27,7 @@
  */
 
 import { isTrustedOrigin, getExtraAllowedOrigins } from './dynamicOriginRegistry';
-
-const DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/;
+import { isLoopbackOrigin } from '../utils/origin';
 
 /**
  * Strict TRUSTED Origin allowlist check. Comparison is case-sensitive on
@@ -35,16 +36,17 @@ const DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/;
  * for our zones.
  *
  * Reads the trusted snapshot from {@link dynamicOriginRegistry}; also honours
- * dev-localhost (outside production) and the `OXY_EXTRA_ALLOWED_ORIGINS`
- * escape hatch synchronously, so an env change is reflected immediately rather
- * than only after the next background refresh.
+ * loopback dev origins (unconditionally, in ALL environments — owner-approved)
+ * and the `OXY_EXTRA_ALLOWED_ORIGINS` escape hatch synchronously, so an env
+ * change is reflected immediately rather than only after the next background
+ * refresh.
  */
 export function isAllowedOrigin(origin: string): boolean {
   if (isTrustedOrigin(origin)) {
     return true;
   }
 
-  if (process.env.NODE_ENV !== 'production' && DEV_ORIGIN_PATTERN.test(origin)) {
+  if (isLoopbackOrigin(origin)) {
     return true;
   }
 
