@@ -53,7 +53,7 @@ jest.mock('../../middleware/auth', () => ({
   },
 }));
 
-const APPROVED = new Set(['https://accounts.oxy.so', 'https://mention.earth']);
+const APPROVED = new Set(['https://accounts.oxy.so', 'https://mention.earth', 'http://localhost:8081']);
 const recordGrant = jest.fn(async (_userId: string, _origin: string) => {});
 jest.mock('../../services/fedcm.service', () => ({
   __esModule: true,
@@ -310,8 +310,38 @@ describe('POST /sso/establish-token', () => {
     });
     expect(result.status).toBe(204);
     expect(result.headers['access-control-allow-origin']).toBe('https://accounts.oxy.so');
-    expect(result.headers['access-control-allow-credentials']).toBe('false');
+    // Bearer-only endpoint, but the shared @oxyhq/core HTTP client sends
+    // credentials:'include' for same-baseURL calls, so the preflight MUST allow
+    // credentials for approved origins (ambient cookies are ignored server-side).
+    expect(result.headers['access-control-allow-credentials']).toBe('true');
     expect(String(result.headers['access-control-allow-headers'])).toContain('Authorization');
+  });
+
+  it('echoes an approved dev-localhost origin with credentials allowed on the OPTIONS preflight', async () => {
+    // The bug was confirmed against http://localhost:8081 in prod: the shared
+    // SDK HTTP client sends credentials:'include' for same-baseURL calls, so a
+    // dev localhost RP must also receive ACAC:true (it is an approved origin).
+    const address = server.address() as AddressInfo;
+    const result = await new Promise<{ status: number; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+      const req = http.request(
+        {
+          method: 'OPTIONS',
+          host: '127.0.0.1',
+          port: address.port,
+          path: '/sso/establish-token',
+          headers: { origin: 'http://localhost:8081' },
+        },
+        (res) => {
+          res.on('data', () => {});
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers }));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    expect(result.status).toBe(204);
+    expect(result.headers['access-control-allow-origin']).toBe('http://localhost:8081');
+    expect(result.headers['access-control-allow-credentials']).toBe('true');
   });
 
   it('does not echo an unapproved origin on the OPTIONS preflight', async () => {
@@ -334,6 +364,9 @@ describe('POST /sso/establish-token', () => {
       req.end();
     });
     expect(result.status).toBe(204);
+    // An unapproved origin gets NEITHER Access-Control-Allow-Origin NOR
+    // Access-Control-Allow-Credentials — the approved-clients gate is not weakened.
     expect(result.headers['access-control-allow-origin']).toBeUndefined();
+    expect(result.headers['access-control-allow-credentials']).toBeUndefined();
   });
 });

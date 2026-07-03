@@ -50,14 +50,28 @@ export async function ssoExchangeCors(req: Request, res: Response, next: NextFun
  * Dedicated CORS handler for `POST /sso/establish-token`.
  *
  * Mounted BEFORE the global CORS middleware (see server.ts) so it fully owns the
- * response for this path. Unlike `/sso/exchange` this endpoint is
- * BEARER-authenticated (the token rides in the `Authorization` header, not a
- * cookie), so it echoes the validated approved origin with
- * `Access-Control-Allow-Credentials: false` and additionally allows the
- * `Authorization` request header. Cross-apex RP origins (`mention.earth`, …) are
- * NOT covered by the apex-scoped global policy, which is exactly why this
- * dedicated handler — echoing any origin on the FedCM approved-clients allow-list
- * — is required. The OPTIONS preflight is answered here (204).
+ * response for this path. This endpoint is BEARER-authenticated (the token rides
+ * in the `Authorization` header; `authMiddleware` requires it and has no cookie
+ * fallback, and the controller reads the user id SOLELY from the bearer's
+ * claims). It nonetheless MUST echo `Access-Control-Allow-Credentials: true`
+ * because the `@oxyhq/core` shared HTTP client sends `credentials:'include'` for
+ * same-baseURL calls (the RP targets `api.oxy.so`, which equals the SDK
+ * baseURL) — answering `false` makes the browser block every include-mode
+ * request, breaking establish-token for every cross-origin RP. Echoing `true`
+ * is safe: any ambient cookies the browser attaches are ignored server-side, and
+ * the Origin is echoed ONLY for FedCM-approved clients — never a wildcard.
+ * Cross-apex RP origins (`mention.earth`, …) are not covered by the apex-scoped
+ * global policy, which is exactly why this dedicated handler — echoing any origin
+ * on the FedCM approved-clients allow-list — is required. It additionally allows
+ * the `Authorization` request header. The OPTIONS preflight is answered here (204).
+ *
+ * Because `Access-Control-Allow-Credentials` is `true`, the value written to
+ * `Access-Control-Allow-Origin` is the NORMALISED allow-list value, tested inline
+ * against `getApprovedClientOrigins()` — never the raw request header. Echoing a
+ * validated allow-list member (instead of reflecting untrusted request bytes) is
+ * the correct credentialed-CORS pattern: a real browser's canonical Origin already
+ * equals its normalised form, so approved clients see no behavioural change, while
+ * an unapproved or malformed Origin receives no CORS header at all.
  */
 export async function ssoEstablishTokenCors(req: Request, res: Response, next: NextFunction): Promise<void> {
   const originHeader = req.headers.origin;
@@ -65,9 +79,10 @@ export async function ssoEstablishTokenCors(req: Request, res: Response, next: N
 
   if (typeof originHeader === 'string' && originHeader.length > 0) {
     const normalised = normaliseOrigin(originHeader);
-    if (normalised && (await fedcmService.isClientApproved(normalised))) {
-      res.setHeader('Access-Control-Allow-Origin', originHeader);
-      res.setHeader('Access-Control-Allow-Credentials', 'false');
+    const approvedOrigins = await fedcmService.getApprovedClientOrigins();
+    if (normalised && approvedOrigins.includes(normalised)) {
+      res.setHeader('Access-Control-Allow-Origin', normalised);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept');
       res.setHeader('Access-Control-Max-Age', '600');
