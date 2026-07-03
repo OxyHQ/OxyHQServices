@@ -5,6 +5,8 @@ import {
     recommendationBoostSchema,
     recommendationSignalWeightsSchema,
     appUserSignalIngestSchema,
+    appAffinityEventSchema,
+    appAffinityEventsIngestSchema,
     safeParseContract,
 } from '../index';
 
@@ -101,13 +103,120 @@ describe('recommendationSignalWeightsSchema', () => {
         expect(parsed).not.toBeNull();
     });
 
+    it('accepts an affinity weight (the phase-2 interaction-affinity signal)', () => {
+        const parsed = safeParseContract(recommendationSignalWeightsSchema, { affinity: 2.5 });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.affinity).toBe(2.5);
+    });
+
     it('rejects a weight above 10', () => {
         const parsed = safeParseContract(recommendationSignalWeightsSchema, { graph: 11 });
         expect(parsed).toBeNull();
     });
 
+    it('rejects an affinity weight above 10', () => {
+        const parsed = safeParseContract(recommendationSignalWeightsSchema, { affinity: 11 });
+        expect(parsed).toBeNull();
+    });
+
     it('rejects a negative weight', () => {
         const parsed = safeParseContract(recommendationSignalWeightsSchema, { interest: -1 });
+        expect(parsed).toBeNull();
+    });
+});
+
+describe('appAffinityEventSchema', () => {
+    it('accepts a minimal event (from, to, type)', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: '64f7c2a1b8e9d3f4a1c2b3d4',
+            toUserId: '64f7c2a1b8e9d3f4a1c2b3d5',
+            type: 'like',
+        });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.type).toBe('like');
+    });
+
+    it('accepts a fully-specified event (weight, occurredAt, eventId)', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: 'a',
+            toUserId: 'b',
+            type: 'follow',
+            weight: 7,
+            occurredAt: '2026-07-03T12:00:00.000Z',
+            eventId: 'evt_123',
+        });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.weight).toBe(7);
+        expect(parsed?.eventId).toBe('evt_123');
+    });
+
+    it('rejects an unknown event type', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: 'a',
+            toUserId: 'b',
+            type: 'block',
+        });
+        expect(parsed).toBeNull();
+    });
+
+    it('rejects a negative weight', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: 'a',
+            toUserId: 'b',
+            type: 'like',
+            weight: -1,
+        });
+        expect(parsed).toBeNull();
+    });
+
+    it('rejects a non-ISO occurredAt', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: 'a',
+            toUserId: 'b',
+            type: 'like',
+            occurredAt: 'yesterday',
+        });
+        expect(parsed).toBeNull();
+    });
+
+    it('rejects an empty fromUserId', () => {
+        const parsed = safeParseContract(appAffinityEventSchema, {
+            fromUserId: '',
+            toUserId: 'b',
+            type: 'like',
+        });
+        expect(parsed).toBeNull();
+    });
+});
+
+describe('appAffinityEventsIngestSchema', () => {
+    it('accepts a non-empty batch of events', () => {
+        const parsed = safeParseContract(appAffinityEventsIngestSchema, {
+            events: [
+                { fromUserId: 'a', toUserId: 'b', type: 'reply' },
+                { fromUserId: 'a', toUserId: 'c', type: 'boost', weight: 3 },
+            ],
+        });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.events.length).toBe(2);
+    });
+
+    it('rejects an empty events array', () => {
+        expect(safeParseContract(appAffinityEventsIngestSchema, { events: [] })).toBeNull();
+    });
+
+    it('rejects a missing events array', () => {
+        expect(safeParseContract(appAffinityEventsIngestSchema, {})).toBeNull();
+    });
+
+    it('rejects more than 1000 events', () => {
+        const parsed = safeParseContract(appAffinityEventsIngestSchema, {
+            events: Array.from({ length: 1001 }, () => ({
+                fromUserId: 'a',
+                toUserId: 'b',
+                type: 'like' as const,
+            })),
+        });
         expect(parsed).toBeNull();
     });
 });

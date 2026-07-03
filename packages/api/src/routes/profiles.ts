@@ -29,6 +29,7 @@ import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.sc
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
+import { AppAffinityEdge } from '../models/AppAffinityEdge';
 import { Application } from '../models/Application';
 import { accountService } from '../services/account.service';
 import { getRedisClient } from '../config/redis';
@@ -43,6 +44,9 @@ import {
   REP_WEIGHT_NORM_MAX,
   ENDORSEMENT_SCORE_SATURATION,
   MUTUAL_COUNT_SATURATION,
+  MAX_AFFINITY_CANDIDATES,
+  decayAffinity,
+  normalizeAffinity,
   type RecommendationSignal,
 } from '../utils/recommendationWeights';
 import { INFLUENCE_MIN } from '../utils/reputation.constants';
@@ -904,6 +908,34 @@ async function buildRecommendationsScored(
     }
   }
 
+  // 3b. Interaction-affinity map (candidate id → decayed-on-read affinity).
+  //     The viewer's strongest directed affinity edges within the selected app,
+  //     decayed once more on read so a dormant relationship fades toward 0.
+  //     Empty when the viewer has no edges (no app context, or no events folded
+  //     yet) → 0 contribution and no injected candidates (strict no-op).
+  const affinityMap = new Map<string, number>();
+  if (viewerId && Types.ObjectId.isValid(viewerId) && opts.clientId && Types.ObjectId.isValid(opts.clientId)) {
+    const nowMs = Date.now();
+    const affinityRows = await AppAffinityEdge.find({
+      applicationId: new Types.ObjectId(opts.clientId),
+      fromUserId: new Types.ObjectId(viewerId),
+    })
+      .select('toUserId affinity lastEventAt')
+      .sort({ affinity: -1 })
+      .limit(MAX_AFFINITY_CANDIDATES)
+      .lean();
+    for (const row of affinityRows) {
+      const decayed = decayAffinity(
+        typeof row.affinity === 'number' ? row.affinity : 0,
+        row.lastEventAt ?? null,
+        nowMs
+      );
+      if (decayed > 0) {
+        affinityMap.set(row.toUserId.toHexString(), decayed);
+      }
+    }
+  }
+
   // 4. Boost map (member id → summed boost weight). Boost members join the
   //    candidate union but still pass the eligibility/privacy gate.
   const boostMap = new Map<string, number>();
@@ -929,6 +961,7 @@ async function buildRecommendationsScored(
   const candidateKeys = new Set<string>();
   for (const key of mutualMap.keys()) candidateKeys.add(key);
   for (const key of appSignalMap.keys()) candidateKeys.add(key);
+  for (const key of affinityMap.keys()) candidateKeys.add(key);
   for (const key of boostMap.keys()) candidateKeys.add(key);
   for (const key of excluded) candidateKeys.delete(key);
 
@@ -1075,6 +1108,8 @@ async function buildRecommendationsScored(
     const endorsement = appSignal?.endorsementScore ?? 0;
     const interest = appSignal?.interestScore ?? 0;
     const boost = boostMap.get(key) ?? 0;
+    // Decayed affinity for this candidate, normalized to [0, 1]. Absent → 0.
+    const affinityScore = normalizeAffinity(affinityMap.get(key) ?? 0);
 
     const graphScore = Math.min(mutual / MUTUAL_COUNT_SATURATION, 1);
     const curationScore = Math.max(
@@ -1097,6 +1132,7 @@ async function buildRecommendationsScored(
       ['interest', interest],
       ['appBoost', boost],
       ['repCandidate', repCand],
+      ['affinity', affinityScore],
     ];
 
     let score = 0;

@@ -14,7 +14,7 @@ import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { ForbiddenError, BadRequestError } from '../utils/error';
 import { appSignalsService } from '../services/appSignals.service';
-import { appUserSignalIngestSchema } from '@oxyhq/contracts';
+import { appUserSignalIngestSchema, appAffinityEventsIngestSchema } from '@oxyhq/contracts';
 
 const router = Router();
 
@@ -76,6 +76,36 @@ router.post(
       endorsements: endorsementResult,
       interests: interestResult,
     });
+  })
+);
+
+/**
+ * POST /app-signals/events
+ *
+ * Ingest a batch of directed interaction-affinity events for the requesting
+ * application (`fromUserId → toUserId`, typed, optionally weighted). Each event
+ * is folded into a per-app, time-decayed affinity edge; self-edges are dropped
+ * and a supplied `eventId` is deduped. Idempotent for events carrying an
+ * `eventId`; at-least-once (additive/decayed) for events without one.
+ */
+router.post(
+  '/events',
+  ingestLimiter,
+  serviceAuthMiddleware,
+  validate({ body: appAffinityEventsIngestSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertSignalsScope(req);
+
+    const applicationId = req.serviceApp?.appId;
+    if (!applicationId) {
+      throw new BadRequestError('Service token is missing an application id');
+    }
+
+    const { events } = req.body;
+
+    const affinityResult = await appSignalsService.ingestAffinityEvents(applicationId, events);
+
+    sendSuccess(res, { affinity: affinityResult });
   })
 );
 
