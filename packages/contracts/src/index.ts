@@ -70,6 +70,9 @@ export {
     appEndorsementInputSchema,
     appInterestInputSchema,
     appUserSignalIngestSchema,
+    appAffinityEventTypeSchema,
+    appAffinityEventSchema,
+    appAffinityEventsIngestSchema,
 } from './recommendations';
 
 export type {
@@ -83,6 +86,9 @@ export type {
     AppEndorsementInput,
     AppInterestInput,
     AppUserSignalIngest,
+    AppAffinityEventType,
+    AppAffinityEvent,
+    AppAffinityEventsIngest,
 } from './recommendations';
 
 export {

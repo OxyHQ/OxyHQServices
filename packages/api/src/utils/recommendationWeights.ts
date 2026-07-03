@@ -10,7 +10,7 @@
 
 import { clamp, INFLUENCE_MIN, INFLUENCE_MAX } from './reputation.constants';
 
-/** The seven scoring signals the recommendation pipeline weights. */
+/** The scoring signals the recommendation pipeline weights. */
 export type RecommendationSignal =
   | 'graph'
   | 'completeness'
@@ -18,7 +18,8 @@ export type RecommendationSignal =
   | 'curation'
   | 'interest'
   | 'appBoost'
-  | 'repCandidate';
+  | 'repCandidate'
+  | 'affinity';
 
 export const RECOMMENDATION_SIGNALS: readonly RecommendationSignal[] = [
   'graph',
@@ -28,6 +29,7 @@ export const RECOMMENDATION_SIGNALS: readonly RecommendationSignal[] = [
   'interest',
   'appBoost',
   'repCandidate',
+  'affinity',
 ] as const;
 
 /** A resolved set of scoring weights, one per signal. */
@@ -90,6 +92,122 @@ export const ENDORSEMENT_SCORE_SATURATION = 10;
 /** Saturation point for mutual-connection overlap, normalized to [0, 1]. */
 export const MUTUAL_COUNT_SATURATION = 20;
 
+// =============================================================================
+// INTERACTION-AFFINITY GRAPH (Fase 2 — direct affinity)
+// =============================================================================
+//
+// Consuming apps report directed interaction events (`POST /app-signals/events`)
+// which are folded into per-app, time-decayed directed affinity edges
+// (`fromUserId → toUserId`). The scorer reads the viewer's strongest edges,
+// decays each once more on read, normalizes to [0, 1], and adds
+// `w.affinity * affinityScore` to the composite. With no edges the map is empty
+// → 0 contribution → strict no-op.
+
+/**
+ * Exponential-decay half-life for stored affinity, in milliseconds (30 days).
+ * After one half-life an untouched edge's affinity has halved; the same decay is
+ * applied on the ingest read-modify-write and again on the scorer's read, so
+ * affinity always reflects RECENT interaction, not lifetime totals.
+ */
+export const AFFINITY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Per-type default event weight applied when a caller does not override it. A
+ * stronger, more intentional interaction (following, replying, quoting) carries
+ * more affinity than a passive one (a profile view). These are the ADDITIVE
+ * strengths folded into the (already-decayed) edge on each event.
+ */
+export const AFFINITY_EVENT_WEIGHTS: Readonly<Record<string, number>> = {
+  follow: 5,
+  reply: 4,
+  quote: 4,
+  boost: 3,
+  repost: 3,
+  mention: 3,
+  like: 2,
+  profile_view: 1,
+} as const;
+
+/**
+ * Saturation point for the decayed affinity roll-up: an edge's decayed affinity
+ * is normalized to [0, 1] by dividing by this value and clamping, so a single
+ * viewer→candidate relationship saturates near 1 after sustained interaction
+ * while a one-off interaction contributes a small fraction. Mirrors the
+ * endorsement/mutual saturation model so all signals share the same [0, 1] scale.
+ */
+export const AFFINITY_SATURATION = 20;
+
+/**
+ * How many of the viewer's strongest affinity edges to pull into the candidate
+ * union / affinity map per request. Bounds the injected-candidate fan-out and
+ * the in-memory map, mirroring `MAX_APP_SIGNAL_CANDIDATES`.
+ */
+export const MAX_AFFINITY_CANDIDATES = 300;
+
+/**
+ * TTL (seconds) for the bounded `AppAffinityEventSeen` idempotency ledger — the
+ * window within which a repeated `eventId` is deduped. 30 days matches the decay
+ * half-life: an event delivered again after this window has negligible affinity
+ * impact anyway, so folding it once more is harmless and the ledger stays small.
+ */
+export const AFFINITY_EVENT_SEEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * Pure exponential time-decay of a stored affinity value.
+ *
+ * `decayed = stored * 2^(-elapsed / halfLife)` where `elapsed = now - lastEventAt`.
+ * Guarantees:
+ *  - `elapsed <= 0` (or a missing/invalid `lastEventAt`) → returns `stored`
+ *    unchanged (never amplifies; clock skew cannot inflate affinity),
+ *  - `elapsed === halfLife` → exactly `stored / 2`,
+ *  - strictly monotonically decreasing in `elapsed` for a positive `stored`.
+ *
+ * Pure and DB-free — `now`/`lastEventAt` are supplied by the caller (the API
+ * service passes real `Date.now()`).
+ */
+export function decayAffinity(
+  stored: number,
+  lastEventAt: Date | number | null | undefined,
+  now: number,
+  halfLifeMs: number = AFFINITY_HALF_LIFE_MS,
+): number {
+  if (!Number.isFinite(stored) || stored === 0) {
+    return 0;
+  }
+  if (lastEventAt === null || lastEventAt === undefined || halfLifeMs <= 0) {
+    return stored;
+  }
+  const last = lastEventAt instanceof Date ? lastEventAt.getTime() : lastEventAt;
+  if (!Number.isFinite(last)) {
+    return stored;
+  }
+  const elapsed = now - last;
+  if (elapsed <= 0) {
+    return stored;
+  }
+  return stored * Math.pow(2, -elapsed / halfLifeMs);
+}
+
+/**
+ * The additive weight to fold for one interaction event: a finite, non-negative
+ * caller override when supplied, else the per-type default (0 for an unknown
+ * type, so a future/unrecognized type is a harmless no-op rather than a throw).
+ */
+export function affinityEventWeight(type: string, override?: number): number {
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 0) {
+    return override;
+  }
+  return AFFINITY_EVENT_WEIGHTS[type] ?? 0;
+}
+
+/** Normalize a decayed affinity value to [0, 1] against the saturation cap. */
+export function normalizeAffinity(decayed: number): number {
+  if (!Number.isFinite(decayed) || decayed <= 0 || AFFINITY_SATURATION <= 0) {
+    return 0;
+  }
+  return clamp(decayed / AFFINITY_SATURATION, 0, 1);
+}
+
 /** Default weight profile applied to every app unless one overrides it. */
 export const DEFAULT_WEIGHT_PROFILE: WeightProfile = {
   weights: {
@@ -100,6 +218,11 @@ export const DEFAULT_WEIGHT_PROFILE: WeightProfile = {
     interest: 1.5,
     appBoost: 2,
     repCandidate: 2,
+    // Direct interaction affinity sits between graph (structural follow overlap)
+    // and interest (app-reported topical interest): a real, decayed relationship
+    // is a strong "who to recommend" signal, but not so strong it swamps the
+    // structural graph. A no-op until events flow (empty edge map → 0).
+    affinity: 2.5,
   },
   ranges: {
     graph: { min: 0, max: 6 },
@@ -109,6 +232,7 @@ export const DEFAULT_WEIGHT_PROFILE: WeightProfile = {
     interest: { min: 0, max: 5 },
     appBoost: { min: 0, max: 6 },
     repCandidate: { min: 0, max: 6 },
+    affinity: { min: 0, max: 6 },
   },
 };
 
@@ -124,8 +248,9 @@ export function buildWeightProfiles(): Record<string, WeightProfile> {
   const mentionAppId = process.env.MENTION_APPLICATION_ID;
   if (mentionAppId) {
     profiles[mentionAppId] = {
-      // Mention is graph- and curation-led: who you follow and who curators
-      // (lists / starter packs) endorse matter more than raw verification.
+      // Mention is graph-, affinity- and curation-led: who you follow, who you
+      // actually interact with, and who curators (lists / starter packs) endorse
+      // matter more than raw verification.
       weights: {
         graph: 4,
         completeness: 1,
@@ -134,6 +259,10 @@ export function buildWeightProfiles(): Record<string, WeightProfile> {
         interest: 2,
         appBoost: 2,
         repCandidate: 2.5,
+        // Mention weights real interaction affinity a notch above the default —
+        // in a social app "who you engage with" is one of the strongest
+        // discovery signals, second only to the raw follow graph.
+        affinity: 3.5,
       },
       ranges: {
         graph: { min: 0, max: 6 },
@@ -143,6 +272,7 @@ export function buildWeightProfiles(): Record<string, WeightProfile> {
         interest: { min: 0, max: 6 },
         appBoost: { min: 0, max: 6 },
         repCandidate: { min: 0, max: 6 },
+        affinity: { min: 0, max: 6 },
       },
     };
   }

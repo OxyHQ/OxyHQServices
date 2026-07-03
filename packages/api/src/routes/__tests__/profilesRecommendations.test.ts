@@ -29,6 +29,7 @@ const mockFollowFind = jest.fn();
 const mockFollowAggregate = jest.fn();
 const mockUserAggregate = jest.fn();
 const mockAppUserSignalFind = jest.fn();
+const mockAppAffinityEdgeFind = jest.fn();
 const mockApplicationFindById = jest.fn();
 const mockResolveEffectiveAccess = jest.fn();
 
@@ -116,6 +117,12 @@ jest.mock('../../models/User', () => ({
 jest.mock('../../models/AppUserSignal', () => ({
   AppUserSignal: {
     find: (...args: unknown[]) => mockAppUserSignalFind(...args),
+  },
+}));
+
+jest.mock('../../models/AppAffinityEdge', () => ({
+  AppAffinityEdge: {
+    find: (...args: unknown[]) => mockAppAffinityEdgeFind(...args),
   },
 }));
 
@@ -316,6 +323,15 @@ beforeEach(() => {
   currentUserId = undefined;
   currentServiceApp = undefined;
   mockAppUserSignalFind.mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  });
+  // No affinity edges by default → empty affinity map → 0 contribution and no
+  // injected candidates. Every existing recommendation test therefore also
+  // asserts the strict NO-OP property of the affinity term.
+  mockAppAffinityEdgeFind.mockReturnValue({
     select: jest.fn().mockReturnThis(),
     sort: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
@@ -766,5 +782,164 @@ describe('GET /profiles/recommendations scored ranking', () => {
     // candidate flagged NSFW by moderation is floored out of the scored surface,
     // mirroring the restricted/private exclusions.
     expectNonSensitiveMatch(mockUserAggregate.mock.calls[0][0]);
+  });
+});
+
+/**
+ * Interaction-affinity injection + no-op (Fase 2).
+ *
+ * Proves the affinity term is ADDITIVE and a strict NO-OP until edges exist:
+ *   - a viewer WITH a directed affinity edge injects that candidate into the
+ *     scored union (even with no mutual overlap) and boosts its score, and
+ *   - a viewer with NO edges produces an EMPTY candidate union → the popular
+ *     fallback → the affinity term contributes nothing and injects no one.
+ * The affinity read is gated on an authorized clientId, so the service token is
+ * used for its OWN app.
+ */
+describe('POST /profiles/recommendations interaction affinity', () => {
+  function postJson(
+    server: http.Server,
+    headers: Record<string, string> = {},
+    body: Record<string, unknown> = { limit: 10 }
+  ): Promise<JsonResponse> {
+    const address = server.address() as AddressInfo;
+    const payload = JSON.stringify(body);
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          method: 'POST',
+          host: '127.0.0.1',
+          port: address.port,
+          path: '/profiles/recommendations',
+          headers: { 'content-type': 'application/json', ...headers },
+        },
+        (res) => {
+          let raw = '';
+          res.on('data', (chunk) => { raw += chunk; });
+          res.on('end', () => {
+            try {
+              resolve({ status: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : {} });
+            } catch (err) {
+              reject(err);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.end(payload);
+    });
+  }
+
+  /** Wire the scoring + count User.aggregate passes for a candidate set. */
+  function stubUserAggregateFor(candidates: Types.ObjectId[]): void {
+    mockUserAggregate.mockImplementation((pipeline: unknown) => {
+      const stages = pipeline as Array<Record<string, unknown>>;
+      const isCountPass = stages.some(
+        (s) => s.$project && (s.$project as Record<string, unknown>).followersCount
+      );
+      const matchStage = stages.find(
+        (s) => s.$match && (s.$match as { _id?: { $in?: Types.ObjectId[] } })._id?.$in
+      );
+      const inIds = (matchStage?.$match as { _id?: { $in?: Types.ObjectId[] } } | undefined)?._id?.$in ?? [];
+      const present = candidates.filter((c) => inIds.some((id) => id.equals(c)));
+      if (isCountPass) {
+        return Promise.resolve(
+          present.map((c) => ({ _id: c, followersCount: 3, followingCount: 1 }))
+        );
+      }
+      return Promise.resolve(
+        present.map((c) => ({
+          _id: c, username: 'u', name: { first: 'U' }, avatar: 'x', verified: false,
+          completenessScore: 1, verifiedScore: 0, repCandScore: 0,
+        }))
+      );
+    });
+  }
+
+  it('injects and surfaces an affinity-only candidate for a viewer WITH an edge', async () => {
+    const appId = new Types.ObjectId().toHexString();
+    // A service token acting for viewer A within its own app (authorized clientId).
+    currentServiceApp = { appId, scopes: ['user:read'] };
+
+    // Viewer A follows no one relevant → no mutual overlap.
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
+    mockFollowFind.mockReturnValue({ select });
+    mockFollowAggregate.mockResolvedValue([]);
+
+    // Viewer A has a strong, recent affinity edge toward D.
+    const affinityLean = jest.fn().mockResolvedValue([
+      { toUserId: userD, affinity: 40, lastEventAt: new Date() },
+    ]);
+    const affinityLimit = jest.fn().mockReturnValue({ lean: affinityLean });
+    const affinitySort = jest.fn().mockReturnValue({ limit: affinityLimit });
+    const affinitySelect = jest.fn().mockReturnValue({ sort: affinitySort });
+    mockAppAffinityEdgeFind.mockReturnValue({ select: affinitySelect });
+
+    stubUserAggregateFor([userD]);
+
+    const res = await postJson(
+      server,
+      { 'x-oxy-user-id': userA.toHexString() },
+      { limit: 10, clientId: appId }
+    );
+
+    expect(res.status).toBe(200);
+
+    // The affinity read was scoped to the viewer within the app.
+    const affinityQuery = mockAppAffinityEdgeFind.mock.calls[0][0] as {
+      applicationId: Types.ObjectId;
+      fromUserId: Types.ObjectId;
+    };
+    expect(affinityQuery.applicationId.toHexString()).toBe(appId);
+    expect(affinityQuery.fromUserId.toHexString()).toBe(userA.toHexString());
+
+    // D was INJECTED into the scored candidate union purely by affinity...
+    const scoringMatch = (mockUserAggregate.mock.calls[0][0] as Array<{ $match?: { _id?: { $in?: Types.ObjectId[] } } }>)
+      .find((s) => s.$match?._id?.$in);
+    const candidateIds = (scoringMatch?.$match?._id?.$in ?? []).map((id) => id.toString());
+    expect(candidateIds).toContain(userD.toString());
+
+    // ...and surfaces in the response, with the affinity signal marked matched.
+    const returned = res.body.data ?? [];
+    const dRow = returned.find((p) => String(p.id) === userD.toString()) as
+      | { id: unknown; score?: number; matchedSignals?: string[] }
+      | undefined;
+    expect(dRow).toBeDefined();
+    expect(dRow?.matchedSignals).toContain('affinity');
+    expect(dRow?.score ?? 0).toBeGreaterThan(0);
+  });
+
+  it('is a strict NO-OP for a viewer with NO affinity edges (empty union → fallback)', async () => {
+    const appId = new Types.ObjectId().toHexString();
+    currentServiceApp = { appId, scopes: ['user:read'] };
+
+    const lean = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
+    mockFollowFind.mockReturnValue({ select });
+    mockFollowAggregate.mockResolvedValue([]);
+
+    // No affinity edges (the default beforeEach stub already returns []), and no
+    // app signals → the personalized candidate union is empty → popular fallback.
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(
+      server,
+      { 'x-oxy-user-id': userA.toHexString() },
+      { limit: 10, clientId: appId }
+    );
+
+    expect(res.status).toBe(200);
+    // No candidate was injected by affinity: the only User.aggregate calls are
+    // the popular-fallback follower-ranked + random-fill passes, never a
+    // candidate-union `_id.$in` scoring pass.
+    const sawScoringUnion = mockUserAggregate.mock.calls.some((call) => {
+      const stages = call[0] as Array<{ $match?: { _id?: { $in?: unknown } } }>;
+      return stages.some((s) => s.$match?._id?.$in !== undefined);
+    });
+    expect(sawScoringUnion).toBe(false);
+    expect(Array.isArray(res.body.data)).toBe(true);
   });
 });
