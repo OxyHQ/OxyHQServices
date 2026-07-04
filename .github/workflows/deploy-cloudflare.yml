@@ -54,28 +54,30 @@ jobs:
       # sync is already gated pre-push (test-build) and in PR CI, so the deploy
       # installs without the buggy frozen flag.
       - run: bun install
-      # Builds the Vite SPA AND the FedCM IdP Cloudflare Pages Function
-      # (dist/_worker.js) — see packages/auth `build` -> `build:worker`.
+      # Builds the Vite SPA AND the Cloudflare Pages Function (dist/_worker.js —
+      # the /api/device-accounts chooser feed) — see packages/auth `build` ->
+      # `build:worker`.
       - run: bun x turbo run build --filter=auth
       # Safety net: regenerate the Pages Function directly (bypasses any stale
       # turbo cache) and fail fast if the advanced-mode worker is missing, so we
-      # never deploy a static-only build that 404s/HTMLs the /fedcm/* endpoints.
-      - name: Ensure FedCM Pages Function is built
+      # never deploy a static-only build that serves SPA HTML for the dynamic
+      # /api/device-accounts feed.
+      - name: Ensure the Pages Function is built
         working-directory: packages/auth
         run: |
           bun run build:worker
-          test -f dist/_worker.js || { echo "::error::dist/_worker.js missing — FedCM IdP server would not deploy"; exit 1; }
+          test -f dist/_worker.js || { echo "::error::dist/_worker.js missing — the /api/device-accounts feed would not deploy"; exit 1; }
           echo "dist/_worker.js present ($(wc -c < dist/_worker.js) bytes)"
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy packages/auth/dist --project-name=oxy-auth --branch=main
-      # Post-deploy smoke gate: hit the LIVE IdP and assert the critical FedCM
+      # Post-deploy smoke gate: hit the LIVE host and assert the post-FedCM
       # contract on PUBLIC, unauthenticated endpoints only (no secrets). A broken
-      # IdP deploy (blank SPA, missing _worker.js / static-only, crashed /sso
-      # error page, or pinned multi-domain issuer) turns this job RED immediately.
-      # Retries briefly to let the Cloudflare Pages deploy propagate to the edge.
+      # deploy (blank SPA, missing _worker.js / static-only serving SPA HTML for
+      # the /api/device-accounts feed, or a re-added FedCM manifest) turns this
+      # job RED immediately. Retries briefly to let the Pages deploy propagate.
       - name: Post-deploy IdP smoke gate
         working-directory: packages/auth
         env:

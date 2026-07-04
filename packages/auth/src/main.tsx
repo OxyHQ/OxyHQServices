@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
 import { Toaster } from "@/components/ui/sonner"
-import { FedCMLoginStatus } from "@/components/fedcm-login-status"
 import { getBloomThemeCSS, setBasePreset } from "@/lib/bloom-css"
 import { LayoutProvider } from "@/lib/layout-context"
 import { LocaleProvider } from "@/lib/i18n/locale-context"
@@ -70,7 +69,6 @@ function App() {
                             <Route path="*" element={<Navigate to="/login" replace />} />
                         </Routes>
                         <Toaster position="bottom-right" />
-                        <FedCMLoginStatus />
                     </BrowserRouter>
                 </BloomThemeProvider>
             </LayoutProvider>

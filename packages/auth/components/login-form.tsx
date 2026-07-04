@@ -6,7 +6,7 @@ import { OxyServices } from "@oxyhq/core"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
 import { withCsrfHeader } from "@/lib/csrf"
-import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
+import { buildPostLoginRedirect } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
 import { loginResponseSchema, safeParse } from "@/lib/schemas"
@@ -98,7 +98,7 @@ export function LoginForm({
     const [useBackupCode, setUseBackupCode] = useState(false)
     const [backupCode, setBackupCode] = useState("")
     const [securityAlert, setSecurityAlert] = useState<string | null>(null)
-    const [pendingRedirect, setPendingRedirect] = useState<{ sessionId: string; authuser?: number } | null>(null)
+    const [pendingRedirect, setPendingRedirect] = useState<{ authuser?: number } | null>(null)
 
     const passwordRef = useRef<HTMLInputElement>(null)
     const identifierRef = useRef<HTMLInputElement>(null)
@@ -233,33 +233,12 @@ export function LoginForm({
         await runLookup(username)
     }
 
-    async function redirectAfterLogin(sessionId: string, authuser?: number) {
-        // FedCM login_url completion: when there's no OAuth/cross-app request
-        // context (no token, no redirect_uri), this login was almost certainly
-        // initiated by the browser's FedCM flow opening our `login_url` dialog
-        // (cold sign-in OR "use another account"). This branch MUST run before
-        // any fire-and-forget login-status work: the `fedcm_session` cookie has
-        // to land BEFORE we signal completion (so Chrome's accounts re-fetch
-        // resolves the *new* account), and a stray `/fedcm/login-status` iframe
-        // racing the `IdentityProvider.close()` handoff is exactly the kind of
-        // concurrent navigation that made "use another account" complete
-        // erratically. So we do a single AWAITED cookie write here and nothing
-        // else, then hand off to the browser.
-        if (!sessionToken && !redirectUri) {
-            await registerFedCMSession(sessionId)
-            if (completeFedCMLogin()) {
-                return
-            }
-            // Not a FedCM browser-mediated context (e.g. a plain direct visit to /login):
-            // the cookie is set; fall through to the normal redirect below.
-        } else {
-            // OAuth / cross-app login: keep the browser's FedCM login status in
-            // sync (returning-account + silent SSO) via the fire-and-forget
-            // cookie write + Set-Login iframe. Safe here because we are NOT in
-            // the close()-handoff path.
-            setFedCMLoginStatus(sessionId)
-        }
-
+    function redirectAfterLogin(authuser?: number) {
+        // The central device session (the `oxy_device` cookie) is minted
+        // server-side by `POST /auth/login`, so there is no client-side
+        // session-cookie plant to do here — proceed straight to `/authorize`.
+        // `/authorize` targets the intended account via the `authuser` hint plus
+        // the device-account chooser feed (`/api/device-accounts`).
         navigate(buildPostLoginRedirect({
             sessionToken,
             redirectUri,
@@ -272,14 +251,14 @@ export function LoginForm({
         }))
     }
 
-    function completeLogin(sessionId: string, authuser?: number, alert?: string) {
+    function completeLogin(authuser?: number, alert?: string) {
         if (alert) {
             setSecurityAlert(alert)
-            setPendingRedirect({ sessionId, authuser })
+            setPendingRedirect({ authuser })
             goToStep("security-alert", "forward")
             return
         }
-        void redirectAfterLogin(sessionId, authuser)
+        redirectAfterLogin(authuser)
     }
 
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -340,7 +319,7 @@ export function LoginForm({
                 return
             }
 
-            completeLogin(parsed.sessionId, parsed.authuser, payload.securityAlert)
+            completeLogin(parsed.authuser, payload.securityAlert)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to sign in")
             setIsSubmitting(false)
@@ -381,7 +360,7 @@ export function LoginForm({
                 return
             }
 
-            completeLogin(parsed.sessionId, parsed.authuser, payload.securityAlert)
+            completeLogin(parsed.authuser, payload.securityAlert)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to verify")
             setIsSubmitting(false)
@@ -397,7 +376,7 @@ export function LoginForm({
         setPendingSessionId(entry.sessionId)
         setIsSubmitting(true)
         try {
-            await redirectAfterLogin(entry.sessionId, entry.authuser)
+            redirectAfterLogin(entry.authuser)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
             setPendingSessionId(null)
@@ -419,7 +398,7 @@ export function LoginForm({
         setPendingSessionId(entry.sessionId)
         setIsSubmitting(true)
         try {
-            await redirectAfterLogin(entry.sessionId, entry.authuser)
+            redirectAfterLogin(entry.authuser)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
             setPendingSessionId(null)
@@ -465,7 +444,7 @@ export function LoginForm({
 
     function handleSecurityAlertDismiss() {
         if (pendingRedirect) {
-            void redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.authuser)
+            redirectAfterLogin(pendingRedirect.authuser)
         }
     }
 
@@ -662,7 +641,7 @@ export function LoginForm({
                     <CommonsSignIn
                         oxyServices={oxy}
                         clientId={OXY_CLIENT_ID}
-                        onAuthorized={(sessionId) => completeLogin(sessionId)}
+                        onAuthorized={() => completeLogin()}
                         onBack={() => goToStep("identifier", "back")}
                     />
                 </div>
