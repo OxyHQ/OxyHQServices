@@ -1,7 +1,7 @@
 import { useRef, useState } from "react"
 import { getAccountDisplayName } from "@oxyhq/core"
 import { resolveUserId, deviceResolveResponseSchema } from "@oxyhq/contracts"
-import type { UserResponse } from "@oxyhq/contracts"
+import type { UserResponse, DeviceResolveResponse } from "@oxyhq/contracts"
 import { safeParse } from "@/lib/schemas"
 import type { Account, DeviceAccount } from "@/lib/types"
 
@@ -84,6 +84,77 @@ export function useDeviceAccounts(): DeviceAccountsState {
 }
 
 /**
+ * Project a parsed `POST /auth/device/resolve` response onto the chooser's
+ * `DeviceAccountsState`. Pure (no I/O) so the index/selection logic is unit
+ * testable.
+ *
+ * `authuser` is a DETERMINISTIC per-account index assigned over the FILTERED,
+ * user-id-sorted set — device-session accounts have no persistent
+ * `oxy_rt_${n}` slot. It is a client-side `/login → /authorize?authuser=N`
+ * selection hint only (matched in `authorize.tsx`), never sent to the API.
+ * CRITICAL: the index is assigned AFTER dropping any entry whose user fails to
+ * resolve, so a skipped entry never leaves a gap that would shift `authuser`
+ * relative to another page load's projection.
+ */
+export function mapDeviceResolveToState(parsed: DeviceResolveResponse): DeviceAccountsState {
+    // Resolve to valid accounts FIRST (drop any unresolvable user), user-id
+    // sorted for a stable order, THEN assign the contiguous per-account index.
+    const resolved = parsed.accounts
+        .map((entry) => {
+            const account = toAccount(entry.user)
+            return account ? { entry, account } : null
+        })
+        .filter((r): r is { entry: DeviceResolveResponse["accounts"][number]; account: Account } => r !== null)
+        .sort((a, b) => (a.account.id < b.account.id ? -1 : a.account.id > b.account.id ? 1 : 0))
+
+    if (resolved.length === 0) {
+        return LOGGED_OUT_STATE
+    }
+
+    const activeId = parsed.activeAccountId
+    const accounts: DeviceAccount[] = []
+    let currentAccount: Account | null = null
+    let currentSessionId: string | null = null
+    let currentAccessToken: string | null = null
+
+    resolved.forEach(({ entry, account }, index) => {
+        const isCurrent = activeId !== null && account.id === activeId
+        accounts.push({
+            sessionId: entry.sessionId,
+            isCurrent,
+            accessToken: entry.accessToken,
+            expiresAt: entry.expiresAt,
+            authuser: index,
+            account,
+        })
+        if (isCurrent) {
+            currentAccount = account
+            currentSessionId = entry.sessionId
+            currentAccessToken = entry.accessToken
+        }
+    })
+
+    // The device has accounts but the server reported no active one (or an id
+    // that resolved to no live token): elect the first as the chooser's current
+    // row so it still renders (the chooser gates on `currentSessionId`).
+    if (!currentSessionId) {
+        const first = accounts[0]
+        first.isCurrent = true
+        currentAccount = first.account
+        currentSessionId = first.sessionId
+        currentAccessToken = first.accessToken
+    }
+
+    return {
+        isLoading: false,
+        currentAccount,
+        currentSessionId,
+        currentAccessToken,
+        accounts,
+    }
+}
+
+/**
  * Resolve the device's account set from the IdP's same-origin
  * `/api/device-accounts` feed. A non-2xx response or an empty set is
  * authoritative "no signed-in accounts".
@@ -116,62 +187,5 @@ async function detectAccounts(): Promise<DeviceAccountsState> {
         return LOGGED_OUT_STATE
     }
 
-    // Device-session accounts have no persistent `oxy_rt_${n}` slot. Assign a
-    // DETERMINISTIC per-account index (`authuser`) by sorting on the stable user
-    // id, so the client-side `/login → /authorize?authuser=N` selection hint
-    // (matched in `authorize.tsx`) resolves to the SAME account across page
-    // loads. `authuser` is never sent to the API — it is a UI selection hint.
-    const sorted = [...parsed.accounts].sort((a, b) => {
-        const ai = resolveUserId(a.user) ?? ""
-        const bi = resolveUserId(b.user) ?? ""
-        return ai < bi ? -1 : ai > bi ? 1 : 0
-    })
-
-    const activeId = parsed.activeAccountId
-    const accounts: DeviceAccount[] = []
-    let currentAccount: Account | null = null
-    let currentSessionId: string | null = null
-    let currentAccessToken: string | null = null
-
-    sorted.forEach((entry, index) => {
-        const account = toAccount(entry.user)
-        if (!account) return
-        const isCurrent = activeId !== null && account.id === activeId
-        accounts.push({
-            sessionId: entry.sessionId,
-            isCurrent,
-            accessToken: entry.accessToken,
-            expiresAt: entry.expiresAt,
-            authuser: index,
-            account,
-        })
-        if (isCurrent) {
-            currentAccount = account
-            currentSessionId = entry.sessionId
-            currentAccessToken = entry.accessToken
-        }
-    })
-
-    if (accounts.length === 0) {
-        return LOGGED_OUT_STATE
-    }
-
-    // The device has accounts but the server reported no active one (or an id
-    // that resolved to no live token): elect the first as the chooser's current
-    // row so it still renders (the chooser gates on `currentSessionId`).
-    if (!currentSessionId) {
-        const first = accounts[0]
-        first.isCurrent = true
-        currentAccount = first.account
-        currentSessionId = first.sessionId
-        currentAccessToken = first.accessToken
-    }
-
-    return {
-        isLoading: false,
-        currentAccount,
-        currentSessionId,
-        currentAccessToken,
-        accounts,
-    }
+    return mapDeviceResolveToState(parsed)
 }
