@@ -12,9 +12,11 @@
  * `window`/`location`, and has no side effects. It is the single source of
  * truth for the central IdP origin so call sites never hardcode the literal.
  *
- * Note: this is distinct from `autoDetectAuthWebUrl` (per-apex `auth.<rp-apex>`
- * derivation). The central-SSO path deliberately does NOT auto-detect per-apex
- * IdPs — it is central only. An explicitly-configured `authWebUrl` still wins.
+ * LEGACY(old-sdk): the client resolver (`resolveCentralAuthUrl`) was removed in
+ * the device-first cutover; `CENTRAL_IDP_APEX` / `CENTRAL_AUTH_URL` survive ONLY
+ * because the lista-B IdP worker imports them to brand assertions. Deletable
+ * once Homiio/Allo/Alia/Syra are bumped off the old SDK AND CloudWatch
+ * `/oxy/ecs` shows the `/sso*` + `/fedcm/*` routes quiet — F-final sweep.
  */
 
 /**

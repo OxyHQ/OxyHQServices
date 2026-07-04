@@ -7,6 +7,11 @@
  * bounce through `auth.oxy.so`. The one survivor is this path constant, still
  * referenced by the api SSO controller and the IdP (both lista B, gated on the
  * ecosystem bump). `@oxyhq/core/server` re-exports it for the api.
+ *
+ * LEGACY(old-sdk): `SSO_CALLBACK_PATH` survives ONLY for the lista-B api/IdP SSO
+ * surface. Deletable once Homiio/Allo/Alia/Syra are bumped off the old SDK AND
+ * CloudWatch `/oxy/ecs` shows the `/sso*` + `/fedcm/*` routes quiet — the
+ * F-final sweep should remove this file then.
  */
 
 /**

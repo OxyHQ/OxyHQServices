@@ -7,6 +7,11 @@
  * the api SSO surface, `fedcm.service`, `deviceAuth` (same-apex trust checks),
  * and the IdP worker (all lista B / server-side). `@oxyhq/core/server`
  * re-exports it for the api.
+ *
+ * LEGACY(old-sdk): `registrableApex` survives ONLY for the lista-B server/IdP
+ * SSO surface. Deletable once Homiio/Allo/Alia/Syra are bumped off the old SDK
+ * AND CloudWatch `/oxy/ecs` shows the `/sso*` + `/fedcm/*` routes quiet — the
+ * F-final sweep should remove this file then.
  */
 
 import { getDomain } from 'tldts';
