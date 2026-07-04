@@ -151,4 +151,64 @@ describe('usePasswordSignIn', () => {
     act(() => result.current.back());
     expect(result.current.step).toBe('identifier');
   });
+
+  it('ignores a second submitPassword while one is already in flight (double-tap guard)', async () => {
+    // Keep the first call pending so the second fires while it is still running.
+    let resolvePending: (value: PasswordSignInResult) => void = () => undefined;
+    signInWithPassword.mockReturnValue(
+      new Promise<PasswordSignInResult>((resolve) => {
+        resolvePending = resolve;
+      }),
+    );
+    const onSignedIn = jest.fn();
+    const { result } = renderHook(() => usePasswordSignIn({ onSignedIn }));
+
+    act(() => result.current.setIdentifier('pwuser'));
+    act(() => result.current.submitIdentifier());
+    act(() => result.current.setPassword('hunter2'));
+
+    await act(async () => {
+      // Two rapid taps in the same tick — the second must be a no-op.
+      const first = result.current.submitPassword();
+      const second = result.current.submitPassword();
+      resolvePending({ status: 'ok' });
+      await Promise.all([first, second]);
+    });
+
+    expect(signInWithPassword).toHaveBeenCalledTimes(1);
+    expect(onSignedIn).toHaveBeenCalledTimes(1);
+    expect(result.current.isSubmitting).toBe(false);
+  });
+
+  it('ignores a second submitTwoFactor while one is already in flight (double-tap guard)', async () => {
+    signInWithPassword.mockResolvedValue({ status: '2fa_required', loginToken: 'lt_abc' });
+    let resolvePending: () => void = () => undefined;
+    completeTwoFactorSignIn.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolvePending = resolve;
+      }),
+    );
+    const onSignedIn = jest.fn();
+    const { result } = renderHook(() => usePasswordSignIn({ onSignedIn }));
+
+    act(() => result.current.setIdentifier('pwuser'));
+    act(() => result.current.submitIdentifier());
+    act(() => result.current.setPassword('hunter2'));
+    await act(async () => {
+      await result.current.submitPassword();
+    });
+    expect(result.current.step).toBe('twoFactor');
+
+    act(() => result.current.setCode('123456'));
+    await act(async () => {
+      const first = result.current.submitTwoFactor();
+      const second = result.current.submitTwoFactor();
+      resolvePending();
+      await Promise.all([first, second]);
+    });
+
+    expect(completeTwoFactorSignIn).toHaveBeenCalledTimes(1);
+    expect(onSignedIn).toHaveBeenCalledTimes(1);
+    expect(result.current.isSubmitting).toBe(false);
+  });
 });

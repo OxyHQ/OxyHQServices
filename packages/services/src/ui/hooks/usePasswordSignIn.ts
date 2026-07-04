@@ -12,7 +12,7 @@
  * device-first cold boot / SessionClient projection then drive the app into the
  * authenticated state.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useOxy } from '../context/OxyContext';
 import { handleAuthError } from '../utils/errorHandlers';
 
@@ -61,6 +61,13 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginToken, setLoginToken] = useState<string | null>(null);
 
+  // Synchronous in-flight guard. `isSubmitting` state drives the UI, but a rapid
+  // double-tap fires both handlers in the SAME tick — before React re-renders —
+  // so a state read would still see `false` on the second call and double-fire
+  // the network request (rate-limit + race). This ref is set/checked
+  // synchronously, so the second call is a true no-op.
+  const submittingRef = useRef(false);
+
   const surfaceError = useCallback((err: unknown, defaultMessage: string): void => {
     setError(handleAuthError(err, { defaultMessage, code: 'PASSWORD_SIGN_IN_ERROR' }));
   }, []);
@@ -75,11 +82,16 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
   }, [identifier]);
 
   const submitPassword = useCallback(async () => {
+    // A second call while one is already in flight is a no-op (double-tap guard).
+    if (submittingRef.current) {
+      return;
+    }
     if (!password) {
       setError('Enter your password');
       return;
     }
     setError(null);
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const result = await signInWithPassword(identifier.trim(), password);
@@ -94,11 +106,16 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
     } catch (err) {
       surfaceError(err, 'Sign in failed');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   }, [identifier, password, signInWithPassword, onSignedIn, surfaceError]);
 
   const submitTwoFactor = useCallback(async () => {
+    // A second call while one is already in flight is a no-op (double-tap guard).
+    if (submittingRef.current) {
+      return;
+    }
     if (!loginToken) {
       setError('Your sign-in session expired. Start again.');
       setStep('password');
@@ -109,6 +126,7 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
       return;
     }
     setError(null);
+    submittingRef.current = true;
     setIsSubmitting(true);
     try {
       await completeTwoFactorSignIn({
@@ -119,6 +137,7 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
     } catch (err) {
       surfaceError(err, 'Verification failed');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   }, [loginToken, code, useBackupCode, completeTwoFactorSignIn, onSignedIn, surfaceError]);
@@ -147,6 +166,7 @@ export function usePasswordSignIn(options: UsePasswordSignInOptions = {}): UsePa
     setUseBackupCode(false);
     setLoginToken(null);
     setError(null);
+    submittingRef.current = false;
     setIsSubmitting(false);
   }, []);
 
