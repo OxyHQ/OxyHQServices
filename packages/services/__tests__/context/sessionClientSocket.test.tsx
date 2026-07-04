@@ -33,7 +33,7 @@
 import React from 'react';
 import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SessionLoginResponse, User } from '@oxyhq/core';
+import { AUTH_STATE_STORAGE_KEY, type SessionLoginResponse, type User } from '@oxyhq/core';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 
 jest.mock('../../src/ui/session', () => {
@@ -48,7 +48,6 @@ import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { OxyContextState } from '../../src/ui/context/OxyContext';
 import { useAuthStore } from '../../src/ui/stores/authStore';
 import { createSessionClient } from '../../src/ui/session';
-import { getStorageKeys, STORAGE_KEY_PREFIX } from '../../src/ui/utils/storageHelpers';
 
 const mockedCreateSessionClient = createSessionClient as jest.MockedFunction<typeof createSessionClient>;
 
@@ -147,27 +146,25 @@ function buildStub(baseURL: string) {
     getUsersByIds,
     stub: {
       config: { authWebUrl: 'https://auth.oxy.so' },
-      httpService: { setTokens: (token: string) => { currentToken = token; } },
+      httpService: {
+        setTokens: (token: string) => { currentToken = token; },
+        setAuthRefreshHandler: jest.fn(),
+        refreshAccessToken: jest.fn(async () => null),
+      },
       getBaseURL: () => baseURL,
       getSessionBaseUrl: () => baseURL,
       getAccessToken: () => currentToken,
+      getAccessTokenExpiry: () => null,
       onTokensChanged: () => () => undefined,
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      handleAuthCallback: jest.fn(() => null),
-      // The `silent-iframe` cold-boot step (per-apex `/auth/silent`) is the web
-      // restore path now that FedCM is gone: it mints via `silentSignIn`, so
-      // returning `bootSession` here is what recovers a session on boot.
-      silentSignIn: jest.fn(async () => bootSession),
-      generateSsoState: jest.fn(() => 'state-token-xyz'),
-      exchangeSsoCode: jest.fn(async () => null),
+      // The device-first cold boot recovers the session from the persisted
+      // refresh family seeded into localStorage before render (the `stored-tokens`
+      // warm-plant step) — no `silentSignIn`/FedCM arm anymore.
+      signInWithSharedIdentity: jest.fn(async () => null),
       getCurrentUser: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
-      validateSession: jest.fn(async () => ({ valid: true, user: { id: ACCOUNT_A1, username: 'user-a1' } })),
-      getDeviceSessions: jest.fn(async () => []),
-      getSessionsBySessionId: jest.fn(async () => []),
       getUserBySession: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
-      refreshTokenViaCookie: jest.fn(async () => null),
       listAccounts: jest.fn(async () => []),
       getUsersByIds,
     },
@@ -224,10 +221,28 @@ function nextBaseURL(): string {
 }
 
 /**
- * Boots the provider through the real cold-boot token ladder (the web
- * `silent-iframe` step's `silentSignIn` recovers `bootSession`), then hands off
+ * Seed a persisted refresh family (with a still-valid warm access token) so the
+ * device-first cold boot's `stored-tokens` step warm-plants a session WITHOUT a
+ * network round-trip — the offline stand-in for a returning signed-in device.
+ */
+function seedWarmSession() {
+  window.localStorage.setItem(
+    AUTH_STATE_STORAGE_KEY,
+    JSON.stringify({
+      sessionId: SESSION_A1,
+      refreshToken: 'a1.refresh.token',
+      userId: ACCOUNT_A1,
+      accessToken: bootSession.accessToken,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    }),
+  );
+}
+
+/**
+ * Boots the provider through the real device-first cold-boot ladder (the
+ * `stored-tokens` step warm-plants the seeded persisted session), then hands off
  * to the fake `SessionClient`, whose `start()` seeds `deviceState` and notifies
- * — projecting it onto the exposed context exactly like the real Task 2 handoff.
+ * — projecting it onto the exposed context exactly like the real handoff.
  */
 async function bootWithDeviceState(deviceState: DeviceSessionState) {
   const fake = buildFakeClient(deviceState);
@@ -238,6 +253,7 @@ async function bootWithDeviceState(deviceState: DeviceSessionState) {
 
   const baseURL = nextBaseURL();
   const { stub, getUsersByIds } = buildStub(baseURL);
+  seedWarmSession();
   renderProvider(stub, baseURL);
 
   await waitFor(() => expect(fake.start).toHaveBeenCalledTimes(1));
@@ -301,48 +317,6 @@ describe('SessionClient socket replaces per-domain useSessionSocket (Task 4)', (
     expect(captured.sessionsLength).toBe(0);
     expect(captured.activeSessionId).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
-  });
-
-  it('H1: a pushed ZERO-account state also clears the durable prior-session hint so a remote sign-out fully suppresses the terminal sso-bounce', async () => {
-    const { fake } = await bootWithDeviceState(twoAccountDeviceState());
-    const storageKeys = getStorageKeys(STORAGE_KEY_PREFIX);
-
-    // Precondition: the cold-boot silent-iframe win committed a session, which
-    // durably sets the "this device has had a signed-in Oxy session before"
-    // hint — exactly like a real returning device.
-    await waitFor(() =>
-      expect(window.localStorage.getItem(storageKeys.priorSession)).toBe('1'),
-    );
-
-    const pushed: DeviceSessionState = {
-      deviceId: 'dev-1',
-      accounts: [],
-      activeAccountId: null,
-      revision: 2,
-      updatedAt: Date.now(),
-    };
-
-    // Simulates BOTH device accounts being signed out from another
-    // tab/device — no `logout()`/`logoutAll()` call happens on THIS
-    // instance, only the remote push.
-    act(() => {
-      fake.push(pushed);
-    });
-
-    await waitFor(() => expect(captured.isAuthenticated).toBe(false));
-
-    // The bug: `allowSsoBounce` gates the terminal `sso-bounce` cold-boot step
-    // on the durable prior-session hint (`hasPriorSession || hasLocalSession`),
-    // NOT on the deliberately-signed-out flag. A remote sign-out that leaves
-    // the hint in place would still get one terminal `/sso` establish bounce
-    // on the next reload and could silently re-mint a session from a
-    // still-live central `fedcm_session` — signing the user back in on the RP
-    // they were just signed out of. The zero-account branch must clear the
-    // hint (mirroring `logout()`/`logoutAll()` in `useAuthOperations.ts`)
-    // exactly like a local full sign-out does.
-    await waitFor(() =>
-      expect(window.localStorage.getItem(storageKeys.priorSession)).toBeNull(),
-    );
   });
 
   it('exposed refreshSessions() calls client.bootstrap() then reprojects via syncFromClient', async () => {

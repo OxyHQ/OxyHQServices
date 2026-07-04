@@ -8,7 +8,7 @@ import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
-import { isWebBrowser } from './useWebSSO';
+import { isWebBrowser } from '../utils/isWebBrowser';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;

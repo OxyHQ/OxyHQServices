@@ -1,19 +1,22 @@
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import { logger } from '@oxyhq/core';
+import { logger, createMemoryAuthStateStore, refreshPersistedSession } from '@oxyhq/core';
 import { createTokenTransport } from '../tokenTransport';
-import { isWebBrowser } from '../../hooks/useWebSSO';
 
-jest.mock('../../hooks/useWebSSO', () => ({
-  isWebBrowser: jest.fn(),
-}));
+// The device-first transport mints a fallback token by rotating the persisted
+// refresh family via `refreshPersistedSession` (the ONE unified refresh path) —
+// there is no `silentSignIn`/`signInWithSharedIdentity` arm anymore. Mock that
+// one core function so the transport's own coalescing / logging contract can be
+// exercised in isolation; keep the real `logger` + memory store.
+jest.mock('@oxyhq/core', () => {
+  const actual = jest.requireActual('@oxyhq/core');
+  return { __esModule: true, ...actual, refreshPersistedSession: jest.fn() };
+});
 
-const mockedIsWebBrowser = isWebBrowser as jest.MockedFunction<typeof isWebBrowser>;
+const mockedRefresh = refreshPersistedSession as jest.MockedFunction<typeof refreshPersistedSession>;
 
 function fakeOxy(accessToken: string | null) {
   return {
     getAccessToken: jest.fn().mockReturnValue(accessToken),
-    silentSignIn: jest.fn().mockResolvedValue(null),
-    signInWithSharedIdentity: jest.fn().mockResolvedValue(null),
   };
 }
 
@@ -28,51 +31,39 @@ const state: DeviceSessionState = {
 describe('createTokenTransport', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedRefresh.mockResolvedValue('minted-token');
   });
 
   test('no-ops when a token is already present', async () => {
     const oxy = fakeOxy('tok');
-    const transport = createTokenTransport(oxy as never);
+    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
 
     await transport.ensureActiveToken(state);
 
-    expect(oxy.silentSignIn).not.toHaveBeenCalled();
-    expect(oxy.signInWithSharedIdentity).not.toHaveBeenCalled();
+    expect(mockedRefresh).not.toHaveBeenCalled();
   });
 
-  test('mints via silentSignIn on web when no token is present', async () => {
-    mockedIsWebBrowser.mockReturnValue(true);
+  test('mints via refreshPersistedSession when no token is present', async () => {
     const oxy = fakeOxy(null);
-    const transport = createTokenTransport(oxy as never);
+    const store = createMemoryAuthStateStore();
+    const transport = createTokenTransport(oxy as never, store);
 
     await transport.ensureActiveToken(state);
 
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(1);
-    expect(oxy.signInWithSharedIdentity).not.toHaveBeenCalled();
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledWith({ oxy, store });
   });
 
-  test('mints via signInWithSharedIdentity off web when no token is present', async () => {
-    mockedIsWebBrowser.mockReturnValue(false);
+  test('resolves (never rejects) and logs a warning when the refresh throws', async () => {
     const oxy = fakeOxy(null);
-    const transport = createTokenTransport(oxy as never);
-
-    await transport.ensureActiveToken(state);
-
-    expect(oxy.signInWithSharedIdentity).toHaveBeenCalledTimes(1);
-    expect(oxy.silentSignIn).not.toHaveBeenCalled();
-  });
-
-  test('resolves (never rejects) and logs a warning when the mint throws', async () => {
-    mockedIsWebBrowser.mockReturnValue(true);
-    const oxy = fakeOxy(null);
-    oxy.silentSignIn.mockRejectedValue(new Error('mint boom'));
-    const transport = createTokenTransport(oxy as never);
+    mockedRefresh.mockRejectedValue(new Error('mint boom'));
+    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
 
     expect(warnSpy).toHaveBeenCalledWith(
-      'ensureActiveToken: mint failed',
+      'ensureActiveToken: refresh failed',
       { component: 'TokenTransport' },
       expect.any(Error),
     );
@@ -80,52 +71,49 @@ describe('createTokenTransport', () => {
     warnSpy.mockRestore();
   });
 
-  test('resolves cleanly when the mint returns null', async () => {
-    mockedIsWebBrowser.mockReturnValue(true);
+  test('resolves cleanly when the refresh produces no session', async () => {
     const oxy = fakeOxy(null);
-    const transport = createTokenTransport(oxy as never);
+    mockedRefresh.mockResolvedValue(null);
+    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
   });
 
   test('coalesces concurrent calls into a single mint', async () => {
-    mockedIsWebBrowser.mockReturnValue(true);
     const oxy = fakeOxy(null);
-    let resolveMint: ((value: null) => void) | null = null;
-    oxy.silentSignIn.mockImplementation(
+    let resolveMint: ((value: string | null) => void) | null = null;
+    mockedRefresh.mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<string | null>((resolve) => {
           resolveMint = resolve;
         }),
     );
-    const transport = createTokenTransport(oxy as never);
+    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
 
     const first = transport.ensureActiveToken(state);
     const second = transport.ensureActiveToken(state);
 
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
 
     resolveMint?.(null);
     await Promise.all([first, second]);
 
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
 
-    // A later call after the in-flight mint settled starts a fresh mint
-    // (the mock reassigns `resolveMint` on the second silentSignIn call).
+    // A later call after the in-flight mint settled starts a fresh mint.
     const third = transport.ensureActiveToken(state);
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(2);
+    expect(mockedRefresh).toHaveBeenCalledTimes(2);
     resolveMint?.(null);
     await third;
   });
 
   test('treats a throwing getAccessToken as no-token and still mints', async () => {
-    mockedIsWebBrowser.mockReturnValue(true);
     const oxy = fakeOxy(null);
     oxy.getAccessToken.mockImplementation(() => {
       throw new Error('storage unavailable');
     });
-    const transport = createTokenTransport(oxy as never);
+    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
@@ -135,7 +123,7 @@ describe('createTokenTransport', () => {
       { component: 'TokenTransport' },
       expect.any(Error),
     );
-    expect(oxy.silentSignIn).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
 
     warnSpy.mockRestore();
   });

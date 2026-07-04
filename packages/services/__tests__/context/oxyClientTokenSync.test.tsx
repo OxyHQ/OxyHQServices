@@ -38,16 +38,11 @@ import { render, waitFor, act, type RenderResult } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { oxyClient, type User } from '@oxyhq/core';
 
-// Neutralize the mount-time network/socket effects so the provider settles
-// deterministically without a backend. Neither touches the token-sync path.
-jest.mock('../../src/ui/hooks/useWebSSO', () => ({
+// Neutralize the mount-time network effects so the provider settles
+// deterministically without a backend. Forcing the cold boot onto the native
+// ladder keeps it offline; this does not touch the token-sync path under test.
+jest.mock('../../src/ui/utils/isWebBrowser', () => ({
   __esModule: true,
-  useWebSSO: () => ({
-    checkSSO: jest.fn(async () => null),
-    signInWithFedCM: jest.fn(async () => null),
-    isChecking: false,
-    isFedCMSupported: false,
-  }),
   isWebBrowser: () => false,
 }));
 

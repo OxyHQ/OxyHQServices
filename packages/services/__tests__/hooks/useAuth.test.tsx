@@ -1,11 +1,20 @@
 /**
  * Tests for the high-level `useAuth` hook.
  *
- * The public web sign-in path is redirect-based. Silent SSO/FedCM is handled
- * during cold boot; an explicit user click sends the browser to the IdP.
+ * The public web sign-in path opens the in-app "Sign in with Oxy" modal — there
+ * is NO automatic navigation to any login page. Cross-domain restore is handled
+ * during the device-first cold boot; an explicit user click just presents the
+ * SDK sign-in surface (password / QR device flow / add account). Native with a
+ * public key still signs in with the cryptographic identity directly.
  */
 
 import { act, renderHook } from '@testing-library/react';
+
+const showSignInModal = jest.fn();
+jest.mock('../../src/ui/components/SignInModal', () => ({
+  __esModule: true,
+  showSignInModal: () => showSignInModal(),
+}));
 
 interface MockOxyState {
   user: { id: string; username: string } | null;
@@ -21,10 +30,7 @@ interface MockOxyState {
   logout: jest.Mock;
   logoutAll: jest.Mock;
   refreshSessions: jest.Mock;
-  oxyServices: {
-    config?: { authWebUrl?: string };
-    signInWithRedirect?: jest.Mock;
-  };
+  oxyServices: Record<string, unknown>;
   hasIdentity: jest.Mock;
   getPublicKey: jest.Mock;
   showBottomSheet: jest.Mock;
@@ -45,10 +51,7 @@ const defaultMockState = (): MockOxyState => ({
   logout: jest.fn(async () => undefined),
   logoutAll: jest.fn(async () => undefined),
   refreshSessions: jest.fn(async () => undefined),
-  oxyServices: {
-    config: { authWebUrl: 'https://auth.oxy.so' },
-    signInWithRedirect: jest.fn(),
-  },
+  oxyServices: {},
   hasIdentity: jest.fn(async () => false),
   getPublicKey: jest.fn(async () => null),
   showBottomSheet: jest.fn(),
@@ -67,6 +70,7 @@ import { useAuth } from '../../src/ui/hooks/useAuth';
 describe('useAuth — state passthrough', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('passes auth state through', () => {
@@ -93,21 +97,24 @@ describe('useAuth — state passthrough', () => {
   });
 });
 
-describe('useAuth.signIn — web redirect path', () => {
+describe('useAuth.signIn — web modal path', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
-  it('redirects to the IdP instead of using a popup', async () => {
+  it('opens the in-app sign-in modal instead of navigating to a login page', async () => {
     const { result } = renderHook(() => useAuth());
 
     await act(async () => {
+      // The web path returns a never-resolving promise (the caller reacts to
+      // `isAuthenticated`), so fire-and-forget it.
       void result.current.signIn();
+      await Promise.resolve();
     });
 
-    expect(mockState.oxyServices.signInWithRedirect).toHaveBeenCalledWith({
-      redirectUri: window.location.href,
-    });
+    expect(showSignInModal).toHaveBeenCalledTimes(1);
+    // No key-based sign-in, no redirect helper.
     expect(mockState.signIn).not.toHaveBeenCalled();
   });
 });
@@ -115,6 +122,7 @@ describe('useAuth.signIn — web redirect path', () => {
 describe('useAuth.signIn — native key-based path', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('calls signIn with the provided publicKey when one is passed', async () => {
@@ -125,13 +133,14 @@ describe('useAuth.signIn — native key-based path', () => {
     });
 
     expect(mockState.signIn).toHaveBeenCalledWith('explicit-pubkey');
-    expect(mockState.oxyServices.signInWithRedirect).not.toHaveBeenCalled();
+    expect(showSignInModal).not.toHaveBeenCalled();
   });
 });
 
 describe('useAuth.signOut / signOutAll / refresh', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('delegates signOut to context.logout', async () => {

@@ -33,16 +33,18 @@
 
 import {
   KeyManager,
-  establishIdpSessionAfterClaim,
-  type EstablishAfterClaimDeps,
   type MinimalUserData,
   type SessionLoginResponse,
-  type SsoEstablishClient,
   type User,
 } from '@oxyhq/core';
 
 interface DeviceFlowClaimResult {
   accessToken?: string;
+  /** Rotating refresh-token family head minted by `/auth/session/claim` on the
+   * trusted lane. Not on the core method's typed return, so read defensively;
+   * threaded into `commitSession` so the QR sign-in persists a durable session
+   * that survives a reload without a redirect. */
+  refreshToken?: string;
   sessionId?: string;
   deviceId?: string;
   expiresAt?: string;
@@ -55,10 +57,8 @@ interface DeviceFlowClaimResult {
  * trivially unit-testable with a stub and never pulls the RN/Expo runtime into
  * a test bundle.
  *
- * Extends {@link SsoEstablishClient} (`requestSsoEstablishUrl`) so the WEB
- * post-claim durable-session hop can be driven off the same client.
  */
-export interface DeviceFlowClient extends SsoEstablishClient {
+export interface DeviceFlowClient {
   /**
    * Exchange the device-flow `sessionToken` for the first access + refresh
    * token, planting them on the client. Single-use; replay is rejected by the
@@ -83,15 +83,12 @@ export interface CompleteDeviceFlowSignInOptions {
    * registers the account into the device's server-authoritative session set,
    * persists it durably, and hydrates the full user profile. Runs AFTER the
    * bearer is planted so its bearer-protected calls succeed.
+   *
+   * The `refreshToken` extra (optional; not on the public `SessionLoginResponse`
+   * type) carries the rotating refresh family so the commit funnel persists a
+   * durable session.
    */
-  commitSession: (session: SessionLoginResponse) => Promise<void>;
-  /**
-   * Injectable web seams for the post-claim durable-session establish hop
-   * ({@link establishIdpSessionAfterClaim}). Omit in production — the defaults
-   * resolve to `window.*` (and no-op off-web / on native). Tests inject fakes to
-   * drive the web path deterministically.
-   */
-  establishDeps?: EstablishAfterClaimDeps;
+  commitSession: (session: SessionLoginResponse & { refreshToken?: string }) => Promise<void>;
 }
 
 /**
@@ -108,7 +105,6 @@ export async function completeDeviceFlowSignIn({
   sessionId,
   sessionToken,
   commitSession,
-  establishDeps,
 }: CompleteDeviceFlowSignInOptions): Promise<User> {
   // 1) Plant the bearer + refresh tokens. The claim response is also persisted
   //    to native shared secure storage so a later cold boot has a bearer before
@@ -135,25 +131,22 @@ export async function completeDeviceFlowSignIn({
 
   // 2) Bearer is now planted — commit the session through the same path a
   //    fresh sign-in uses so it is registered into the device's
-  //    server-authoritative session set instead of an account switch.
+  //    server-authoritative session set instead of an account switch. Thread
+  //    the rotating refresh token so the commit funnel persists a durable
+  //    session that survives a reload.
   await commitSession({
     sessionId: claimed.sessionId || sessionId,
     deviceId: claimed.deviceId ?? '',
     expiresAt: claimed.expiresAt ?? '',
     user: minimalUser,
     accessToken: claimed.accessToken,
+    ...(claimed.refreshToken ? { refreshToken: claimed.refreshToken } : {}),
   });
 
-  // 3) WEB durable-session hop (no-op on native). A device-flow claim plants
-  //    ONLY in-memory tokens — no IdP `fedcm_session` cookie is ever planted, so
-  //    a reload cannot re-mint a token and the session is lost. Now that the
-  //    session is committed AND durably persisted (step 2), plant the per-apex
-  //    IdP cookie via ONE top-level establish hop. Single attempt; total (never
-  //    throws) — an establish failure leaves the committed session as-is. On web
-  //    success it navigates away, so it is the LAST step: the browser tears the
-  //    page down on the next tick, after `claimed.user` is returned to the
-  //    caller's `onSignedIn`.
-  await establishIdpSessionAfterClaim(oxyServices, establishDeps ?? {});
+  // The commit funnel persisted the rotating refresh family and registered the
+  // account into the device set, so a reload restores the session locally (web:
+  // stored-tokens / same-apex web-session; native: shared keychain) WITHOUT any
+  // IdP `fedcm_session` cookie or top-level establish hop.
 
   return claimed.user;
 }

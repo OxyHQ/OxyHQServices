@@ -1,34 +1,32 @@
 /**
  * @jest-environment node
  *
- * Regression coverage for the device-flow sign-in bugs:
+ * Regression coverage for the device-flow ("Sign in with Oxy" QR / "Open Oxy
+ * Auth") sign-in orchestration:
  *
  *   BUG 1 (native): tapping "Sign In with Oxy" opens `OxyAuthScreen`, which
- *   creates a device-flow AuthSession and opens auth.oxy.so/authorize. The
- *   user signs in successfully, the API authorizes the session and notifies
- *   the client via the auth-session socket — but the screen then called
- *   `switchSession` DIRECTLY without first claiming the bearer with the
- *   secret `sessionToken`. The session was authorized server-side but the app
- *   never became authenticated ("nothing happens").
+ *   creates a device-flow AuthSession. The user signs in successfully, the API
+ *   authorizes the session and notifies the client — but the screen then called
+ *   `switchSession` DIRECTLY without first claiming the bearer with the secret
+ *   `sessionToken`. The session was authorized server-side but the app never
+ *   became authenticated ("nothing happens").
  *
  *   BUG 2 (session-sync cutover regression): once claiming was fixed,
  *   `completeDeviceFlowSignIn` still committed the claimed session through
- *   `switchSession`. After the session-sync cutover, `switchSession` became an
- *   account-SWITCH between accounts already registered on the device and
- *   throws `No device account found for session "..."` for a freshly-claimed
- *   session that was never registered — surfacing as "Authorization
- *   successful but failed to complete sign in." The fix commits the claimed
- *   session through `commitSession` (`useOxy().handleWebSession`) instead —
- *   the same path a fresh password sign-in uses to register the account
- *   into the device's session set.
+ *   `switchSession`, which after the cutover is an account-SWITCH between
+ *   accounts already registered on the device and throws `No device account
+ *   found for session "..."` for a freshly-claimed session. The fix commits the
+ *   claimed session through `commitSession` (`useOxy().handleWebSession`)
+ *   instead — the SAME path a fresh password sign-in uses to register the
+ *   account into the device's server-authoritative session set.
  *
- *   These tests pin the order (claim before commit), the fail-fast behaviour
- *   on a claim that returns no usable session, and propagation of a
- *   `commitSession` failure.
+ * These tests pin the order (claim before commit), the fail-fast behaviour on a
+ * claim that returns no usable session, propagation of a `commitSession`
+ * failure, and (device-first) that the rotating refresh token the claim returns
+ * is threaded into `commitSession` so the QR sign-in persists a durable session.
  */
 
 import type { SessionLoginResponse, User } from '@oxyhq/core';
-import { ssoStateKey, ssoGuardKey, ssoDestKey } from '@oxyhq/core';
 import {
   completeDeviceFlowSignIn,
   type DeviceFlowClient,
@@ -37,6 +35,7 @@ import {
 const SESSION_ID = 'session-id-123';
 const SESSION_TOKEN = 'a'.repeat(32);
 const ACCESS_TOKEN = 'access-token-abc';
+const REFRESH_TOKEN = 'refresh-token-def';
 const USER = {
   id: 'user-1',
   username: 'nate',
@@ -52,7 +51,6 @@ describe('completeDeviceFlowSignIn', () => {
     const order: string[] = [];
 
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async (token: string) => {
         expect(token).toBe(SESSION_TOKEN);
         order.push('claim');
@@ -89,9 +87,40 @@ describe('completeDeviceFlowSignIn', () => {
     expect(user).toBe(USER);
   });
 
+  it('threads the claim rotating refreshToken into commitSession (durable QR session)', async () => {
+    const oxyServices: DeviceFlowClient = {
+      claimSessionByToken: jest.fn(async () => ({
+        accessToken: ACCESS_TOKEN,
+        refreshToken: REFRESH_TOKEN,
+        sessionId: SESSION_ID,
+        deviceId: 'device-1',
+        expiresAt: '2026-01-01T00:00:00.000Z',
+        user: USER,
+      })),
+    };
+    const commitSession = jest.fn(async (): Promise<void> => {});
+
+    await completeDeviceFlowSignIn({
+      oxyServices,
+      sessionId: SESSION_ID,
+      sessionToken: SESSION_TOKEN,
+      commitSession,
+    });
+
+    // The rotating refresh family is carried into the commit funnel so it
+    // persists a durable session that survives a reload without a redirect.
+    expect(commitSession).toHaveBeenCalledWith({
+      sessionId: SESSION_ID,
+      deviceId: 'device-1',
+      expiresAt: '2026-01-01T00:00:00.000Z',
+      user: MINIMAL_USER,
+      accessToken: ACCESS_TOKEN,
+      refreshToken: REFRESH_TOKEN,
+    });
+  });
+
   it('falls back to the delivered sessionId/deviceId/expiresAt when the claim omits them', async () => {
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async () => ({
         accessToken: ACCESS_TOKEN,
         user: USER,
@@ -118,7 +147,6 @@ describe('completeDeviceFlowSignIn', () => {
   it('does NOT commit the session when the claim fails (the original native regression)', async () => {
     const claimError = new Error('claim failed (401)');
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async () => {
         throw claimError;
       }),
@@ -141,7 +169,6 @@ describe('completeDeviceFlowSignIn', () => {
 
   it('throws when the claim returns no accessToken (the session-sync regression guard)', async () => {
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async () => ({ sessionId: SESSION_ID, user: USER })),
     };
     const commitSession = jest.fn(async (): Promise<void> => {});
@@ -160,7 +187,6 @@ describe('completeDeviceFlowSignIn', () => {
 
   it('throws when the claim returns no user', async () => {
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async () => ({ accessToken: ACCESS_TOKEN, sessionId: SESSION_ID })),
     };
     const commitSession = jest.fn(async (): Promise<void> => {});
@@ -180,7 +206,6 @@ describe('completeDeviceFlowSignIn', () => {
   it('propagates a commitSession failure after a successful claim', async () => {
     const commitError = new Error('session invalid');
     const oxyServices: DeviceFlowClient = {
-      requestSsoEstablishUrl: jest.fn(async () => ({ establishUrl: 'https://auth.oxy.so/sso/establish' })),
       claimSessionByToken: jest.fn(async () => ({
         accessToken: ACCESS_TOKEN,
         sessionId: SESSION_ID,
@@ -202,111 +227,5 @@ describe('completeDeviceFlowSignIn', () => {
 
     expect(oxyServices.claimSessionByToken).toHaveBeenCalledTimes(1);
     expect(commitSession).toHaveBeenCalledTimes(1);
-  });
-
-  describe('web durable-session establish hop', () => {
-    const RP_ORIGIN = 'https://accounts.oxy.so';
-    const RP_HREF = 'https://accounts.oxy.so/settings';
-    const ESTABLISH_URL =
-      'https://auth.oxy.so/sso/establish?et=jwt&return_to=https%3A%2F%2Faccounts.oxy.so%2F__oxy%2Fsso-callback&state=state-1';
-
-    function webDeps(overrides: Record<string, unknown> = {}) {
-      const map = new Map<string, string>();
-      const navigated: string[] = [];
-      const deps = {
-        isWeb: () => true,
-        storage: {
-          getItem: (k: string) => (map.has(k) ? (map.get(k) as string) : null),
-          setItem: (k: string, v: string) => { map.set(k, v); },
-        },
-        location: { origin: RP_ORIGIN, href: RP_HREF },
-        navigate: (url: string) => { navigated.push(url); },
-        generateState: () => 'state-1',
-        now: () => 1_700_000_000_000,
-        ...overrides,
-      };
-      return { deps, map, navigated };
-    }
-
-    function baseClient(
-      requestSsoEstablishUrl: DeviceFlowClient['requestSsoEstablishUrl'],
-    ): DeviceFlowClient {
-      return {
-        requestSsoEstablishUrl,
-        claimSessionByToken: jest.fn(async () => ({
-          accessToken: ACCESS_TOKEN,
-          sessionId: SESSION_ID,
-          deviceId: 'device-1',
-          expiresAt: '2026-01-01T00:00:00.000Z',
-          user: USER,
-        })),
-      };
-    }
-
-    it('fires the establish hop on web: requests the URL with the RP origin + state and navigates once', async () => {
-      const requestSsoEstablishUrl = jest.fn(async (origin: string, state: string) => {
-        expect(origin).toBe(RP_ORIGIN);
-        expect(state).toBe('state-1');
-        return { establishUrl: ESTABLISH_URL };
-      });
-      const oxyServices = baseClient(requestSsoEstablishUrl);
-      const { deps, map, navigated } = webDeps();
-
-      const user = await completeDeviceFlowSignIn({
-        oxyServices,
-        sessionId: SESSION_ID,
-        sessionToken: SESSION_TOKEN,
-        commitSession: jest.fn(async () => {}),
-        establishDeps: deps,
-      });
-
-      expect(user).toBe(USER);
-      expect(requestSsoEstablishUrl).toHaveBeenCalledTimes(1);
-      expect(navigated).toEqual([ESTABLISH_URL]);
-      // Bounce state persisted so the post-bounce `sso-return` step validates it.
-      expect(map.get(ssoStateKey(RP_ORIGIN))).toBe('state-1');
-      expect(map.get(ssoGuardKey(RP_ORIGIN))).toBe(String(1_700_000_000_000));
-      expect(map.get(ssoDestKey(RP_ORIGIN))).toBe(RP_HREF);
-    });
-
-    it('does NOT fire the hop on native (no request, no navigation)', async () => {
-      const requestSsoEstablishUrl = jest.fn(async () => ({ establishUrl: ESTABLISH_URL }));
-      const oxyServices = baseClient(requestSsoEstablishUrl);
-      const { deps, navigated } = webDeps({ isWeb: () => false });
-
-      await completeDeviceFlowSignIn({
-        oxyServices,
-        sessionId: SESSION_ID,
-        sessionToken: SESSION_TOKEN,
-        commitSession: jest.fn(async () => {}),
-        establishDeps: deps,
-      });
-
-      expect(requestSsoEstablishUrl).not.toHaveBeenCalled();
-      expect(navigated).toEqual([]);
-    });
-
-    it('completes sign-in even if the establish request fails — exactly one attempt, no navigation', async () => {
-      const requestSsoEstablishUrl = jest.fn(async () => {
-        throw new Error('403 unapproved');
-      });
-      const oxyServices = baseClient(requestSsoEstablishUrl);
-      const { deps, map, navigated } = webDeps();
-
-      const user = await completeDeviceFlowSignIn({
-        oxyServices,
-        sessionId: SESSION_ID,
-        sessionToken: SESSION_TOKEN,
-        commitSession: jest.fn(async () => {}),
-        establishDeps: deps,
-      });
-
-      // Sign-in still completed (the primitive is total — never throws).
-      expect(user).toBe(USER);
-      expect(requestSsoEstablishUrl).toHaveBeenCalledTimes(1);
-      expect(navigated).toEqual([]);
-      // No stale bounce state left behind on failure.
-      expect(map.size).toBe(0);
-    });
   });
 });

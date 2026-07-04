@@ -35,21 +35,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { User } from '@oxyhq/core';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 
-// Neutralize the mount-time network/socket effects so the provider settles
+// Neutralize the mount-time network effects so the provider settles
 // deterministically without a backend — mirrors `oxyClientTokenSync.test.tsx`.
-// `isWebBrowser: () => false` disables every web-only cold-boot step, leaving
-// only the (no-op, nothing stored) native `stored-session` step, so the real
-// `OxyServices` instance the provider constructs never attempts a network call
-// on its own; the ONLY network-shaped call this suite exercises is
+// Forcing the device-first cold boot onto the NATIVE ladder (`isWebBrowser: () =>
+// false`) disables every web-only step (bootstrap-return / bootstrap-hop),
+// leaving only the (empty-store → skip) `stored-tokens` step and the native
+// shared-key step (`signInWithSharedIdentity` returns null off-device), so the
+// real `OxyServices` instance the provider constructs never attempts a network
+// call on its own; the ONLY network-shaped call this suite exercises is
 // `getUsersByIds`, driven entirely by the SessionClient projection under test.
-jest.mock('../../src/ui/hooks/useWebSSO', () => ({
+jest.mock('../../src/ui/utils/isWebBrowser', () => ({
   __esModule: true,
-  useWebSSO: () => ({
-    checkSSO: jest.fn(async () => null),
-    signInWithFedCM: jest.fn(async () => null),
-    isChecking: false,
-    isFedCMSupported: false,
-  }),
   isWebBrowser: () => false,
 }));
 
