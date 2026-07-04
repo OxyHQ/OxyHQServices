@@ -8,7 +8,7 @@
  *
  * What it catches:
  *   - SPA renders blank / build totally broken   → `/`, `/login`, `/signup`, `/authorize` lose the SPA root marker.
- *   - `_worker.js` missing (static-only deploy)  → `GET /api/device-accounts` returns SPA HTML instead of worker JSON.
+ *   - Pages Function not registered/running      → `GET /api/device-accounts` returns SPA HTML instead of the Function's JSON.
  *   - device chooser feed broken                 → `GET /api/device-accounts` (no cookie) is not `200 {accounts:[]}`.
  *   - FedCM manifest NOT removed                  → `/.well-known/web-identity` still serves the FedCM config JSON.
  *
@@ -109,9 +109,10 @@ async function checkSpaPage(hostBase: string, path: string): Promise<void> {
 
 /**
  * `GET /api/device-accounts` with NO `oxy_device` cookie MUST be answered BY THE
- * WORKER as `200 { activeAccountId: null, accounts: [] }` JSON. A static-only
- * deploy would instead return SPA HTML — so this ALSO proves `_worker.js` is live
- * and intercepting the dynamic route (it is the only dynamic endpoint now).
+ * PAGES FUNCTION as `200 { activeAccountId: null, accounts: [] }` JSON. If the
+ * Function is not registered/running the request falls through to the static SPA
+ * (HTML) — so this proves the `functions/api/device-accounts` route is live (it
+ * is the only dynamic endpoint now).
  */
 async function checkDeviceAccounts(hostBase: string): Promise<void> {
   const out = await probe(`${hostBase}/api/device-accounts`, { headers: { Accept: 'application/json' } });
@@ -120,7 +121,7 @@ async function checkDeviceAccounts(hostBase: string): Promise<void> {
     return;
   }
   if (isHtmlBody(out.body)) {
-    record('device-accounts feed', false, 'responded with SPA HTML — static-only deploy (worker NOT live)');
+    record('device-accounts feed', false, 'responded with SPA HTML — Pages Function not registered/running');
     return;
   }
   if (out.status !== 200) {
@@ -136,7 +137,7 @@ async function checkDeviceAccounts(hostBase: string): Promise<void> {
     record('device-accounts feed', false, `expected an empty account list without a cookie, got ${json.accounts.length}`);
     return;
   }
-  record('device-accounts feed', true, 'worker answered 200 {accounts:[]} (no cookie)');
+  record('device-accounts feed', true, 'Pages Function answered 200 {accounts:[]} (no cookie)');
 }
 
 /**
