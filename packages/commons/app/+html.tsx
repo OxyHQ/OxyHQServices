@@ -1,10 +1,8 @@
-import { getSsoCallbackBootstrapScript } from '@oxyhq/core';
 import { ScrollViewStyleReset } from 'expo-router/html';
 import type { PropsWithChildren } from 'react';
 
 const DEFAULT_TITLE = 'Accounts by Oxy';
 const DEFAULT_DESCRIPTION = 'Manage your Oxy account, identity, sessions, and security.';
-const SSO_CALLBACK_BOOTSTRAP_SCRIPT = getSsoCallbackBootstrapScript();
 
 export default function Root({ children }: PropsWithChildren) {
   return (
@@ -31,7 +29,6 @@ export default function Root({ children }: PropsWithChildren) {
         <meta property="og:title" content={DEFAULT_TITLE} />
         <meta property="og:description" content={DEFAULT_DESCRIPTION} />
 
-        <script dangerouslySetInnerHTML={{ __html: SSO_CALLBACK_BOOTSTRAP_SCRIPT }} />
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>

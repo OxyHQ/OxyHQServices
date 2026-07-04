@@ -1,16 +1,8 @@
 /**
- * Single platform-detection helper for `@oxyhq/services`.
+ * Web-browser detection for `@oxyhq/services`.
  *
- * Returns `true` in a real web browser (a DOM is present), `false` on React
- * Native. Native defines a global `window` but no `document`, so the DOM probe
- * is the reliable discriminator. Kept as one tiny module so every consumer
- * imports the same predicate (the former `useWebSSO` home of this helper was
- * deleted in the device-first cutover along with the FedCM/silent surface).
+ * The predicate now lives ONCE in `@oxyhq/core` (`isWebBrowser`) so services and
+ * auth-sdk share the exact same DOM probe. This module re-exposes it under the
+ * existing internal import path so consumers stay unchanged.
  */
-export function isWebBrowser(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof document !== 'undefined' &&
-    typeof document.documentElement !== 'undefined'
-  );
-}
+export { isWebBrowser } from '@oxyhq/core';

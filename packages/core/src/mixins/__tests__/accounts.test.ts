@@ -176,27 +176,22 @@ describe('OxyServices.accounts', () => {
   });
 
   describe('switchToAccount', () => {
-    // The switch route NO LONGER returns `authuser` or sets the device cookie —
-    // it can't (it's at /accounts/*, outside the Path=/auth cookie scope). The SDK
-    // establishes the cookie + resolves the slot via a follow-up POST /auth/session.
+    // Device-first: the switch route registers the switched session in the
+    // server-side DeviceSession set directly and returns the fresh access token
+    // + the resolved `authuser`. There is NO follow-up POST /auth/session.
     const switchResponse: SwitchAccountResult = {
       sessionId: 'sess_switch',
       deviceId: 'dev_switch',
       expiresAt: '2026-06-30T01:00:00.000Z',
       accessToken: 'access_switch',
+      authuser: 1,
       user: { id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } },
     };
-    // POST /auth/session establishes the cookie in a correctly-allocated NEW slot
-    // and returns that slot + a fresh access token off the same session.
-    const sessionResponse = { accessToken: 'access_session', authuser: 1 };
 
-    // Route makeRequest by path: the switch call vs the /auth/session establishment.
     const routeByPath = (response = switchResponse) =>
-      makeRequestSpy.mockImplementation((_method: string, path: string) =>
-        Promise.resolve(path === '/auth/session' ? sessionResponse : response),
-      );
+      makeRequestSpy.mockResolvedValue(response);
 
-    it('posts to /:id/switch then establishes the cookie via POST /auth/session, planting both tokens and sweeping the cache', async () => {
+    it('posts to /:id/switch, plants the token, carries the response authuser, and sweeps the cache', async () => {
       const setTokensSpy = jest.spyOn(oxy, 'setTokens');
       const clearCacheSpy = jest.spyOn(oxy, 'clearCache');
       routeByPath();
@@ -210,29 +205,20 @@ describe('OxyServices.accounts', () => {
         undefined,
         expect.objectContaining({ cache: false }),
       );
-      // Then the canonical refresh-cookie establishment under /auth (where the
-      // device's oxy_rt_* slots ARE visible, so a NEW slot is allocated).
-      expect(makeRequestSpy).toHaveBeenCalledWith(
-        'POST',
-        '/auth/session',
-        undefined,
-        expect.objectContaining({ cache: false }),
-      );
+      // No secondary /auth/session establishment — the switch registers the
+      // session server-side on its own.
+      expect(makeRequestSpy).toHaveBeenCalledTimes(1);
 
-      // The switch token is planted first; /auth/session's fresh token re-planted.
-      expect(setTokensSpy).toHaveBeenNthCalledWith(1, 'access_switch');
-      expect(setTokensSpy).toHaveBeenNthCalledWith(2, 'access_session');
-      expect(oxy.getAccessToken()).toBe('access_session');
+      // The switch token is planted; the cache is swept AFTER planting.
+      expect(setTokensSpy).toHaveBeenCalledWith('access_switch');
+      expect(oxy.getAccessToken()).toBe('access_switch');
       expect(oxy.hasValidToken()).toBe(true);
-
-      // Cache swept once, AFTER both tokens are planted.
       expect(clearCacheSpy).toHaveBeenCalledTimes(1);
-      expect(setTokensSpy.mock.invocationCallOrder[1]).toBeLessThan(
+      expect(setTokensSpy.mock.invocationCallOrder[0]).toBeLessThan(
         clearCacheSpy.mock.invocationCallOrder[0],
       );
 
-      // The returned session carries the target account (id-normalised) and the
-      // slot resolved by /auth/session — NEVER the clobbering slot 0.
+      // The returned session carries the target account (id-normalised) + slot.
       expect(result.sessionId).toBe('sess_switch');
       expect(result.user).toEqual({ id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } });
       expect(result.authuser).toBe(1);
@@ -247,27 +233,14 @@ describe('OxyServices.accounts', () => {
       expect(makeRequestSpy.mock.calls[0][1]).toBe('/accounts/a%20b%2Fc/switch');
     });
 
-    it('keeps the switch active in-session when /auth/session fails (best-effort cookie)', async () => {
-      const setTokensSpy = jest.spyOn(oxy, 'setTokens');
-      const clearCacheSpy = jest.spyOn(oxy, 'clearCache');
-      makeRequestSpy.mockImplementation((_method: string, path: string) =>
-        path === '/auth/session'
-          ? Promise.reject(Object.assign(new Error('origin'), { response: { status: 403 } }))
-          : Promise.resolve(switchResponse),
-      );
+    it('omits authuser from the result when the switch response has none', async () => {
+      const { authuser, ...noAuthuser } = switchResponse;
+      routeByPath(noAuthuser as SwitchAccountResult);
 
       const result = await oxy.switchToAccount('acc1');
 
-      // The in-session switch survives: the switch token stays planted and the
-      // cache is still swept. The switched account just won't survive a reload
-      // until the cookie is next established (no authuser resolved).
-      expect(setTokensSpy).toHaveBeenCalledWith('access_switch');
       expect(oxy.getAccessToken()).toBe('access_switch');
-      expect(clearCacheSpy).toHaveBeenCalledTimes(1);
       expect(result.authuser).toBeUndefined();
-
-      setTokensSpy.mockRestore();
-      clearCacheSpy.mockRestore();
     });
 
     it('does NOT plant or sweep when the operator is not authorized (403 surfaces via handleError)', async () => {

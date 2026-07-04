@@ -58,10 +58,6 @@
  */
 import { OxyServicesBase, type LinkedHttpClient, type OxyConfig } from './OxyServices.base';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
-import type { SessionLoginResponse } from './models/session';
-import type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
-import type { SilentAuthOptions } from './mixins/OxyServices.silent';
-import type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 
 // Import mixin composition helper
 import { composeOxyServices } from './mixins';
@@ -111,16 +107,6 @@ const OxyServicesComposed = composeOxyServices();
 // We extend the composed constructor directly — its public surface is broadened
 // to the full mixin set via the interface declaration that follows.
 export class OxyServices extends OxyServicesComposed {
-  /**
-   * FedCM credential-request timeouts (ms). The runtime values are defined on
-   * the FedCM mixin and inherited here via `extends`; these `declare` members
-   * surface their types to TypeScript without re-emitting (or duplicating) the
-   * literals, so consumers/tests can reference `OxyServices.FEDCM_SILENT_TIMEOUT`
-   * with full typing.
-   */
-  declare static readonly FEDCM_TIMEOUT: number;
-  declare static readonly FEDCM_SILENT_TIMEOUT: number;
-
   constructor(config: OxyConfig) {
     super(config);
   }
@@ -132,30 +118,6 @@ export class OxyServices extends OxyServicesComposed {
 // packages (auth-sdk, services) need without casting to `any`.
 export interface OxyServices extends InstanceType<ReturnType<typeof composeOxyServices>> {
   createLinkedClient(config: OxyConfig): LinkedHttpClient;
-
-  // FedCM authentication
-  isFedCMSupported(): boolean;
-  signInWithFedCM(options?: FedCMAuthOptions): Promise<SessionLoginResponse>;
-  silentSignInWithFedCM(): Promise<SessionLoginResponse | null>;
-  revokeFedCMCredential(): Promise<void>;
-  getFedCMConfig(): FedCMConfig;
-
-  // Silent iframe SSO
-  resolveAuthUrl(): string;
-  silentSignIn(options?: SilentAuthOptions): Promise<SessionLoginResponse | null>;
-  waitForIframeAuth(
-    iframe: HTMLIFrameElement,
-    timeout: number,
-    expectedOrigin: string,
-  ): Promise<SessionLoginResponse | null>;
-
-  // Redirect authentication
-  signInWithRedirect(options?: RedirectAuthOptions): void;
-  signUpWithRedirect(options?: RedirectAuthOptions): void;
-
-  // Central cross-domain SSO (opaque single-use code exchange)
-  exchangeSsoCode(code: string, state?: string): Promise<SessionLoginResponse>;
-  generateSsoState(): string;
 
   // Express.js middleware
   auth(options?: {

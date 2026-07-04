@@ -555,23 +555,16 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         // Plant the freshly minted session as the ACTIVE session, mirroring
         // `claimSessionByToken` / `verifyChallenge`: the response body carries
-        // the first access token. The device refresh cookie is established below.
+        // the first access token.
         if (res?.accessToken) {
           this.setTokens(res.accessToken);
         }
 
-        // Register the switched session in the device's multi-account set by
-        // establishing its first-party refresh cookie. This MUST be a separate
-        // call to `POST /auth/session` (the shared `establishDeviceRefreshSlot`
-        // primitive): the switch route is at `/accounts/*`, outside the
-        // `oxy_rt_<authuser>` cookie's `Path=/auth` scope, so it can never read
-        // the device's existing slots and would overwrite slot 0 (destroying the
-        // operator's own session). `/auth/session` runs where the cookies ARE
-        // visible, so the server allocates a NEW slot that coexists with the
-        // operator's and returns its `authuser`. Web-only; best-effort (the helper
-        // re-plants the rotated access token and returns `null` on native/failure).
-        const establishedAuthuser = await this.establishDeviceRefreshSlot();
-        const authuser = establishedAuthuser ?? res.authuser;
+        // The switch route now registers the switched session in the device's
+        // server-side DeviceSession set directly (device-first), so there is no
+        // client-side refresh-cookie slot to establish — the `authuser` comes
+        // from the switch response (optional-chained to match `res?.accessToken`).
+        const authuser = res?.authuser;
 
         // Identity changed → drop the entire GET response cache so no entry
         // personalised for the previous identity is reused. Cache keys are

@@ -1,14 +1,8 @@
 /**
  * Web-browser environment detection for the web auth SDK.
  *
- * The only surviving helper from the retired FedCM `useWebSSO` hook — kept as a
- * standalone util so existing consumer imports (`import { isWebBrowser } from
- * '@oxyhq/auth'`) stay valid.
+ * The predicate now lives ONCE in `@oxyhq/core` (`isWebBrowser`) so auth-sdk and
+ * services share the exact same DOM probe. Re-exposed here so existing consumer
+ * imports (`import { isWebBrowser } from '@oxyhq/auth'`) stay valid.
  */
-export function isWebBrowser(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof document !== 'undefined' &&
-    typeof document.documentElement !== 'undefined'
-  );
-}
+export { isWebBrowser } from '@oxyhq/core';

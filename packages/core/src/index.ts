@@ -34,25 +34,9 @@ export type { AuthRefreshReason, AuthRefreshHandler } from './HttpService';
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
-export { AuthManager, createAuthManager } from './AuthManager';
-export type {
-    StorageAdapter,
-    AuthStateChangeCallback,
-    AuthMethod,
-    AuthManagerConfig,
-} from './AuthManager';
-export type {
-    AuthManagerAccount,
-    RestoreFromCookiesResult,
-    RestoreFromCookiesOptions,
-    SwitchAuthuserResult,
-} from './AuthManagerTypes';
-
-export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
-export type { CrossDomainAuthOptions } from './CrossDomainAuth';
-export type { FedCMAuthOptions, FedCMConfig, AuthorizedApp } from './mixins/OxyServices.fedcm';
-export type { SilentAuthOptions } from './mixins/OxyServices.silent';
-export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
+// Legacy "Connected apps" management surface (list/revoke FedCM authorization
+// grants). The FedCM sign-in machinery was removed in the device-first cutover.
+export type { AuthorizedApp } from './mixins/OxyServices.authorizedApps';
 export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)
@@ -246,16 +230,6 @@ export type {
 } from './models/session';
 
 // ---------------------------------------------------------------------------
-// Multi-account refresh-all (Google-style)
-// ---------------------------------------------------------------------------
-export type {
-    RefreshAllResponse,
-    RefreshAllAccount,
-    RefreshAllAccountUser,
-    RefreshCookieResponse,
-} from './models/interfaces';
-
-// ---------------------------------------------------------------------------
 // Crypto / identity
 // ---------------------------------------------------------------------------
 export {
@@ -367,6 +341,7 @@ export {
     isNative,
     isIOS,
     isAndroid,
+    isWebBrowser,
 } from './utils/platform';
 export type { PlatformOS } from './utils/platform';
 
@@ -514,48 +489,23 @@ export {
     getAccountDisplayName,
     getAccountFallbackHandle,
     formatPublicKeyHandle,
-    mergeAccountsFromRefreshAll,
     getAccountColor,
 } from './utils/accountUtils';
 export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 
 // ---------------------------------------------------------------------------
-// Cross-domain SSO infrastructure
+// Registrable-domain + central-IdP-apex helpers.
+//
+// The client SSO-bounce / silent-iframe / FedCM machinery was removed in the
+// device-first cutover. These three symbols survive because the api SSO surface
+// and the IdP (both lista B, gated on the ecosystem bump) still import them:
+// `registrableApex` (eTLD+1), `CENTRAL_IDP_APEX`, and the `SSO_CALLBACK_PATH`
+// constant. `@oxyhq/core/server` re-exports `registrableApex` + `SSO_CALLBACK_PATH`
+// for the api; the IdP imports all three from here.
 // ---------------------------------------------------------------------------
-export { autoDetectAuthWebUrl, registrableApex } from './utils/fapiAutoDetect';
-
-// Central cross-domain SSO (opaque single-use code bounce via auth.oxy.so)
-export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX, resolveCentralAuthUrl } from './utils/authWebUrl';
-export { parseSsoReturnFragment, consumeSsoReturn } from './utils/ssoReturn';
-export type { SsoReturnKind, SsoReturnResult, ConsumeSsoReturnDeps } from './utils/ssoReturn';
-export { generateSsoState } from './mixins/OxyServices.sso';
-
-// Post-claim durable-session establish hop (web device-flow / QR sign-in).
-export { establishIdpSessionAfterClaim } from './utils/ssoEstablish';
-export type { SsoEstablishClient, EstablishAfterClaimDeps } from './utils/ssoEstablish';
-
-// SSO bounce — per-origin sessionStorage keys, bounce URL builder, predicates
-export {
-    SSO_CALLBACK_PATH,
-    SSO_GUARD_TTL_MS,
-    ssoStateKey,
-    ssoGuardKey,
-    ssoDestKey,
-    ssoNoSessionKey,
-    ssoAttemptedKey,
-    ssoPriorSessionKey,
-    ssoSignedOutKey,
-    ssoOutcomeKey,
-    ssoCallbackBootstrapKey,
-    ssoNavigate,
-    getSsoCallbackBootstrapScript,
-    buildSsoBounceUrl,
-    isCentralIdPOrigin,
-    guardActive,
-    silentRestoreSuppressed,
-    allowSsoBounce,
-} from './utils/ssoBounce';
-export type { SsoBounceGate } from './utils/ssoBounce';
+export { registrableApex } from './utils/fapiAutoDetect';
+export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX } from './utils/authWebUrl';
+export { SSO_CALLBACK_PATH } from './utils/ssoBounce';
 
 export { runColdBoot } from './utils/coldBoot';
 export type {

@@ -7,10 +7,7 @@
 
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
-import { OxyServicesFedCMMixin } from './OxyServices.fedcm';
-import { OxyServicesSilentAuthMixin } from './OxyServices.silent';
-import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
-import { OxyServicesSsoMixin } from './OxyServices.sso';
+import { OxyServicesAuthorizedAppsMixin } from './OxyServices.authorizedApps';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesIdentityMixin } from './OxyServices.identity';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
@@ -45,10 +42,7 @@ import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
  */
 type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesFedCMMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesSilentAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesSsoMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesAuthorizedAppsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesIdentityMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
@@ -92,10 +86,9 @@ type MixinFunction = (Base: new (...args: unknown[]) => OxyServicesBase) => new 
  *
  * Order matters for dependencies:
  * 1. Base auth mixin first (required by all others)
- * 2. Cross-domain auth mixins (FedCM, silent iframe, Redirect)
- * 3. User mixin (requires auth)
- * 4. Feature mixins (can depend on user)
- * 5. Utility mixin last (augments all)
+ * 2. User mixin (requires auth)
+ * 3. Feature mixins (can depend on user)
+ * 4. Utility mixin last (augments all)
  *
  * To add a new mixin: insert it at the appropriate position in this array.
  */
@@ -103,16 +96,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Base authentication
     OxyServicesAuthMixin,
 
-    // Cross-domain authentication (web-only)
-    // - FedCM: Modern browser-native identity federation (Google-style)
-    // - Silent: iframe-based restore for first-party IdP hosts
-    // - Redirect: Traditional redirect-based authentication
-    OxyServicesFedCMMixin,
-    OxyServicesSilentAuthMixin,
-    OxyServicesRedirectAuthMixin,
-
-    // Central cross-domain SSO (opaque-code exchange).
-    OxyServicesSsoMixin,
+    // Legacy FedCM "Connected apps" management (list/revoke authorized RP grants).
+    // The FedCM sign-in surface was removed in the device-first cutover; only
+    // this management pair survives until the AppGrant migration.
+    OxyServicesAuthorizedAppsMixin,
 
     // User management (requires auth)
     OxyServicesUserMixin,

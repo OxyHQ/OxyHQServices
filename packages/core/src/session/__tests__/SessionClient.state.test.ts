@@ -32,12 +32,25 @@ describe('SessionClient state', () => {
     expect(seen.at(-1)?.revision).toBe(1);
   });
 
-  it('ignores a stale or equal revision (last-writer-wins)', () => {
+  it('ignores a stale or equal revision (last-writer-wins) WITHIN the same device', () => {
     const c = new TestClient(makeHost());
-    c.apply(STATE(5));
-    expect(c.apply(STATE(5))).toBe(false);
-    expect(c.apply(STATE(4))).toBe(false);
-    expect(c.getState()?.revision).toBe(5);
+    c.apply({ ...STATE(5), deviceId: 'A' });
+    expect(c.apply({ ...STATE(5), deviceId: 'A' })).toBe(false);
+    expect(c.apply({ ...STATE(4), deviceId: 'A' })).toBe(false);
+    expect(c.apply({ ...STATE(6), deviceId: 'A' })).toBe(true);
+    expect(c.getState()?.revision).toBe(6);
+  });
+
+  it('accepts a LOWER-revision state from a DIFFERENT device (revision baseline resets cross-device)', () => {
+    const c = new TestClient(makeHost());
+    // Device A at a high revision.
+    expect(c.apply({ ...STATE(10), deviceId: 'A' })).toBe(true);
+    expect(c.getState()?.deviceId).toBe('A');
+    // Device B, freshly converged (revision 1), must win over device A's
+    // stale-but-higher revision — the cross-device comparison is not monotone.
+    expect(c.apply({ ...STATE(1), deviceId: 'B' })).toBe(true);
+    expect(c.getState()?.deviceId).toBe('B');
+    expect(c.getState()?.revision).toBe(1);
   });
 
   it('rejects an invalid (unvalidated) state without applying', () => {

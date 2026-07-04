@@ -3,20 +3,6 @@ import type { UserNameResponse } from '@oxyhq/contracts';
 export interface OxyConfig {
   baseURL: string;
   cloudURL?: string;
-  /**
-   * Base URL the SDK's first-party session/refresh calls target.
-   *
-   * Per the 2026 session architecture (docs/SESSION-ARCHITECTURE.md), every app
-   * keeps its OWN first-party session on its OWN domain. For non-`oxy.so` apps
-   * this is the app's own same-site backend (e.g. `https://api.mention.earth`),
-   * whose session bridge forwards the user's refresh credential to
-   * `api.oxy.so`. For `*.oxy.so` apps this is omitted and falls back to
-   * `baseURL` (`https://api.oxy.so`), so their behavior is unchanged.
-   *
-   * Resolve via {@link OxyServices.getSessionBaseUrl}; when unset it returns
-   * `baseURL`. This is purely additive — no refresh/auth logic reads it yet.
-   */
-  sessionBaseUrl?: string;
   authWebUrl?: string;
   authRedirectUri?: string;
   /**
@@ -689,67 +675,3 @@ export interface UpdateDeviceNameResponse {
   deviceName: string;
 }
 
-// ---------------------------------------------------------------------------
-// Multi-account "refresh-all" (Google-style)
-// ---------------------------------------------------------------------------
-// Wire shape of `POST /auth/refresh-all`. The server rotates every device-local
-// `oxy_rt_${authuser}` cookie in parallel and returns one entry per VALID
-// account, sorted by `authuser` ascending. Slot-level errors are silently
-// omitted; the response is `{ accounts: [] }` in the worst case (no signed-in
-// accounts, all cookies expired, or origin not allowlisted).
-
-/**
- * Minimal user shape included in a `RefreshAllAccount` entry. The server
- * projects a small whitelist (`username name avatar email color`) so the
- * client can render the account chooser without an extra `/users/me` round
- * trip per account.
- *
- * `avatar` and `color` are `string | null` because they are stored as nullable
- * fields in the user document.
- */
-export interface RefreshAllAccountUser {
-  id: string;
-  username: string;
-  /**
-   * Structured human name as emitted by `formatUserResponse` (the canonical
-   * {@link UserNameResponse} `{ first?, last?, full? }` subdocument), NOT a bare
-   * string. The server projects `name` verbatim from the user document. The
-   * single source of truth is `@oxyhq/contracts`.
-   */
-  name: UserNameResponse;
-  avatar?: string | null;
-  email?: string;
-  color?: string | null;
-}
-
-/**
- * One rotated account entry returned by `POST /auth/refresh-all`. `authuser` is
- * the device-local slot index (0..N-1) the cookie was bound to.
- */
-export interface RefreshAllAccount {
-  authuser: number;
-  accessToken: string;
-  expiresAt: string;
-  sessionId: string;
-  user: RefreshAllAccountUser | null;
-}
-
-/**
- * Wire shape of `POST /auth/refresh-all`. Always 200 with a (possibly empty)
- * accounts array — 401 means "no accounts signed in on this device" and is
- * normalised to `{ accounts: [] }` at the SDK layer.
- */
-export interface RefreshAllResponse {
-  accounts: RefreshAllAccount[];
-}
-
-/**
- * Wire shape of `POST /auth/refresh` (single-slot refresh, optionally targeting
- * a specific `?authuser=N` slot). The server always includes the numeric slot in
- * the response.
- */
-export interface RefreshCookieResponse {
-  accessToken: string;
-  expiresAt: string;
-  authuser: number;
-}
