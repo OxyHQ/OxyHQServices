@@ -19,13 +19,16 @@ export type Account = {
 /**
  * An account signed in on this device, paired with the session it belongs to.
  *
- * `isCurrent` marks the account elected as the chooser's active row from the
- * refresh-all response. Every row carries a freshly minted in-memory bearer for
- * the consent action; tokens are never written to Web Storage.
+ * Resolved from the central `DeviceSession` (via the IdP's same-origin
+ * `/api/device-accounts` feed → API `POST /auth/device/resolve`). `isCurrent`
+ * marks the device's active account. Every row carries a freshly minted
+ * in-memory bearer for the consent action; tokens are never written to Web
+ * Storage.
  *
- * `authuser` is the device-local cookie slot index (0..N-1) returned by
- * `POST /auth/refresh-all`. The chooser can use it to re-mint a short-lived
- * bearer when the row's token has expired before the user submits consent.
+ * `authuser` is a DETERMINISTIC per-account index (0..N-1) the hook assigns from
+ * the sorted device-account set — NOT a persistent `oxy_rt_${n}` cookie slot
+ * (those are gone). It is a client-side `/login → /authorize` selection hint
+ * only, never sent to the API.
  */
 export type DeviceAccount = {
     sessionId: string
