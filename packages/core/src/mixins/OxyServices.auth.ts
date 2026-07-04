@@ -9,7 +9,8 @@ import type {
   RefreshAllAccount,
   RefreshCookieResponse,
 } from '../models/interfaces';
-import type { UserNameResponse } from '@oxyhq/contracts';
+import type { UserNameResponse, LoginResult, LoginSessionResult } from '@oxyhq/contracts';
+import { loginResultSchema, safeParseContract } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import type { PublicApplication } from './OxyServices.connectedApps';
@@ -1368,6 +1369,81 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: any
     ): Promise<SessionLoginResponse> {
       return this.signIn(email, password, deviceName, deviceFingerprint);
+    }
+
+    /**
+     * Device-first password sign-in. Unlike the legacy {@link signIn} (which
+     * assumes a one-step session and is kept intact for existing callers until
+     * the F4 cutover), this returns the FULL `POST /auth/login` contract — the
+     * discriminated {@link LoginResult}: either a 2FA challenge
+     * (`{ twoFactorRequired, loginToken }`) to complete via
+     * {@link completeTwoFactorSignIn}, or a session arm.
+     *
+     * `options.deviceToken` attributes the new session to the caller's existing
+     * device set (so an in-app login from a cross-apex, cookie-less web app
+     * still joins the same DeviceSession). On the session arm, a returned access
+     * token is planted immediately (mirroring {@link verifyChallenge}), so the
+     * caller has an authenticated client without a second round-trip.
+     */
+    async passwordSignIn(
+      identifier: string,
+      password: string,
+      options: { deviceToken?: string; deviceName?: string; deviceFingerprint?: string } = {},
+    ): Promise<LoginResult> {
+      try {
+        const res = await this.makeRequest<unknown>('POST', '/auth/login', {
+          identifier,
+          password,
+          deviceName: options.deviceName,
+          deviceFingerprint: options.deviceFingerprint,
+          deviceToken: options.deviceToken,
+        }, { cache: false });
+        const parsed = safeParseContract(loginResultSchema, res);
+        if (!parsed) {
+          throw new Error('auth/login returned an unexpected response shape');
+        }
+        if (!('twoFactorRequired' in parsed) && parsed.accessToken) {
+          this.setTokens(parsed.accessToken);
+        }
+        return parsed;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Complete a 2FA-gated sign-in started by {@link passwordSignIn}. Presents
+     * the short-lived `loginToken` with either a TOTP `token` or a `backupCode`
+     * to `POST /security/2fa/verify-login`, which must resolve to the session
+     * arm of {@link LoginResult} (a second 2FA challenge here is a protocol
+     * error). A returned access token is planted immediately.
+     */
+    async completeTwoFactorSignIn(params: {
+      loginToken: string;
+      token?: string;
+      backupCode?: string;
+      deviceToken?: string;
+      deviceName?: string;
+    }): Promise<LoginSessionResult> {
+      try {
+        const res = await this.makeRequest<unknown>('POST', '/security/2fa/verify-login', {
+          loginToken: params.loginToken,
+          token: params.token,
+          backupCode: params.backupCode,
+          deviceToken: params.deviceToken,
+          deviceName: params.deviceName,
+        }, { cache: false });
+        const parsed = safeParseContract(loginResultSchema, res);
+        if (!parsed || 'twoFactorRequired' in parsed) {
+          throw new Error('security/2fa/verify-login returned an unexpected response shape');
+        }
+        if (parsed.accessToken) {
+          this.setTokens(parsed.accessToken);
+        }
+        return parsed;
+      } catch (error) {
+        throw this.handleError(error);
+      }
     }
   };
 }

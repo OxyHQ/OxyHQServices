@@ -25,6 +25,16 @@ export interface SessionClientHost {
 export interface SessionClientOptions {
   transport?: TokenTransport;
   /**
+   * Invoked when an APPLIED state has zero accounts — i.e. a device
+   * signout-all removed the last account from this device set. Providers use
+   * this to clear the persisted {@link AuthStateStore} so a reload does not
+   * try to restore a session that no longer exists on the device.
+   *
+   * Only fires when a state is actually applied (revision advanced), never on
+   * a stale/rejected push. Exceptions thrown by the callback are isolated.
+   */
+  onUnauthenticated?: () => void;
+  /**
    * Statically-injected `socket.io-client` factory (its `io` export).
    * `@oxyhq/services` and `@oxyhq/auth` list `socket.io-client` as a real
    * dependency and pass `io` in directly, so realtime session sync never
@@ -90,6 +100,15 @@ export class SessionClient {
         logger.warn('[SessionClient] ensureActiveToken failed', { component: 'SessionClient' }, error);
       });
     }
+    // A device signout-all leaves zero accounts — tell the provider to clear
+    // the persisted store so a reload does not try to restore a dead session.
+    if (next.accounts.length === 0 && this.options.onUnauthenticated) {
+      try {
+        this.options.onUnauthenticated();
+      } catch (error) {
+        logger.error('[SessionClient] onUnauthenticated threw', error);
+      }
+    }
     return true;
   }
 
@@ -142,6 +161,28 @@ export class SessionClient {
   async addCurrentAccount(): Promise<void> {
     const res = await this.host.makeRequest<unknown>('POST', '/session/device/add', undefined, { cache: false });
     this.applySync(res);
+  }
+
+  /**
+   * Register the just-signed-in account into the device set AND make it the
+   * ACTIVE account — the explicit user-intent activation a sign-in UI performs.
+   *
+   * `addCurrentAccount` alone honors the server's `activate:'if-empty'` policy
+   * (a new account does NOT steal focus from an already-active one), which is
+   * correct for a background/silent add but wrong right after a deliberate
+   * sign-in. This adds, then switches to the target so the UI lands on the
+   * account the user just authenticated.
+   *
+   * @param accountId - The signed-in account id (e.g. `session.user.id`). When
+   *   omitted, falls back to the host's current-account ref. If neither
+   *   resolves, the add still applies and no switch is performed.
+   */
+  async registerAndActivate(accountId?: string): Promise<void> {
+    await this.addCurrentAccount();
+    const target = accountId ?? this.host.getCurrentAccountId();
+    if (target && this.state?.activeAccountId !== target) {
+      await this.switchAccount(target);
+    }
   }
 
   async start(): Promise<void> {
