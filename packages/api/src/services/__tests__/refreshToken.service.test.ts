@@ -1,238 +1,188 @@
 /**
- * RefreshToken service — multi-account helper unit tests.
+ * refreshToken.service — rotating single-use refresh-family core.
  *
- * Covers the Google-style multi-account primitives added in the §6b handoff:
- *   - `refreshCookieName(authuser)` name + range validation.
- *   - `parseAllRefreshCookies(header)` indexed bucket grouping,
- *     including the rejection of malformed suffixes and out-of-range indices.
- *   - `selectActiveCandidate(rawList)` — valid wins, lone used fires
- *     reuse-detection, none-found stays none.
+ * Covers the security-critical rotation + reuse-detection that backs
+ * `POST /auth/refresh-token` (the legacy `oxy_rt` cookie helpers were deleted
+ * with the `/auth/refresh*` endpoints):
+ *   - issueRefreshToken stores ONLY the sha256 of the raw token.
+ *   - rotateRefreshToken: happy rotation, not_found, revoked, reuse_detected
+ *     (used token replay + claim-race), expired.
+ *   - revokeFamilyByRawToken / revokeAllFamiliesBySession.
  */
 
 import * as crypto from 'crypto';
 
-interface StoredToken {
-  _id: string;
-  tokenHash: string;
-  sessionId: string;
-  userId: { toString(): string };
-  family: string;
-  usedAt: Date | null;
-  revokedAt: Date | null;
-  expiresAt: Date;
-}
-
-const tokenStore = new Map<string, StoredToken>();
-
-function stage(token: StoredToken): void {
-  tokenStore.set(token.tokenHash, token);
-}
-
-const mockFindOne = jest.fn((query?: { tokenHash?: string }) => {
-  const hash = query?.tokenHash;
-  if (typeof hash === 'string' && tokenStore.has(hash)) {
-    return Promise.resolve(tokenStore.get(hash));
-  }
-  return Promise.resolve(null);
-});
+const mockFindOne = jest.fn();
+const mockFindOneAndUpdate = jest.fn();
+const mockCreate = jest.fn();
+const mockUpdateMany = jest.fn();
 
 jest.mock('../../models/RefreshToken', () => ({
   __esModule: true,
   default: {
-    findOne: (...args: unknown[]) => mockFindOne(...args),
-    findOneAndUpdate: jest.fn(),
-    create: jest.fn(),
-    updateMany: jest.fn(),
+    findOne: (...a: unknown[]) => mockFindOne(...a),
+    findOneAndUpdate: (...a: unknown[]) => mockFindOneAndUpdate(...a),
+    create: (...a: unknown[]) => mockCreate(...a),
+    updateMany: (...a: unknown[]) => mockUpdateMany(...a),
   },
 }));
 
-jest.mock('../../models/Session', () => ({
+const mockDeactivateSession = jest.fn();
+jest.mock('../session.service', () => ({
   __esModule: true,
-  default: { findOne: jest.fn(), find: jest.fn() },
+  default: { deactivateSession: (...a: unknown[]) => mockDeactivateSession(...a) },
 }));
 
-jest.mock('../../services/session.service', () => ({
-  __esModule: true,
-  default: {
-    getAccessToken: jest.fn(),
-    deactivateSession: jest.fn(),
-    createSession: jest.fn(),
-  },
-}));
-
-jest.mock('../../models/AuthCode', () => ({
-  __esModule: true,
-  AuthCode: { create: jest.fn(), findOne: jest.fn() },
-  default: { create: jest.fn(), findOne: jest.fn() },
-}));
+jest.mock('../oauthCode.service', () => {
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
+  return {
+    sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
+    base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
+  };
+});
 
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
 import {
-  refreshCookieName,
-  parseAllRefreshCookies,
-  selectActiveCandidate,
-  MAX_DEVICE_ACCOUNTS,
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeFamilyByRawToken,
+  revokeAllFamiliesBySession,
 } from '../refreshToken.service';
-import { sha256Hex } from '../oauthCode.service';
 
-function buildStored(rawToken: string, overrides: Partial<StoredToken> = {}): StoredToken {
-  return {
-    _id: 'rt-1',
-    tokenHash: sha256Hex(rawToken),
-    sessionId: 'sess-1',
-    userId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3d4' },
-    family: 'fam-1',
-    usedAt: null,
-    revokedAt: null,
-    expiresAt: new Date(Date.now() + 60_000),
-    ...overrides,
-  };
+function sha256Hex(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
-  tokenStore.clear();
+  mockCreate.mockResolvedValue({});
+  mockUpdateMany.mockResolvedValue({});
+  mockDeactivateSession.mockResolvedValue(true);
 });
 
-describe('refreshCookieName', () => {
-  it('returns oxy_rt_0 .. oxy_rt_(MAX-1) for valid integers', () => {
-    expect(refreshCookieName(0)).toBe('oxy_rt_0');
-    expect(refreshCookieName(1)).toBe('oxy_rt_1');
-    expect(refreshCookieName(MAX_DEVICE_ACCOUNTS - 1)).toBe(`oxy_rt_${MAX_DEVICE_ACCOUNTS - 1}`);
+describe('issueRefreshToken', () => {
+  it('stores ONLY the sha256 of the raw token and returns the raw token + family', async () => {
+    const result = await issueRefreshToken({ sessionId: 's1', userId: 'u1' });
+
+    expect(typeof result.token).toBe('string');
+    expect(result.token.length).toBeGreaterThan(20);
+    expect(result.family.length).toBeGreaterThan(0);
+    expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+    const created = mockCreate.mock.calls[0][0];
+    expect(created.tokenHash).toBe(sha256Hex(result.token));
+    expect(created.sessionId).toBe('s1');
+    expect(created.userId).toBe('u1');
+    // The raw token is never persisted.
+    expect(JSON.stringify(created)).not.toContain(result.token);
   });
 
-  it('throws RangeError for non-integer values', () => {
-    expect(() => refreshCookieName(1.5)).toThrow(RangeError);
-    expect(() => refreshCookieName(Number.NaN)).toThrow(RangeError);
-  });
-
-  it('throws RangeError for negative values', () => {
-    expect(() => refreshCookieName(-1)).toThrow(RangeError);
-  });
-
-  it('throws RangeError when authuser >= MAX_DEVICE_ACCOUNTS', () => {
-    expect(() => refreshCookieName(MAX_DEVICE_ACCOUNTS)).toThrow(RangeError);
-    expect(() => refreshCookieName(MAX_DEVICE_ACCOUNTS + 5)).toThrow(RangeError);
-  });
-});
-
-describe('parseAllRefreshCookies', () => {
-  it('returns an empty map for undefined / empty cookie headers', () => {
-    expect(parseAllRefreshCookies(undefined).size).toBe(0);
-    expect(parseAllRefreshCookies('').size).toBe(0);
-  });
-
-  it('groups indexed cookies and ignores unsuffixed oxy_rt', () => {
-    const header =
-      'oxy_rt=LEGACY; oxy_rt_0=ZERO; oxy_rt_5=FIVE; theme=dark';
-    const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(2);
-    expect(result.get(0)).toEqual(['ZERO']);
-    expect(result.get(5)).toEqual(['FIVE']);
-  });
-
-  it('ignores malformed suffixes (oxy_rt_foo, oxy_rt_-1, trailing space)', () => {
-    const header =
-      'oxy_rt_foo=BAD; oxy_rt_-1=BAD; oxy_rt_=BAD; oxy_rt_0a=BAD; oxy_rt_0=GOOD';
-    const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(1);
-    expect(result.get(0)).toEqual(['GOOD']);
-  });
-
-  it('ignores out-of-range numeric suffixes (oxy_rt_999, oxy_rt_<MAX>)', () => {
-    const header = `oxy_rt_999=BAD; oxy_rt_${MAX_DEVICE_ACCOUNTS}=BAD; oxy_rt_2=GOOD`;
-    const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(1);
-    expect(result.get(2)).toEqual(['GOOD']);
-  });
-
-  it('preserves duplicate-value de-duplication and first-seen order per bucket', () => {
-    const header =
-      'oxy_rt_0=A; oxy_rt_0=B; oxy_rt_0=A; oxy_rt=L1; oxy_rt=L1';
-    const result = parseAllRefreshCookies(header);
-    expect(result.get(0)).toEqual(['A', 'B']);
-    expect(result.has(1)).toBe(false);
-  });
-
-  it('skips empty values inside any bucket', () => {
-    const header = 'oxy_rt_0=; oxy_rt_0=REAL; oxy_rt=';
-    const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(1);
-    expect(result.get(0)).toEqual(['REAL']);
-  });
-
-  it('tolerates control chars / unusual characters inside values without crashing', () => {
-    // The values pass through unchanged — we only ever feed them to sha256Hex,
-    // so the parser must not corrupt the bytes (e.g. by URL-decoding).
-    const header = 'oxy_rt_0=A%20B; oxy_rt_1=tok-en';
-    const result = parseAllRefreshCookies(header);
-    expect(result.get(0)).toEqual(['A%20B']);
-    expect(result.get(1)).toEqual(['tok-en']);
-  });
-
-  it('does not bleed cookies named oxy_rt-something or other_rt_0 into the result', () => {
-    const header = 'other_rt_0=BAD; oxy-rt=BAD; oxy_rt_0=GOOD';
-    const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(1);
-    expect(result.get(0)).toEqual(['GOOD']);
+  it('reuses an existing family when supplied (rotation)', async () => {
+    const result = await issueRefreshToken({ sessionId: 's1', userId: 'u1', family: 'fam-existing' });
+    expect(result.family).toBe('fam-existing');
+    expect(mockCreate.mock.calls[0][0].family).toBe('fam-existing');
   });
 });
 
-describe('selectActiveCandidate', () => {
-  it('returns valid when at least one stored row is valid', async () => {
-    const valid = 'VALID-TOK';
-    const used = 'USED-TOK';
-    stage(buildStored(valid));
-    stage(buildStored(used, { _id: 'rt-2', usedAt: new Date(Date.now() - 1000) }));
+describe('rotateRefreshToken', () => {
+  it('rotates a valid token: claims it single-use and issues the next in the same family', async () => {
+    const stored = {
+      _id: 'row1', family: 'fam1', sessionId: 's1', userId: { toString: () => 'u1' },
+      usedAt: null, revokedAt: null, expiresAt: new Date(Date.now() + 60_000),
+    };
+    mockFindOne.mockResolvedValueOnce(stored);
+    mockFindOneAndUpdate.mockResolvedValueOnce({ ...stored, usedAt: new Date() });
 
-    const result = await selectActiveCandidate([used, valid]);
-    expect(result.kind).toBe('valid');
-    if (result.kind === 'valid') {
-      expect(result.rawToken).toBe(valid);
+    const outcome = await rotateRefreshToken('raw');
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.sessionId).toBe('s1');
+      expect(outcome.userId).toBe('u1');
+      expect(typeof outcome.token).toBe('string');
+      expect(outcome.family).toBe('fam1');
     }
+    // Atomic single-use claim was attempted.
+    expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 'row1', usedAt: null, revokedAt: null },
+      { $set: { usedAt: expect.any(Date) } },
+      { new: true },
+    );
   });
 
-  it('returns used (theft signal) when only used/revoked rows are found', async () => {
-    const lone = 'LONE-USED';
-    stage(buildStored(lone, { usedAt: new Date(Date.now() - 1000) }));
-    const result = await selectActiveCandidate([lone]);
-    expect(result.kind).toBe('used');
-    if (result.kind === 'used') {
-      expect(result.family).toBe('fam-1');
-      expect(result.sessionId).toBe('sess-1');
-    }
+  it('returns not_found for an unknown token', async () => {
+    mockFindOne.mockResolvedValueOnce(null);
+    const outcome = await rotateRefreshToken('raw');
+    expect(outcome).toEqual({ ok: false, reason: 'not_found' });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
   });
 
-  it('returns none when no candidate matches a stored row', async () => {
-    const result = await selectActiveCandidate(['ghost-1', 'ghost-2']);
-    expect(result.kind).toBe('none');
+  it('REUSE DETECTED: a replayed (already-used) token revokes the whole family', async () => {
+    mockFindOne.mockResolvedValueOnce({
+      _id: 'row1', family: 'fam1', sessionId: 's1', userId: { toString: () => 'u1' },
+      usedAt: new Date(), revokedAt: null, expiresAt: new Date(Date.now() + 60_000),
+    });
+    const outcome = await rotateRefreshToken('raw');
+    expect(outcome).toEqual({ ok: false, reason: 'reuse_detected' });
+    // Family revoked + session deactivated (theft containment).
+    expect(mockUpdateMany).toHaveBeenCalledWith({ family: 'fam1', revokedAt: null }, { $set: { revokedAt: expect.any(Date) } });
+    expect(mockDeactivateSession).toHaveBeenCalledWith('s1');
   });
 
-  it('returns none for an empty list', async () => {
-    expect((await selectActiveCandidate([])).kind).toBe('none');
+  it('re-asserts the revoke for an already-revoked token', async () => {
+    mockFindOne.mockResolvedValueOnce({
+      _id: 'row1', family: 'fam1', sessionId: 's1', userId: { toString: () => 'u1' },
+      usedAt: null, revokedAt: new Date(), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const outcome = await rotateRefreshToken('raw');
+    expect(outcome).toEqual({ ok: false, reason: 'revoked' });
+    expect(mockUpdateMany).toHaveBeenCalled();
+  });
+
+  it('returns expired for a past-expiry token (no family revoke)', async () => {
+    mockFindOne.mockResolvedValueOnce({
+      _id: 'row1', family: 'fam1', sessionId: 's1', userId: { toString: () => 'u1' },
+      usedAt: null, revokedAt: null, expiresAt: new Date(Date.now() - 1000),
+    });
+    const outcome = await rotateRefreshToken('raw');
+    expect(outcome).toEqual({ ok: false, reason: 'expired' });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('treats a lost claim race as reuse (revokes the family)', async () => {
+    mockFindOne.mockResolvedValueOnce({
+      _id: 'row1', family: 'fam1', sessionId: 's1', userId: { toString: () => 'u1' },
+      usedAt: null, revokedAt: null, expiresAt: new Date(Date.now() + 60_000),
+    });
+    mockFindOneAndUpdate.mockResolvedValueOnce(null); // another caller claimed it first
+    const outcome = await rotateRefreshToken('raw');
+    expect(outcome).toEqual({ ok: false, reason: 'reuse_detected' });
+    expect(mockUpdateMany).toHaveBeenCalledWith({ family: 'fam1', revokedAt: null }, { $set: { revokedAt: expect.any(Date) } });
   });
 });
 
-describe('parseAllRefreshCookies — non-trivial header shapes', () => {
-  it('handles a Cookie header with a single oxy_rt_0', () => {
-    const result = parseAllRefreshCookies('oxy_rt_0=ONLY');
-    expect(result.size).toBe(1);
-    expect(result.get(0)).toEqual(['ONLY']);
+describe('revokeFamilyByRawToken', () => {
+  it('revokes the family + deactivates the session for a known token', async () => {
+    mockFindOne.mockResolvedValueOnce({ family: 'fam1', sessionId: 's1' });
+    await revokeFamilyByRawToken('raw');
+    expect(mockUpdateMany).toHaveBeenCalledWith({ family: 'fam1', revokedAt: null }, { $set: { revokedAt: expect.any(Date) } });
+    expect(mockDeactivateSession).toHaveBeenCalledWith('s1');
   });
 
-  it('strips surrounding whitespace around names', () => {
-    const result = parseAllRefreshCookies(' oxy_rt_0 = X ;  oxy_rt = Y ');
-    expect(result.get(0)).toEqual(['X']);
-    expect(result.size).toBe(1);
+  it('is a no-op for an unknown token', async () => {
+    mockFindOne.mockResolvedValueOnce(null);
+    await revokeFamilyByRawToken('raw');
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(mockDeactivateSession).not.toHaveBeenCalled();
   });
+});
 
-  it('keeps random-byte values intact (sha256Hex would otherwise mismatch)', () => {
-    const rawBytes = crypto.randomBytes(32).toString('base64url');
-    const header = `oxy_rt_0=${rawBytes}`;
-    const result = parseAllRefreshCookies(header);
-    expect(result.get(0)).toEqual([rawBytes]);
+describe('revokeAllFamiliesBySession', () => {
+  it('revokes every un-revoked token for the session', async () => {
+    await revokeAllFamiliesBySession('s1');
+    expect(mockUpdateMany).toHaveBeenCalledWith({ sessionId: 's1', revokedAt: null }, { $set: { revokedAt: expect.any(Date) } });
   });
 });

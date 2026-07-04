@@ -296,15 +296,10 @@ router.get(
  * validity to that membership — revoking it kills the session (re-checked on
  * validate + refresh).
  *
- * The session joins the device's multi-account set (`oxy_rt_<authuser>` cookie
- * family) so it survives reload and propagates cross-domain via
- * `/auth/refresh-all` — but that cookie is NOT set here. The refresh cookies are
- * scoped to `Path=/auth` (REFRESH_COOKIE_PATH), so a browser never sends them to
- * this `/accounts/*` route; setting one here would run blind to the device's
- * existing slots and clobber slot 0 (the operator's own session). Instead the SDK
- * plants the returned `accessToken` and then calls the canonical
- * `POST /auth/session` — which IS under `/auth`, where the cookies are visible —
- * to establish this session's refresh cookie in a correctly-allocated NEW slot.
+ * The minted managed session is registered into the operator's device set
+ * server-side (`deviceSessionService.addAccount`, broadcast to the device room)
+ * so it survives reload and syncs cross-domain via the socket, converging on the
+ * operator's `oxy_device` device identity.
  *
  * Returns the SAME shape as login / claimSession (`SessionAuthResponse`) so the
  * client plants it as the active session.

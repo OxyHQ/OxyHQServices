@@ -163,11 +163,6 @@ jest.mock('../../models/AppGrant', () => ({
   AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
   default: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
 }));
-jest.mock('../../models/FedCMGrant', () => ({
-  __esModule: true,
-  FedCMGrant: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
-  default: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
-}));
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
 
@@ -396,5 +391,25 @@ describe('POST /auth/session/claim', () => {
     });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /auth/logout (rotating-family revoke)', () => {
+  const mockRefreshTokenFindOne = jest.requireMock('../../models/RefreshToken').default.findOne as jest.Mock;
+
+  it('revokes the family behind a presented body refreshToken and returns success', async () => {
+    // A known token → refreshToken.service.revokeFamilyByRawToken finds the row
+    // and revokes its family (best-effort). Logout always returns 200.
+    mockRefreshTokenFindOne.mockResolvedValueOnce({ family: 'fam1', sessionId: 's1' });
+    const res = await requestJson(server, 'POST', '/auth/logout', { refreshToken: 'stored-refresh-token-value' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    expect(mockRefreshTokenFindOne).toHaveBeenCalled();
+  });
+
+  it('is idempotent: succeeds with no body token (nothing to revoke)', async () => {
+    const res = await requestJson(server, 'POST', '/auth/logout', {});
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
   });
 });

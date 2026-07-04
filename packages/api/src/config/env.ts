@@ -19,8 +19,6 @@ export interface RequiredEnvVars {
   // Authentication
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
-  FEDCM_TOKEN_SECRET: string;
-  FEDCM_ISSUER?: string;
 
   // Central cross-domain SSO: shared secret the auth.oxy.so worker presents in
   // the `X-Oxy-Internal` header on `POST /sso/code`. Must be provisioned
@@ -117,7 +115,6 @@ export function validateRequiredEnvVars(): void {
     'MONGODB_URI',
     'ACCESS_TOKEN_SECRET',
     'REFRESH_TOKEN_SECRET',
-    'FEDCM_TOKEN_SECRET',
     'AWS_REGION',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
@@ -166,7 +163,7 @@ export function validateRequiredEnvVars(): void {
     'password',
   ];
   if (isProduction()) {
-    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET', 'FEDCM_TOKEN_SECRET'] as const) {
+    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET'] as const) {
       const val = process.env[key];
       if (val && (WEAK_SECRETS.includes(val) || val.length < 32)) {
         missing.push(`${key} (insecure: must be at least 32 characters and not a default placeholder)`);
@@ -182,11 +179,12 @@ export function validateRequiredEnvVars(): void {
     }
   }
 
-  // SSO_INTERNAL_SECRET gates the internal `POST /sso/code` mint endpoint that
-  // the auth.oxy.so worker calls server-to-server. It is NOT required for the
-  // API to boot — when unset, `/sso/code` fails closed (returns 404), which
-  // only disables code-based cross-domain SSO. But when it IS set it must be
-  // strong (≥32 chars), since it is a bearer-equivalent shared secret.
+  // SSO_INTERNAL_SECRET gates the internal `POST /auth/device/resolve` endpoint
+  // the auth.oxy.so IdP chooser calls server-to-server (`X-Oxy-Internal`). It is
+  // NOT required for the API to boot — when unset, `/auth/device/resolve` fails
+  // closed (returns 404), which only disables the IdP chooser's device feed. But
+  // when it IS set it must be strong (≥32 chars), since it is a bearer-equivalent
+  // shared secret.
   const ssoInternalSecret = process.env.SSO_INTERNAL_SECRET;
   if (ssoInternalSecret && ssoInternalSecret.length > 0) {
     if (ssoInternalSecret.length < 32 || WEAK_SECRETS.includes(ssoInternalSecret)) {
@@ -194,9 +192,9 @@ export function validateRequiredEnvVars(): void {
     }
   } else if (isProduction()) {
     warnings.push(
-      'SSO_INTERNAL_SECRET is unset — central cross-domain SSO (POST /sso/code) is disabled. ' +
+      'SSO_INTERNAL_SECRET is unset — the IdP chooser device feed (POST /auth/device/resolve) is disabled. ' +
       'Provision it (GitHub secret → SSM /oxy/oxy-api/SSO_INTERNAL_SECRET) and set the matching ' +
-      'value on the auth.oxy.so worker to enable code-based SSO. Generate with: openssl rand -base64 48'
+      'value on the auth.oxy.so worker to enable it. Generate with: openssl rand -base64 48'
     );
   }
 
@@ -233,22 +231,6 @@ export function validateRequiredEnvVars(): void {
   } else if (deviceIdSalt.length < MIN_DEVICE_ID_SALT_LENGTH) {
     missing.push(
       `DEVICE_ID_SALT (insecure: must be at least ${MIN_DEVICE_ID_SALT_LENGTH} characters; got ${deviceIdSalt.length})`
-    );
-  }
-
-  // REFRESH_COOKIE_DOMAIN becomes a cookie Domain attribute. Refresh cookies
-  // are bearer-equivalent, so the safe default is host-only (unset). If an
-  // operator uses the emergency override, fail fast unless it is the exact API
-  // host; parent-domain scopes such as `oxy.so` leak the cookie to sibling
-  // subdomain servers despite HttpOnly.
-  const refreshCookieDomain = process.env.REFRESH_COOKIE_DOMAIN;
-  if (
-    refreshCookieDomain &&
-    (!isValidHostname(refreshCookieDomain) || refreshCookieDomain !== 'api.oxy.so')
-  ) {
-    missing.push(
-      'REFRESH_COOKIE_DOMAIN (invalid: leave unset for host-only cookies, or set exactly "api.oxy.so"; ' +
-      'parent domains, schemes, ports, paths, spaces, and ";"/"," characters are forbidden)'
     );
   }
 

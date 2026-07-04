@@ -29,34 +29,28 @@ function makeStore(prefix: string) {
 /**
  * Paths hit ONLY by the first-party IdP worker (auth.oxy.so) server-to-server,
  * never by a browser directly:
- *   - GET /fedcm/clients/approved   (worker: resolveApprovedClientOrigin)
- *   - GET /fedcm/grants/:userId     (worker: fetchApprovedClients, X-Oxy-Internal)
- *   - GET /session/validate/:id     (worker: fetchUserFromAPI / validateSession)
- *   - POST /sso/code                (worker: mint SSO code, X-Oxy-Internal)
+ *   - GET  /session/validate/:id    (worker: fetchUserFromAPI / validateSession)
+ *   - POST /auth/device/resolve     (worker: IdP chooser device feed, X-Oxy-Internal)
  *
- * The IdP worker fans EVERY user's /sso, /sso/establish, /auth/silent and FedCM
- * flow through these, from a small pool of shared Cloudflare egress IPs.
- * Subjecting them to the per-IP browser budget (rl:general 1000/15min) lets
- * normal multi-user traffic exhaust the budget on one worker IP → 429 → the IdP
- * fails closed (invalid_request on /sso, silent restore fails) → RP auth guards
+ * The IdP worker fans EVERY user's chooser/session flow through these, from a
+ * small pool of shared Cloudflare egress IPs. Subjecting them to the per-IP
+ * browser budget (rl:general 1000/15min) lets normal multi-user traffic exhaust
+ * the budget on one worker IP → 429 → the IdP fails closed → RP auth guards
  * re-bounce and amplify the load. These are trusted infrastructure calls, NOT
  * browser traffic, so they are excluded from the general per-IP limiter and
- * capped instead by their own dedicated limiters (idpServiceLimiter below for
- * the reads; the route-local secret-gated codeLimiter for POST /sso/code).
+ * capped instead by their own dedicated route limiters (idpServiceLimiter for
+ * `/session/validate/`; `rl:auth:device:resolve:` for `/auth/device/resolve`).
  *
  * MOUNT-ORDER INVARIANT: the general `rateLimiter` skips these paths, so any
- * path listed here MUST carry its OWN dedicated limiter at its route (reads →
- * `idpServiceLimiter`; /sso/code → its `rl:sso:code:` codeLimiter). Adding a
+ * path listed here MUST carry its OWN dedicated limiter at its route. Adding a
  * path here without a route-level limiter would leave it entirely unthrottled.
  * `/session/validate-header/` is intentionally NOT matched — it is bearer-cross-
  * checked and browser-reachable, so it stays under the general budget.
  */
 export function isIdpServiceToServicePath(path: string): boolean {
   return (
-    path === '/fedcm/clients/approved' ||
-    path.startsWith('/fedcm/grants/') ||
     path.startsWith('/session/validate/') ||
-    path === '/sso/code'
+    path === '/auth/device/resolve'
   );
 }
 

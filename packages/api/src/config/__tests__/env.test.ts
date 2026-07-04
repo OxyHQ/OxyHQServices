@@ -69,42 +69,6 @@ describe('isValidHostname', () => {
   });
 });
 
-describe('validateRequiredEnvVars — REFRESH_COOKIE_DOMAIN', () => {
-  const originalEnv = process.env;
-
-  beforeEach(() => {
-    process.env = { ...originalEnv, ...REQUIRED_BASE_ENV };
-    delete process.env.REFRESH_COOKIE_DOMAIN;
-  });
-
-  afterAll(() => {
-    process.env = originalEnv;
-  });
-
-  it('passes when REFRESH_COOKIE_DOMAIN is unset', () => {
-    expect(() => validateRequiredEnvVars()).not.toThrow();
-  });
-
-  it('passes for the exact API host emergency override', () => {
-    process.env.REFRESH_COOKIE_DOMAIN = 'api.oxy.so';
-    expect(() => validateRequiredEnvVars()).not.toThrow();
-  });
-
-  it.each([
-    'oxy.so',
-    'auth.oxy.so',
-    'oxy.so; Secure',
-    'oxy.so,evil.com',
-    'http://oxy.so',
-    'oxy .so',
-    'oxy.so\nSet-Cookie: x=y',
-  ])('fails fast with a clear error for %j', (value) => {
-    process.env.REFRESH_COOKIE_DOMAIN = value;
-    expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
-    expect(() => validateRequiredEnvVars()).toThrow(/REFRESH_COOKIE_DOMAIN/);
-  });
-});
-
 describe('validateRequiredEnvVars — DEVICE_ID_SALT (security review H1)', () => {
   const originalEnv = process.env;
   const STRONG_SALT = 'x'.repeat(48);

@@ -72,9 +72,9 @@ export function buildDeviceCookieOptions(): DeviceCookieOptions {
  * (HttpOnly so JS can never read it, Secure so it only rides HTTPS, SameSite=Lax).
  * Server-side it is persisted ONLY as its SHA-256 (`DeviceSession.cookieKeyHash`)
  * — the raw value is never written to any document, cache, or log, and possessing
- * the cookie reveals nothing about the deviceId. This is the identical posture as
- * the first-party `oxy_rt` refresh cookie (`setRefreshCookie`). There is no
- * cleartext-at-rest to encrypt: the value is already the credential.
+ * the cookie reveals nothing about the deviceId. Same posture as the rotating
+ * refresh token (hash-only storage). There is no cleartext-at-rest to encrypt:
+ * the value is already the credential.
  */
 export function setDeviceCookie(res: Response, secret: string): void {
   res.cookie(DEVICE_COOKIE_NAME, secret, buildDeviceCookieOptions());

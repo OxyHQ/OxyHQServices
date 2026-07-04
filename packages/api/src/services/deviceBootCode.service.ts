@@ -1,9 +1,9 @@
 /**
  * Device-first bootstrap code store.
  *
- * Clones the security PATTERN of `ssoCode.service.ts` (opaque single-use code,
- * sha256-hashed key, atomic GETDEL burn, fail-closed on Redis absence) for the
- * device-first bootstrap hop. `GET /auth/device/bootstrap` resolves the active
+ * Follows the opaque-single-use-code security pattern (256-bit CSPRNG code,
+ * sha256-hashed Valkey key, atomic GETDEL burn, fail-closed on Redis absence) for
+ * the device-first bootstrap hop. `GET /auth/device/bootstrap` resolves the active
  * session from the `oxy_device` cookie and mints one of these codes; the raw
  * code travels in the top-level `#oxy_boot=…` fragment, and the RP browser
  * exchanges it at `POST /auth/device/exchange` for real tokens.

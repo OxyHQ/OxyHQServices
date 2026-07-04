@@ -75,7 +75,6 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
           ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
           REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
-          FEDCM_TOKEN_SECRET: test_fedcm_token_secret_minimum_32_characters
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: test_aws_access_key
           AWS_SECRET_ACCESS_KEY: test_aws_secret_key
@@ -89,7 +88,6 @@ jobs:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
           ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
           REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
-          FEDCM_TOKEN_SECRET: test_fedcm_token_secret_minimum_32_characters
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: test_aws_access_key
           AWS_SECRET_ACCESS_KEY: test_aws_secret_key
