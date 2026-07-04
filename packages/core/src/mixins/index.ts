@@ -32,6 +32,7 @@ import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
 import { OxyServicesLinksMixin } from './OxyServices.links';
+import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -68,6 +69,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDeviceBootMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -146,6 +148,11 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Link previews / unfurls: SDK-owned link-metadata resolution via oxy-api,
     // so apps stop scraping link metadata locally.
     OxyServicesLinksMixin,
+
+    // Device-first session bootstrap: the client half of the new
+    // /auth/device/* + /auth/refresh-token surface (exchange, web-session,
+    // refresh, native device-token, bootstrap-url builder).
+    OxyServicesDeviceBootMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,

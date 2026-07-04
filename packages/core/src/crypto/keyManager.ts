@@ -91,6 +91,11 @@ const STORAGE_KEYS = {
   SHARED_PUBLIC_KEY: 'oxy_shared_identity_public_key',
   SHARED_SESSION_TOKEN: 'oxy_shared_session_token',
   SHARED_SESSION_ID: 'oxy_shared_session_id',
+  // Opaque device-attribution token, shared across all Oxy apps on one device
+  // so they all resolve to a SINGLE server-side DeviceSession (device-first
+  // session model). Add-only: it never carries session state, only attributes
+  // a newly-credentialed session to the shared device set.
+  SHARED_DEVICE_TOKEN: 'oxy_shared_device_token',
 } as const;
 
 /**
@@ -640,6 +645,102 @@ export class KeyManager {
         logger.error('Failed to migrate to shared identity', error, { component: 'KeyManager' });
       }
       return false;
+    }
+  }
+
+  /**
+   * Store the opaque device-attribution token in the SHARED keychain so every
+   * Oxy app on this device reads the SAME token and therefore resolves to one
+   * server-side DeviceSession.
+   *
+   * Mirrors the shared-session storage options exactly (iOS keychain access
+   * group `group.so.oxy.shared`; Android shared secure store). Native-only —
+   * a no-op on web (the shared keychain does not exist there; web persists its
+   * deviceToken in the per-origin {@link AuthStateStore} instead).
+   */
+  static async setSharedDeviceToken(deviceToken: string): Promise<void> {
+    if (isWebPlatform()) {
+      return; // Not supported on web
+    }
+
+    try {
+      const store = await initSecureStore();
+
+      if (isIOS()) {
+        const opts: OxySecureStoreOptions = {
+          keychainAccessible: store.WHEN_UNLOCKED,
+          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
+        };
+        await store.setItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN, deviceToken, opts);
+      } else if (isAndroid()) {
+        await store.setItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN, deviceToken);
+      }
+
+      if (isDev()) {
+        logger.debug('Shared device token stored successfully', { component: 'KeyManager' });
+      }
+    } catch (error) {
+      if (isDev()) {
+        logger.error('Failed to store shared device token', error, { component: 'KeyManager' });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Read the shared device-attribution token, or `null` when none is set (or
+   * on web). Mirrors {@link getSharedSession}'s keychain-access-group read.
+   */
+  static async getSharedDeviceToken(): Promise<string | null> {
+    if (isWebPlatform()) {
+      return null;
+    }
+
+    try {
+      const store = await initSecureStore();
+
+      if (isIOS()) {
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        return await store.getItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN, opts);
+      }
+      if (isAndroid()) {
+        return await store.getItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN);
+      }
+      return null;
+    } catch (error) {
+      if (isDev()) {
+        logger.warn('Failed to get shared device token', { component: 'KeyManager' }, error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Delete the shared device-attribution token (device signout-all). Best-effort:
+   * a keychain failure is logged, not thrown, so it cannot block a sign-out.
+   */
+  static async clearSharedDeviceToken(): Promise<void> {
+    if (isWebPlatform()) {
+      return;
+    }
+
+    try {
+      const store = await initSecureStore();
+
+      if (isIOS()) {
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        await store.deleteItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN, opts);
+      } else if (isAndroid()) {
+        await store.deleteItemAsync(STORAGE_KEYS.SHARED_DEVICE_TOKEN);
+      }
+
+      if (isDev()) {
+        logger.debug('Shared device token cleared successfully', { component: 'KeyManager' });
+      }
+    } catch (error) {
+      if (isDev()) {
+        logger.error('Failed to clear shared device token', error, { component: 'KeyManager' });
+      }
     }
   }
 

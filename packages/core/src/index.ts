@@ -591,6 +591,63 @@ export {
     accountIdsOf,
 } from './session/projectSessionState';
 
+// ---------------------------------------------------------------------------
+// Device-first session machinery (auth centralization, wave 1) — additive.
+// Persisted auth-state store, the unified refresh handler + scheduler, the
+// cold-boot v2 runner, and the device-boot return-fragment consumer. Built ON
+// the existing `runColdBoot` primitive + `SessionClient`; the legacy
+// FedCM/SSO/CrossDomainAuth surface is untouched (cutover happens in F4).
+// ---------------------------------------------------------------------------
+export {
+    createWebAuthStateStore,
+    createNativeAuthStateStore,
+    createMemoryAuthStateStore,
+    AUTH_STATE_STORAGE_KEY,
+    DEVICE_TOKEN_STORAGE_KEY,
+} from './session/authStateStore';
+export type {
+    PersistedAuthState,
+    AuthStateStore,
+    NativeKeyValueStorage,
+} from './session/authStateStore';
+
+export {
+    refreshPersistedSession,
+    createAuthRefreshHandler,
+    installAuthRefreshHandler,
+    startTokenRefreshScheduler,
+    TOKEN_REFRESH_LEAD_MS,
+} from './session/refresh';
+export type { RefreshDeps, TokenRefreshSchedulerHandle } from './session/refresh';
+
+export {
+    runSessionColdBoot,
+    createBrowserColdBootDom,
+    isSameApex,
+    BOOT_ATTEMPTED_KEY,
+} from './boot/coldBootV2';
+export type {
+    RunSessionColdBootOptions,
+    ColdBootDom,
+    SignedOutReason,
+} from './boot/coldBootV2';
+
+export {
+    consumeDeviceBootReturn,
+    parseDeviceBootFragment,
+    hashHasBootFragment,
+    BOOT_FRAGMENT_PARAM,
+    BOOT_STATE_SESSION_KEY,
+} from './boot/deviceBootReturn';
+export type {
+    DeviceBootSession,
+    DeviceBootReturnOutcome,
+    ConsumeDeviceBootReturnDeps,
+} from './boot/deviceBootReturn';
+
+export { isAuthTokenBundle } from './mixins/OxyServices.deviceBoot';
+export type { WebSessionResult, WebSessionNoSession } from './mixins/OxyServices.deviceBoot';
+
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every
 // client SDK. Import them directly from `@oxyhq/contracts`; `@oxyhq/core` does NOT

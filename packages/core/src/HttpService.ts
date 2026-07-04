@@ -70,6 +70,19 @@ export interface RequestOptions {
   signal?: AbortSignal;
   headers?: Record<string, string>;
   responseType?: 'blob';
+  /**
+   * Skip BOTH the bearer auth header (and its near-expiry preflight refresh)
+   * AND the 401-driven auto-refresh/retry for this request.
+   *
+   * Required for the body-authenticated refresh endpoint (`POST
+   * /auth/refresh-token`): it does not need a bearer, and — critically — it is
+   * itself invoked from inside the registered `AuthRefreshHandler`. If it went
+   * through the normal preflight, `getAuthHeader` would call
+   * `refreshAccessToken` while the handler-owning `tokenRefreshPromise` is
+   * still in flight and await ITSELF (deadlock). Skipping auth makes the
+   * refresh call fully independent of the current (near-expired) bearer.
+   */
+  skipAuth?: boolean;
 }
 
 interface RequestConfig extends RequestOptions {
@@ -403,8 +416,11 @@ export class HttpService {
         // Build URL with params
         const fullUrl = this.buildURL(url, params);
         
-        // Get auth token (with auto-refresh)
-        const authHeader = await this.getAuthHeader();
+        // Get auth token (with auto-refresh). `skipAuth` requests (the
+        // body-authenticated refresh endpoint) send NO bearer and skip the
+        // near-expiry preflight — see RequestOptions.skipAuth for the deadlock
+        // this avoids.
+        const authHeader = config.skipAuth ? null : await this.getAuthHeader();
 
         // CSRF protects cookie-authenticated browser writes. Bearer-authenticated
         // SDK clients are not vulnerable to ambient-cookie CSRF, and linked app
@@ -514,7 +530,7 @@ export class HttpService {
           // On 401, delegate refresh to AuthManager and retry once before
           // giving up. HttpService deliberately does not know any session
           // routes; the AuthManager is the single session authority.
-          if (response.status === 401 && !config._isAuthRetry) {
+          if (response.status === 401 && !config._isAuthRetry && !config.skipAuth) {
             const refreshed = await this.refreshAccessToken('response-401');
             if (refreshed) {
               // `deduplicate: false` is REQUIRED on the retry (mirrors the 403
