@@ -160,6 +160,33 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
     expect(setCurrentAccountId).toHaveBeenCalledWith('a2');
   });
 
+  it('still lists accounts when the batch profile fetch fails (no bail to empty)', async () => {
+    const deviceState = buildDeviceState('a2');
+    const fake = buildFakeClient(deviceState);
+    mockedCreateSessionClient.mockReturnValue({
+      client: fake.fakeClient as never,
+      host: { setCurrentAccountId: jest.fn() } as never,
+    });
+    // A transient batch-profile failure must NOT empty the chooser.
+    stubs.getUsersByIds = jest.fn(async () => { throw new Error('network'); });
+
+    let latest: ProbeState = {
+      isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null,
+      accountsLength: 0, activeAuthuser: null,
+    };
+    renderProvider((s) => { latest = s; });
+    await waitFor(() => expect(latest.isAuthenticated).toBe(false));
+
+    act(() => { fake.fire(); });
+
+    // Accounts + sessions are still projected (handle-fallback rows) from the
+    // SessionClient state even though every profile fetch threw.
+    await waitFor(() => expect(latest.accountsLength).toBe(2));
+    expect(latest.sessionsLength).toBe(2);
+    expect(latest.activeSessionId).toBe('sess-a2');
+    expect(latest.activeAuthuser).toBe(1);
+  });
+
   it('is inert while client.getState() is null (signed-out cold boot)', async () => {
     const fake = buildFakeClient(null);
     mockedCreateSessionClient.mockReturnValue({
