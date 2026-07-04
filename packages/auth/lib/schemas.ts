@@ -1,8 +1,8 @@
 /**
  * Zod schemas for validating API responses in the auth app.
  *
- * The user / account / session RESPONSE contracts (`refreshAllResponseSchema`,
- * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) plus the
+ * The user / account / session RESPONSE contracts (`currentUserResponseSchema`,
+ * `deviceSessionsResponseSchema`) plus the
  * device-flow `publicApplicationSchema` / `sessionStatusSchema` are NOT defined
  * here — they are owned by `@oxyhq/contracts` as the single source of truth
  * shared between the API (producer) and every consumer. Importing them straight
@@ -16,7 +16,6 @@
  */
 import { z } from "zod"
 import {
-    refreshAllResponseSchema,
     currentUserResponseSchema,
     deviceSessionsResponseSchema,
     publicApplicationSchema,
@@ -31,7 +30,6 @@ import type {
 
 // Canonical, contracts-owned schemas re-exported for local import sites.
 export {
-    refreshAllResponseSchema,
     currentUserResponseSchema,
     deviceSessionsResponseSchema,
     publicApplicationSchema,
