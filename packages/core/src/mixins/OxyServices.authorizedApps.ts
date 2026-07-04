@@ -47,7 +47,7 @@ export function OxyServicesAuthorizedAppsMixin<T extends typeof OxyServicesBase>
             cacheTTL: 30 * 1000, // 30 second cache — short, this drives a manageable UI
           },
         );
-        return response.apps ?? [];
+        return response?.apps ?? [];
       } catch (error) {
         throw this.handleError(error);
       }

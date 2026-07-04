@@ -563,8 +563,8 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         // The switch route now registers the switched session in the device's
         // server-side DeviceSession set directly (device-first), so there is no
         // client-side refresh-cookie slot to establish — the `authuser` comes
-        // from the switch response.
-        const authuser = res.authuser;
+        // from the switch response (optional-chained to match `res?.accessToken`).
+        const authuser = res?.authuser;
 
         // Identity changed → drop the entire GET response cache so no entry
         // personalised for the previous identity is reused. Cache keys are
