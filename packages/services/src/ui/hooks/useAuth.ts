@@ -26,7 +26,8 @@
 import { useCallback, useState } from 'react';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
-import { isWebBrowser } from './useWebSSO';
+import { isWebBrowser } from '../utils/isWebBrowser';
+import { showSignInModal } from '../components/SignInModal';
 
 export interface AuthState {
   /** Current authenticated user, null if not authenticated */
@@ -140,35 +141,24 @@ export function useAuth(): UseAuthReturn {
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Check if we're on the identity provider itself
-    // Only the IdP has local login forms - other apps are client apps
-    const authWebUrl = oxyServices.config?.authWebUrl;
-    let idpHostname = 'auth.oxy.so';
-    if (authWebUrl) {
-      try { idpHostname = new URL(authWebUrl).hostname; } catch { /* malformed URL, use default */ }
-    }
-    const isIdentityProvider = isWebBrowser() &&
-      window.location.hostname === idpHostname;
-
-    // Web (not on IdP): use the tokenless redirect SSO flow. The silent
-    // cross-domain restore (per-apex `/auth/silent` iframe + `/sso` bounce)
-    // already ran on page load; an explicit click needs interactive auth.
-    if (isWebBrowser() && !publicKey && !isIdentityProvider) {
-      oxyServices.signInWithRedirect?.({
-        redirectUri: window.location.href,
-      });
+    // Web (no key): open the in-app "Sign in with Oxy" modal. There is NO
+    // automatic navigation to any login page — the device-first cold boot
+    // already restored a session if one existed; an explicit click presents the
+    // SDK sign-in surface (password / QR device flow / add account).
+    if (isWebBrowser() && !publicKey) {
+      showSignInModal();
+      // Resolves when the modal commits a session; the caller typically reacts
+      // to `isAuthenticated` rather than this promise.
       return new Promise<User>(() => undefined);
     }
 
-    // Native: Use cryptographic identity
-    // If public key provided, use it directly
+    // Native: use the cryptographic identity directly when a public key is given.
     if (publicKey) {
       return oxySignIn(publicKey);
     }
 
-    // Try to get existing identity
+    // Native with an existing keychain identity: sign in with it.
     const hasExisting = await hasIdentity();
-
     if (hasExisting) {
       const existingKey = await getPublicKey();
       if (existingKey) {
@@ -176,27 +166,16 @@ export function useAuth(): UseAuthReturn {
       }
     }
 
-    // No identity - show auth UI
+    // Native with no identity: open the auth sheet (password / QR device flow).
     if (showBottomSheet) {
       showBottomSheet('OxyAuth');
-      // Return a promise that resolves when auth completes
       return new Promise((_, reject) => {
         reject(new Error('Please complete sign-in in the auth sheet'));
       });
     }
 
-    // Web fallback: navigate to login page on auth domain
-    if (isWebBrowser()) {
-      const authBase = authWebUrl || 'https://accounts.oxy.so';
-      const loginUrl = window.location.hostname.includes('oxy.so')
-        ? '/login'
-        : `${authBase}/login`;
-      window.location.href = loginUrl;
-      return new Promise(() => {}); // Never resolves, page will redirect
-    }
-
     throw new Error('No authentication method available');
-  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
+  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();

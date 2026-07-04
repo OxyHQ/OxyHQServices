@@ -1,19 +1,20 @@
 /**
- * Session-sync integration layer (Fase 3-A) — intra-package use only.
+ * Session-sync integration layer — intra-package use only.
  *
- * These modules let `@oxyhq/services` drive the platform-agnostic
- * `SessionClient` (in `@oxyhq/core`): a thin host adapter over `OxyServices`,
- * pure `DeviceSessionState → services` projection helpers, a platform token
- * transport, and the factory that wires them together. Nothing here is
- * re-exported from the package root — `OxyContext` consumes it directly in
- * Fase 3-B.
+ * `@oxyhq/core` owns the platform-agnostic `SessionClient`, its host adapter,
+ * and the pure `DeviceSessionState → services` projection helpers; those are
+ * re-exported straight from core here so `OxyContext` has one import site.
+ * `@oxyhq/services` supplies only the two platform pieces: the thin
+ * `createSessionClient` factory (injects socket.io-client `io` + the
+ * device-first token transport) and the `AuthStateStore` factory.
  */
 export { createSessionClient } from './createSessionClient';
-export { createSessionClientHost } from './sessionClientHost';
 export { createTokenTransport } from './tokenTransport';
+export { createPlatformAuthStateStore } from './authStore';
 export {
+  createSessionClientHost,
   accountIdsOf,
   activeSessionIdOf,
   activeUserOf,
   deviceStateToClientSessions,
-} from './projectSessionState';
+} from '@oxyhq/core';

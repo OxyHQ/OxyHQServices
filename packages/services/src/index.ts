@@ -180,10 +180,6 @@ export {
     extractErrorMessage,
 } from './ui/utils/errorHandlers';
 export type { HandleAuthErrorOptions } from './ui/utils/errorHandlers';
-// Thrown by `signInWithPassword` / `signIn` on a cross-apex web RP, where a
-// direct (non-IdP) sign-in would not survive a page reload — apps catch it to
-// route the user to the durable "Continue with Oxy" IdP flow.
-export { CrossApexDirectSignInError, isCrossApexWeb } from './utils/crossApex';
 
 // ---------------------------------------------------------------------------
 // File filtering

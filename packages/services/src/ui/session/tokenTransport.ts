@@ -1,42 +1,35 @@
+import {
+  refreshPersistedSession,
+  logger,
+  type AuthStateStore,
+  type OxyServices,
+  type TokenTransport,
+} from '@oxyhq/core';
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import type { OxyServices, TokenTransport } from '@oxyhq/core';
-import { logger } from '@oxyhq/core';
-import { isWebBrowser } from '../hooks/useWebSSO';
 
 /**
- * Platform `TokenTransport` for `SessionClient`: mints an access token when
- * none is currently held, reusing the SAME primitives `OxyContext`'s cold
- * boot already relies on (never re-implemented here):
+ * Platform `TokenTransport` for `SessionClient` (device-first model).
  *
- * - web: `oxyServices.silentSignIn()` (per-apex `/auth/silent` iframe).
- * - native: `oxyServices.signInWithSharedIdentity()` (app-group keychain).
+ * `ensureActiveToken` is the fallback the client uses when a `session_state`
+ * push arrived WITHOUT an embedded `activeToken` and the app currently holds no
+ * bearer. It mints one through the ONE unified refresh path
+ * (`refreshPersistedSession`): rotate the persisted refresh-token family
+ * (`POST /auth/refresh-token`) and, on native, fall back to the shared-keychain
+ * re-mint. There is no FedCM/silent-iframe arm anymore — the per-origin
+ * persisted refresh token is the durable web credential.
  *
- * Both primitives plant the token internally on success (the "Sign-In Token
- * Planting" rule) — `ensureActiveToken` never calls `setTokens` itself.
- *
- * `ensureActiveToken` treats a PRESENT token as sufficient in this phase; it
- * does not decode/match the token's subject against `state.activeAccountId`
- * (that refinement is Fase 3-B). Account switching itself is server-driven
- * via the `activeToken` carried in the sync envelope — this transport is
- * only the fallback used when the envelope carried no token.
- *
- * A failed mint is logged and swallowed: it must never throw out of
- * `ensureActiveToken`, since that would crash the caller (the SessionClient
- * socket handler in Fase 3-B).
+ * Concurrent pushes coalesce onto one in-flight mint. A failure is logged and
+ * swallowed: this method must never throw out (it runs inside the socket state
+ * handler).
  */
-export function createTokenTransport(oxyServices: OxyServices): TokenTransport {
-  // Coalesces concurrent mints: `SessionClient.applyState` can fire
-  // `ensureActiveToken` on rapid successive state pushes; a second call while a
-  // mint is already in flight must reuse it, not spawn a second silent iframe /
-  // shared-key challenge round-trip.
+export function createTokenTransport(
+  oxyServices: OxyServices,
+  store: AuthStateStore,
+): TokenTransport {
   let inFlightMint: Promise<void> | null = null;
 
   return {
     async ensureActiveToken(state: DeviceSessionState): Promise<void> {
-      // Read the current token defensively: it is an in-memory getter that
-      // should never throw, but the documented contract is that this method
-      // never throws out — so a surprising throw is logged and treated as "no
-      // token" (fall through to mint) rather than rejecting the promise.
       try {
         if (oxyServices.getAccessToken()) {
           return;
@@ -51,18 +44,15 @@ export function createTokenTransport(oxyServices: OxyServices): TokenTransport {
 
       inFlightMint = (async () => {
         try {
-          const session = isWebBrowser()
-            ? await oxyServices.silentSignIn()
-            : await oxyServices.signInWithSharedIdentity();
-
-          if (!session) {
-            logger.debug('ensureActiveToken: platform mint returned no session', {
+          const token = await refreshPersistedSession({ oxy: oxyServices, store });
+          if (!token) {
+            logger.debug('ensureActiveToken: refresh produced no session', {
               component: 'TokenTransport',
               deviceId: state.deviceId,
             });
           }
         } catch (error) {
-          logger.warn('ensureActiveToken: mint failed', { component: 'TokenTransport' }, error);
+          logger.warn('ensureActiveToken: refresh failed', { component: 'TokenTransport' }, error);
         }
       })();
 

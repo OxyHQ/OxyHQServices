@@ -19,7 +19,7 @@
 import React from 'react';
 import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SessionLoginResponse, User } from '@oxyhq/core';
+import { AUTH_STATE_STORAGE_KEY, type SessionLoginResponse, type User } from '@oxyhq/core';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 
 jest.mock('../../src/ui/session', () => {
@@ -99,7 +99,12 @@ function buildFakeClient(initial: DeviceSessionState) {
     notify();
   });
 
+  // The cold-boot handoff (`commitSession` with `activate:false`) registers the
+  // recovered account via `addCurrentAccount`; a deliberate first-time mint
+  // (`switchToAccount` into an account not yet on the device) activates via
+  // `registerAndActivate`.
   const addCurrentAccount = jest.fn(async () => undefined);
+  const registerAndActivate = jest.fn(async () => undefined);
 
   const switchAccount = jest.fn(async (accountId: string) => {
     if (!state) return;
@@ -123,6 +128,7 @@ function buildFakeClient(initial: DeviceSessionState) {
   return {
     start,
     addCurrentAccount,
+    registerAndActivate,
     switchAccount,
     signOut,
     getState: () => state,
@@ -134,6 +140,7 @@ function buildFakeClient(initial: DeviceSessionState) {
       },
       start,
       addCurrentAccount,
+      registerAndActivate,
       switchAccount,
       signOut,
     },
@@ -161,27 +168,29 @@ function buildStub(baseURL: string) {
     switchToAccount,
     stub: {
       config: { authWebUrl: 'https://auth.oxy.so' },
-      httpService: { setTokens: (token: string) => { currentToken = token; } },
+      // `installAuthRefreshHandler` (SDK-owned unified refresh) installs the one
+      // core refresh handler on the client's HttpService at mount.
+      httpService: {
+        setTokens: (token: string) => { currentToken = token; },
+        setAuthRefreshHandler: jest.fn(),
+        refreshAccessToken: jest.fn(async () => null),
+      },
       getBaseURL: () => baseURL,
       getSessionBaseUrl: () => baseURL,
       getAccessToken: () => currentToken,
+      // Opaque token → no scheduled proactive refresh (the reactive 401 path
+      // stays the only trigger); keeps `startTokenRefreshScheduler` inert here.
+      getAccessTokenExpiry: () => null,
       onTokensChanged: () => () => undefined,
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      handleAuthCallback: jest.fn(() => null),
-      // The `silent-iframe` cold-boot step (per-apex `/auth/silent`) is the web
-      // restore path now that FedCM is gone: it mints via `silentSignIn`, so
-      // returning `bootSession` here is what recovers a session on boot.
-      silentSignIn: jest.fn(async () => bootSession),
-      generateSsoState: jest.fn(() => 'state-token-xyz'),
-      exchangeSsoCode: jest.fn(async () => null),
+      // The device-first cold boot recovers the session from the persisted
+      // refresh family seeded into localStorage before render (the `stored-tokens`
+      // warm-plant step) — no `silentSignIn`/FedCM arm anymore.
+      signInWithSharedIdentity: jest.fn(async () => null),
       getCurrentUser: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
-      validateSession: jest.fn(async () => ({ valid: true, user: { id: ACCOUNT_A1, username: 'user-a1' } })),
-      getDeviceSessions: jest.fn(async () => []),
-      getSessionsBySessionId: jest.fn(async () => []),
       getUserBySession: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
-      refreshTokenViaCookie: jest.fn(async () => null),
       listAccounts: jest.fn(async () => []),
       switchToAccount,
       getUsersByIds,
@@ -239,10 +248,29 @@ function nextBaseURL(): string {
 }
 
 /**
- * Boots the provider through the real cold-boot token ladder (the web
- * `silent-iframe` step's `silentSignIn` recovers `bootSession`), then hands off
+ * Seed a persisted refresh family (with a still-valid warm access token) so the
+ * device-first cold boot's `stored-tokens` step warm-plants a session WITHOUT a
+ * network round-trip — the offline stand-in for "this device already has a
+ * signed-in session". Recovers ACCOUNT_A1 / SESSION_A1.
+ */
+function seedWarmSession() {
+  window.localStorage.setItem(
+    AUTH_STATE_STORAGE_KEY,
+    JSON.stringify({
+      sessionId: SESSION_A1,
+      refreshToken: 'a1.refresh.token',
+      userId: ACCOUNT_A1,
+      accessToken: bootSession.accessToken,
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    }),
+  );
+}
+
+/**
+ * Boots the provider through the real device-first cold-boot ladder (the
+ * `stored-tokens` step warm-plants the seeded persisted session), then hands off
  * to the fake `SessionClient`, whose `start()` seeds `deviceState` and notifies
- * — projecting it onto the exposed context exactly like the real Task 2 handoff.
+ * — projecting it onto the exposed context exactly like the real handoff.
  */
 async function bootWithDeviceState(deviceState: DeviceSessionState) {
   const fake = buildFakeClient(deviceState);
@@ -253,6 +281,7 @@ async function bootWithDeviceState(deviceState: DeviceSessionState) {
 
   const baseURL = nextBaseURL();
   const { stub, getUsersByIds, switchToAccount } = buildStub(baseURL);
+  seedWarmSession();
   renderProvider(stub, baseURL);
 
   await waitFor(() => expect(fake.start).toHaveBeenCalledTimes(1));
@@ -381,7 +410,7 @@ describe('switchToAccount unifies org/managed-account switching through the devi
     await waitFor(() => expect(stub.listAccounts.mock.calls.length).toBeGreaterThan(listAccountsCallsBefore));
   });
 
-  it('switchToAccount(ACCOUNT_A3) — NOT yet on the device — keeps the first-time mint path and registers it via addCurrentAccount', async () => {
+  it('switchToAccount(ACCOUNT_A3) — NOT yet on the device — keeps the first-time mint path and activates it via registerAndActivate', async () => {
     const { fake, stub, switchToAccount } = await bootWithDeviceState(twoAccountDeviceState());
 
     const addCurrentAccountCallsBefore = fake.addCurrentAccount.mock.calls.length;
@@ -394,9 +423,12 @@ describe('switchToAccount unifies org/managed-account switching through the devi
     // First-time mint: `oxyServices.switchToAccount` is called for an account
     // not yet in the device's multi-account set…
     expect(switchToAccount).toHaveBeenCalledWith(ACCOUNT_A3);
-    // …then registered into the device set exactly like the cold-boot handoff
-    // — ONE new call on top of the cold-boot baseline.
-    expect(fake.addCurrentAccount.mock.calls.length).toBe(addCurrentAccountCallsBefore + 1);
+    // …then committed through the shared funnel as a DELIBERATE activation, which
+    // registers + activates the minted account via `registerAndActivate` (NOT the
+    // cold-boot `addCurrentAccount` path).
+    expect(fake.registerAndActivate).toHaveBeenCalledWith(ACCOUNT_A3);
+    // No additional cold-boot-style membership-only registration.
+    expect(fake.addCurrentAccount.mock.calls.length).toBe(addCurrentAccountCallsBefore);
     // Shared post-switch side effects still ran, same as the already-on-device branch.
     await waitFor(() => expect(stub.listAccounts.mock.calls.length).toBeGreaterThan(listAccountsCallsBefore));
   });

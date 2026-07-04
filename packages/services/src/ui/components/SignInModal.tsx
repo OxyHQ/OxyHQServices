@@ -1,13 +1,17 @@
 /**
- * SignInModal - Web-first centered sign-in modal (Continue with Oxy)
+ * SignInModal - Web-first centered sign-in modal (first-party password sign-in)
  *
- * A semi-transparent full-screen modal whose primary action is the one-tap
- * "Continue with Oxy" approval flow. The QR code is demoted to a collapsed
- * "Sign in on another device" disclosure (you can't scan your own screen).
+ * A semi-transparent full-screen modal whose PRIMARY action is the first-party
+ * password flow (identifier → password → optional 2FA), driven by
+ * `usePasswordSignIn`. Below an "or" divider, the cross-app device flow is a
+ * SECONDARY option: a same-device "Sign in with the Oxy app" deep-link plus a
+ * collapsed "Sign in on another device" QR disclosure (you can't scan your own
+ * screen). The device-flow loading/error state only gates that secondary section
+ * — the password form is always usable.
  *
- * ALL of the auth-session machinery (session-token creation, QR data, socket +
- * polling, waiting/error/retry state, the open-auth handler, deep-link return,
- * and cleanup) lives in the shared `useOxyAuthSession` hook, which the native
+ * The device-flow machinery (session-token creation, QR data, socket + polling,
+ * waiting/error/retry state, same-device deep-link, deep-link return, and
+ * cleanup) lives in the shared `useOxyAuthSession` hook, which the native
  * `OxyAuthScreen` also consumes — neither container re-implements the transport.
  *
  * Animates with a fade + scale effect.
@@ -15,7 +19,7 @@
 
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -30,7 +34,7 @@ import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import AnotherDeviceQR from './AnotherDeviceQR';
 import { useOxyAuthSession, OXY_ACCOUNTS_WEB_URL } from '../hooks/useOxyAuthSession';
-import { isCrossApexWeb } from '../../utils/crossApex';
+import { usePasswordSignIn } from '../hooks/usePasswordSignIn';
 
 // Store for modal visibility with subscription support
 let modalVisible = false;
@@ -104,18 +108,17 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
     handleWebSession,
     clientId,
 }) => {
-    const { qrData, qrPayload, isLoading, error, isWaiting, openAuthApproval, openSameDeviceApproval, retry } = useOxyAuthSession(
+    const { qrData, qrPayload, isLoading, error, isWaiting, openSameDeviceApproval, retry } = useOxyAuthSession(
         oxyServices,
         clientId,
         handleWebSession,
         { onSignedIn: hideSignInModal },
     );
 
-    // On a cross-apex web RP, only the "Continue with Oxy" IdP popup establishes
-    // a durable `fedcm_session`. The Commons-app handoffs (same-device deep-link
-    // + cross-device QR) approve OUTSIDE the browser, so they leave no IdP
-    // session and the user would be logged out on reload — hide them there.
-    const crossApexWeb = isCrossApexWeb();
+    // First-party password sign-in — the PRIMARY action. Closes the modal on a
+    // committed session; the device-first cold boot then drives the app into the
+    // authenticated state.
+    const pw = usePasswordSignIn({ onSignedIn: hideSignInModal });
 
     // Entrance animation.
     const opacity = useSharedValue(0);
@@ -175,35 +178,147 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                         </Text>
                     </View>
 
+                    {/* PRIMARY action — first-party password sign-in. Always usable;
+                        the device-flow loading/error state below never gates it. */}
+                    <View style={styles.form}>
+                        {pw.step === 'identifier' && (
+                            <TextInput
+                                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                value={pw.identifier}
+                                onChangeText={pw.setIdentifier}
+                                onSubmitEditing={pw.submitIdentifier}
+                                placeholder="Username or email"
+                                placeholderTextColor={theme.colors.textSecondary}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                keyboardType="email-address"
+                                returnKeyType="next"
+                                accessibilityLabel="Username or email"
+                            />
+                        )}
+
+                        {pw.step === 'password' && (
+                            <>
+                                <Text style={[styles.contextText, { color: theme.colors.textSecondary }]}>
+                                    {pw.identifier}
+                                </Text>
+                                <TextInput
+                                    style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                    value={pw.password}
+                                    onChangeText={pw.setPassword}
+                                    onSubmitEditing={pw.submitPassword}
+                                    placeholder="Password"
+                                    placeholderTextColor={theme.colors.textSecondary}
+                                    secureTextEntry
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    returnKeyType="go"
+                                    accessibilityLabel="Password"
+                                />
+                            </>
+                        )}
+
+                        {pw.step === 'twoFactor' && (
+                            <TextInput
+                                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                value={pw.code}
+                                onChangeText={pw.setCode}
+                                onSubmitEditing={pw.submitTwoFactor}
+                                placeholder={pw.useBackupCode ? 'Backup code' : '6-digit code'}
+                                placeholderTextColor={theme.colors.textSecondary}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                keyboardType={pw.useBackupCode ? 'default' : 'number-pad'}
+                                returnKeyType="go"
+                                accessibilityLabel={pw.useBackupCode ? 'Backup code' : 'Two-factor code'}
+                            />
+                        )}
+
+                        {pw.step === 'identifier' && (
+                            <Button
+                                variant="primary"
+                                onPress={pw.submitIdentifier}
+                                loading={pw.isSubmitting}
+                                disabled={pw.isSubmitting}
+                                style={styles.primaryButton}
+                            >
+                                Continue
+                            </Button>
+                        )}
+
+                        {pw.step === 'password' && (
+                            <Button
+                                variant="primary"
+                                onPress={pw.submitPassword}
+                                loading={pw.isSubmitting}
+                                disabled={pw.isSubmitting}
+                                style={styles.primaryButton}
+                            >
+                                Sign in
+                            </Button>
+                        )}
+
+                        {pw.step === 'twoFactor' && (
+                            <Button
+                                variant="primary"
+                                onPress={pw.submitTwoFactor}
+                                loading={pw.isSubmitting}
+                                disabled={pw.isSubmitting}
+                                style={styles.primaryButton}
+                            >
+                                Verify
+                            </Button>
+                        )}
+
+                        {pw.error && (
+                            <Text className="text-destructive" style={styles.formError}>{pw.error}</Text>
+                        )}
+
+                        {pw.step === 'twoFactor' && (
+                            <TouchableOpacity onPress={() => pw.setUseBackupCode(!pw.useBackupCode)} accessibilityRole="button" style={styles.linkButton}>
+                                <Text style={[styles.linkText, { color: theme.colors.primary }]}>
+                                    {pw.useBackupCode ? 'Use authenticator code' : 'Use a backup code'}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+                        {pw.step !== 'identifier' && (
+                            <TouchableOpacity onPress={pw.back} accessibilityRole="button" style={styles.linkButton}>
+                                <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>Back</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* "or" divider — separates the password form from the SECONDARY
+                        cross-app device flow below. */}
+                    <View style={styles.dividerRow}>
+                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+                        <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>or</Text>
+                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+                    </View>
+
+                    {/* SECONDARY — cross-app device flow. Its loading/error state gates
+                        ONLY this section; the password form above is always usable. In the
+                        device-first model these paths persist a durable session, so they
+                        are always shown when a payload exists. */}
                     {isLoading ? (
-                        <View style={styles.loadingContainer}>
-                            <Loading size="large" />
-                            <Text className="text-muted-foreground" style={styles.loadingText}>
+                        <View style={styles.deviceLoading}>
+                            <Loading size="small" style={styles.statusSpinner} />
+                            <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
                                 Preparing sign in...
                             </Text>
                         </View>
                     ) : error ? (
                         <View style={styles.errorContainer}>
                             <Text className="text-destructive" style={styles.errorText}>{error}</Text>
-                            <Button variant="primary" onPress={retry} style={styles.primaryButton}>Try Again</Button>
+                            <Button variant="secondary" onPress={retry} style={styles.secondaryButton}>Try Again</Button>
                         </View>
                     ) : (
                         <>
-                            {/* Primary action — Continue with Oxy */}
-                            <Button
-                                variant="primary"
-                                onPress={openAuthApproval}
-                                icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.primaryForeground} style={styles.buttonIcon} />}
-                                style={styles.primaryButton}
-                            >
-                                Continue with Oxy
-                            </Button>
-
                             {/* Same-device "Sign in with Oxy" handoff — deep-links into the
                                 native Oxy app to approve. Shown only when the handoff backend
-                                returned a payload, and never on a cross-apex web RP (the
-                                approval happens outside the browser → no durable session). */}
-                            {!crossApexWeb && qrPayload && (
+                                returned a payload. */}
+                            {qrPayload && (
                                 <Button
                                     variant="secondary"
                                     onPress={openSameDeviceApproval}
@@ -224,14 +339,10 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                                 </View>
                             )}
 
-                            {/* Collapsed "sign in on another device" QR disclosure. Hidden on
-                                a cross-apex web RP: a remote Commons-app approval completes via
-                                the device-flow claim, which plants no `fedcm_session`. */}
-                            {!crossApexWeb && (
-                                <View style={styles.qrSection}>
-                                    <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
-                                </View>
-                            )}
+                            {/* Collapsed "sign in on another device" QR disclosure. */}
+                            <View style={styles.qrSection}>
+                                <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
+                            </View>
                         </>
                     )}
 
@@ -307,6 +418,57 @@ const styles = StyleSheet.create({
     },
     buttonIcon: {
         marginRight: 10,
+    },
+    form: {
+        width: '100%',
+    },
+    input: {
+        width: '100%',
+        borderWidth: 1,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        fontSize: 15,
+        marginBottom: 12,
+    },
+    contextText: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    formError: {
+        fontSize: 14,
+        textAlign: 'center',
+        marginTop: 12,
+    },
+    linkButton: {
+        alignSelf: 'center',
+        paddingVertical: 8,
+        marginTop: 8,
+    },
+    linkText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    dividerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '100%',
+        marginVertical: 20,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+    },
+    dividerText: {
+        marginHorizontal: 12,
+        fontSize: 13,
+    },
+    deviceLoading: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
     },
     statusContainer: {
         flexDirection: 'row',
