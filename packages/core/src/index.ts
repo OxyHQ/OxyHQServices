@@ -504,8 +504,8 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 // constant. `@oxyhq/core/server` re-exports `registrableApex` + `SSO_CALLBACK_PATH`
 // for the api; the IdP imports all three from here.
 // ---------------------------------------------------------------------------
-export { registrableApex } from './utils/fapiAutoDetect';
-export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX } from './utils/authWebUrl';
+export { registrableApex } from './utils/registrableApex';
+export { CENTRAL_IDP_APEX } from './utils/authWebUrl';
 export { SSO_CALLBACK_PATH } from './utils/ssoBounce';
 
 export { runColdBoot } from './utils/coldBoot';
