@@ -21,6 +21,7 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import linksRoutes from './routes/links';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
+import deviceAuthRoutes from './routes/deviceAuth';
 import assetRoutes from './routes/assets';
 import cdnRoutes from './routes/cdn';
 import storageRoutes from './routes/storage';
@@ -507,6 +508,11 @@ app.use(bruteForceProtection);
 app.get('/csrf-token', getCsrfToken);
 
 // API Routes
+// Device-first auth surface (ADDITIVE). Mounted BEFORE the generic `/auth` so
+// `/auth/device/*` and `/auth/refresh-token` are owned by this router; it brings
+// its own per-endpoint rate limiters (NOT the broad `authRateLimiter`, avoiding
+// double-counting). Unmatched paths fall through to the generic `/auth` router.
+app.use("/auth", deviceAuthRoutes);
 // Apply stricter rate limiting to auth routes
 app.use("/auth", authRateLimiter, authRoutes);
 app.use("/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)

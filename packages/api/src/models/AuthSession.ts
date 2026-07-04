@@ -53,6 +53,15 @@ export interface IAuthSession extends Document {
   /** Random nonce embedded in the QR payload (audit only; not a binding check). */
   challengeNonce?: string;
   applicationId: mongoose.Types.ObjectId; // Canonical, required reference to a registered Application
+  /**
+   * Central deviceId of the browser/device that STARTED this cross-app auth
+   * session (device-flow QR attribution), resolved from an optional `deviceToken`
+   * at create time. When present, the authorize paths mint the resulting session
+   * onto this device so a cross-device QR sign-in converges on the originating
+   * device's `DeviceSession` set instead of sprawling a fresh device. Optional —
+   * native/legacy callers that pass no `deviceToken` leave it unset.
+   */
+  deviceId?: string;
   status: AuthSessionStatus;
   authorizedBy?: string;     // Public key of the user who authorized
   authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing user

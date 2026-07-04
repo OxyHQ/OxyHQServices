@@ -26,6 +26,7 @@ import {
   revokeAllUserFamilies,
   clearAllRefreshCookies,
 } from '../services/refreshToken.service';
+import { resolveLoginDeviceId, finalizeDeviceLogin } from '../services/deviceLogin.service';
 import type { AuthRequest } from '../middleware/auth';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
@@ -331,7 +332,7 @@ export class SessionController {
    */
   static async signUp(req: Request, res: Response) {
     try {
-      const { email, username, password, name, deviceName, deviceFingerprint } = req.body;
+      const { email, username, password, name, deviceName, deviceFingerprint, deviceToken } = req.body;
 
       if (
         !email ||
@@ -412,15 +413,32 @@ export class SessionController {
         });
       }
 
+      // Device-first attribution (oxy_device cookie > deviceToken > none),
+      // resolved before mint so the session carries the central deviceId.
+      const signupDeviceId = await resolveLoginDeviceId(req, deviceToken);
+
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        { deviceName, deviceFingerprint, ...(signupDeviceId ? { deviceId: signupDeviceId } : {}) }
       );
 
-      const response = buildSessionAuthResponse(session, user);
-      if (!response) {
+      const baseSignupResponse = buildSessionAuthResponse(session, user);
+      if (!baseSignupResponse) {
         return res.status(500).json({ message: 'Failed to format user data' });
+      }
+      const response: typeof baseSignupResponse & { refreshToken?: string } = baseSignupResponse;
+
+      // Register into the device set (add-only) + broadcast, and additively
+      // attach a rotating refresh token when the lane allows it. Best-effort.
+      const signupDeviceExtras = await finalizeDeviceLogin({
+        req,
+        deviceId: signupDeviceId,
+        session,
+        userId: user._id.toString(),
+      });
+      if (signupDeviceExtras.refreshToken) {
+        response.refreshToken = signupDeviceExtras.refreshToken;
       }
 
       try {
@@ -526,11 +544,11 @@ export class SessionController {
    */
   static async verifyChallenge(req: Request, res: Response) {
     try {
-      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint } = req.body;
+      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint, deviceToken } = req.body;
 
       if (!publicKey || !challenge || !signature || !timestamp) {
-        return res.status(400).json({ 
-          message: 'Public key, challenge, signature, and timestamp are required' 
+        return res.status(400).json({
+          message: 'Public key, challenge, signature, and timestamp are required'
         });
       }
 
@@ -573,11 +591,15 @@ export class SessionController {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Device-first attribution (oxy_device cookie > deviceToken > none),
+      // resolved before mint so the session carries the central deviceId.
+      const verifyDeviceId = await resolveLoginDeviceId(req, deviceToken);
+
       // Create session
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        { deviceName, deviceFingerprint, ...(verifyDeviceId ? { deviceId: verifyDeviceId } : {}) }
       );
       const sessionAfterCreate = Date.now();
 
@@ -623,7 +645,7 @@ export class SessionController {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
 
-      const response: SessionAuthResponse = {
+      const response: SessionAuthResponse & { refreshToken?: string } = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
@@ -634,6 +656,18 @@ export class SessionController {
           avatar: userData.avatar
         }
       };
+
+      // Register into the device set (add-only) + broadcast, and additively
+      // attach a rotating refresh token when the lane allows it. Best-effort.
+      const verifyDeviceExtras = await finalizeDeviceLogin({
+        req,
+        deviceId: verifyDeviceId,
+        session,
+        userId: user._id.toString(),
+      });
+      if (verifyDeviceExtras.refreshToken) {
+        response.refreshToken = verifyDeviceExtras.refreshToken;
+      }
 
       res.json(response);
     } catch (error) {
@@ -660,7 +694,7 @@ export class SessionController {
    */
   static async signIn(req: Request, res: Response) {
     try {
-      const { identifier, email, username, password, deviceName, deviceFingerprint } = req.body;
+      const { identifier, email, username, password, deviceName, deviceFingerprint, deviceToken } = req.body;
       const loginIdentifier = identifier || email || username;
 
       if (!loginIdentifier || !password || typeof password !== 'string') {
@@ -741,10 +775,16 @@ export class SessionController {
         req
       );
 
+      // Resolve the device this sign-in attaches to (oxy_device cookie >
+      // deviceToken > none) BEFORE minting the session so its central deviceId
+      // is stamped onto the session's token claims. Additive — null keeps the
+      // pre-existing device attribution (UA/IP/random).
+      const loginDeviceId = await resolveLoginDeviceId(req, deviceToken);
+
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        { deviceName, deviceFingerprint, ...(loginDeviceId ? { deviceId: loginDeviceId } : {}) }
       );
 
       const baseResponse = buildSessionAuthResponse(session, user);
@@ -754,12 +794,28 @@ export class SessionController {
       }
 
       // Include anomaly information in response if detected
-      const response: SessionAuthResponse & { securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> } } = baseResponse;
+      const response: SessionAuthResponse & {
+        securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> };
+        refreshToken?: string;
+      } = baseResponse;
       if (anomalyCheck.hasAnomalies) {
         response.securityAlert = {
           message: 'Unusual activity detected on your account',
           anomalies: anomalyCheck.anomalies,
         };
+      }
+
+      // Device-first lane: register the session into the resolved device set
+      // (add-only, never flips active) + broadcast, and additively attach a
+      // rotating refresh token when the lane allows it. Best-effort.
+      const deviceExtras = await finalizeDeviceLogin({
+        req,
+        deviceId: loginDeviceId,
+        session,
+        userId: user._id.toString(),
+      });
+      if (deviceExtras.refreshToken) {
+        response.refreshToken = deviceExtras.refreshToken;
       }
 
       try {

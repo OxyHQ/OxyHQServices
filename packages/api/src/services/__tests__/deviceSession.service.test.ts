@@ -1,6 +1,9 @@
+import * as nodeCrypto from 'crypto';
+
 const mockFindOne = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 const mockUpdateOne = jest.fn();
+const mockCreate = jest.fn();
 const mockDeactivate = jest.fn();
 const mockGetAccessToken = jest.fn();
 const mockValidateSessionById = jest.fn();
@@ -11,6 +14,7 @@ jest.mock('../../models/DeviceSession', () => ({
     findOne: (...a: unknown[]) => mockFindOne(...a),
     findOneAndUpdate: (...a: unknown[]) => mockFindOneAndUpdate(...a),
     updateOne: (...a: unknown[]) => mockUpdateOne(...a),
+    create: (...a: unknown[]) => mockCreate(...a),
   },
 }));
 jest.mock('../session.service', () => ({
@@ -22,6 +26,23 @@ jest.mock('../session.service', () => ({
   },
 }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
+// deviceSession.service now additively imports these; mock them so the module
+// graph loads under the global mongoose mock (no real RefreshToken/AuthCode).
+const mockRevokeAllFamiliesBySession = jest.fn();
+jest.mock('../refreshToken.service', () => ({
+  revokeAllFamiliesBySession: (...a: unknown[]) => mockRevokeAllFamiliesBySession(...a),
+}));
+const mockRevokeDeviceTokens = jest.fn();
+jest.mock('../deviceToken.service', () => ({
+  revokeDeviceTokens: (...a: unknown[]) => mockRevokeDeviceTokens(...a),
+}));
+jest.mock('../oauthCode.service', () => {
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
+  return {
+    sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
+    base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
+  };
+});
 
 import deviceSessionService, { projectState } from '../deviceSession.service';
 
@@ -522,5 +543,143 @@ describe('resolveRegisteredSession', () => {
 
     const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
     expect(result).toBeNull();
+  });
+});
+
+describe('addAccount — activate option', () => {
+  it("'if-empty' does NOT flip the active account when one already exists", async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 3,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: { toString: () => 'a1' }, revision: 4,
+    }));
+
+    await deviceSessionService.addAccount('d1', { accountId: 'a2', sessionId: 's2' }, { activate: 'if-empty' });
+
+    const update = mockFindOneAndUpdate.mock.calls[0][1];
+    // Active stays a1 — the add-only lane never steals the active selection.
+    expect(update.$set.activeAccountId).toBe('a1');
+  });
+
+  it("'if-empty' DOES set active when the device has no active account", async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: { toString: () => 'a2' }, revision: 1,
+    }));
+
+    await deviceSessionService.addAccount('d1', { accountId: 'a2', sessionId: 's2' }, { activate: 'if-empty' });
+
+    const update = mockFindOneAndUpdate.mock.calls[0][1];
+    expect(update.$set.activeAccountId).toBe('a2');
+  });
+
+  it("default 'always' sets the new account active (existing callers unchanged)", async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 3,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: { toString: () => 'a2' }, revision: 4,
+    }));
+
+    await deviceSessionService.addAccount('d1', { accountId: 'a2', sessionId: 's2' });
+
+    const update = mockFindOneAndUpdate.mock.calls[0][1];
+    expect(update.$set.activeAccountId).toBe('a2');
+  });
+});
+
+describe('signout — refresh family cascade', () => {
+  it('revokes ALL refresh families for each signed-out session (single-account: deviceTokens untouched)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 3,
+    }));
+
+    await deviceSessionService.signout('d1', { accountId: 'a1' });
+
+    expect(mockDeactivate).toHaveBeenCalledWith('s1');
+    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
+    // Single-account signout must NOT revoke device tokens — other apps/accounts
+    // on the same device still legitimately use theirs.
+    expect(mockRevokeDeviceTokens).not.toHaveBeenCalled();
+  });
+
+  it('signout-ALL revokes device tokens for the device (after the refresh-family revocation)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 4,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 5,
+    }));
+
+    await deviceSessionService.signout('d1', { all: true });
+
+    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
+    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s2');
+    expect(mockRevokeDeviceTokens).toHaveBeenCalledWith('d1');
+  });
+});
+
+describe('getStateByCookieKey', () => {
+  it('returns the projected state for a known cookie secret', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'dev-cookie',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 5,
+      updatedAt: new Date(1720000000000),
+    }));
+    const state = await deviceSessionService.getStateByCookieKey('raw-secret');
+    expect(state?.deviceId).toBe('dev-cookie');
+    // Looked up by the HASH of the secret, never the raw value.
+    const query = mockFindOne.mock.calls[0][0];
+    expect(query.cookieKeyHash).toBeDefined();
+    expect(query.cookieKeyHash).not.toBe('raw-secret');
+  });
+
+  it('returns null for an unknown cookie / empty key', async () => {
+    mockFindOne.mockReturnValueOnce(lean(null));
+    expect(await deviceSessionService.getStateByCookieKey('unknown')).toBeNull();
+    expect(await deviceSessionService.getStateByCookieKey('')).toBeNull();
+  });
+});
+
+describe('ensureDeviceForCookie', () => {
+  it('mints a new device + cookie secret and stores only the hash', async () => {
+    mockCreate.mockResolvedValueOnce({});
+    const { deviceId, rawCookieKey } = await deviceSessionService.ensureDeviceForCookie();
+
+    expect(typeof deviceId).toBe('string');
+    expect(deviceId.length).toBeGreaterThan(0);
+    expect(typeof rawCookieKey).toBe('string');
+    expect(rawCookieKey.length).toBeGreaterThan(20);
+
+    const created = mockCreate.mock.calls[0][0];
+    expect(created.deviceId).toBe(deviceId);
+    // The stored cookieKeyHash is the sha256 of the returned secret — not the secret.
+    expect(created.cookieKeyHash).toBe(
+      nodeCrypto.createHash('sha256').update(rawCookieKey).digest('hex'),
+    );
+    expect(created.cookieKeyHash).not.toBe(rawCookieKey);
   });
 });
