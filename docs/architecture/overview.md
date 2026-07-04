@@ -184,11 +184,16 @@ and delegates 401 refresh to the session owner.
   ALB, image built `linux/arm64` and pushed to ECR by `deploy-aws.yml`. Domains
   `api.oxy.so` (+ website API aliases).
 - `packages/auth` (third-party OAuth IdP + device-account chooser feed) →
-  Cloudflare Pages, deployed as a single `_worker.js` at the dist root
-  (advanced mode). A static-only deploy serves SPA HTML for the dynamic
-  `GET /api/device-accounts` feed instead of JSON — caught pre-deploy by an
-  execution guard (`scripts/verify-worker.mjs`) and post-deploy by a smoke
-  gate, not just a file-presence check.
+  Cloudflare Pages: the SPA is pure static output; the one dynamic route
+  (`GET /api/device-accounts`) is a **Pages Function**
+  (`packages/auth/functions/api/device-accounts.ts`), not an advanced-mode
+  `_worker.js` — CF Pages was not reliably invoking a single-file worker on
+  this project. The deploy workflow verifies the Functions directory compiles
+  before deploying, and a post-deploy smoke gate re-checks the live host. As of
+  this writing the deploy pipeline itself has a separate, unresolved failure
+  (an npm override conflict in the deploy action) — see the repo-root
+  `AGENTS.md`'s "Auth App" section for the live status before trusting this is
+  deployed.
 - Web RP frontends (accounts, console, inbox, …) → Cloudflare Pages.
 - `@oxyhq/node` → self-hosted by users (Docker + Caddy) or, for the managed
   vault, an Oxy-operated endpoint (`MANAGED_NODE_BASE_URL`).

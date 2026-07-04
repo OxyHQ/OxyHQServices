@@ -22,9 +22,9 @@ There is no browser-mediated federation API and no central session-issuing
 redirect for first-party apps anymore. A device (a browser + origin pair, or a
 native app install) proves its session directly against `api.oxy.so` using a
 durable, first-party cookie plus a persisted rotating refresh-token family.
-`auth.oxy.so` (package `packages/auth`, a standalone Vite + Hono app deployed
-as a Cloudflare Pages `_worker.js`) still exists, but only as a **third-party
-OAuth authorize/consent IdP** — for apps that integrate against Oxy via OAuth
+`auth.oxy.so` (package `packages/auth`, a standalone Vite SPA + one Cloudflare
+Pages Function) still exists, but only as a **third-party OAuth
+authorize/consent IdP** — for apps that integrate against Oxy via OAuth
 instead of embedding the SDK — plus a device-account chooser feed it reads
 through the same first-party cookie.
 

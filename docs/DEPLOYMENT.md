@@ -113,7 +113,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
 | Project | Source | Notes |
 |---------|--------|-------|
-| `oxy-auth` | `packages/auth/` | Builds the Vite SPA **and** the device-account-chooser worker `_worker.js` (Cloudflare Pages advanced mode — a single `_worker.js` at the dist root, not a Pages Functions directory). The workflow builds it, then runs `scripts/verify-worker.mjs`, which imports the built worker and asserts it actually EXECUTES and routes `GET /api/device-accounts` to JSON — not just that the file exists — before deploying with a pinned `wrangler` version. A post-deploy smoke gate (`scripts/smoke-idp.ts`) then re-checks the live host. |
+| `oxy-auth` | `packages/auth/` | Builds the Vite SPA; the one dynamic route (`GET /api/device-accounts`, the device-account chooser) is a **Cloudflare Pages Function** (`packages/auth/functions/api/device-accounts.ts`), not an advanced-mode `_worker.js` (CF Pages did not reliably invoke a single-file worker on this project). The workflow runs `bunx wrangler@4 pages functions build functions` to fail fast on a broken Function before deploying with a pinned `wrangler` version. A post-deploy smoke gate (`scripts/smoke-idp.ts`) then re-checks the live host. **As of this writing the deploy step itself fails** (`npm error EOVERRIDE` from `cloudflare/wrangler-action`'s `workingDirectory: packages/auth` invoking npm against the repo-root `@oxyhq/bloom` override) — check `gh run list --workflow=deploy-cloudflare.yml` for current status before assuming this is live. |
 | `oxy-accounts` | `packages/accounts/` | Expo Web export -> Cloudflare Pages |
 | `oxy-inbox` | `packages/inbox/` | Expo Web export |
 | `oxy-console` | `packages/console/` | Nuxt or Vite output |
