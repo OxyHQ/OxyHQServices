@@ -12,6 +12,8 @@ import { User, IUser } from '../models/User';
 import { IAccountMember } from '../models/AccountMember';
 import { IAccountCredential } from '../models/AccountCredential';
 import sessionService from '../services/session.service';
+import deviceSessionService from '../services/deviceSession.service';
+import { broadcastDeviceState } from '../utils/socket';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
 import { logger } from '../utils/logger';
 import type { SessionAuthResponse } from '../types/session';
@@ -358,6 +360,34 @@ router.post(
       operatedByUserId: operatorId,
       ...(callerDeviceId ? { deviceId: callerDeviceId } : {}),
     });
+
+    // Register the managed session into the operator's device set server-side so
+    // it survives reload and syncs cross-domain via the socket room — a switch is
+    // a deliberate activation, so `activate: 'always'`. This replaces the client
+    // establishing the slot separately. Best-effort: never fail the switch on a
+    // device-set write. Only when the operator's device is known.
+    if (callerDeviceId) {
+      try {
+        const { state, changed } = await deviceSessionService.addAccount(
+          session.deviceId,
+          {
+            accountId: account._id.toString(),
+            sessionId: session.sessionId,
+            operatedByUserId: operatorId,
+          },
+          { activate: 'always' },
+        );
+        if (changed) broadcastDeviceState(state);
+      } catch (error) {
+        logger.warn('[accounts] switch: device-set registration failed', {
+          component: 'accounts',
+          method: 'switch',
+          operatorId,
+          targetAccountId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     const userData = formatUserResponse(account);
     if (!userData) {

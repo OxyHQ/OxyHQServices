@@ -5,6 +5,7 @@ import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
+import { resolveLoginDeviceId, finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { buildSessionAuthResponse } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
@@ -294,7 +295,7 @@ export async function verify2FAToken(req: Request, res: Response) {
  */
 export async function verify2FALogin(req: Request, res: Response) {
   try {
-    const { loginToken, token, backupCode, deviceName, deviceFingerprint } = req.body;
+    const { loginToken, token, backupCode, deviceName, deviceFingerprint, deviceToken } = req.body;
 
     if (!loginToken) {
       return res.status(400).json({ message: 'Login token is required' });
@@ -394,16 +395,33 @@ export async function verify2FALogin(req: Request, res: Response) {
     user.twoFactorAuth.verifiedAt = new Date();
     await user.save();
 
+    // Device-first attribution (oxy_device cookie > deviceToken > none),
+    // resolved before mint so the session carries the central deviceId.
+    const twoFactorDeviceId = await resolveLoginDeviceId(req, deviceToken);
+
     // Create session (same as signIn would)
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      { deviceName, deviceFingerprint }
+      { deviceName, deviceFingerprint, ...(twoFactorDeviceId ? { deviceId: twoFactorDeviceId } : {}) }
     );
 
-    const response = buildSessionAuthResponse(session, user);
-    if (!response) {
+    const baseTwoFactorResponse = buildSessionAuthResponse(session, user);
+    if (!baseTwoFactorResponse) {
       return res.status(500).json({ message: 'Failed to format user data' });
+    }
+    const response: typeof baseTwoFactorResponse & { refreshToken?: string } = baseTwoFactorResponse;
+
+    // Register into the device set (add-only) + broadcast, and additively attach
+    // a rotating refresh token when the lane allows it. Best-effort.
+    const twoFactorDeviceExtras = await finalizeDeviceLogin({
+      req,
+      deviceId: twoFactorDeviceId,
+      session,
+      userId: user._id.toString(),
+    });
+    if (twoFactorDeviceExtras.refreshToken) {
+      response.refreshToken = twoFactorDeviceExtras.refreshToken;
     }
 
     try {

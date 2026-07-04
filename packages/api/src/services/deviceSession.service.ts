@@ -1,6 +1,9 @@
+import * as crypto from 'crypto';
 import type { DeviceSessionState, SessionAccount } from '@oxyhq/contracts';
 import DeviceSession, { IDeviceSession, IDeviceSessionAccount } from '../models/DeviceSession';
 import sessionService from './session.service';
+import { revokeAllFamiliesBySession } from './refreshToken.service';
+import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 import { logger } from '../utils/logger';
 
 function idToString(value: unknown): string | null {
@@ -101,7 +104,14 @@ class DeviceSessionService {
   async addAccount(
     deviceId: string,
     input: { accountId: string; sessionId: string; operatedByUserId?: string },
+    opts?: { activate?: 'always' | 'if-empty' },
   ): Promise<AddAccountResult> {
+    // `activate` default 'always' keeps every existing caller (device
+    // add/switch, cold-boot handoff) byte-identical. 'if-empty' is the ADD-ONLY
+    // attribution semantic used by the device-first login lanes: register the
+    // new account into the set but NEVER steal the device's current active
+    // selection — it only becomes active when nothing else is.
+    const activate = opts?.activate ?? 'always';
     const current = await this.load(deviceId);
     const existing = (current?.accounts ?? []).find((a) => idToString(a.accountId) === input.accountId);
 
@@ -109,6 +119,12 @@ class DeviceSessionService {
     if (current && existing && existing.sessionId === input.sessionId) {
       return { state: projectState(current), changed: false };
     }
+
+    const currentActiveId = idToString(current?.activeAccountId ?? null);
+    // 'if-empty' preserves an existing active account; only claims active when
+    // the device currently has none.
+    const nextActiveAccountId =
+      activate === 'always' || !currentActiveId ? input.accountId : currentActiveId;
 
     const others = (current?.accounts ?? []).filter((a) => idToString(a.accountId) !== input.accountId);
     // Case 2 — replacing an account's session (re-add with a new sessionId) must
@@ -132,7 +148,7 @@ class DeviceSessionService {
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },
       {
-        $set: { accounts: [...others, account], activeAccountId: input.accountId },
+        $set: { accounts: [...others, account], activeAccountId: nextActiveAccountId },
         $inc: { revision: 1 },
       },
       { new: true, upsert: true },
@@ -214,6 +230,15 @@ class DeviceSessionService {
         await sessionService.deactivateSession(a.sessionId);
       } catch (error) {
         logger.warn('deviceSession.signout: deactivate failed', { sessionId: a.sessionId, error });
+      }
+      // Cascade the signout to the persisted rotating refresh families:
+      // deactivateSession alone leaves a stored refresh token able to mint fresh
+      // access tokens, so revoke EVERY family bound to the session. Best-effort —
+      // a revoke failure must never block the signout.
+      try {
+        await revokeAllFamiliesBySession(a.sessionId);
+      } catch (error) {
+        logger.warn('deviceSession.signout: refresh family revoke failed', { sessionId: a.sessionId, error });
       }
     }
     const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
@@ -307,7 +332,49 @@ class DeviceSessionService {
       { $set: { accounts: remaining, activeAccountId: nextActive }, $inc: { revision: 1 } },
     );
   }
+
+  /**
+   * Resolve the `DeviceSessionState` bound to an `oxy_device` cookie SECRET.
+   * The cookie value is hashed and looked up against `cookieKeyHash` — the raw
+   * secret is never stored, and the deviceId is never derivable from the cookie.
+   * Returns null when the cookie maps to no device (unknown / pruned / never
+   * planted).
+   */
+  async getStateByCookieKey(rawCookieKey: string): Promise<DeviceSessionState | null> {
+    if (typeof rawCookieKey !== 'string' || rawCookieKey.length === 0) return null;
+    const cookieKeyHash = sha256Hex(rawCookieKey);
+    const doc = await DeviceSession.findOne({ cookieKeyHash }).lean<IDeviceSession>();
+    if (!doc) return null;
+    return projectState(doc);
+  }
+
+  /**
+   * Ensure a device exists for a fresh `oxy_device` cookie. Mints a NEW random
+   * deviceId AND a NEW random 256-bit cookie secret, persists a device doc bound
+   * to `sha256(secret)`, and returns both. Called by the bootstrap hop when the
+   * request carries no (or an unknown) device cookie — the caller then plants the
+   * returned `rawCookieKey` as the `oxy_device` cookie. The deviceId is server-
+   * minted and never leaves the server; only the opaque cookie secret does.
+   */
+  async ensureDeviceForCookie(): Promise<{ deviceId: string; rawCookieKey: string }> {
+    const deviceId = crypto.randomUUID();
+    const rawCookieKey = base64UrlEncode(crypto.randomBytes(32));
+    const cookieKeyHash = sha256Hex(rawCookieKey);
+    await DeviceSession.create({
+      deviceId,
+      accounts: [],
+      activeAccountId: null,
+      revision: 0,
+      cookieKeyHash,
+    });
+    return { deviceId, rawCookieKey };
+  }
 }
 
-const deviceSessionService = new DeviceSessionService();
+// Exported BOTH as the default (existing static `import deviceSessionService`
+// call sites) AND as a named export so dynamic `await import(...)` consumers can
+// destructure it cleanly under NodeNext CJS interop (a default-only export
+// resolves to the namespace object there — same reason `account.service`
+// exports `accountService` by name).
+export const deviceSessionService = new DeviceSessionService();
 export default deviceSessionService;

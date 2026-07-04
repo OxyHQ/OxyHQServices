@@ -174,12 +174,16 @@ export async function authorizeSessionWithSignedChallenge(
   }
   const userId = user._id.toString();
 
-  // 4. Mint the session for the originating app, owned by the signer.
+  // 4. Mint the session for the originating app, owned by the signer. When the
+  //    flow was started with a device binding (`deviceId` persisted at create
+  //    time), pass it as the explicit deviceId so the session lands on the
+  //    originating device set instead of sprawling a fresh device.
   const app = await Application.findById(authSession.applicationId);
   const appLabel = app ? app.name : 'App';
   const newSession = await sessionService.createSession(userId, req, {
     deviceName: deviceName || `${appLabel} App`,
     deviceFingerprint,
+    ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
   });
 
   // 5. Bind the result onto the session row.
