@@ -161,9 +161,9 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({ theme, insets }
         }
     }, [switchingId, switchToAccount, t]);
 
-    const title = showChooser ? 'Choose an account' : 'Sign in to Oxy';
+    const title = showChooser ? t('signin.chooser.title') : 'Sign in to Oxy';
     const subtitle = showChooser
-        ? 'Continue as an account below, or use another.'
+        ? t('signin.chooser.subtitle')
         : 'Continue with your Oxy identity to sign in securely.';
 
     return (
@@ -214,7 +214,7 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({ theme, insets }
                                     style={styles.backRow}
                                 >
                                     <Ionicons name="chevron-back" size={18} color={theme.colors.textSecondary} />
-                                    <Text style={[styles.backText, { color: theme.colors.textSecondary }]}>Choose an account</Text>
+                                    <Text style={[styles.backText, { color: theme.colors.textSecondary }]}>{t('signin.chooser.title')}</Text>
                                 </TouchableOpacity>
                             )}
 

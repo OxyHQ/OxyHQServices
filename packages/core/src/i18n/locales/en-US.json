@@ -2,6 +2,13 @@
   "signin": {
     "title": "Sign In",
     "subtitle": "Sign in to continue your journey",
+    "chooser": {
+      "title": "Choose an account",
+      "subtitle": "Continue as an account below, or use another.",
+      "signedIn": "Signed in",
+      "useAnother": "Use another account",
+      "continueAs": "Continue as {{name}}"
+    },
     "addAccountTitle": "Add Another Account",
     "addAccountSubtitle": "Sign in with another account",
     "username": {

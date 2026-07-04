@@ -32,7 +32,19 @@ jest.mock('../../src/ui/context/OxyContext', () => ({
 
 jest.mock('../../src/ui/hooks/useI18n', () => ({
   __esModule: true,
-  useI18n: () => ({ t: (key: string) => key, locale: 'en' }),
+  useI18n: () => ({
+    t: (key: string, vars?: Record<string, string>) => {
+      const map: Record<string, string> = {
+        'signin.chooser.title': 'Choose an account',
+        'signin.chooser.subtitle': 'Continue as an account below, or use another.',
+        'signin.chooser.signedIn': 'Signed in',
+        'signin.chooser.useAnother': 'Use another account',
+        'signin.chooser.continueAs': `Continue as ${vars?.name ?? ''}`,
+      };
+      return map[key] ?? key;
+    },
+    locale: 'en',
+  }),
 }));
 
 jest.mock('../../src/ui/hooks/useOxyAuthSession', () => ({

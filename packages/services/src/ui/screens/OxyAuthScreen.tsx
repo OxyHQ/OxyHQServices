@@ -90,9 +90,9 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
     backgroundColor: bloomTheme.colors.backgroundSecondary,
   };
 
-  const title = showChooser ? 'Choose an account' : 'Sign in to Oxy';
+  const title = showChooser ? t('signin.chooser.title') : 'Sign in to Oxy';
   const subtitle = showChooser
-    ? 'Continue as an account below, or use another.'
+    ? t('signin.chooser.subtitle')
     : 'Continue with your Oxy identity to sign in securely';
 
   return (

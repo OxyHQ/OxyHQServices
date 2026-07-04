@@ -18,6 +18,21 @@ jest.mock('../../src/ui/components/Avatar', () => ({
   default: () => null,
 }));
 
+jest.mock('../../src/ui/hooks/useI18n', () => ({
+  __esModule: true,
+  useI18n: () => ({
+    t: (key: string, vars?: Record<string, string>) => {
+      const map: Record<string, string> = {
+        'signin.chooser.signedIn': 'Signed in',
+        'signin.chooser.useAnother': 'Use another account',
+        'signin.chooser.continueAs': `Continue as ${vars?.name ?? ''}`,
+      };
+      return map[key] ?? key;
+    },
+    locale: 'en',
+  }),
+}));
+
 // eslint-disable-next-line import/first
 import SignInAccountChooser from '../../src/ui/components/SignInAccountChooser';
 

@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from './Avatar';
+import { useI18n } from '../hooks/useI18n';
 import type { SwitchableAccount } from '../hooks/useSwitchableAccounts';
 
 export interface SignInAccountChooserProps {
@@ -38,6 +39,7 @@ export const SignInAccountChooser: React.FC<SignInAccountChooserProps> = ({
     disabled,
 }) => {
     const { colors } = useTheme();
+    const { t } = useI18n();
 
     return (
         <View style={styles.container}>
@@ -48,7 +50,7 @@ export const SignInAccountChooser: React.FC<SignInAccountChooserProps> = ({
                     <TouchableOpacity
                         key={account.accountId}
                         accessibilityRole="button"
-                        accessibilityLabel={`Continue as ${account.displayName}`}
+                        accessibilityLabel={t('signin.chooser.continueAs', { name: account.displayName })}
                         accessibilityState={{ selected: account.isCurrent, disabled: Boolean(disabled) }}
                         onPress={() => onSelectAccount(account)}
                         disabled={disabled}
@@ -76,7 +78,9 @@ export const SignInAccountChooser: React.FC<SignInAccountChooserProps> = ({
                         ) : account.isCurrent ? (
                             <View style={[styles.currentPill, { backgroundColor: colors.card }]}>
                                 <Ionicons name="checkmark" size={14} color={colors.primary} />
-                                <Text style={[styles.currentPillText, { color: colors.primary }]}>Signed in</Text>
+                                <Text style={[styles.currentPillText, { color: colors.primary }]}>
+                                    {t('signin.chooser.signedIn')}
+                                </Text>
                             </View>
                         ) : (
                             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
@@ -87,7 +91,7 @@ export const SignInAccountChooser: React.FC<SignInAccountChooserProps> = ({
 
             <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel="Use another account"
+                accessibilityLabel={t('signin.chooser.useAnother')}
                 onPress={onUseAnother}
                 disabled={disabled}
                 activeOpacity={0.7}
@@ -97,7 +101,7 @@ export const SignInAccountChooser: React.FC<SignInAccountChooserProps> = ({
                     <Ionicons name="person-add-outline" size={20} color={colors.textSecondary} />
                 </View>
                 <View style={styles.info}>
-                    <Text style={[styles.name, { color: colors.text }]}>Use another account</Text>
+                    <Text style={[styles.name, { color: colors.text }]}>{t('signin.chooser.useAnother')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
