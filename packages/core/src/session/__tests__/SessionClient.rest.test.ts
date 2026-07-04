@@ -77,4 +77,29 @@ describe('SessionClient REST', () => {
     expect(c.getState()?.revision).toBe(7);
     expect(host.setTokens).not.toHaveBeenCalled();
   });
+
+  it('accepts a NEW device\'s lower-revision state and plants its token (cross-device revision reset)', async () => {
+    const deviceA: DeviceSessionState = {
+      deviceId: 'A', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: 10, updatedAt: 1720000000000,
+    };
+    const deviceB: DeviceSessionState = {
+      deviceId: 'B', accounts: [{ accountId: 'a2', sessionId: 's2', authuser: 0 }], activeAccountId: 'a2', revision: 1, updatedAt: 1720000001000,
+    };
+    const makeRequest = jest.fn()
+      .mockResolvedValueOnce({ state: deviceA, activeToken: { accessToken: 'jwt-A', expiresAt: 'x' } })
+      .mockResolvedValueOnce({ state: deviceB, activeToken: { accessToken: 'jwt-B', expiresAt: 'x' } });
+    const host = makeHost(makeRequest);
+    const c = new SessionClient(host);
+
+    await c.bootstrap();
+    expect(c.getState()?.deviceId).toBe('A');
+    expect(host.setTokens).toHaveBeenLastCalledWith('jwt-A');
+
+    // Device B is freshly converged (revision 1) — it must win over device A's
+    // stale-but-higher revision, and its token must be planted.
+    await c.bootstrap();
+    expect(c.getState()?.deviceId).toBe('B');
+    expect(c.getState()?.revision).toBe(1);
+    expect(host.setTokens).toHaveBeenLastCalledWith('jwt-B');
+  });
 });

@@ -90,7 +90,17 @@ export class SessionClient {
       logger.warn('[SessionClient] discarded invalid session state');
       return false;
     }
-    if (this.state && next.revision <= this.state.revision) {
+    // The revision is monotone ONLY within a single deviceId. When the incoming
+    // state belongs to a DIFFERENT device than the currently-applied one, reset
+    // the baseline and accept it regardless of revision: a freshly-converged
+    // device (low revision) must not lose last-writer-wins to a stale, higher-
+    // revision state from a retired device. Only when the deviceIds MATCH is the
+    // `revision <= current` guard a valid staleness check.
+    if (
+      this.state &&
+      next.deviceId === this.state.deviceId &&
+      next.revision <= this.state.revision
+    ) {
       return false;
     }
     this.state = next;
