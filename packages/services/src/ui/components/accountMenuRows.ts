@@ -21,7 +21,7 @@ export interface BuildAccountRowsInput {
 }
 
 /**
- * Pure builder for `AccountMenu` rows. Extracted so the multi-account display
+ * Pure builder for `AccountSwitcher` rows. Extracted so the multi-account display
  * logic can be unit-tested without rendering React Native.
  *
  * Maps each {@link DeviceAccount} (sourced from `useDeviceAccounts()`, which

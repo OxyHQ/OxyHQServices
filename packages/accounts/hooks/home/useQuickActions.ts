@@ -7,7 +7,8 @@ import type { HomeHandlers } from './useHomeHandlers';
 /**
  * Builds the horizontally-scrolling quick-action chips on the home screen
  * (personal info, security, devices, data, sharing, payments, storage,
- * family). Extracted verbatim from the screen's inline `useMemo`.
+ * third-party connections). Extracted verbatim from the screen's inline
+ * `useMemo`.
  */
 export function useQuickActions(handlers: HomeHandlers): QuickAction[] {
   const colors = useColors();
@@ -76,9 +77,9 @@ export function useQuickActions(handlers: HomeHandlers): QuickAction[] {
     },
     {
       id: 'family',
-      icon: 'home-group',
+      icon: 'share-variant-outline',
       iconColor: colors.sidebarIconFamily,
-      title: t('home.quickActions.family'),
+      title: t('drawer.thirdParty'),
       onPress: handleFamily,
     },
   ], [

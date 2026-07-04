@@ -1,11 +1,10 @@
 /**
- * Tests for `buildAccountRows` — the pure builder consumed by `AccountMenu`
+ * Tests for `buildAccountRows` — the pure builder consumed by `AccountSwitcher`
  * to render the multi-account list.
  *
- * `AccountMenu` is the unified surface that replaced the separate
- * `AccountSwitcher`/`AccountOverview`/`AccountCenter`/`AccountSettings`
- * screens. Phase 1 of the unified account switcher hydrates EVERY row (not just
- * the active one) with real name/email/avatar/color via `useDeviceAccounts()`.
+ * `AccountSwitcher` is the single unified account-switching surface. The unified
+ * account switcher hydrates EVERY row (not just the active one) with real
+ * name/email/avatar/color via `useDeviceAccounts()`.
  *
  * `buildAccountRows` is now a thin, pure projection of the already-hydrated
  * `DeviceAccount[]` the hook produces. A regression here would either:

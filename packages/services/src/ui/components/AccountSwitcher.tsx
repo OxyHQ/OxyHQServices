@@ -24,10 +24,32 @@ import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { buildAccountRows, type AccountRow } from './accountMenuRows';
 import { useDeviceAccounts } from '../hooks/useDeviceAccounts';
-import type { AccountMenuAnchor } from './AccountMenu';
 
 const isWeb = Platform.OS === 'web';
 const PANEL_WIDTH = 380;
+
+/**
+ * Web-only anchor for the popover panel. Each field anchors the panel against
+ * one viewport edge, so the popover can be placed against ANY corner: a
+ * top-right avatar chip opens downward/right-aligned (`{ top, right }`), while a
+ * bottom-left account button opens upward/left-aligned (`{ bottom, left }`).
+ *
+ * Callers MUST supply at most one vertical edge (`top` XOR `bottom`) and at most
+ * one horizontal edge (`left` XOR `right`). The panel has a fixed width and
+ * `maxHeight`, so a single vertical + single horizontal edge fully positions it.
+ * Supplying both opposite edges (e.g. `top` AND `bottom`) would stretch the
+ * panel on RN-Web and is unsupported.
+ */
+export interface AccountMenuAnchor {
+    /** Distance from the viewport top, when anchoring the panel's TOP edge. */
+    top?: number;
+    /** Distance from the viewport bottom, when anchoring the panel's BOTTOM edge (opens upward). */
+    bottom?: number;
+    /** Distance from the viewport left, when anchoring the panel's LEFT edge. */
+    left?: number;
+    /** Distance from the viewport right, when anchoring the panel's RIGHT edge. */
+    right?: number;
+}
 
 /**
  * The set of action callbacks the switcher body needs. Supplied by whichever
@@ -594,7 +616,8 @@ export interface AccountSwitcherProps extends AccountSwitcherActions {
 /**
  * Unified account switcher presented as a popover (web) / bottom-sheet style
  * modal (native). The canonical entry point opened by {@link AccountMenuButton}.
- * Supersedes `AccountMenu` (which remains exported as the device-only switcher).
+ * The single account-switching surface across the ecosystem — combines the
+ * on-device sign-ins with the switchable account graph.
  */
 const AccountSwitcher: React.FC<AccountSwitcherProps> = ({ open, anchor, ...actions }) => {
     const { t } = useI18n();

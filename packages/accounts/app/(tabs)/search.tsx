@@ -8,13 +8,14 @@ import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, EmptyStateCard } from '@/components/ui';
 import { menuItems } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, FollowButton as ImportedFollowButton, Avatar } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import { getAccountFallbackHandle } from '@oxyhq/core';
+import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -206,7 +207,7 @@ export default function SearchScreen() {
         // Always derive a friendly display name from the canonical helper so
         // partially-onboarded accounts (publicKey only) read as
         // `Account 0x12345678…` rather than the harsh "Unknown".
-        const username = getAccountDisplayName(user, locale);
+        const username = getDisplayName(user, locale);
         const userUsername = user.username || undefined;
         const fallbackHandle = getAccountFallbackHandle(user);
         const avatarUrl = user.avatar && oxyServices
@@ -302,18 +303,11 @@ export default function SearchScreen() {
                 </ThemedText>
               </View>
               {filteredItems.length === 0 && userSearchResultItems.length === 0 && !isSearchingUsers ? (
-                <View style={styles.emptyState}>
-                  <MaterialCommunityIcons
-                    name="magnify"
-                    size={48}
-                    color={colors.icon}
-                    style={styles.emptyIcon}
-                  />
-                  <ThemedText style={styles.emptyText}>{t('search.noResults')}</ThemedText>
-                  <ThemedText style={styles.emptySubtext}>
-                    {t('search.noResultsSubtitle')}
-                  </ThemedText>
-                </View>
+                <EmptyStateCard
+                  icon="magnify"
+                  title={t('search.noResults')}
+                  subtitle={t('search.noResultsSubtitle')}
+                />
               ) : (
                 <>
                   {filteredItems.length > 0 && (
@@ -447,27 +441,6 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 15,
     opacity: 0.8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 24,
-  },
-  emptyIcon: {
-    opacity: 0.5,
-    marginBottom: 24,
-  },
-  emptyText: {
-    fontSize: 28,
-    fontWeight: '600',
-    marginBottom: 12,
-    opacity: 0.9,
-  },
-  emptySubtext: {
-    fontSize: 16,
-    opacity: 0.7,
-    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 18,

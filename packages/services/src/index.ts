@@ -205,25 +205,22 @@ export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';
 
-// Unified account menu (device-only switcher — popover on web, sheet on native)
-export { default as AccountMenu } from './ui/components/AccountMenu';
-export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/AccountMenu';
+// Avatar chip entry point that opens the unified account switcher.
 export { default as AccountMenuButton } from './ui/components/AccountMenuButton';
 export type { AccountMenuButtonProps } from './ui/components/AccountMenuButton';
 
-// Sidebar account button + its device-account switcher menu (Bluesky-style
-// ProfileCard). `ProfileButton` owns its own open state + anchor measurement
-// and opens `ProfileMenu` upward from a sidebar footer.
+// Sidebar account button (Bluesky-style ProfileCard). `ProfileButton` owns its
+// own open state + anchor measurement and opens `AccountSwitcher` upward from a
+// sidebar footer.
 export { default as ProfileButton } from './ui/components/ProfileButton';
 export type { ProfileButtonProps } from './ui/components/ProfileButton';
-export { default as ProfileMenu } from './ui/components/ProfileMenu';
-export type { ProfileMenuProps, ProfileMenuAnchor } from './ui/components/ProfileMenu';
 
-// Unified account switcher (device sign-ins + account graph). `AccountMenuButton`
-// opens this; the `AccountSwitcherView` body also backs the `AccountSwitcher`
-// bottom-sheet route.
+// Unified account switcher (device sign-ins + account graph). The single
+// account-switching surface: `AccountMenuButton` / `ProfileButton` open it, and
+// the `AccountSwitcherView` body also backs the `AccountSwitcher` bottom-sheet
+// route. `AccountMenuAnchor` positions the web popover against a viewport edge.
 export { default as AccountSwitcher, AccountSwitcherView } from './ui/components/AccountSwitcher';
-export type { AccountSwitcherProps, AccountSwitcherActions } from './ui/components/AccountSwitcher';
+export type { AccountSwitcherProps, AccountSwitcherActions, AccountMenuAnchor } from './ui/components/AccountSwitcher';
 
 // Unified device-account hook (hydrates every signed-in account on the device
 // with real name/email/avatar/color for the account switcher).

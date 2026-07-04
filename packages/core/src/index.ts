@@ -468,6 +468,7 @@ export {
     isValidEmail,
     isValidUsername,
     isValidPassword,
+    isValidDisplayName,
     isRequiredString,
     isRequiredNumber,
     isRequiredBoolean,

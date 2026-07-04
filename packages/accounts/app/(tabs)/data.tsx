@@ -223,39 +223,6 @@ export default function DataScreen() {
     },
   ], [colors, dataSharing, locationSharing, analyticsSharing, showActivity, handlePrivacyUpdate, pendingPrivacyKey, t]);
 
-  // Handle clear history. Keep this as an informational action until the API
-  // exposes scoped deletion endpoints for activity and location history.
-  const handleClearHistory = useCallback((type: 'activity' | 'location') => {
-    const title = type === 'activity' ? t('data.activity.activityHistory') : t('data.activity.locationHistory');
-    const message = type === 'activity'
-      ? t('data.activity.activityHistoryUnavailable')
-      : t('data.activity.locationHistoryUnavailable');
-
-    alert(title, message, [{ text: t('common.ok') }]);
-  }, [alert, t]);
-
-  // Activity management section
-  const activityItems = useMemo(() => [
-    {
-      id: 'activity-history',
-      icon: 'history',
-      iconColor: colors.sidebarIconData,
-      title: t('data.activity.activityHistory'),
-      subtitle: t('data.activity.activityHistorySubtitle'),
-      onPress: () => handleClearHistory('activity'),
-      showChevron: true,
-    },
-    {
-      id: 'location-history',
-      icon: 'map-marker-outline',
-      iconColor: colors.sidebarIconData,
-      title: t('data.activity.locationHistory'),
-      subtitle: t('data.activity.locationHistorySubtitle'),
-      onPress: () => handleClearHistory('location'),
-      showChevron: true,
-    },
-  ], [colors, handleClearHistory, t]);
-
   // Account management section
   const accountManagementItems = useMemo(() => [
     {
@@ -295,13 +262,6 @@ export default function DataScreen() {
         <ThemedText style={styles.sectionSubtitle}>{t('data.sections.privacySubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={privacyControlItems} />
-        </AccountCard>
-      </Section>
-
-      <Section title={t('data.sections.activity')}>
-        <ThemedText style={styles.sectionSubtitle}>{t('data.sections.activitySubtitle')}</ThemedText>
-        <AccountCard>
-          <GroupedSection items={activityItems} />
         </AccountCard>
       </Section>
 

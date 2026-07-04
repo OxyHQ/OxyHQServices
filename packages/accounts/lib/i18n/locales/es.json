@@ -98,8 +98,7 @@
       "data": "Datos y privacidad",
       "sharing": "Compartido",
       "payments": "Pagos",
-      "storage": "Almacenamiento",
-      "family": "Familia"
+      "storage": "Almacenamiento"
     },
     "accountInfo": {
       "fullName": "Nombre completo",
@@ -259,8 +258,6 @@
       "downloadSubtitle": "Obtén una copia de los datos de tu cuenta",
       "privacy": "Controles de privacidad",
       "privacySubtitle": "Decide cómo se usan y comparten tus datos",
-      "activity": "Gestión de actividad",
-      "activitySubtitle": "Gestiona tu actividad y datos de ubicación",
       "account": "Gestión de la cuenta",
       "accountSubtitle": "Acciones peligrosas que afectan a tu cuenta"
     },
@@ -287,24 +284,6 @@
       "showActivity": "Mostrar estado de actividad",
       "showActivitySubtitle": "Permite que otros vean cuándo estás activo",
       "updateFailed": "No se pudo actualizar la configuración de privacidad"
-    },
-    "activity": {
-      "activityHistory": "Historial de actividad",
-      "activityHistorySubtitle": "Consulta y gestiona tu historial de actividad",
-      "activityHistoryUnavailable": "La gestión del historial de actividad aún no está disponible.",
-      "locationHistory": "Historial de ubicación",
-      "locationHistorySubtitle": "Consulta y gestiona tus datos de ubicación",
-      "locationHistoryUnavailable": "La gestión del historial de ubicación aún no está disponible.",
-      "clearActivityTitle": "Borrar historial de actividad",
-      "clearLocationTitle": "Borrar historial de ubicación",
-      "clearActivityMessage": "Esto eliminará permanentemente todo tu historial de actividad. Esta acción no se puede deshacer.",
-      "clearLocationMessage": "Esto eliminará permanentemente todo tu historial de ubicación. Esta acción no se puede deshacer.",
-      "clear": "Borrar",
-      "clearedTitle": "Historial borrado",
-      "clearedActivity": "Tu historial de actividad ha sido borrado.",
-      "clearedLocation": "Tu historial de ubicación ha sido borrado.",
-      "clearFailedActivity": "No se pudo borrar el historial de actividad.",
-      "clearFailedLocation": "No se pudo borrar el historial de ubicación."
     },
     "deleteAccount": {
       "title": "Eliminar cuenta",
@@ -387,6 +366,7 @@
     },
     "fields": {
       "fullName": "Nombre completo",
+      "username": "Nombre de usuario",
       "email": "Correo electrónico",
       "phone": "Número de teléfono",
       "address": "Dirección",
@@ -395,6 +375,8 @@
       "noEmail": "Sin correo configurado"
     },
     "actions": {
+      "editProfile": "Editar perfil",
+      "editProfileSubtitle": "Nombre, nombre de usuario, biografía, enlaces y ubicaciones",
       "manageSessions": "Gestionar dispositivos y sesiones",
       "manageSessionsSubtitle": "Revisa los dispositivos activos y cierra sesión",
       "subscription": "Pagos y suscripción",
@@ -577,11 +559,7 @@
     "emptySubtitle": "Cuando autorices a apps externas a acceder a tu cuenta de Oxy, aparecerán aquí."
   },
   "connectedApps": {
-    "title": "Apps conectadas",
-    "subtitle": "Apps de terceros a las que has dado acceso a tu cuenta de Oxy.",
     "loading": "Cargando apps conectadas...",
-    "empty": "No hay apps conectadas",
-    "emptySubtitle": "Las apps que autorices a acceder a tu cuenta de Oxy aparecerán aquí.",
     "lastUsed": "Usada por última vez {{time}}",
     "noScopes": "Sin permisos específicos",
     "revoke": "Revocar",
@@ -673,6 +651,22 @@
   "devices": {
     "title": "Tus dispositivos",
     "subtitle": "Dispositivos donde tienes sesión iniciada en Oxy.",
+    "headerSubtitle": "Gestiona los dispositivos que tienen acceso a tu cuenta.",
+    "loading": "Cargando dispositivos...",
+    "unknownDevice": "Dispositivo desconocido",
+    "item": {
+      "currentBadge": "Actual",
+      "thisDeviceLastActive": "Este dispositivo • Última actividad: {{time}}",
+      "lastActive": "Última actividad: {{time}}"
+    },
+    "remove": {
+      "success": "Dispositivo eliminado",
+      "failed": "No se pudo quitar el dispositivo. Inténtalo de nuevo."
+    },
+    "empty": {
+      "title": "No se encontraron dispositivos",
+      "subtitle": "Los dispositivos en los que inicies sesión aparecerán aquí."
+    },
     "detail": {
       "title": "Detalles del dispositivo",
       "subtitle": "Consulta y gestiona la información del dispositivo.",
@@ -694,6 +688,36 @@
       "removeTitle": "Eliminar dispositivo",
       "removeMessage": "¿Seguro que quieres eliminar \"{{name}}\"? Esto cerrará todas las sesiones de este dispositivo.",
       "removeCurrentWarning": "No puedes eliminar tu dispositivo actual. Usa otro dispositivo para eliminar este."
+    }
+  },
+  "sessions": {
+    "title": "Sesiones de inicio",
+    "subtitle": "Estas son tus sesiones de inicio activas en todos los dispositivos. Cada sesión representa un dispositivo con sesión iniciada.",
+    "loading": "Cargando sesiones...",
+    "item": {
+      "title": "Sesión {{id}}",
+      "currentActive": "Sesión actual • {{time}}",
+      "lastActive": "Última actividad: {{time}}",
+      "activeBadge": "Activa"
+    },
+    "remove": {
+      "currentWarning": "No puedes quitar tu sesión activa actual. Cambia primero a otra sesión.",
+      "confirmTitle": "Quitar sesión",
+      "confirmMessage": "¿Seguro que quieres quitar esta sesión?",
+      "success": "Sesión eliminada",
+      "failed": "No se pudo quitar la sesión. Inténtalo de nuevo."
+    },
+    "switch": {
+      "success": "Sesión cambiada",
+      "failed": "No se pudo cambiar de sesión. Inténtalo de nuevo."
+    },
+    "managedLink": {
+      "title": "¿Buscas tus cuentas?",
+      "subtitle": "Ve a Cuentas para gestionar organizaciones, proyectos y bots"
+    },
+    "empty": {
+      "title": "No hay sesiones activas",
+      "subtitle": "Los dispositivos en los que inicies sesión aparecerán aquí como sesiones activas."
     }
   },
   "sidebar": {
@@ -793,12 +817,7 @@
     "lottieDecorative": "Animación decorativa de fondo"
   },
   "scanQr": {
-    "checkingIdentity": "Comprobando identidad…",
-    "redirecting": "Redirigiendo a la configuración de identidad…",
     "requestingPermission": "Solicitando permiso de cámara…",
-    "identityRequiredTitle": "Identidad requerida",
-    "identityRequiredBody": "Para escanear códigos QR y autorizar solicitudes de inicio de sesión, necesitas crear o importar una identidad.\n\nLa creación de identidad solo está disponible en plataformas nativas (iOS/Android). Usa la app móvil para configurar tu identidad.",
-    "goBack": "Volver",
     "permissionTitle": "Acceso a la cámara requerido",
     "permissionBody": "Para escanear códigos QR de autorización de inicio de sesión, necesitamos acceso a tu cámara.",
     "grantPermission": "Conceder permiso",
@@ -814,7 +833,6 @@
       "grantPermission": "Conceder permiso de cámara",
       "openSettings": "Abrir ajustes del dispositivo",
       "cancel": "Cancelar",
-      "goBack": "Volver",
       "flashOn": "Activar flash",
       "flashOff": "Desactivar flash",
       "scanAgain": "Escanear de nuevo",

@@ -602,6 +602,7 @@
   "editProfile": {
     "title": "Edit Profile",
     "subtitle": "Manage your profile and preferences",
+    "notSet": "Not set",
     "sections": {
       "profilePicture": "Profile Picture",
       "basicInfo": "Basic Information",
@@ -610,6 +611,9 @@
       "security": "Security"
     },
     "items": {
+      "avatar": {
+        "subtitle": "Update your profile photo"
+      },
       "displayName": {
         "title": "Display Name",
         "subtitle": "This is how your name will appear to others",
@@ -617,7 +621,8 @@
         "firstName": "First Name",
         "firstNamePlaceholder": "Enter first name",
         "lastName": "Last Name",
-        "lastNamePlaceholder": "Enter last name (optional)"
+        "lastNamePlaceholder": "Enter last name (optional)",
+        "invalidChars": "Use letters and spaces only"
       },
       "username": {
         "title": "Username",

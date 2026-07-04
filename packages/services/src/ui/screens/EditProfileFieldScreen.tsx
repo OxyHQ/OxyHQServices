@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     View,
     Platform,
@@ -16,12 +16,13 @@ import { H1, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { normalizeTheme } from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
 import { toast } from '@oxyhq/bloom';
-import { EMAIL_REGEX } from '@oxyhq/core';
+import { EMAIL_REGEX, isValidDisplayName } from '@oxyhq/core';
 
 /**
  * Field types supported by EditProfileFieldScreen
@@ -75,6 +76,87 @@ const getLinkTitle = (url: string) => url.replace(/^https?:\/\//, '').replace(/\
 const getLinkDescription = (url: string) => `Link to ${url}`;
 
 /**
+ * Pure seeding function: derives the initial `fieldValues` / `listItems` for a
+ * given field type from the active account snapshot. Called ONCE per state via
+ * lazy `useState` initializers — never from an effect — so a background
+ * `refreshSessions()` / `useCurrentUser()` swap of the `user` reference can't
+ * wipe in-progress typing. Each editor mounts with a fixed `fieldType`, so the
+ * seed is stable for the lifetime of the mount.
+ */
+function buildInitialProfileState(
+    user: User | null,
+    fieldType: ProfileFieldType,
+): { fieldValues: Record<string, string>; listItems: EditableListItem[] } {
+    if (!user) {
+        return { fieldValues: {}, listItems: [] };
+    }
+    const userData = user;
+
+    if (fieldType === 'locations') {
+        const locations = Array.isArray(userData.locations) ? userData.locations : [];
+        return {
+            fieldValues: {},
+            listItems: locations.map((loc, i) => ({
+                id: String(loc.id || `location-${i}`),
+                name: String(loc.name || ''),
+                ...loc,
+            })),
+        };
+    }
+
+    if (fieldType === 'links') {
+        const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
+        const links = Array.isArray(userData.links) ? userData.links : [];
+        // Prefer rich link metadata; fall back to the plain links array.
+        if (linksMetadata.length > 0) {
+            return {
+                fieldValues: {},
+                listItems: linksMetadata.map((link, i) => ({
+                    ...link,
+                    id: String(link.id || `link-${i}`),
+                    url: String(link.url || ''),
+                    title: String(link.title || getLinkTitle(String(link.url || ''))),
+                    description: String(link.description || getLinkDescription(String(link.url || ''))),
+                })),
+            };
+        }
+        return {
+            fieldValues: {},
+            listItems: links.map((item, i) => ({
+                id: `link-${i}`,
+                url: item,
+                title: getLinkTitle(item),
+                description: getLinkDescription(item),
+            })),
+        };
+    }
+
+    // Scalar fields: seed only the keys this field type edits.
+    const fieldValues: Record<string, string> = {};
+    switch (fieldType) {
+        case 'displayName':
+            fieldValues.firstName = String(userData.name?.first || '');
+            fieldValues.lastName = String(userData.lastName || userData.name?.last || '');
+            break;
+        case 'birthday':
+            fieldValues.birthday = String(userData.birthday || userData.dateOfBirth || '');
+            break;
+        case 'address':
+            fieldValues.address = String(userData.address || '');
+            break;
+        case 'username':
+        case 'email':
+        case 'bio':
+        case 'phone':
+            fieldValues[fieldType] = String(userData[fieldType] || '');
+            break;
+        default:
+            break;
+    }
+    return { fieldValues, listItems: [] };
+}
+
+/**
  * EditProfileFieldScreen - A dedicated screen for editing profile fields
  *
  * Navigate to this screen with a fieldType prop to edit that specific field.
@@ -98,12 +180,18 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
 
-    // State for field values
-    const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+    // State for field values — seeded ONCE from the active account snapshot at
+    // mount via lazy initializers. See buildInitialProfileState: no effect
+    // reseeds these, so a background user-ref swap never wipes typing.
+    const [fieldValues, setFieldValues] = useState<Record<string, string>>(
+        () => buildInitialProfileState(user, fieldType).fieldValues,
+    );
     const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({});
 
-    // State for list fields (locations, links)
-    const [listItems, setListItems] = useState<EditableListItem[]>([]);
+    // State for list fields (locations, links) — same one-time mount seeding.
+    const [listItems, setListItems] = useState<EditableListItem[]>(
+        () => buildInitialProfileState(user, fieldType).listItems,
+    );
     const [newItemValue, setNewItemValue] = useState('');
 
     // Get field configuration based on fieldType
@@ -118,11 +206,21 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                             key: 'firstName',
                             label: t('editProfile.items.displayName.firstName') || 'First Name',
                             placeholder: t('editProfile.items.displayName.firstNamePlaceholder') || 'Enter first name',
+                            validation: (value) =>
+                                isValidDisplayName(value)
+                                    ? undefined
+                                    : (t('editProfile.items.displayName.invalidChars')
+                                        || 'Use letters and spaces only'),
                         },
                         {
                             key: 'lastName',
                             label: t('editProfile.items.displayName.lastName') || 'Last Name',
                             placeholder: t('editProfile.items.displayName.lastNamePlaceholder') || 'Enter last name (optional)',
+                            validation: (value) =>
+                                isValidDisplayName(value)
+                                    ? undefined
+                                    : (t('editProfile.items.displayName.invalidChars')
+                                        || 'Use letters and spaces only'),
                         },
                     ],
                 };
@@ -265,62 +363,6 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                 };
         }
     }, [fieldType, t]);
-
-    // Initialize field values from the active account's data
-    useEffect(() => {
-        if (!user) return;
-
-        const userData = user;
-
-        if (fieldConfig.isList) {
-            if (fieldType === 'locations') {
-                const locations = Array.isArray(userData.locations) ? userData.locations : [];
-                setListItems(locations.map((loc, i) => ({
-                    id: String(loc.id || `location-${i}`),
-                    name: String(loc.name || ''),
-                    ...loc,
-                })));
-            } else if (fieldType === 'links') {
-                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
-                const links = Array.isArray(userData.links) ? userData.links : [];
-                // Use linksMetadata if available, otherwise convert links array
-                if (linksMetadata.length > 0) {
-                    setListItems(linksMetadata.map((link, i) => ({
-                        ...link,
-                        id: String(link.id || `link-${i}`),
-                        url: String(link.url || ''),
-                        title: String(link.title || getLinkTitle(String(link.url || ''))),
-                        description: String(link.description || getLinkDescription(String(link.url || ''))),
-                    })));
-                } else {
-                    setListItems(links.map((item, i) => {
-                        return {
-                            id: `link-${i}`,
-                            url: item,
-                            title: getLinkTitle(item),
-                            description: getLinkDescription(item),
-                        };
-                    }));
-                }
-            }
-        } else {
-            const initialValues: Record<string, string> = {};
-            fieldConfig.fields.forEach(field => {
-                if (field.key === 'firstName') {
-                    initialValues[field.key] = String(userData.name?.first || '');
-                } else if (field.key === 'lastName') {
-                    initialValues[field.key] = String(userData.lastName || userData.name?.last || '');
-                } else if (field.key === 'birthday') {
-                    initialValues[field.key] = String(userData.birthday || userData.dateOfBirth || '');
-                } else if (field.key === 'address') {
-                    initialValues[field.key] = String(userData.address || userData.location || '');
-                } else {
-                    initialValues[field.key] = String(userData[field.key] || '');
-                }
-            });
-            setFieldValues(initialValues);
-        }
-    }, [user, fieldConfig, fieldType]);
 
     // Field change handler
     const handleFieldChange = useCallback((key: string, value: string) => {

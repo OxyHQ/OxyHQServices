@@ -98,8 +98,7 @@
       "data": "Data & Privacy",
       "sharing": "Sharing",
       "payments": "Payments",
-      "storage": "Storage",
-      "family": "Family"
+      "storage": "Storage"
     },
     "accountInfo": {
       "fullName": "Full name",
@@ -259,8 +258,6 @@
       "downloadSubtitle": "Get a copy of your account data",
       "privacy": "Privacy controls",
       "privacySubtitle": "Control how your data is used and shared",
-      "activity": "Activity management",
-      "activitySubtitle": "Manage your activity and location data",
       "account": "Account management",
       "accountSubtitle": "Dangerous actions that affect your account"
     },
@@ -287,24 +284,6 @@
       "showActivity": "Show activity status",
       "showActivitySubtitle": "Let others see when you're active",
       "updateFailed": "Failed to update privacy setting"
-    },
-    "activity": {
-      "activityHistory": "Activity history",
-      "activityHistorySubtitle": "View and manage your activity history",
-      "activityHistoryUnavailable": "Activity history management is not available yet.",
-      "locationHistory": "Location history",
-      "locationHistorySubtitle": "View and manage your location data",
-      "locationHistoryUnavailable": "Location history management is not available yet.",
-      "clearActivityTitle": "Clear Activity History",
-      "clearLocationTitle": "Clear Location History",
-      "clearActivityMessage": "This will permanently delete all your activity history. This action cannot be undone.",
-      "clearLocationMessage": "This will permanently delete all your location history. This action cannot be undone.",
-      "clear": "Clear",
-      "clearedTitle": "History Cleared",
-      "clearedActivity": "Your activity history has been cleared.",
-      "clearedLocation": "Your location history has been cleared.",
-      "clearFailedActivity": "Failed to clear activity history.",
-      "clearFailedLocation": "Failed to clear location history."
     },
     "deleteAccount": {
       "title": "Delete account",
@@ -387,6 +366,7 @@
     },
     "fields": {
       "fullName": "Full name",
+      "username": "Username",
       "email": "Email",
       "phone": "Phone number",
       "address": "Address",
@@ -395,6 +375,8 @@
       "noEmail": "No email set"
     },
     "actions": {
+      "editProfile": "Edit profile",
+      "editProfileSubtitle": "Name, username, bio, links, and locations",
       "manageSessions": "Manage devices & sessions",
       "manageSessionsSubtitle": "Review active devices and sign out",
       "subscription": "Payments & subscription",
@@ -577,11 +559,7 @@
     "emptySubtitle": "When you grant third-party apps access to your Oxy account, they will appear here."
   },
   "connectedApps": {
-    "title": "Connected apps",
-    "subtitle": "Third-party apps you've granted access to your Oxy account.",
     "loading": "Loading connected apps...",
-    "empty": "No connected apps",
-    "emptySubtitle": "Apps you authorize to access your Oxy account will appear here.",
     "lastUsed": "Last used {{time}}",
     "noScopes": "No specific permissions",
     "revoke": "Revoke",
@@ -673,6 +651,22 @@
   "devices": {
     "title": "Your devices",
     "subtitle": "Devices where you're signed in to Oxy.",
+    "headerSubtitle": "Manage devices that have access to your account.",
+    "loading": "Loading devices...",
+    "unknownDevice": "Unknown Device",
+    "item": {
+      "currentBadge": "Current",
+      "thisDeviceLastActive": "This device • Last active: {{time}}",
+      "lastActive": "Last active: {{time}}"
+    },
+    "remove": {
+      "success": "Device removed",
+      "failed": "Failed to remove device. Please try again."
+    },
+    "empty": {
+      "title": "No devices found",
+      "subtitle": "Devices you sign in on will appear here."
+    },
     "detail": {
       "title": "Device Details",
       "subtitle": "View and manage device information.",
@@ -694,6 +688,36 @@
       "removeTitle": "Remove device",
       "removeMessage": "Are you sure you want to remove \"{{name}}\"? This will sign out all sessions on this device.",
       "removeCurrentWarning": "You cannot remove your current device. Use another device to remove this one."
+    }
+  },
+  "sessions": {
+    "title": "Login Sessions",
+    "subtitle": "These are your active login sessions across devices. Each session represents a signed-in device.",
+    "loading": "Loading sessions...",
+    "item": {
+      "title": "Session {{id}}",
+      "currentActive": "Current session • {{time}}",
+      "lastActive": "Last active: {{time}}",
+      "activeBadge": "Active"
+    },
+    "remove": {
+      "currentWarning": "You cannot remove your current active session. Switch to another session first.",
+      "confirmTitle": "Remove session",
+      "confirmMessage": "Are you sure you want to remove this session?",
+      "success": "Session removed",
+      "failed": "Failed to remove session. Please try again."
+    },
+    "switch": {
+      "success": "Session switched",
+      "failed": "Failed to switch session. Please try again."
+    },
+    "managedLink": {
+      "title": "Looking for your accounts?",
+      "subtitle": "Go to Accounts to manage organizations, projects, and bots"
+    },
+    "empty": {
+      "title": "No active sessions",
+      "subtitle": "Devices you sign in on will appear here as active sessions."
     }
   },
   "sidebar": {
@@ -793,12 +817,7 @@
     "lottieDecorative": "Decorative background animation"
   },
   "scanQr": {
-    "checkingIdentity": "Checking identity…",
-    "redirecting": "Redirecting to identity setup…",
     "requestingPermission": "Requesting camera permission…",
-    "identityRequiredTitle": "Identity Required",
-    "identityRequiredBody": "To scan QR codes and authorize sign-in requests, you need to create or import an identity.\n\nIdentity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.",
-    "goBack": "Go Back",
     "permissionTitle": "Camera Access Required",
     "permissionBody": "To scan QR codes for sign-in authorization, we need access to your camera.",
     "grantPermission": "Grant Permission",
@@ -814,7 +833,6 @@
       "grantPermission": "Grant camera permission",
       "openSettings": "Open device settings",
       "cancel": "Cancel",
-      "goBack": "Go back",
       "flashOn": "Turn flash on",
       "flashOff": "Turn flash off",
       "scanAgain": "Scan again",

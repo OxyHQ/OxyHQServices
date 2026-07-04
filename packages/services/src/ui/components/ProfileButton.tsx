@@ -14,16 +14,17 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { useAuth } from '../hooks/useAuth';
 import { useI18n } from '../hooks/useI18n';
-import ProfileMenu, { type ProfileMenuAnchor } from './ProfileMenu';
+import AccountSwitcher, { type AccountMenuAnchor } from './AccountSwitcher';
+import { showBottomSheet } from '../navigation/bottomSheetManager';
 
 const isWeb = Platform.OS === 'web';
 
 /**
- * Fixed popover width used by {@link ProfileMenu} on web. `ProfileButton`
- * mirrors this constant when computing the trigger-relative anchor so the
- * left-edge clamp keeps the panel fully on-screen. Keep the two in sync.
+ * Fixed popover width used by {@link AccountSwitcher} on web (its `PANEL_WIDTH`).
+ * `ProfileButton` mirrors this constant when computing the trigger-relative
+ * anchor so the left-edge clamp keeps the panel fully on-screen. Keep in sync.
  */
-const MENU_WIDTH = 300;
+const MENU_WIDTH = 380;
 
 /** Gutter, in px, kept between the popover and the viewport edges on web. */
 const VIEWPORT_GUTTER = 8;
@@ -42,8 +43,6 @@ export interface ProfileButtonProps {
     onNavigateManage: () => void;
     /** Start the add-account / sign-in flow for an additional account. */
     onAddAccount: () => void;
-    /** Optional: navigate to the signed-in user's own profile. */
-    onNavigateProfile?: () => void;
     /** Called before the active identity changes so apps can clear scoped state. */
     onBeforeSessionChange?: () => void | Promise<void>;
     /** Extra className applied to the outer trigger. */
@@ -55,7 +54,7 @@ export interface ProfileButtonProps {
 /**
  * Self-contained sidebar account trigger, modeled on Bluesky's ProfileCard and
  * the Oxy inbox's `MailboxDrawer` footer. Owns its own open state + anchor
- * measurement, and renders {@link ProfileMenu} (the device-account switcher).
+ * measurement, and renders {@link AccountSwitcher} (the unified switcher).
  *
  * Three auth states from {@link useAuth}:
  *  - **Undetermined** (`!isAuthResolved || isPrivateApiPending`): a neutral
@@ -75,7 +74,6 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     avatarSize,
     onNavigateManage,
     onAddAccount,
-    onNavigateProfile,
     onBeforeSessionChange,
     className,
     style,
@@ -91,7 +89,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     const { t, locale } = useI18n();
 
     const [menuOpen, setMenuOpen] = useState(false);
-    const [anchor, setAnchor] = useState<ProfileMenuAnchor | null>(null);
+    const [anchor, setAnchor] = useState<AccountMenuAnchor | null>(null);
 
     // Trigger ref for the web anchor measurement. RN-Web exposes `measure()` on
     // host views, so we anchor the popover to the button rect and open upward.
@@ -214,13 +212,16 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                 >
                     {avatarNode}
                 </Pressable>
-                <ProfileMenu
+                <AccountSwitcher
                     open={menuOpen}
                     onClose={handleClose}
                     anchor={anchor}
                     onNavigateManage={onNavigateManage}
                     onAddAccount={onAddAccount}
-                    onNavigateProfile={onNavigateProfile}
+                    onCreateAccount={() => showBottomSheet('CreateAccount')}
+                    onOpenAccountSettings={(accountId) =>
+                        showBottomSheet({ screen: 'AccountSettings', props: { accountId } })
+                    }
                     onBeforeSessionChange={onBeforeSessionChange}
                 />
             </View>
@@ -254,13 +255,16 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                     color={colors.textSecondary}
                 />
             </Pressable>
-            <ProfileMenu
+            <AccountSwitcher
                 open={menuOpen}
                 onClose={handleClose}
                 anchor={anchor}
                 onNavigateManage={onNavigateManage}
                 onAddAccount={onAddAccount}
-                onNavigateProfile={onNavigateProfile}
+                onCreateAccount={() => showBottomSheet('CreateAccount')}
+                onOpenAccountSettings={(accountId) =>
+                    showBottomSheet({ screen: 'AccountSettings', props: { accountId } })
+                }
                 onBeforeSessionChange={onBeforeSessionChange}
             />
         </View>

@@ -144,7 +144,6 @@ export const userProfileUpdateSchema = z
         phone: z.string().optional(),
         address: z.string().optional(),
         birthday: z.string().optional(),
-        location: z.string().optional(),
         locations: z.array(z.unknown()).optional(),
         links: z.array(z.string()).optional(),
         linksMetadata: z

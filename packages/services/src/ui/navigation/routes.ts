@@ -26,6 +26,7 @@ export type RouteName =
     | 'UserLinks'
     | 'HistoryView'
     | 'SavesCollections'
+    | 'EditProfile'      // Profile-editing hub: one row per editable field
     | 'EditProfileField' // Dedicated screen for editing a single profile field
     | 'LearnMoreUsernames' // Informational screen about usernames
     | 'TrustCenter'
@@ -67,6 +68,7 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     UserLinks: () => require('../screens/UserLinksScreen').default,
     HistoryView: () => require('../screens/HistoryViewScreen').default,
     SavesCollections: () => require('../screens/SavesCollectionsScreen').default,
+    EditProfile: () => require('../screens/EditProfileScreen').default,
     EditProfileField: () => require('../screens/EditProfileFieldScreen').default,
     // Informational screens
     LearnMoreUsernames: () => require('../screens/LearnMoreUsernamesScreen').default,

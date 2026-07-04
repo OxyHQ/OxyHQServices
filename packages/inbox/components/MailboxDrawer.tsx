@@ -17,7 +17,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, OxySignInButton, showSignInModal, AccountMenu, type AccountMenuAnchor } from '@oxyhq/services';
+import { useOxy, OxySignInButton, showSignInModal, AccountSwitcher, type AccountMenuAnchor } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -165,7 +165,7 @@ function NavItem({
 
 export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () => void; onToggle?: () => void; collapsed?: boolean }) {
   const colors = useColors();
-  const { user, isAuthenticated } = useOxy();
+  const { user, isAuthenticated, showBottomSheet } = useOxy();
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
@@ -196,8 +196,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         if (typeof pageX !== 'number' || typeof pageY !== 'number') {
           setAccountMenuAnchor(null);
         } else {
-          // Panel is 360 wide; keep an 8px gutter on both sides (368 = 360 + 8).
-          const left = Math.min(Math.max(8, pageX), Math.max(8, window.innerWidth - 368));
+          // Panel is 380 wide; keep an 8px gutter on both sides (388 = 380 + 8).
+          const left = Math.min(Math.max(8, pageX), Math.max(8, window.innerWidth - 388));
           // Anchor the panel's BOTTOM edge 8px above the button's top → opens upward.
           const bottom = Math.max(8, window.innerHeight - pageY + 8);
           setAccountMenuAnchor({ left, bottom });
@@ -223,7 +223,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const handleAddAccount = useCallback(() => {
     setAccountMenuOpen(false);
     // Open the sign-in modal to authenticate a new account.
-    // OxyContext picks up the new session and AccountMenu reflects it.
+    // OxyContext picks up the new session and AccountSwitcher reflects it.
     resetInboxForAccountChange();
     showSignInModal();
   }, [resetInboxForAccountChange]);
@@ -701,15 +701,20 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         </View>
       )}
 
-      {/* Shared account switcher (only mounted when signed-in). Sources its rows
-          from the SDK's useDeviceAccounts — real shared sessions with real
+      {/* Shared account switcher (only mounted when signed-in). Sources device
+          sign-ins from the SDK's useDeviceAccounts plus the switchable account
+          graph (managed-account users) — real sessions with real
           names/emails/avatars. Sign out / Sign out all are handled internally. */}
       {isAuthenticated && (
-        <AccountMenu
+        <AccountSwitcher
           open={accountMenuOpen}
           onClose={handleCloseMenu}
           onNavigateManage={handleNavigateManage}
           onAddAccount={handleAddAccount}
+          onCreateAccount={() => showBottomSheet?.('CreateAccount')}
+          onOpenAccountSettings={(accountId) =>
+            showBottomSheet?.({ screen: 'AccountSettings', props: { accountId } })
+          }
           anchor={accountMenuAnchor}
           onBeforeSessionChange={resetInboxForAccountChange}
         />

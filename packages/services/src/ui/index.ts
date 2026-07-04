@@ -25,10 +25,8 @@ export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
 export { FontLoader, setupFonts } from './components/FontLoader';
 export { default as OxyIcon } from './components/icon/OxyIcon';
-export { default as AccountMenu } from './components/AccountMenu';
 export { default as AccountMenuButton } from './components/AccountMenuButton';
 export { default as ProfileButton } from './components/ProfileButton';
-export { default as ProfileMenu } from './components/ProfileMenu';
 export { default as AccountSwitcher, AccountSwitcherView } from './components/AccountSwitcher';
 
 // Context + hooks

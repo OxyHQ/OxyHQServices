@@ -40,8 +40,8 @@ const ACCOUNT_MENU_KEYS = [
     'common.status.notSignedIn',
 ] as const;
 
-describe('AccountMenu i18n labels (SDK-bundled strings)', () => {
-    it('resolves EVERY AccountMenu key to a real string in en-US (never the raw key)', () => {
+describe('AccountSwitcher i18n labels (SDK-bundled strings)', () => {
+    it('resolves EVERY AccountSwitcher key to a real string in en-US (never the raw key)', () => {
         for (const key of ACCOUNT_MENU_KEYS) {
             const value = translate('en-US', key);
             expect(value).not.toBe(key);

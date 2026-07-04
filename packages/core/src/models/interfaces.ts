@@ -118,7 +118,6 @@ export interface User {
   phone?: string;
   address?: string;
   birthday?: string;
-  location?: string;
   website?: string;
   createdAt?: string;
   updatedAt?: string;

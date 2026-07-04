@@ -27,8 +27,8 @@ export type DeviceAccountUser = RefreshAllAccountUser | User;
 
 /**
  * One signed-in account on this device, fully hydrated for the account
- * chooser. Unlike the old `AccountMenu` behaviour (which only carried the
- * ACTIVE session's user), EVERY entry here carries real per-account
+ * chooser. Unlike the earlier device-only switcher behaviour (which only
+ * carried the ACTIVE session's user), EVERY entry here carries real per-account
  * `displayName` / `email` / `avatarUrl` / `color`.
  */
 export interface DeviceAccount {
