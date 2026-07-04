@@ -39,6 +39,11 @@ import type { UserNameResponse } from '@oxyhq/contracts';
 // ---------------------------------------------------------------------------
 
 const COOKIE_NAME = 'fedcm_session';
+// The device-first anchor cookie (`Domain=.oxy.so`, so it rides first-party to
+// auth.oxy.so). Read by the account-chooser feed to resolve the device's
+// session set via the API's internal `POST /auth/device/resolve`. Must match the
+// API's `DEVICE_COOKIE_NAME` (`packages/api/src/utils/deviceCookie.ts`).
+const DEVICE_COOKIE_NAME = 'oxy_device';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 const TOKEN_LIFETIME = 600; // 10 minutes for id_tokens
 
@@ -1945,6 +1950,66 @@ app.post('/fedcm/set-session', async (c) => {
 
   c.header('Set-Login', 'logged-in');
   return c.json({ success: true });
+});
+
+/**
+ * GET /api/device-accounts — the account chooser's device-session feed.
+ *
+ * The IdP is first-party to `oxy.so`, so the browser sends the `Domain=.oxy.so`
+ * `oxy_device` cookie on this same-origin request. We forward its RAW value to
+ * the API's cookie-less `POST /auth/device/resolve` (gated by the shared
+ * `X-Oxy-Internal` secret — the same secret the `/sso/code` mint uses), which
+ * resolves the device's `DeviceSession` into the set of accounts signed in on
+ * this device. Replaces the SPA's former direct `POST /auth/refresh-all`
+ * (`oxy_rt_${n}` cookie-slot) probe.
+ *
+ * Fail-closed to an empty list on: no cookie, no configured secret, a non-2xx
+ * resolve, or a malformed body — a chooser with no accounts simply shows the
+ * login form. The internal secret travels ONLY in the outbound request header
+ * (never in the response), and the cookie value is never logged.
+ *
+ * NOTE ON TOKENS: the resolve response carries a freshly-minted access token +
+ * expiry per account. They are forwarded (not stripped): the OAuth consent
+ * screen (`authorize.tsx`, which consumes the SAME `useDeviceAccounts` feed)
+ * mints the single-use authorization code with the selected account's bearer
+ * (`Authorization: Bearer` → `POST /auth/oauth/authorize`), so stripping them
+ * would break third-party sign-in. This is the same exposure the prior
+ * `/auth/refresh-all` feed already had (same-origin, memory-only, short-lived,
+ * scoped to the device's own sessions) — no new exposure is introduced.
+ */
+app.get('/api/device-accounts', async (c) => {
+  const { apiBaseUrl, ssoInternalSecret } = resolveConfig(c);
+  const empty = { activeAccountId: null, accounts: [] as unknown[] };
+
+  const deviceKey = getCookie(c, DEVICE_COOKIE_NAME);
+  if (!deviceKey || !ssoInternalSecret) {
+    return c.json(empty);
+  }
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/auth/device/resolve`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Accept: 'application/json',
+        'X-Oxy-Internal': ssoInternalSecret,
+      },
+      body: JSON.stringify({ deviceKey }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return c.json(empty);
+    const data = (await res.json()) as { activeAccountId?: unknown; accounts?: unknown };
+    if (!data || !Array.isArray(data.accounts)) {
+      return c.json(empty);
+    }
+    const activeAccountId = typeof data.activeAccountId === 'string' ? data.activeAccountId : null;
+    // Forward the resolved shape as-is (the client strictly validates it against
+    // `deviceResolveResponseSchema`). The worker only reads the cookie, injects
+    // the internal secret, and fails closed.
+    return c.json({ activeAccountId, accounts: data.accounts });
+  } catch {
+    return c.json(empty);
+  }
 });
 
 /**
