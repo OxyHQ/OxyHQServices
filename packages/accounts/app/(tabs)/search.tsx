@@ -14,8 +14,7 @@ import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, FollowButton as ImportedFollowButton, Avatar } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { getAccountFallbackHandle } from '@oxyhq/core';
-import { getDisplayName } from '@/utils/date-utils';
+import { getAccountFallbackHandle, getNormalizedUserHandle } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -54,7 +53,7 @@ export default function SearchScreen() {
   const params = useLocalSearchParams<{ q?: string }>();
   const searchQuery = params.q || '';
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
 
   // OxyServices integration
   const { user, oxyServices, isAuthenticated, showBottomSheet } = useOxy();
@@ -204,10 +203,9 @@ export default function SearchScreen() {
         const userId = extractUserId(user);
         if (!userId) return null; // Skip invalid users
 
-        // Always derive a friendly display name from the canonical helper so
-        // partially-onboarded accounts (publicKey only) read as
-        // `Account 0x12345678…` rather than the harsh "Unknown".
-        const username = getDisplayName(user, locale);
+        // Canonical display-name contract for a profile DTO: the API-owned
+        // name.displayName, then the normalized handle. No multi-field chain.
+        const displayName = user.name?.displayName ?? getNormalizedUserHandle(user) ?? '';
         const userUsername = user.username || undefined;
         const fallbackHandle = getAccountFallbackHandle(user);
         const avatarUrl = user.avatar && oxyServices
@@ -216,12 +214,12 @@ export default function SearchScreen() {
 
         return {
           id: userId,
-          title: username,
+          title: displayName,
           subtitle: user.bio
-            || (fallbackHandle ? (user.username ? `@${fallbackHandle}` : fallbackHandle) : username),
+            || (fallbackHandle ? (user.username ? `@${fallbackHandle}` : fallbackHandle) : displayName),
           customIcon: (
             <Avatar
-              name={username}
+              name={displayName}
               uri={avatarUrl}
               size={40}
             />
@@ -249,7 +247,7 @@ export default function SearchScreen() {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet, locale]);
+  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

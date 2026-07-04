@@ -13,7 +13,7 @@ import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
-import { getDisplayName } from '@/utils/date-utils';
+import { getAccountDisplayName } from '@oxyhq/core';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useTranslation } from '@/lib/i18n';
 
@@ -133,7 +133,7 @@ export default function AuthorizeScreen() {
   }, [params.token, oxyServices, router]);
 
   // Get user display name via the canonical helper.
-  const displayName = useMemo(() => getDisplayName(user, locale), [user, locale]);
+  const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
 
   // Get avatar URL
   const avatarUrl = useAvatarUrl(user);

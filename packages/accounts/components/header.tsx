@@ -9,7 +9,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar, LogoIcon } from '@oxyhq/services';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useOxy } from '@oxyhq/services';
-import { getDisplayName } from '@/utils/date-utils';
+import { getAccountDisplayName } from '@oxyhq/core';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
 import { useTranslation } from '@/lib/i18n';
@@ -46,7 +46,7 @@ export function Header({ }: HeaderProps) {
     const lastPressRef = useRef<number>(0);
     const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const displayName = useMemo(() => getDisplayName(user), [user]);
+    const displayName = useMemo(() => getAccountDisplayName(user), [user]);
     const avatarUrl = useMemo(() => {
         if (user?.avatar && oxyServices) {
             return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');

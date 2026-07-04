@@ -3,11 +3,10 @@ import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'rea
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar } from '@oxyhq/services';
 import type { AccountNode, AccountRole, OxyServices } from '@oxyhq/core';
-import { getAccountFallbackHandle } from '@oxyhq/core';
+import { getAccountFallbackHandle, getAccountDisplayName } from '@oxyhq/core';
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
-import { getDisplayName } from '@/utils/date-utils';
 import type { GroupedItem } from '@/components/sections/types';
 
 // Roles whose membership carries the `account:act_as` capability — the only
@@ -193,7 +192,7 @@ export function useAccountRowBuilder({
   const { t, locale } = useTranslation();
 
   return useCallback((node: AccountNode): GroupedItem => {
-    const name = getDisplayName(node.account ?? null, locale);
+    const name = getAccountDisplayName(node.account ?? null, locale);
     const username = node.account?.username;
     // When an account has no username yet (e.g. mid-provisioning) fall back to
     // a truncated `publicKey` handle so the row still reads as identifiable
