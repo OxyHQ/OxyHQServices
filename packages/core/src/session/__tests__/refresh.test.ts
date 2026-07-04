@@ -188,6 +188,57 @@ describe('startTokenRefreshScheduler', () => {
     handle.dispose();
   });
 
+  it('backs off on repeated failure — bounded attempts, never a zero-delay busy loop', async () => {
+    jest.useFakeTimers();
+    // Already-expired token + a refresh that ALWAYS fails. The old code floored
+    // the delay to 0 and re-armed in the finally block → a tight loop that would
+    // exhaust jest's 100k-timer guard. The backoff schedule fires only a handful
+    // of times per simulated minute.
+    const refreshAccessToken = jest.fn(async () => null);
+    const nowSec = Math.floor(Date.now() / 1000);
+    const oxy = {
+      getAccessToken: () => 'tok',
+      getAccessTokenExpiry: () => nowSec - 10,
+      onTokensChanged: () => () => undefined,
+      httpService: { refreshAccessToken },
+    } as unknown as OxyServices;
+
+    const handle = startTokenRefreshScheduler(oxy);
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(refreshAccessToken.mock.calls.length).toBeGreaterThan(0);
+    expect(refreshAccessToken.mock.calls.length).toBeLessThan(10);
+    handle.dispose();
+  });
+
+  it('resets the backoff after a successful refresh', async () => {
+    jest.useFakeTimers();
+    // Expiry is always ~1h from NOW, so a successful refresh genuinely pushes
+    // the token out (as a real rotation would). Fail once, then succeed.
+    const refreshAccessToken = jest
+      .fn<Promise<string | null>, [unknown]>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue('fresh');
+    const oxy = {
+      getAccessToken: () => 'tok',
+      getAccessTokenExpiry: () => Math.floor(Date.now() / 1000) + 3600,
+      onTokensChanged: () => () => undefined,
+      httpService: { refreshAccessToken },
+    } as unknown as OxyServices;
+
+    const handle = startTokenRefreshScheduler(oxy);
+    // First fire ~ (3600-60)s out (fails → 5s backoff), then the backoff fire
+    // succeeds and re-arms ~1h out from the (now-fresh) expiry.
+    await jest.advanceTimersByTimeAsync((3600 - 60) * 1000);
+    await jest.advanceTimersByTimeAsync(5_000);
+    const callsAfterSuccess = refreshAccessToken.mock.calls.length;
+    expect(callsAfterSuccess).toBe(2); // one failure + one success
+    // A further minute must NOT produce a burst — the healthy re-arm is ~1h out.
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(refreshAccessToken.mock.calls.length).toBe(callsAfterSuccess);
+    handle.dispose();
+  });
+
   it('calls unref() on its timer so it never holds the event loop', () => {
     const unref = jest.fn();
     const setTimeoutSpy = jest

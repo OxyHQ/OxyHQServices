@@ -119,7 +119,30 @@ describe('createWebAuthStateStore', () => {
     const store = createWebAuthStateStore();
 
     await expect(store.save(SAMPLE)).resolves.toBeUndefined();
-    // The failed write means nothing was persisted.
+    // The write never reached storage...
+    expect(localStorage.getItem(AUTH_STATE_STORAGE_KEY)).toBeNull();
+    // ...but the in-memory mirror keeps the session live for this page's lifetime.
+    expect(await store.load()).toEqual(SAMPLE);
+  });
+
+  it('the mirror keeps the deviceToken live when the write throws', async () => {
+    installLocalStorage(makeFakeStorage({ throwOnSet: true }));
+    const store = createWebAuthStateStore();
+
+    await store.saveDeviceToken('dt-mirrored');
+    expect(await store.loadDeviceToken()).toBe('dt-mirrored');
+  });
+
+  it('a cleared session reads null even if storage later holds a stale blob (mirror wins)', async () => {
+    const storage = makeFakeStorage();
+    installLocalStorage(storage);
+    const store = createWebAuthStateStore();
+
+    await store.save(SAMPLE);
+    await store.clear();
+    // Something (another tab / a failed remove) leaves a stale blob behind.
+    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify(SAMPLE));
+    // The authoritative in-memory mirror still reports the cleared state.
     expect(await store.load()).toBeNull();
   });
 });
@@ -157,7 +180,7 @@ describe('createNativeAuthStateStore', () => {
     expect(await store.loadDeviceToken()).toBe('dt-native');
   });
 
-  it('degrades gracefully when the injected storage throws', async () => {
+  it('keeps the session live via the mirror when the injected storage throws (locked keychain)', async () => {
     const store = createNativeAuthStateStore({
       getItem: async () => {
         throw new Error('secure store locked');
@@ -170,7 +193,8 @@ describe('createNativeAuthStateStore', () => {
       },
     });
     await expect(store.save(SAMPLE)).resolves.toBeUndefined();
-    expect(await store.load()).toBeNull();
+    // The write threw, but the in-memory mirror preserves the session.
+    expect(await store.load()).toEqual(SAMPLE);
   });
 });
 

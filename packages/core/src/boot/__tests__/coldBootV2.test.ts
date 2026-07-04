@@ -101,6 +101,20 @@ describe('isSameApex', () => {
     expect(isSameApex('app.mention.earth', 'api.oxy.so')).toBe(false);
     expect(isSameApex('homiio.com', 'api.oxy.so')).toBe(false);
   });
+
+  it('does NOT collapse distinct IPv4 hosts that share trailing octets', () => {
+    // The last-2-labels heuristic would map both to "1.1" — must be exact.
+    expect(isSameApex('192.168.1.1', '10.0.1.1')).toBe(false);
+    expect(isSameApex('192.168.1.10', '192.168.1.5')).toBe(false);
+    expect(isSameApex('192.168.1.5', '192.168.1.5')).toBe(true);
+  });
+
+  it('requires exact equality for single-label / IPv6 / localhost hosts', () => {
+    expect(isSameApex('localhost', 'localhost')).toBe(true);
+    expect(isSameApex('localhost', 'api.oxy.so')).toBe(false);
+    expect(isSameApex('::1', '::1')).toBe(true);
+    expect(isSameApex('fe80::1', 'fe80::2')).toBe(false);
+  });
 });
 
 describe('runSessionColdBoot — step ordering', () => {

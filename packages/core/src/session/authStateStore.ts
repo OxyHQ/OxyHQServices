@@ -202,8 +202,17 @@ export function createWebAuthStateStore(): AuthStateStore {
   if (!storage) {
     return createMemoryAuthStateStore();
   }
+  // In-memory mirror so a FAILED persist (quota / private mode / locked store)
+  // does not silently lose the session for this page's lifetime. `undefined`
+  // means "never written this session" → fall back to storage; any set value
+  // (including `null` after clear) is authoritative and preferred over storage.
+  let sessionMirror: PersistedAuthState | null | undefined;
+  let deviceTokenMirror: string | null | undefined;
   return {
     load: async () => {
+      if (sessionMirror !== undefined) {
+        return sessionMirror;
+      }
       try {
         return deserialize(storage.getItem(AUTH_STATE_STORAGE_KEY));
       } catch {
@@ -211,14 +220,16 @@ export function createWebAuthStateStore(): AuthStateStore {
       }
     },
     save: async (state) => {
+      sessionMirror = state; // mirror FIRST — authoritative even if persist fails
       try {
         storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify(state));
       } catch {
         // Quota / private-mode / disabled storage — non-fatal. The session
-        // stays live in memory; only reload durability is lost.
+        // stays live via the in-memory mirror; only reload durability is lost.
       }
     },
     clear: async () => {
+      sessionMirror = null;
       try {
         storage.removeItem(AUTH_STATE_STORAGE_KEY);
       } catch {
@@ -226,6 +237,9 @@ export function createWebAuthStateStore(): AuthStateStore {
       }
     },
     loadDeviceToken: async () => {
+      if (deviceTokenMirror !== undefined) {
+        return deviceTokenMirror;
+      }
       try {
         return storage.getItem(DEVICE_TOKEN_STORAGE_KEY);
       } catch {
@@ -233,6 +247,7 @@ export function createWebAuthStateStore(): AuthStateStore {
       }
     },
     saveDeviceToken: async (token) => {
+      deviceTokenMirror = token;
       try {
         storage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
       } catch {
@@ -240,6 +255,7 @@ export function createWebAuthStateStore(): AuthStateStore {
       }
     },
     clearDeviceToken: async () => {
+      deviceTokenMirror = null;
       try {
         storage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
       } catch {
@@ -258,8 +274,15 @@ export function createWebAuthStateStore(): AuthStateStore {
  * exactly like the web store.
  */
 export function createNativeAuthStateStore(storage: NativeKeyValueStorage): AuthStateStore {
+  // Same in-memory mirror as the web store — a locked/failed SecureStore write
+  // must not silently lose the session for the app's lifetime.
+  let sessionMirror: PersistedAuthState | null | undefined;
+  let deviceTokenMirror: string | null | undefined;
   return {
     load: async () => {
+      if (sessionMirror !== undefined) {
+        return sessionMirror;
+      }
       try {
         return deserialize(await storage.getItem(AUTH_STATE_STORAGE_KEY));
       } catch {
@@ -267,13 +290,15 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       }
     },
     save: async (state) => {
+      sessionMirror = state;
       try {
         await storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify(state));
       } catch {
-        // Non-fatal — session stays live in memory.
+        // Non-fatal — session stays live via the in-memory mirror.
       }
     },
     clear: async () => {
+      sessionMirror = null;
       try {
         await storage.removeItem(AUTH_STATE_STORAGE_KEY);
       } catch {
@@ -281,6 +306,9 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       }
     },
     loadDeviceToken: async () => {
+      if (deviceTokenMirror !== undefined) {
+        return deviceTokenMirror;
+      }
       try {
         return await storage.getItem(DEVICE_TOKEN_STORAGE_KEY);
       } catch {
@@ -288,6 +316,7 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       }
     },
     saveDeviceToken: async (token) => {
+      deviceTokenMirror = token;
       try {
         await storage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
       } catch {
@@ -295,6 +324,7 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       }
     },
     clearDeviceToken: async () => {
+      deviceTokenMirror = null;
       try {
         await storage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
       } catch {

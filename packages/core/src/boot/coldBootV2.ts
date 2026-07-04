@@ -186,11 +186,38 @@ function registrableDomain(host: string): string {
   return labels.length <= 2 ? labels.join('.') : labels.slice(-2).join('.');
 }
 
-/** True when both hosts share a registrable domain (same-site / same-apex). */
+/**
+ * Is `host` an IP literal (v4/v6) or a single-label host (`localhost`)? Such
+ * hosts have NO registrable domain — the last-two-labels heuristic would
+ * mis-group them (`192.168.1.1` and `10.0.1.1` both collapse to `1.1`; IPv6
+ * `::1` and `localhost` are single "labels"), so a LAN/dev page could be wrongly
+ * classified same-apex as a different LAN API and skip the cross-apex hop.
+ */
+function isIpOrSingleLabel(host: string): boolean {
+  if (host.includes(':')) {
+    return true; // IPv6 literal
+  }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return true; // IPv4 literal
+  }
+  return !host.includes('.'); // single-label (e.g. `localhost`)
+}
+
+/**
+ * True when both hosts are same-site / same-apex. For a normal multi-label host
+ * pair, that means sharing a registrable domain. For an IP literal or a
+ * single-label host (no registrable domain), same-apex requires the two hosts
+ * to be EXACTLY equal — never grouped by a spurious trailing-label match.
+ */
 export function isSameApex(pageHost: string, apiHost: string): boolean {
-  const a = registrableDomain(pageHost);
-  const b = registrableDomain(apiHost);
-  return a !== '' && a === b;
+  const a = pageHost.toLowerCase();
+  const b = apiHost.toLowerCase();
+  if (isIpOrSingleLabel(a) || isIpOrSingleLabel(b)) {
+    return a === b;
+  }
+  const ra = registrableDomain(a);
+  const rb = registrableDomain(b);
+  return ra !== '' && ra === rb;
 }
 
 /** Build a `DeviceBootSession` from a persisted state (post-refresh/warm-plant). */

@@ -54,17 +54,37 @@ export type DeviceBootReason = z.infer<typeof deviceBootReasonSchema>;
 
 /**
  * The `#oxy_boot=<json>` fragment `GET /auth/device/bootstrap` appends to the
- * `return_to` URL. Carries the CSRF `state` echo, the resolution `reason`, an
- * optional single-use exchange `code` (present iff `reason === 'session'`), and
- * the opaque `deviceToken`. NEVER carries tokens or a deviceId.
+ * `return_to` URL. Carries the CSRF `state` echo, the resolution `reason`, the
+ * opaque `deviceToken`, and — ONLY on the `session` arm — the single-use
+ * exchange `code`. NEVER carries tokens or a deviceId.
+ *
+ * Discriminated on `reason` so the code↔reason coupling is enforced by the
+ * schema, not by the consumer: the `session` arm REQUIRES `code`, and the
+ * `no_session` / `new_device` arms omit it (a stray `code` on those arms is
+ * stripped). A `session` fragment WITHOUT a code therefore fails to parse and
+ * is treated as "no usable fragment" rather than half-processed.
  */
-export const deviceBootFragmentSchema = z.object({
+const deviceBootFragmentBase = {
     v: z.literal(1),
     state: z.string().min(1).max(256),
-    reason: deviceBootReasonSchema,
-    code: z.string().min(20).max(128).optional(),
     deviceToken: z.string().min(20).max(512),
-});
+};
+
+export const deviceBootFragmentSchema = z.discriminatedUnion('reason', [
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('session'),
+        code: z.string().min(20).max(128),
+    }),
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('no_session'),
+    }),
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('new_device'),
+    }),
+]);
 
 export type DeviceBootFragment = z.infer<typeof deviceBootFragmentSchema>;
 

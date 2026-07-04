@@ -60,8 +60,28 @@ describe('deviceBootFragmentSchema', () => {
             ...noCode,
             reason: 'no_session',
         });
-        expect(parsed?.code).toBeUndefined();
         expect(parsed?.reason).toBe('no_session');
+        expect(parsed && 'code' in parsed).toBe(false);
+    });
+
+    it('REJECTS a session fragment missing the code (discriminated union requires it)', () => {
+        const { code, ...noCode } = fragment;
+        expect(safeParseContract(deviceBootFragmentSchema, noCode)).toBeNull();
+    });
+
+    it('strips a stray code on the no_session / new_device arms', () => {
+        const parsedNoSession = safeParseContract(deviceBootFragmentSchema, {
+            ...fragment,
+            reason: 'no_session',
+        });
+        expect(parsedNoSession && 'code' in parsedNoSession).toBe(false);
+
+        const parsedNewDevice = safeParseContract(deviceBootFragmentSchema, {
+            ...fragment,
+            reason: 'new_device',
+        });
+        expect(parsedNewDevice?.reason).toBe('new_device');
+        expect(parsedNewDevice && 'code' in parsedNewDevice).toBe(false);
     });
 
     it('rejects v !== 1', () => {
