@@ -40,6 +40,68 @@ export function isValidPassword(password: string): boolean {
 }
 
 /**
+ * Display-name character policy.
+ *
+ * A clean display name is composed ONLY of:
+ *   - letters of any script (`\p{L}`),
+ *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
+ *     "é"),
+ *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
+ *     space, …) — but NOT control whitespace such as tab, newline, or carriage
+ *     return, which would break layout or enable multi-line spoofing,
+ *   - the straight apostrophe (`'`, e.g. "O'Brien").
+ *
+ * Everything else is rejected: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
+ * digits, hyphens, dots, control whitespace (tab/newline/CR), and any other
+ * punctuation. The allowed set `\p{L}\p{M}\p{Zs}'` explicitly EXCLUDES `<`, `>`,
+ * `&`, and `"`, so a value that passes this predicate can never contain an
+ * HTML/XSS vector.
+ *
+ * This is the SINGLE definition of the policy, shared between the API 400-gate
+ * (`@oxyhq/api` `displayNameSanitize.ts`) and client-side inline validation
+ * (the RN profile editor) so the two can never drift. It is platform-agnostic
+ * (no react/react-native/expo).
+ */
+
+/**
+ * Single test for the presence of a disallowed character (non-global). The
+ * whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the latter
+ * would admit tab/newline/carriage return, which break layout and enable
+ * multi-line spoofing.
+ */
+const DISALLOWED_PROBE = /[^\p{L}\p{M}\p{Zs}']/u;
+
+/**
+ * Single test for the presence of an orphaned combining mark (non-global) — a
+ * `\p{M}` not attached to a base letter (string start, whitespace, the
+ * apostrophe, or a position vacated by a stripped character). A mark preceded by
+ * `\p{L}` (a base letter, e.g. the decomposed accent in "Renée") or by another
+ * `\p{M}` (a multi-mark cluster) is NOT matched because the negative lookbehind
+ * fails at its position.
+ */
+const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
+
+/**
+ * Whether `raw` already satisfies the display-name policy, i.e. it contains no
+ * disallowed characters AND no orphaned combining marks. Used to REJECT native
+ * (signup / profile edit) names with a 400 rather than silently stripping them,
+ * and to validate inline in the client editor.
+ *
+ * The orphaned-mark probe runs on the NFC-normalized form so a legitimate
+ * decomposed accent (`e`+◌́) — which normalization recomposes into `é` — is NOT
+ * rejected, while a lone, base-less mark (e.g. `"༘"`) IS.
+ *
+ * The function only checks the character set; an empty or whitespace-only string
+ * is considered valid (`true`). Call sites that require a non-empty name enforce
+ * that separately.
+ */
+export function isValidDisplayName(raw: string): boolean {
+  return (
+    !DISALLOWED_PROBE.test(raw) && !ORPHANED_MARK_PROBE.test(raw.normalize('NFC'))
+  );
+}
+
+/**
  * Validate required string
  */
 export function isRequiredString(value: unknown): boolean {

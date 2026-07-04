@@ -5,7 +5,8 @@ import { ThemedText } from '@/components/themed-text';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
-import { formatDate, getDisplayName } from '@/utils/date-utils';
+import { formatDate } from '@/utils/date-utils';
+import { getAccountDisplayName } from '@oxyhq/core';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
 import { Section } from '@/components/section';
@@ -32,11 +33,12 @@ export default function PersonalInfoScreen() {
   }, [showBottomSheet]);
 
   // Compute current-account profile data.
-  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const displayName = useMemo(() => getAccountDisplayName(user), [user]);
+  const userUsername = useMemo(() => user?.username ?? null, [user?.username]);
   const userEmail = useMemo(() => user?.email ?? t('personalInfo.fields.noEmail'), [user?.email, t]);
   const extendedUser = user as ExtendedUser | undefined;
   const userPhone = useMemo(() => extendedUser?.phone ?? null, [extendedUser]);
-  const userAddress = useMemo(() => user?.location ?? extendedUser?.address ?? null, [user, extendedUser]);
+  const userAddress = useMemo(() => extendedUser?.address ?? null, [extendedUser]);
   const userBirthday = useMemo(() => {
     const birthday = extendedUser?.birthday ?? extendedUser?.dateOfBirth;
     return birthday ? formatDate(birthday) : null;
@@ -50,6 +52,14 @@ export default function PersonalInfoScreen() {
       title: t('personalInfo.fields.fullName'),
       value: displayName ?? t('common.notSet'),
       onPress: () => handleEditField('displayName'),
+    },
+    {
+      id: 'username',
+      icon: 'at',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: t('personalInfo.fields.username'),
+      value: userUsername ? `@${userUsername}` : t('common.notSet'),
+      onPress: () => handleEditField('username'),
     },
     {
       id: 'email',
@@ -90,7 +100,7 @@ export default function PersonalInfoScreen() {
       title: t('personalInfo.fields.accountCreated'),
       value: user?.createdAt ? formatDate(user.createdAt) : t('common.unknown'),
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField, t]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userUsername, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField, t]);
 
   const contactItems = useMemo(() => [
     {
@@ -133,6 +143,15 @@ export default function PersonalInfoScreen() {
 
   const actionsItems = useMemo(() => [
     {
+      id: 'edit-profile',
+      icon: 'account-edit-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: t('personalInfo.actions.editProfile'),
+      subtitle: t('personalInfo.actions.editProfileSubtitle'),
+      onPress: () => showBottomSheet?.({ screen: 'EditProfile' }),
+      showChevron: true,
+    },
+    {
       id: 'manage-sessions',
       icon: 'monitor-lock',
       iconColor: colors.sidebarIconSecurity,
@@ -159,7 +178,7 @@ export default function PersonalInfoScreen() {
       onPress: () => showBottomSheet?.('ManageAccount'),
       showChevron: true,
     },
-  ], [colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet, t]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet, t]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {

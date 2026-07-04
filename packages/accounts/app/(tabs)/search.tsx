@@ -8,13 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, EmptyStateCard } from '@/components/ui';
 import { menuItems } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, FollowButton as ImportedFollowButton, Avatar } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import { getAccountFallbackHandle, getNormalizedUserHandle } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -53,7 +53,7 @@ export default function SearchScreen() {
   const params = useLocalSearchParams<{ q?: string }>();
   const searchQuery = params.q || '';
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
 
   // OxyServices integration
   const { user, oxyServices, isAuthenticated, showBottomSheet } = useOxy();
@@ -203,10 +203,9 @@ export default function SearchScreen() {
         const userId = extractUserId(user);
         if (!userId) return null; // Skip invalid users
 
-        // Always derive a friendly display name from the canonical helper so
-        // partially-onboarded accounts (publicKey only) read as
-        // `Account 0x12345678…` rather than the harsh "Unknown".
-        const username = getAccountDisplayName(user, locale);
+        // Canonical display-name contract for a profile DTO: the API-owned
+        // name.displayName, then the normalized handle. No multi-field chain.
+        const displayName = user.name?.displayName ?? getNormalizedUserHandle(user) ?? '';
         const userUsername = user.username || undefined;
         const fallbackHandle = getAccountFallbackHandle(user);
         const avatarUrl = user.avatar && oxyServices
@@ -215,12 +214,12 @@ export default function SearchScreen() {
 
         return {
           id: userId,
-          title: username,
+          title: displayName,
           subtitle: user.bio
-            || (fallbackHandle ? (user.username ? `@${fallbackHandle}` : fallbackHandle) : username),
+            || (fallbackHandle ? (user.username ? `@${fallbackHandle}` : fallbackHandle) : displayName),
           customIcon: (
             <Avatar
-              name={username}
+              name={displayName}
               uri={avatarUrl}
               size={40}
             />
@@ -248,7 +247,7 @@ export default function SearchScreen() {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet, locale]);
+  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -302,18 +301,11 @@ export default function SearchScreen() {
                 </ThemedText>
               </View>
               {filteredItems.length === 0 && userSearchResultItems.length === 0 && !isSearchingUsers ? (
-                <View style={styles.emptyState}>
-                  <MaterialCommunityIcons
-                    name="magnify"
-                    size={48}
-                    color={colors.icon}
-                    style={styles.emptyIcon}
-                  />
-                  <ThemedText style={styles.emptyText}>{t('search.noResults')}</ThemedText>
-                  <ThemedText style={styles.emptySubtext}>
-                    {t('search.noResultsSubtitle')}
-                  </ThemedText>
-                </View>
+                <EmptyStateCard
+                  icon="magnify"
+                  title={t('search.noResults')}
+                  subtitle={t('search.noResultsSubtitle')}
+                />
               ) : (
                 <>
                   {filteredItems.length > 0 && (
@@ -447,27 +439,6 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 15,
     opacity: 0.8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 24,
-  },
-  emptyIcon: {
-    opacity: 0.5,
-    marginBottom: 24,
-  },
-  emptyText: {
-    fontSize: 28,
-    fontWeight: '600',
-    marginBottom: 12,
-    opacity: 0.9,
-  },
-  emptySubtext: {
-    fontSize: 16,
-    opacity: 0.7,
-    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 18,

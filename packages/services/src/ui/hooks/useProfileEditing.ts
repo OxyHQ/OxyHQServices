@@ -24,7 +24,6 @@ export interface ProfileUpdateData {
     username?: string;
     email?: string;
     bio?: string;
-    location?: string;
     locations?: ProfileLocation[];
     links?: string[];
     linksMetadata?: ProfileLinkMetadata[];
@@ -67,13 +66,8 @@ export const useProfileEditing = () => {
         if (updates.bio !== undefined) {
             updateData.bio = updates.bio;
         }
-        if (updates.location !== undefined || updates.locations !== undefined) {
-            updateData.location = updates.locations && updates.locations.length > 0 
-                ? updates.locations[0].name 
-                : updates.location || '';
-            if (updates.locations) {
-                updateData.locations = updates.locations;
-            }
+        if (updates.locations !== undefined) {
+            updateData.locations = updates.locations;
         }
         if (updates.links !== undefined) {
             updateData.links = updates.links;

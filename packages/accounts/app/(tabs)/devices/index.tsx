@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, EmptyStateCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
@@ -45,17 +45,17 @@ export default function DevicesScreen() {
   // Handle device removal
   const handleRemoveDevice = useCallback(async (deviceId: string, deviceName: string, isCurrent: boolean) => {
     if (isCurrent) {
-      toast.warning('You cannot remove your current device. Use another device to remove this one.');
+      toast.warning(t('devices.detail.removeCurrentWarning'));
       return;
     }
 
     alert(
-      'Remove device',
-      `Are you sure you want to remove "${deviceName}"? This will sign out all sessions on this device.`,
+      t('devices.detail.removeTitle'),
+      t('devices.detail.removeMessage', { name: deviceName }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.remove'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -65,10 +65,10 @@ export default function DevicesScreen() {
               await refetch();
               // On native, surface a success toast (web's list refresh is its own confirmation).
               if (Platform.OS !== 'web') {
-                toast.success('Device removed');
+                toast.success(t('devices.remove.success'));
               }
             } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : 'Failed to remove device. Please try again.';
+              const message = err instanceof Error ? err.message : t('devices.remove.failed');
               toast.error(message);
             } finally {
               setActionLoading(null);
@@ -77,7 +77,7 @@ export default function DevicesScreen() {
         },
       ]
     );
-  }, [oxyServices, alert, refetch]);
+  }, [oxyServices, alert, refetch, t]);
 
   // Transform devices for UI
   const deviceItems = useMemo(() => {
@@ -85,7 +85,7 @@ export default function DevicesScreen() {
 
     return devices.map((device: DeviceRecord) => {
       const deviceId = device.id || device.deviceId || '';
-      const deviceName = getDeviceDisplayName(device, 'Unknown Device');
+      const deviceName = getDeviceDisplayName(device, t('devices.unknownDevice'));
       const deviceType = device.type || device.deviceType || '';
       const lastActive = device.lastActive || device.createdAt;
       // Use isCurrent from API response (already identified by backend)
@@ -98,15 +98,15 @@ export default function DevicesScreen() {
         iconColor: isCurrent ? colors.tint : colors.sidebarIconDevices,
         title: deviceName,
         subtitle: isCurrent
-          ? 'This device • Last active: ' + formatRelativeTime(lastActive, t('common.unknown'))
-          : 'Last active: ' + formatRelativeTime(lastActive, t('common.unknown')),
+          ? t('devices.item.thisDeviceLastActive', { time: formatRelativeTime(lastActive, t('common.unknown')) })
+          : t('devices.item.lastActive', { time: formatRelativeTime(lastActive, t('common.unknown')) }),
         onPress: () => router.push({ pathname: '/(tabs)/devices/[deviceId]', params: { deviceId } }),
         showChevron: true,
         customContent: (
           <View style={styles.deviceActions}>
             {isCurrent ? (
               <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
-                <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>Current</Text>
+                <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>{t('devices.item.currentBadge')}</Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -121,7 +121,7 @@ export default function DevicesScreen() {
                 {isLoading ? (
                   <ActivityIndicator size="small" color={colors.text} />
                 ) : (
-                  <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
+                  <Text style={[styles.buttonText, { color: colors.text }]}>{t('common.remove')}</Text>
                 )}
               </TouchableOpacity>
             )}
@@ -137,7 +137,7 @@ export default function DevicesScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading devices...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('devices.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -149,7 +149,7 @@ export default function DevicesScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <View style={styles.mobileContent}>
-            <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+            <ScreenHeader title={t('devices.title')} subtitle={t('devices.headerSubtitle')} />
             <View style={styles.errorContainer}>
               <ThemedText style={[styles.errorText, { color: colors.text }]}>
                 {error}
@@ -161,7 +161,7 @@ export default function DevicesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('a11y.retry')}
               >
-                <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>Retry</Text>
+                <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>{t('common.retry')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -170,16 +170,20 @@ export default function DevicesScreen() {
     );
   }
 
+  const emptyDevices = (
+    <EmptyStateCard
+      icon="devices"
+      title={t('devices.empty.title')}
+      subtitle={t('devices.empty.subtitle')}
+    />
+  );
+
   if (isDesktop) {
     return (
       <>
-        <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+        <ScreenHeader title={t('devices.title')} subtitle={t('devices.headerSubtitle')} />
         {deviceItems.length === 0 ? (
-          <View style={styles.placeholder}>
-            <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
-              No devices found.
-            </ThemedText>
-          </View>
+          emptyDevices
         ) : (
           <AccountCard>
             <GroupedSection items={deviceItems} />
@@ -193,13 +197,9 @@ export default function DevicesScreen() {
     <ScreenContentWrapper refreshing={isFetching && !loading} onRefresh={handleRefresh}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+          <ScreenHeader title={t('devices.title')} subtitle={t('devices.headerSubtitle')} />
           {deviceItems.length === 0 ? (
-            <View style={styles.placeholder}>
-              <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
-                No devices found.
-              </ThemedText>
-            </View>
+            emptyDevices
           ) : (
             <AccountCard>
               <GroupedSection items={deviceItems} />
@@ -318,16 +318,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     opacity: 0.7,
-  },
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  placeholderText: {
-    fontSize: 16,
-    textAlign: 'center',
   },
   deviceActions: {
     flexDirection: 'row',

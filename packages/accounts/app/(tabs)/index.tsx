@@ -7,7 +7,8 @@ import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useCurrentUser } from '@oxyhq/services';
-import { formatDate, getDisplayName } from '@/utils/date-utils';
+import { formatDate } from '@/utils/date-utils';
+import { getAccountDisplayName } from '@oxyhq/core';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
@@ -59,7 +60,7 @@ export default function HomeScreen() {
   } = useBiometricSettings();
 
   // Compute current-account identity data (the account signed in as).
-  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const displayName = useMemo(() => getAccountDisplayName(user), [user]);
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
   const avatarUrl = useAvatarUrl(user);
 

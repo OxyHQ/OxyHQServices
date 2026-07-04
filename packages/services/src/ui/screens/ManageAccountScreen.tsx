@@ -78,7 +78,7 @@ const formatRelative = (dateString?: string): string => {
  * Replaces AccountOverview + AccountSettings + the per-account half of
  * SessionManagement. Lists ONLY the active user's profile, sessions on this
  * device, and security/destructive actions for THIS account. Multi-account
- * surface lives in {@link AccountMenu} — keep these concerns separate.
+ * surface lives in {@link AccountSwitcher} — keep these concerns separate.
  */
 const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -384,9 +384,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.items.editProfile.subtitle')
                             || 'Name, username, bio, links'
                         }
-                        onPress={() =>
-                            navigate?.('EditProfileField', { field: 'username' })
-                        }
+                        onPress={() => navigate?.('EditProfile')}
                     />
                     <SettingsListItem
                         icon={
@@ -400,9 +398,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.items.theme.subtitle')
                             || 'Personalize your Bloom color'
                         }
-                        onPress={() =>
-                            navigate?.('EditProfileField', { field: 'color' })
-                        }
+                        onPress={() => navigate?.('Preferences')}
                     />
                     <SettingsListItem
                         icon={
