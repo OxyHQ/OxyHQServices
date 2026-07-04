@@ -632,9 +632,9 @@ export const useUpdateUserPreferences = () => {
 };
 
 /**
- * Revoke the authenticated user's authorization for a specific RP origin.
- * Removes the OAuth grant so the app no longer appears in the user's
- * "Connected apps" list — next sign-in for that app will require explicit
+ * Revoke the authenticated user's authorization for a specific application (by
+ * its OAuth `clientId`). Removes the grant so the app no longer appears in the
+ * user's "Connected apps" list — next sign-in for that app will require explicit
  * re-consent.
  */
 export const useRevokeAuthorizedApp = () => {

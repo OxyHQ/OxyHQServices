@@ -120,10 +120,10 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                         icon={<Avatar name={item.appName} size={APP_ICON_SIZE} />}
                         title={item.appName}
                         description={
-                            t('connectedApps.item.lastUsed', {
+                            t('connectedApps.item.granted', {
                                 relative: formatRelative(item.grantedAt),
                             })
-                            || `Last used ${formatRelative(item.grantedAt)}`
+                            || `Granted ${formatRelative(item.grantedAt)}`
                         }
                         onPress={isRevoking ? undefined : () => confirmRevoke(item)}
                         disabled={isRevoking}
