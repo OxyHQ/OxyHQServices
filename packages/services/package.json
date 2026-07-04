@@ -106,7 +106,7 @@
     }
   },
   "dependencies": {
-    "@oxyhq/contracts": "0.8.0"
+    "@oxyhq/contracts": "workspace:*"
   },
   "devDependencies": {
     "@oxyhq/core": "^5.5.0",
