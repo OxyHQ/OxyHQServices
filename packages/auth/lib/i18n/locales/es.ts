@@ -72,13 +72,6 @@ const es: LocaleDict = {
     },
   },
 
-  fedcm: {
-    status: {
-      signedInAs: 'Sesión iniciada como {{name}}',
-      signedOut: 'Sesión cerrada',
-    },
-  },
-
   authorize: {
     title: 'Continuar a {{app}}',
     subtitle:

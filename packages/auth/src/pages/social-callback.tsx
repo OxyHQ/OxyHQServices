@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { buildAuthUrl } from "@/lib/oxy-api-client"
-import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
+import { buildPostLoginRedirect } from "@/lib/auth-utils"
 import { LoadingSpinner } from "@/components/auth-form-layout"
 
 type OAuthState = {
@@ -88,7 +88,6 @@ export function SocialCallbackPage() {
                     return
                 }
 
-                setFedCMLoginStatus(payload.sessionId)
                 navigate(buildPostLoginRedirect({
                     sessionToken: oauthState.sessionToken,
                     redirectUri: oauthState.redirectUri,

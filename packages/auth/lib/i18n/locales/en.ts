@@ -75,13 +75,6 @@ const en: LocaleDict = {
     },
   },
 
-  fedcm: {
-    status: {
-      signedInAs: 'Signed in as {{name}}',
-      signedOut: 'Signed out',
-    },
-  },
-
   authorize: {
     title: 'Continue to {{app}}',
     subtitle:

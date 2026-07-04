@@ -23,8 +23,6 @@ const INTERNAL_SECRET = 'test-sso-internal-secret-32-chars-long!!';
 // Configure env BEFORE importing the server module (it reads env at load).
 process.env.OXY_API_URL = API_BASE;
 process.env.SSO_INTERNAL_SECRET = INTERNAL_SECRET;
-process.env.FEDCM_TOKEN_SECRET = 'test-fedcm-secret';
-process.env.FEDCM_ISSUER = 'https://auth.oxy.so';
 process.env.NODE_ENV = 'test';
 
 const { app } = await import('../index');
