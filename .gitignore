@@ -111,3 +111,5 @@ dkim-private.pem
 *_private.key
 *_public.key
 c4p0_*.key
+# Wrangler local state (miniflare cache from `wrangler pages dev`)
+.wrangler/
