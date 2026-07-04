@@ -317,12 +317,17 @@ export function WebOxyProvider({
     try {
       users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
     } catch (fetchError) {
+      // Do NOT bail to an empty account list: a transient batch-profile failure
+      // must still LIST the device accounts so the chooser shows them (rows
+      // project with a null user → the account-chooser renders a handle
+      // fallback). Profiles fill in on the next successful sync. Leaving `users`
+      // empty preserves the already-resolved active `user` (the `if (activeUser)`
+      // guard below never clears it).
       logger.warn(
-        'syncFromClient: failed to resolve account profiles',
+        'syncFromClient: failed to resolve account profiles — listing accounts without profiles',
         { component: 'WebOxyProvider', method: 'syncFromClient' },
         fetchError as unknown,
       );
-      return;
     }
     const latest = sessionClient.getState();
     if (!latest || latest.revision !== capturedRevision) {
