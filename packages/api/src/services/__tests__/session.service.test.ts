@@ -623,4 +623,37 @@ describe('Session Service', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('migrateSessionToDevice', () => {
+    it('re-mints tokens on the new device and updates the Session (migrated=true)', async () => {
+      mockFindOneResults.push({ userId: 'user-1', deviceId: 'old-dev', accessToken: 'old-tok', expiresAt: new Date('2030-01-01T00:00:00.000Z') });
+      // findOneAndUpdate is now `.lean()`-chained → return a lean-shaped query.
+      mockFindOneAndUpdate.mockReturnValueOnce({ lean: () => Promise.resolve({ deviceId: 'cookie-dev', expiresAt: new Date('2030-01-01T00:00:00.000Z') }) });
+
+      const result = await sessionService.migrateSessionToDevice('session-123', 'cookie-dev');
+
+      expect(result).toEqual({ accessToken: 'mock-access-token', expiresAt: new Date('2030-01-01T00:00:00.000Z'), migrated: true });
+      // The re-minted token embeds the NEW deviceId (3rd generateSessionTokens arg).
+      expect(generateSessionTokens as jest.Mock).toHaveBeenCalledWith('user-1', 'session-123', 'cookie-dev');
+      const updateArg = mockFindOneAndUpdate.mock.calls[0][1] as { $set: Record<string, unknown> };
+      expect(updateArg.$set.deviceId).toBe('cookie-dev');
+      expect(updateArg.$set.accessToken).toBe('mock-access-token');
+      expect(sessionCache.invalidate).toHaveBeenCalledWith('session-123');
+    });
+
+    it('is idempotent: no re-mint when the session is already on the target device (migrated=false)', async () => {
+      mockFindOneResults.push({ userId: 'user-1', deviceId: 'cookie-dev', accessToken: 'current-tok', expiresAt: new Date('2030-01-01T00:00:00.000Z') });
+
+      const result = await sessionService.migrateSessionToDevice('session-123', 'cookie-dev');
+
+      expect(result).toEqual({ accessToken: 'current-tok', expiresAt: new Date('2030-01-01T00:00:00.000Z'), migrated: false });
+      expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+      expect(generateSessionTokens as jest.Mock).not.toHaveBeenCalled();
+    });
+
+    it('returns null for a missing/inactive session', async () => {
+      mockFindOneResults.push(null);
+      expect(await sessionService.migrateSessionToDevice('gone', 'cookie-dev')).toBeNull();
+    });
+  });
 });

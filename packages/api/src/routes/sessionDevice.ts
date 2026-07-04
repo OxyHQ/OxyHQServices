@@ -6,6 +6,7 @@ import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
 import deviceSessionService from '../services/deviceSession.service';
 import sessionService from '../services/session.service';
 import { broadcastDeviceState } from '../utils/socket';
+import { readDeviceCookie } from '../utils/deviceCookie';
 import { asyncHandler } from '../utils/asyncHandler';
 
 const router = Router();
@@ -49,6 +50,38 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
   // deactivated) — such a session must NOT be re-added to the device set.
   if (!sessionDoc) { res.status(401).json({ error: 'Invalid session' }); return; }
   const operatedByUserId = sessionDoc.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
+
+  // CONVERGENCE: same-site callers send the `oxy_device` cookie. If it resolves
+  // to a DIFFERENT (canonical) device than the caller's JWT-claims deviceId,
+  // migrate this session onto the cookie device so the whole ecosystem converges
+  // on ONE device identity. Fixes the split-brain: a pre-cookie session lives on
+  // the old JWT-claims doc while the cookie doc (born empty during bootstrap) is
+  // what `/auth/device/resolve` + bootstrap/web-session read — so a signed-in
+  // user looked signed-out to the new device-first surface + IdP chooser.
+  const rawCookie = readDeviceCookie(req);
+  const cookieState = rawCookie ? await deviceSessionService.getStateByCookieKey(rawCookie) : null;
+  if (cookieState && cookieState.deviceId !== session.deviceId) {
+    // Re-mint the session's tokens on the cookie device FIRST so the returned
+    // activeToken carries the cookie deviceId claim — the caller's JWT still
+    // claims the OLD deviceId, so the client must replace its bearer immediately
+    // (SessionClient plants activeToken from /add) to target the right socket
+    // room + hit the canonical doc on subsequent /session/device/* calls.
+    await sessionService.migrateSessionToDevice(session.sessionId, cookieState.deviceId);
+    const { cookieState: convergedState, oldState, changed } = await deviceSessionService.convergeAccountOntoDevice(
+      cookieState.deviceId,
+      session.deviceId,
+      { accountId, sessionId: session.sessionId, ...(operatedByUserId ? { operatedByUserId } : {}) },
+    );
+    // Broadcast BOTH rooms on a real migration: the cookie device (account
+    // arrived) and the old device (account left). No-op re-converge → no change.
+    if (changed) {
+      broadcastDeviceState(convergedState);
+      broadcastDeviceState(oldState);
+    }
+    res.json({ data: await withActiveToken(convergedState) });
+    return;
+  }
+
   const { state, changed } = await deviceSessionService.addAccount(session.deviceId, {
     accountId,
     sessionId: session.sessionId,

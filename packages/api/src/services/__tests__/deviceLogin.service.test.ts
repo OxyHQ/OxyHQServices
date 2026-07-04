@@ -13,14 +13,21 @@ import type { Request } from 'express';
 
 const mockGetStateByCookieKey = jest.fn();
 const mockAddAccount = jest.fn();
+const mockEnsureDeviceForCookie = jest.fn();
 jest.mock('../deviceSession.service', () => {
   const svc = {
     getStateByCookieKey: (...a: unknown[]) => mockGetStateByCookieKey(...a),
     addAccount: (...a: unknown[]) => mockAddAccount(...a),
+    ensureDeviceForCookie: (...a: unknown[]) => mockEnsureDeviceForCookie(...a),
   };
   // deviceLogin.service dynamically imports the NAMED `deviceSessionService`.
   return { __esModule: true, default: svc, deviceSessionService: svc };
 });
+
+const mockIsSameSiteTrustedRequest = jest.fn(() => false);
+jest.mock('../../utils/sameSite', () => ({
+  isSameSiteTrustedRequest: (...a: unknown[]) => mockIsSameSiteTrustedRequest(...a),
+}));
 
 const mockResolveDeviceToken = jest.fn();
 jest.mock('../deviceToken.service', () => ({
@@ -46,7 +53,7 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import { resolveLoginDeviceId, finalizeDeviceLogin } from '../deviceLogin.service';
+import { resolveLoginDeviceId, resolveLoginDevice, finalizeDeviceLogin } from '../deviceLogin.service';
 
 function req(headers: Record<string, string> = {}): Request {
   return { headers } as unknown as Request;
@@ -56,6 +63,31 @@ beforeEach(() => {
   jest.resetAllMocks();
   mockIssueRefreshToken.mockResolvedValue({ token: 'rt', family: 'f', expiresAt: new Date() });
   mockIsTrustedOrigin.mockReturnValue(false);
+  mockIsSameSiteTrustedRequest.mockReturnValue(false);
+});
+
+describe('resolveLoginDevice — same-site cookie mint', () => {
+  it('returns the existing binding without minting when a cookie resolves', async () => {
+    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'existing-dev' });
+    const result = await resolveLoginDevice(req({ cookie: 'oxy_device=secret' }), undefined);
+    expect(result).toEqual({ deviceId: 'existing-dev' });
+    expect(mockEnsureDeviceForCookie).not.toHaveBeenCalled();
+  });
+
+  it('mints a device cookie for a same-site trusted login with no existing binding', async () => {
+    mockIsSameSiteTrustedRequest.mockReturnValue(true);
+    mockEnsureDeviceForCookie.mockResolvedValueOnce({ deviceId: 'new-dev', rawCookieKey: 'minted-secret' });
+    const result = await resolveLoginDevice(req({ origin: 'https://accounts.oxy.so' }), undefined);
+    expect(result).toEqual({ deviceId: 'new-dev', setCookieSecret: 'minted-secret' });
+    expect(mockEnsureDeviceForCookie).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT mint for a non-same-site (cross-site / untrusted) login', async () => {
+    mockIsSameSiteTrustedRequest.mockReturnValue(false);
+    const result = await resolveLoginDevice(req({ origin: 'https://third-party.example' }), undefined);
+    expect(result).toEqual({ deviceId: null });
+    expect(mockEnsureDeviceForCookie).not.toHaveBeenCalled();
+  });
 });
 
 describe('resolveLoginDeviceId', () => {

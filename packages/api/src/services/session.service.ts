@@ -938,6 +938,79 @@ class SessionService {
       return null;
     }
   }
+
+  /**
+   * Migrate an ACTIVE session onto a different (canonical) deviceId and re-mint
+   * its tokens so the fresh access token's `deviceId` claim addresses the new
+   * device — the room the client's SessionClient must join. Used by the
+   * device-doc convergence path (`POST /session/device/add`) when a same-site
+   * caller's `oxy_device` cookie resolves to a different device than the
+   * session's stored (JWT-claims-era) deviceId.
+   *
+   * Idempotent: when the session is already on `newDeviceId` the tokens are NOT
+   * re-minted — the current access token (already carrying that deviceId claim)
+   * is returned. Returns null when the session is missing/inactive. The re-mint
+   * is an explicit field whitelist (deviceId + tokens + activity), never a
+   * `req.body` spread.
+   */
+  async migrateSessionToDevice(
+    sessionId: string,
+    newDeviceId: string,
+  ): Promise<{ accessToken: string; expiresAt: Date; migrated: boolean } | null> {
+    try {
+      const existing = await Session.findOne({ sessionId, isActive: true })
+        .select('userId deviceId accessToken expiresAt')
+        .lean();
+      if (!existing) return null;
+
+      // Already canonical — no re-mint. Hand back the current access token.
+      if (existing.deviceId === newDeviceId) {
+        return { accessToken: existing.accessToken, expiresAt: existing.expiresAt, migrated: false };
+      }
+
+      const userId = existing.userId.toString();
+      const now = new Date();
+      const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, newDeviceId);
+
+      // `.lean()` — store a PLAIN object in the cache, not a full Mongoose
+      // Document (avoids memory bloat + an accidentally-mutable hydrated doc in
+      // the in-memory cache), matching the lean-read convention of `getSession`.
+      const updated = await Session.findOneAndUpdate(
+        { sessionId, isActive: true },
+        {
+          $set: {
+            deviceId: newDeviceId,
+            accessToken,
+            refreshToken,
+            lastRefresh: now,
+            'deviceInfo.lastActive': now,
+            updatedAt: now,
+          },
+        },
+        { new: true },
+      ).lean<ISession>();
+      if (!updated) return null;
+
+      sessionCache.invalidate(sessionId);
+      sessionCache.set(sessionId, updated as ISession);
+
+      logger.info('[SessionService] Migrated session onto cookie device', {
+        component: 'SessionService',
+        method: 'migrateSessionToDevice',
+        sessionId: sessionId.substring(0, 8),
+        toDeviceId: newDeviceId.substring(0, 8),
+      });
+
+      return { accessToken, expiresAt: updated.expiresAt, migrated: true };
+    } catch (error) {
+      logger.error('[SessionService] Failed to migrate session to device', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'migrateSessionToDevice',
+        sessionId,
+      });
+      return null;
+    }
+  }
 }
 
 // Export singleton instance

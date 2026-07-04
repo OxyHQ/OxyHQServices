@@ -26,7 +26,8 @@ import {
   revokeAllUserFamilies,
   clearAllRefreshCookies,
 } from '../services/refreshToken.service';
-import { resolveLoginDeviceId, finalizeDeviceLogin } from '../services/deviceLogin.service';
+import { resolveLoginDevice, finalizeDeviceLogin } from '../services/deviceLogin.service';
+import { setDeviceCookie } from '../utils/deviceCookie';
 import type { AuthRequest } from '../middleware/auth';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
@@ -413,15 +414,21 @@ export class SessionController {
         });
       }
 
-      // Device-first attribution (oxy_device cookie > deviceToken > none),
-      // resolved before mint so the session carries the central deviceId.
-      const signupDeviceId = await resolveLoginDeviceId(req, deviceToken);
+      // Device-first attribution (oxy_device cookie > deviceToken > same-site
+      // cookie mint > none), resolved before mint so the session carries the
+      // central deviceId.
+      const signupDevice = await resolveLoginDevice(req, deviceToken);
 
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(signupDeviceId ? { deviceId: signupDeviceId } : {}) }
+        { deviceName, deviceFingerprint, ...(signupDevice.deviceId ? { deviceId: signupDevice.deviceId } : {}) }
       );
+
+      // Plant the freshly-minted device cookie (same-site trusted signups only).
+      if (signupDevice.setCookieSecret) {
+        setDeviceCookie(res, signupDevice.setCookieSecret);
+      }
 
       const baseSignupResponse = buildSessionAuthResponse(session, user);
       if (!baseSignupResponse) {
@@ -433,7 +440,7 @@ export class SessionController {
       // attach a rotating refresh token when the lane allows it. Best-effort.
       const signupDeviceExtras = await finalizeDeviceLogin({
         req,
-        deviceId: signupDeviceId,
+        deviceId: signupDevice.deviceId,
         session,
         userId: user._id.toString(),
       });
@@ -591,17 +598,23 @@ export class SessionController {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Device-first attribution (oxy_device cookie > deviceToken > none),
-      // resolved before mint so the session carries the central deviceId.
-      const verifyDeviceId = await resolveLoginDeviceId(req, deviceToken);
+      // Device-first attribution (oxy_device cookie > deviceToken > same-site
+      // cookie mint > none), resolved before mint so the session carries the
+      // central deviceId.
+      const verifyDevice = await resolveLoginDevice(req, deviceToken);
 
       // Create session
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(verifyDeviceId ? { deviceId: verifyDeviceId } : {}) }
+        { deviceName, deviceFingerprint, ...(verifyDevice.deviceId ? { deviceId: verifyDevice.deviceId } : {}) }
       );
       const sessionAfterCreate = Date.now();
+
+      // Plant the freshly-minted device cookie (same-site trusted logins only).
+      if (verifyDevice.setCookieSecret) {
+        setDeviceCookie(res, verifyDevice.setCookieSecret);
+      }
 
       // Log security event for sign-in only if this is a new session
       // More reliable detection: check if session was created during this request
@@ -661,7 +674,7 @@ export class SessionController {
       // attach a rotating refresh token when the lane allows it. Best-effort.
       const verifyDeviceExtras = await finalizeDeviceLogin({
         req,
-        deviceId: verifyDeviceId,
+        deviceId: verifyDevice.deviceId,
         session,
         userId: user._id.toString(),
       });
@@ -777,15 +790,21 @@ export class SessionController {
 
       // Resolve the device this sign-in attaches to (oxy_device cookie >
       // deviceToken > none) BEFORE minting the session so its central deviceId
-      // is stamped onto the session's token claims. Additive — null keeps the
-      // pre-existing device attribution (UA/IP/random).
-      const loginDeviceId = await resolveLoginDeviceId(req, deviceToken);
+      // is stamped onto the session's token claims. For a same-site trusted login
+      // with no existing binding, a device cookie is minted (planted below).
+      // Additive — null keeps the pre-existing device attribution (UA/IP/random).
+      const loginDevice = await resolveLoginDevice(req, deviceToken);
 
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(loginDeviceId ? { deviceId: loginDeviceId } : {}) }
+        { deviceName, deviceFingerprint, ...(loginDevice.deviceId ? { deviceId: loginDevice.deviceId } : {}) }
       );
+
+      // Plant the freshly-minted device cookie (same-site trusted logins only).
+      if (loginDevice.setCookieSecret) {
+        setDeviceCookie(res, loginDevice.setCookieSecret);
+      }
 
       const baseResponse = buildSessionAuthResponse(session, user);
 
@@ -810,7 +829,7 @@ export class SessionController {
       // rotating refresh token when the lane allows it. Best-effort.
       const deviceExtras = await finalizeDeviceLogin({
         req,
-        deviceId: loginDeviceId,
+        deviceId: loginDevice.deviceId,
         session,
         userId: user._id.toString(),
       });

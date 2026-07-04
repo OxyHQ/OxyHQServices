@@ -24,6 +24,7 @@ import type { Request } from 'express';
 import { readDeviceCookie } from '../utils/deviceCookie';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { isTrustedOrigin } from '../config/dynamicOriginRegistry';
+import { isSameSiteTrustedRequest } from '../utils/sameSite';
 import { issueRefreshToken } from './refreshToken.service';
 import { broadcastDeviceState } from '../utils/socket';
 import { logger } from '../utils/logger';
@@ -60,6 +61,38 @@ export async function resolveLoginDeviceId(
     logger.warn('resolveLoginDeviceId failed', { error });
   }
   return null;
+}
+
+/**
+ * Resolve the login device, MINTING a device cookie when appropriate. Precedence:
+ *   1. an existing binding (oxy_device cookie > deviceToken), OR
+ *   2. for a SAME-SITE TRUSTED login with no existing binding — the IdP form on
+ *      auth.oxy.so and oxy.so apps hitting api.oxy.so — mint a fresh device +
+ *      `oxy_device` cookie so a first-ever sign-in gets a durable device identity
+ *      WITHOUT a bootstrap hop (this is what feeds the IdP chooser its own logins
+ *      and gives new oxy.so users a device to converge on).
+ *   3. otherwise no device (cross-site callers stay on the deviceToken lane).
+ *
+ * Returns the deviceId (or null) plus, when a cookie was minted, the raw secret
+ * the caller must Set-Cookie on the login response. Never throws.
+ */
+export async function resolveLoginDevice(
+  req: Request,
+  deviceToken: unknown,
+): Promise<{ deviceId: string | null; setCookieSecret?: string }> {
+  const existing = await resolveLoginDeviceId(req, deviceToken);
+  if (existing) return { deviceId: existing };
+
+  if (isSameSiteTrustedRequest(req)) {
+    try {
+      const { deviceSessionService } = await import('./deviceSession.service.js');
+      const { deviceId, rawCookieKey } = await deviceSessionService.ensureDeviceForCookie();
+      return { deviceId, setCookieSecret: rawCookieKey };
+    } catch (error) {
+      logger.warn('resolveLoginDevice: same-site cookie mint failed', { error });
+    }
+  }
+  return { deviceId: null };
 }
 
 /**

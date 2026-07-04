@@ -26,7 +26,6 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { registrableApex } from '@oxyhq/core/server';
 import type { DeviceBootFragment, DeviceBootReason } from '@oxyhq/contracts';
 import { deviceBootFragmentSchema } from '@oxyhq/contracts';
 import { authMiddleware } from '../middleware/auth';
@@ -37,6 +36,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { isTrustedOrigin } from '../config/dynamicOriginRegistry';
+import { isSameSiteTrustedRequest } from '../utils/sameSite';
 import { hasValidInternalSecret } from '../utils/internalSecret';
 import { readDeviceCookie, setDeviceCookie } from '../utils/deviceCookie';
 import deviceSessionService from '../services/deviceSession.service';
@@ -246,39 +246,14 @@ const webSessionLimiter = rateLimit({
 });
 
 /**
- * Same-site fast path. The Origin MUST be present, on the trusted lane, AND
- * share the API host's registrable apex (a true `*.oxy.so` sibling) — loopback
- * dev origins are exempted from the apex check. Rejects otherwise.
+ * Same-site fast path. Delegates the trusted-lane + registrable-apex (or exact
+ * host for IP/single-label) decision to the shared `isSameSiteTrustedRequest`
+ * predicate, then returns the normalised origin for the deviceToken binding.
  */
 function assertSameSiteApex(req: Request): { ok: true; origin: string } | { ok: false } {
-  const originRaw = req.headers.origin;
-  if (typeof originRaw !== 'string' || originRaw.length === 0) return { ok: false };
-  const origin = normaliseOrigin(originRaw);
-  if (!origin || !isTrustedLaneOrigin(origin)) return { ok: false };
-
-  if (isLoopbackOrigin(origin)) return { ok: true, origin };
-
-  // Use Express's `req.hostname` — it strips the port and handles IPv6 literals
-  // (`[::1]:3000` → `[::1]`) correctly, unlike a naive `host.split(':')` which
-  // shreds an IPv6 address.
-  const apiHost = req.hostname;
-  if (typeof apiHost !== 'string' || apiHost.length === 0) return { ok: false };
-  let originHost: string;
-  try {
-    originHost = new URL(origin).hostname;
-  } catch {
-    return { ok: false };
-  }
-
-  const apiApex = registrableApex(apiHost);
-  const originApex = registrableApex(originHost);
-  if (apiApex && originApex) {
-    // Registrable-domain match (the `*.oxy.so` sibling case).
-    return apiApex === originApex ? { ok: true, origin } : { ok: false };
-  }
-  // No registrable apex (IP literal / single-label host): same-site ONLY on an
-  // exact host match — never treat two different bare hosts as same-site.
-  return originHost.toLowerCase() === apiHost.toLowerCase() ? { ok: true, origin } : { ok: false };
+  if (!isSameSiteTrustedRequest(req)) return { ok: false };
+  const origin = normaliseOrigin(req.headers.origin as string);
+  return origin ? { ok: true, origin } : { ok: false };
 }
 
 router.post(

@@ -683,3 +683,100 @@ describe('ensureDeviceForCookie', () => {
     expect(created.cookieKeyHash).not.toBe(rawCookieKey);
   });
 });
+
+describe('convergeAccountOntoDevice', () => {
+  it('adds the account to the cookie doc, advances its revision past the old doc, detaches (preserving the migrated session), and returns both states', async () => {
+    mockUpdateOne.mockResolvedValue({});
+    // 1) oldBefore load — the retired doc is at revision 5.
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'old-dev',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 5,
+    }));
+    // 2) addAccount loads the (empty) cookie doc.
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0 }));
+    // 3) addAccount writes → cookie doc with the account, active, revision 1.
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'cookie-dev',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 1,
+      updatedAt: new Date(1720000000000),
+    }));
+    // 4) revision bump (1 <= 5) → cookie doc revision advanced to old+1 = 6.
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'cookie-dev',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 6,
+      updatedAt: new Date(1720000000000),
+    }));
+    // 5) detachMigratedAccount loads the OLD doc (still holds a1 with session s1).
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'old-dev',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 5,
+    }));
+    // 6) convergeAccountOntoDevice re-loads the OLD doc (now emptied) for oldState.
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'old-dev', accounts: [], activeAccountId: null, revision: 6, updatedAt: new Date(1720000000001),
+    }));
+
+    const { cookieState, oldState, changed } = await deviceSessionService.convergeAccountOntoDevice(
+      'cookie-dev',
+      'old-dev',
+      { accountId: 'a1', sessionId: 's1' },
+    );
+
+    expect(changed).toBe(true);
+    expect(cookieState.deviceId).toBe('cookie-dev');
+    expect(cookieState.activeAccountId).toBe('a1');
+    expect(cookieState.accounts).toHaveLength(1);
+    // The canonical cookie doc out-ranks the retired doc so the client applies it.
+    expect(cookieState.revision).toBe(6);
+    expect(cookieState.revision).toBeGreaterThan(5);
+    // The bump update targeted the cookie device with the advanced revision.
+    const bumpCall = mockFindOneAndUpdate.mock.calls[1];
+    expect(bumpCall[0]).toEqual({ deviceId: 'cookie-dev' });
+    expect(bumpCall[1]).toEqual({ $set: { revision: 6 } });
+    expect(oldState.deviceId).toBe('old-dev');
+    expect(oldState.accounts).toHaveLength(0);
+    // The just-migrated session (s1) is PRESERVED — never deactivated by detach.
+    expect(mockDeactivate).not.toHaveBeenCalled();
+  });
+
+  it('synthesizes an empty old state WITHOUT upserting when the old doc is absent (no garbage doc)', async () => {
+    mockUpdateOne.mockResolvedValue({});
+    // 1) oldBefore load — no old doc.
+    mockFindOne.mockReturnValueOnce(lean(null));
+    // 2) addAccount loads the (empty) cookie doc.
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0 }));
+    // 3) addAccount writes → cookie doc revision 1 (bump path: 1 > oldRevisionBefore 0, so NO bump).
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'cookie-dev',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 1,
+      updatedAt: new Date(1720000000000),
+    }));
+    // 4) detachMigratedAccount load (old doc absent → no-op).
+    mockFindOne.mockReturnValueOnce(lean(null));
+    // 5) convergeAccountOntoDevice re-load (old doc still absent → synthetic state).
+    mockFindOne.mockReturnValueOnce(lean(null));
+
+    const { oldState, cookieState } = await deviceSessionService.convergeAccountOntoDevice(
+      'cookie-dev',
+      'missing-old-dev',
+      { accountId: 'a1', sessionId: 's1' },
+    );
+
+    // Synthetic empty old state (deviceId echoed), never persisted.
+    expect(oldState).toEqual({ deviceId: 'missing-old-dev', accounts: [], activeAccountId: null, revision: 0, updatedAt: expect.any(Number) });
+    expect(cookieState.deviceId).toBe('cookie-dev');
+    // Exactly ONE findOneAndUpdate (the addAccount write) — NO getState upsert,
+    // NO revision bump (cookie revision 1 already > old 0).
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+});

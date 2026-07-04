@@ -392,6 +392,59 @@ class DeviceSessionService {
     });
     return { deviceId, rawCookieKey };
   }
+
+  /**
+   * Converge a caller's account onto the CANONICAL `oxy_device`-cookie device
+   * doc. Fixes the split-brain where a pre-cookie session lives on the old
+   * JWT-claims-era device doc while the cookie doc (born via `ensureDeviceForCookie`
+   * during bootstrap) is empty — so `/auth/device/resolve` + bootstrap/web-session
+   * saw an empty device despite live sessions.
+   *
+   * The session must ALREADY have been migrated onto `cookieDeviceId` at the
+   * Session level (`sessionService.migrateSessionToDevice`) BEFORE this call, so
+   * the follow-up `resolveActiveToken(cookieState)` mints an access token whose
+   * `deviceId` claim addresses the cookie device. Here we: register the account
+   * on the cookie doc (`activate: 'always'` — an explicit `/add` sets it active,
+   * matching today's behaviour), detach it from the old doc (preserving the
+   * just-migrated session), and return BOTH resulting states so the route can
+   * broadcast both device rooms. `changed` is the cookie-doc mutation flag.
+   */
+  async convergeAccountOntoDevice(
+    cookieDeviceId: string,
+    oldDeviceId: string,
+    input: { accountId: string; sessionId: string; operatedByUserId?: string },
+  ): Promise<{ cookieState: DeviceSessionState; oldState: DeviceSessionState; changed: boolean }> {
+    // Capture the old doc's revision BEFORE detaching. The client's `applyState`
+    // is last-writer-wins by `revision` ACROSS the device set, so the canonical
+    // cookie doc must out-rank the retired doc's revision — otherwise the fresh
+    // (low-revision) converged state loses to the stale high-revision old-device
+    // state the client still holds and the migration would never be applied.
+    const oldBefore = await this.load(oldDeviceId);
+    const oldRevisionBefore = oldBefore?.revision ?? 0;
+
+    const { state: added, changed } = await this.addAccount(cookieDeviceId, input);
+
+    let cookieState = added;
+    if (changed && added.revision <= oldRevisionBefore) {
+      const bumped = await DeviceSession.findOneAndUpdate(
+        { deviceId: cookieDeviceId },
+        { $set: { revision: oldRevisionBefore + 1 } },
+        { new: true },
+      ).lean<IDeviceSession>();
+      if (bumped) cookieState = projectState(bumped);
+    }
+
+    await this.detachMigratedAccount(oldDeviceId, input.accountId, input.sessionId);
+    // Plain find, NEVER `getState` — the latter UPSERTS an empty doc, which would
+    // manufacture a garbage device record for a retired/unknown old deviceId. When
+    // the old doc is absent (session was never registered on a device doc, or the
+    // id is stale), synthesize an empty state to broadcast WITHOUT persisting.
+    const oldDoc = await this.load(oldDeviceId);
+    const oldState: DeviceSessionState = oldDoc
+      ? projectState(oldDoc)
+      : { deviceId: oldDeviceId, accounts: [], activeAccountId: null, revision: 0, updatedAt: Date.now() };
+    return { cookieState, oldState, changed };
+  }
 }
 
 // Exported BOTH as the default (existing static `import deviceSessionService`
