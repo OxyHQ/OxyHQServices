@@ -36,6 +36,7 @@ import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../servic
 import Session from '../models/Session';
 import {
   rotateRefreshToken,
+  issueRefreshToken,
   issueAndSetRefreshCookie,
   revokeFamilyByRawToken,
   revokeFamily,
@@ -47,6 +48,7 @@ import {
   selectActiveCandidate,
   MAX_DEVICE_ACCOUNTS,
 } from '../services/refreshToken.service';
+import { resolveLoginDeviceId } from '../services/deviceLogin.service';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
   signupSchema,
@@ -1131,6 +1133,15 @@ router.post('/logout', refreshLimiter, requireSameSiteOrigin, asyncHandler(async
   // always proceeds to clear and returns 200.
   const authuser = parseAuthuserParam(req);
 
+  // Persisted-refresh lane (ADDITIVE): a client that holds a rotating refresh
+  // token in storage (web localStorage / native) passes it in the body so its
+  // family is revoked alongside the cookie families. Idempotent on unknown
+  // tokens; never affects the legacy cookie path below.
+  const bodyRefreshToken = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
+  if (typeof bodyRefreshToken === 'string' && bodyRefreshToken.length > 0) {
+    await revokeFamilyByRawToken(bodyRefreshToken);
+  }
+
   if (authuser !== null) {
     const buckets = parseAllRefreshCookies(req.headers.cookie);
     const rawList = buckets.get(authuser) ?? [];
@@ -1440,11 +1451,12 @@ import AuthSession from '../models/AuthSession';
  *         description: Application is not available (suspended/deleted/pending review).
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, clientId, applicationId } = req.body as {
+  const { sessionToken, expiresAt, clientId, applicationId, deviceToken } = req.body as {
     sessionToken: string;
     clientId?: string;
     applicationId?: string;
     expiresAt?: string | number;
+    deviceToken?: string;
   };
 
   if (!sessionToken) {
@@ -1534,6 +1546,12 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const authorizeCode = crypto.randomBytes(16).toString('hex');
   const qrNonce = crypto.randomBytes(8).toString('hex');
 
+  // Device-first attribution: when the QR was started from a device that already
+  // holds a session (oxy_device cookie) or presented an add-only deviceToken,
+  // persist that central deviceId so the authorize paths mint the resulting
+  // session onto the SAME device set instead of sprawling a fresh device.
+  const attributionDeviceId = await resolveLoginDeviceId(req, deviceToken);
+
   // Create new auth session
   const authSession = await AuthSession.create({
     sessionToken,
@@ -1544,6 +1562,7 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
+    ...(attributionDeviceId ? { deviceId: attributionDeviceId } : {}),
   });
 
   // Deep-link / universal-link payload for the QR. Commons parses ONLY `code`
@@ -1807,11 +1826,17 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
   const appLabel = app ? app.name : 'App';
 
   // Create a new session for the third-party app, owned by the
-  // authenticated user identified via the bearer token.
+  // authenticated user identified via the bearer token. When the flow was
+  // started with a device binding (`deviceId` persisted at create time), pass it
+  // as the explicit deviceId so the session lands on the originating device.
   const newSession = await sessionService.createSession(
     authenticatedUserId,
     req,
-    { deviceName: deviceName || `${appLabel} App`, deviceFingerprint }
+    {
+      deviceName: deviceName || `${appLabel} App`,
+      deviceFingerprint,
+      ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
+    }
   );
 
   // Update auth session
@@ -1979,11 +2004,9 @@ router.post(
       throw new UnauthorizedError('invalid_grant');
     }
 
-    // Pull the refreshToken + deviceId from the underlying Session so
-    // the client can persist them and continue using the normal token
-    // refresh flow afterwards.
+    // Pull the deviceId from the underlying Session for the response.
     const session = await Session.findOne({ sessionId: authSession.authorizedSessionId })
-      .select('refreshToken deviceId expiresAt')
+      .select('deviceId expiresAt')
       .lean();
 
     if (!session) {
@@ -1992,6 +2015,15 @@ router.post(
       });
       throw new UnauthorizedError('invalid_grant');
     }
+
+    // Return a fresh ROTATING refresh-family token (the persisted-refresh lane),
+    // NOT the legacy Session-embedded JWT. The client persists this and rotates
+    // it via `POST /auth/refresh-token`. (The OAuth `/auth/oauth/token` flow is
+    // deliberately untouched.)
+    const refresh = await issueRefreshToken({
+      sessionId: authSession.authorizedSessionId,
+      userId: authSession.authorizedUserId.toString(),
+    });
 
     const userData = formatUserResponse(user);
 
@@ -2004,7 +2036,7 @@ router.post(
 
     sendSuccess(res, {
       accessToken: tokenResult.accessToken,
-      refreshToken: session.refreshToken,
+      refreshToken: refresh.token,
       sessionId: authSession.authorizedSessionId,
       deviceId: session.deviceId,
       expiresAt: tokenResult.expiresAt.toISOString(),

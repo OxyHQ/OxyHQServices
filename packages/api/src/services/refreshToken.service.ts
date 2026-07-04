@@ -162,6 +162,21 @@ export async function revokeAllUserFamilies(userId: string): Promise<void> {
 }
 
 /**
+ * Revoke EVERY un-revoked refresh token bound to a session — ALL rotation
+ * families, not just the latest. Used by the device signout cascade: when a
+ * device signs an account out, `deactivateSession` alone leaves the persisted
+ * rotating refresh family live, so a stored token could still mint fresh access
+ * tokens. This closes that gap. Does NOT deactivate the session (the caller
+ * already did) and never mints/rotates — pure revoke, idempotent.
+ */
+export async function revokeAllFamiliesBySession(sessionId: string): Promise<void> {
+  await RefreshToken.updateMany(
+    { sessionId, revokedAt: null },
+    { $set: { revokedAt: new Date() } }
+  );
+}
+
+/**
  * Revoke the rotation family for a presented RAW refresh token (logout via the
  * httpOnly cookie). Hashes the raw token, looks up the stored row by its
  * `tokenHash`, and — if found — revokes the whole family AND deactivates the

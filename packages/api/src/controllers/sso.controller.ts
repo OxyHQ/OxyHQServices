@@ -26,6 +26,7 @@ import type { AuthRequest } from '../middleware/auth';
 import { ssoEstablishTokenSchema } from '../schemas/sso.schemas';
 import { logger } from '../utils/logger';
 import { normaliseOrigin } from '../utils/origin';
+import { hasValidInternalSecret } from '../utils/internalSecret';
 
 /**
  * Establish-token claim contract — MUST match the IdP `/sso/establish` verifier
@@ -49,25 +50,6 @@ function timingSafeStringEqual(a: string, b: string): boolean {
     return false;
   }
   return crypto.timingSafeEqual(aBuf, bBuf);
-}
-
-/**
- * Validate the internal shared-secret header. Returns true only when
- * `SSO_INTERNAL_SECRET` is configured AND the `X-Oxy-Internal` header matches it
- * in constant time. When the env var is unset we fail closed (the route is
- * effectively disabled) — we never accept an empty/absent secret.
- */
-function hasValidInternalSecret(req: Request): boolean {
-  const expected = process.env.SSO_INTERNAL_SECRET;
-  if (typeof expected !== 'string' || expected.length === 0) {
-    logger.error('POST /sso/code called but SSO_INTERNAL_SECRET is not configured');
-    return false;
-  }
-  const provided = req.headers['x-oxy-internal'];
-  if (typeof provided !== 'string' || provided.length === 0) {
-    return false;
-  }
-  return timingSafeStringEqual(provided, expected);
 }
 
 /**

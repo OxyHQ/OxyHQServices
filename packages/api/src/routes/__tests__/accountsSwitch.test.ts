@@ -48,6 +48,22 @@ jest.mock('../../services/session.service', () => ({
   default: { createSession: (...args: unknown[]) => mockCreateSession(...args) },
 }));
 
+// The switch now registers the managed session into the operator's device set.
+// This suite uses REAL mongoose (no DB), so mock the device-set write + socket
+// broadcast to avoid a buffered query hanging the request.
+const mockAddAccount = jest.fn(async () => ({
+  state: { deviceId: 'op-device', accounts: [], activeAccountId: null, revision: 1, updatedAt: Date.now() },
+  changed: false,
+}));
+jest.mock('../../services/deviceSession.service', () => ({
+  __esModule: true,
+  default: { addAccount: (...args: unknown[]) => mockAddAccount(...args) },
+}));
+const mockBroadcastDeviceState = jest.fn();
+jest.mock('../../utils/socket', () => ({
+  broadcastDeviceState: (...args: unknown[]) => mockBroadcastDeviceState(...args),
+}));
+
 const mockAuthMiddleware = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -200,6 +216,13 @@ describe('POST /accounts/:id/switch', () => {
       operatedByUserId: OPERATOR_ID,
       deviceId: 'dev-op',
     });
+    // The managed session is registered into the operator's device set
+    // server-side (a switch is a deliberate activation → activate: 'always').
+    expect(mockAddAccount).toHaveBeenCalledWith(
+      'dev-1',
+      { accountId: ORG_ID, sessionId: 'sess-1', operatedByUserId: OPERATOR_ID },
+      { activate: 'always' },
+    );
   });
 
   it('falls back to a fresh device when the bearer has no resolvable deviceId', async () => {

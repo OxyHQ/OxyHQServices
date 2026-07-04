@@ -58,11 +58,18 @@ jest.mock('../../services/session.service', () => ({
   },
 }));
 
-jest.mock('../../services/oauthCode.service', () => ({
-  issueAuthCode: jest.fn(),
-  exchangeAuthCode: jest.fn(),
-  AUTH_CODE_TTL_MS: 60_000,
-}));
+jest.mock('../../services/oauthCode.service', () => {
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
+  return {
+    issueAuthCode: jest.fn(),
+    exchangeAuthCode: jest.fn(),
+    AUTH_CODE_TTL_MS: 60_000,
+    // The claim handler now mints a rotating refresh-family token via
+    // `issueRefreshToken`, which pulls these hashing helpers from here.
+    sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
+    base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
+  };
+});
 
 jest.mock('../../services/signature.service', () => ({
   __esModule: true,
@@ -323,17 +330,22 @@ describe('POST /auth/session/claim', () => {
     });
 
     expect(res.status).toBe(200);
-    // sendSuccess wraps the body in { data: ... }
+    // sendSuccess wraps the body in { data: ... }. The claim now returns a fresh
+    // ROTATING refresh-family token (minted via issueRefreshToken), NOT the
+    // legacy Session-embedded JWT, so we assert its presence as a non-empty
+    // string rather than a fixed value.
     expect(res.body).toEqual({
       data: {
         accessToken: 'access-jwt',
-        refreshToken: 'refresh-jwt',
+        refreshToken: expect.any(String),
         sessionId,
         deviceId: 'dev-1',
         expiresAt: expiresAt.toISOString(),
         user: { id: userId, username: 'alice' },
       },
     });
+    expect(res.body.data.refreshToken).not.toBe('refresh-jwt');
+    expect(res.body.data.refreshToken.length).toBeGreaterThan(0);
     expect(mockGetAccessToken).toHaveBeenCalledWith(sessionId);
   });
 
