@@ -22,6 +22,7 @@ import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
 import { toast } from '@oxyhq/bloom';
 import { EMAIL_REGEX } from '@oxyhq/core';
+import { getLinkTitle, getLinkDescription, linksToListItems } from './linkFormat';
 
 /**
  * Field types supported by EditProfileFieldScreen
@@ -70,9 +71,6 @@ type EditableListItem = {
     image?: string;
     coordinates?: { lat: number; lon: number };
 };
-
-const getLinkTitle = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-const getLinkDescription = (url: string) => `Link to ${url}`;
 
 /**
  * EditProfileFieldScreen - A dedicated screen for editing profile fields
@@ -293,14 +291,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         description: String(link.description || getLinkDescription(String(link.url || ''))),
                     })));
                 } else {
-                    setListItems(links.map((item, i) => {
-                        return {
-                            id: `link-${i}`,
-                            url: item,
-                            title: getLinkTitle(item),
-                            description: getLinkDescription(item),
-                        };
-                    }));
+                    setListItems(linksToListItems(links));
                 }
             }
         } else {
