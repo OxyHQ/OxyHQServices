@@ -17,7 +17,7 @@
  * fresh hook state (no stale `authorized`/`error` from a prior open).
  */
 
-import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useOxySignIn } from '../hooks/useOxySignIn';
 import { useCommonsSignIn } from '../hooks/useCommonsSignIn';
 
@@ -49,6 +49,9 @@ const backdropStyle: CSSProperties = {
 const cardStyle: CSSProperties = {
   position: 'relative',
   zIndex: 1,
+  // Override the UA <dialog> default `margin: auto`, which would fight the flex
+  // overlay's centering and offset the card.
+  margin: 0,
   width: '100%',
   maxWidth: 380,
   background: '#ffffff',
@@ -200,6 +203,20 @@ function QrPanel() {
 
 function OxySignInModalContent({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<'password' | 'qr'>('password');
+
+  // The non-modal <dialog open> does not receive the browser's native
+  // Escape/cancel handling (that is showModal()-only), so wire Escape-to-close
+  // explicitly for keyboard accessibility. Mounted only while open, so the
+  // listener lifecycle matches the modal's.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
 
   return (
     <div style={overlayStyle}>

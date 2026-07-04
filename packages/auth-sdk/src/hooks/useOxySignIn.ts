@@ -93,6 +93,10 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loginTokenRef = useRef<string | null>(null);
+  // Double-submit guard: a synchronous ref (not the async `isSubmitting` state,
+  // which is stale inside these callbacks' closures) so a second submit while a
+  // request is in flight is dropped rather than firing a duplicate login.
+  const submittingRef = useRef(false);
   const onAuthenticatedRef = useRef(onAuthenticated);
   onAuthenticatedRef.current = onAuthenticated;
   const onErrorRef = useRef(options.onError);
@@ -101,6 +105,7 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
   // Keep the current phase on failure so the user retries from the right form
   // (credentials vs. 2FA); only surface the error + drop the in-flight flag.
   const fail = useCallback((message: string) => {
+    submittingRef.current = false;
     setIsSubmitting(false);
     setError(message);
     onErrorRef.current?.(new Error(message));
@@ -122,6 +127,7 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
       };
       await onAuthenticatedRef.current?.(committed);
       loginTokenRef.current = null;
+      submittingRef.current = false;
       setIsSubmitting(false);
       setPhase('authorized');
     },
@@ -130,10 +136,14 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
 
   const submitPassword = useCallback(
     async (identifier: string, password: string) => {
+      if (submittingRef.current) {
+        return;
+      }
       if (!oxyServices) {
         fail('Sign-in is unavailable (missing Oxy client).');
         return;
       }
+      submittingRef.current = true;
       setError(null);
       setIsSubmitting(true);
       try {
@@ -141,6 +151,7 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
         const result = await oxyServices.passwordSignIn(identifier, password, { deviceToken });
         if ('twoFactorRequired' in result) {
           loginTokenRef.current = result.loginToken;
+          submittingRef.current = false;
           setIsSubmitting(false);
           setPhase('twoFactor');
           return;
@@ -155,11 +166,15 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
 
   const submitTwoFactor = useCallback(
     async (params: { token?: string; backupCode?: string }) => {
+      if (submittingRef.current) {
+        return;
+      }
       const loginToken = loginTokenRef.current;
       if (!oxyServices || !loginToken) {
         fail('Two-factor sign-in is not in progress.');
         return;
       }
+      submittingRef.current = true;
       setError(null);
       setIsSubmitting(true);
       try {
@@ -180,6 +195,7 @@ export function useOxySignIn(options: UseOxySignInOptions = {}): UseOxySignInRes
 
   const reset = useCallback(() => {
     loginTokenRef.current = null;
+    submittingRef.current = false;
     setError(null);
     setIsSubmitting(false);
     setPhase('credentials');

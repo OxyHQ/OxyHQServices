@@ -86,6 +86,33 @@ describe('useOxySignIn', () => {
     expect(passwordSignIn).toHaveBeenCalledWith('nate', 'pw', { deviceToken: 'dev-tok-1' });
   });
 
+  it('drops a concurrent second submit while the first is in flight (double-submit guard)', async () => {
+    // A deferred created UP FRONT so `resolveSignIn` is assigned before any
+    // submit; `passwordSignIn` returns the same pending promise.
+    let resolveSignIn: (value: LoginResult) => void = () => undefined;
+    const pending = new Promise<LoginResult>((resolve) => { resolveSignIn = resolve; });
+    const passwordSignIn = jest.fn(() => pending);
+    const svc = makeFakeSvc({ passwordSignIn });
+
+    const { result } = renderHook(() => useOxySignIn({ oxyServices: svc, onAuthenticated: jest.fn() }));
+
+    // First submit goes in flight (sets the guard synchronously); the second is
+    // dropped before it can call passwordSignIn again.
+    await act(async () => {
+      void result.current.submitPassword('nate', 'pw');
+      void result.current.submitPassword('nate', 'pw');
+    });
+    expect(passwordSignIn).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSignIn(sessionArm);
+      await pending;
+    });
+
+    await waitFor(() => expect(result.current.phase).toBe('authorized'));
+    expect(passwordSignIn).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces an error and keeps the credentials phase on failure', async () => {
     const passwordSignIn = jest.fn(async () => { throw new Error('Invalid credentials'); });
     const onError = jest.fn();
