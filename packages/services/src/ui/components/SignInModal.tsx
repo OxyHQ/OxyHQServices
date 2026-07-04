@@ -1,38 +1,45 @@
 /**
- * SignInModal - Web-first centered sign-in modal (first-party password sign-in)
+ * SignInModal — web-first centered sign-in modal.
  *
- * A semi-transparent full-screen modal whose PRIMARY action is the first-party
- * password flow (identifier → password → optional 2FA), driven by
- * `usePasswordSignIn`. Below an "or" divider, the cross-app device flow is a
- * SECONDARY option: a same-device "Sign in with the Oxy app" deep-link plus a
- * collapsed "Sign in on another device" QR disclosure (you can't scan your own
- * screen). The device-flow loading/error state only gates that secondary section
- * — the password form is always usable.
+ * Two phases, Google-style:
+ *  1. Account chooser (FRONT screen, shown when the device/user already has
+ *     accounts): pick an account to continue as — one tap switches through the
+ *     SAME `switchToAccount` path the account switcher uses — or "Use another
+ *     account" to reveal the sign-in options.
+ *  2. Sign-in options: the first-party password flow (identifier → password →
+ *     optional 2FA, `usePasswordSignIn`) as the PRIMARY action, with the
+ *     cross-app device flow (same-device deep-link + "sign in on another device"
+ *     QR) as a SECONDARY option below an "or" divider.
  *
- * The device-flow machinery (session-token creation, QR data, socket + polling,
- * waiting/error/retry state, same-device deep-link, deep-link return, and
- * cleanup) lives in the shared `useOxyAuthSession` hook, which the native
- * `OxyAuthScreen` also consumes — neither container re-implements the transport.
- *
- * Animates with a fade + scale effect.
+ * When there are no accounts the modal opens straight on the sign-in options.
+ * The device-flow machinery lives in the shared `useOxyAuthSession` hook (the
+ * native `OxyAuthScreen` consumes it too — neither container re-implements the
+ * transport). Animates with a fade + scale; per-phase content cross-fades and
+ * respects reduced motion.
  */
 
 import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Linking, AccessibilityInfo } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withTiming,
+    FadeIn,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Loading } from '@oxyhq/bloom/loading';
-import { Linking } from 'react-native';
+import { toast } from '@oxyhq/bloom';
+import { Ionicons } from '@expo/vector-icons';
+import { isDev, logger as loggerUtil } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import AnotherDeviceQR from './AnotherDeviceQR';
+import SignInAccountChooser from './SignInAccountChooser';
+import { useSwitchableAccounts, type SwitchableAccount } from '../hooks/useSwitchableAccounts';
+import { useI18n } from '../hooks/useI18n';
 import { useOxyAuthSession, OXY_ACCOUNTS_WEB_URL } from '../hooks/useOxyAuthSession';
 import { usePasswordSignIn } from '../hooks/usePasswordSignIn';
 
@@ -63,10 +70,8 @@ export const subscribeToSignInModal = (listener: (visible: boolean) => void): ((
 
 const SignInModal: React.FC = () => {
     const [visible, setVisible] = useState(false);
-
     const insets = useSafeAreaInsets();
     const theme = useTheme();
-    const { oxyServices, handleWebSession, clientId } = useOxy();
 
     // Register the imperative visibility callback.
     useEffect(() => {
@@ -78,36 +83,27 @@ const SignInModal: React.FC = () => {
 
     if (!visible) return null;
 
-    // The hook owns the whole auth-session lifecycle. Mounting it only while the
-    // modal is visible matches the previous behavior (session created on open,
-    // cleaned up on close) — the inner component is unmounted when `visible`
-    // flips false, which runs the hook's unmount cleanup.
-    return (
-        <SignInModalContent
-            theme={theme}
-            insets={insets}
-            oxyServices={oxyServices}
-            handleWebSession={handleWebSession}
-            clientId={clientId}
-        />
-    );
+    // Mounting the content only while visible preserves the session-created-on-open
+    // / cleaned-up-on-close behaviour and resets the phase state on every reopen.
+    return <SignInModalContent theme={theme} insets={insets} />;
 };
 
 interface SignInModalContentProps {
     theme: ReturnType<typeof useTheme>;
     insets: ReturnType<typeof useSafeAreaInsets>;
-    oxyServices: ReturnType<typeof useOxy>['oxyServices'];
-    handleWebSession: ReturnType<typeof useOxy>['handleWebSession'];
-    clientId: ReturnType<typeof useOxy>['clientId'];
 }
 
-const SignInModalContent: React.FC<SignInModalContentProps> = ({
-    theme,
-    insets,
-    oxyServices,
-    handleWebSession,
-    clientId,
-}) => {
+const SignInModalContent: React.FC<SignInModalContentProps> = ({ theme, insets }) => {
+    const { oxyServices, handleWebSession, clientId, switchToAccount } = useOxy();
+    const { t } = useI18n();
+    const { accounts } = useSwitchableAccounts();
+
+    // Phase: the chooser is the front screen whenever accounts exist AND the user
+    // has not tapped "Use another account" this session.
+    const [useAnother, setUseAnother] = useState(false);
+    const [switchingId, setSwitchingId] = useState<string | null>(null);
+    const showChooser = !useAnother && accounts.length > 0;
+
     const { qrData, qrPayload, isLoading, error, isWaiting, openSameDeviceApproval, retry } = useOxyAuthSession(
         oxyServices,
         clientId,
@@ -115,37 +111,60 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
         { onSignedIn: hideSignInModal },
     );
 
-    // First-party password sign-in — the PRIMARY action. Closes the modal on a
-    // committed session; the device-first cold boot then drives the app into the
-    // authenticated state.
+    // First-party password sign-in — the PRIMARY option once past the chooser.
     const pw = usePasswordSignIn({ onSignedIn: hideSignInModal });
 
-    // Entrance animation.
+    // Entrance animation (respects reduced motion).
     const opacity = useSharedValue(0);
     const scale = useSharedValue(0.96);
-
-    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity/scale are Reanimated SharedValues (stable refs) and must not be listed as deps; this runs once on mount to play the entrance.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity/scale are Reanimated SharedValues (stable refs), not deps; runs once on mount.
     useEffect(() => {
-        opacity.value = withTiming(1, { duration: 250 });
-        scale.value = withTiming(1, { duration: 250 });
+        let cancelled = false;
+        AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+            if (cancelled) return;
+            const duration = reduced ? 0 : 250;
+            opacity.value = withTiming(1, { duration });
+            scale.value = withTiming(1, { duration });
+        });
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
-    const backdropStyle = useAnimatedStyle(() => ({
-        opacity: opacity.value,
-    }));
-
+    const backdropStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
     const contentStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
         transform: [{ scale: scale.value }],
     }));
 
-    const handleClose = useCallback(() => {
-        hideSignInModal();
-    }, []);
+    const handleClose = useCallback(() => hideSignInModal(), []);
+    const handleCreateAccount = useCallback(() => Linking.openURL(OXY_ACCOUNTS_WEB_URL), []);
 
-    const handleCreateAccount = useCallback(() => {
-        Linking.openURL(OXY_ACCOUNTS_WEB_URL);
-    }, []);
+    const handleSelectAccount = useCallback(async (account: SwitchableAccount) => {
+        // The active account is already signed in — selecting it just continues.
+        if (account.isCurrent) {
+            hideSignInModal();
+            return;
+        }
+        if (switchingId) return;
+        setSwitchingId(account.accountId);
+        try {
+            await switchToAccount(account.accountId);
+            hideSignInModal();
+        } catch (switchError) {
+            if (isDev()) {
+                loggerUtil.warn('SignInModal: switch account failed', { component: 'SignInModal' }, switchError as unknown);
+            }
+            toast.error(t('accountSwitcher.toasts.switchFailed') || 'Failed to switch account');
+        } finally {
+            setSwitchingId(null);
+        }
+    }, [switchingId, switchToAccount, t]);
+
+    const title = showChooser ? 'Choose an account' : 'Sign in to Oxy';
+    const subtitle = showChooser
+        ? 'Continue as an account below, or use another.'
+        : 'Continue with your Oxy identity to sign in securely.';
 
     return (
         <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
@@ -155,195 +174,182 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                 <Animated.View
                     style={[
                         styles.card,
-                        { backgroundColor: theme.colors.card, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+                        { backgroundColor: theme.colors.card, paddingTop: insets.top + 28, paddingBottom: insets.bottom + 24 },
                         contentStyle,
                     ]}
                 >
-                    {/* Close button */}
                     <TouchableOpacity
                         style={[styles.closeButton, { backgroundColor: theme.colors.backgroundSecondary }]}
                         onPress={handleClose}
                         accessibilityRole="button"
                         accessibilityLabel="Close sign in"
                     >
-                        <Text style={[styles.closeButtonText, { color: theme.colors.textSecondary }]}>×</Text>
+                        <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
                     </TouchableOpacity>
 
                     {/* Branded header */}
                     <View style={styles.header}>
-                        <OxyLogo variant="icon" size={56} />
-                        <Text className="text-foreground" style={styles.title}>Sign in to Oxy</Text>
-                        <Text className="text-muted-foreground" style={styles.subtitle}>
-                            Continue with your Oxy identity to sign in securely
-                        </Text>
+                        <OxyLogo variant="icon" size={52} />
+                        <Text className="text-foreground" style={styles.title}>{title}</Text>
+                        <Text className="text-muted-foreground" style={styles.subtitle}>{subtitle}</Text>
                     </View>
 
-                    {/* PRIMARY action — first-party password sign-in. Always usable;
-                        the device-flow loading/error state below never gates it. */}
-                    <View style={styles.form}>
-                        {pw.step === 'identifier' && (
-                            <TextInput
-                                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
-                                value={pw.identifier}
-                                onChangeText={pw.setIdentifier}
-                                onSubmitEditing={pw.submitIdentifier}
-                                placeholder="Username or email"
-                                placeholderTextColor={theme.colors.textSecondary}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                keyboardType="email-address"
-                                returnKeyType="next"
-                                accessibilityLabel="Username or email"
+                    {showChooser ? (
+                        <Animated.View key="chooser" entering={FadeIn.duration(180)} style={styles.phase}>
+                            <SignInAccountChooser
+                                accounts={accounts}
+                                onSelectAccount={handleSelectAccount}
+                                onUseAnother={() => setUseAnother(true)}
+                                pendingAccountId={switchingId}
+                                disabled={switchingId !== null}
                             />
-                        )}
-
-                        {pw.step === 'password' && (
-                            <>
-                                <Text style={[styles.contextText, { color: theme.colors.textSecondary }]}>
-                                    {pw.identifier}
-                                </Text>
-                                <TextInput
-                                    style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
-                                    value={pw.password}
-                                    onChangeText={pw.setPassword}
-                                    onSubmitEditing={pw.submitPassword}
-                                    placeholder="Password"
-                                    placeholderTextColor={theme.colors.textSecondary}
-                                    secureTextEntry
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                    returnKeyType="go"
-                                    accessibilityLabel="Password"
-                                />
-                            </>
-                        )}
-
-                        {pw.step === 'twoFactor' && (
-                            <TextInput
-                                style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
-                                value={pw.code}
-                                onChangeText={pw.setCode}
-                                onSubmitEditing={pw.submitTwoFactor}
-                                placeholder={pw.useBackupCode ? 'Backup code' : '6-digit code'}
-                                placeholderTextColor={theme.colors.textSecondary}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                keyboardType={pw.useBackupCode ? 'default' : 'number-pad'}
-                                returnKeyType="go"
-                                accessibilityLabel={pw.useBackupCode ? 'Backup code' : 'Two-factor code'}
-                            />
-                        )}
-
-                        {pw.step === 'identifier' && (
-                            <Button
-                                variant="primary"
-                                onPress={pw.submitIdentifier}
-                                loading={pw.isSubmitting}
-                                disabled={pw.isSubmitting}
-                                style={styles.primaryButton}
-                            >
-                                Continue
-                            </Button>
-                        )}
-
-                        {pw.step === 'password' && (
-                            <Button
-                                variant="primary"
-                                onPress={pw.submitPassword}
-                                loading={pw.isSubmitting}
-                                disabled={pw.isSubmitting}
-                                style={styles.primaryButton}
-                            >
-                                Sign in
-                            </Button>
-                        )}
-
-                        {pw.step === 'twoFactor' && (
-                            <Button
-                                variant="primary"
-                                onPress={pw.submitTwoFactor}
-                                loading={pw.isSubmitting}
-                                disabled={pw.isSubmitting}
-                                style={styles.primaryButton}
-                            >
-                                Verify
-                            </Button>
-                        )}
-
-                        {pw.error && (
-                            <Text className="text-destructive" style={styles.formError}>{pw.error}</Text>
-                        )}
-
-                        {pw.step === 'twoFactor' && (
-                            <TouchableOpacity onPress={() => pw.setUseBackupCode(!pw.useBackupCode)} accessibilityRole="button" style={styles.linkButton}>
-                                <Text style={[styles.linkText, { color: theme.colors.primary }]}>
-                                    {pw.useBackupCode ? 'Use authenticator code' : 'Use a backup code'}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-
-                        {pw.step !== 'identifier' && (
-                            <TouchableOpacity onPress={pw.back} accessibilityRole="button" style={styles.linkButton}>
-                                <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>Back</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    {/* "or" divider — separates the password form from the SECONDARY
-                        cross-app device flow below. */}
-                    <View style={styles.dividerRow}>
-                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
-                        <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>or</Text>
-                        <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
-                    </View>
-
-                    {/* SECONDARY — cross-app device flow. Its loading/error state gates
-                        ONLY this section; the password form above is always usable. In the
-                        device-first model these paths persist a durable session, so they
-                        are always shown when a payload exists. */}
-                    {isLoading ? (
-                        <View style={styles.deviceLoading}>
-                            <Loading size="small" style={styles.statusSpinner} />
-                            <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
-                                Preparing sign in...
-                            </Text>
-                        </View>
-                    ) : error ? (
-                        <View style={styles.errorContainer}>
-                            <Text className="text-destructive" style={styles.errorText}>{error}</Text>
-                            <Button variant="secondary" onPress={retry} style={styles.secondaryButton}>Try Again</Button>
-                        </View>
+                        </Animated.View>
                     ) : (
-                        <>
-                            {/* Same-device "Sign in with Oxy" handoff — deep-links into the
-                                native Oxy app to approve. Shown only when the handoff backend
-                                returned a payload. */}
-                            {qrPayload && (
-                                <Button
-                                    variant="secondary"
-                                    onPress={openSameDeviceApproval}
-                                    icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.text} style={styles.buttonIcon} />}
-                                    style={styles.secondaryButton}
+                        <Animated.View key="signIn" entering={FadeIn.duration(180)} style={styles.phase}>
+                            {/* Back to the chooser when accounts exist. */}
+                            {accounts.length > 0 && (
+                                <TouchableOpacity
+                                    onPress={() => setUseAnother(false)}
+                                    accessibilityRole="button"
+                                    style={styles.backRow}
                                 >
-                                    Sign in with the Oxy app
+                                    <Ionicons name="chevron-back" size={18} color={theme.colors.textSecondary} />
+                                    <Text style={[styles.backText, { color: theme.colors.textSecondary }]}>Choose an account</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {/* PRIMARY — first-party password sign-in. Always usable; the
+                                device-flow loading/error state below never gates it. */}
+                            <View style={styles.form}>
+                                {pw.step === 'identifier' && (
+                                    <TextInput
+                                        style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                        value={pw.identifier}
+                                        onChangeText={pw.setIdentifier}
+                                        onSubmitEditing={pw.submitIdentifier}
+                                        placeholder="Username or email"
+                                        placeholderTextColor={theme.colors.textSecondary}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        keyboardType="email-address"
+                                        returnKeyType="next"
+                                        accessibilityLabel="Username or email"
+                                    />
+                                )}
+
+                                {pw.step === 'password' && (
+                                    <>
+                                        <Text style={[styles.contextText, { color: theme.colors.textSecondary }]}>{pw.identifier}</Text>
+                                        <TextInput
+                                            style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                            value={pw.password}
+                                            onChangeText={pw.setPassword}
+                                            onSubmitEditing={pw.submitPassword}
+                                            placeholder="Password"
+                                            placeholderTextColor={theme.colors.textSecondary}
+                                            secureTextEntry
+                                            autoCapitalize="none"
+                                            autoCorrect={false}
+                                            returnKeyType="go"
+                                            accessibilityLabel="Password"
+                                        />
+                                    </>
+                                )}
+
+                                {pw.step === 'twoFactor' && (
+                                    <TextInput
+                                        style={[styles.input, { borderColor: theme.colors.border, color: theme.colors.text, backgroundColor: theme.colors.backgroundSecondary }]}
+                                        value={pw.code}
+                                        onChangeText={pw.setCode}
+                                        onSubmitEditing={pw.submitTwoFactor}
+                                        placeholder={pw.useBackupCode ? 'Backup code' : '6-digit code'}
+                                        placeholderTextColor={theme.colors.textSecondary}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        keyboardType={pw.useBackupCode ? 'default' : 'number-pad'}
+                                        returnKeyType="go"
+                                        accessibilityLabel={pw.useBackupCode ? 'Backup code' : 'Two-factor code'}
+                                    />
+                                )}
+
+                                <Button
+                                    variant="primary"
+                                    onPress={
+                                        pw.step === 'identifier' ? pw.submitIdentifier
+                                            : pw.step === 'password' ? pw.submitPassword
+                                                : pw.submitTwoFactor
+                                    }
+                                    loading={pw.isSubmitting}
+                                    disabled={pw.isSubmitting}
+                                    style={styles.primaryButton}
+                                >
+                                    {pw.step === 'identifier' ? 'Continue' : pw.step === 'password' ? 'Sign in' : 'Verify'}
                                 </Button>
-                            )}
 
-                            {/* Waiting status */}
-                            {isWaiting && (
-                                <View style={styles.statusContainer}>
-                                    <Loading size="small" style={styles.statusSpinner} />
-                                    <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
-                                        Waiting for authorization...
-                                    </Text>
-                                </View>
-                            )}
+                                {pw.error && (
+                                    <Text className="text-destructive" style={styles.formError}>{pw.error}</Text>
+                                )}
 
-                            {/* Collapsed "sign in on another device" QR disclosure. */}
-                            <View style={styles.qrSection}>
-                                <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
+                                {pw.step === 'twoFactor' && (
+                                    <TouchableOpacity onPress={() => pw.setUseBackupCode(!pw.useBackupCode)} accessibilityRole="button" style={styles.linkButton}>
+                                        <Text style={[styles.linkText, { color: theme.colors.primary }]}>
+                                            {pw.useBackupCode ? 'Use authenticator code' : 'Use a backup code'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                )}
+
+                                {pw.step !== 'identifier' && (
+                                    <TouchableOpacity onPress={pw.back} accessibilityRole="button" style={styles.linkButton}>
+                                        <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>Back</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
-                        </>
+
+                            {/* "or" divider */}
+                            <View style={styles.dividerRow}>
+                                <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+                                <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>or</Text>
+                                <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+                            </View>
+
+                            {/* SECONDARY — cross-app device flow. Its loading/error state gates
+                                ONLY this section; the password form above is always usable. */}
+                            {isLoading ? (
+                                <View style={styles.deviceLoading}>
+                                    <Loading size="small" style={styles.statusSpinner} />
+                                    <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>Preparing sign in…</Text>
+                                </View>
+                            ) : error ? (
+                                <View style={styles.errorContainer}>
+                                    <Text className="text-destructive" style={styles.errorText}>{error}</Text>
+                                    <Button variant="secondary" onPress={retry} style={styles.secondaryButton}>Try Again</Button>
+                                </View>
+                            ) : (
+                                <>
+                                    {qrPayload && (
+                                        <Button
+                                            variant="secondary"
+                                            onPress={openSameDeviceApproval}
+                                            icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.text} style={styles.buttonIcon} />}
+                                            style={styles.secondaryButton}
+                                        >
+                                            Sign in with the Oxy app
+                                        </Button>
+                                    )}
+
+                                    {isWaiting && (
+                                        <View style={styles.statusContainer}>
+                                            <Loading size="small" style={styles.statusSpinner} />
+                                            <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>Waiting for authorization…</Text>
+                                        </View>
+                                    )}
+
+                                    <View style={styles.qrSection}>
+                                        <AnotherDeviceQR qrData={qrData} qrPayload={qrPayload} />
+                                    </View>
+                                </>
+                            )}
+                        </Animated.View>
                     )}
 
                     {/* Footer — create an account */}
@@ -352,9 +358,7 @@ const SignInModalContent: React.FC<SignInModalContentProps> = ({
                             Don't have an Oxy account?{' '}
                         </Text>
                         <TouchableOpacity onPress={handleCreateAccount} accessibilityRole="link">
-                            <Text style={styles.footerLink} className="text-primary">
-                                Create one
-                            </Text>
+                            <Text style={styles.footerLink} className="text-primary">Create one</Text>
                         </TouchableOpacity>
                     </View>
                 </Animated.View>
@@ -371,41 +375,53 @@ const styles = StyleSheet.create({
     },
     card: {
         width: '100%',
-        maxWidth: 400,
+        maxWidth: 420,
         alignItems: 'center',
         paddingHorizontal: 24,
-        borderRadius: 24,
+        borderRadius: 28,
     },
     closeButton: {
         position: 'absolute',
         top: 16,
         right: 16,
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10,
     },
-    closeButtonText: {
-        fontSize: 28,
-        fontWeight: '300',
-        lineHeight: 32,
-    },
     header: {
         alignItems: 'center',
-        marginBottom: 28,
+        marginBottom: 24,
     },
     title: {
         fontSize: 26,
-        fontWeight: 'bold',
+        fontWeight: '800',
+        letterSpacing: -0.5,
         marginTop: 16,
         textAlign: 'center',
     },
     subtitle: {
         fontSize: 15,
+        lineHeight: 21,
         marginTop: 8,
         textAlign: 'center',
+    },
+    phase: {
+        width: '100%',
+    },
+    backRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        alignSelf: 'flex-start',
+        paddingVertical: 6,
+        marginBottom: 8,
+    },
+    backText: {
+        fontSize: 14,
+        fontWeight: '600',
     },
     primaryButton: {
         width: '100%',
@@ -427,7 +443,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderRadius: 12,
         paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingVertical: 13,
         fontSize: 15,
         marginBottom: 12,
     },
@@ -485,14 +501,6 @@ const styles = StyleSheet.create({
     qrSection: {
         width: '100%',
         marginTop: 24,
-    },
-    loadingContainer: {
-        alignItems: 'center',
-        paddingVertical: 40,
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 14,
     },
     errorContainer: {
         alignItems: 'center',

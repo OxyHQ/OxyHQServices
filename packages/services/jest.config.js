@@ -36,6 +36,7 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-native$': '<rootDir>/__tests__/__mocks__/react-native.ts',
+    '^react-native-reanimated$': '<rootDir>/__tests__/__mocks__/reanimated.ts',
     '^@oxyhq/bloom$': '<rootDir>/__tests__/__mocks__/bloom.ts',
     '^@oxyhq/bloom/(.*)$': '<rootDir>/__tests__/__mocks__/bloom.ts',
   },
