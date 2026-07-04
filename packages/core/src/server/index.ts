@@ -68,7 +68,7 @@ export { verifySecret } from './verifySecret';
 // SOURCE OF TRUTH shared with the IdP worker and the client FAPI auto-detect.
 // Pure host handling (no browser deps), so it is safe on the server subpath and
 // lets `@oxyhq/api` derive `auth.<apex>` without duplicating PSL logic.
-export { registrableApex } from '../utils/fapiAutoDetect';
+export { registrableApex } from '../utils/registrableApex';
 
 // The single RP callback path the IdP redirects back to. A pure wire-contract
 // constant (no browser deps at module top level), re-used server-side so the

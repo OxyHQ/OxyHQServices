@@ -39,12 +39,11 @@ const formatRelative = (iso: string): string => {
 };
 
 /**
- * ConnectedAppsScreen — list and revoke FedCM-authorized RP applications.
+ * ConnectedAppsScreen — list and revoke authorized OAuth applications.
  *
- * Fetches via `useAuthorizedApps` (drives `GET /fedcm/me/authorized-apps`)
- * and exposes a "Revoke" action that hits `DELETE /fedcm/me/authorized-apps/
- * :origin`. Each revoke invalidates the connected-apps query so the list
- * refreshes immediately.
+ * Fetches via `useAuthorizedApps` (drives `GET /apps/authorized`) and exposes a
+ * "Revoke" action that hits `DELETE /apps/authorized/:clientId`. Each revoke
+ * invalidates the connected-apps query so the list refreshes immediately.
  */
 const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const bloomTheme = useTheme();
@@ -59,7 +58,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
     const revokeMutation = useRevokeAuthorizedApp();
     const revokeDialog = useDialogControl();
     const [pendingRevoke, setPendingRevoke] = useState<AuthorizedApp | null>(null);
-    const [revokingOrigin, setRevokingOrigin] = useState<string | null>(null);
+    const [revokingClientId, setRevokingClientId] = useState<string | null>(null);
 
     const confirmRevoke = useCallback(
         (app: AuthorizedApp) => {
@@ -74,12 +73,12 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
             return;
         }
         const target = pendingRevoke;
-        setRevokingOrigin(target.origin);
+        setRevokingClientId(target.clientId);
         try {
-            await revokeMutation.mutateAsync(target.origin);
+            await revokeMutation.mutateAsync(target.clientId);
             toast.success(
-                t('connectedApps.toasts.revoked', { name: target.name })
-                || `Revoked access for ${target.name}`,
+                t('connectedApps.toasts.revoked', { name: target.appName })
+                || `Revoked access for ${target.appName}`,
             );
         } catch (error) {
             loggerUtil.warn(
@@ -92,7 +91,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                 || 'Failed to revoke access',
             );
         } finally {
-            setRevokingOrigin(null);
+            setRevokingClientId(null);
             setPendingRevoke(null);
         }
     }, [pendingRevoke, revokeMutation, t]);
@@ -114,17 +113,17 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
 
     const renderItem = useCallback(
         ({ item }: { item: AuthorizedApp }) => {
-            const isRevoking = revokingOrigin === item.origin;
+            const isRevoking = revokingClientId === item.clientId;
             return (
                 <SettingsListGroup>
                     <SettingsListItem
-                        icon={<Avatar name={item.name} size={APP_ICON_SIZE} />}
-                        title={item.name}
+                        icon={<Avatar name={item.appName} size={APP_ICON_SIZE} />}
+                        title={item.appName}
                         description={
                             t('connectedApps.item.lastUsed', {
-                                relative: formatRelative(item.lastUsedAt),
+                                relative: formatRelative(item.grantedAt),
                             })
-                            || `Last used ${formatRelative(item.lastUsedAt)}`
+                            || `Last used ${formatRelative(item.grantedAt)}`
                         }
                         onPress={isRevoking ? undefined : () => confirmRevoke(item)}
                         disabled={isRevoking}
@@ -142,7 +141,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                 </SettingsListGroup>
             );
         },
-        [bloomTheme.colors.error, confirmRevoke, revokingOrigin, t],
+        [bloomTheme.colors.error, confirmRevoke, revokingClientId, t],
     );
 
     return (
@@ -158,7 +157,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
             ) : (
                 <FlatList
                     data={apps ?? []}
-                    keyExtractor={(item) => item.origin}
+                    keyExtractor={(item) => item.clientId}
                     renderItem={renderItem}
                     contentContainerClassName="px-screen-margin py-space-16"
                     contentContainerStyle={styles.listContent}
@@ -177,8 +176,8 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                 title={t('connectedApps.confirm.title') || 'Revoke access'}
                 description={
                     pendingRevoke
-                        ? (t('connectedApps.confirm.message', { name: pendingRevoke.name })
-                            || `Revoke ${pendingRevoke.name}'s access to your Oxy account?`)
+                        ? (t('connectedApps.confirm.message', { name: pendingRevoke.appName })
+                            || `Revoke ${pendingRevoke.appName}'s access to your Oxy account?`)
                         : ''
                 }
                 actions={[

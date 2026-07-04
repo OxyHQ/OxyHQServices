@@ -633,8 +633,8 @@ export const useUpdateUserPreferences = () => {
 
 /**
  * Revoke the authenticated user's authorization for a specific RP origin.
- * Removes the FedCM grant so the origin no longer appears in the user's
- * "Connected apps" list — next sign-in from that origin will require explicit
+ * Removes the OAuth grant so the app no longer appears in the user's
+ * "Connected apps" list — next sign-in for that app will require explicit
  * re-consent.
  */
 export const useRevokeAuthorizedApp = () => {
@@ -643,9 +643,9 @@ export const useRevokeAuthorizedApp = () => {
 
   return useMutation({
     mutationKey: [...mutationKeys.connectedApps.revoke],
-    mutationFn: async (origin: string) => {
+    mutationFn: async (clientId: string) => {
       return authenticatedApiCall<void>(oxyServices, activeSessionId, () =>
-        oxyServices.revokeAuthorizedApp(origin)
+        oxyServices.revokeAuthorizedApp(clientId)
       );
     },
     onSuccess: () => {

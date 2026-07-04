@@ -6,7 +6,7 @@
  * surface + the IdP). These cases lock its Public-Suffix-List behaviour.
  */
 
-import { registrableApex } from '../fapiAutoDetect';
+import { registrableApex } from '../registrableApex';
 
 describe('registrableApex', () => {
   it('returns the eTLD+1 for a normal two-label host', () => {

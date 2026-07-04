@@ -205,10 +205,8 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
 };
 
 /**
- * List the authenticated user's authorized RP apps (FedCM grants).
- *
- * Returns the intersection of the user's grants with the currently-approved
- * RP catalog. Drives the "Connected apps" management screen.
+ * List the authenticated user's authorized OAuth applications
+ * (`GET /apps/authorized`). Drives the "Connected apps" management screen.
  */
 export const useAuthorizedApps = (options?: { enabled?: boolean }) => {
   const { oxyServices, activeSessionId, isAuthenticated } = useOxy();
