@@ -3,20 +3,6 @@ import type { UserNameResponse } from '@oxyhq/contracts';
 export interface OxyConfig {
   baseURL: string;
   cloudURL?: string;
-  /**
-   * Base URL the SDK's first-party session/refresh calls target.
-   *
-   * Per the 2026 session architecture (docs/SESSION-ARCHITECTURE.md), every app
-   * keeps its OWN first-party session on its OWN domain. For non-`oxy.so` apps
-   * this is the app's own same-site backend (e.g. `https://api.mention.earth`),
-   * whose session bridge forwards the user's refresh credential to
-   * `api.oxy.so`. For `*.oxy.so` apps this is omitted and falls back to
-   * `baseURL` (`https://api.oxy.so`), so their behavior is unchanged.
-   *
-   * Resolve via {@link OxyServices.getSessionBaseUrl}; when unset it returns
-   * `baseURL`. This is purely additive — no refresh/auth logic reads it yet.
-   */
-  sessionBaseUrl?: string;
   authWebUrl?: string;
   authRedirectUri?: string;
   /**
