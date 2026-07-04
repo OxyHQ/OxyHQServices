@@ -176,34 +176,6 @@ export function resolveUserId(user: UserResponse): string | undefined {
 }
 
 /**
- * One rotated account entry from `POST /auth/refresh-all`.
- *
- * `authuser` is the device-local slot index (`0..N-1`). `user` is the canonical
- * {@link userResponseSchema} shape (the handler projects a whitelist and runs it
- * through `formatUserResponse`).
- */
-export const refreshAllAccountSchema = z.object({
-    authuser: z.number().int().nonnegative(),
-    accessToken: z.string(),
-    expiresAt: z.string(),
-    sessionId: z.string(),
-    user: userResponseSchema,
-});
-
-export type RefreshAllAccountResponse = z.infer<typeof refreshAllAccountSchema>;
-
-/**
- * Wire shape of `POST /auth/refresh-all`: every valid device-local account,
- * sorted by `authuser` ascending. An empty `accounts` array means "no signed-in
- * accounts on this device" — the IdP must show the sign-in form.
- */
-export const refreshAllResponseSchema = z.object({
-    accounts: z.array(refreshAllAccountSchema),
-});
-
-export type RefreshAllResponseContract = z.infer<typeof refreshAllResponseSchema>;
-
-/**
  * Wire shape of `GET /users/me` — the API success envelope (`{ data: <user> }`)
  * wrapping the current-user DTO. Some older producers use `_id` instead of
  * `id`; resolve via {@link resolveUserId}. The display name still lives under
