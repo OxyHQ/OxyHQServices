@@ -5,7 +5,8 @@ import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
-import { resolveLoginDeviceId, finalizeDeviceLogin } from '../services/deviceLogin.service';
+import { resolveLoginDevice, finalizeDeviceLogin } from '../services/deviceLogin.service';
+import { setDeviceCookie } from '../utils/deviceCookie';
 import { buildSessionAuthResponse } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
@@ -395,16 +396,22 @@ export async function verify2FALogin(req: Request, res: Response) {
     user.twoFactorAuth.verifiedAt = new Date();
     await user.save();
 
-    // Device-first attribution (oxy_device cookie > deviceToken > none),
-    // resolved before mint so the session carries the central deviceId.
-    const twoFactorDeviceId = await resolveLoginDeviceId(req, deviceToken);
+    // Device-first attribution (oxy_device cookie > deviceToken > same-site
+    // cookie mint > none), resolved before mint so the session carries the
+    // central deviceId.
+    const twoFactorDevice = await resolveLoginDevice(req, deviceToken);
 
     // Create session (same as signIn would)
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      { deviceName, deviceFingerprint, ...(twoFactorDeviceId ? { deviceId: twoFactorDeviceId } : {}) }
+      { deviceName, deviceFingerprint, ...(twoFactorDevice.deviceId ? { deviceId: twoFactorDevice.deviceId } : {}) }
     );
+
+    // Plant the freshly-minted device cookie (same-site trusted logins only).
+    if (twoFactorDevice.setCookieSecret) {
+      setDeviceCookie(res, twoFactorDevice.setCookieSecret);
+    }
 
     const baseTwoFactorResponse = buildSessionAuthResponse(session, user);
     if (!baseTwoFactorResponse) {
@@ -416,7 +423,7 @@ export async function verify2FALogin(req: Request, res: Response) {
     // a rotating refresh token when the lane allows it. Best-effort.
     const twoFactorDeviceExtras = await finalizeDeviceLogin({
       req,
-      deviceId: twoFactorDeviceId,
+      deviceId: twoFactorDevice.deviceId,
       session,
       userId: user._id.toString(),
     });
