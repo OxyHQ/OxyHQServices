@@ -145,6 +145,18 @@ describe('displayNameSanitize', () => {
     it('collapses internal whitespace and trims the ends', () => {
       expect(cleanDisplayName('  Ada   Lovelace  ')).toBe('Ada Lovelace');
     });
+
+    it.each([
+      ['Ada\tLovelace', 'tab'],
+      ['Ada\nLovelace', 'newline'],
+      ['Ada\rLovelace', 'carriage return'],
+      ['Ada\n\tLovelace', 'mixed control whitespace'],
+    ])('collapses control whitespace (%s) to a single space', (input) => {
+      // `\p{Zs}` no longer admits tab/newline/CR, so they are replaced with a
+      // space in the char-strip step and then collapsed by the whitespace pass —
+      // the net output is identical to a plain-space input.
+      expect(cleanDisplayName(input)).toBe('Ada Lovelace');
+    });
   });
 
   describe('cleanDisplayName — normalization', () => {
@@ -223,6 +235,25 @@ describe('displayNameSanitize', () => {
     it('returns false for hyphens and dots', () => {
       expect(isValidDisplayName('Jean-Luc')).toBe(false);
       expect(isValidDisplayName('J.R.')).toBe(false);
+    });
+
+    it.each([
+      ['Ada\tLovelace', 'tab'],
+      ['Ada\nLovelace', 'newline'],
+      ['Ada\rLovelace', 'carriage return'],
+      ['Line break', 'line separator U+2028'],
+    ])('returns false for control whitespace (%s)', (name) => {
+      // Regression: `\s` used to admit these, so a layout-breaking / multi-line
+      // spoofing name passed the native 400-gate. `\p{Zs}` rejects them.
+      expect(isValidDisplayName(name)).toBe(false);
+    });
+
+    it.each([
+      ['Ada Lovelace', 'ASCII space'],
+      ['Ada Lovelace', 'non-breaking space'],
+      ['山田　太郎', 'ideographic space'],
+    ])('returns true for space separators (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
     });
   });
 });

@@ -5,15 +5,18 @@
  *   - letters of any script (`\p{L}`),
  *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
  *     "é"),
- *   - whitespace (`\s`),
+ *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
+ *     space, …) — but NOT control whitespace such as tab, newline, or carriage
+ *     return, which would break layout or enable multi-line spoofing,
  *   - the straight apostrophe (`'`, e.g. "O'Brien").
  *
  * Everything else is removed: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
- * digits, hyphens, dots, and any other punctuation.
+ * digits, hyphens, dots, control whitespace (tab/newline/CR), and any other
+ * punctuation.
  *
  * XSS reasoning
  * -------------
- * The allowed set `\p{L}\p{M}\s'` explicitly EXCLUDES `<`, `>`, `&`, and `"`,
+ * The allowed set `\p{L}\p{M}\p{Zs}'` explicitly EXCLUDES `<`, `>`, `&`, and `"`,
  * so the output of {@link cleanDisplayName} can never contain an HTML/XSS
  * vector — there is simply no character in the output that can open a tag, an
  * entity, or an attribute. The only special character that survives is the
@@ -30,11 +33,16 @@ export const MAX_DISPLAY_NAME_LENGTH = 80;
 /** Matches a `:shortcode:` emoji token (e.g. `:bongoCat:`, `:+1:`). */
 const SHORTCODE_PATTERN = /:[A-Za-z0-9_+-]+:/g;
 
-/** Matches any character NOT allowed in a display name (global, Unicode). */
-const DISALLOWED_PATTERN = /[^\p{L}\p{M}\s']/gu;
+/**
+ * Matches any character NOT allowed in a display name (global, Unicode). The
+ * whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the latter
+ * would admit tab/newline/carriage return, which break layout and enable
+ * multi-line spoofing.
+ */
+const DISALLOWED_PATTERN = /[^\p{L}\p{M}\p{Zs}']/gu;
 
 /** Single test for the presence of a disallowed character (non-global). */
-const DISALLOWED_PROBE = /[^\p{L}\p{M}\s']/u;
+const DISALLOWED_PROBE = /[^\p{L}\p{M}\p{Zs}']/u;
 
 /**
  * Matches a run of combining marks (`\p{M}`) that is NOT attached to a base
