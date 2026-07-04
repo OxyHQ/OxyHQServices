@@ -22,22 +22,38 @@ export interface DeviceAccountsEnv {
 const DEVICE_COOKIE_NAME = 'oxy_device';
 const EMPTY = { activeAccountId: null, accounts: [] as unknown[] };
 
-/** Extract a single cookie value from a `Cookie` header, or `null`. */
+/**
+ * Extract a single cookie value from a `Cookie` header, or `null`.
+ *
+ * Handles the RFC 6265 double-quoted `cookie-value` form (`name="..."`) by
+ * stripping the wrapping quotes, and percent-decodes the value (some proxies
+ * URL-encode cookies). A malformed `%`-sequence falls back to the raw value
+ * rather than throwing.
+ */
 function readCookie(header: string | null, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
     if (part.slice(0, eq).trim() === name) {
-      return part.slice(eq + 1).trim() || null;
+      let value = part.slice(eq + 1).trim();
+      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
+      if (!value) return null;
+      try {
+        return decodeURIComponent(value) || null;
+      } catch {
+        return value;
+      }
     }
   }
   return null;
 }
 
-export async function deviceAccountsResponse(request: Request, env: DeviceAccountsEnv): Promise<Response> {
-  const apiBaseUrl = (env.OXY_API_URL || 'https://api.oxy.so').replace(/\/+$/, '');
-  const ssoInternalSecret = env.SSO_INTERNAL_SECRET || '';
+export async function deviceAccountsResponse(request: Request, env?: DeviceAccountsEnv): Promise<Response> {
+  const apiBaseUrl = (env?.OXY_API_URL || 'https://api.oxy.so').replace(/\/+$/, '');
+  const ssoInternalSecret = env?.SSO_INTERNAL_SECRET || '';
 
   const deviceKey = readCookie(request.headers.get('cookie'), DEVICE_COOKIE_NAME);
   if (!deviceKey || !ssoInternalSecret) {

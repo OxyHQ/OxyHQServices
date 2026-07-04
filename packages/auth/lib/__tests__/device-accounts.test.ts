@@ -100,6 +100,28 @@ describe('deviceAccountsResponse', () => {
     expect(captured.body).toEqual({ deviceKey: 'raw-secret-1234567890' });
   });
 
+  it('strips RFC 6265 wrapping double-quotes from the cookie value before forwarding', async () => {
+    resolveBody = SAMPLE;
+    const res = await deviceAccountsResponse(request('oxy_device="raw-secret-1234567890"'), env);
+    expect(res.status).toBe(200);
+    expect(captured.called).toBe(true);
+    expect(captured.body).toEqual({ deviceKey: 'raw-secret-1234567890' });
+  });
+
+  it('percent-decodes a URL-encoded cookie value before forwarding', async () => {
+    resolveBody = SAMPLE;
+    const res = await deviceAccountsResponse(request('oxy_device=raw%2Fsecret%3D1234'), env);
+    expect(res.status).toBe(200);
+    expect(captured.body).toEqual({ deviceKey: 'raw/secret=1234' });
+  });
+
+  it('fails closed when env is undefined (no configured secret)', async () => {
+    const res = await deviceAccountsResponse(request('oxy_device=raw-secret-1234567890'), undefined);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ activeAccountId: null, accounts: [] });
+    expect(captured.called).toBe(false);
+  });
+
   it('fails closed to an empty list when resolve returns a non-2xx', async () => {
     resolveStatus = 500;
     resolveBody = { message: 'boom' };
