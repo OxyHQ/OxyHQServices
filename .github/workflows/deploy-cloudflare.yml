@@ -54,33 +54,28 @@ jobs:
       # sync is already gated pre-push (test-build) and in PR CI, so the deploy
       # installs without the buggy frozen flag.
       - run: bun install
-      # Builds the Vite SPA AND the Cloudflare Pages Function (dist/_worker.js —
-      # the /api/device-accounts chooser feed) — see packages/auth `build` ->
-      # `build:worker`.
+      # Build the Vite SPA into packages/auth/dist. The ONE dynamic route
+      # (/api/device-accounts) is a Pages FUNCTION (`packages/auth/functions/`),
+      # NOT an advanced-mode `_worker.js` — CF Pages was not executing the
+      # single-file worker on the oxy-auth project, so it fell through to the SPA.
       - run: bun x turbo run build --filter=auth
-      # Safety net: regenerate the Pages Function directly (bypasses any stale
-      # turbo cache), confirm it is at the dist ROOT (advanced-mode requires
-      # `dist/_worker.js` at the upload root), and — critically — RUN the built
-      # worker to prove it EXECUTES and routes `/api/device-accounts` to JSON
-      # (not just that the file exists). This catches the "worker present but
-      # serves SPA HTML" class before deploy.
-      - name: Ensure the Pages Function is built and executes
+      # Fail fast if the Pages Functions do not COMPILE (a broken function would
+      # otherwise deploy and 500/fall through at runtime). `wrangler pages
+      # functions build` is exactly what CF runs to bundle `functions/` for the
+      # deployment, so a green compile here == the deploy will register the route.
+      - name: Verify Pages Functions compile
         working-directory: packages/auth
-        run: |
-          bun run build:worker
-          test -f dist/_worker.js || { echo "::error::dist/_worker.js missing — the /api/device-accounts feed would not deploy"; exit 1; }
-          echo "dist/_worker.js present ($(wc -c < dist/_worker.js) bytes)"
-          bun run scripts/verify-worker.mjs
-      # Deploy with a PINNED modern wrangler (4.x). The advanced-mode
-      # single-file `_worker.js` upload is verified to work under wrangler 4
-      # (`wrangler pages dev dist` compiles + serves the feed as JSON); pinning
-      # removes the wrangler-action default-version drift as a variable.
+        run: bunx wrangler@4 pages functions build functions --outfile "$RUNNER_TEMP/functions-worker.js"
+      # Deploy from packages/auth so wrangler picks up the sibling `functions/`
+      # directory (CF Pages compiles `./functions` relative to the CWD) alongside
+      # the `dist` static assets. Pinned wrangler 4.
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4'
-          command: pages deploy packages/auth/dist --project-name=oxy-auth --branch=main
+          workingDirectory: packages/auth
+          command: pages deploy dist --project-name=oxy-auth --branch=main
       # Post-deploy smoke gate: hit the LIVE host and assert the post-FedCM
       # contract on PUBLIC, unauthenticated endpoints only (no secrets). A broken
       # deploy (blank SPA, missing _worker.js / static-only serving SPA HTML for
