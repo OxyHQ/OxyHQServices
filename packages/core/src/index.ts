@@ -645,8 +645,9 @@ export type {
     ConsumeDeviceBootReturnDeps,
 } from './boot/deviceBootReturn';
 
-export { isAuthTokenBundle } from './mixins/OxyServices.deviceBoot';
-export type { WebSessionResult, WebSessionNoSession } from './mixins/OxyServices.deviceBoot';
+// The web-session result contract (`WebSessionResult`) is owned by
+// `@oxyhq/contracts` — import it directly from there; `@oxyhq/core` does not
+// re-export contract types.
 
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every

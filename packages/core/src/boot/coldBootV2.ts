@@ -33,7 +33,6 @@ import { logger } from '../utils/loggerUtils';
 import type { OxyServices } from '../OxyServices';
 import type { AuthStateStore, PersistedAuthState } from '../session/authStateStore';
 import { refreshPersistedSession } from '../session/refresh';
-import { isAuthTokenBundle } from '../mixins/OxyServices.deviceBoot';
 import {
   consumeDeviceBootReturn,
   hashHasBootFragment,
@@ -335,25 +334,28 @@ export async function runSessionColdBoot(
       // Same-apex: inline credentialed fetch, no redirect, runs every boot.
       if (isSameApex(pageHost, apiHost)) {
         const result = await oxy.requestWebSession();
-        if (isAuthTokenBundle(result)) {
-          const userId = resolveUserId(result.user);
+        // The rotated deviceToken is on BOTH arms (it is device-level, not
+        // session-level) — persist it before branching on the session.
+        await store.saveDeviceToken(result.deviceToken);
+        if (result.reason === 'session') {
+          const bundle = result.session;
+          const userId = resolveUserId(bundle.user);
           if (!userId) {
             return { kind: 'skip' };
           }
           const next: PersistedAuthState = {
-            sessionId: result.sessionId,
-            refreshToken: result.refreshToken,
+            sessionId: bundle.sessionId,
+            refreshToken: bundle.refreshToken,
             userId,
-            deviceToken: (await store.loadDeviceToken()) ?? undefined,
-            accessToken: result.accessToken,
-            expiresAt: result.expiresAt,
+            deviceToken: result.deviceToken,
+            accessToken: bundle.accessToken,
+            expiresAt: bundle.expiresAt,
           };
           await store.save(next);
-          oxy.setTokens(result.accessToken);
-          return { kind: 'session', session: sessionFromPersisted(next, result.accessToken) };
+          oxy.setTokens(bundle.accessToken);
+          return { kind: 'session', session: sessionFromPersisted(next, bundle.accessToken) };
         }
         // Known device, signed out.
-        await store.saveDeviceToken(result.deviceToken);
         signedOutReason = result.reason;
         return { kind: 'skip' };
       }

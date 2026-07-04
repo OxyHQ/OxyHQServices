@@ -3,6 +3,7 @@ import {
     deviceBootFragmentSchema,
     deviceExchangeRequestSchema,
     authTokenBundleSchema,
+    webSessionResultSchema,
     tokenRefreshRequestSchema,
     tokenRefreshResponseSchema,
     deviceTokenIssueResponseSchema,
@@ -11,7 +12,12 @@ import {
     deviceResolveResponseSchema,
     safeParseContract,
 } from '../index';
-import type { AuthTokenBundle, DeviceResolveResponse, LoginResult } from '../index';
+import type {
+    AuthTokenBundle,
+    DeviceResolveResponse,
+    LoginResult,
+    WebSessionResult,
+} from '../index';
 
 /**
  * The device-first bootstrap contracts MUST round-trip exactly what the new
@@ -114,6 +120,55 @@ describe('authTokenBundleSchema', () => {
     it('rejects a bundle missing the refreshToken', () => {
         const { refreshToken, ...noRefresh } = bundle;
         expect(safeParseContract(authTokenBundleSchema, noRefresh)).toBeNull();
+    });
+});
+
+describe('webSessionResultSchema (reason-discriminated union)', () => {
+    const bundle: AuthTokenBundle = {
+        sessionId: 's1',
+        accessToken: 'jwt.access',
+        refreshToken: 'rt_family_head',
+        expiresAt: '2026-07-07T00:00:00.000Z',
+        user: { id: 'u1', username: 'nate', name: { displayName: 'Nate' } },
+    };
+
+    it('parses the session arm (bundle nested under `session` + deviceToken)', () => {
+        const sessionArm: WebSessionResult = { reason: 'session', session: bundle, deviceToken: A_TOKEN };
+        const parsed = safeParseContract(webSessionResultSchema, sessionArm);
+        expect(parsed).not.toBeNull();
+        expect(parsed && parsed.reason === 'session' && parsed.session.sessionId).toBe('s1');
+        expect(parsed?.deviceToken).toBe(A_TOKEN);
+    });
+
+    it('parses the no_session arm (deviceToken only)', () => {
+        const parsed = safeParseContract(webSessionResultSchema, { reason: 'no_session', deviceToken: A_TOKEN });
+        expect(parsed).not.toBeNull();
+        expect(parsed?.reason).toBe('no_session');
+        expect(parsed && !('session' in parsed)).toBe(true);
+    });
+
+    it('parses the new_device arm', () => {
+        const parsed = safeParseContract(webSessionResultSchema, { reason: 'new_device', deviceToken: A_TOKEN });
+        expect(parsed?.reason).toBe('new_device');
+    });
+
+    it('REJECTS the old bare-bundle shape (no reason wrapper)', () => {
+        expect(safeParseContract(webSessionResultSchema, bundle)).toBeNull();
+    });
+
+    it('rejects a session arm missing the nested session bundle', () => {
+        expect(
+            safeParseContract(webSessionResultSchema, { reason: 'session', deviceToken: A_TOKEN }),
+        ).toBeNull();
+    });
+
+    it('rejects any arm missing the deviceToken', () => {
+        expect(safeParseContract(webSessionResultSchema, { reason: 'session', session: bundle })).toBeNull();
+        expect(safeParseContract(webSessionResultSchema, { reason: 'no_session' })).toBeNull();
+    });
+
+    it('rejects an unknown reason', () => {
+        expect(safeParseContract(webSessionResultSchema, { reason: 'signed_out', deviceToken: A_TOKEN })).toBeNull();
     });
 });
 

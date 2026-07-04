@@ -102,6 +102,69 @@ export const authTokenBundleSchema: z.ZodType<AuthTokenBundle> = z.object({
 });
 
 /* -------------------------------------------------------------------------- */
+/*  Web-session fast path (`POST /auth/device/web-session`)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `*.oxy.so` same-site fast path returns a `reason`-discriminated result:
+ * a full session (the device cookie resolved an active session) OR a
+ * signed-out arm (the device is known / was just planted). BOTH arms carry the
+ * rotated opaque `deviceToken` to persist — the deviceToken is device-level
+ * attribution, not session-level, so it is refreshed even when signed out.
+ *
+ * IMPORTANT: the success arm nests the token bundle under `session` — it is
+ * NOT a bare {@link AuthTokenBundle}. That distinction is load-bearing for the
+ * consumer (`@oxyhq/core`'s cold boot uses `result.session` and persists the
+ * `deviceToken` from the SAME envelope).
+ */
+
+/**
+ * Success arm: an active session resolved from the same-site device cookie.
+ */
+export interface WebSessionSession {
+    reason: 'session';
+    session: AuthTokenBundle;
+    deviceToken: string;
+}
+
+/**
+ * Signed-out arm: the device is known (or freshly planted) but has no active
+ * session. Carries only the rotated `deviceToken`.
+ */
+export interface WebSessionNoSession {
+    reason: 'no_session' | 'new_device';
+    deviceToken: string;
+}
+
+/** The `reason`-discriminated outcome of `POST /auth/device/web-session`. */
+export type WebSessionResult = WebSessionSession | WebSessionNoSession;
+
+// The nested-`session` arm is pinned by an explicit interface + `z.ZodType<>`
+// annotation (same node10 `.d.ts` rationale as `AuthTokenBundle` above — a
+// `z.infer<>` of a nested object schema can degrade to `{}` under a consumer's
+// `moduleResolution: "node"`).
+const webSessionSessionSchema: z.ZodType<WebSessionSession> = z.object({
+    reason: z.literal('session'),
+    session: authTokenBundleSchema,
+    deviceToken: z.string().min(1),
+});
+
+const webSessionNoSessionSchema: z.ZodType<WebSessionNoSession> = z.object({
+    reason: z.enum(['no_session', 'new_device']),
+    deviceToken: z.string().min(1),
+});
+
+// Discriminated on `reason` (the two arms carry disjoint `reason` values, so
+// the union disambiguates unambiguously at parse time). A `z.union` — rather
+// than `z.discriminatedUnion` — to keep the `z.ZodType<WebSessionResult>`
+// annotation that preserves the nested-interface shape, matching the
+// `loginResultSchema` precedent below.
+export const webSessionResultSchema: z.ZodType<WebSessionResult> = z.union([
+    webSessionSessionSchema,
+    webSessionNoSessionSchema,
+]);
+
+/* -------------------------------------------------------------------------- */
 /*  Refresh-token rotation (web + native, one implementation)                 */
 /* -------------------------------------------------------------------------- */
 
