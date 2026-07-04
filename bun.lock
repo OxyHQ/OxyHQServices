@@ -378,7 +378,7 @@
     },
     "packages/contracts": {
       "name": "@oxyhq/contracts",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "dependencies": {
         "zod": "^3.25.64",
       },
@@ -609,7 +609,7 @@
       "name": "@oxyhq/services",
       "version": "14.1.0",
       "dependencies": {
-        "@oxyhq/contracts": "0.8.0",
+        "@oxyhq/contracts": "workspace:*",
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",

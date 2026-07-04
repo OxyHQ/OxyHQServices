@@ -221,3 +221,33 @@ export type {
     ActiveToken,
     DeviceSessionSync,
 } from './deviceSession';
+
+export {
+    // Schemas
+    deviceBootReasonSchema,
+    deviceBootFragmentSchema,
+    deviceExchangeRequestSchema,
+    authTokenBundleSchema,
+    tokenRefreshRequestSchema,
+    tokenRefreshResponseSchema,
+    deviceTokenIssueResponseSchema,
+    loginResultSchema,
+    deviceResolveRequestSchema,
+    deviceResolveResponseSchema,
+} from './deviceBoot';
+
+export type {
+    DeviceBootReason,
+    DeviceBootFragment,
+    DeviceExchangeRequest,
+    AuthTokenBundle,
+    TokenRefreshRequest,
+    TokenRefreshResponse,
+    DeviceTokenIssueResponse,
+    LoginTwoFactorRequired,
+    LoginSessionResult,
+    LoginResult,
+    DeviceResolveRequest,
+    DeviceResolveAccount,
+    DeviceResolveResponse,
+} from './deviceBoot';
