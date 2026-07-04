@@ -627,7 +627,8 @@ describe('Session Service', () => {
   describe('migrateSessionToDevice', () => {
     it('re-mints tokens on the new device and updates the Session (migrated=true)', async () => {
       mockFindOneResults.push({ userId: 'user-1', deviceId: 'old-dev', accessToken: 'old-tok', expiresAt: new Date('2030-01-01T00:00:00.000Z') });
-      mockFindOneAndUpdate.mockResolvedValueOnce({ deviceId: 'cookie-dev', expiresAt: new Date('2030-01-01T00:00:00.000Z') });
+      // findOneAndUpdate is now `.lean()`-chained → return a lean-shaped query.
+      mockFindOneAndUpdate.mockReturnValueOnce({ lean: () => Promise.resolve({ deviceId: 'cookie-dev', expiresAt: new Date('2030-01-01T00:00:00.000Z') }) });
 
       const result = await sessionService.migrateSessionToDevice('session-123', 'cookie-dev');
 

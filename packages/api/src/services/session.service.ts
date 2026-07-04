@@ -972,6 +972,9 @@ class SessionService {
       const now = new Date();
       const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, newDeviceId);
 
+      // `.lean()` — store a PLAIN object in the cache, not a full Mongoose
+      // Document (avoids memory bloat + an accidentally-mutable hydrated doc in
+      // the in-memory cache), matching the lean-read convention of `getSession`.
       const updated = await Session.findOneAndUpdate(
         { sessionId, isActive: true },
         {
@@ -985,7 +988,7 @@ class SessionService {
           },
         },
         { new: true },
-      );
+      ).lean<ISession>();
       if (!updated) return null;
 
       sessionCache.invalidate(sessionId);

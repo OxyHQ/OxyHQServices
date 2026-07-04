@@ -435,8 +435,14 @@ class DeviceSessionService {
     }
 
     await this.detachMigratedAccount(oldDeviceId, input.accountId, input.sessionId);
+    // Plain find, NEVER `getState` — the latter UPSERTS an empty doc, which would
+    // manufacture a garbage device record for a retired/unknown old deviceId. When
+    // the old doc is absent (session was never registered on a device doc, or the
+    // id is stale), synthesize an empty state to broadcast WITHOUT persisting.
     const oldDoc = await this.load(oldDeviceId);
-    const oldState = oldDoc ? projectState(oldDoc) : await this.getState(oldDeviceId);
+    const oldState: DeviceSessionState = oldDoc
+      ? projectState(oldDoc)
+      : { deviceId: oldDeviceId, accounts: [], activeAccountId: null, revision: 0, updatedAt: Date.now() };
     return { cookieState, oldState, changed };
   }
 }
