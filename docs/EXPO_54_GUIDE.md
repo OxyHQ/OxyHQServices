@@ -96,19 +96,21 @@ export default App;
 ┌─────────────────────────────────────────┐
 │  homiio.com                             │
 │                                         │
-│  1. Check for session at auth.oxy.so   │
-│  2. FedCM/Popup/Iframe auth             │
-│  3. Receive token via postMessage       │
-│  4. Signed in! ✅                        │
+│  1. Device-first cold boot resolves     │
+│     the session against api.oxy.so     │
+│     (same-apex: inline fetch; cross-    │
+│     apex: one top-level hop, ever)      │
+│  2. Signed in! ✅ (no redirect, no       │
+│     popup, in-app modal if needed)      │
 │                                         │
 │  User visits mention.earth →            │
-│  Instant sign-in via SSO! ✅             │
+│  Instant sign-in via device-first SSO! ✅│
 └─────────────────────────────────────────┘
 ```
 
-- **Storage:** First-party cookies at auth.oxy.so
-- **Auth:** FedCM (modern) / Popup / Redirect
-- **Cross-domain:** Instant via browser SSO
+- **Storage:** First-party `oxy_device` cookie (`Domain=.oxy.so`) + persisted rotating refresh-token family
+- **Auth:** In-app sign-in modal (password+2FA, or "Sign in with Oxy" QR handoff) — no FedCM, no popup, no full-page redirect
+- **Cross-domain:** Instant via the device-first cold boot
 - **Offline:** Requires initial online sign-in
 
 ---
@@ -310,7 +312,7 @@ function MyComponent() {
 
   // Web-only properties
   if (platform === 'web') {
-    const { signInWeb, crossDomainAuth } = auth;
+    const { signIn, isReady } = auth; // signIn() opens the in-app modal; no FedCM/redirect
   }
 
   return (
@@ -428,34 +430,14 @@ if (!session) {
 
 ### Web Issues
 
-#### ❌ "CrossDomainAuth is null"
+#### ❌ Cross-domain session isn't restoring on web
 
-**Solution:** CrossDomainAuth is only available on web. Check platform:
-
-```tsx
-import { Platform } from 'react-native';
-
-const crossDomainAuth = Platform.OS === 'web'
-  ? createCrossDomainAuth(oxyServices)
-  : null;
-
-// Use it:
-if (crossDomainAuth) {
-  await crossDomainAuth.signIn();
-}
-```
-
-#### ❌ "FedCM not supported"
-
-**Solutions:**
-1. Check browser version (Chrome 108+, Safari 16.4+)
-2. Ensure HTTPS (required for FedCM)
-3. Fallback automatically happens:
-
-```tsx
-// Auto-fallback: FedCM → Popup → Redirect
-await crossDomainAuth.signIn({ method: 'auto' });
-```
+There is no `CrossDomainAuth` class or FedCM path anymore (removed in the
+wave-2 device-first cutover) — `OxyProvider`'s cold boot handles cross-domain
+restore automatically. See
+[Cross-Domain Authentication](./CROSS_DOMAIN_AUTH.md#troubleshooting) for the
+current checklist (HTTPS, the `oxy_device` cookie not being blocked, and the
+one-time-per-browser+origin cross-apex hop).
 
 ### Universal Issues
 
@@ -496,20 +478,9 @@ This is **expected**! The auth system adapts to each platform:
 5. **Do** use TypeScript for type safety
 
 ```tsx
-// ✅ Good: Platform-aware
-const handleSignIn = async () => {
-  if (Platform.OS === 'web') {
-    await crossDomainAuth?.signIn();
-  } else {
-    await createIdentity();
-  }
-};
-
-// ✅ Good: Type-safe
-const auth = useAuth();
-if (auth.platform !== 'web' && auth.createIdentity) {
-  await auth.createIdentity();
-}
+// ✅ Good: signIn() is already platform-uniform — no branching needed
+const { signIn } = useAuth();
+await signIn(); // opens the in-app modal on both web and native
 ```
 
 ### ❌ Don'ts
@@ -591,28 +562,15 @@ const publicKey = KeyManager
 
 ### From Web-Only to Universal
 
-#### Before (Web-only):
+There's no platform-specific auth class to switch on anymore — `useAuth()`
+from `@oxyhq/services` (Expo, native + web) exposes the same `signIn()` on
+every platform, and it just opens the in-app "Sign in with Oxy" modal:
 
 ```tsx
-import { createCrossDomainAuth } from '@oxyhq/services';
+import { useAuth } from '@oxyhq/services';
 
-const auth = createCrossDomainAuth(oxyServices);
-await auth.signIn();
-```
-
-#### After (Universal):
-
-```tsx
-import { Platform } from 'react-native';
-import { createCrossDomainAuth } from '@oxyhq/core';
-
-const crossDomainAuth = Platform.OS === 'web'
-  ? createCrossDomainAuth(oxyServices)
-  : null;
-
-if (crossDomainAuth) {
-  await crossDomainAuth.signIn();
-}
+const { signIn } = useAuth();
+await signIn(); // works identically on iOS, Android, and web
 ```
 
 ---

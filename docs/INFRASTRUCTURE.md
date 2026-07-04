@@ -35,7 +35,7 @@ All tasks run `assign_public_ip=true` so there is no NAT gateway in the path.
 | Project | Hostnames |
 |---------|-----------|
 | `oxy-accounts` | accounts.oxy.so |
-| `oxy-auth` | auth.oxy.so (FedCM IdP — deployed as `_worker.js`, see `packages/auth/server`) |
+| `oxy-auth` | auth.oxy.so (third-party OAuth IdP + device-account chooser feed — deployed as a single `_worker.js` at the dist root, CF Pages advanced mode, see `packages/auth/server`) |
 | `oxy-inbox` | inbox.oxy.so |
 | `oxy-console` | console.oxy.so |
 

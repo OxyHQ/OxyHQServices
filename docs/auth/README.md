@@ -1,259 +1,170 @@
 # Authentication & Session System
 
-> How sign-in, cross-domain SSO, FedCM, service tokens, and backend request
+> How sign-in, cross-domain session restore, service tokens, and backend request
 > identity work across the Oxy ecosystem. The whole system is implemented **once**
 > in the shared SDK (`@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`) so every app
 > gets it for free and stays zero-config.
+>
+> **Wave 2 (device-first, 2026-07):** FedCM, the `/sso` bounce, the
+> `/auth/silent` iframe, `AuthManager`, `CrossDomainAuth`, and the
+> `fedcm_session` / `oxy_rt_*` cookies were all deleted from the client, server,
+> and IdP. Sections 1–6 and 8 below describe the current device-first
+> mechanism. Sections 7, 9, 10 (service tokens, linked backend clients,
+> `@oxyhq/core/server`) are unaffected by wave 2.
 >
 > Related: [Architecture](../architecture/overview.md) · [Identity / Oxy ID](../identity/README.md) · [Changelog](../CHANGELOG.md)
 
 ---
 
-## 1. The mental model: one IdP, many Relying Parties
+## 1. The mental model: device-first, with a third-party OAuth IdP on the side
 
-There is exactly **one Identity Provider (IdP)** — `auth.oxy.so` (package
-`packages/auth`, a standalone Vite + Hono app deployed as a Cloudflare Pages
-`_worker.js`). Every other web app (Mention, accounts, console, inbox, Allo,
-Homiio, …) is a **Relying Party (RP)** that consumes the IdP through the SDK.
+There is no browser-mediated federation API and no central session-issuing
+redirect for first-party apps anymore. A device (a browser + origin pair, or a
+native app install) proves its session directly against `api.oxy.so` using a
+durable, first-party cookie plus a persisted rotating refresh-token family.
+`auth.oxy.so` (package `packages/auth`, a standalone Vite + Hono app deployed
+as a Cloudflare Pages `_worker.js`) still exists, but only as a **third-party
+OAuth authorize/consent IdP** — for apps that integrate against Oxy via OAuth
+instead of embedding the SDK — plus a device-account chooser feed it reads
+through the same first-party cookie.
 
 | Role | Package / host | Session authority |
 |---|---|---|
-| **IdP** | `packages/auth` → `auth.oxy.so` (+ `auth.<rp-apex>` CNAMEs) | Owns `fedcm_session` + `oxy_rt_*` cookies (`Domain=oxy.so`) |
-| **RP (web)** | `WebOxyProvider` from `@oxyhq/auth` | The SDK; restores via cold boot |
-| **RP (Expo/RN)** | `OxyProvider` from `@oxyhq/services` | The SDK; restores via cold boot |
-| **API** | `packages/api` → `api.oxy.so` | Validates bearer tokens, mints sessions, exchanges SSO codes |
+| **API** | `packages/api` → `api.oxy.so` | Owns the `oxy_device` cookie (`Domain=.oxy.so`), the rotating refresh-token family, and every device-first endpoint |
+| **RP (web)** | `WebOxyProvider` from `@oxyhq/auth` | The SDK; restores via device-first cold boot, never redirects for sign-in |
+| **RP (Expo/RN)** | `OxyProvider` from `@oxyhq/services` | The SDK; restores via device-first cold boot + native shared-keychain SSO |
+| **Third-party OAuth IdP** | `packages/auth` → `auth.oxy.so` | Login/signup/authorize/recover/settings SPA + OAuth authorize/consent + the device-account chooser feed (`GET /api/device-accounts`) |
 
-**The IdP exception (critical — do not refactor away):** the auth app is the
-IdP, *not* an RP. It MUST NOT use `WebOxyProvider` / `runColdBoot` / the RP
-cold-boot + SSO-bounce chain — doing so would make the IdP bounce to *itself* for
-session restore (a circular loop). Instead it uses a bespoke first-party path:
-`useDeviceAccounts()` (`packages/auth/lib/use-device-accounts.ts`) reads the
-shared refresh cookies via `POST api.oxy.so/auth/refresh-all` with
-`credentials: include`. This is the *only* sanctioned exception to "all SSO logic
-lives in the shared SDK"; that rule governs RPs.
-
----
-
-## 2. FedCM (browser-native federated sign-in)
-
-FedCM is the preferred interactive and silent path on Chromium browsers.
-
-- **`mode` is W3C-spec `'active'` / `'passive'`** — NOT the legacy Chrome
-  `'button'` / `'widget'`, which current Chrome rejects with a `TypeError`. The
-  client (`OxyServices.fedcm.ts`) sends `'active'` first and transparently retries
-  once with the Chrome 125–131 value for backward compatibility.
-- **`mode` ≠ `mediation`.** `mode` (`active`/`passive`) selects the FedCM UI
-  style; `mediation` (`silent`/`optional`/`required`) controls the
-  credential-chooser flow. Silent SSO sends **no** `mode` field.
-- **A server-minted, origin-bound nonce is required.** Before token exchange the
-  client calls `POST /fedcm/nonce` (`mintServerNonce` / `getFedcmNonce`). A
-  purely local UUID nonce is rejected with `invalid_nonce`.
-- **Timeouts** (`OxyServices.fedcm.ts`): interactive `FEDCM_TIMEOUT = 15000`,
-  silent `FEDCM_SILENT_TIMEOUT = 4000`, plus a `FEDCM_ABORT_SETTLE_GRACE_MS = 500`
-  hard-settle grace. The grace exists because `navigator.credentials.get()` does
-  **not** reliably reject on `AbortController` — in some Chrome states it hangs
-  forever, so the silent step must race a settle-timer or it stalls the whole
-  cold-boot chain.
-
-**IdP server requirements** (in `packages/auth/server/index.ts`, require a
-redeploy to take effect):
-
-- `/.well-known/web-identity` served as `application/json` (not octet-stream).
-- `id_assertion_endpoint` and `disconnect` send CORS headers
-  (`Access-Control-Allow-Origin: <RP origin>` + `Access-Control-Allow-Credentials: true`)
-  and enforce the `Sec-Fetch-Dest: webidentity` guard.
-- `/fedcm.json` is a **dynamic handler**, not a static asset, because the issuer
-  is computed per-request (see multi-domain FAPI below).
-
-### Multi-domain FAPI
-
-Any RP can `CNAME auth.<rp-domain>` → `oxy-auth.pages.dev`. `resolveConfig(c)`
-(`packages/auth/server/index.ts:138`) derives `fedcmIssuer` from the incoming
-request URL per-request (`${url.protocol}//${url.host}`), so on
-`auth.mention.earth` the issuer is `https://auth.mention.earth` and the
-`fedcm_session` cookie is first-party in Safari/Firefox. This is what makes
-cross-domain restore survive Safari ITP / Firefox Total Cookie Protection.
-
-> **NEVER set the `FEDCM_ISSUER` env var on the `oxy-auth` Pages project.** It
-> pins *every* host to the same issuer and silently breaks multi-domain FAPI (all
-> custom-domain hosts report the same `provider_urls`). The env override only
-> exists for local dev/tests where the request URL is `http://localhost:<port>`.
+**The IdP exception (still applies, mechanism changed):** the auth app is not
+an RP and must not use `WebOxyProvider` / `runSessionColdBoot`. There is no
+longer a `/sso`/FedCM loop to worry about circularity with — that machinery
+is gone entirely, not replaced by an equivalent self-referential path. The
+auth app's own account-chooser feed reads the shared `oxy_device` cookie
+first-party and forwards it to the API's internal `POST /auth/device/resolve`
+under an `X-Oxy-Internal` shared secret.
 
 ---
 
-## 3. The central-issuer invariant (read this before touching the IdP)
+## 2. The `oxy_device` cookie and the device-first bootstrap surface
 
-`resolveConfig()` sets `fedcmIssuer` *per-request* from the request URL — correct
-for the browser-facing `/.well-known/web-identity` and `/fedcm.json` (they drive
-the native FedCM UI). **But every API-bound assertion the IdP mints must use the
-central issuer**, unconditionally:
+The device-first anchor, defined once in `packages/api/src/utils/deviceCookie.ts`:
 
-```ts
-// packages/auth/server/index.ts:794
-const CENTRAL_FEDCM_ISSUER = `https://auth.${CENTRAL_IDP_APEX}`; // https://auth.oxy.so
-```
+- Name `oxy_device`; `HttpOnly`, `Secure` (prod), `SameSite=Lax`,
+  `Domain=.oxy.so`, 400-day sliding `Max-Age`, re-set on every bootstrap hop.
+  Dev/localhost: host-only, no `Secure`, so `http://localhost` works without TLS.
+- The cookie value is a random 256-bit secret, **never** the deviceId. Server-side
+  it is stored only as its SHA-256 (`DeviceSession.cookieKeyHash`); possessing
+  the cookie reveals nothing about the device's account set.
 
-`mintSessionForClient()` (`index.ts:614`) forces `iss = CENTRAL_FEDCM_ISSUER` for
-**every** assertion it builds (used by `/sso/establish`, `/auth/silent`, etc.).
+Server surface (`packages/api/src/routes/deviceAuth.ts`, mounted at `/auth`
+on `api.oxy.so`, BEFORE the generic `/auth` router):
 
-**Why:** the API's `POST /fedcm/exchange` validates the assertion's `iss` against
-the central issuer *only*. If the IdP minted an assertion on
-`auth.mention.earth` with `iss = https://auth.mention.earth`, the API would
-reject it (`FedCM: Invalid issuer expected "https://auth.oxy.so"`),
-`mintSessionForClient` would return `null`, and cross-domain sessions would never
-survive a reload — even though the `fedcm_session` cookie was planted correctly.
-The per-apex `fedcm_session` cookie (host-only) is independent of the assertion
-issuer, so this fix does not affect cookie planting.
+| Endpoint | Purpose |
+|---|---|
+| `GET /auth/device/bootstrap` | Top-level cross-apex hop target. (Re-)plants `oxy_device`, resolves the active session, and 303s back to `return_to` with a single-use boot `code` (or a `no_session`/`new_device` reason) in a `#oxy_boot=…` fragment. `return_to` must resolve to a trusted-lane origin. |
+| `POST /auth/device/web-session` | Same-site (`*.oxy.so`) fast path — exchanges the `oxy_device` cookie directly for a token bundle, no redirect. |
+| `POST /auth/device/exchange` | Burn a boot code (origin-bound, atomic single-use) for a token bundle. |
+| `POST /auth/refresh-token` | The one rotating refresh implementation, web + native. Reuse of an already-rotated token revokes the whole family. |
+| `POST /auth/device/token` | Bearer-gated: issue the native-channel device token (deviceId derived from the caller's JWT, never the body). |
+| `POST /auth/device/resolve` | `X-Oxy-Internal`-gated device-set feed consumed by the `auth.oxy.so` account chooser. |
 
----
-
-## 4. Cross-domain SSO — the "Option A" architecture
-
-When a cross-apex RP has no local session and silent paths fail, the SDK does a
-**top-level bounce** to the central IdP, which performs a second first-party hop
-to plant a host-only cookie on `auth.<rp-apex>` (surviving Safari ITP / Firefox
-TCP), mints a single-use code, and bounces back. The RP redeems the code at the
-API. Subsequent reloads restore silently via the `/auth/silent` iframe — no bounce.
-
-Key endpoints and storage keys (defined once in `@oxyhq/core`):
-
-- `SSO_CALLBACK_PATH = '/__oxy/sso-callback'` (`ssoBounce.ts:53`)
-- `SSO_GUARD_TTL_MS = 30_000` — self-healing once-guard TTL (`ssoBounce.ts:63`)
-- `buildSsoBounceUrl(origin, state, authWebUrl?)` → `/sso?prompt=none&client_id=<origin>&return_to=<origin>/__oxy/sso-callback&state=<state>` (`ssoBounce.ts:195`)
-- `isCentralIdPOrigin(origin)` — prevents bouncing `auth.oxy.so` to itself
-- `guardActive(storage, origin)` — 30s reentrancy guard
-- New API SSO endpoints: `POST /sso/code` (`X-Oxy-Internal`-gated; 404 if
-  `SSO_INTERNAL_SECRET` unset) and `POST /sso/exchange` (CORS, origin-bound,
-  atomic GETDEL burn in Valkey).
-- IdP establish-token: HS256, signed with `FEDCM_TOKEN_SECRET`,
-  `ESTABLISH_TOKEN_LIFETIME = 60s`, `purpose = 'sso-establish'`, bound to
-  host + audience.
-
-```mermaid
-sequenceDiagram
-    participant RP as RP page (SDK)
-    participant Central as auth.oxy.so (/sso)
-    participant Apex as auth.&lt;rp-apex&gt; (/sso/establish)
-    participant API as api.oxy.so
-    RP->>Central: top-level GET /sso?prompt=none&client_id=&state= (buildSsoBounceUrl)
-    Note over Central: reads central fedcm_session cookie<br/>resolveApprovedClientOrigin(client_id)
-    Central->>Apex: 2nd top-level hop /sso/establish?et=&lt;HS256 establish-token&gt;
-    Note over Apex: verify et → re-validate session + approved client<br/>PLANT host-only fedcm_session on auth.&lt;rp-apex&gt;<br/>mintSessionForClient (iss = central!)
-    Apex->>API: POST /sso/code (X-Oxy-Internal) → opaque single-use code
-    Apex-->>RP: 303 → &lt;rp&gt;/__oxy/sso-callback#oxy_sso=ok&code=&lt;code&gt;&state=&lt;state&gt;
-    Note over RP: SDK intercepts SSO_CALLBACK_PATH, validates state
-    RP->>API: POST /sso/exchange { code } (origin-bound, atomic GETDEL)
-    API-->>RP: session { accessToken, user } → token planted
-```
-
-The hash fragment (`#oxy_sso=…`) is used deliberately — fragments are never sent
-to the server and never logged. The SDK intercepts `SSO_CALLBACK_PATH` on mount,
-validates `state` against the stored `ssoStateKey(origin)`, exchanges the code,
-clears the hash, and sets a once-guard so it can't re-fire.
+No token or deviceId is ever placed in a URL/query/fragment/response-body
+of these endpoints — the cookie secret is not the deviceId, the boot code is
+opaque, and the deviceToken is opaque.
 
 ---
 
-## 5. Web cold-boot restore order
+## 3. Device-first cold boot (`runSessionColdBoot`)
 
-`runColdBoot` (`packages/core/src/utils/coldBoot.ts:141`) is a pure, ordered
-short-circuit runner. It takes `steps: { id, enabled?, run }[]`, runs them in
-order, and the **first** step that returns `{ kind: 'session' }` wins. A step may
-return `{ kind: 'skip' }`, throw, or be disabled to fall through. There is **no
-module-level state** — the silent-SSO once-guard lives in the consumers, because
-a core module-level singleton re-evaluates in the Metro web bundle and the guard
-wouldn't hold across navigations. A single shared deadline races all steps;
-`onStepDeadline(id)` reports a step that fails to settle and the runner moves on.
-
-**`WebOxyProvider` (`@oxyhq/auth`)** registers these steps in order
-(`WebOxyProvider.tsx:698`):
+`runSessionColdBoot` (`packages/core/src/boot/coldBootV2.ts`) is the single
+implementation both `WebOxyProvider` (`@oxyhq/auth`) and `OxyContext`
+(`@oxyhq/services`) call — there is no separate web/native cold-boot chain to
+keep in sync anymore. Built on the same pure `runColdBoot` short-circuit
+primitive (`packages/core/src/utils/coldBoot.ts`) used before wave 2. It
+**never** redirects to a login page: an unresolved boot ends signed-out and the
+app renders its own in-app "Sign in with Oxy" UI.
 
 | # | step `id` | enabled when | what it does |
 |---|---|---|---|
-| 0 | `sso-return` | web browser | parse `#oxy_sso` fragment, validate state, `exchangeSsoCode` |
-| 1 | `fedcm-silent` | FedCM supported & not already attempted this page | central FedCM silent (one-shot guard keyed `origin|baseURL`) |
-| 2 | `cookie-restore` | web browser | `authManager.initialize({ timeout: COOKIE_RESTORE_TIMEOUT })` (3000ms) |
-| 3 | `sso-bounce` | smart gate passes (see below) | **terminal**: top-level navigation to central `/sso` |
+| 1 | `bootstrap-return` | web, `#oxy_boot` fragment present | parse + verify `state`, exchange the boot code via `POST /auth/device/exchange`, plant tokens |
+| 2 | `stored-tokens` | always | warm-plant a still-valid persisted access token, else rotate the family via `POST /auth/refresh-token` |
+| 3 | `shared-key-signin` | native only | re-mint from the shared-keychain identity; issues/mirrors a shared device token the first time |
+| 4 | `bootstrap-hop` | web, terminal | **same-apex**: inline credentialed `POST /auth/device/web-session` fetch, runs every boot, no navigation. **Cross-apex**: ONE visible top-level navigation, ever, per browser+origin, to the API's `GET /auth/device/bootstrap` (the RP's own configured `baseURL` — a single canonical host, not a per-apex CNAME) |
+| — | (signed out) | — | no step yielded a session |
 
-**`OxyContext` (`@oxyhq/services`, web + native)** registers a longer chain
-(`OxyContext.tsx:1268`), with a hard overall deadline
-`COLD_BOOT_OVERALL_DEADLINE = 20000`:
+The cross-apex hop fires on the very first load in a given browser regardless
+of whether it turns out to find a session, then never repeats for that
+browser+origin — a persistent `localStorage` flag (`oxy.boot.attempted`) is the
+guard, not any server-side or session-based gate. All mutable guard state
+lives in storage (never module scope), so it holds under Metro/bundler
+re-evaluation.
 
-| # | step `id` | enabled when | what it does |
-|---|---|---|---|
-| 0 | `sso-return` | web browser | `runSsoReturn()` → commit via `handleWebSSOSession` |
-| 1 | `stored-session` | **always** | `restoreStoredSession()` — **the only native path** |
-| 2 | `shared-key-signin` | native & no stored session | `signInWithSharedIdentity()` (shared-keychain SSO) |
-| 3 | `fedcm-silent` | no stored session, FedCM supported, not attempted | central FedCM silent |
-| 4 | `silent-iframe` | no stored session, web browser | per-apex `/auth/silent` iframe (`SILENT_IFRAME_TIMEOUT = 2500`) |
-| 5 | `cookie-restore` | web browser | `restoreViaRefreshCookie()` (`COOKIE_RESTORE_TIMEOUT = 3000`) |
-| 6 | `sso-bounce` | smart gate passes | **terminal**: central `/sso` bounce |
+**Native cold boot** runs steps 2 and 3 only — there is no bootstrap-hop, no
+iframe, no bounce on native; a fresh install with no stored tokens and no
+shared-keychain identity ends signed out immediately.
 
-```mermaid
-flowchart TD
-    A[sso-return: #oxy_sso code exchange] -->|no session| B[stored-session: local bearer]
-    B -->|no session, native| C[shared-key-signin]
-    B -->|no session, web| D[fedcm-silent]
-    C -->|no session| D
-    D -->|no session| E[silent-iframe /auth/silent]
-    E -->|no session| F[cookie-restore /auth/refresh-all]
-    F -->|no session| G[[sso-bounce: top-level /sso]]
-    A -.session.-> Z((authenticated))
-    B -.session.-> Z
-    C -.session.-> Z
-    D -.session.-> Z
-    E -.session.-> Z
-    F -.session.-> Z
+---
+
+## 4. Sign-in is an in-app SDK modal
+
+For first-party apps (anything using `OxyProvider` or `WebOxyProvider`),
+interactive sign-in is a **modal rendered by the provider itself** — there is
+no redirect to `auth.oxy.so`.
+
+- `useAuth().signIn()` just opens the modal; it never navigates away.
+- Password + 2FA: `POST /auth/login` → (if 2FA enabled) `POST
+  /security/2fa/verify-login`.
+- "Sign in with Oxy" QR/handoff (Commons): unchanged from before wave 2 — see
+  [identity/README.md → Sign in with Oxy](../identity/README.md#6-sign-in-with-oxy).
+- Native additionally tries the shared-keychain identity automatically via the
+  cold boot's `shared-key-signin` step (no user interaction).
+
+`auth.oxy.so`'s own login/signup/authorize/recover pages are for the
+**third-party OAuth** surface only — a first-party app embedding the SDK never
+lands there for interactive sign-in.
+
+---
+
+## 5. Trust and OAuth consent (third-party apps)
+
+Third-party apps that integrate via `auth.oxy.so`'s OAuth authorize/consent
+flow get auto-approved consent only if their `Application` is
+**registry-trusted** — `isTrustedApplication()`
+(`packages/api/src/utils/trustedApplication.ts`): `isOfficial`, `isInternal`,
+or `type` ∈ `{first_party, internal, system}`, all staff-controlled fields.
+Trust is **registry-based, not domain-based** — official apps span
+`mention.earth`, `homiio.com`, `syra.fm`, etc. Ordinary self-service
+`third_party` applications always see the consent screen, even while
+`status: 'active'`.
+
+A user's revocable third-party grants are the authoritative `AppGrant` model
+(replaces the deleted FedCM `me/authorized-apps` surface):
+
+```
+GET    /apps/authorized            → { data: { apps: [...] } }
+DELETE /apps/authorized/:clientId  → 204
 ```
 
-**Ordering rationale ("FIX A", `OxyContext.tsx:1201`):** `stored-session` runs
-*before* the slow web probes. On a normal reload a local bearer validates in one
-round-trip and short-circuits, so the common path is fast and never flashes.
-
-**Native cold boot** runs only step 1 (`stored-session`) plus, if no stored
-session, step 2 (`shared-key-signin`). There is no FedCM/iframe/cookie/bounce on
-native.
-
-### The "smart" SSO-bounce gate
-
-The terminal `/sso` bounce is the only step that navigates the top frame, so it's
-gated to avoid bouncing first-time visitors who have never had a session
-(introduced in core 3.15.0 / auth 6.0.0 / services 12.0.0; replaced the old
-`disableAutoSso` flag). The gate (`allowSsoBounce({ hasPriorSession, hasLocalSession })`)
-allows the bounce only when there's evidence the user has signed in before
-(`ssoPriorSessionKey`, a durable localStorage hint) or a local session exists,
-AND the page is not an iframe, AND it's not the central IdP itself, AND no
-`ssoNoSessionKey` / `ssoAttemptedKey` flag is set, AND no 30s `guardActive` is in
-effect. After a successful restore the SDK writes the durable
-`ssoPriorSessionKey` hint so future reloads can bounce silently.
-
-### The `/auth/silent` iframe (Safari/Firefox restore without a bounce)
-
-`silentSignIn()` (`OxyServices.silent.ts:83`) embeds a hidden iframe at
-`https://auth.<rp-apex>/auth/silent?client_id=<origin>&nonce=<uuid>`. The IdP
-reads the host-only `fedcm_session` cookie (first-party to the RP apex), mints an
-assertion (central issuer!), exchanges it at the API, and `postMessage`s
-`{ type: 'oxy_silent_auth', session, nonce }` back **to the validated
-`client_id` origin only — never `targetOrigin: '*'`**. This restores
-cross-domain sessions on Safari/Firefox without a top-level bounce.
+`clientId` is an OAuth `client_id` (`ApplicationCredential.publicKey`); the
+grant is keyed by `applicationId`. Trusted first-party/internal/official apps
+are auto-approved and never recorded, so this surface only ever lists the
+revocable third-party set.
 
 ---
 
 ## 6. Session token planting
 
-`OxyServices.verifyChallenge()` (`OxyServices.auth.ts:524`) and
-`claimSessionByToken()` both call `setTokens(accessToken, refreshToken ?? '')`
-internally before returning. Consumers do not hand-plant tokens after sign-in —
-they `await` and proceed. This also fixes token-less new-identity onboarding (no
-call to the bearer-protected `getTokenBySession` for a brand-new identity that
-has no session yet).
+`OxyServices.verifyChallenge()` and `claimSessionByToken()` both call
+`setTokens(accessToken, refreshToken ?? '')` internally before returning.
+Consumers do not hand-plant tokens after sign-in — they `await` and proceed.
 
-**401 = authoritative local sign-out.** On a 401, `HttpService` clears tokens and
-emits `onTokensChanged(null)`. `OxyContext` treats that as authoritative: clears
-session + managed accounts and disables private fetches until a new token is
-restored. `isAuthenticated` must never stay `true` after
-`getAccessToken()` becomes null. Consumer apps gate private work with SDK state
-(`useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`), never local
-token helpers.
+**401 = authoritative local sign-out.** On a 401, `HttpService` clears tokens
+and emits `onTokensChanged(null)`. The providers treat that as authoritative:
+clear session state and disable private fetches until a new token is restored.
+`isAuthenticated` must never stay `true` after `getAccessToken()` becomes null.
+Consumer apps gate private work with SDK state — native:
+`useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`; web:
+`useAuth().isLoading` / `useAuth().isReady` — never local token helpers.
 
 ---
 
@@ -265,9 +176,9 @@ DB model; the SDK surface (`OxyServices.auth.ts`):
 
 ```ts
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-oxy.configureServiceAuth('oxy_dk_...', 'secret...');   // line 248
-const token = await oxy.getServiceToken();             // cached + auto-refreshed, line 272
-const result = await oxy.makeServiceRequest('POST', '/endpoint', data, userId); // line 450
+oxy.configureServiceAuth('oxy_dk_...', 'secret...');
+const token = await oxy.getServiceToken();             // cached + auto-refreshed
+const result = await oxy.makeServiceRequest('POST', '/endpoint', data, userId);
 ```
 
 - `getServiceToken()` caches per `sha256(apiKey)` with a 60s clock-drift buffer,
@@ -288,13 +199,15 @@ The token endpoint is `POST /auth/service-token`, validating `publicKey` +
 
 ## 8. "Sign in with Oxy" — device sign-in (QR + shared keychain)
 
-Two mechanisms, both surfaced under one user-facing label "Sign in with Oxy":
+Two mechanisms, both surfaced under one user-facing label "Sign in with Oxy",
+both unaffected by the wave-2 device-first cutover (they predate it and were
+kept as-is):
 
 - **Same-device shared-keychain SSO (native):** `signInWithSharedIdentity()`
   signs a challenge with the shared identity key and redeems it. Runs as the
   `shared-key-signin` cold-boot step on native.
 - **Cross-device QR handoff:** `startCommonsSignIn({ clientId })`
-  (`OxyServices.auth.ts:768`) mints a secret `sessionToken` + a public
+  (`OxyServices.auth.ts`) mints a secret `sessionToken` + a public
   `authorizeCode`, calls `POST /auth/session/create`, and returns a
   `qrPayload` (`oxycommons://approve?v=1&code=<authorizeCode>&...`) — the secret
   `sessionToken` is **never** in the QR. Commons scans, fetches
@@ -314,8 +227,8 @@ RP apps that call their *own* backend (`api.mention.earth`, `api.syra.fm`, …)
 MUST use `oxyServices.createLinkedClient({ baseURL })`. The linked client mirrors
 the session owner's access token, delegates preflight/401 refresh to the owner,
 and invalidates the owner when a linked 401 can't refresh. `createLinkedClient`
-defaults to `enableCache: false` (core 3.9.0) so a GET cache never serves
-stale-after-write data.
+defaults to `enableCache: false` so a GET cache never serves stale-after-write
+data.
 
 **Do NOT** add app-local token providers, Axios/fetch auth interceptors, manual
 `Authorization` plumbing, refresh-cookie retries, or local session invalidation.
@@ -332,14 +245,14 @@ token-decoding middleware — missing behavior belongs upstream in
 
 | Export | File | Purpose |
 |---|---|---|
-| `createOptionalOxyAuth(oxy, opts?)` | `server/auth.ts:113` | resolve identity if present (idempotent); never 401s |
-| `createOxyAuthMiddleware(oxy, opts?)` | `server/auth.ts:135` | optional-auth + `requireOxyAuth` (401 if missing) |
-| `requireOxyAuth(req,res,next)` | `server/auth.ts:97` | 401 when no resolved userId |
-| `getRequiredOxyUserId(req)` | `server/auth.ts:89` | resolve userId or throw — use this for owner ids |
-| `createOxyRateLimit(oxy, opts?)` | `server/rateLimit.ts:148` | per-user (5000/15min) / per-IP (600/15min) limiting; exempts uploads/media/health/OPTIONS; `express-rate-limit` is a required peer |
+| `createOptionalOxyAuth(oxy, opts?)` | `server/auth.ts` | resolve identity if present (idempotent); never 401s |
+| `createOxyAuthMiddleware(oxy, opts?)` | `server/auth.ts` | optional-auth + `requireOxyAuth` (401 if missing) |
+| `requireOxyAuth(req,res,next)` | `server/auth.ts` | 401 when no resolved userId |
+| `getRequiredOxyUserId(req)` | `server/auth.ts` | resolve userId or throw — use this for owner ids |
+| `createOxyRateLimit(oxy, opts?)` | `server/rateLimit.ts` | per-user / per-IP limiting; exempts uploads/media/health/OPTIONS; `express-rate-limit` is a required peer |
 | `createOxyCors({ appOrigins, allowCredentials })` | `server/cors.ts` | deny-by-default allowlist; auto-allows `*.oxy.so`; HTTPS-only; **never** wildcard+credentials; always `Vary: Origin` |
-| `safeFetch(url, opts?)` | `server/safeFetch.ts:502` | SSRF-safe fetch (see below) |
-| `verifySecret(provided, expected)` | `server/verifySecret.ts:33` | constant-time `timingSafeEqual` + length guard; returns `false`, never throws |
+| `safeFetch(url, opts?)` | `server/safeFetch.ts` | SSRF-safe fetch (see below) |
+| `verifySecret(provided, expected)` | `server/verifySecret.ts` | constant-time `timingSafeEqual` + length guard; returns `false`, never throws |
 | `authSocket` | `server/auth.ts` | Socket.IO/WebSocket auth |
 
 **`safeFetch` SSRF protections** (use it for **any** fetch of a user/remote-supplied

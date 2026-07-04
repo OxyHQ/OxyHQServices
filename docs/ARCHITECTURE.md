@@ -32,8 +32,8 @@ Oxy uses **device-based cryptographic identity** as the primary authentication m
 |    Oxy Accounts app             - Token management               |
 |  - Never leaves device          - Session handling               |
 |  - Device = Password            - Multiple auth methods          |
-|  - BIP39 recovery phrase        - FedCM, popup, redirect         |
-|                                 - Cross-domain SSO               |
+|  - BIP39 recovery phrase        - In-app sign-in modal           |
+|                                 - Device-first cross-domain SSO  |
 |                                                                  |
 |  [accounts app]  ----------->   [@oxyhq/core]  (foundation)     |
 |   (native only)                 [@oxyhq/auth]  (web auth)       |
@@ -60,8 +60,8 @@ The Oxy SDK is split into three independent packages:
 
 | Package | Purpose | Platform |
 |---------|---------|----------|
-| **@oxyhq/core** | Foundation: API client, AuthManager, crypto utilities, types | All (Node.js, web, native) |
-| **@oxyhq/auth** | Web authentication: WebOxyProvider, FedCM, popup/redirect flows | Web only (React, Next.js, Vite) |
+| **@oxyhq/core** | Foundation: API client, device-first cold boot, crypto utilities, types | All (Node.js, web, native) |
+| **@oxyhq/auth** | Web authentication: WebOxyProvider, in-app sign-in modal, device-first cold boot | Web only (React, Next.js, Vite) |
 | **@oxyhq/services** | React Native / Expo: OxyProvider, native components, UI | React Native / Expo |
 
 ### Package Structure
@@ -73,7 +73,7 @@ OxyHQServices/
 │   │   └── (private keys, recovery, QR transfer)
 │   │
 │   ├── core/              # @oxyhq/core - Foundation
-│   │   ├── /core          # API client, AuthManager, FedCM, SSO (no UI)
+│   │   ├── /core          # API client, device-first cold boot, SSO (no UI)
 │   │   ├── /crypto        # Signing utilities (NOT key storage)
 │   │   └── /shared        # Platform-agnostic utilities
 │   │
@@ -84,7 +84,7 @@ OxyHQServices/
 │   │   └── /native        # OxyProvider, native components & hooks
 │   │
 │   ├── api/               # Backend API server
-│   │   └── (users, sessions, auth, FedCM IdP)
+│   │   └── (users, sessions, auth, device-first bootstrap)
 │   │
 │   └── auth-web/          # auth.oxy.so web app
 │       └── (login portal for popup/redirect flows)
@@ -115,7 +115,7 @@ OxyHQServices/
 |   |                                                          |    |
 |   |  - Challenge-Response Auth    - Password Auth            |    |
 |   |  - Session Management         - Social Auth (OAuth)      |    |
-|   |  - FedCM Identity Provider    - User Linking             |    |
+|   |  - Device-first (oxy_device)  - User Linking             |    |
 |   +----------------------------+-----------------------------+    |
 |                                |                                  |
 |                                v                                  |
@@ -253,50 +253,35 @@ const session = await oxy.signIn({
 - User must have set email + password on their account
 - Can be added to existing identity account via account linking
 
-### 3. FedCM (Browser-Native SSO)
+### 3. Device-first cross-domain SSO (no FedCM, no popup, no redirect)
 
-Modern browser-native authentication (Chrome 108+, Safari 16.4+):
+`WebOxyProvider` restores an existing session automatically on load — no
+browser identity-federation API involved. A same-apex reload uses an inline
+credentialed fetch; a different-apex app takes exactly one top-level
+round-trip to the API and back, ever, per browser+origin. See
+[Cross-Domain Authentication](./CROSS_DOMAIN_AUTH.md) for the full mechanism.
 
 ```typescript
 import { useAuth } from '@oxyhq/auth';
 
 function LoginButton() {
-  const { signIn, isFedCMSupported } = useAuth();
+  const { signIn, isAuthenticated } = useAuth();
 
+  // Cross-domain restore already ran automatically on mount; signIn() only
+  // opens the in-app modal for a user with no existing session anywhere.
   return (
     <button onClick={signIn}>
-      {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
+      {isAuthenticated ? 'Signed in' : 'Sign in with Oxy'}
     </button>
   );
 }
 ```
 
-**Flow**:
-1. Browser shows native account picker (like Google sign-in)
-2. No popup or redirect needed
-3. Seamless UX with existing Oxy session
+### 4. In-app sign-in modal
 
-### 4. Redirect Fallback
-
-Tokenless fallback for browsers without FedCM:
-
-```typescript
-crossDomainAuth.signInWithRedirect();
-// On return:
-const session = crossDomainAuth.handleRedirectCallback();
-```
-
-### Auth Method Priority
-
-When calling `signIn()`, the SDK automatically selects the best method:
-
-```
-1. FedCM (if browser supports)
-   | fallback
-2. Popup (default for web)
-   | fallback
-3. Redirect (if popup blocked)
-```
+When there's no session to restore, `signIn()` opens the in-app "Sign in with
+Oxy" modal — password + 2FA, or the QR/Commons handoff. It never navigates the
+page away.
 
 ---
 
@@ -420,16 +405,15 @@ POST /api/auth/session/authorize/:token # Authorize from accounts app
 POST /api/auth/session/cancel/:token    # Cancel auth session
 ```
 
-### FedCM Endpoints
+### Device-First Endpoints
 
 ```
-GET  /.well-known/web-identity          # FedCM config discovery
-GET  /fedcm/config.json                 # FedCM IdP configuration
-GET  /fedcm/accounts                    # User's accounts for FedCM
-GET  /fedcm/client_metadata             # RP metadata
-POST /fedcm/token                       # Exchange for ID token
-POST /fedcm/disconnect                  # Revoke FedCM credential
-POST /api/fedcm/exchange                # Exchange ID token for session
+GET  /auth/device/bootstrap             # Cross-apex hop target: plants oxy_device, returns a #oxy_boot fragment
+POST /auth/device/web-session           # Same-site fast path: exchange oxy_device cookie for tokens, no redirect
+POST /auth/device/exchange              # Burn a single-use boot code for tokens
+POST /auth/refresh-token                # Rotate the persisted refresh-token family
+POST /auth/device/token                 # Bearer-gated: issue the native-channel device token
+POST /auth/device/resolve               # X-Oxy-Internal-gated device-set feed (IdP account chooser)
 ```
 
 ### User Linking Endpoints
@@ -598,11 +582,11 @@ function App() {
 }
 
 function LoginButton() {
-  const { signIn, isFedCMSupported, isLoading } = useAuth();
+  const { signIn, isLoading } = useAuth();
 
   return (
     <button onClick={signIn} disabled={isLoading}>
-      {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
+      Sign in with Oxy
     </button>
   );
 }
@@ -681,7 +665,7 @@ const linkResponse = await fetch('/api/auth/link', {
 
 ## Related Documentation
 
-- [Cross-Domain Auth](./CROSS_DOMAIN_AUTH.md) - FedCM, popup, redirect flows
+- [Cross-Domain Auth](./CROSS_DOMAIN_AUTH.md) - device-first SSO (oxy_device cookie + rotating refresh, native shared-keychain)
 - [Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md) - Detailed crypto docs
 - [Services Package](../packages/services/README.md) - Full package documentation
 - [API Package](../packages/api/README.md) - Backend API documentation

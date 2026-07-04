@@ -11,11 +11,12 @@ decentralization (user data nodes) layer.
 OxyHQServices (`@oxyhq/sdk`) is the platform layer for the whole Oxy ecosystem. It
 is four things in one Bun-workspaces monorepo:
 
-1. **An identity provider + API.** `auth.oxy.so` is the single FedCM IdP; every
-   other web/native app is a Relying Party that restores its session through the
-   shared SDK (cold boot → FedCM silent → `/auth/silent` iframe → cookie →
-   stored-session → `/sso` bounce). `api.oxy.so` mints sessions, exchanges SSO
-   codes, and serves the platform data model.
+1. **An API + a device-first session model.** `api.oxy.so` owns the durable
+   `oxy_device` cookie and the rotating refresh-token family; every web/native
+   app restores its session through the shared SDK's device-first cold boot
+   with zero redirects for first-party apps. `auth.oxy.so` is a third-party
+   OAuth authorize/consent IdP (for apps that don't embed the SDK) plus a
+   device-account chooser feed.
 
 2. **A client SDK.** `@oxyhq/core` (platform-agnostic client + `/server`
    middleware), `@oxyhq/auth` (web `WebOxyProvider`), `@oxyhq/services` (Expo/RN
@@ -44,7 +45,7 @@ and in any third-party verifier — using the exact same `@oxyhq/core` code.
 | Doc | What it covers |
 |---|---|
 | [architecture/overview.md](architecture/overview.md) | Monorepo packages, dependency graph, build order, package boundaries, end-to-end request flow |
-| [auth/README.md](auth/README.md) | IdP vs RPs, FedCM, cross-domain SSO "Option A", web/native cold boot, the central-issuer rule, service tokens, linked clients, `@oxyhq/core/server` middleware |
+| [auth/README.md](auth/README.md) | Device-first session model, the `oxy_device` cookie, `runSessionColdBoot`, the in-app sign-in modal, OAuth consent/trust, service tokens, linked clients, `@oxyhq/core/server` middleware |
 | [identity/README.md](identity/README.md) | `did:web` documents (custodial ↔ self-sovereign), signed records (envelope v2, hash chain, `verifyEnvelope`), signed export, domain verification, "Sign in with Oxy" |
 | [reputation/README.md](reputation/README.md) | Oxy Trust ledger (tiers/influence), crypto-owned reputation, F2 real-life attestation + validator jury, F3 proof-of-personhood, F4 verifiable credentials |
 | [nodes/README.md](nodes/README.md) | The data-node model, `@oxyhq/node` server, registration, Oxy→node export, node→Oxy ingest (verify/LWW/fork/counter-sign), managed vault |
@@ -71,7 +72,7 @@ topics and remain authoritative for their areas:
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — original system architecture / identity vs auth
 - [AUTHENTICATION.md](AUTHENTICATION.md) — auth integration guide (Expo, Web, Node, WebSockets)
-- [CROSS_DOMAIN_AUTH.md](CROSS_DOMAIN_AUTH.md) — cross-domain SSO (FedCM, popup, redirect)
+- [CROSS_DOMAIN_AUTH.md](CROSS_DOMAIN_AUTH.md) — cross-domain SSO (device-first: `oxy_device` cookie + rotating refresh, native shared-keychain)
 - [SESSION-ARCHITECTURE.md](SESSION-ARCHITECTURE.md) — session architecture notes
 - [SERVICE_TOKENS.md](SERVICE_TOKENS.md) — service-to-service auth (OAuth2 client credentials)
 - [INFRASTRUCTURE.md](INFRASTRUCTURE.md) — AWS resources (ECS, ALB, ECR, ElastiCache, MongoDB)

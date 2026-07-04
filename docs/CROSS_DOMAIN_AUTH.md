@@ -1,38 +1,35 @@
 # Cross-Domain Authentication for Oxy Ecosystem
 
-Zero-config cross-domain SSO across all Oxy apps (homiio.com, mention.earth, alia.onl, oxy.so, etc.) **without third-party cookies**.
+Zero-config cross-domain SSO across all Oxy apps (homiio.com, mention.earth, alia.onl, oxy.so, etc.), device-first — no FedCM, no third-party cookies, no `/sso` bounce loop.
 
 ## Overview
 
-Sign in once at `auth.oxy.so` and be automatically authenticated across all Oxy domains. Works like Google's SSO across YouTube, Gmail, and Maps.
+Sign in once on any Oxy app and be automatically authenticated across all Oxy
+domains, on both web and native. There is no browser identity-federation API
+involved (FedCM was removed in the wave-2 device-first cutover) — the
+mechanism is a durable, first-party device cookie plus a persisted rotating
+refresh-token family.
 
-The callback and cold-boot behavior lives in the shared SDK:
+The callback and cold-boot behavior lives entirely in the shared SDK:
 
-- `@oxyhq/core` owns all SSO helpers.
-- `OxyProvider` and `WebOxyProvider` handle `/__oxy/sso-callback` universally.
-- Apps must not implement local callback routes or helper copies.
+- `@oxyhq/core` owns the device-first cold boot (`runSessionColdBoot`) and every helper it uses.
+- `OxyProvider` (`@oxyhq/services`) and `WebOxyProvider` (`@oxyhq/auth`) are thin bindings over it.
+- Apps must not implement local session-restore routes or helper copies.
 - Auth-dependent UI and private fetches should render only after the provider's
-  cold boot is resolved (`isAuthResolved` / `isLoading === false`).
+  cold boot is resolved (`isAuthResolved` / `isLoading === false`, or
+  `canUsePrivateApi` on native for the bearer-token-ready check).
 
 ### How It Works
 
-- **Web**: Uses FedCM (Federated Credential Management) - browser-native identity API
-- **Native**: Uses iOS Keychain Sharing / Android Account Manager
+- **Web**: a durable `HttpOnly` `oxy_device` cookie (`Domain=.oxy.so`) plus a persisted, per-origin rotating refresh-token family. Same-apex apps resolve inline (no navigation); a cross-apex app does **one** top-level hop, ever, per browser+origin.
+- **Native**: iOS Keychain Sharing / Android shared user ID — a shared cryptographic identity, exactly as before wave 2.
 
 ### Key Features
 
-- **No third-party cookies** - Works in all modern browsers
-- **Zero config** - Just wrap with `OxyProvider` and SSO works automatically
-- **Cross-TLD** - Works across completely different domains (not just subdomains)
-- **Privacy-preserving** - Browser mediates identity flow
-- **Automatic fallback** - FedCM → Popup → Redirect
-
-### Browser Support
-
-| Method | Chrome | Safari | Firefox | Edge |
-|--------|--------|--------|---------|------|
-| **FedCM** | 108+ | 16.4+ | - | 108+ |
-| **Popup** | All | All | All | All |
+- **No third-party cookies, no FedCM** — the device cookie is first-party to `*.oxy.so`; the browser never needs a federated-identity API
+- **Zero config** — just wrap with `OxyProvider` / `WebOxyProvider` and cross-domain SSO works automatically
+- **Cross-TLD** — works across completely different domains (not just subdomains), via the one-time bootstrap hop
+- **At most one visible navigation, ever** — a cross-apex app takes exactly one top-level round trip to `api.oxy.so` and back the very first time it ever loads in a given browser (whether or not the device turns out to have a session), then never again for that browser+origin
 
 ---
 
@@ -61,7 +58,7 @@ import { OxyProvider, useAuth } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so" clientId="oxy_dk_...">
       <YourApp />
     </OxyProvider>
   );
@@ -78,7 +75,7 @@ function MyComponent() {
     return <Button onPress={() => signIn()} title="Sign In" />;
   }
 
-  return <Text>Welcome, {user?.username}!</Text>;
+  return <Text>Welcome, {user?.name?.displayName}!</Text>;
 }
 ```
 
@@ -93,7 +90,7 @@ import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
-    <WebOxyProvider baseURL="https://api.oxy.so">
+    <WebOxyProvider baseURL="https://api.oxy.so" clientId="oxy_dk_...">
       <YourApp />
     </WebOxyProvider>
   );
@@ -106,28 +103,30 @@ function App() {
 
 ## How It Works
 
-### Web (FedCM)
+### Web (device-first)
 
 ```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│ homiio.com  │         │ auth.oxy.so  │         │mention.earth│
-│             │  FedCM  │    (IdP)     │  FedCM  │             │
-│  User       ├────────▶│              │◀────────┤  User       │
-│  visits     │         │  Browser     │         │  visits     │
-│             │◀────────┤  mediates    ├────────▶│             │
-│  Instant    │  Token  │  identity    │  Token  │  Instant    │
-│  auth!      │         │              │         │  auth!      │
-└─────────────┘         └──────────────┘         └─────────────┘
+┌─────────────┐                          ┌─────────────┐
+│ homiio.com  │                          │mention.earth│
+│             │                          │             │
+│  User signs │  1st load ever: ONE       │  Same-apex  │
+│  in here    │  top-level hop to         │  reload:    │
+│             │  api.oxy.so/auth/device/  │  inline     │
+│             │  bootstrap and back        │  fetch, no  │
+│             │  (never repeats)           │  navigation │
+│  Instant    │                          │             │
+│  auth!      │                          │  Instant    │
+└─────────────┘                          │  auth!      │
+                                          └─────────────┘
 ```
 
-1. User signs in at `auth.oxy.so`
-2. Browser stores FedCM credential
-3. User visits your app (e.g., homiio.com)
-4. OxyProvider uses FedCM to request identity from browser
-5. Browser returns ID token (no network request to IdP!)
-6. Your app exchanges token for session at `api.oxy.so`
+1. User signs in on any Oxy app (in-app modal — no redirect for first-party apps)
+2. The API mints/refreshes a durable, `HttpOnly`, first-party `oxy_device` cookie (`Domain=.oxy.so`) bound to that device, and a rotating refresh-token family the app persists locally
+3. On a same-apex reload (e.g. another `*.oxy.so` app), the cold boot's `bootstrap-hop` step does an inline, credentialed `POST /auth/device/web-session` fetch — no navigation at all
+4. On a **different apex** (e.g. `mention.earth`, `homiio.com`), the cold boot does **one** top-level navigation, ever, per browser+origin, to `api.oxy.so`'s `GET /auth/device/bootstrap` (a single canonical host — no per-apex CNAME needed), which reads the shared device cookie and 303s straight back with the result in a `#oxy_boot` fragment
+5. That one hop happens on the **very first load** in a given browser regardless of whether the device turns out to have a session — it's what lets the SDK know either way without ever repeating. If it found a session, a single-use boot code in the fragment is exchanged for tokens; if not, the app renders signed-out and the flag is set so it never hops again for that origin
 
-### Native (Keychain Sharing)
+### Native (Keychain Sharing) — unchanged by wave 2
 
 ```
 ┌────────────┐         ┌──────────────────┐         ┌────────────┐
@@ -136,10 +135,15 @@ function App() {
 │            ├────────▶│ (group.so.oxy)   │◀────────┤            │
 │ Signs in   │         │                  │         │ Launches   │
 │            │         │  Identity +      │         │            │
-│            │         │  Session stored  │         │ Instant    │
-│            │         │                  │         │ auth!      │
+│            │         │  shared session  │         │ Instant    │
+│            │         │  stored          │         │ auth!      │
 └────────────┘         └──────────────────┘         └────────────┘
 ```
+
+This mechanism was not part of the FedCM/SSO deletion — it is a separate,
+still-current path: the cold boot's `shared-key-signin` step re-mints a
+session from the shared-keychain identity automatically, with no user
+interaction, the first time a second Oxy app launches on the same device.
 
 ---
 
@@ -150,7 +154,7 @@ function App() {
 The `useAuth` hook handles everything automatically:
 
 ```tsx
-import { useAuth } from '@oxyhq/services';
+import { useAuth } from '@oxyhq/auth';
 
 function LoginButton() {
   const { isAuthenticated, user, signIn, signOut, isLoading } = useAuth();
@@ -160,46 +164,30 @@ function LoginButton() {
   if (isAuthenticated) {
     return (
       <div>
-        <span>Hi, {user?.username}!</span>
+        <span>Hi, {user?.name?.displayName}!</span>
         <button onClick={signOut}>Sign Out</button>
       </div>
     );
   }
 
-  return <button onClick={() => signIn()}>Sign In</button>;
+  return <button onClick={signIn}>Sign In</button>;
 }
 ```
 
-**What happens when `signIn()` is called:**
+**What happens when `signIn()` is called:** the in-app "Sign in with Oxy" modal
+opens (password + 2FA, or the QR/Commons handoff). It never navigates the page
+away. Cross-domain restore for an *already signed-in* device happens
+automatically on mount, before the user ever needs to click anything — see
+"How It Works" above.
 
-1. **FedCM check** - If browser supports FedCM and user has signed in before, instant auth
-2. **Popup fallback** - Opens `auth.oxy.so` in popup, user signs in, popup closes
-3. **Session stored** - Token stored locally, user is authenticated
-
-### Using OxySignInButton Component
-
-```tsx
-import { OxySignInButton } from '@oxyhq/services';
-
-function LoginPage() {
-  return (
-    <div>
-      <h1>Sign In</h1>
-      <OxySignInButton />
-    </div>
-  );
-}
-```
-
-### Authentication Methods
+### Authentication Methods (interactive)
 
 | Method | When Used | User Experience |
 |--------|-----------|-----------------|
-| **FedCM** | Chrome/Safari/Edge 108+ with prior sign-in | Instant, no UI |
-| **Popup** | User clicks sign in, FedCM unavailable | Popup window opens |
-| **Redirect** | Mobile browsers where popups are blocked | Full page redirect |
+| **Password + 2FA** | User opens the in-app modal | Modal form, no navigation |
+| **"Sign in with Oxy" QR/handoff** | User opens the in-app modal, scans with Commons | QR code or same-device deep link |
 
-**The provider handles method selection automatically.** You don't need to configure anything.
+**The provider renders and owns this modal itself.** You don't need to build sign-in UI.
 
 ---
 
@@ -218,10 +206,14 @@ For **each Oxy app** (Homiio, Mention, Alia, etc.):
 5. Add "Keychain Sharing"
 6. Add keychain group: `group.so.oxy.shared`
 
-#### 2. Use Shared Identity
+#### 2. Use Shared Identity (usually automatic)
+
+`OxyProvider`'s cold boot already tries the shared-keychain identity via its
+`shared-key-signin` step — most apps never need to call these directly. The
+underlying `KeyManager` API (`@oxyhq/core`), for lower-level or diagnostic use:
 
 ```typescript
-import { KeyManager } from '@oxyhq/services';
+import { KeyManager } from '@oxyhq/core';
 
 // Create shared identity (only needed once across all apps)
 const hasShared = await KeyManager.hasSharedIdentity();
@@ -233,85 +225,19 @@ if (!hasShared) {
 // Get shared public key (works in all Oxy apps)
 const publicKey = await KeyManager.getSharedPublicKey();
 
-// Check for shared session
+// Check for a session already established by another Oxy app on this device
 const session = await KeyManager.getSharedSession();
 if (session) {
-  // User is signed in from another Oxy app!
   oxyServices.setTokens(session.accessToken);
   const user = await oxyServices.getCurrentUser();
 }
-
-// Store session (accessible to all Oxy apps)
-await KeyManager.storeSharedSession(sessionId, accessToken);
 ```
 
-#### 3. Complete iOS Flow
-
-```typescript
-import { OxyServices } from '@oxyhq/core';
-import { KeyManager } from '@oxyhq/core';
-
-const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-// On app startup
-async function initializeAuth() {
-  // 1. Check for shared session first
-  const sharedSession = await KeyManager.getSharedSession();
-  if (sharedSession) {
-    oxyServices.setTokens(sharedSession.accessToken);
-    const user = await oxyServices.getCurrentUser();
-    return user;
-  }
-
-  // 2. Check for local identity
-  const hasIdentity = await KeyManager.hasIdentity();
-  if (hasIdentity) {
-    // Sign in with existing identity
-    const publicKey = await KeyManager.getPublicKey();
-    const { challenge } = await oxyServices.requestChallenge(publicKey);
-    const signature = await SignatureService.signChallenge(challenge);
-    const session = await oxyServices.verifyChallenge(
-      publicKey,
-      challenge,
-      signature,
-      Date.now()
-    );
-
-    // Store in shared storage for other apps
-    await KeyManager.storeSharedSession(session.sessionId, session.accessToken);
-
-    return session.user;
-  }
-
-  // 3. No identity - user needs to create one
-  return null;
-}
-
-// Create new identity
-async function createIdentity() {
-  // Create in shared storage so all apps can use it
-  const publicKey = await KeyManager.createSharedIdentity();
-
-  // Register with server
-  const signature = await SignatureService.createRegistrationSignature();
-  await oxyServices.register(publicKey, signature, Date.now());
-
-  // Sign in
-  const { challenge } = await oxyServices.requestChallenge(publicKey);
-  const challengeSig = await SignatureService.signChallenge(challenge);
-  const session = await oxyServices.verifyChallenge(
-    publicKey,
-    challenge,
-    challengeSig,
-    Date.now()
-  );
-
-  // Store in shared storage
-  await KeyManager.storeSharedSession(session.sessionId, session.accessToken);
-
-  return session.user;
-}
-```
+The shared keychain also carries a **shared device token**
+(`KeyManager.getSharedDeviceToken` / `setSharedDeviceToken` /
+`clearSharedDeviceToken`, added in wave 2) — an opaque, add-only attribution
+token every native Oxy app on the device mirrors so they're recognized as the
+same device server-side. `OxyProvider`'s cold boot manages this automatically.
 
 ### Android: Account Manager + Shared User ID
 
@@ -330,196 +256,37 @@ In **each app's** `AndroidManifest.xml`:
 
 ⚠️ **Important:** All Oxy apps must have the **same** `sharedUserId` to share data.
 
-#### 2. Use Shared Identity
-
-```typescript
-import { KeyManager } from '@oxyhq/services';
-
-// Same API as iOS!
-const hasShared = await KeyManager.hasSharedIdentity();
-const publicKey = await KeyManager.getSharedPublicKey();
-const session = await KeyManager.getSharedSession();
-
-// Store shared session
-await KeyManager.storeSharedSession(sessionId, accessToken);
-```
-
-Android automatically shares SecureStore data between apps with the same `sharedUserId`.
+Android automatically shares SecureStore data between apps with the same `sharedUserId`; the same `KeyManager` API above applies.
 
 ---
 
 ## Auth Server Setup
 
-The Oxy auth server runs at `auth.oxy.so`. If you're self-hosting, ensure these endpoints are available:
-
-### FedCM Endpoints (Required for cross-domain SSO)
-
-| Path | Method | Purpose |
-|------|--------|---------|
-| `/fedcm.json` | GET | FedCM configuration |
-| `/.well-known/web-identity` | GET | FedCM provider discovery |
-| `/api/fedcm/accounts` | GET | List user accounts for FedCM |
-| `/api/fedcm/assertion` | POST | Issue ID tokens |
-
-### API Endpoints (at api.oxy.so)
-
-| Path | Method | Purpose |
-|------|--------|---------|
-| `/api/fedcm/exchange` | POST | Exchange ID token for session |
-| `/api/sessions/*` | * | Session management |
-
-### Auth UI Endpoints (at auth.oxy.so)
-
-| Path | Purpose |
-|------|---------|
-| `/login` | Login page |
-| `/signup` | Signup page |
-| `/auth/callback` | Popup callback (auto-closes) |
+`auth.oxy.so` (`packages/auth`) is a third-party OAuth authorize/consent IdP
+plus the device-account chooser feed — it is **not** in the restore path for
+first-party apps using `OxyProvider`/`WebOxyProvider` except for the one-time
+cross-apex bootstrap hop described above. If you're integrating a third-party
+app that does NOT embed the SDK, integrate against its OAuth authorize/consent
+endpoints instead of anything in this document.
 
 ### Requirements
 
-- **HTTPS required** - FedCM only works over HTTPS
-- **CORS configured** - API must accept requests from your domains
-
----
-
-## API Reference
-
-### `CrossDomainAuth`
-
-Main authentication helper class.
-
-#### `constructor(oxyServices: OxyServices)`
-
-Creates new instance.
-
-```typescript
-const auth = new CrossDomainAuth(oxyServices);
-// Or use helper:
-const auth = createCrossDomainAuth(oxyServices);
-```
-
-#### `signIn(options?): Promise<SessionLoginResponse | null>`
-
-Sign in with automatic method selection.
-
-**Options:**
-- `method?: 'auto' | 'fedcm' | 'redirect'` - Preferred method
-- `isSignup?: boolean` - Open signup instead of login
-- `redirectUri?: string` - Custom redirect URI (for redirect method)
-- `onMethodSelected?: (method) => void` - Callback when method chosen
-
-**Returns:** Session or null (null for redirect method)
-
-#### `signInWithFedCM(options?): Promise<SessionLoginResponse>`
-
-Sign in using FedCM (browser-native).
-
-#### `signInWithRedirect(options?): void`
-
-Sign in using full-page tokenless redirect. Doesn't return (navigates away).
-
-#### `handleRedirectCallback(): SessionLoginResponse | null`
-
-Handle redirect callback. Call on app startup.
-
-#### `silentSignIn(): Promise<SessionLoginResponse | null>`
-
-Try to sign in without user interaction.
-
-#### `restoreSession(): boolean`
-
-Restore session from localStorage.
-
-#### `initialize(): Promise<SessionLoginResponse | null>`
-
-Complete initialization: handles callbacks, restores session, tries silent sign-in.
-
-**Use this on app startup.**
-
-### `KeyManager` (Native Only)
-
-#### Shared Identity Methods
-
-- `createSharedIdentity(): Promise<string>` - Create cross-app identity
-- `getSharedPublicKey(): Promise<string | null>` - Get shared public key
-- `getSharedPrivateKey(): Promise<string | null>` - Get shared private key
-- `hasSharedIdentity(): Promise<boolean>` - Check if shared identity exists
-- `importSharedIdentity(privateKey): Promise<string>` - Import shared identity
-- `storeSharedSession(sessionId, token): Promise<void>` - Store cross-app session
-- `getSharedSession(): Promise<{ sessionId, accessToken } | null>` - Get cross-app session
-- `clearSharedSession(): Promise<void>` - Clear cross-app session
-- `migrateToSharedIdentity(): Promise<boolean>` - Migrate local → shared
-
----
-
-## Migration Guide
-
-### Migrating Existing Web Apps
-
-```typescript
-// Before: App-specific auth
-const session = await oxyServices.signIn(email, password);
-
-// After: Cross-domain auth
-const auth = createCrossDomainAuth(oxyServices);
-const session = await auth.signIn(); // Automatic SSO!
-```
-
-### Migrating Existing Native Apps
-
-```typescript
-// Before: Device-specific identity
-const publicKey = await KeyManager.getPublicKey();
-
-// After: Shared identity
-// Automatic migration - existing users keep their identity
-await KeyManager.migrateToSharedIdentity();
-const publicKey = await KeyManager.getSharedPublicKey();
-
-// Store sessions in shared storage
-await KeyManager.storeSharedSession(sessionId, accessToken);
-```
-
-### Backward Compatibility
-
-Both old and new methods work simultaneously:
-
-```typescript
-// Old method still works
-const localKey = await KeyManager.getPublicKey();
-
-// New method works too
-const sharedKey = await KeyManager.getSharedPublicKey();
-
-// Migrate when ready
-await KeyManager.migrateToSharedIdentity();
-```
+- **HTTPS required** in production
+- **CORS configured** — the API only accepts credentialed requests from registered app origins (plus loopback dev origins on any port)
 
 ---
 
 ## Troubleshooting
 
-### SSO Not Working on Web
+### Cross-domain restore not working on web
 
-**Symptom:** User has to sign in on each domain
+**Symptom:** User has to sign in again on a different Oxy domain
 
 **Check:**
-1. User must have signed in at `auth.oxy.so` at least once
-2. Browser must support FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
-3. Both sites must be served over HTTPS
-4. FedCM config accessible: `https://auth.oxy.so/fedcm.json`
-
-**For Firefox/older browsers:** FedCM is not supported. Users will need to click "Sign In" which opens a popup. This is expected behavior.
-
-### Popup Blocked
-
-**Symptom:** "Popup blocked" error when signing in
-
-**Solutions:**
-1. Call `signIn()` directly from a click handler (not from setTimeout/async callback)
-2. Ask user to allow popups for your domain
-3. Mobile browsers may require redirect instead (handled automatically)
+1. The user must have an existing session (a brand-new, never-signed-in device is not bounced — sign in explicitly once)
+2. Both sites must be served over HTTPS (or both on an `http://localhost`/loopback dev origin)
+3. The `oxy_device` cookie must not be blocked — it's `HttpOnly` + `Secure` + `Domain=.oxy.so`, so browser settings that block all third-party or all cookies from `oxy.so` will break it (it is first-party from the API's perspective, not a tracking cookie)
+4. The one-time cross-apex hop only fires once per browser+origin ever (`localStorage` flag) — if it already ran and returned signed-out, it will not retry automatically; sign in explicitly
 
 ### Session Not Persisting
 
@@ -528,7 +295,7 @@ await KeyManager.migrateToSharedIdentity();
 **Check:**
 1. Ensure you're using `OxyProvider` or `WebOxyProvider` at the root of your app
 2. Check browser localStorage is not blocked
-3. Verify you're not in incognito/private mode
+3. Verify you're not in incognito/private mode (the persisted refresh-token family and `oxy_device` cookie won't survive a private session close)
 
 ### iOS Keychain Sharing Not Working
 
@@ -553,34 +320,15 @@ await KeyManager.migrateToSharedIdentity();
 
 ## Best Practices
 
-### ✅ Do's
+### Do's
 
-- **Do** call `auth.initialize()` on every app startup
-- **Do** use `method: 'auto'` for automatic fallback
-- **Do** handle both web methods (FedCM/Redirect)
-- **Do** store sessions in shared storage on native
-- **Do** migrate existing users to shared identity
-- **Do** test on real devices (iOS Keychain Sharing)
-- **Do** implement proper error handling
+- **Do** wrap every app in `OxyProvider` / `WebOxyProvider` with a registered `clientId` and let it own cold boot
+- **Do** gate private-API calls on `canUsePrivateApi` / `isPrivateApiPending` (native) or `isLoading`/`isReady` (web), not just `isAuthenticated`
+- **Do** test cross-app native SSO on real devices (iOS Keychain Sharing)
 
-### ❌ Don'ts
+### Don'ts
 
-- **Don't** forget to handle redirect callbacks
-- **Don't** mix local and shared storage
+- **Don't** implement a local session-restore, callback route, or FedCM-era helper copy in an app — it all lives in `@oxyhq/core`
+- **Don't** mix local and shared native storage
 - **Don't** skip iOS Keychain Sharing capability
 - **Don't** change Android `sharedUserId` after publish
-- **Don't** assume FedCM support (always have fallback)
-
----
-
-## Support
-
-- **Issues:** https://github.com/oxyhq/oxyhqservices/issues
-- **Docs:** https://oxy.so/docs
-- **Email:** support@oxy.so
-
----
-
-## License
-
-MIT © OxyHQ
