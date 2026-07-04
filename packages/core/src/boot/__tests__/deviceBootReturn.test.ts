@@ -1,4 +1,4 @@
-import type { AuthTokenBundle, DeviceBootFragment } from '@oxyhq/contracts';
+import type { AuthTokenBundle } from '@oxyhq/contracts';
 import {
   parseDeviceBootFragment,
   hashHasBootFragment,
@@ -11,7 +11,10 @@ const STATE = 'st-1234567890';
 const CODE = 'c'.repeat(24);
 const DEVICE_TOKEN = 'd'.repeat(24);
 
-function fragmentObject(overrides: Partial<DeviceBootFragment> = {}): DeviceBootFragment {
+// A loose record (fed to `encodeHash(unknown)` and validated by the schema) so
+// tests can build the session arm plus invalid variants (missing/extra `code`,
+// `v: 2`) without fighting the discriminated-union type.
+function fragmentObject(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { v: 1, state: STATE, reason: 'session', code: CODE, deviceToken: DEVICE_TOKEN, ...overrides };
 }
 
@@ -69,7 +72,11 @@ describe('parseDeviceBootFragment', () => {
     expect(parseDeviceBootFragment('#oxy_boot=!!!not-base64!!!')).toBeNull();
     expect(parseDeviceBootFragment(encodeHash({ nope: true }))).toBeNull();
     // v must be the literal 1
-    expect(parseDeviceBootFragment(encodeHash(fragmentObject({ v: 2 as 1 })))).toBeNull();
+    expect(parseDeviceBootFragment(encodeHash(fragmentObject({ v: 2 })))).toBeNull();
+  });
+
+  it('returns null for a session fragment missing its code (discriminated union)', () => {
+    expect(parseDeviceBootFragment(encodeHash(fragmentObject({ code: undefined })))).toBeNull();
   });
 });
 

@@ -160,7 +160,10 @@ export async function consumeDeviceBootReturn(
 
   await deps.store.saveDeviceToken(fragment.deviceToken);
 
-  if (fragment.reason === 'session' && fragment.code) {
+  // `code` is guaranteed present on the `session` arm (the contract's
+  // discriminated union requires it; a session fragment without a code fails to
+  // parse and never reaches here).
+  if (fragment.reason === 'session') {
     try {
       const bundle = await deps.exchangeBootCode(fragment.code);
       const userId = resolveUserId(bundle.user);

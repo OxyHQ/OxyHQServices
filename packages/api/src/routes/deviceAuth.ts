@@ -199,29 +199,25 @@ router.get(
     }
 
     // Resolve the active session and mint a single-use, origin-bound boot code.
-    let reason: DeviceBootReason = freshDevice ? 'new_device' : 'no_session';
-    let code: string | undefined;
     const activeRef = await resolveActiveSessionRef(existingState);
+
+    // Rotate a fresh web deviceToken on EVERY hop, bound to the return_to origin.
+    const deviceToken = await issueDeviceToken({ deviceId, origin: returnToOrigin, channel: 'web' });
+
+    // Build the fragment DISCRIMINATELY so it satisfies the contract's
+    // reason-discriminated union: the `session` arm REQUIRES `code`; the
+    // signed-out arms (`no_session` / `new_device`) omit the key entirely.
+    let fragment: DeviceBootFragment;
     if (activeRef) {
       const minted = await mintBootCode({
         sessionId: activeRef.sessionId,
         userId: activeRef.userId,
         clientOrigin: returnToOrigin,
       });
-      code = minted.code;
-      reason = 'session';
+      fragment = { v: 1, state, reason: 'session', code: minted.code, deviceToken };
+    } else {
+      fragment = { v: 1, state, reason: freshDevice ? 'new_device' : 'no_session', deviceToken };
     }
-
-    // Rotate a fresh web deviceToken on EVERY hop, bound to the return_to origin.
-    const deviceToken = await issueDeviceToken({ deviceId, origin: returnToOrigin, channel: 'web' });
-
-    const fragment: DeviceBootFragment = {
-      v: 1,
-      state,
-      reason,
-      ...(code ? { code } : {}),
-      deviceToken,
-    };
     // Guard: never emit a fragment the consumer cannot parse.
     const validFragment = deviceBootFragmentSchema.safeParse(fragment);
     if (!validFragment.success) {

@@ -1,7 +1,6 @@
 import type { OxyServices } from '../../OxyServices';
-import type { AuthTokenBundle, TokenRefreshResponse } from '@oxyhq/contracts';
+import type { AuthTokenBundle, TokenRefreshResponse, WebSessionResult } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../../models/session';
-import type { WebSessionResult } from '../../mixins/OxyServices.deviceBoot';
 import {
   runSessionColdBoot,
   createBrowserColdBootDom,
@@ -102,6 +101,20 @@ describe('isSameApex', () => {
     expect(isSameApex('app.mention.earth', 'api.oxy.so')).toBe(false);
     expect(isSameApex('homiio.com', 'api.oxy.so')).toBe(false);
   });
+
+  it('does NOT collapse distinct IPv4 hosts that share trailing octets', () => {
+    // The last-2-labels heuristic would map both to "1.1" — must be exact.
+    expect(isSameApex('192.168.1.1', '10.0.1.1')).toBe(false);
+    expect(isSameApex('192.168.1.10', '192.168.1.5')).toBe(false);
+    expect(isSameApex('192.168.1.5', '192.168.1.5')).toBe(true);
+  });
+
+  it('requires exact equality for single-label / IPv6 / localhost hosts', () => {
+    expect(isSameApex('localhost', 'localhost')).toBe(true);
+    expect(isSameApex('localhost', 'api.oxy.so')).toBe(false);
+    expect(isSameApex('::1', '::1')).toBe(true);
+    expect(isSameApex('fe80::1', 'fe80::2')).toBe(false);
+  });
 });
 
 describe('runSessionColdBoot — step ordering', () => {
@@ -173,7 +186,10 @@ describe('runSessionColdBoot — step ordering', () => {
 describe('runSessionColdBoot — bootstrap-hop (web)', () => {
   it('same-apex: resolves a session via the inline web-session fetch (no navigation)', async () => {
     const store = createMemoryAuthStateStore();
-    const requestWebSession = jest.fn(async () => BUNDLE as WebSessionResult);
+    // The EXACT post-unwrap server shape (PR #526): a reason-`session` envelope
+    // nesting the bundle under `session` plus the rotated deviceToken.
+    const sessionEnvelope: WebSessionResult = { reason: 'session', session: BUNDLE, deviceToken: 'dt-rotated' };
+    const requestWebSession = jest.fn(async () => sessionEnvelope);
     const { oxy, setTokens } = makeOxy({ requestWebSession });
     const domHandle = makeDom({ hostname: 'accounts.oxy.so' });
 
@@ -183,7 +199,9 @@ describe('runSessionColdBoot — bootstrap-hop (web)', () => {
     expect(requestWebSession).toHaveBeenCalledTimes(1);
     expect(setTokens).toHaveBeenCalledWith('access-boot');
     expect(domHandle.navigate).not.toHaveBeenCalled();
-    expect(await store.load()).toMatchObject({ sessionId: 'sess-boot' });
+    expect(await store.load()).toMatchObject({ sessionId: 'sess-boot', refreshToken: 'refresh-boot-abcdefghij' });
+    // deviceToken from the SAME envelope is persisted on the session arm too.
+    expect(await store.loadDeviceToken()).toBe('dt-rotated');
   });
 
   it('same-apex: signed-out device persists the deviceToken and reports signed out', async () => {

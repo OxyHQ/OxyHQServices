@@ -54,17 +54,37 @@ export type DeviceBootReason = z.infer<typeof deviceBootReasonSchema>;
 
 /**
  * The `#oxy_boot=<json>` fragment `GET /auth/device/bootstrap` appends to the
- * `return_to` URL. Carries the CSRF `state` echo, the resolution `reason`, an
- * optional single-use exchange `code` (present iff `reason === 'session'`), and
- * the opaque `deviceToken`. NEVER carries tokens or a deviceId.
+ * `return_to` URL. Carries the CSRF `state` echo, the resolution `reason`, the
+ * opaque `deviceToken`, and — ONLY on the `session` arm — the single-use
+ * exchange `code`. NEVER carries tokens or a deviceId.
+ *
+ * Discriminated on `reason` so the code↔reason coupling is enforced by the
+ * schema, not by the consumer: the `session` arm REQUIRES `code`, and the
+ * `no_session` / `new_device` arms omit it (a stray `code` on those arms is
+ * stripped). A `session` fragment WITHOUT a code therefore fails to parse and
+ * is treated as "no usable fragment" rather than half-processed.
  */
-export const deviceBootFragmentSchema = z.object({
+const deviceBootFragmentBase = {
     v: z.literal(1),
     state: z.string().min(1).max(256),
-    reason: deviceBootReasonSchema,
-    code: z.string().min(20).max(128).optional(),
     deviceToken: z.string().min(20).max(512),
-});
+};
+
+export const deviceBootFragmentSchema = z.discriminatedUnion('reason', [
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('session'),
+        code: z.string().min(20).max(128),
+    }),
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('no_session'),
+    }),
+    z.object({
+        ...deviceBootFragmentBase,
+        reason: z.literal('new_device'),
+    }),
+]);
 
 export type DeviceBootFragment = z.infer<typeof deviceBootFragmentSchema>;
 
@@ -100,6 +120,71 @@ export const authTokenBundleSchema: z.ZodType<AuthTokenBundle> = z.object({
     expiresAt: z.string(),
     user: userResponseSchema,
 });
+
+/* -------------------------------------------------------------------------- */
+/*  Web-session fast path (`POST /auth/device/web-session`)                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `*.oxy.so` same-site fast path returns a `reason`-discriminated result:
+ * a full session (the device cookie resolved an active session) OR a
+ * signed-out arm (the device is known / was just planted). BOTH arms carry the
+ * rotated opaque `deviceToken` to persist — the deviceToken is device-level
+ * attribution, not session-level, so it is refreshed even when signed out.
+ *
+ * IMPORTANT: the success arm nests the token bundle under `session` — it is
+ * NOT a bare {@link AuthTokenBundle}. That distinction is load-bearing for the
+ * consumer (`@oxyhq/core`'s cold boot uses `result.session` and persists the
+ * `deviceToken` from the SAME envelope).
+ */
+
+/**
+ * Success arm: an active session resolved from the same-site device cookie.
+ */
+export interface WebSessionSession {
+    reason: 'session';
+    session: AuthTokenBundle;
+    deviceToken: string;
+}
+
+/**
+ * Signed-out arm: the device is known (or freshly planted) but has no active
+ * session. Carries only the rotated `deviceToken`.
+ */
+export interface WebSessionNoSession {
+    reason: 'no_session' | 'new_device';
+    deviceToken: string;
+}
+
+/** The `reason`-discriminated outcome of `POST /auth/device/web-session`. */
+export type WebSessionResult = WebSessionSession | WebSessionNoSession;
+
+// Internal (unexported) arm schemas — PLAIN `z.object` literals (no
+// `z.ZodType<>` annotation) so `z.discriminatedUnion` can introspect the
+// `reason` discriminator. The node10 `.d.ts`-degradation safety comes from the
+// EXPORTED symbols instead: the public types are explicit interfaces
+// (`WebSessionSession` / `WebSessionNoSession` / `WebSessionResult`) and the
+// exported schema is annotated `z.ZodType<WebSessionResult>` below, so the
+// emitted declaration states the shape literally rather than a degradable
+// `z.infer<>` of the nested `session` object.
+const webSessionSessionSchema = z.object({
+    reason: z.literal('session'),
+    session: authTokenBundleSchema,
+    deviceToken: z.string().min(1),
+});
+
+const webSessionNoSessionSchema = z.object({
+    reason: z.enum(['no_session', 'new_device']),
+    deviceToken: z.string().min(1),
+});
+
+// Discriminated on `reason` — a true `discriminatedUnion` (not `z.union`): it
+// dispatches on the discriminator instead of sequentially probing each arm,
+// giving precise per-arm errors.
+export const webSessionResultSchema: z.ZodType<WebSessionResult> = z.discriminatedUnion('reason', [
+    webSessionSessionSchema,
+    webSessionNoSessionSchema,
+]);
 
 /* -------------------------------------------------------------------------- */
 /*  Refresh-token rotation (web + native, one implementation)                 */

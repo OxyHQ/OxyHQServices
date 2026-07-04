@@ -45,6 +45,24 @@ export const TOKEN_REFRESH_LEAD_MS = 60_000;
 const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
 
 /**
+ * Floor (ms) on ANY scheduled delay. An already-expired / in-lead-window token
+ * computes a non-positive `exp − now − lead`; without this floor that becomes
+ * `setTimeout(…, 0)`, and a FAILING refresh (offline / server error) would
+ * re-arm at 0 in the finally block → a tight 100%-CPU busy loop. The floor
+ * guarantees every re-arm yields the event loop.
+ */
+const MIN_SCHEDULE_DELAY_MS = 1_000;
+
+/**
+ * Backoff schedule (ms) applied when a scheduled refresh FAILS: first retry
+ * after {@link MIN_FAILURE_BACKOFF_MS}, doubling up to {@link MAX_FAILURE_BACKOFF_MS}.
+ * Reset to 0 on any success or token change. This is what converts the former
+ * zero-delay failure loop into a bounded, backing-off retry.
+ */
+const MIN_FAILURE_BACKOFF_MS = 5_000;
+const MAX_FAILURE_BACKOFF_MS = 5 * 60_000;
+
+/**
  * Error codes (in addition to HTTP 401/403) that mean the stored refresh token
  * is permanently unusable — the family was revoked or a reuse was detected. On
  * any of these the persisted store is CLEARED (the session is truly over);
@@ -204,6 +222,9 @@ export interface TokenRefreshSchedulerHandle {
 export function startTokenRefreshScheduler(oxy: OxyServices): TokenRefreshSchedulerHandle {
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  // 0 = no active backoff; grows on consecutive failures, resets on success /
+  // token change. Keeps a failing refresh from re-arming at zero delay.
+  let failureBackoffMs = 0;
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -212,17 +233,17 @@ export function startTokenRefreshScheduler(oxy: OxyServices): TokenRefreshSchedu
     }
   };
 
-  const runRefresh = (): void => {
-    void oxy.httpService.refreshAccessToken('preflight')
-      .catch(() => null)
-      .finally(() => {
-        if (!disposed) {
-          schedule();
-        }
-      });
+  /** Arm the timer for `delayMs`, flooring at {@link MIN_SCHEDULE_DELAY_MS} and capping at the int32 max. */
+  const armTimer = (delayMs: number): void => {
+    clearTimer();
+    const clamped = Math.min(Math.max(delayMs, MIN_SCHEDULE_DELAY_MS), MAX_TIMEOUT_DELAY_MS);
+    timer = setTimeout(runRefresh, clamped);
+    // Never keep a Node/Jest event loop alive for a background refresh timer.
+    timer.unref?.();
   };
 
-  const schedule = (): void => {
+  /** Schedule the next refresh from the current token's expiry (the healthy path). */
+  const scheduleFromExpiry = (): void => {
     clearTimer();
     if (disposed || !oxy.getAccessToken()) {
       return;
@@ -231,10 +252,39 @@ export function startTokenRefreshScheduler(oxy: OxyServices): TokenRefreshSchedu
     if (expSeconds === null) {
       return;
     }
-    const fireInMs = expSeconds * 1000 - Date.now() - TOKEN_REFRESH_LEAD_MS;
-    timer = setTimeout(runRefresh, Math.min(Math.max(fireInMs, 0), MAX_TIMEOUT_DELAY_MS));
-    // Never keep a Node/Jest event loop alive for a background refresh timer.
-    timer.unref?.();
+    armTimer(expSeconds * 1000 - Date.now() - TOKEN_REFRESH_LEAD_MS);
+  };
+
+  const runRefresh = (): void => {
+    // Clear any pending timer up front so an out-of-band trigger (focus) plus
+    // a fired timer can never double-run.
+    clearTimer();
+    void oxy.httpService.refreshAccessToken('preflight')
+      .then((token) => Boolean(token))
+      .catch(() => false)
+      .then((ok) => {
+        if (disposed) {
+          return;
+        }
+        if (ok) {
+          // Success — drop any backoff and re-arm from the rotated token's exp.
+          failureBackoffMs = 0;
+          scheduleFromExpiry();
+          return;
+        }
+        // Failure — back off (never re-arm at zero) and retry.
+        failureBackoffMs =
+          failureBackoffMs === 0
+            ? MIN_FAILURE_BACKOFF_MS
+            : Math.min(failureBackoffMs * 2, MAX_FAILURE_BACKOFF_MS);
+        armTimer(failureBackoffMs);
+      });
+  };
+
+  /** Public (re)schedule entry: a fresh token / focus signal — drop backoff and arm from expiry. */
+  const schedule = (): void => {
+    failureBackoffMs = 0;
+    scheduleFromExpiry();
   };
 
   const onFocus = (): void => {

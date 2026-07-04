@@ -3,9 +3,8 @@
  * and asserts each method's route/shape, contract validation, and the
  * `skipAuth` flag on the refresh call.
  */
-import type { AuthTokenBundle, TokenRefreshResponse } from '@oxyhq/contracts';
+import type { AuthTokenBundle, TokenRefreshResponse, WebSessionResult } from '@oxyhq/contracts';
 import { OxyServices } from '../../OxyServices';
-import { isAuthTokenBundle, type WebSessionResult } from '../OxyServices.deviceBoot';
 
 const BUNDLE: AuthTokenBundle = {
   sessionId: 'sess-1',
@@ -48,10 +47,11 @@ describe('OxyServices.deviceBoot', () => {
   });
 
   describe('requestWebSession', () => {
-    it('returns the token-bundle arm', async () => {
-      makeRequest.mockResolvedValueOnce(BUNDLE);
+    it('returns the session arm (bundle nested under `session` + deviceToken)', async () => {
+      const sessionArm: WebSessionResult = { reason: 'session', session: BUNDLE, deviceToken: 'device-abcdefghij' };
+      makeRequest.mockResolvedValueOnce(sessionArm);
       const result = await oxy.requestWebSession();
-      expect(isAuthTokenBundle(result)).toBe(true);
+      expect(result).toEqual(sessionArm);
       expect(makeRequest).toHaveBeenCalledWith('POST', '/auth/device/web-session', undefined, { cache: false });
     });
 
@@ -59,8 +59,13 @@ describe('OxyServices.deviceBoot', () => {
       const noSession: WebSessionResult = { reason: 'no_session', deviceToken: 'device-abcdefghij' };
       makeRequest.mockResolvedValueOnce(noSession);
       const result = await oxy.requestWebSession();
-      expect(isAuthTokenBundle(result)).toBe(false);
+      expect(result.reason).toBe('no_session');
       expect(result).toEqual(noSession);
+    });
+
+    it('throws on the OLD bare-bundle shape (regression: server now wraps in a reason envelope)', async () => {
+      makeRequest.mockResolvedValueOnce(BUNDLE);
+      await expect(oxy.requestWebSession()).rejects.toThrow();
     });
 
     it('throws when the response matches neither arm', async () => {

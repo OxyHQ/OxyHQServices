@@ -15,46 +15,17 @@
  * and `setTokens`, so the same network primitive can be reused from either
  * without double-planting.
  */
-import { z } from 'zod';
 import {
   authTokenBundleSchema,
   tokenRefreshResponseSchema,
   deviceTokenIssueResponseSchema,
+  webSessionResultSchema,
   safeParseContract,
   type AuthTokenBundle,
   type TokenRefreshResponse,
+  type WebSessionResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
-
-/**
- * The "known device, no active session" arm of `POST /auth/device/web-session`
- * — the fast-path returns EITHER a full {@link AuthTokenBundle} (a session was
- * resolved from the same-site device cookie) OR this shape (the device is known
- * / just planted but signed out). It carries the rotated `deviceToken` to
- * persist, never any session tokens.
- */
-export interface WebSessionNoSession {
-  reason: 'no_session' | 'new_device';
-  deviceToken: string;
-}
-
-/** The discriminated outcome of `POST /auth/device/web-session`. */
-export type WebSessionResult = AuthTokenBundle | WebSessionNoSession;
-
-const webSessionNoSessionSchema: z.ZodType<WebSessionNoSession> = z.object({
-  reason: z.enum(['no_session', 'new_device']),
-  deviceToken: z.string().min(1),
-});
-
-const webSessionResultSchema: z.ZodType<WebSessionResult> = z.union([
-  authTokenBundleSchema,
-  webSessionNoSessionSchema,
-]);
-
-/** Type guard: did the web-session fast-path resolve a full token bundle? */
-export function isAuthTokenBundle(result: WebSessionResult): result is AuthTokenBundle {
-  return 'accessToken' in result;
-}
 
 export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
