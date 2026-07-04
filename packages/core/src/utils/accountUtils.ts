@@ -14,9 +14,8 @@ export interface QuickAccount {
     avatarUrl?: string;
     /**
      * Device-local account slot index, 0..N-1 (Google-style multi-account).
-     * Mirrors the server's `oxy_rt_${authuser}` cookie slot. Optional so that
-     * pre-multi-account QuickAccounts (sessionId-only, non-cookie auth on RN)
-     * remain valid; web flows always populate it after `refreshAllSessions`.
+     * Optional so that pre-multi-account QuickAccounts (sessionId-only) remain
+     * valid; the device session set populates it where available.
      */
     authuser?: number;
     /**

@@ -4,15 +4,14 @@
  * Phase 2 of the name-centralization refactor: the API is the FAITHFUL PRODUCER
  * of the canonical `@oxyhq/contracts` user-response contract. These tests build
  * representative user documents through `formatUserResponse` and assert the
- * output PARSES against `@oxyhq/contracts`'s `userResponseSchema` /
- * `refreshAllResponseSchema`. If the producer ever drifts from the contract
- * (e.g. drops `name.full`, or emits a shape the auth-app switcher can't parse),
- * these tests fail — exactly the class of bug that motivated the contract.
+ * output PARSES against `@oxyhq/contracts`'s `userResponseSchema`. If the
+ * producer ever drifts from the contract (e.g. drops `name.full`, or emits a
+ * shape a consumer can't parse), these tests fail — exactly the class of bug
+ * that motivated the contract.
  *
  * The load-bearing assertion is that `name.full` and `name.displayName` are
  * composed from a REAL name (first-only included) even when the source document
- * was loaded WITHOUT Mongoose virtuals (a `.lean()` query), because the
- * `/auth/refresh-all` handler reads users via `.lean()`. When the user has no
+ * was loaded WITHOUT Mongoose virtuals (a `.lean()` query). When the user has no
  * real name (username-only / publicKey-only) `name.displayName` is OMITTED and
  * the client falls back to the handle.
  */
@@ -20,7 +19,6 @@
 import { formatUserResponse } from '../userTransform';
 import {
   userResponseSchema,
-  refreshAllResponseSchema,
   safeParseContract,
   resolveUserId,
 } from '@oxyhq/contracts';
@@ -138,56 +136,5 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(formatUserResponse(null)).toBeNull();
     expect(formatUserResponse(undefined)).toBeNull();
     expect(formatUserResponse({ _id: { toString: () => '' } })).toBeNull();
-  });
-});
-
-describe('synthetic /auth/refresh-all response → refreshAllResponseSchema', () => {
-  it('parses a multi-account response with numeric authuser slots', () => {
-    const firstUser = formatUserResponse(
-      leanDoc('507f1f77bcf86cd799439021', {
-        username: 'first',
-        color: 'green',
-        name: { first: 'First', last: 'User' },
-      })
-    );
-    const secondUser = formatUserResponse(
-      leanDoc('507f1f77bcf86cd799439022', {
-        username: 'second',
-        name: { first: 'Second' },
-      })
-    );
-
-    const response = {
-      accounts: [
-        {
-          authuser: 0,
-          accessToken: 'access-first',
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          sessionId: 'sess-first',
-          user: firstUser,
-        },
-        {
-          authuser: 1,
-          accessToken: 'access-second',
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          sessionId: 'sess-second',
-          user: secondUser,
-        },
-      ],
-    };
-
-    const parsed = safeParseContract(refreshAllResponseSchema, response);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.accounts).toHaveLength(2);
-    expect(parsed?.accounts[0].authuser).toBe(0);
-    expect(parsed?.accounts[0].user.name?.full).toBe('First User');
-    expect(parsed?.accounts[0].user.name?.displayName).toBe('First User');
-    expect(parsed?.accounts[1].authuser).toBe(1);
-    expect(parsed?.accounts[1].user.name?.full).toBe('Second');
-    expect(parsed?.accounts[1].user.name?.displayName).toBe('Second');
-  });
-
-  it('parses an empty accounts array (no signed-in accounts on device)', () => {
-    expect(safeParseContract(refreshAllResponseSchema, { accounts: [] })).not.toBeNull();
   });
 });
