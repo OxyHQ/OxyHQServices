@@ -51,8 +51,7 @@ describe('OxyServices.deviceBoot', () => {
       const sessionArm: WebSessionResult = { reason: 'session', session: BUNDLE, deviceToken: 'device-abcdefghij' };
       makeRequest.mockResolvedValueOnce(sessionArm);
       const result = await oxy.requestWebSession();
-      expect(result.reason).toBe('session');
-      expect(result.reason === 'session' && result.session.sessionId).toBe('sess-1');
+      expect(result).toEqual(sessionArm);
       expect(makeRequest).toHaveBeenCalledWith('POST', '/auth/device/web-session', undefined, { cache: false });
     });
 

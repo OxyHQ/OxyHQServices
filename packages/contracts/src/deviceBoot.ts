@@ -159,27 +159,29 @@ export interface WebSessionNoSession {
 /** The `reason`-discriminated outcome of `POST /auth/device/web-session`. */
 export type WebSessionResult = WebSessionSession | WebSessionNoSession;
 
-// The nested-`session` arm is pinned by an explicit interface + `z.ZodType<>`
-// annotation (same node10 `.d.ts` rationale as `AuthTokenBundle` above — a
-// `z.infer<>` of a nested object schema can degrade to `{}` under a consumer's
-// `moduleResolution: "node"`).
-const webSessionSessionSchema: z.ZodType<WebSessionSession> = z.object({
+// Internal (unexported) arm schemas — PLAIN `z.object` literals (no
+// `z.ZodType<>` annotation) so `z.discriminatedUnion` can introspect the
+// `reason` discriminator. The node10 `.d.ts`-degradation safety comes from the
+// EXPORTED symbols instead: the public types are explicit interfaces
+// (`WebSessionSession` / `WebSessionNoSession` / `WebSessionResult`) and the
+// exported schema is annotated `z.ZodType<WebSessionResult>` below, so the
+// emitted declaration states the shape literally rather than a degradable
+// `z.infer<>` of the nested `session` object.
+const webSessionSessionSchema = z.object({
     reason: z.literal('session'),
     session: authTokenBundleSchema,
     deviceToken: z.string().min(1),
 });
 
-const webSessionNoSessionSchema: z.ZodType<WebSessionNoSession> = z.object({
+const webSessionNoSessionSchema = z.object({
     reason: z.enum(['no_session', 'new_device']),
     deviceToken: z.string().min(1),
 });
 
-// Discriminated on `reason` (the two arms carry disjoint `reason` values, so
-// the union disambiguates unambiguously at parse time). A `z.union` — rather
-// than `z.discriminatedUnion` — to keep the `z.ZodType<WebSessionResult>`
-// annotation that preserves the nested-interface shape, matching the
-// `loginResultSchema` precedent below.
-export const webSessionResultSchema: z.ZodType<WebSessionResult> = z.union([
+// Discriminated on `reason` — a true `discriminatedUnion` (not `z.union`): it
+// dispatches on the discriminator instead of sequentially probing each arm,
+// giving precise per-arm errors.
+export const webSessionResultSchema: z.ZodType<WebSessionResult> = z.discriminatedUnion('reason', [
     webSessionSessionSchema,
     webSessionNoSessionSchema,
 ]);

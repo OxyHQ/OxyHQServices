@@ -154,22 +154,17 @@ describe('webSessionResultSchema (reason-discriminated union)', () => {
 
     it('parses the session arm (bundle nested under `session` + deviceToken)', () => {
         const sessionArm: WebSessionResult = { reason: 'session', session: bundle, deviceToken: A_TOKEN };
-        const parsed = safeParseContract(webSessionResultSchema, sessionArm);
-        expect(parsed).not.toBeNull();
-        expect(parsed && parsed.reason === 'session' && parsed.session.sessionId).toBe('s1');
-        expect(parsed?.deviceToken).toBe(A_TOKEN);
+        expect(safeParseContract(webSessionResultSchema, sessionArm)).toEqual(sessionArm);
     });
 
     it('parses the no_session arm (deviceToken only)', () => {
-        const parsed = safeParseContract(webSessionResultSchema, { reason: 'no_session', deviceToken: A_TOKEN });
-        expect(parsed).not.toBeNull();
-        expect(parsed?.reason).toBe('no_session');
-        expect(parsed && !('session' in parsed)).toBe(true);
+        const noSessionArm: WebSessionResult = { reason: 'no_session', deviceToken: A_TOKEN };
+        expect(safeParseContract(webSessionResultSchema, noSessionArm)).toEqual(noSessionArm);
     });
 
     it('parses the new_device arm', () => {
-        const parsed = safeParseContract(webSessionResultSchema, { reason: 'new_device', deviceToken: A_TOKEN });
-        expect(parsed?.reason).toBe('new_device');
+        const newDeviceArm: WebSessionResult = { reason: 'new_device', deviceToken: A_TOKEN };
+        expect(safeParseContract(webSessionResultSchema, newDeviceArm)).toEqual(newDeviceArm);
     });
 
     it('REJECTS the old bare-bundle shape (no reason wrapper)', () => {
