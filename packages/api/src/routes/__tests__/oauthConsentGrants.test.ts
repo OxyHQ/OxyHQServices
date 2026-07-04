@@ -2,7 +2,7 @@
  * Tests for the OAuth consent decision + connected-apps (grants) endpoints:
  *  - GET    /auth/oauth/consent          → trusted / granted / scope_changed / new
  *  - GET    /auth/grants                 → list connected apps
- *  - DELETE /auth/grants/:applicationId  → revoke (AppGrant + matching FedCMGrant)
+ *  - DELETE /auth/grants/:applicationId  → revoke the AppGrant
  *
  * Mounts the real authRouter and stubs only the data sources. `normaliseOrigin`
  * (utils/origin) is the REAL helper so the FedCM-origin derivation on revoke is
@@ -22,7 +22,6 @@ const mockAppGrantFindOne = jest.fn();
 const mockAppGrantFind = jest.fn();
 const mockAppGrantFindOneAndUpdate = jest.fn();
 const mockAppGrantDeleteOne = jest.fn();
-const mockFedCMGrantDeleteMany = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -100,11 +99,6 @@ jest.mock('../../models/AppGrant', () => ({
   },
 }));
 
-jest.mock('../../models/FedCMGrant', () => ({
-  __esModule: true,
-  FedCMGrant: { deleteMany: mockFedCMGrantDeleteMany },
-  default: { deleteMany: mockFedCMGrantDeleteMany },
-}));
 
 jest.mock('../../models/User', () => ({
   __esModule: true,
@@ -412,15 +406,8 @@ describe('GET /auth/grants', () => {
 describe('DELETE /auth/grants/:applicationId', () => {
   const APP_ID = '507f1f77bcf86cd799439abc';
 
-  it('revokes the AppGrant and matching FedCMGrant origins', async () => {
+  it('revokes the AppGrant for the application', async () => {
     mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 1 });
-    mockApplicationFindById.mockReturnValue({
-      select: () => ({
-        lean: () =>
-          Promise.resolve({ redirectUris: ['https://app.example.com/cb', 'https://app.example.com/cb2'] }),
-      }),
-    });
-    mockFedCMGrantDeleteMany.mockResolvedValue({ deletedCount: 2 });
 
     const res = await requestJson(server, 'DELETE', `/auth/grants/${APP_ID}`, { Authorization: 'Bearer t' });
 
@@ -429,23 +416,15 @@ describe('DELETE /auth/grants/:applicationId', () => {
     expect(mockAppGrantDeleteOne).toHaveBeenCalledWith(
       expect.objectContaining({ applicationId: APP_ID })
     );
-    // Only ONE deduped origin is derived from the two redirectUris.
-    expect(mockFedCMGrantDeleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ clientOrigin: { $in: ['https://app.example.com'] } })
-    );
   });
 
-  it('is idempotent when no grant exists and the app has no redirect origins', async () => {
+  it('is idempotent when no grant exists', async () => {
     mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 0 });
-    mockApplicationFindById.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve(null) }),
-    });
 
     const res = await requestJson(server, 'DELETE', `/auth/grants/${APP_ID}`, { Authorization: 'Bearer t' });
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ revoked: true });
-    expect(mockFedCMGrantDeleteMany).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid applicationId with 400', async () => {

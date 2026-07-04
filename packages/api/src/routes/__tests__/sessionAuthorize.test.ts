@@ -153,11 +153,6 @@ jest.mock('../../models/AppGrant', () => ({
   AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
   default: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
 }));
-jest.mock('../../models/FedCMGrant', () => ({
-  __esModule: true,
-  FedCMGrant: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
-  default: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
-}));
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
 

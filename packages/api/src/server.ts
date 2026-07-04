@@ -30,10 +30,8 @@ import accountRoutes from './routes/accounts';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
-import fedcmRoutes from './routes/fedcm';
-import ssoRoutes, { ssoExchangeCors, ssoEstablishTokenCors } from './routes/sso';
+import authorizedAppsRoutes from './routes/authorizedApps';
 import authLinkingRoutes from './routes/authLinking';
-import fedcmService from './services/fedcm.service';
 import reputationService from './services/reputation.service';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
@@ -189,21 +187,6 @@ app.use((req, res, next) => {
 
 // Performance monitoring middleware (before routes)
 app.use(performanceMiddleware);
-
-// Dedicated CORS for the cross-domain SSO exchange — MUST run before the global
-// CORS middleware so it owns the response for `/sso/exchange`: it echoes the
-// validated APPROVED client origin with `Access-Control-Allow-Credentials:
-// false` (the session token rides in the JSON body, never a cookie) and answers
-// the OPTIONS preflight itself. The global middleware below is credentialed and
-// apex-scoped, which is the wrong policy for this token-in-body endpoint.
-app.use('/sso/exchange', ssoExchangeCors);
-
-// Dedicated CORS for the bearer-authenticated establish-token mint — same
-// before-global-CORS rationale as `/sso/exchange`, but it additionally allows
-// the `Authorization` request header (credentials:false; the bearer is in the
-// header, not a cookie) and echoes any origin on the FedCM approved-clients
-// allow-list (cross-apex RPs the apex-scoped global policy would reject).
-app.use('/sso/establish-token', ssoEstablishTokenCors);
 
 // CORS middleware - reflects request origin with credentials
 app.use(createCorsMiddleware());
@@ -550,8 +533,9 @@ app.use('/accounts', csrfProtection, accountRoutes);
 app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
-app.use('/fedcm', fedcmRoutes);
-app.use('/sso', ssoRoutes); // central cross-domain SSO code store (mint + exchange)
+// Connected-apps management (OAuth AppGrant). Replaces the deleted FedCM
+// authorized-apps surface. Bearer-auth inside the router; own rate limiters.
+app.use('/apps', authorizedAppsRoutes);
 app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before /email
 app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
@@ -736,9 +720,6 @@ if (require.main === module) {
   // This prevents queries from executing before the database is ready
   waitForMongoConnection(30000)
     .then(async () => {
-      // Seed FedCM approved clients (idempotent - only inserts if not exists)
-      await fedcmService.seedApprovedClients();
-
       // Build the dynamic CORS origin snapshot from the Application registry now
       // that Mongo is connected. The registry boot-seeds from the bootstrap-core
       // set synchronously at import, so requests before this resolves are still

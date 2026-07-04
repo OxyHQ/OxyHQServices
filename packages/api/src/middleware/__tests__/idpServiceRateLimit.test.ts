@@ -67,21 +67,18 @@ function close(server: http.Server): Promise<void> {
 }
 
 describe('isIdpServiceToServicePath', () => {
-  it('matches the exact worker READ + mint paths', () => {
-    expect(isIdpServiceToServicePath('/fedcm/clients/approved')).toBe(true);
-    expect(isIdpServiceToServicePath('/fedcm/grants/64f7c2a1b8e9d3f4a1c2b3d4')).toBe(true);
+  it('matches the exact worker READ + device-resolve paths', () => {
     expect(isIdpServiceToServicePath('/session/validate/sess-abc')).toBe(true);
-    expect(isIdpServiceToServicePath('/sso/code')).toBe(true);
+    expect(isIdpServiceToServicePath('/auth/device/resolve')).toBe(true);
   });
 
   it('does NOT match browser-reachable neighbours that must stay under the general budget', () => {
     // Bearer-cross-checked, browser-reachable — MUST NOT be exempted.
     expect(isIdpServiceToServicePath('/session/validate-header/sess-abc')).toBe(false);
-    // Browser-facing FedCM endpoints (their own limiters / general budget apply).
-    expect(isIdpServiceToServicePath('/fedcm/nonce')).toBe(false);
-    expect(isIdpServiceToServicePath('/fedcm/exchange')).toBe(false);
-    // Public SSO redemption is browser-driven.
-    expect(isIdpServiceToServicePath('/sso/exchange')).toBe(false);
+    // Other device-auth endpoints are browser-driven (own limiters / general budget).
+    expect(isIdpServiceToServicePath('/auth/device/bootstrap')).toBe(false);
+    expect(isIdpServiceToServicePath('/auth/device/exchange')).toBe(false);
+    expect(isIdpServiceToServicePath('/auth/refresh-token')).toBe(false);
     // Ordinary user/session traffic.
     expect(isIdpServiceToServicePath('/session/user/64f7c2a1b8e9d3f4a1c2b3d4')).toBe(false);
     expect(isIdpServiceToServicePath('/users/me')).toBe(false);
@@ -105,10 +102,8 @@ describe('general limiter (rl:general) exempts IdP service paths', () => {
 
   it('does not consume / emit the general budget on exempt paths', async () => {
     for (const path of [
-      '/fedcm/clients/approved',
-      '/fedcm/grants/64f7c2a1b8e9d3f4a1c2b3d4',
       '/session/validate/sess-abc',
-      '/sso/code',
+      '/auth/device/resolve',
     ]) {
       const res = await get(server, path);
       expect(res.status).toBe(200);
@@ -142,7 +137,7 @@ describe('idpServiceLimiter (rl:fedcm:service) is the dedicated high-cap limiter
   });
 
   it('enforces a ceiling far above the general per-IP budget', async () => {
-    const res = await get(server, '/fedcm/clients/approved');
+    const res = await get(server, '/session/validate/sess-abc');
     expect(res.status).toBe(200);
     expect(hasRateLimitHeaders(res.headers)).toBe(true);
     // 20x the general 1000 ceiling — sized for shared-egress worker fan-out, a
