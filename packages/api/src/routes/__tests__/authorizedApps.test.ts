@@ -13,7 +13,8 @@ import { AddressInfo } from 'net';
 
 const mockAppGrantFind = jest.fn();
 const mockAppGrantDeleteOne = jest.fn();
-const mockApplicationFindById = jest.fn();
+const mockApplicationFind = jest.fn();
+const mockCredentialFind = jest.fn();
 const mockCredentialFindOne = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
@@ -32,13 +33,19 @@ jest.mock('../../models/AppGrant', () => ({
 }));
 jest.mock('../../models/Application', () => ({
   __esModule: true,
-  Application: { findById: (...a: unknown[]) => mockApplicationFindById(...a) },
-  default: { findById: (...a: unknown[]) => mockApplicationFindById(...a) },
+  Application: { find: (...a: unknown[]) => mockApplicationFind(...a) },
+  default: { find: (...a: unknown[]) => mockApplicationFind(...a) },
 }));
 jest.mock('../../models/ApplicationCredential', () => ({
   __esModule: true,
-  ApplicationCredential: { findOne: (...a: unknown[]) => mockCredentialFindOne(...a) },
-  default: { findOne: (...a: unknown[]) => mockCredentialFindOne(...a) },
+  ApplicationCredential: {
+    find: (...a: unknown[]) => mockCredentialFind(...a),
+    findOne: (...a: unknown[]) => mockCredentialFindOne(...a),
+  },
+  default: {
+    find: (...a: unknown[]) => mockCredentialFind(...a),
+    findOne: (...a: unknown[]) => mockCredentialFindOne(...a),
+  },
 }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
@@ -71,12 +78,12 @@ afterAll((done) => { server.close(done); });
 beforeEach(() => { jest.clearAllMocks(); });
 
 describe('GET /apps/authorized', () => {
-  it('returns the connected apps with clientId/appName/appIconUrl/grantedAt/scopes', async () => {
+  it('returns the connected apps, resolving applications + client_ids in BULK $in queries', async () => {
     mockAppGrantFind.mockReturnValueOnce(sortLean([
       { applicationId: 'app-1', scopes: ['read', 'write'], firstGrantedAt: new Date('2026-01-01T00:00:00.000Z') },
     ]));
-    mockApplicationFindById.mockReturnValueOnce(lean({ name: 'Acme', icon: 'https://cdn/acme.png' }));
-    mockCredentialFindOne.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve({ publicKey: 'oxy_dk_acme' }) }) });
+    mockApplicationFind.mockReturnValueOnce(lean([{ _id: 'app-1', name: 'Acme', icon: 'https://cdn/acme.png' }]));
+    mockCredentialFind.mockReturnValueOnce(lean([{ applicationId: 'app-1', publicKey: 'oxy_dk_acme' }]));
 
     const res = await request(server, 'GET', '/apps/authorized');
 
@@ -88,6 +95,11 @@ describe('GET /apps/authorized', () => {
         ],
       },
     });
+    // BULK — exactly one Application.find + one ApplicationCredential.find, never
+    // a per-grant findById/findOne loop.
+    expect(mockApplicationFind).toHaveBeenCalledTimes(1);
+    expect(mockCredentialFind).toHaveBeenCalledTimes(1);
+    expect(mockApplicationFind).toHaveBeenCalledWith({ _id: { $in: ['app-1'] } });
   });
 
   it('skips a grant whose application or public credential no longer resolves', async () => {
@@ -95,15 +107,24 @@ describe('GET /apps/authorized', () => {
       { applicationId: 'gone', scopes: [], firstGrantedAt: new Date() },
       { applicationId: 'no-cred', scopes: [], firstGrantedAt: new Date() },
     ]));
-    // First app is gone (null); second app resolves but has no public credential.
-    mockApplicationFindById
-      .mockReturnValueOnce(lean(null))
-      .mockReturnValueOnce(lean({ name: 'NoCred' }));
-    mockCredentialFindOne.mockReturnValueOnce({ select: () => ({ lean: () => Promise.resolve(null) }) });
+    // 'gone' is absent from the bulk Application result; 'no-cred' resolves but
+    // has no active public credential in the bulk credential result.
+    mockApplicationFind.mockReturnValueOnce(lean([{ _id: 'no-cred', name: 'NoCred' }]));
+    mockCredentialFind.mockReturnValueOnce(lean([]));
 
     const res = await request(server, 'GET', '/apps/authorized');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: { apps: [] } });
+  });
+
+  it('returns an empty list WITHOUT querying applications when the user has no grants', async () => {
+    mockAppGrantFind.mockReturnValueOnce(sortLean([]));
+
+    const res = await request(server, 'GET', '/apps/authorized');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { apps: [] } });
+    expect(mockApplicationFind).not.toHaveBeenCalled();
+    expect(mockCredentialFind).not.toHaveBeenCalled();
   });
 });
 
