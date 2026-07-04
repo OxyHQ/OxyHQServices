@@ -98,6 +98,40 @@ export const Text = ({
 export const ActivityIndicator = (props: Record<string, unknown>) =>
   React.createElement('span', { ...props, role: 'status' });
 
+export const TextInput = ({
+  value,
+  onChangeText,
+  onSubmitEditing,
+  placeholder,
+  accessibilityLabel,
+  testID,
+}: {
+  value?: string;
+  onChangeText?: (text: string) => void;
+  onSubmitEditing?: () => void;
+  placeholder?: string;
+  accessibilityLabel?: string;
+  testID?: string;
+  [key: string]: unknown;
+}) =>
+  React.createElement('input', {
+    value: value ?? '',
+    placeholder,
+    'aria-label': accessibilityLabel,
+    'data-testid': testID,
+    onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+    onKeyDown: (event: { key: string }) => {
+      if (event.key === 'Enter') onSubmitEditing?.();
+    },
+  });
+
+/** Minimal `AccessibilityInfo` stub — reduced-motion probe resolves false. */
+export const AccessibilityInfo = {
+  isReduceMotionEnabled: () => Promise.resolve(false),
+  addEventListener: () => ({ remove: () => undefined }),
+  announceForAccessibility: () => undefined,
+};
+
 /**
  * Keep only DOM-safe props for the layout-primitive stubs below. RN passes
  * `style` arrays, `hitSlop`/`accessibilityState` objects, `className`, etc. that

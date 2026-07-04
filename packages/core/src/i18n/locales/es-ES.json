@@ -2,6 +2,13 @@
   "signin": {
     "title": "Iniciar sesión",
     "subtitle": "Inicia sesión para continuar",
+    "chooser": {
+      "title": "Elige una cuenta",
+      "subtitle": "Continúa con una de tus cuentas o usa otra.",
+      "signedIn": "Sesión activa",
+      "useAnother": "Usar otra cuenta",
+      "continueAs": "Continuar como {{name}}"
+    },
     "addAccountTitle": "Agregar otra cuenta",
     "addAccountSubtitle": "Inicia sesión con otra cuenta",
     "username": {
