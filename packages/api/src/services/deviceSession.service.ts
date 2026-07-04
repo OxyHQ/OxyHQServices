@@ -3,6 +3,7 @@ import type { DeviceSessionState, SessionAccount } from '@oxyhq/contracts';
 import DeviceSession, { IDeviceSession, IDeviceSessionAccount } from '../models/DeviceSession';
 import sessionService from './session.service';
 import { revokeAllFamiliesBySession } from './refreshToken.service';
+import { revokeDeviceTokens } from './deviceToken.service';
 import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 import { logger } from '../utils/logger';
 
@@ -241,6 +242,28 @@ class DeviceSessionService {
         logger.warn('deviceSession.signout: refresh family revoke failed', { sessionId: a.sessionId, error });
       }
     }
+
+    // Signout-ALL also severs the device's ATTRIBUTION bindings: revoke every
+    // deviceToken issued for this device so a retained token (400-day sliding
+    // TTL) can never later attach a fresh sign-in as active into the now-empty
+    // set. Only on the {all} path — a single-account signout deliberately leaves
+    // deviceTokens alone, since other apps/accounts on the SAME device still
+    // legitimately use theirs to attribute their own sign-ins. Best-effort — a
+    // revoke failure must never block signout.
+    //
+    // We deliberately do NOT clear the `oxy_device` cookie here: device identity
+    // is not an account credential (an empty device set grants NOTHING via
+    // bootstrap — reason resolves to `no_session`), and clearing a cookie via
+    // Set-Cookie on a cross-apex fetch response is 3rd-party-cookie-blocked
+    // anyway. The next bootstrap simply re-uses the same empty device.
+    if ('all' in target) {
+      try {
+        await revokeDeviceTokens(deviceId);
+      } catch (error) {
+        logger.warn('deviceSession.signout: device token revoke failed', { deviceId, error });
+      }
+    }
+
     const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);

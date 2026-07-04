@@ -174,6 +174,14 @@ describe('resolveDeviceToken — lifecycle guards', () => {
     mockFindOne.mockRejectedValueOnce(new Error('db down'));
     expect(await resolveDeviceToken('raw', reqWithOrigin(undefined))).toBeNull();
   });
+
+  it('returns the valid deviceId even when the sliding-expiry bump write fails (best-effort, not the deny path)', async () => {
+    mockFindOne.mockResolvedValueOnce({
+      _id: 'r', revokedAt: null, expiresAt: new Date(Date.now() + 60_000), channel: 'native', origin: NATIVE_ORIGIN, deviceId: 'd-keep',
+    });
+    mockUpdateOne.mockRejectedValueOnce(new Error('transient write failure'));
+    expect(await resolveDeviceToken('raw', reqWithOrigin(undefined))).toEqual({ deviceId: 'd-keep' });
+  });
 });
 
 describe('revokeDeviceTokens', () => {

@@ -32,6 +32,10 @@ const mockRevokeAllFamiliesBySession = jest.fn();
 jest.mock('../refreshToken.service', () => ({
   revokeAllFamiliesBySession: (...a: unknown[]) => mockRevokeAllFamiliesBySession(...a),
 }));
+const mockRevokeDeviceTokens = jest.fn();
+jest.mock('../deviceToken.service', () => ({
+  revokeDeviceTokens: (...a: unknown[]) => mockRevokeDeviceTokens(...a),
+}));
 jest.mock('../oauthCode.service', () => {
   const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
   return {
@@ -594,7 +598,7 @@ describe('addAccount — activate option', () => {
 });
 
 describe('signout — refresh family cascade', () => {
-  it('revokes ALL refresh families for each signed-out session', async () => {
+  it('revokes ALL refresh families for each signed-out session (single-account: deviceTokens untouched)', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
@@ -609,6 +613,30 @@ describe('signout — refresh family cascade', () => {
 
     expect(mockDeactivate).toHaveBeenCalledWith('s1');
     expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
+    // Single-account signout must NOT revoke device tokens — other apps/accounts
+    // on the same device still legitimately use theirs.
+    expect(mockRevokeDeviceTokens).not.toHaveBeenCalled();
+  });
+
+  it('signout-ALL revokes device tokens for the device (after the refresh-family revocation)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 4,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 5,
+    }));
+
+    await deviceSessionService.signout('d1', { all: true });
+
+    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
+    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s2');
+    expect(mockRevokeDeviceTokens).toHaveBeenCalledWith('d1');
   });
 });
 

@@ -114,12 +114,19 @@ export async function resolveDeviceToken(
       if (originHeader && originHeader.length > 0) return null;
     }
 
-    // Slide the expiry and record use. Best-effort — a write failure must not
-    // deny an otherwise-valid attribution.
-    await DeviceToken.updateOne(
-      { _id: stored._id },
-      { $set: { lastUsedAt: new Date(), expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_MS) } }
-    );
+    // Slide the expiry and record use. Best-effort in its OWN try/catch — the
+    // token has already validated, so a transient write failure must NOT fall to
+    // the deny path and return null for an otherwise-valid attribution.
+    try {
+      await DeviceToken.updateOne(
+        { _id: stored._id },
+        { $set: { lastUsedAt: new Date(), expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_MS) } }
+      );
+    } catch (bumpError) {
+      logger.warn('resolveDeviceToken: sliding-expiry bump failed (non-fatal)', {
+        error: bumpError instanceof Error ? bumpError.message : String(bumpError),
+      });
+    }
 
     return { deviceId: stored.deviceId };
   } catch (error) {
