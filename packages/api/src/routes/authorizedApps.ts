@@ -71,20 +71,47 @@ router.get(
       scopes?: string[];
     }> = [];
 
+    if (grants.length === 0) {
+      res.json({ data: { apps } });
+      return;
+    }
+
+    // BULK-resolve the applications + their representative public client_ids in
+    // two `$in` queries (NOT N+1 per grant). `applicationId` is unique per grant
+    // (one grant row per user+application).
+    const applicationIds = grants.map((grant) => grant.applicationId);
+
+    const applications = await Application.find({ _id: { $in: applicationIds } })
+      .select('name icon')
+      .lean();
+    const appById = new Map(applications.map((app) => [app._id.toString(), app]));
+
+    const credentials = await ApplicationCredential.find({
+      applicationId: { $in: applicationIds },
+      type: 'public',
+      status: 'active',
+    })
+      .select('applicationId publicKey')
+      .lean();
+    // First active public credential per application wins (a stable, representative
+    // client_id); later credentials for the same app are ignored.
+    const clientIdByApp = new Map<string, string>();
+    for (const credential of credentials) {
+      const key = credential.applicationId.toString();
+      if (credential.publicKey && !clientIdByApp.has(key)) {
+        clientIdByApp.set(key, credential.publicKey);
+      }
+    }
+
     for (const grant of grants) {
-      const app = await Application.findById(grant.applicationId).select('name icon').lean();
-      if (!app) continue;
-      const credential = await ApplicationCredential.findOne({
-        applicationId: grant.applicationId,
-        type: 'public',
-        status: 'active',
-      })
-        .select('publicKey')
-        .lean();
-      if (!credential?.publicKey) continue;
+      const key = grant.applicationId.toString();
+      const app = appById.get(key);
+      const clientId = clientIdByApp.get(key);
+      // Skip a grant whose app or public credential no longer resolves (orphaned).
+      if (!app || !clientId) continue;
 
       apps.push({
-        clientId: credential.publicKey,
+        clientId,
         appName: app.name,
         ...(typeof app.icon === 'string' && app.icon.length > 0 ? { appIconUrl: app.icon } : {}),
         grantedAt: new Date(grant.firstGrantedAt).toISOString(),
