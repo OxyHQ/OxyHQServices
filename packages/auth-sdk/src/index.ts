@@ -34,7 +34,21 @@ export type {
     WebAuthState,
     WebAuthActions,
     WebOxyContextValue,
+    CommittedSignInSession,
 } from './WebOxyProvider';
+
+// ---------------------------------------------------------------------------
+// In-app "Sign in with Oxy" — headless password/2FA hook + minimal modal
+// ---------------------------------------------------------------------------
+export { useOxySignIn } from './hooks/useOxySignIn';
+export type {
+    UseOxySignInOptions,
+    UseOxySignInResult,
+    OxySignInPhase,
+} from './hooks/useOxySignIn';
+export { OxySignInModal } from './components/OxySignInModal';
+export type { OxySignInModalProps } from './components/OxySignInModal';
+export type { DeviceAccountView } from './session/deviceAccountsProjection';
 
 // ---------------------------------------------------------------------------
 // "Sign in with Oxy" — cross-device QR handoff (Workstream C)
@@ -144,7 +158,7 @@ export type {
 // ---------------------------------------------------------------------------
 // Custom hooks
 // ---------------------------------------------------------------------------
-export { isWebBrowser } from './hooks/useWebSSO';
+export { isWebBrowser } from './utils/isWebBrowser';
 export { useAssets, setOxyAssetInstance } from './hooks/useAssets';
 export { useFileDownloadUrl } from './hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './hooks/useFollow';
