@@ -107,4 +107,18 @@ describe('OxySignInModal — account chooser', () => {
     expect(screen.getByText('Sign in with Oxy')).toBeTruthy();
     expect(screen.queryByText('Choose an account')).toBeNull();
   });
+
+  it('focuses the first account row on open — NOT the header close button', () => {
+    ctx.accounts = [makeAccount(0, 'u1', 'Nate Isern', 'nate'), makeAccount(1, 'u2', 'Bob Doe', 'bob')];
+    ctx.activeAuthuser = 0;
+    render(<OxySignInModal open onClose={() => undefined} />);
+    // Sorted by user id → "Nate Isern" (u1) is the first row.
+    expect(document.activeElement).toBe(screen.getByLabelText('Continue as Nate Isern'));
+  });
+
+  it('focuses the identifier input when opening straight to sign-in', () => {
+    ctx.accounts = [];
+    render(<OxySignInModal open onClose={() => undefined} />);
+    expect(document.activeElement).toBe(screen.getByLabelText('Username or email'));
+  });
 });

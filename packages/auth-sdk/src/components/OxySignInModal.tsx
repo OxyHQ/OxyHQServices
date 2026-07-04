@@ -22,7 +22,7 @@
  * `prefers-color-scheme`.
  */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useOxySignIn } from '../hooks/useOxySignIn';
 import { useCommonsSignIn } from '../hooks/useCommonsSignIn';
 import { useWebOxyOptional } from '../WebOxyProvider';
@@ -206,6 +206,7 @@ function PasswordForm({ onDone, onBack }: { onDone: () => void; onBack?: () => v
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const codeRef = useRef<HTMLInputElement>(null);
 
   // A committed sign-in closes the modal (the provider flips isSignInOpen; this
   // is a belt-and-suspenders for standalone use).
@@ -213,11 +214,18 @@ function PasswordForm({ onDone, onBack }: { onDone: () => void; onBack?: () => v
     if (phase === 'authorized') onDone();
   }, [phase, onDone]);
 
+  // Focus the 2FA input when the flow advances to it — the parent's mount-focus
+  // effect keys on `view` only, so it does not re-fire on this in-view swap.
+  useEffect(() => {
+    if (phase === 'twoFactor') codeRef.current?.focus();
+  }, [phase]);
+
   if (phase === 'twoFactor') {
     return (
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); void submitTwoFactor({ token: code.trim() }); }}>
         <p className="oxysi-sub" style={{ marginTop: 0 }}>Enter the 6-digit code from your authenticator app.</p>
         <input
+          ref={codeRef}
           className="oxysi-input"
           value={code}
           onChange={(e) => setCode(e.target.value)}
@@ -316,8 +324,8 @@ function OxySignInModalContent({ onClose }: { onClose: () => void }) {
   const [pendingAuthuser, setPendingAuthuser] = useState<number | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  const avatarUrlFor = useMemo(
-    () => (account: DeviceAccountView['user']): string | null => {
+  const avatarUrlFor = useCallback(
+    (account: DeviceAccountView['user']): string | null => {
       if (!account?.avatar || !oxyServices) return null;
       try {
         return oxyServices.getFileDownloadUrl(account.avatar) || null;
@@ -328,13 +336,19 @@ function OxySignInModalContent({ onClose }: { onClose: () => void }) {
     [oxyServices],
   );
 
-  // Move focus into the dialog on mount and whenever the view swaps — the
-  // sign-in view leads with its first input, the chooser with its first row.
+  // Move focus onto the intended PRIMARY element on mount and whenever the view
+  // swaps. A comma-separated `querySelector` would return the first match in DOM
+  // order (the header × close button); query the priority target individually
+  // instead — the identifier input in the sign-in view, the first account row in
+  // the chooser — falling back to any focusable.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const selector = view === 'signin' ? `input:not([disabled]), ${FOCUSABLE}` : FOCUSABLE;
-    dialog.querySelector<HTMLElement>(selector)?.focus();
+    const primary =
+      view === 'signin'
+        ? dialog.querySelector<HTMLElement>('input:not([disabled])')
+        : dialog.querySelector<HTMLElement>('.oxysi-row');
+    (primary ?? dialog.querySelector<HTMLElement>(FOCUSABLE))?.focus();
   }, [view]);
 
   // Escape-to-close (the non-modal <dialog open> gets no native cancel) + a
