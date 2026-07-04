@@ -262,18 +262,27 @@ function assertSameSiteApex(req: Request): { ok: true; origin: string } | { ok: 
 
   if (isLoopbackOrigin(origin)) return { ok: true, origin };
 
-  const hostRaw = req.headers.host;
-  if (typeof hostRaw !== 'string' || hostRaw.length === 0) return { ok: false };
+  // Use Express's `req.hostname` — it strips the port and handles IPv6 literals
+  // (`[::1]:3000` → `[::1]`) correctly, unlike a naive `host.split(':')` which
+  // shreds an IPv6 address.
+  const apiHost = req.hostname;
+  if (typeof apiHost !== 'string' || apiHost.length === 0) return { ok: false };
   let originHost: string;
   try {
     originHost = new URL(origin).hostname;
   } catch {
     return { ok: false };
   }
-  const apiApex = registrableApex(hostRaw.split(':')[0]);
+
+  const apiApex = registrableApex(apiHost);
   const originApex = registrableApex(originHost);
-  if (!apiApex || !originApex || apiApex !== originApex) return { ok: false };
-  return { ok: true, origin };
+  if (apiApex && originApex) {
+    // Registrable-domain match (the `*.oxy.so` sibling case).
+    return apiApex === originApex ? { ok: true, origin } : { ok: false };
+  }
+  // No registrable apex (IP literal / single-label host): same-site ONLY on an
+  // exact host match — never treat two different bare hosts as same-site.
+  return originHost.toLowerCase() === apiHost.toLowerCase() ? { ok: true, origin } : { ok: false };
 }
 
 router.post(
@@ -473,26 +482,40 @@ router.post(
       return;
     }
 
-    const accounts: Array<{
+    type ResolvedAccount = {
       user: SerializedUser;
       sessionId: string;
       accessToken: string;
       expiresAt: string;
-    }> = [];
-    for (const account of state.accounts) {
-      const validated = await sessionService.validateSessionById(account.sessionId, true);
-      if (!validated) continue;
-      const tokenResult = await sessionService.getAccessToken(account.sessionId);
-      if (!tokenResult) continue;
-      const user = validated.user ? formatUserResponse(validated.user) : null;
-      if (!user) continue;
-      accounts.push({
-        user,
-        sessionId: account.sessionId,
-        accessToken: tokenResult.accessToken,
-        expiresAt: tokenResult.expiresAt.toISOString(),
-      });
-    }
+    };
+    // Resolve every account in PARALLEL, each isolated in its own try/catch so a
+    // single dead/corrupt session is SKIPPED (returns null) rather than 500-ing
+    // the whole chooser feed.
+    const resolved = await Promise.all(
+      state.accounts.map(async (account): Promise<ResolvedAccount | null> => {
+        try {
+          const validated = await sessionService.validateSessionById(account.sessionId, true);
+          if (!validated) return null;
+          const tokenResult = await sessionService.getAccessToken(account.sessionId);
+          if (!tokenResult) return null;
+          const user = validated.user ? formatUserResponse(validated.user) : null;
+          if (!user) return null;
+          return {
+            user,
+            sessionId: account.sessionId,
+            accessToken: tokenResult.accessToken,
+            expiresAt: tokenResult.expiresAt.toISOString(),
+          };
+        } catch (error) {
+          logger.warn('device resolve: skipping unresolvable account', {
+            sessionId: account.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        }
+      }),
+    );
+    const accounts = resolved.filter((a): a is ResolvedAccount => a !== null);
 
     // The active account survives only if it minted a live token above.
     const activeAlive =

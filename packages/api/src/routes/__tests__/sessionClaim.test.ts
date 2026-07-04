@@ -59,8 +59,7 @@ jest.mock('../../services/session.service', () => ({
 }));
 
 jest.mock('../../services/oauthCode.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const nodeCrypto = require('crypto');
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
   return {
     issueAuthCode: jest.fn(),
     exchangeAuthCode: jest.fn(),

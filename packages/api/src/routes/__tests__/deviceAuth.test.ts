@@ -303,6 +303,23 @@ describe('POST /auth/device/web-session', () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it('allows a single-label host only on EXACT host equality (no registrable apex)', async () => {
+    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'd1', activeAccountId: null, accounts: [] });
+    const res = await request('POST', '/auth/device/web-session', {
+      body: {},
+      headers: { host: 'internal-host', origin: 'https://internal-host', cookie: 'oxy_device=known' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('403s when single-label hosts differ (exact-equality fallback)', async () => {
+    const res = await request('POST', '/auth/device/web-session', {
+      body: {},
+      headers: { host: 'host-a', origin: 'https://host-b' },
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('POST /auth/device/exchange', () => {
@@ -432,5 +449,32 @@ describe('POST /auth/device/resolve', () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]).toMatchObject({ sessionId: 's1', accessToken: 'acc' });
     expect((accounts[0].user as Record<string, unknown>).id).toBe('u1');
+  });
+
+  it('SKIPS a corrupt/dead account (does not 500 the whole feed)', async () => {
+    internalOk = true;
+    mockGetStateByCookieKey.mockResolvedValueOnce({
+      deviceId: 'd1',
+      activeAccountId: 'u2',
+      accounts: [
+        { accountId: 'u1', sessionId: 's-bad' },
+        { accountId: 'u2', sessionId: 's-good' },
+      ],
+    });
+    // First account throws mid-resolve; second resolves cleanly.
+    mockValidateSessionById.mockRejectedValueOnce(new Error('corrupt session'));
+    mockValidateSessionById.mockResolvedValueOnce({ session: {}, user: { _id: 'u2', username: 'good' } });
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'acc2', expiresAt: new Date(Date.now() + 60_000) });
+
+    const res = await request('POST', '/auth/device/resolve', {
+      body: { deviceKey: 'somedevicesecretvalue' },
+      headers: { 'x-oxy-internal': 'secret' },
+    });
+
+    expect(res.status).toBe(200);
+    const accounts = res.body.accounts as Array<Record<string, unknown>>;
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0]).toMatchObject({ sessionId: 's-good', accessToken: 'acc2' });
+    expect(res.body.activeAccountId).toBe('u2');
   });
 });

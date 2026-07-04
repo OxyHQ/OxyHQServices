@@ -65,6 +65,16 @@ export function buildDeviceCookieOptions(): DeviceCookieOptions {
 
 /**
  * (Re-)set the device cookie on the response with the fresh sliding expiry.
+ *
+ * SECURITY NOTE (re: CodeQL "clear text storage of sensitive information"):
+ * `secret` is a random 256-bit, opaque, bearer-equivalent token — NOT user PII.
+ * The cookie IS its transport, hardened via `buildDeviceCookieOptions()`
+ * (HttpOnly so JS can never read it, Secure so it only rides HTTPS, SameSite=Lax).
+ * Server-side it is persisted ONLY as its SHA-256 (`DeviceSession.cookieKeyHash`)
+ * — the raw value is never written to any document, cache, or log, and possessing
+ * the cookie reveals nothing about the deviceId. This is the identical posture as
+ * the first-party `oxy_rt` refresh cookie (`setRefreshCookie`). There is no
+ * cleartext-at-rest to encrypt: the value is already the credential.
  */
 export function setDeviceCookie(res: Response, secret: string): void {
   res.cookie(DEVICE_COOKIE_NAME, secret, buildDeviceCookieOptions());

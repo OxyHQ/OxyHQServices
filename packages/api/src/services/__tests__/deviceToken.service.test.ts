@@ -25,7 +25,9 @@ jest.mock('../../models/DeviceToken', () => ({
   default: {
     updateMany: (...a: unknown[]) => mockUpdateMany(...a),
     create: (...a: unknown[]) => mockCreate(...a),
-    findOne: (...a: unknown[]) => mockFindOne(...a),
+    // resolveDeviceToken reads via `.lean()`; the query returns a lean-shaped
+    // object whose `.lean()` yields whatever `mockFindOne` was staged with.
+    findOne: (...a: unknown[]) => ({ lean: () => mockFindOne(...a) }),
     updateOne: (...a: unknown[]) => mockUpdateOne(...a),
   },
 }));
@@ -37,8 +39,7 @@ jest.mock('../../utils/logger', () => ({
 // Hashing helpers come from oauthCode.service; mock it so the AuthCode model
 // (Schema.Types.ObjectId) is not evaluated under the global mongoose mock.
 jest.mock('../oauthCode.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const nodeCrypto = require('crypto');
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
   return {
     sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
     base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),

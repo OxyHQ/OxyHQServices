@@ -23,7 +23,7 @@
 
 import * as crypto from 'crypto';
 import type { Request } from 'express';
-import DeviceToken, { DeviceTokenChannel } from '../models/DeviceToken';
+import DeviceToken, { DeviceTokenChannel, IDeviceToken } from '../models/DeviceToken';
 import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 import { normaliseOrigin } from '../utils/origin';
 import { logger } from '../utils/logger';
@@ -90,7 +90,9 @@ export async function resolveDeviceToken(
       return null;
     }
     const tokenHash = sha256Hex(rawToken);
-    const stored = await DeviceToken.findOne({ tokenHash });
+    // `.lean()` — the row is only READ (its `_id` is reused for the bump write),
+    // never mutated as a document, so skip the Mongoose hydration overhead.
+    const stored = await DeviceToken.findOne({ tokenHash }).lean<IDeviceToken>();
     if (!stored) return null;
     if (stored.revokedAt) return null;
     if (stored.expiresAt < new Date()) return null;

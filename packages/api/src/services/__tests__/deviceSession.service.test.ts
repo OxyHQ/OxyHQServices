@@ -1,3 +1,5 @@
+import * as nodeCrypto from 'crypto';
+
 const mockFindOne = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 const mockUpdateOne = jest.fn();
@@ -31,8 +33,7 @@ jest.mock('../refreshToken.service', () => ({
   revokeAllFamiliesBySession: (...a: unknown[]) => mockRevokeAllFamiliesBySession(...a),
 }));
 jest.mock('../oauthCode.service', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const nodeCrypto = require('crypto');
+  const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
   return {
     sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
     base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
@@ -649,7 +650,7 @@ describe('ensureDeviceForCookie', () => {
     expect(created.deviceId).toBe(deviceId);
     // The stored cookieKeyHash is the sha256 of the returned secret — not the secret.
     expect(created.cookieKeyHash).toBe(
-      require('crypto').createHash('sha256').update(rawCookieKey).digest('hex'),
+      nodeCrypto.createHash('sha256').update(rawCookieKey).digest('hex'),
     );
     expect(created.cookieKeyHash).not.toBe(rawCookieKey);
   });
