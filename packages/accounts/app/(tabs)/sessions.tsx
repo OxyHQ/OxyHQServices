@@ -4,10 +4,9 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, EmptyStateCard } from '@/components/ui';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
-import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -48,26 +47,26 @@ export default function SessionsScreen() {
     // Handle session removal
     const handleRemoveSession = useCallback(async (sessionId: string, isActive: boolean) => {
         if (isActive) {
-            toast.warning('You cannot remove your current active session. Switch to another session first.');
+            toast.warning(t('sessions.remove.currentWarning'));
             return;
         }
 
         alert(
-            'Remove session',
-            'Are you sure you want to remove this session?',
+            t('sessions.remove.confirmTitle'),
+            t('sessions.remove.confirmMessage'),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                    text: 'Remove',
+                    text: t('common.remove'),
                     style: 'destructive',
                     onPress: async () => {
                         try {
                             setActionLoading(sessionId);
                             await removeSession(sessionId);
-                            toast.success('Session removed');
+                            toast.success(t('sessions.remove.success'));
                         } catch (error) {
                             console.error('Failed to remove session:', error);
-                            toast.error('Failed to remove session. Please try again.');
+                            toast.error(t('sessions.remove.failed'));
                         } finally {
                             setActionLoading(null);
                         }
@@ -75,7 +74,7 @@ export default function SessionsScreen() {
                 },
             ]
         );
-    }, [removeSession, alert]);
+    }, [removeSession, alert, t]);
 
     // Handle session switch
     const handleSwitchSession = useCallback(async (sessionId: string) => {
@@ -84,14 +83,14 @@ export default function SessionsScreen() {
         try {
             setActionLoading(sessionId);
             await switchSession(sessionId);
-            toast.success('Session switched');
+            toast.success(t('sessions.switch.success'));
         } catch (error) {
             console.error('Failed to switch session:', error);
-            toast.error('Failed to switch session. Please try again.');
+            toast.error(t('sessions.switch.failed'));
         } finally {
             setActionLoading(null);
         }
-    }, [switchSession, activeSessionId]);
+    }, [switchSession, activeSessionId, t]);
 
     // Format session items for display
     const sessionItems = useMemo(() => {
@@ -105,15 +104,15 @@ export default function SessionsScreen() {
                 id: session.sessionId,
                 icon: 'devices',
                 iconColor: isActive ? colors.tint : colors.sidebarIconDevices,
-                title: `Session ${session.deviceId?.substring(0, 8) || session.sessionId.substring(0, 8)}`,
+                title: t('sessions.item.title', { id: session.deviceId?.substring(0, 8) || session.sessionId.substring(0, 8) }),
                 subtitle: isActive
-                    ? 'Current session \u2022 ' + formatRelativeTime(session.lastActive, t('common.unknown'))
-                    : 'Last active: ' + formatRelativeTime(session.lastActive, t('common.unknown')),
+                    ? t('sessions.item.currentActive', { time: formatRelativeTime(session.lastActive, t('common.unknown')) })
+                    : t('sessions.item.lastActive', { time: formatRelativeTime(session.lastActive, t('common.unknown')) }),
                 customContent: (
                     <View style={styles.sessionActions}>
                         {isActive && (
                             <View style={[styles.activeBadge, { backgroundColor: colors.tint }]}>
-                                <Text style={[styles.activeBadgeText, { color: '#FFFFFF' }]}>Active</Text>
+                                <Text style={[styles.activeBadgeText, { color: '#FFFFFF' }]}>{t('sessions.item.activeBadge')}</Text>
                             </View>
                         )}
                         {!isActive && (
@@ -158,7 +157,7 @@ export default function SessionsScreen() {
             <ScreenContentWrapper>
                 <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
                     <ActivityIndicator size="large" color={colors.tint} />
-                    <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading sessions...</ThemedText>
+                    <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('sessions.loading')}</ThemedText>
                 </View>
             </ScreenContentWrapper>
         );
@@ -168,14 +167,14 @@ export default function SessionsScreen() {
         <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.content}>
-                    <ScreenHeader title="Login Sessions" subtitle="These are your active login sessions across devices. Each session represents a signed-in device." />
+                    <ScreenHeader title={t('sessions.title')} subtitle={t('sessions.subtitle')} />
 
                     {sessionItems.length === 0 ? (
-                        <View style={styles.placeholder}>
-                            <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
-                                No active sessions found.
-                            </ThemedText>
-                        </View>
+                        <EmptyStateCard
+                            icon="devices"
+                            title={t('sessions.empty.title')}
+                            subtitle={t('sessions.empty.subtitle')}
+                        />
                     ) : (
                         <AccountCard>
                             <GroupedSection items={sessionItems} />
@@ -189,8 +188,8 @@ export default function SessionsScreen() {
                                 id: 'managed-accounts-link',
                                 icon: 'account-group-outline',
                                 iconColor: colors.sidebarIconSharing,
-                                title: 'Looking for your accounts?',
-                                subtitle: 'Go to Accounts to manage organizations, projects, and bots',
+                                title: t('sessions.managedLink.title'),
+                                subtitle: t('sessions.managedLink.subtitle'),
                                 onPress: handleGoToManagedAccounts,
                                 showChevron: true,
                             }]} />
@@ -223,16 +222,6 @@ const styles = StyleSheet.create({
     subtitle: {
         fontSize: 16,
         opacity: 0.6,
-    },
-    placeholder: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-    },
-    placeholderText: {
-        fontSize: 16,
-        textAlign: 'center',
     },
     loadingContainer: {
         flex: 1,

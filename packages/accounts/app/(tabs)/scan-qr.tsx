@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,11 @@ import {
   StyleSheet,
   Linking,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { useOxy } from '@oxyhq/services';
 import { alert } from '@oxyhq/bloom';
 import { useTranslation } from '@/lib/i18n';
 
@@ -27,12 +25,9 @@ export default function ScanQRScreen() {
   const router = useRouter();
   const colors = useColors();
   const { t } = useTranslation();
-  const { hasIdentity, isLoading, isStorageReady } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
-  const [checkingIdentity, setCheckingIdentity] = useState(true);
-  const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
 
   // Handle barcode scan
   const handleBarCodeScanned = useCallback(({ data }: BarcodeScanningResult) => {
@@ -112,94 +107,6 @@ export default function ScanQRScreen() {
       Linking.openSettings();
     }
   }, []);
-
-  // Check identity on mount
-  const checkIdentity = useCallback(async () => {
-    try {
-      const exists = await hasIdentity();
-      setHasExistingIdentity(exists);
-
-      if (!exists) {
-        // No identity found - handle based on platform
-        if (Platform.OS !== 'web') {
-          // Native: redirect to auth flow
-          router.replace('/(auth)');
-        }
-        // Web: will show message below
-      }
-    } catch (err) {
-      console.error('Error checking identity:', err);
-    } finally {
-      setCheckingIdentity(false);
-    }
-  }, [hasIdentity, router]);
-
-  useEffect(() => {
-    // Wait for storage to be ready before checking identity
-    if (isStorageReady) {
-      checkIdentity();
-    } else {
-      // If storage isn't ready after a reasonable time, stop checking to avoid infinite loading
-      const timeout = setTimeout(() => {
-        console.warn('Storage not ready after timeout, stopping check');
-        setCheckingIdentity(false);
-      }, 3000); // 3 second timeout
-
-      return () => clearTimeout(timeout);
-    }
-  }, [isStorageReady, checkIdentity]);
-
-  // Show loading state while checking identity
-  if (checkingIdentity || isLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
-          {t('scanQr.checkingIdentity')}
-        </Text>
-      </View>
-    );
-  }
-
-  // No identity - show platform-specific message
-  if (!hasExistingIdentity) {
-    if (Platform.OS === 'web') {
-      // Web: show message that identity creation is native-only
-      return (
-        <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
-          <MaterialCommunityIcons
-            name="qrcode-scan"
-            size={64}
-            color={colors.textSecondary}
-            style={styles.icon}
-          />
-          <Text style={[styles.title, { color: colors.text }]}>
-            {t('scanQr.identityRequiredTitle')}
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            {t('scanQr.identityRequiredBody')}
-          </Text>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.tint, marginTop: 24 }]}
-            onPress={handleClose}
-            accessibilityRole="button"
-            accessibilityLabel={t('scanQr.a11y.goBack')}
-          >
-            <Text style={styles.buttonText}>{t('scanQr.goBack')}</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    // Native: should have redirected, but show fallback just in case
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
-          {t('scanQr.redirecting')}
-        </Text>
-      </View>
-    );
-  }
 
   // Permission not determined yet
   if (!permission) {

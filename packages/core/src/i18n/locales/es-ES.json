@@ -152,6 +152,7 @@
   "editProfile": {
     "title": "Editar perfil",
     "subtitle": "Gestiona tu perfil y preferencias",
+    "notSet": "Sin definir",
     "sections": {
       "profilePicture": "Foto de perfil",
       "basicInfo": "Información básica",
@@ -160,6 +161,9 @@
       "security": "Seguridad"
     },
     "items": {
+      "avatar": {
+        "subtitle": "Actualiza tu foto de perfil"
+      },
       "displayName": {
         "title": "Nombre para mostrar",
         "subtitle": "Así aparecerá tu nombre para los demás",
@@ -167,7 +171,8 @@
         "firstName": "Nombre",
         "firstNamePlaceholder": "Introduce tu nombre",
         "lastName": "Apellido",
-        "lastNamePlaceholder": "Introduce tu apellido (opcional)"
+        "lastNamePlaceholder": "Introduce tu apellido (opcional)",
+        "invalidChars": "Usa solo letras y espacios"
       },
       "username": {
         "title": "Usuario",

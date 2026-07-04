@@ -7,6 +7,7 @@ import {
   isValidEmail,
   isValidUsername,
   isValidPassword,
+  isValidDisplayName,
   isValidUUID,
   isValidDate,
   isValidFileSize,
@@ -136,6 +137,35 @@ describe('Validation Utils', () => {
       expect(isValidPassword('')).toBe(false);
       expect(isValidPassword('short')).toBe(false); // too short
       expect(isValidPassword('1234567')).toBe(false); // too short
+    });
+  });
+
+  describe('isValidDisplayName', () => {
+    it('should return true for clean names (letters, spaces, apostrophe)', () => {
+      expect(isValidDisplayName("Renée O'Brien")).toBe(true);
+      expect(isValidDisplayName('Ada Lovelace')).toBe(true);
+      expect(isValidDisplayName('山田太郎')).toBe(true);
+      expect(isValidDisplayName('')).toBe(true); // empty is valid; non-empty enforced elsewhere
+    });
+
+    it('should return false for emoji, symbols, digits, and punctuation', () => {
+      expect(isValidDisplayName('nixCraft \u{1f427}')).toBe(false); // penguin emoji
+      expect(isValidDisplayName('Agent007')).toBe(false);
+      expect(isValidDisplayName('Jean-Luc')).toBe(false);
+      expect(isValidDisplayName('J.R.')).toBe(false);
+    });
+
+    it('should return false for control whitespace (tab/newline/CR)', () => {
+      // \p{Zs} (space separators only) rejects layout-breaking / multi-line
+      // spoofing whitespace that \s would have admitted.
+      expect(isValidDisplayName('Ada\tLovelace')).toBe(false);
+      expect(isValidDisplayName('Ada\nLovelace')).toBe(false);
+      expect(isValidDisplayName('Ada\rLovelace')).toBe(false);
+    });
+
+    it('should return true for Unicode space separators', () => {
+      expect(isValidDisplayName('Ada Lovelace')).toBe(true); // NBSP
+      expect(isValidDisplayName('山田　太郎')).toBe(true); // ideographic space
     });
   });
 

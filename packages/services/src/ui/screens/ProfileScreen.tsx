@@ -178,6 +178,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     const displayName = profile ? getAccountDisplayName(profile, locale) : username || '';
 
+    // The singular `location` field was removed from the User contract; derive
+    // the primary place from the `locations` list instead. `locations` is only
+    // reachable through the User index signature (typed `unknown`), so narrow it
+    // defensively before rendering the chip.
+    const primaryLocation = ((): string | undefined => {
+        const locations = profile?.locations;
+        const first: unknown = Array.isArray(locations) ? locations[0] : undefined;
+        if (first && typeof first === 'object' && 'name' in first && typeof first.name === 'string') {
+            return first.name || undefined;
+        }
+        return undefined;
+    })();
+
     return (
         <View style={styles.container} className="bg-bg">
             <ScrollView style={styles.flex} contentContainerStyle={styles.scrollContainer}>
@@ -238,10 +251,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             showChevron={false}
                         />
                     )}
-                    {profile?.location && (
+                    {primaryLocation && (
                         <SettingsListItem
                             icon={<Ionicons name="location-outline" size={INFO_ICON_SIZE} color={bloomTheme.colors.textSecondary} />}
-                            title={profile.location}
+                            title={primaryLocation}
                             showChevron={false}
                         />
                     )}
