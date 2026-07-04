@@ -31,17 +31,6 @@ export const CENTRAL_IDP_APEX = 'oxy.so';
 /**
  * The canonical central Identity Provider origin for the Oxy ecosystem.
  * No trailing slash. Derived from {@link CENTRAL_IDP_APEX} so the apex and the
- * full origin never drift apart.
+ * full origin never drift apart. The IdP worker imports it to brand assertions.
  */
 export const CENTRAL_AUTH_URL = `https://auth.${CENTRAL_IDP_APEX}`;
-
-/**
- * Resolve the central IdP origin, honouring an explicit override.
- *
- * @param explicit - A caller-supplied auth web URL, or `undefined`/empty to use
- *   the central default. An explicit non-empty value always wins.
- * @returns The explicit value when provided, otherwise {@link CENTRAL_AUTH_URL}.
- */
-export function resolveCentralAuthUrl(explicit?: string): string {
-  return explicit ?? CENTRAL_AUTH_URL;
-}

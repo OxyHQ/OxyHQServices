@@ -98,3 +98,24 @@ export function setPlatformOS(os: PlatformOS): void {
   (globalThis as any).__REACT_NATIVE_PLATFORM__ = os;
 }
 
+/**
+ * True only in a real web browser (a DOM is present), false on React Native
+ * and Node/SSR.
+ *
+ * Native defines a global `window` but no `document`, so the DOM probe — not a
+ * bare `window` check — is the reliable discriminator. This is the single
+ * source of truth consumed by `@oxyhq/services` and `@oxyhq/auth` (both dropped
+ * their local copies), so every consumer shares the exact same predicate.
+ *
+ * NOTE: this is a live runtime probe (not the cached `getPlatformOS()` verdict)
+ * because it must reflect the actual DOM availability at call time in the
+ * consumer's bundle.
+ */
+export function isWebBrowser(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    typeof document.documentElement !== 'undefined'
+  );
+}
+

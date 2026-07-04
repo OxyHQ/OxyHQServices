@@ -4,7 +4,6 @@
  */
 
 import { translate } from '../i18n';
-import type { RefreshAllAccount } from '../models/interfaces';
 
 export interface QuickAccount {
     sessionId: string;
@@ -176,67 +175,6 @@ export const createQuickAccount = (
         avatar,
         avatarUrl,
     };
-};
-
-/**
- * Merge a fresh `/auth/refresh-all` snapshot into an existing QuickAccount
- * list, preserving any cached fields (`avatarUrl`) for slots that didn't
- * change. The fresh response is canonical: the resulting list contains EXACTLY
- * the slots present in `fresh`, sorted by `authuser` ascending. Stale stored
- * accounts that no longer appear in `fresh` are dropped (the server already
- * authoritatively cleared the corresponding cookie).
- *
- * @param stored Previously persisted QuickAccount list (any order).
- * @param fresh Server's authoritative refresh-all response.
- * @returns Canonical merged list, sorted by `authuser` asc.
- */
-export const mergeAccountsFromRefreshAll = (
-    stored: QuickAccount[] | undefined,
-    fresh: RefreshAllAccount[],
-): QuickAccount[] => {
-    const storedByAuthuser = new Map<number, QuickAccount>();
-    if (stored) {
-        for (const account of stored) {
-            if (typeof account.authuser === 'number') {
-                storedByAuthuser.set(account.authuser, account);
-            }
-        }
-    }
-
-    const merged: QuickAccount[] = fresh.map((entry) => {
-        const previous = storedByAuthuser.get(entry.authuser);
-        // Preserve any previously cached identity for a slot that arrives
-        // without a user shape rather than overwriting it with blanks, and let
-        // AuthManager's getCurrentUser() hydration refresh it on the next
-        // snapshot.
-        const wireUser = entry.user;
-        const username = wireUser?.username ?? previous?.username ?? '';
-        const displayName = getAccountDisplayName({
-            name: wireUser?.name,
-            username,
-        });
-        const avatar = wireUser?.avatar ?? previous?.avatar ?? undefined;
-        const avatarUrl =
-            previous && previous.avatar === avatar ? previous.avatarUrl : undefined;
-        return {
-            sessionId: entry.sessionId,
-            userId: wireUser?.id ?? previous?.userId,
-            username,
-            displayName,
-            avatar,
-            avatarUrl,
-            authuser: entry.authuser,
-            color: wireUser?.color ?? previous?.color ?? null,
-        };
-    });
-
-    merged.sort((a, b) => {
-        const aIdx = a.authuser ?? Number.POSITIVE_INFINITY;
-        const bIdx = b.authuser ?? Number.POSITIVE_INFINITY;
-        return aIdx - bIdx;
-    });
-
-    return merged;
 };
 
 /**

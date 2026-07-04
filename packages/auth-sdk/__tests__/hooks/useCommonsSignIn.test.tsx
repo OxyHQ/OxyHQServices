@@ -9,20 +9,10 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { OxyServices } from '@oxyhq/core';
-import { establishIdpSessionAfterClaim } from '@oxyhq/core';
 import {
   useCommonsSignIn,
   type CommonsClaimResult,
 } from '../../src/hooks/useCommonsSignIn';
-
-// The post-claim durable-session establish hop is the SHARED core primitive.
-// Mock it so the QR flow does not attempt a real top-level navigation, and so we
-// can assert it fires exactly once after a successful claim+commit.
-jest.mock('@oxyhq/core', () => ({
-  ...jest.requireActual('@oxyhq/core'),
-  establishIdpSessionAfterClaim: jest.fn(async () => true),
-}));
-const mockEstablish = establishIdpSessionAfterClaim as jest.Mock;
 
 // Stub `qrcode` so the hook renders a deterministic data URL without a canvas.
 jest.mock(
@@ -80,10 +70,6 @@ function renderCommons(services: StubServices, onAuthenticated?: jest.Mock, onEr
 }
 
 describe('useCommonsSignIn', () => {
-  beforeEach(() => {
-    mockEstablish.mockClear();
-  });
-
   it('starts a session, renders the QR, polls, claims, and commits', async () => {
     // Stay `pending` until we flip `approved`, so the transient `waiting` phase
     // is observable before approval drives the flow to completion.
@@ -117,7 +103,7 @@ describe('useCommonsSignIn', () => {
     expect(result.current.isActive).toBe(false);
   });
 
-  it('fires the shared durable-session establish hop once, after the claim commits', async () => {
+  it('commits the claim with no post-claim IdP establish hop (device-first persists locally)', async () => {
     let approved = false;
     const services = makeServices({
       pollCommonsSignIn: jest.fn(async () =>
@@ -126,7 +112,6 @@ describe('useCommonsSignIn', () => {
     });
     const order: string[] = [];
     const onAuthenticated = jest.fn(async () => { order.push('commit'); });
-    mockEstablish.mockImplementation(async () => { order.push('establish'); return true; });
 
     const { result } = renderCommons(services, onAuthenticated);
     act(() => result.current.start());
@@ -134,20 +119,20 @@ describe('useCommonsSignIn', () => {
     act(() => { approved = true; });
     await waitFor(() => expect(result.current.phase).toBe('authorized'));
 
-    // Hop fired exactly once, AFTER the commit, driven by the same client.
-    expect(mockEstablish).toHaveBeenCalledTimes(1);
-    expect(mockEstablish).toHaveBeenCalledWith(services, {});
-    expect(order).toEqual(['commit', 'establish']);
+    // The claim commits and nothing runs after it — the legacy establish hop is gone.
+    expect(order).toEqual(['commit']);
+    expect(services.claimSessionByToken).toHaveBeenCalledWith('secret-token');
   });
 
-  it('does not fire the establish hop when the flow expires before a claim', async () => {
+  it('does not commit when the flow expires before a claim', async () => {
+    const onAuthenticated = jest.fn(async () => undefined);
     const services = makeServices({
       pollCommonsSignIn: jest.fn(async () => ({ authorized: false, status: 'expired' })),
     });
-    const { result } = renderCommons(services);
+    const { result } = renderCommons(services, onAuthenticated);
     act(() => result.current.start());
     await waitFor(() => expect(result.current.phase).toBe('expired'));
-    expect(mockEstablish).not.toHaveBeenCalled();
+    expect(onAuthenticated).not.toHaveBeenCalled();
   });
 
   it('moves to `expired` when the server reports the session expired', async () => {

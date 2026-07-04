@@ -8,10 +8,6 @@ import type { OxyConfig as OxyConfigBase, ApiError, User } from './models/interf
 import { handleHttpError } from './utils/errorUtils';
 import { HttpService, type AuthRefreshReason, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
-import { resolveCentralAuthUrl } from './utils/authWebUrl';
-import { isWeb } from './utils/platform';
-import { registrableApex } from './utils/fapiAutoDetect';
-import { logger } from './utils/loggerUtils';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
@@ -44,23 +40,15 @@ export class OxyServicesBase {
       throw new Error('OxyConfig is required');
     }
 
-    // Default `authWebUrl` to the CENTRAL IdP (`auth.oxy.so`) when the caller
-    // did not pin it explicitly. TRUE central cross-domain SSO (Google/Meta/
-    // Clerk style) routes every RP through the one central IdP — it owns the
-    // host-only `fedcm_session` cookie and the central session store — so the
-    // SDK no longer derives a per-apex `auth.<rp-apex>` IdP by default.
-    // `autoDetectAuthWebUrl` is still exported for any call site that opts into
-    // per-apex resolution, but it is NOT the constructor default anymore.
-    // An explicit `authWebUrl` always wins (we only fill it when absent).
-    const resolvedConfig: OxyConfig = config.authWebUrl
-      ? config
-      : { ...config, authWebUrl: resolveCentralAuthUrl(config.authWebUrl) };
-
-    this.config = resolvedConfig;
-    this.cloudURL = resolvedConfig.cloudURL || 'https://cloud.oxy.so';
+    // `authWebUrl` is a plain optional config value now (used only for building
+    // third-party "Sign in with Oxy" OAuth links). The SDK no longer derives or
+    // defaults an IdP host — the device-first cold boot restores sessions from
+    // the persisted refresh store, not an `auth.<apex>` bounce.
+    this.config = config;
+    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
 
     // Initialize unified HTTP service (handles auth, caching, deduplication, queuing, retry)
-    this.httpService = new HttpService(resolvedConfig);
+    this.httpService = new HttpService(config);
   }
 
   // Test-only utility to reset tokens on this instance between jest tests
@@ -311,82 +299,6 @@ export class OxyServicesBase {
    */
   public getAccessToken(): string | null {
     return this.httpService.getAccessToken();
-  }
-
-  /**
-   * Register the CURRENTLY-ACTIVE session in the device's first-party
-   * multi-account refresh-cookie set by calling `POST /auth/session`.
-   *
-   * This is the single, shared primitive every web primary-session commit and the
-   * account switch use to plant their `oxy_rt_<authuser>` slot. It MUST be a
-   * dedicated call to `/auth/session` rather than relying on whichever endpoint
-   * established the session: that endpoint is frequently OUTSIDE the cookie's
-   * `Path=/auth` scope (`/accounts/:id/switch`) or is a cross-origin/credential-
-   * less restore (`/sso/exchange`, the IdP `/auth/silent` postMessage) that cannot
-   * set an `api.oxy.so` cookie at all. `/auth/session` runs where the device's
-   * existing slots ARE visible, so the server resolves this user's slot (reusing an
-   * existing one or allocating a new one) without clobbering a sibling account,
-   * mints a fresh access token bound to the same session, and returns the resolved
-   * `authuser`.
-   *
-   * Behaviour:
-   * - Requires a planted bearer (the caller must have already installed the
-   *   session's access token); `/auth/session` derives the session from it.
-   * - On success re-plants the rotated access token (so the active token matches
-   *   the freshly-rotated cookie) and returns the device `authuser` slot.
-   * - WEB-ONLY: on native there are no first-party refresh cookies → returns
-   *   `null`.
-   * - FIRST-PARTY-ONLY: the cookie is host-only on the API host with
-   *   `SameSite=Lax`, so it only sticks when the page is SAME-SITE (same
-   *   registrable apex) as the API. On a cross-apex RP (`mention.earth` calling
-   *   `api.oxy.so`) the browser rejects the `Set-Cookie` as a third-party cookie,
-   *   so a returned slot would be a phantom never enumerated by `refresh-all`.
-   *   Those RPs durably restore via the per-apex `/auth/silent` iframe + `/sso`
-   *   bounce, NOT this device set → returns `null` without calling the API.
-   * - BEST-EFFORT: a failure (e.g. transient network) never throws — the session
-   *   stays active in-memory; only its reload durability via the device set is at
-   *   risk. The caller treats `null` as "not registered in the device set".
-   *
-   * @returns The resolved device `authuser` slot, or `null` on native / cross-apex
-   *   / failure.
-   */
-  public async establishDeviceRefreshSlot(): Promise<number | null> {
-    if (!isWeb()) {
-      return null;
-    }
-    if (typeof window !== 'undefined' && window.location?.hostname) {
-      const pageApex = registrableApex(window.location.hostname);
-      let apiApex: string | null = null;
-      try {
-        apiApex = registrableApex(new URL(this.getBaseURL()).hostname);
-      } catch {
-        apiApex = null;
-      }
-      if (!pageApex || !apiApex || pageApex !== apiApex) {
-        return null;
-      }
-    }
-    try {
-      const established = await this.makeRequest<{ accessToken?: string; authuser?: number }>(
-        'POST',
-        '/auth/session',
-        undefined,
-        { cache: false },
-      );
-      // `/auth/session` mints a fresh access token off the same session; re-plant
-      // it so the active token matches the rotated cookie.
-      if (established?.accessToken) {
-        this.setTokens(established.accessToken);
-      }
-      return typeof established?.authuser === 'number' ? established.authuser : null;
-    } catch (error) {
-      logger.warn(
-        '[OxyServices] Failed to establish device refresh cookie via POST /auth/session; the session is active in-session but may not survive a reload as part of the device account set',
-        { component: 'OxyServices', method: 'establishDeviceRefreshSlot' },
-        error,
-      );
-      return null;
-    }
   }
 
   /**
