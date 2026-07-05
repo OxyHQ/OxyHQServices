@@ -1909,5 +1909,44 @@
       "earlyAdopter": "Early Adopter",
       "earlyAdopterDesc": "Been part of the community from the start"
     }
+  },
+  "consent": {
+    "title": "Continue to {{app}}",
+    "subtitle": "Use your Oxy account to sign in to {{app}}. Review what this connection means before you continue.",
+    "provenance": {
+      "title": "Who is requesting access",
+      "official": "Official Oxy application",
+      "developer": "Published by {{developer}}",
+      "thirdParty": "Third-party application"
+    },
+    "permissions": {
+      "title": "Permissions requested",
+      "basic": "Sign you in and read your basic profile"
+    },
+    "scopes": {
+      "openid": "Confirm your identity",
+      "profile": "Read your basic profile",
+      "email": "Read your email address",
+      "offlineAccess": "Keep you signed in when you're away",
+      "userRead": "Read your basic profile",
+      "filesRead": "Read your files",
+      "filesWrite": "Upload and modify your files",
+      "filesDelete": "Delete your files",
+      "webhooksReceive": "Receive webhooks",
+      "chatCompletions": "Use AI chat on your behalf",
+      "modelsRead": "List available AI models",
+      "federationWrite": "Act across federated services"
+    },
+    "account": {
+      "title": "Signing in as"
+    },
+    "links": {
+      "website": "Website",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service"
+    },
+    "allow": "Continue to {{app}}",
+    "deny": "Cancel",
+    "disclaimer": "By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings."
   }
 }

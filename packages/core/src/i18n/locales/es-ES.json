@@ -1909,5 +1909,44 @@
       "earlyAdopter": "Pionero",
       "earlyAdopterDesc": "Has formado parte de la comunidad desde el principio"
     }
+  },
+  "consent": {
+    "title": "Continuar a {{app}}",
+    "subtitle": "Usa tu cuenta de Oxy para iniciar sesión en {{app}}. Revisa qué implica esta conexión antes de continuar.",
+    "provenance": {
+      "title": "Quién solicita acceso",
+      "official": "Aplicación oficial de Oxy",
+      "developer": "Publicada por {{developer}}",
+      "thirdParty": "Aplicación de terceros"
+    },
+    "permissions": {
+      "title": "Permisos solicitados",
+      "basic": "Iniciar sesión y leer tu perfil básico"
+    },
+    "scopes": {
+      "openid": "Confirmar tu identidad",
+      "profile": "Leer tu perfil básico",
+      "email": "Leer tu dirección de correo",
+      "offlineAccess": "Mantener tu sesión iniciada cuando no estés",
+      "userRead": "Leer tu perfil básico",
+      "filesRead": "Leer tus archivos",
+      "filesWrite": "Subir y modificar tus archivos",
+      "filesDelete": "Eliminar tus archivos",
+      "webhooksReceive": "Recibir webhooks",
+      "chatCompletions": "Usar el chat con IA en tu nombre",
+      "modelsRead": "Ver los modelos de IA disponibles",
+      "federationWrite": "Actuar en servicios federados"
+    },
+    "account": {
+      "title": "Iniciando sesión como"
+    },
+    "links": {
+      "website": "Sitio web",
+      "privacy": "Política de privacidad",
+      "terms": "Términos del servicio"
+    },
+    "allow": "Continuar a {{app}}",
+    "deny": "Cancelar",
+    "disclaimer": "Al continuar, {{app}} podrá iniciar sesión con tu cuenta de Oxy. Puedes gestionar las apps conectadas cuando quieras en los ajustes de tu cuenta de Oxy."
   }
 }
