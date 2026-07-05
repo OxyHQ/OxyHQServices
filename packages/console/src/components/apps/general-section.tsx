@@ -99,8 +99,8 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           description: description.trim() || undefined,
           websiteUrl: websiteUrl.trim() || undefined,
           // Empty string clears the stored legal URL server-side.
-          privacyPolicyUrl: privacyPolicyUrl.trim() || undefined,
-          termsUrl: termsUrl.trim() || undefined,
+          privacyPolicyUrl: privacyPolicyUrl.trim(),
+          termsUrl: termsUrl.trim(),
           // Empty string clears the logo. Strip credentials defensively before
           // saving because application metadata can be exposed publicly.
           icon: stripSensitiveImageUrlQueryParams(icon),
