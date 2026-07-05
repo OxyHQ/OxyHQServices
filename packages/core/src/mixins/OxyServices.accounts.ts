@@ -284,6 +284,10 @@ export interface Application {
   name: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL, rendered as a legal link on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL, rendered as a legal link on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   type: ApplicationType;
   status: ApplicationStatus;
@@ -342,6 +346,10 @@ export interface CreateApplicationInput {
   name: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL (absolute `https://`). Shown on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL (absolute `https://`). Shown on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   redirectUris?: string[];
   scopes?: string[];
@@ -357,6 +365,10 @@ export interface UpdateApplicationInput {
   name?: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL (absolute `https://`, or `''` to clear). Shown on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL (absolute `https://`, or `''` to clear). Shown on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   redirectUris?: string[];
   scopes?: string[];

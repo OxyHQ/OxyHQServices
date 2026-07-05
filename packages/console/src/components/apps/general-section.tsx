@@ -52,6 +52,8 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
   const [name, setName] = useState(application.name);
   const [description, setDescription] = useState(application.description ?? '');
   const [websiteUrl, setWebsiteUrl] = useState(application.websiteUrl ?? '');
+  const [privacyPolicyUrl, setPrivacyPolicyUrl] = useState(application.privacyPolicyUrl ?? '');
+  const [termsUrl, setTermsUrl] = useState(application.termsUrl ?? '');
   const [icon, setIcon] = useState(application.icon ?? '');
   const [redirectUris, setRedirectUris] = useState<string[]>(application.redirectUris);
   const [newRedirectUri, setNewRedirectUri] = useState('');
@@ -61,6 +63,8 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
     name !== application.name ||
     description !== (application.description ?? '') ||
     websiteUrl !== (application.websiteUrl ?? '') ||
+    privacyPolicyUrl !== (application.privacyPolicyUrl ?? '') ||
+    termsUrl !== (application.termsUrl ?? '') ||
     icon !== (application.icon ?? '') ||
     !arraysEqual(redirectUris, application.redirectUris);
 
@@ -94,6 +98,9 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           name: name.trim(),
           description: description.trim() || undefined,
           websiteUrl: websiteUrl.trim() || undefined,
+          // Empty string clears the stored legal URL server-side.
+          privacyPolicyUrl: privacyPolicyUrl.trim() || undefined,
+          termsUrl: termsUrl.trim() || undefined,
           // Empty string clears the logo. Strip credentials defensively before
           // saving because application metadata can be exposed publicly.
           icon: stripSensitiveImageUrlQueryParams(icon),
@@ -164,6 +171,34 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
             value={websiteUrl}
             onChange={(e) => setWebsiteUrl(e.target.value)}
             placeholder="https://example.com"
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="app-privacy-policy" className="text-sm">
+            Privacy policy URL
+          </Label>
+          <Input
+            id="app-privacy-policy"
+            type="url"
+            value={privacyPolicyUrl}
+            onChange={(e) => setPrivacyPolicyUrl(e.target.value)}
+            placeholder="https://example.com/privacy"
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="app-terms" className="text-sm">
+            Terms of service URL
+          </Label>
+          <Input
+            id="app-terms"
+            type="url"
+            value={termsUrl}
+            onChange={(e) => setTermsUrl(e.target.value)}
+            placeholder="https://example.com/terms"
             disabled={!canEdit}
           />
         </div>

@@ -22,6 +22,17 @@ export const periodQuerySchema = z.object({
 });
 
 const websiteUrlSchema = z.string().url().optional().or(z.literal(''));
+/**
+ * Public legal URL (privacy policy / terms of service) shown on the OAuth
+ * consent screen. Must be an absolute `https://` URL. An empty string clears the
+ * stored value, mirroring `websiteUrlSchema`.
+ */
+const legalUrlSchema = z
+  .string()
+  .url()
+  .startsWith('https://', 'URL must use https')
+  .optional()
+  .or(z.literal(''));
 const redirectUrisSchema = z.array(z.string().url()).optional();
 const appScopesSchema = z.array(z.enum(APPLICATION_SCOPES)).optional();
 
@@ -36,6 +47,8 @@ export const createApplicationSchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   websiteUrl: websiteUrlSchema,
+  privacyPolicyUrl: legalUrlSchema,
+  termsUrl: legalUrlSchema,
   icon: z.string().optional(),
   redirectUris: redirectUrisSchema,
   scopes: appScopesSchema,
@@ -58,6 +71,8 @@ export const updateApplicationSchema = z
     name: z.string().trim().min(1).max(100).optional(),
     description: z.string().trim().max(500).optional(),
     websiteUrl: websiteUrlSchema,
+    privacyPolicyUrl: legalUrlSchema,
+    termsUrl: legalUrlSchema,
     icon: z.string().optional(),
     redirectUris: redirectUrisSchema,
     scopes: appScopesSchema,

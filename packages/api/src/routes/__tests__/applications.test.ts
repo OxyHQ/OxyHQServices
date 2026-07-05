@@ -33,6 +33,8 @@ interface FakeApp {
   name: string;
   description?: string;
   websiteUrl?: string;
+  privacyPolicyUrl?: string;
+  termsUrl?: string;
   icon?: string;
   type: string;
   status: string;
@@ -448,6 +450,65 @@ describe('POST /applications — create', () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.application?.scopes).toContain('federation:write');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legal URLs (privacyPolicyUrl / termsUrl) — OAuth consent links
+// ---------------------------------------------------------------------------
+
+describe('privacyPolicyUrl / termsUrl — legal consent links', () => {
+  it('create persists and serializes both legal URLs', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      name: 'Legal App',
+      privacyPolicyUrl: 'https://example.com/privacy',
+      termsUrl: 'https://example.com/terms',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.application?.privacyPolicyUrl).toBe('https://example.com/privacy');
+    expect(res.body.application?.termsUrl).toBe('https://example.com/terms');
+
+    const stored = apps.find((a) => a.name === 'Legal App');
+    expect(stored?.privacyPolicyUrl).toBe('https://example.com/privacy');
+    expect(stored?.termsUrl).toBe('https://example.com/terms');
+  });
+
+  it('PATCH updates both legal URLs and serializes them', async () => {
+    const app = seedApp();
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      privacyPolicyUrl: 'https://acme.example/privacy',
+      termsUrl: 'https://acme.example/terms',
+    });
+    expect(res.status).toBe(200);
+    expect(app.privacyPolicyUrl).toBe('https://acme.example/privacy');
+    expect(app.termsUrl).toBe('https://acme.example/terms');
+    expect(res.body.application?.privacyPolicyUrl).toBe('https://acme.example/privacy');
+    expect(res.body.application?.termsUrl).toBe('https://acme.example/terms');
+  });
+
+  it('PATCH clears a legal URL with an empty string', async () => {
+    const app = seedApp({ privacyPolicyUrl: 'https://example.com/privacy' });
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      privacyPolicyUrl: '',
+    });
+    expect(res.status).toBe(200);
+    expect(app.privacyPolicyUrl).toBeUndefined();
+  });
+
+  it('400 when a legal URL is not a valid URL', async () => {
+    seedApp();
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      privacyPolicyUrl: 'not-a-url',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when a legal URL is not https (http rejected on create)', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      name: 'Insecure',
+      termsUrl: 'http://example.com/terms',
+    });
+    expect(res.status).toBe(400);
   });
 });
 

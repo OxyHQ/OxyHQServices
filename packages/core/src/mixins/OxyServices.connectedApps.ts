@@ -41,6 +41,10 @@ export interface PublicApplication {
   icon?: string;
   /** Optional public website/homepage URL for the application. */
   websiteUrl?: string;
+  /** Optional public privacy-policy URL, rendered as a legal link on the consent screen. */
+  privacyPolicyUrl?: string;
+  /** Optional public terms-of-service URL, rendered as a legal link on the consent screen. */
+  termsUrl?: string;
   /** Application classification (set by Oxy platform staff). */
   type: ApplicationType;
   /** Whether the application is an officially endorsed Oxy application. */

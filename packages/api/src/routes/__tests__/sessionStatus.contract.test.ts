@@ -243,6 +243,8 @@ function thirdPartyApp() {
     description: 'A third-party integration',
     icon: 'https://cdn.acme.example/icon.png',
     websiteUrl: 'https://acme.example',
+    privacyPolicyUrl: 'https://acme.example/privacy',
+    termsUrl: 'https://acme.example/terms',
     type: 'third_party',
     status: 'active',
     isOfficial: false,
@@ -320,6 +322,9 @@ describe('GET /auth/session/status/:sessionToken → @oxyhq/contracts sessionSta
     expect(parsed?.userId).toBe('64f7c2a1b8e9d3f4a1c2b3d4');
     // developerName is attached for non-official apps.
     expect(parsed?.application?.developerName).toBe('Ada Lovelace');
+    // Legal URLs flow through the serializer to the consent UI contract.
+    expect(parsed?.application?.privacyPolicyUrl).toBe('https://acme.example/privacy');
+    expect(parsed?.application?.termsUrl).toBe('https://acme.example/terms');
   });
 
   it('application:null (bound app unresolved / hard-deleted) parses', async () => {

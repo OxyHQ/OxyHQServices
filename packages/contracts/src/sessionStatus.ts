@@ -19,9 +19,10 @@
  * Faithful to the producers:
  *  - `packages/api/src/utils/serializeApplication.ts` `serializePublicApplication`
  *    — the ONLY shape returned to an unauthenticated consent UI. Optional fields
- *    (`description`, `icon`, `websiteUrl`, `developerName`) are OMITTED when
- *    absent (never serialized as `null`), so they are `.optional()` — NOT
- *    `.nullable()`. `type` is the `Application.type` enum.
+ *    (`description`, `icon`, `websiteUrl`, `privacyPolicyUrl`, `termsUrl`,
+ *    `developerName`) are OMITTED when absent (never serialized as `null`), so
+ *    they are `.optional()` — NOT `.nullable()`. `type` is the `Application.type`
+ *    enum.
  *  - `packages/api/src/routes/auth.ts` `GET /session/status/:sessionToken` — the
  *    inner object of the API's `{ data: ... }` success envelope. The handler
  *    ALWAYS emits `status`, `authorized` (`status === 'authorized'`),
@@ -57,9 +58,10 @@ export type ApplicationTypeContract = z.infer<typeof applicationTypeSchema>;
  * `GET /auth/oauth/client/:clientId` (OAuth code flow).
  *
  * Optional fields are `.optional()` (NOT `.nullable()`): the serializer OMITS
- * `description` / `icon` / `websiteUrl` / `developerName` when the underlying
- * value is absent — it never writes `null` for them. `developerName` is only
- * attached for non-official apps when a name could be resolved.
+ * `description` / `icon` / `websiteUrl` / `privacyPolicyUrl` / `termsUrl` /
+ * `developerName` when the underlying value is absent — it never writes `null`
+ * for them. `developerName` is only attached for non-official apps when a name
+ * could be resolved.
  */
 export const publicApplicationSchema = z.object({
     id: z.string(),
@@ -67,6 +69,8 @@ export const publicApplicationSchema = z.object({
     description: z.string().optional(),
     icon: z.string().optional(),
     websiteUrl: z.string().optional(),
+    privacyPolicyUrl: z.string().optional(),
+    termsUrl: z.string().optional(),
     type: applicationTypeSchema,
     isOfficial: z.boolean(),
     isInternal: z.boolean(),
