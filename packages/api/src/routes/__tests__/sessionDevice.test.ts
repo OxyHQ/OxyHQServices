@@ -95,6 +95,68 @@ describe('GET /session/device/state', () => {
     expect(res.body.data.activeToken).toEqual({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
     expect(mockGetState).toHaveBeenCalledWith('d1');
   });
+
+  it('does NOT converge (plain read) when no oxy_device cookie is present', async () => {
+    mockGetState.mockResolvedValueOnce(STATE);
+    const res = await requestJson(server, 'GET', '/session/device/state');
+    expect(res.status).toBe(200);
+    expect(mockGetStateByCookieKey).not.toHaveBeenCalled();
+    expect(mockMigrateSessionToDevice).not.toHaveBeenCalled();
+    expect(mockConvergeAccountOntoDevice).not.toHaveBeenCalled();
+    expect(mockGetState).toHaveBeenCalledWith('d1');
+  });
+
+  it('does NOT converge (plain read) when the cookie resolves to the SAME device as the JWT', async () => {
+    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0, updatedAt: 1 });
+    mockGetState.mockResolvedValueOnce(STATE);
+    const res = await requestJson(server, 'GET', '/session/device/state', undefined, { Cookie: 'oxy_device=cookiesecret' });
+    expect(res.status).toBe(200);
+    expect(mockMigrateSessionToDevice).not.toHaveBeenCalled();
+    expect(mockConvergeAccountOntoDevice).not.toHaveBeenCalled();
+    expect(mockGetState).toHaveBeenCalledWith('d1');
+    expect(res.body.data.state).toEqual(STATE);
+  });
+
+  it('CONVERGES on read: migrates the session onto the cookie device when the cookie deviceId differs from the JWT claim', async () => {
+    // JWT claims deviceId 'd1'; the oxy_device cookie resolves to the canonical
+    // 'cookie-dev'. A switcher that only READS state must still converge — POST
+    // /add is never called on this path.
+    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0, updatedAt: 1 });
+    mockMigrateSessionToDevice.mockResolvedValueOnce({ accessToken: 'fresh-cookie-token', expiresAt: new Date(), migrated: true });
+    const convergedState = { deviceId: 'cookie-dev', accounts: [{ accountId: '64b0000000000000000000aa', sessionId: 's1', authuser: 0 }], activeAccountId: '64b0000000000000000000aa', revision: 10, updatedAt: 2 };
+    const oldState = { deviceId: 'd1', accounts: [], activeAccountId: null, revision: 9, updatedAt: 3 };
+    mockConvergeAccountOntoDevice.mockResolvedValueOnce({ cookieState: convergedState, oldState, changed: true });
+    mockResolveActiveToken.mockResolvedValueOnce({ accessToken: 'fresh-cookie-token', expiresAt: '2026-07-07T00:00:00.000Z' });
+
+    const res = await requestJson(server, 'GET', '/session/device/state', undefined, { Cookie: 'oxy_device=cookiesecret' });
+
+    expect(res.status).toBe(200);
+    // Session re-minted onto the cookie device, then the account converged.
+    expect(mockMigrateSessionToDevice).toHaveBeenCalledWith('s1', 'cookie-dev');
+    expect(mockConvergeAccountOntoDevice).toHaveBeenCalledWith('cookie-dev', 'd1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
+    // BOTH device rooms broadcast on a real migration.
+    expect(mockBroadcast).toHaveBeenCalledWith(convergedState);
+    expect(mockBroadcast).toHaveBeenCalledWith(oldState);
+    // The normal read path is short-circuited — getState never runs.
+    expect(mockGetState).not.toHaveBeenCalled();
+    // Response carries the converged state + fresh cookie-device token to plant.
+    expect(res.body.data.state).toEqual(convergedState);
+    expect(res.body.data.activeToken.accessToken).toBe('fresh-cookie-token');
+  });
+
+  it('does NOT converge (plain read) when the cookie mismatches but the session is expired/revoked (getSession returns null)', async () => {
+    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0, updatedAt: 1 });
+    // Dead session — nothing live to converge; fall through to the plain read.
+    mockGetSession.mockResolvedValueOnce(null);
+    mockGetState.mockResolvedValueOnce(STATE);
+
+    const res = await requestJson(server, 'GET', '/session/device/state', undefined, { Cookie: 'oxy_device=cookiesecret' });
+
+    expect(res.status).toBe(200);
+    expect(mockMigrateSessionToDevice).not.toHaveBeenCalled();
+    expect(mockConvergeAccountOntoDevice).not.toHaveBeenCalled();
+    expect(mockGetState).toHaveBeenCalledWith('d1');
+  });
 });
 
 describe('POST /session/device/switch', () => {
