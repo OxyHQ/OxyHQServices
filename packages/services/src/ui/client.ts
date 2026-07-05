@@ -19,10 +19,6 @@ export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
 export { FontLoader, setupFonts } from './components/FontLoader';
 export { default as OxyIcon } from './components/icon/OxyIcon';
-export { default as AccountMenu } from './components/AccountMenu';
-export type { AccountMenuProps } from './components/AccountMenu';
-export { default as AccountMenuButton } from './components/AccountMenuButton';
-export type { AccountMenuButtonProps } from './components/AccountMenuButton';
 
 // Context
 export { useOxy } from './context/OxyContext';

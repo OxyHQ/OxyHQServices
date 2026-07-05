@@ -196,41 +196,34 @@ export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
 export { default as OxyLogo } from './ui/components/OxyLogo';
+
+// Optional signed-out gate primitive. Wrap any subtree (or the whole app via
+// `OxyProvider`'s `requireAuth` prop) to opt into a shared, readiness-safe wall.
+// `prompt`: `off` (render always) | `soft` (dismissible banner) | `hard` (block).
+// Gates on `useOxy().canUsePrivateApi` / `isPrivateApiPending` — never flashes the
+// wall before the device-first cold boot resolves. Opens the ONE account dialog.
+export { RequireOxyAuth } from './ui/components/RequireOxyAuth';
+export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './ui/components/RequireOxyAuth';
+
 export { default as FollowButton } from './ui/components/FollowButton';
 export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps } from './ui/components/FollowButton';
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';
 
-// Unified account menu (device-only switcher — popover on web, sheet on native)
-export { default as AccountMenu } from './ui/components/AccountMenu';
-export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/AccountMenu';
-export { default as AccountMenuButton } from './ui/components/AccountMenuButton';
-export type { AccountMenuButtonProps } from './ui/components/AccountMenuButton';
-
-// Sidebar account button + its device-account switcher menu (Bluesky-style
-// ProfileCard). `ProfileButton` owns its own open state + anchor measurement
-// and opens `ProfileMenu` upward from a sidebar footer.
+// Sidebar account trigger. Pressing `ProfileButton` opens the unified
+// `OxyAccountDialog` (the single account switcher + sign-in surface) via
+// `useOxy().openAccountDialog`.
 export { default as ProfileButton } from './ui/components/ProfileButton';
 export type { ProfileButtonProps } from './ui/components/ProfileButton';
-export { default as ProfileMenu } from './ui/components/ProfileMenu';
-export type { ProfileMenuProps, ProfileMenuAnchor } from './ui/components/ProfileMenu';
-
-// Unified account switcher (device sign-ins + account graph). `AccountMenuButton`
-// opens this; the `AccountSwitcherView` body also backs the `AccountSwitcher`
-// bottom-sheet route.
-export { default as AccountSwitcher, AccountSwitcherView } from './ui/components/AccountSwitcher';
-export type { AccountSwitcherProps, AccountSwitcherActions } from './ui/components/AccountSwitcher';
 
 // Unified switchable-accounts hook — the single source of everything the user
 // can switch into: device sign-ins AND linked graph accounts (owned orgs +
 // shared-with-you), deduped by account id and hydrated with real
-// name/email/avatar/color. Every switch routes through `switchToAccount`.
+// name/email/avatar/color. Backed by the shared `AccountDialogController` in
+// `@oxyhq/core`. Every switch routes through `useOxy().switchToAccount`.
+// The `SwitchableAccount` type lives in `@oxyhq/core` — import it from there.
 export { useSwitchableAccounts } from './ui/hooks/useSwitchableAccounts';
-export type {
-    SwitchableAccount,
-    SwitchableAccountUser,
-    UseSwitchableAccountsResult,
-} from './ui/hooks/useSwitchableAccounts';
+export type { UseSwitchableAccountsResult } from './ui/hooks/useSwitchableAccounts';
 
 // Unified "Manage your Oxy Account" screen (the caller's own personal account)
 export { default as ManageAccountScreen } from './ui/screens/ManageAccountScreen';
@@ -239,7 +232,6 @@ export { default as PreferencesScreen } from './ui/screens/PreferencesScreen';
 export { default as ConnectedAppsScreen } from './ui/screens/ConnectedAppsScreen';
 
 // Account-graph screens (organization / project / bot accounts)
-export { default as AccountSwitcherScreen } from './ui/screens/AccountSwitcherScreen';
 export { default as CreateAccountScreen } from './ui/screens/CreateAccountScreen';
 export { default as AccountMembersScreen } from './ui/screens/AccountMembersScreen';
 export { default as AccountSettingsScreen } from './ui/screens/AccountSettingsScreen';
@@ -251,6 +243,9 @@ export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetMa
 export type { RouteName } from './ui/navigation/routes';
 
 // ---------------------------------------------------------------------------
-// Sign-in modal
+// Unified account dialog — imperative entry points
 // ---------------------------------------------------------------------------
-export { showSignInModal, hideSignInModal } from './ui/components/SignInModal';
+// `showSignInModal` / `hideSignInModal` open / close the unified account dialog
+// on its sign-in view; retained under their historical names so existing
+// consumers keep working. Prefer `useOxy().openAccountDialog(view?)` inside React.
+export { showSignInModal, hideSignInModal } from './ui/navigation/accountDialogManager';

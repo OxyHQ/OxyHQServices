@@ -78,7 +78,7 @@ const formatRelative = (dateString?: string): string => {
  * Replaces AccountOverview + AccountSettings + the per-account half of
  * SessionManagement. Lists ONLY the active user's profile, sessions on this
  * device, and security/destructive actions for THIS account. Multi-account
- * surface lives in {@link AccountSwitcher} — keep these concerns separate.
+ * surface lives in the unified `OxyAccountDialog` — keep these concerns separate.
  */
 const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -95,6 +95,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         logout,
         openAvatarPicker,
         accounts,
+        openAccountDialog,
     } = useOxy();
 
     const { data: userFromQuery, isLoading: userLoading } = useCurrentUser({
@@ -700,7 +701,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                         || 'Accounts you own or share'
                                     )
                             }
-                            onPress={() => navigate?.('AccountSwitcher')}
+                            onPress={() => openAccountDialog('accounts')}
                         />
                         <SettingsListItem
                             icon={

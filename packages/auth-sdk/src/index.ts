@@ -38,17 +38,22 @@ export type {
 } from './WebOxyProvider';
 
 // ---------------------------------------------------------------------------
-// In-app "Sign in with Oxy" — headless password/2FA hook + minimal modal
+// Unified account dialog (account switcher + "Sign in with Oxy"), bound to the
+// headless `AccountDialogController` in `@oxyhq/core`. Password + 2FA are NOT in
+// the SDK — they hand off to auth.oxy.so (`openPasswordAtOxyAuth`).
 // ---------------------------------------------------------------------------
-export { useOxySignIn } from './hooks/useOxySignIn';
-export type {
-    UseOxySignInOptions,
-    UseOxySignInResult,
-    OxySignInPhase,
-} from './hooks/useOxySignIn';
-export { OxySignInModal } from './components/OxySignInModal';
-export type { OxySignInModalProps } from './components/OxySignInModal';
-export type { DeviceAccountView } from './session/deviceAccountsProjection';
+export { OxyAccountDialog } from './components/OxyAccountDialog';
+export type { OxyAccountDialogProps } from './components/OxyAccountDialog';
+
+// ---------------------------------------------------------------------------
+// Optional signed-out gate primitive. Wrap any subtree (or the whole app via
+// `WebOxyProvider`'s `requireAuth` prop) to opt into a shared, readiness-safe
+// wall. `prompt`: `off` (render always) | `soft` (dismissible banner) | `hard`
+// (block). Gates on `canUsePrivateApi` / `isPrivateApiPending`. Same prop
+// contract as the `@oxyhq/services` (RN) `RequireOxyAuth`.
+// ---------------------------------------------------------------------------
+export { RequireOxyAuth } from './components/RequireOxyAuth';
+export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './components/RequireOxyAuth';
 
 // ---------------------------------------------------------------------------
 // "Sign in with Oxy" — cross-device QR handoff (Workstream C)
