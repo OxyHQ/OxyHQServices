@@ -505,18 +505,47 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const markAuthResolvedRef = useRef(markAuthResolved);
   markAuthResolvedRef.current = markAuthResolved;
 
+  // Re-boot indirection: the SessionClient is built in the ref initializer below
+  // (before `runColdBoot` is defined), but its `onSessionAppeared` must re-run the
+  // cold boot to self-acquire when a sibling signs in on this device. A ref bridges
+  // the ordering; it is assigned right after `runColdBoot` is declared.
+  const runColdBootRef = useRef<(() => Promise<void>) | null>(null);
+
   // Server-authoritative device session client. Built ONCE per `oxyServices`
   // instance. `onUnauthenticated` (a device signout-all pushed over the socket,
   // or bootstrapped as zero-account) clears the persisted store + local state so
   // a reload does not try to restore a session the device no longer has.
+  // `signedOutSocketAuth` + `onSessionAppeared` power the signed-out sync channel:
+  // an idle tab joins its `device:<id>` room (web via the `oxy_device` cookie,
+  // native via the shared device token) and self-acquires on a sibling sign-in.
   const sessionClientPairRef = useRef<ReturnType<typeof createSessionClient> | null>(null);
   if (!sessionClientPairRef.current) {
-    sessionClientPairRef.current = createSessionClient(oxyServices, authStore, () => {
-      clearPersistedAuthSafe(authStore, logger);
-      void clearSessionStateRef.current().catch((clearError) => {
-        logger('Failed to clear local state on remote sign-out', clearError);
-      });
-    });
+    sessionClientPairRef.current = createSessionClient(
+      oxyServices,
+      authStore,
+      () => {
+        clearPersistedAuthSafe(authStore, logger);
+        void clearSessionStateRef.current().catch((clearError) => {
+          logger('Failed to clear local state on remote sign-out', clearError);
+        });
+      },
+      {
+        signedOutSocketAuth: async () => {
+          // Web (`*.oxy.so`): the first-party `oxy_device` cookie rides the
+          // same-site handshake automatically — just connect.
+          if (isWebBrowser()) return true;
+          // Native (no cookie jar): present the shared device token if we have one.
+          try {
+            return (await authStore.loadDeviceToken()) ?? false;
+          } catch {
+            return false;
+          }
+        },
+        onSessionAppeared: () => {
+          void runColdBootRef.current?.();
+        },
+      },
+    );
   }
   const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
 
@@ -908,6 +937,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
         onSignedOut: () => {
           markAuthResolvedRef.current();
+          // Open the signed-out realtime channel so this idle tab joins its
+          // `device:<id>` room (web `oxy_device` cookie / native device token)
+          // and self-acquires when a sibling signs in. Idempotent, best-effort.
+          void sessionClient.start().catch((startError) => {
+            if (__DEV__) {
+              loggerUtil.debug(
+                'signed-out socket start failed (non-fatal)',
+                { component: 'OxyContext', method: 'runColdBoot' },
+                startError as unknown,
+              );
+            }
+          });
         },
         onStepError: (id, error) => {
           if (__DEV__) {
@@ -931,7 +972,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Backstop: resolve on every exit path so the gate can never hang.
       markAuthResolvedRef.current();
     }
-  }, [oxyServices, authStore]);
+  }, [oxyServices, authStore, sessionClient]);
+  // Bridge for `onSessionAppeared` (SessionClient) → re-run the cold boot to
+  // self-acquire when a sibling signs in on this device while this tab is idle.
+  runColdBootRef.current = runColdBoot;
 
   useEffect(() => {
     if (!storage || initialized) {
