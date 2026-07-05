@@ -12,15 +12,11 @@ import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
 import { RecoverPage } from "@/src/pages/recover"
 import { SocialCallbackPage } from "@/src/pages/social-callback"
-import { SettingsLayout } from "@/src/pages/settings/layout"
-import { ChangePasswordPage } from "@/src/pages/settings/password"
-import { SessionsPage } from "@/src/pages/settings/sessions"
-import { LinkedAccountsPage } from "@/src/pages/settings/linked-accounts"
 import "@/app/globals.css"
 
 function ExternalRedirect({ url }: { url: string }) {
     useEffect(() => {
-        window.location.href = url
+        window.location.replace(url)
     }, [url])
     return null
 }
@@ -54,13 +50,12 @@ function App() {
                                 <Route path="/auth/recover" element={<RecoverPage />} />
                             </Route>
 
-                            {/* Account settings routes */}
-                            <Route element={<SettingsLayout />}>
-                                <Route path="/settings" element={<Navigate to="/settings/password" replace />} />
-                                <Route path="/settings/password" element={<ChangePasswordPage />} />
-                                <Route path="/settings/sessions" element={<SessionsPage />} />
-                                <Route path="/settings/linked-accounts" element={<LinkedAccountsPage />} />
-                            </Route>
+                            {/* Account management lives on accounts.oxy.so — the IdP no longer
+                                owns account settings. Permanent redirects to the sole owner. */}
+                            <Route path="/settings" element={<ExternalRedirect url="https://accounts.oxy.so/security" />} />
+                            <Route path="/settings/password" element={<ExternalRedirect url="https://accounts.oxy.so/security" />} />
+                            <Route path="/settings/linked-accounts" element={<ExternalRedirect url="https://accounts.oxy.so/security" />} />
+                            <Route path="/settings/sessions" element={<ExternalRedirect url="https://accounts.oxy.so/sessions" />} />
 
                             {/* Callback routes (no layout) */}
                             <Route path="/auth/social/callback" element={<SocialCallbackPage />} />

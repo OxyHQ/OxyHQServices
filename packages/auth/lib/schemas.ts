@@ -71,16 +71,6 @@ export const tokenResponseSchema = z.object({
     expiresAt: z.string().optional(),
 })
 
-/**
- * `POST /auth/refresh` reads the durable httpOnly `oxy_rt` cookie, rotates it,
- * and mints a fresh access token. It returns ONLY `{ accessToken, expiresAt }`
- * (no `sessionId` — that is decoded from the access token's JWT claims).
- */
-export const refreshResponseSchema = z.object({
-    accessToken: z.string(),
-    expiresAt: z.string().optional(),
-})
-
 export const oauthStateSchema = z.object({
     provider: z.string(),
     sessionToken: z.string().optional(),
