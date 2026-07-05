@@ -15,7 +15,7 @@
  *
  * There is NO `CrossDomainAuth`, FedCM, `/sso` bounce, or silent-iframe path in
  * this provider anymore (device-first cutover). `signIn()` opens the in-app
- * {@link OxySignInModal}; it NEVER calls `window.location.assign` to an IdP.
+ * {@link OxyAccountDialog}; it NEVER calls `window.location.assign` to an IdP.
  *
  * Zero React Native / Expo dependencies.
  */
@@ -38,6 +38,7 @@ import {
   startTokenRefreshScheduler,
   refreshPersistedSession,
   createSessionClient,
+  createAccountDialogController,
   deviceStateToClientSessions,
   activeSessionIdOf,
   activeUserOf,
@@ -52,18 +53,16 @@ import type {
   TokenTransport,
   DeviceBootSession,
   SignedOutReason,
+  AccountDialogController,
+  AccountDialogView,
+  SessionLoginResponse,
 } from '@oxyhq/core';
-import type { DeviceSessionState } from '@oxyhq/contracts';
 import { io } from 'socket.io-client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, clearQueryCache, createQueryClient } from './hooks/queryClient';
 import type { CommonsClaimResult } from './hooks/useCommonsSignIn';
-import { OxySignInModal } from './components/OxySignInModal';
-import {
-  projectDeviceAccounts,
-  activeAuthuserOf,
-  type DeviceAccountView,
-} from './session/deviceAccountsProjection';
+import { OxyAccountDialog } from './components/OxyAccountDialog';
+import { RequireOxyAuth } from './components/RequireOxyAuth';
 
 /**
  * A committed sign-in session (modal password / 2FA / QR claim) handed to the
@@ -89,6 +88,19 @@ export interface WebAuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * True only when the cold boot has resolved, the user is authenticated, and a
+   * bearer token is held — i.e. private backend requests are safe. Mirrors the
+   * RN `OxyProvider` flag so `RequireOxyAuth` gates identically on both platforms.
+   */
+  canUsePrivateApi: boolean;
+  /**
+   * True while the cold boot is still resolving, OR an authenticated session is
+   * waiting for its bearer token. Hold private-API screens (and the signed-out
+   * wall) in a neutral loading state while this is true so nothing flashes before
+   * auth resolves.
+   */
+  isPrivateApiPending: boolean;
   error: string | null;
   /**
    * The app's Oxy OAuth client id (ApplicationCredential publicKey), as supplied
@@ -99,27 +111,28 @@ export interface WebAuthState {
   /** Device-session list projected from the `SessionClient`-owned state. */
   sessions: ClientSession[];
   /**
-   * Every device-local account the `SessionClient` knows about, projected onto
-   * {@link DeviceAccountView} and sorted by `authuser` ascending.
+   * Whether the unified account dialog owned by the provider is currently open.
+   * Consumers that render their own account UI can ignore this.
    */
-  accounts: DeviceAccountView[];
-  /** The active account's `authuser` slot, or `null` when signed out. */
-  activeAuthuser: number | null;
-  /**
-   * Whether the sign-in modal owned by the provider is currently open. Consumers
-   * that render their own sign-in UI can ignore this.
-   */
-  isSignInOpen: boolean;
+  isAccountDialogOpen: boolean;
 }
 
 export interface WebAuthActions {
   /**
-   * Open the in-app "Sign in with Oxy" modal. NEVER navigates to an IdP. Safe to
-   * call from an auth-guard render/effect — it only toggles local modal state, so
-   * there is no redirect loop to break.
+   * Open the unified in-app account dialog (account switcher / "Sign in with
+   * Oxy"). NEVER navigates to an IdP — it only toggles local dialog state, so it
+   * is safe to call from an auth-guard render/effect with no redirect loop. The
+   * initial view is chosen from the device account set (`accounts` when present,
+   * otherwise `signin`); use {@link openAccountDialog} to force a view.
    */
   signIn: () => void;
-  /** Close the in-app sign-in modal. */
+  /**
+   * Open the unified account dialog at an explicit view (`accounts` | `signin` |
+   * `qr` | `add`). Defaults to `accounts` when device accounts exist, else
+   * `signin`.
+   */
+  openAccountDialog: (view?: AccountDialogView) => void;
+  /** Close the account dialog and reset its view / cancel any in-flight sign-in. */
   closeSignIn: () => void;
   /**
    * Sign out of this device entirely: revoke every account via the
@@ -130,8 +143,6 @@ export interface WebAuthActions {
   signOut: () => Promise<void>;
   /** Switch to a different device session by its server-side session id. Throws when unknown. */
   switchSession: (sessionId: string) => Promise<void>;
-  /** Switch to a different device-local account by its `authuser` index. Never rejects. */
-  switchAccount: (authuser: number) => Promise<void>;
   /** Sign out a specific device-local account by its `authuser` index. Never rejects. */
   signOutAccount: (authuser: number) => Promise<void>;
   /** Sign out EVERY device-local account (equivalent to {@link signOut}). */
@@ -144,15 +155,20 @@ export interface WebAuthActions {
    */
   commitClaimedSession: (claimed: CommonsClaimResult) => Promise<void>;
   /**
-   * Commit a session produced by the in-app sign-in modal (password / 2FA).
-   * Used by {@link OxySignInModal}; also usable by a consumer's own UI built on
-   * `useOxySignIn`.
+   * Commit a session produced by a "Sign in with Oxy" flow (the account dialog's
+   * device flow via the {@link AccountDialogController}, or a consumer's own UI).
    */
   commitSignInSession: (session: CommittedSignInSession) => Promise<void>;
 }
 
 export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
   oxyServices: OxyServices;
+  /**
+   * The headless {@link AccountDialogController} the provider drives. Bound by
+   * {@link OxyAccountDialog} via `useSyncExternalStore`; also exposed for a
+   * consumer that renders its own account UI over the shared controller.
+   */
+  accountDialog: AccountDialogController;
 }
 
 const WebOxyContext = createContext<WebOxyContextValue | null>(null);
@@ -178,6 +194,15 @@ export interface WebOxyProviderProps {
    * signed-out (`isLoading:false`) and the app drives sign-in explicitly.
    */
   skipAutoCheck?: boolean;
+  /**
+   * Convenience: wrap the whole app subtree in `<RequireOxyAuth prompt=...>`.
+   * `off` (default) renders children unconditionally; `soft` adds a dismissible
+   * sign-in banner while signed out; `hard` blocks the app behind the signed-out
+   * wall until the user signs in. For finer control, mount `RequireOxyAuth`
+   * yourself around a specific subtree instead.
+   * @default 'off'
+   */
+  requireAuth?: 'off' | 'soft' | 'hard';
 }
 
 /**
@@ -203,6 +228,7 @@ export function WebOxyProvider({
   onAuthStateChange,
   onError,
   skipAutoCheck = false,
+  requireAuth = 'off',
 }: WebOxyProviderProps) {
   const clientId = useMemo(() => {
     const trimmed = clientIdProp?.trim();
@@ -236,13 +262,20 @@ export function WebOxyProvider({
   const [isLoading, setIsLoading] = useState(!skipAutoCheck);
   const [error, setError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<DeviceAccountView[]>([]);
-  const [activeAuthuser, setActiveAuthuserState] = useState<number | null>(null);
-  const [isSignInOpen, setIsSignInOpen] = useState(false);
+  const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
   const [clientProjectedSessions, setClientProjectedSessions] = useState<ClientSession[] | null>(null);
   const sessions = useMemo<ClientSession[]>(() => clientProjectedSessions ?? [], [clientProjectedSessions]);
+  // Reactive mirror of whether `oxyServices` currently holds a bearer token, so
+  // `canUsePrivateApi` flips the moment a 401 clears it (not only on user change).
+  const [hasAccessToken, setHasAccessToken] = useState(() => Boolean(oxyServices.getAccessToken()));
 
   const isAuthenticated = !!user;
+
+  // The private-API readiness flags `RequireOxyAuth` gates on. `isLoading` plays
+  // the role of the RN provider's "auth not yet resolved"; once resolved they
+  // reduce to "authenticated AND a token is held".
+  const canUsePrivateApi = !isLoading && isAuthenticated && hasAccessToken;
+  const isPrivateApiPending = isLoading || (isAuthenticated && !hasAccessToken);
 
   // Re-boot indirection: the SessionClient is built in the ref initializer below
   // (before the boot is defined), but its `onSessionAppeared` must re-run the cold
@@ -286,6 +319,30 @@ export function WebOxyProvider({
   }
   const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
 
+  // The unified account-dialog controller — created ONCE (device-first authority
+  // + graph account list + the uniform switch + "Sign in with Oxy" device flow).
+  // Its `commitSession` is threaded through a ref so it always calls the LATEST
+  // provider commit path (`commitSignInSession`, defined below) without recreating
+  // the controller. `openUrl` hands the password flow off to auth.oxy.so.
+  const commitControllerSessionRef = useRef<
+    (session: SessionLoginResponse & { refreshToken?: string }) => Promise<void>
+  >(async () => undefined);
+  const accountDialogRef = useRef<AccountDialogController | null>(null);
+  if (!accountDialogRef.current) {
+    accountDialogRef.current = createAccountDialogController({
+      oxyServices,
+      sessionClient,
+      clientId,
+      commitSession: (session) => commitControllerSessionRef.current(session),
+      openUrl: (url) => {
+        if (typeof window !== 'undefined') {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+      },
+    });
+  }
+  const accountDialog = accountDialogRef.current;
+
   /**
    * Full local + persisted session teardown. Shared by an explicit sign-out and
    * by `syncFromClient`'s zero-account branch (a remote device signout-all).
@@ -296,8 +353,6 @@ export function WebOxyProvider({
     setUser(null);
     setActiveSessionId(null);
     setClientProjectedSessions([]);
-    setAccounts([]);
-    setActiveAuthuserState(null);
     sessionClientHost.setCurrentAccountId(null);
     clearQueryCache(queryClient);
     // Clear the persisted refresh family so a reload does not try to restore a
@@ -310,7 +365,8 @@ export function WebOxyProvider({
   /**
    * Project `client.getState()` onto every exposed session field. The
    * `SessionClient` device-session set is the sole authority for
-   * `user` / `activeSessionId` / `sessions` / `accounts` / `activeAuthuser`.
+   * `user` / `activeSessionId` / `sessions`. The unified account list lives on
+   * the {@link AccountDialogController} (fed by the same device state), not here.
    */
   const syncFromClient = useCallback(async (): Promise<void> => {
     const state = sessionClient.getState();
@@ -354,14 +410,6 @@ export function WebOxyProvider({
     if (activeUser) {
       setUser(activeUser);
     }
-    const expSeconds = oxyServices.getAccessTokenExpiry();
-    setAccounts(
-      projectDeviceAccounts(latest, usersById, {
-        accessToken: oxyServices.getAccessToken(),
-        expiresAt: expSeconds !== null ? new Date(expSeconds * 1000).toISOString() : null,
-      }),
-    );
-    setActiveAuthuserState(activeAuthuserOf(latest));
     sessionClientHost.setCurrentAccountId(latest.activeAccountId);
   }, [oxyServices, sessionClient, sessionClientHost, clearSessionState]);
 
@@ -377,6 +425,13 @@ export function WebOxyProvider({
     setIsLoading(false);
     onError?.(err instanceof Error ? err : new Error(errorMessage));
   }, [onError]);
+
+  // Keep `hasAccessToken` in lockstep with the live bearer token so the
+  // private-API readiness flags react to a 401 clearing it, not just user change.
+  useEffect(() => {
+    setHasAccessToken(Boolean(oxyServices.getAccessToken()));
+    return oxyServices.onTokensChanged((token) => setHasAccessToken(Boolean(token)));
+  }, [oxyServices]);
 
   // Reactive refresh handler (401/preflight rotation) + proactive scheduler.
   // Both live in `@oxyhq/core` (`refresh.ts`) — the provider only installs them.
@@ -462,7 +517,7 @@ export function WebOxyProvider({
       setUser(session.user);
     }
     setError(null);
-    setIsSignInOpen(false);
+    setIsAccountDialogOpen(false);
     try {
       await sessionClient.registerAndActivate(session.userId);
       await sessionClient.start();
@@ -508,6 +563,30 @@ export function WebOxyProvider({
       user: claimed.user,
     });
   }, [commitSignInSession]);
+
+  // Adapt the controller's `SessionLoginResponse` commit shape onto the shared
+  // provider commit path. Kept fresh in a ref (read by the once-created
+  // controller) so it always runs the latest `commitSignInSession`.
+  const commitControllerSession = useCallback(
+    async (session: SessionLoginResponse & { refreshToken?: string }) => {
+      await commitSignInSession({
+        sessionId: session.sessionId,
+        userId: session.user.id,
+        accessToken: session.accessToken ?? oxyServices.getAccessToken() ?? '',
+        refreshToken: session.refreshToken,
+        expiresAt: session.expiresAt,
+      });
+    },
+    [commitSignInSession, oxyServices],
+  );
+  commitControllerSessionRef.current = commitControllerSession;
+
+  // Drive the controller's account-list + session subscription for the lifetime
+  // of the provider (`accountDialog` is ref-stable → runs once).
+  useEffect(() => {
+    accountDialog.start();
+    return () => accountDialog.destroy();
+  }, [accountDialog]);
 
   // Cold boot — device-first, zero-redirect. Delegates the entire ordered
   // resolution to core's `runSessionColdBoot`; the provider only reacts to the
@@ -577,14 +656,23 @@ export function WebOxyProvider({
     onAuthStateChange?.(user);
   }, [user, onAuthStateChange]);
 
-  const signIn = useCallback(() => {
+  const openAccountDialog = useCallback((view?: AccountDialogView) => {
     setError(null);
-    setIsSignInOpen(true);
-  }, []);
+    const snapshot = accountDialog.getSnapshot();
+    accountDialog.setView(view ?? (snapshot.accounts.length > 0 ? 'accounts' : 'signin'));
+    // Refresh the graph account list so the dialog opens with fresh data.
+    void accountDialog.refresh();
+    setIsAccountDialogOpen(true);
+  }, [accountDialog]);
+
+  const signIn = useCallback(() => {
+    openAccountDialog();
+  }, [openAccountDialog]);
 
   const closeSignIn = useCallback(() => {
-    setIsSignInOpen(false);
-  }, []);
+    accountDialog.close();
+    setIsAccountDialogOpen(false);
+  }, [accountDialog]);
 
   const signOut = useCallback(async () => {
     setError(null);
@@ -605,22 +693,6 @@ export function WebOxyProvider({
       onError?.(err instanceof Error ? err : new Error(errorMessage));
     }
   }, [sessionClient, clearSessionState, onError]);
-
-  const switchAccount = useCallback(async (authuser: number) => {
-    setError(null);
-    try {
-      const targetAccountId = sessionClient
-        .getState()
-        ?.accounts.find((account) => account.authuser === authuser)?.accountId;
-      if (!targetAccountId) {
-        throw new Error(`No device account found for authuser=${authuser}`);
-      }
-      await sessionClient.switchAccount(targetAccountId);
-      await syncFromClient();
-    } catch (err) {
-      handleAuthError(err);
-    }
-  }, [sessionClient, syncFromClient, handleAuthError]);
 
   const switchSession = useCallback(async (sessionId: string) => {
     const targetAccountId = sessionClient
@@ -669,28 +741,30 @@ export function WebOxyProvider({
     user,
     isAuthenticated,
     isLoading,
+    canUsePrivateApi,
+    isPrivateApiPending,
     error,
     clientId,
     activeSessionId,
     sessions,
-    accounts,
-    activeAuthuser,
-    isSignInOpen,
+    isAccountDialogOpen,
     oxyServices,
+    accountDialog,
     signIn,
+    openAccountDialog,
     closeSignIn,
     signOut,
     switchSession,
-    switchAccount,
     signOutAccount,
     signOutAll,
     clearSessionState,
     commitClaimedSession,
     commitSignInSession,
   }), [
-    user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
-    accounts, activeAuthuser, isSignInOpen, oxyServices,
-    signIn, closeSignIn, signOut, switchSession, switchAccount, signOutAccount,
+    user, isAuthenticated, isLoading, canUsePrivateApi, isPrivateApiPending, error,
+    clientId, activeSessionId, sessions,
+    isAccountDialogOpen, oxyServices, accountDialog,
+    signIn, openAccountDialog, closeSignIn, signOut, switchSession, signOutAccount,
     signOutAll, clearSessionState, commitClaimedSession, commitSignInSession,
   ]);
 
@@ -703,8 +777,12 @@ export function WebOxyProvider({
   return (
     <QueryClientProvider client={queryClient}>
       <WebOxyContext.Provider value={contextValue}>
-        {children}
-        <OxySignInModal open={isSignInOpen} onClose={closeSignIn} />
+        {requireAuth === 'off' ? (
+          children
+        ) : (
+          <RequireOxyAuth prompt={requireAuth}>{children}</RequireOxyAuth>
+        )}
+        <OxyAccountDialog open={isAccountDialogOpen} onClose={closeSignIn} controller={accountDialog} />
       </WebOxyContext.Provider>
     </QueryClientProvider>
   );
@@ -724,7 +802,7 @@ export function useWebOxy(): WebOxyContextValue {
 /**
  * Non-throwing variant of {@link useWebOxy}: returns the Web Oxy context when
  * rendered inside a {@link WebOxyProvider}, or `null` otherwise. Used by hooks
- * (e.g. `useCommonsSignIn`, `useOxySignIn`) that work BOTH inside the provider
+ * (e.g. `useCommonsSignIn`) that work BOTH inside the provider
  * (zero-config) and standalone (explicit `oxyServices` / `clientId`).
  */
 export function useWebOxyOptional(): WebOxyContextValue | null {
@@ -750,18 +828,19 @@ export function useAuth() {
     isAuthenticated: ctx.isAuthenticated,
     isLoading: ctx.isLoading,
     isReady: !ctx.isLoading,
+    canUsePrivateApi: ctx.canUsePrivateApi,
+    isPrivateApiPending: ctx.isPrivateApiPending,
     error: ctx.error,
     clientId: ctx.clientId,
     activeSessionId: ctx.activeSessionId,
     sessions: ctx.sessions,
-    accounts: ctx.accounts,
-    activeAuthuser: ctx.activeAuthuser,
-    isSignInOpen: ctx.isSignInOpen,
+    isAccountDialogOpen: ctx.isAccountDialogOpen,
+    accountDialog: ctx.accountDialog,
     signIn: ctx.signIn,
+    openAccountDialog: ctx.openAccountDialog,
     closeSignIn: ctx.closeSignIn,
     signOut: ctx.signOut,
     switchSession: ctx.switchSession,
-    switchAccount: ctx.switchAccount,
     signOutAccount: ctx.signOutAccount,
     signOutAll: ctx.signOutAll,
     oxyServices: ctx.oxyServices,

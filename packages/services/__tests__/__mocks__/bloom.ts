@@ -43,6 +43,19 @@ export const Text = ({ children }: { children?: ReactNode }) =>
 
 export const Divider = () => createElement('hr', null);
 
+/**
+ * `@oxyhq/bloom/theme` per-account color-scope stubs used by `OxyAccountDialog`.
+ * `BloomColorScope` just renders its children (the real one merges scoped CSS
+ * vars); the preset registry is empty so the dialog's accent resolves to the
+ * theme fallback in tests.
+ */
+export const BloomColorScope = ({ children }: { children?: ReactNode }) =>
+  createElement('div', null, children);
+
+export const APP_COLOR_NAMES: readonly string[] = [];
+
+export const APP_COLOR_PRESETS: Record<string, { hex: string }> = {};
+
 export const Dialog = () => null;
 
 export const useDialogControl = (): {
