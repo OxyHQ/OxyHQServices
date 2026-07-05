@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
 import type { PublicApplication } from "@oxyhq/core";
+import { OxyConsentScreen } from "@oxyhq/services";
 
 import { Button } from "@oxyhq/bloom/button";
 import {
@@ -11,7 +12,6 @@ import {
   tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
-import { ConsentCard } from "@/components/consent-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
@@ -24,6 +24,7 @@ import {
   buildRelativeUrl,
   buildAuthUrl,
   buildApiUrl,
+  getAvatarUrl,
 } from "@/lib/oxy-api-client";
 
 type UserInfo = {
@@ -154,7 +155,7 @@ export function AuthorizePage() {
   const [submitting, setSubmitting] = useState(false);
   // OAuth code path only: when the server says consent isn't required (trusted
   // app, or a stored grant already covers the requested scopes) we authorize
-  // and redirect WITHOUT rendering the ConsentCard. While that POST + redirect
+  // and redirect WITHOUT rendering the consent screen. While that POST + redirect
   // is in flight we show a neutral "Signing you in…" backdrop.
   const [autoApproving, setAutoApproving] = useState(false);
 
@@ -373,7 +374,7 @@ export function AuthorizePage() {
     try {
       applyChosenAccount(entry);
       // Selecting an account plants its bearer; with a token in hand the OAuth
-      // path can skip the ConsentCard when consent isn't required.
+      // path can skip the consent screen when consent isn't required.
       await maybeAutoApprove(entry.accessToken);
     } catch {
       gotoLoginWithHint(entry.account.username || entry.account.email);
@@ -465,7 +466,7 @@ export function AuthorizePage() {
           ? errPayload.message
           : "Authorization failed";
       // Surface the error and drop both in-flight flags so the page falls back
-      // to the ConsentCard (auto-approve) or re-enables the button (manual).
+      // to the consent screen (auto-approve) or re-enables the button (manual).
       setAutoApproving(false);
       setSubmitting(false);
       setData((prev) => ({ ...prev, error: message }));
@@ -483,17 +484,17 @@ export function AuthorizePage() {
   // Ask the server whether the OAuth consent screen must be shown for this
   // (user, application, scope) tuple. A trusted app or a covering stored grant
   // returns `consentRequired: false` → we auto-approve and redirect, no
-  // ConsentCard. SECURITY: any transport/parse failure fails safe to "show the
-  // ConsentCard" (`consentRequiredFromBody`) — we never silently auto-approve
+  // consent screen. SECURITY: any transport/parse failure fails safe to "show the
+  // consent screen" (`consentRequiredFromBody`) — we never silently auto-approve
   // on an error. Only runs on the OAuth code path; the device-flow handoff
-  // (no client_id) always shows the ConsentCard.
+  // (no client_id) always shows the consent screen.
   async function maybeAutoApprove(accessToken: string | null): Promise<void> {
     const safeRedirect = safeRedirectUrl(redirectUri);
     if (!clientId || !safeRedirect || !accessToken) return;
 
-    // Show the neutral backdrop for the whole decision so the ConsentCard never
+    // Show the neutral backdrop for the whole decision so the consent screen never
     // flashes while the check is in flight. If consent turns out to be required
-    // we drop the backdrop below and render the ConsentCard instead.
+    // we drop the backdrop below and render the consent screen instead.
     setAutoApproving(true);
 
     let body: unknown = null;
@@ -510,7 +511,7 @@ export function AuthorizePage() {
         }
       );
       // A non-OK response leaves `body` null → `consentRequiredFromBody`
-      // fails safe to true (ConsentCard shown).
+      // fails safe to true (consent screen shown).
       body = response.ok ? await response.json().catch(() => null) : null;
     } catch {
       body = null;
@@ -667,7 +668,7 @@ export function AuthorizePage() {
   }
 
   // Trusted / already-granted OAuth request: authorizing + redirecting without
-  // ever showing the ConsentCard. Neutral backdrop while that completes.
+  // ever showing the consent screen. Neutral backdrop while that completes.
   if (autoApproving) {
     return (
       <AuthFormLayout>
@@ -712,20 +713,13 @@ export function AuthorizePage() {
   const effectiveStatus = data.sessionStatus;
   const pageError = data.error;
   const application = data.application;
-  const expiresAt = data.expiresAt;
   const currentUser = data.user;
-  const showActions =
-    !pageError && (!effectiveStatus || effectiveStatus === "pending");
-
-  const loginUrl = buildRelativeUrl("/login", {
-    token: token || undefined,
-    redirect_uri: redirectUri || undefined,
-    state: state || undefined,
-    client_id: clientId || undefined,
-    code_challenge: codeChallenge || undefined,
-    code_challenge_method: codeChallengeMethod || undefined,
-    scope: scope || undefined,
-  });
+  // Actionable = the request itself is still live (pending). A transient
+  // submit error (e.g. a 403/500 from the authorize POST) keeps the consent
+  // surface — with the application identity — visible, shown inline via the
+  // consent screen's `error` prop so the user can retry. Terminal states
+  // (expired/cancelled) fall through to the page status view instead.
+  const showActions = !effectiveStatus || effectiveStatus === "pending";
 
   // Additive front screen: when the consent request is still actionable and at
   // least one account is signed in on this device, show the Google-style
@@ -766,24 +760,53 @@ export function AuthorizePage() {
             }
           />
         </>
-      ) : application ? (
-        /* Resolved requesting-application identity → redesigned consent card.
-           Rendered only when the application resolved — there is no generic
-           "This app" fallback. An unresolved request surfaces as the error
-           view below instead. The card delegates every decision back to the
-           unchanged IdP `handleDecision` flow. */
-        <ConsentCard
-          application={application}
-          requestedScopes={parseRequestedScopes(scope, application.scopes)}
-          user={currentUser}
-          showActions={showActions}
-          error={pageError}
-          expiresAt={expiresAt}
-          submitting={submitting}
-          onDecision={handleDecision}
-          loginUrl={loginUrl}
-        />
+      ) : application && showActions ? (
+        /* Resolved requesting-application identity AND an actionable request →
+           the shared services `OxyConsentScreen` (the RN/Bloom consent surface,
+           bundled for web via react-native-web). It is purely presentational;
+           every decision is delegated back to the unchanged IdP `handleDecision`
+           flow. The block wrapper keeps the RN `ScrollView` (flex:1) at content
+           height inside the centered auth card instead of collapsing to zero.
+
+           Gated on `showActions` so a non-actionable request (expired /
+           cancelled, or a transient decision error) never renders a consent
+           surface with dead Allow/Deny buttons — those fall through to the
+           page's status view below. `showActions` already implies `!pageError`,
+           so the consent surface is only ever shown error-free (no `error` prop
+           needed). */
+        <div className="w-full">
+          <OxyConsentScreen
+            application={{
+              name: application.name,
+              iconUrl: application.icon,
+              websiteUrl: application.websiteUrl,
+              privacyPolicyUrl: application.privacyPolicyUrl,
+              termsUrl: application.termsUrl,
+              developerName: application.developerName,
+              isOfficial: application.isOfficial,
+            }}
+            scopes={parseRequestedScopes(scope, application.scopes)}
+            user={
+              currentUser
+                ? {
+                    displayName: currentUser.displayName,
+                    handle: currentUser.username,
+                    avatarUri: currentUser.avatar
+                      ? getAvatarUrl(currentUser.avatar)
+                      : undefined,
+                  }
+                : undefined
+            }
+            onAllow={() => handleDecision("approve")}
+            onDeny={() => handleDecision("deny")}
+            busy={submitting}
+            error={pageError}
+          />
+        </div>
       ) : (
+        /* Either no resolved application, or a resolved application whose request
+           is no longer actionable (expired / cancelled / errored). Render the
+           page's status view — message + error — never a consent surface. */
         <>
           <AuthFormHeader
             title={t("authorize.requestTitle")}

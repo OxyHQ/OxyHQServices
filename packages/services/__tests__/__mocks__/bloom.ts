@@ -14,18 +14,27 @@ type ToastFn = (message: string, options?: Record<string, unknown>) => void;
  * Minimal `@oxyhq/bloom/button` + `@oxyhq/bloom/loading` stubs. All bloom
  * subpaths map to this single file (see `jest.config.js` moduleNameMapper), so
  * components under test that render `<Button>` / `<Loading>` resolve here. The
- * Button forwards `children` (so queries by label work) and `onPress` (mapped to
- * `onClick` for the jsdom host element); other RN-only props are dropped so they
- * do not leak onto the DOM node.
+ * Button forwards `children` (so queries by label work), `onPress` (mapped to
+ * `onClick`), `disabled` (a disabled jsdom `<button>` never fires click — so a
+ * `disabled` Button is un-pressable in tests), and `testID` (as `data-testid`);
+ * other RN-only props are dropped so they do not leak onto the DOM node.
  */
 export const Button = ({
   children,
   onPress,
+  disabled,
+  testID,
 }: {
   children?: ReactNode;
   onPress?: () => void;
+  disabled?: boolean;
+  testID?: string;
 } & Record<string, unknown>) =>
-  createElement('button', { type: 'button', onClick: onPress }, children);
+  createElement(
+    'button',
+    { type: 'button', onClick: onPress, disabled, 'data-testid': testID },
+    children,
+  );
 
 export const Loading = () => createElement('span', null, 'loading');
 
@@ -38,8 +47,11 @@ export const Loading = () => createElement('span', null, 'loading');
  */
 export const Avatar = () => createElement('span', { 'aria-hidden': 'true' });
 
-export const Text = ({ children }: { children?: ReactNode }) =>
-  createElement('span', null, children);
+export const Text = ({
+  children,
+  testID,
+}: { children?: ReactNode; testID?: string } & Record<string, unknown>) =>
+  createElement('span', { 'data-testid': testID }, children);
 
 export const Divider = () => createElement('hr', null);
 

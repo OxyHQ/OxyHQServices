@@ -201,6 +201,12 @@ export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySi
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
 export { default as OxyLogo } from './ui/components/OxyLogo';
+export { OxyConsentScreen } from './ui/components/OxyConsentScreen';
+export type {
+  OxyConsentScreenProps,
+  OxyConsentApplication,
+  OxyConsentUser,
+} from './ui/components/OxyConsentScreen';
 
 // Optional signed-out gate primitive. Wrap any subtree (or the whole app via
 // `OxyProvider`'s `requireAuth` prop) to opt into a shared, readiness-safe wall.
