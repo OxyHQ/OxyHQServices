@@ -24,7 +24,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     <RequireOxyAuth
       prompt="hard"
       loadingFallback={<SplashScreen />}
-      signedOutFallback={<SignInScreen onSignIn={signIn} />}
+      signedOutFallback={<SignInScreen onSignIn={() => void signIn()} />}
     >
       {children}
     </RequireOxyAuth>
