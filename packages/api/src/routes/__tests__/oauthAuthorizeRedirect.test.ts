@@ -343,3 +343,124 @@ describe('POST /auth/oauth/authorize — redirect_uri allowlist (#216)', () => {
     expect(mockIssueAuthCode).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Trusted (first-party / official / internal / system) apps additionally accept
+ * a redirect_uri whose http(s) ORIGIN matches a registered origin — deep links,
+ * sub-routes, `?v=…` cache busters, and the trailing slash the IdP's
+ * `new URL().toString()` normalisation adds to a bare origin. THIRD-PARTY apps
+ * never get this relaxation (strict exact match preserved).
+ */
+describe('POST /auth/oauth/authorize — trusted-app origin relaxation', () => {
+  function trustedApp(redirectUris: string[], overrides: Record<string, unknown> = {}) {
+    return {
+      _id: { toString: () => 'app-1' },
+      status: 'active',
+      isOfficial: true,
+      type: 'first_party',
+      redirectUris,
+      ...overrides,
+    };
+  }
+
+  it('accepts a redirect_uri with extra query + path on a registered origin (official app)', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce(trustedApp(['https://accounts.oxy.so']));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'https://accounts.oxy.so/manage?v=abc123&foo=bar' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockIssueAuthCode).toHaveBeenCalledTimes(1);
+    // The exact (dirty) redirect_uri is preserved through to the issued code.
+    expect(mockIssueAuthCode).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUri: 'https://accounts.oxy.so/manage?v=abc123&foo=bar' })
+    );
+  });
+
+  it('absorbs the trailing slash the IdP adds to a bare registered origin', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce(trustedApp(['https://accounts.oxy.so']));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'https://accounts.oxy.so/' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockIssueAuthCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a deep link when only a path-specific callback origin is registered', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce(
+      trustedApp(['https://accounts.oxy.so/__oxy/sso-callback'], { isOfficial: false, type: 'first_party' })
+    );
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'https://accounts.oxy.so/settings/security' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockIssueAuthCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rejects a different origin for a trusted app (no cross-origin relaxation)', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce(trustedApp(['https://accounts.oxy.so']));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'https://evil.example.com/callback' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockIssueAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('does not relax custom (non-web) schemes — origin "null" collisions are rejected', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce(trustedApp(['astro://auth']));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'astro://evil' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockIssueAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('THIRD-PARTY app still rejects a redirect_uri that differs only by a query string', async () => {
+    mockApplicationFindOne.mockResolvedValueOnce({
+      _id: { toString: () => 'app-1' },
+      status: 'active',
+      type: 'third_party',
+      redirectUris: ['https://app.example.com/callback'],
+    });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/oauth/authorize',
+      { clientId: 'oxy_dk_client', redirectUri: 'https://app.example.com/callback?x=1' },
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockIssueAuthCode).not.toHaveBeenCalled();
+  });
+});

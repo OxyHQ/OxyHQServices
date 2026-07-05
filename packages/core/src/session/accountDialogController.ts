@@ -544,15 +544,16 @@ export class AccountDialogController {
    * the right return.
    *
    * @param params.returnUrl - Where the IdP returns after login. Defaults to the
-   *   current document URL on web (`globalThis.location.href`); pass explicitly
-   *   on native (no `location`).
+   *   current origin on web (`globalThis.location.origin` — no query/path, so it
+   *   exact-matches a registered `redirectUris` entry); pass explicitly on native
+   *   (no `location`).
    * @param params.state - Optional opaque state echoed back on return.
    * @returns The absolute auth.oxy.so sign-in URL.
    */
   openPasswordAtOxyAuth(params: { returnUrl?: string; state?: string } = {}): string {
     const base = `https://auth.${this.idpApex}`;
     const url = new URL('/login', base);
-    const returnUrl = params.returnUrl ?? currentLocationHref();
+    const returnUrl = params.returnUrl ?? currentLocationOrigin();
     if (returnUrl) {
       url.searchParams.set('redirect_uri', returnUrl);
     }
@@ -762,8 +763,12 @@ function readRefreshToken(value: unknown): string | undefined {
   return typeof token === 'string' ? token : undefined;
 }
 
-/** Current document URL on web; empty string where `location` is absent (native/SSR). */
-function currentLocationHref(): string {
-  const location = (globalThis as { location?: { href?: string } }).location;
-  return typeof location?.href === 'string' ? location.href : '';
+/**
+ * Current page origin on web (`https://accounts.oxy.so` — no query, no path, no
+ * trailing slash) so it exact-matches a registered OAuth `redirectUris` entry;
+ * empty string where `location` is absent (native/SSR).
+ */
+function currentLocationOrigin(): string {
+  const location = (globalThis as { location?: { origin?: string } }).location;
+  return typeof location?.origin === 'string' ? location.origin : '';
 }
