@@ -41,7 +41,7 @@ import {
   type AccountRole,
   type AccountKind,
 } from '@/hooks/use-account';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 import { toast } from 'sonner';
 
 const roleLabels: Record<AccountRole, string> = {
