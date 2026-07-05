@@ -22,7 +22,7 @@
  */
 
 import * as crypto from 'crypto';
-import type { Request } from 'express';
+import type { IncomingHttpHeaders } from 'http';
 import DeviceToken, { DeviceTokenChannel, IDeviceToken } from '../models/DeviceToken';
 import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 import { normaliseOrigin } from '../utils/origin';
@@ -83,7 +83,7 @@ export async function issueDeviceToken(input: IssueDeviceTokenInput): Promise<st
  */
 export async function resolveDeviceToken(
   rawToken: string,
-  req: Request
+  req: { headers: Pick<IncomingHttpHeaders, 'origin'> }
 ): Promise<{ deviceId: string } | null> {
   try {
     if (typeof rawToken !== 'string' || rawToken.length === 0) {

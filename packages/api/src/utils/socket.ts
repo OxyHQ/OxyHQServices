@@ -31,3 +31,32 @@ export function broadcastDeviceState(state: DeviceSessionState): void {
 export function deviceRoomFor(decoded: { deviceId?: string | null }): string | null {
   return decoded?.deviceId ? `device:${decoded.deviceId}` : null;
 }
+
+/**
+ * The rooms a connected socket should join, given its resolved identity.
+ *
+ *  - An AUTHENTICATED user socket joins BOTH `user:<id>` (notifications) and its
+ *    `device:<deviceId>` room (JWT claim).
+ *  - An ANONYMOUS device socket (signed-out tab, cookie/device-token authed)
+ *    joins ONLY `device:<deviceId>` — NEVER a `user:` room, so it can learn only
+ *    that its own device's session set changed and nothing about any user.
+ *
+ * The deviceId is always server-resolved (JWT claim, cookie hash, or token hash),
+ * never client-supplied.
+ */
+export function socketRoomsFor(identity: {
+  user?: { id: string; deviceId?: string | null } | null;
+  deviceId?: string | null;
+}): string[] {
+  const rooms: string[] = [];
+  if (identity.user?.id) {
+    rooms.push(`user:${identity.user.id}`);
+  }
+  const deviceRoom = identity.user
+    ? deviceRoomFor(identity.user)
+    : deviceRoomFor({ deviceId: identity.deviceId });
+  if (deviceRoom) {
+    rooms.push(deviceRoom);
+  }
+  return rooms;
+}
