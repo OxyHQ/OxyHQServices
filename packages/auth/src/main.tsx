@@ -2,8 +2,11 @@ import React, { useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
+import { OxyProvider } from "@oxyhq/services"
 import { Toaster } from "@/components/ui/sonner"
 import { getBloomThemeCSS, setBasePreset } from "@/lib/bloom-css"
+import { getApiBaseUrl } from "@/lib/oxy-api-client"
+import { OXY_CLIENT_ID } from "@/lib/oxy-client"
 import { LayoutProvider } from "@/lib/layout-context"
 import { LocaleProvider } from "@/lib/i18n/locale-context"
 import { AuthLayout } from "@/src/pages/layout"
@@ -36,6 +39,15 @@ function App() {
         <LocaleProvider>
             <LayoutProvider>
                 <BloomThemeProvider mode="system" colorPreset="oxy">
+                {/* The IdP mounts @oxyhq/services in IdP mode: coldBoot is OFF
+                    (it is the identity provider, never an RP restoring its own
+                    session) but the provider still supplies the OxyAccountDialog
+                    (QR / Commons sign-in) and the OxyConsentScreen context. */}
+                <OxyProvider
+                    baseURL={getApiBaseUrl()}
+                    clientId={OXY_CLIENT_ID}
+                    coldBoot={false}
+                >
                     <BrowserRouter>
                         <Routes>
                             {/* Auth flow routes */}
@@ -65,6 +77,7 @@ function App() {
                         </Routes>
                         <Toaster position="bottom-right" />
                     </BrowserRouter>
+                </OxyProvider>
                 </BloomThemeProvider>
             </LayoutProvider>
         </LocaleProvider>

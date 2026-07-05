@@ -85,7 +85,7 @@ export const oauthStateSchema = z.object({
  *
  *   - `trusted`       — official/first-party app: never asks for consent.
  *   - `granted`       — a stored grant already covers the requested scopes.
- *   - `new`           — no grant yet; show the ConsentCard.
+ *   - `new`           — no grant yet; show the consent screen.
  *   - `scope_changed` — grant exists but the request adds scopes; re-consent.
  *
  * SECURITY: any response the schema rejects MUST fail safe to
@@ -104,7 +104,7 @@ export type ConsentDecisionResponse = z.infer<typeof consentDecisionSchema>
  * `GET /auth/oauth/consent` response body. Accepts either the API's wrapped
  * `{ data: { ... } }` envelope or a bare decision object. Fails safe: any body
  * the schema cannot validate (malformed, missing fields, unknown `reason`,
- * `null`) returns `true` so the caller renders the ConsentCard rather than
+ * `null`) returns `true` so the caller renders the consent screen rather than
  * auto-approving on a parse error.
  */
 export function consentRequiredFromBody(body: unknown): boolean {
