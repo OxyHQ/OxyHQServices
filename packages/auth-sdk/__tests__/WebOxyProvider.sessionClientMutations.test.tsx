@@ -49,8 +49,6 @@ jest.mock('@oxyhq/core', () => {
       onTokensChanged(): () => void { return () => undefined; }
       getUsersByIds(ids: string[]): Promise<User[]> { return stubs.getUsersByIds(ids); }
       getUserById(id: string): Promise<User> { return stubs.getUserById(id); }
-      getFileDownloadUrl(id: string): string { return `https://cdn.test/${id}`; }
-      listAccounts(): Promise<never[]> { return Promise.resolve([]); }
     },
   };
 });
@@ -173,6 +171,8 @@ describe('WebOxyProvider — account mutations over SessionClient (device-first)
     expect(fake.signOut).toHaveBeenCalledWith({ all: true });
     await waitFor(() => expect(ctxRef?.isAuthenticated).toBe(false));
     expect(ctxRef?.sessions.length).toBe(0);
+    expect(ctxRef?.accounts.length).toBe(0);
+    expect(ctxRef?.activeAuthuser).toBeNull();
   });
 
   it('signOutAccount(authuser) resolves the numeric slot to its account id and revokes it', async () => {

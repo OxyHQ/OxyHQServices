@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider, useOxy, RequireOxyAuth } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 import type { ImageResolver } from '@oxyhq/bloom/image-resolver';
@@ -21,6 +21,7 @@ import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/t
 import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { AuthGate } from '@/components/AuthGate';
 import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
@@ -90,17 +91,18 @@ function RootLayoutContent() {
                 <PortalProvider>
                   <ThemeProvider value={navTheme}>
                     <RootEffects />
-                    {/*
-                      The whole app is gated behind the shared SDK signed-out wall
-                      (`RequireOxyAuth prompt="hard"`). It replaces the former
-                      hand-rolled sign-in gate: it blocks the navigator until the
-                      device-first cold boot resolves a session, shows a neutral
-                      loading state while pending (never flashes the wall), and its
-                      primary CTA opens the ONE shared account dialog. See
-                      `GatedNavigator` for the localized copy.
-                    */}
-                    <GatedNavigator />
+                    <Stack>
+                      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                    </Stack>
                     <StatusBar style="auto" />
+                    {/*
+                      Global, non-dismissible auth gate. Renders ABOVE the entire
+                      app tree whenever the user is signed-out (after the initial
+                      auth restore completes). Unmounts cleanly the moment auth
+                      flips to true, leaving the user wherever they were.
+                    */}
+                    <AuthGate />
                   </ThemeProvider>
                   <PortalOutlet />
                 </PortalProvider>
@@ -110,25 +112,6 @@ function RootLayoutContent() {
         </OxyProvider>
       </KeyboardProvider>
     </QueryClientProvider>
-  );
-}
-
-/**
- * The app navigator, gated behind the shared SDK signed-out wall. `RequireOxyAuth`
- * (prompt="hard") keys on the SDK readiness state so it renders a neutral loading
- * state until the device-first cold boot resolves, then either mounts the
- * navigator (signed in) or the centered signed-out wall whose CTA opens the ONE
- * account dialog. Lives under `LocaleProvider` so the localized copy resolves.
- */
-function GatedNavigator() {
-  const { t } = useTranslation();
-  return (
-    <RequireOxyAuth prompt="hard" title={t('auth.gate.title')} subtitle={t('auth.gate.subtitle')}>
-      <Stack>
-        <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-      </Stack>
-    </RequireOxyAuth>
   );
 }
 

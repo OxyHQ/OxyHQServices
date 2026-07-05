@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from '@tanstack/react-router';
-import { useAuth, RequireOxyAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/auth';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -12,23 +12,21 @@ export const Route = createFileRoute('/_layout')({
 });
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { signIn } = useAuth();
+  const { isAuthenticated, isReady, signIn } = useAuth();
 
-  // The shared SDK signed-out gate (`RequireOxyAuth prompt="hard"`). It keys on
-  // the SDK readiness state (`canUsePrivateApi` / `isPrivateApiPending`), so
-  // private data never loads before the device-first cold boot resolves and the
-  // signed-out wall never flashes. The console keeps its own branded splash +
-  // sign-in screen via the fallbacks; the sign-in button opens the in-app
-  // "Sign in with Oxy" dialog (`signIn()` — modal only, never a navigation).
-  return (
-    <RequireOxyAuth
-      prompt="hard"
-      loadingFallback={<SplashScreen />}
-      signedOutFallback={<SignInScreen onSignIn={signIn} />}
-    >
-      {children}
-    </RequireOxyAuth>
-  );
+  // The SDK cold boot resolves the device session silently (no redirect). While
+  // it runs, show the splash; once resolved and signed out, render the branded
+  // sign-in screen whose button opens the in-app "Sign in with Oxy" modal
+  // (`signIn()` — modal only, never a navigation).
+  if (!isReady) {
+    return <SplashScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <SignInScreen onSignIn={signIn} />;
+  }
+
+  return <>{children}</>;
 }
 
 function LayoutComponent() {

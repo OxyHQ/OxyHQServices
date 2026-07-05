@@ -63,13 +63,4 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     queryClient?: QueryClient;
-    /**
-     * Convenience: wrap the whole app subtree in `<RequireOxyAuth prompt=...>`.
-     * `off` (default) renders children unconditionally; `soft` adds a dismissible
-     * sign-in banner while signed out; `hard` blocks the app behind the signed-out
-     * wall until the user signs in. For finer control, mount `RequireOxyAuth`
-     * yourself around a specific subtree instead.
-     * @default 'off'
-     */
-    requireAuth?: 'off' | 'soft' | 'hard';
 }

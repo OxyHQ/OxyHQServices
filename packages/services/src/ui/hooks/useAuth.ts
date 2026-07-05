@@ -23,10 +23,11 @@
  * - Manual sign-in: signIn() redirects to the IdP (web) or opens the auth sheet (native)
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import { showSignInModal } from '../components/SignInModal';
 
 export interface AuthState {
   /** Current authenticated user, null if not authenticated */
@@ -137,33 +138,44 @@ export function useAuth(): UseAuthReturn {
     getPublicKey,
     showBottomSheet,
     openAvatarPicker,
-    openAccountDialog,
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Native: sign in directly with the cryptographic identity when a public key
-    // is provided, or an existing keychain identity is found.
+    // Web (no key): open the in-app "Sign in with Oxy" modal. There is NO
+    // automatic navigation to any login page — the device-first cold boot
+    // already restored a session if one existed; an explicit click presents the
+    // SDK sign-in surface (password / QR device flow / add account).
+    if (isWebBrowser() && !publicKey) {
+      showSignInModal();
+      // Resolves when the modal commits a session; the caller typically reacts
+      // to `isAuthenticated` rather than this promise.
+      return new Promise<User>(() => undefined);
+    }
+
+    // Native: use the cryptographic identity directly when a public key is given.
     if (publicKey) {
       return oxySignIn(publicKey);
     }
-    if (!isWebBrowser()) {
-      const hasExisting = await hasIdentity();
-      if (hasExisting) {
-        const existingKey = await getPublicKey();
-        if (existingKey) {
-          return oxySignIn(existingKey);
-        }
+
+    // Native with an existing keychain identity: sign in with it.
+    const hasExisting = await hasIdentity();
+    if (hasExisting) {
+      const existingKey = await getPublicKey();
+      if (existingKey) {
+        return oxySignIn(existingKey);
       }
     }
 
-    // Web, or native without a keychain identity: open the unified account dialog
-    // on its sign-in view (device flow / QR / password hand-off). There is NO
-    // automatic navigation to a login page — the device-first cold boot already
-    // restored a session if one existed. The caller reacts to `isAuthenticated`,
-    // so this promise intentionally never resolves.
-    openAccountDialog('signin');
-    return new Promise<User>(() => undefined);
-  }, [oxySignIn, hasIdentity, getPublicKey, openAccountDialog]);
+    // Native with no identity: open the auth sheet (password / QR device flow).
+    if (showBottomSheet) {
+      showBottomSheet('OxyAuth');
+      return new Promise((_, reject) => {
+        reject(new Error('Please complete sign-in in the auth sheet'));
+      });
+    }
+
+    throw new Error('No authentication method available');
+  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();

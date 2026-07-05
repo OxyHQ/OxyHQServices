@@ -9,7 +9,6 @@ import { BloomDialogProvider } from '@oxyhq/bloom';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { setupFonts } from './FontLoader';
-import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
@@ -64,8 +63,8 @@ const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
     ),
 );
 
-const LazyOxyAccountDialog = lazy((): Promise<{ default: ComponentType }> =>
-    import('./OxyAccountDialog').then(
+const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
+    import('./SignInModal').then(
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         () => ({ default: (() => null) as FC }),
     ),
@@ -76,8 +75,8 @@ const LazyOxyAccountDialog = lazy((): Promise<{ default: ComponentType }> =>
  *
  * Provides authentication, session management, query client, and UI overlays.
  * Wraps its own overlay stack in SafeAreaProvider and GestureHandlerRootView so
- * BottomSheetRouter and OxyAccountDialog can safely render even when a consuming
- * app has not mounted those providers yet.
+ * BottomSheetRouter and SignInModal can safely render even when a consuming app
+ * has not mounted those providers yet.
  *
  * Usage:
  * ```tsx
@@ -115,7 +114,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authWebUrl,
     authRedirectUri,
     queryClient: providedQueryClient,
-    requireAuth = 'off',
 }) => {
 
     // Dynamic KeyboardProvider for native. Uses variable indirection
@@ -312,14 +310,10 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     clientId={clientId}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
-                    {requireAuth === 'off' ? (
-                        children
-                    ) : (
-                        <RequireOxyAuth prompt={requireAuth}>{children}</RequireOxyAuth>
-                    )}
+                    {children}
                     <Suspense fallback={null}>
                         <LazyBottomSheetRouter />
-                        <LazyOxyAccountDialog />
+                        <LazySignInModal />
                     </Suspense>
                     <ToastOutlet />
                 </OxyContextProvider>
