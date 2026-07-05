@@ -30,6 +30,8 @@ import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 import socialAuthRouter from './socialAuth';
 import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
+import type { ISession } from '../models/Session';
+import { broadcastDeviceState } from '../utils/socket';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
@@ -2450,11 +2452,74 @@ router.post(
       throw new UnauthorizedError('invalid_grant');
     }
 
-    const session = await sessionService.createSession(
-      user._id.toString(),
+    const userId = user._id.toString();
+
+    // Device-first attribution for the token grant — the last mint path that
+    // used to orphan a UA/IP-derived deviceId (the cleanest reproduction of
+    // "an RP shows a different account list"). Resolve the central device from
+    // the oxy_device cookie (same-apex authorize→token) or an add-only
+    // deviceToken (a cross-apex RP that persisted one at bootstrap). Absent →
+    // no device attribution (we deliberately do NOT invent one).
+    const oauthDeviceId = await resolveLoginDeviceId(
       req,
-      { deviceName: `${app.name} OAuth` }
+      (req.body as { deviceToken?: unknown }).deviceToken,
     );
+
+    // ONE session per account per device: when the account is ALREADY registered
+    // on the resolved device (added during the first-party authorize step),
+    // REUSE that exact registered session so this RP converges on the SAME
+    // sessionId + deviceId the DeviceSession doc holds (one socket room, shared
+    // cross-domain broadcasts) instead of minting a per-RP session on a fresh
+    // device. resolveRegisteredSession validates the session (managed act_as
+    // re-check) before reuse and never resurrects a dead one.
+    // `deviceSession.service` (and its DeviceSession Mongoose model) is imported
+    // LAZILY — only when a device actually resolved — so merely loading the auth
+    // router never forces the model to evaluate (mirrors deviceLogin.service).
+    let session: ISession | null = null;
+    if (oauthDeviceId) {
+      const { deviceSessionService } = await import('../services/deviceSession.service.js');
+      const registered = await deviceSessionService.resolveRegisteredSession(oauthDeviceId, userId);
+      if (registered) {
+        // Load the registered session for the response tokens; its access token
+        // was just rotated/minted by resolveRegisteredSession and carries the
+        // central deviceId claim. A race (session vanished) falls through to a
+        // fresh mint below.
+        session = await sessionService.getSession(registered.sessionId, false);
+      }
+    }
+
+    if (!session) {
+      // Fresh mint — thread the resolved device so createSession's reuse-by-
+      // (userId, deviceId) converges, or a first mint lands on the central
+      // device. No resolved device ⇒ pre-existing UA/IP attribution (unchanged).
+      session = await sessionService.createSession(
+        userId,
+        req,
+        { deviceName: `${app.name} OAuth`, ...(oauthDeviceId ? { deviceId: oauthDeviceId } : {}) },
+      );
+
+      // Register the freshly-minted session into the device set (add-only, never
+      // steals the active account) so a SUBSEQUENT grant for this account on this
+      // device reuses it via resolveRegisteredSession. Best-effort — a
+      // registration failure must never fail the token grant. The lazy import is
+      // module-cached, so re-importing here is free.
+      if (oauthDeviceId) {
+        try {
+          const { deviceSessionService } = await import('../services/deviceSession.service.js');
+          const { state, changed } = await deviceSessionService.addAccount(
+            session.deviceId,
+            { accountId: userId, sessionId: session.sessionId },
+            { activate: 'if-empty' },
+          );
+          if (changed) broadcastDeviceState(state);
+        } catch (error) {
+          logger.warn('[OAuth] device-set registration failed', {
+            userId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
 
     app.lastUsedAt = new Date();
     await app.save();

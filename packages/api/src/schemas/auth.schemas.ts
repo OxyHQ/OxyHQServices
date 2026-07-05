@@ -205,6 +205,13 @@ export const oauthTokenSchema = z.object({
   redirectUri: z.string().trim().url(),
   clientSecret: z.string().trim().min(1).optional(),
   codeVerifier: z.string().trim().min(43).max(128).optional(),
+  // Optional add-only device attribution: an RP that persisted an oxy_device
+  // deviceToken at bootstrap may present it here so the minted session lands on
+  // the caller's CENTRAL device set (one session per account per device) instead
+  // of orphaning a fresh UA/IP-derived deviceId. Absent (the common back-channel
+  // exchange) → the grant still resolves the device from the oxy_device cookie
+  // when the exchange is same-apex, else no device attribution.
+  deviceToken: z.string().trim().min(1).optional(),
 }).refine(
   (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
   { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }
