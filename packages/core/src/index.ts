@@ -520,6 +520,20 @@ export type {
 } from './utils/coldBoot';
 
 // ---------------------------------------------------------------------------
+// OAuth 2.0 Authorization Code + PKCE helpers ("Sign in with Oxy" third party).
+// Standard OAuth against auth.oxy.so/authorize — no FedCM/cookies/SSO bounce.
+// ---------------------------------------------------------------------------
+export {
+    buildOAuthAuthorizeUrl,
+    computeCodeChallenge,
+    generateOAuthState,
+    generatePkcePair,
+    DEFAULT_OAUTH_SCOPE,
+    OXY_AUTHORIZE_URL,
+} from './utils/oauthPkce';
+export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
+
+// ---------------------------------------------------------------------------
 // Session sync (device-scoped multi-account session client)
 // ---------------------------------------------------------------------------
 export { SessionClient } from './session/SessionClient';
