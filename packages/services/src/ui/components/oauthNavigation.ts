@@ -11,9 +11,26 @@
 import { Linking } from 'react-native';
 import { logger } from '@oxyhq/core';
 
+/** Minimal shape of the optional `expo-web-browser` auth-session result. */
+interface WebBrowserAuthResult {
+    type?: string;
+    url?: string;
+}
+
 /** Minimal shape of the optional `expo-web-browser` native module we depend on. */
 interface WebBrowserModule {
-    openAuthSessionAsync?: (url: string, redirectUrl: string) => Promise<unknown>;
+    openAuthSessionAsync?: (url: string, redirectUrl: string) => Promise<WebBrowserAuthResult>;
+}
+
+/** Outcome of opening the authorize URL on native. */
+export interface OpenAuthorizeResult {
+    /**
+     * The deep-link URL the auth session returned to (carries `?code=…&state=…`)
+     * when `expo-web-browser` observed it, else `null`. `null` means the RP must
+     * complete the exchange from its own deep-link handler (e.g. after the
+     * `Linking.openURL` fallback, which cannot observe the return URL).
+     */
+    redirectUrl: string | null;
 }
 
 /**
@@ -30,20 +47,43 @@ export function redirectToAuthorize(url: string): void {
  * `expo-web-browser` module (`openAuthSessionAsync` returns to `redirectUri`),
  * degrading to `Linking.openURL` when the module is not installed — the same
  * dynamic-import-with-fallback pattern services uses for haptics/netinfo.
+ *
+ * Returns the deep-link URL the session came back to when it can be observed, so
+ * the caller can hand `?code=…&state=…` back to the RP for the token exchange.
  */
-export async function openAuthorizeUrlNative(url: string, redirectUri: string): Promise<void> {
+export async function openAuthorizeUrlNative(
+    url: string,
+    redirectUri: string,
+): Promise<OpenAuthorizeResult> {
     try {
         const mod = (await import('expo-web-browser')) as unknown as WebBrowserModule;
         if (mod && typeof mod.openAuthSessionAsync === 'function') {
-            await mod.openAuthSessionAsync(url, redirectUri);
-            return;
+            const result = await mod.openAuthSessionAsync(url, redirectUri);
+            const redirectUrl =
+                result && result.type === 'success' && typeof result.url === 'string'
+                    ? result.url
+                    : null;
+            return { redirectUrl };
         }
     } catch (error) {
         logger.warn(
-            'OxySignInButton: expo-web-browser unavailable; falling back to Linking.openURL',
+            'OxySignInButton: expo-web-browser auth session failed; falling back to Linking.openURL',
             { component: 'oauthNavigation' },
             error,
         );
     }
-    await Linking.openURL(url);
+
+    // Fallback: Linking cannot observe the return URL, so the RP completes the
+    // exchange from its own deep-link handler. A rejected openURL (e.g. an
+    // unregistered scheme) must not throw out of the sign-in flow.
+    try {
+        await Linking.openURL(url);
+    } catch (error) {
+        logger.warn(
+            'OxySignInButton: Linking.openURL rejected the authorize URL',
+            { component: 'oauthNavigation' },
+            error,
+        );
+    }
+    return { redirectUrl: null };
 }

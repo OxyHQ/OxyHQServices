@@ -197,7 +197,7 @@ export {
   OXY_OAUTH_STATE_STORAGE_KEY,
   OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
 } from './ui/components/OxySignInButton';
-export type { OxySignInButtonProps } from './ui/components/OxySignInButton';
+export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
 export { default as OxyLogo } from './ui/components/OxyLogo';

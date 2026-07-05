@@ -16,8 +16,6 @@ import OxyLogo from './OxyLogo';
 import { subscribeToSignInModal } from '../navigation/accountDialogManager';
 import { redirectToAuthorize, openAuthorizeUrlNative } from './oauthNavigation';
 
-const isWeb = Platform.OS === 'web';
-
 /**
  * `sessionStorage` keys under which a third-party "Sign in with Oxy" OAuth flow
  * persists its CSRF `state` and PKCE `code_verifier` across the authorize
@@ -26,20 +24,49 @@ const isWeb = Platform.OS === 'web';
  *
  * Web only: a browser RP navigates away to `auth.oxy.so` and back, so the
  * handshake must survive a full-page redirect. Native completes the flow inside
- * a single `WebBrowser` auth session and has no cross-navigation gap to bridge.
+ * a single `WebBrowser` auth session and surfaces the handshake via
+ * {@link OxySignInButtonProps.onOAuthResult} instead.
  */
 export const OXY_OAUTH_STATE_STORAGE_KEY = 'oxy_oauth_state';
 export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
 
 /**
- * Persist the OAuth CSRF `state` + PKCE `code_verifier` for the RP callback.
- * No-op where `sessionStorage` is unavailable (SSR / non-browser hosts).
+ * The OAuth handshake surfaced to a NATIVE third-party RP via
+ * {@link OxySignInButtonProps.onOAuthResult} so it can finish the code exchange
+ * (`POST /auth/oauth/token`). Web RPs read the same `state` / `code_verifier`
+ * back from `sessionStorage` across the redirect and do not need this callback.
  */
-function persistOAuthHandshake(state: string, codeVerifier: string): void {
+export interface OxyOAuthResult {
+    /** Deep-link URL the native auth session returned to (`?code=…&state=…`), or `null` if unobserved. */
+    redirectUrl: string | null;
+    /** The CSRF `state` sent on the authorize request; the RP must match it on return. */
+    state: string;
+    /** The PKCE `code_verifier` to replay on the token exchange. */
+    codeVerifier: string;
+}
+
+/**
+ * Persist the OAuth CSRF `state` + PKCE `code_verifier` for the RP callback.
+ * Returns `false` when the handshake could not be stored — no `sessionStorage`
+ * (SSR / non-browser host) or a write that threw (`SecurityError` /
+ * `QuotaExceededError`, e.g. Safari private mode) — so the caller aborts the
+ * flow cleanly rather than redirect to a callback that cannot validate `state`.
+ */
+function persistOAuthHandshake(state: string, codeVerifier: string): boolean {
     const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
-    if (!store) return;
-    store.setItem(OXY_OAUTH_STATE_STORAGE_KEY, state);
-    store.setItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+    try {
+        if (!store) throw new Error('sessionStorage is unavailable');
+        store.setItem(OXY_OAUTH_STATE_STORAGE_KEY, state);
+        store.setItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+        return true;
+    } catch (error) {
+        logger.warn(
+            'OxySignInButton: could not persist the OAuth handshake to sessionStorage; aborting third-party sign-in',
+            { component: 'OxySignInButton' },
+            error,
+        );
+        return false;
+    }
 }
 
 export interface OxySignInButtonProps {
@@ -92,6 +119,27 @@ export interface OxySignInButtonProps {
      * not invent a redirect URI).
      */
     oauthRedirectUri?: string;
+
+    /**
+     * Native only: receives the OAuth handshake after a third-party auth session
+     * so the RP can finish the token exchange. On web the handshake is read back
+     * from `sessionStorage` across the full-page redirect, so this is not used
+     * there. A native third-party sign-in with NO `onOAuthResult` handler cannot
+     * complete (the `state` + `code_verifier` are lost) and logs a warning.
+     *
+     * @example
+     * ```tsx
+     * <OxySignInButton
+     *   oauthRedirectUri="myapp://oauth/callback"
+     *   onOAuthResult={({ redirectUrl, state, codeVerifier }) => {
+     *     if (!redirectUrl) return;
+     *     const code = new URL(redirectUrl).searchParams.get('code');
+     *     // → POST /auth/oauth/token { code, code_verifier: codeVerifier, state }
+     *   }}
+     * />
+     * ```
+     */
+    onOAuthResult?: (result: OxyOAuthResult) => void;
 }
 
 /**
@@ -127,6 +175,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     disabled = false,
     showWhenAuthenticated = false,
     oauthRedirectUri,
+    onOAuthResult,
 }) => {
     const theme = useTheme();
     const { openAccountDialog, oxyServices, clientId } = useOxy();
@@ -140,11 +189,16 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
     useEffect(() => subscribeToSignInModal(setIsModalOpen), []);
 
-    // The application's public identity is resolved ONCE per mounted button and
-    // its promise cached here, so the click handler stays lazy (no fetch until
-    // first press) and rapid taps share one in-flight resolve. A rejected resolve
-    // clears the cache so a later press can retry a transient failure.
-    const appResolutionRef = useRef<Promise<PublicApplication> | null>(null);
+    // The application's public identity is resolved lazily on first press and its
+    // promise cached, so rapid taps share one in-flight resolve. The cache is
+    // KEYED on the identity inputs (clientId + the oxyServices instance): if
+    // either changes the cache is invalidated and re-resolved — without a
+    // useEffect. A rejected resolve clears the cache so a later press can retry.
+    const appResolutionRef = useRef<{
+        clientId: string;
+        oxyServices: typeof oxyServices;
+        promise: Promise<PublicApplication>;
+    } | null>(null);
     // Re-entrancy guard: a routing pass may await network + crypto before it
     // redirects, so block a second concurrent press from racing the sessionStorage
     // handshake against a different PKCE pair.
@@ -152,13 +206,20 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
     const resolvePublicApplication = useCallback((): Promise<PublicApplication> | null => {
         if (!clientId) return null;
-        if (!appResolutionRef.current) {
-            appResolutionRef.current = oxyServices.getPublicApplication(clientId).catch((error) => {
-                appResolutionRef.current = null;
-                throw error;
-            });
+        const cached = appResolutionRef.current;
+        if (cached && cached.clientId === clientId && cached.oxyServices === oxyServices) {
+            return cached.promise;
         }
-        return appResolutionRef.current;
+        const promise = oxyServices.getPublicApplication(clientId).catch((error) => {
+            // Only clear if this is still the live entry (a later resolve may have
+            // replaced it after a clientId/oxyServices change).
+            if (appResolutionRef.current?.promise === promise) {
+                appResolutionRef.current = null;
+            }
+            throw error;
+        });
+        appResolutionRef.current = { clientId, oxyServices, promise };
+        return promise;
     }, [clientId, oxyServices]);
 
     // Official / first-party surface: the in-app account + sign-in dialog.
@@ -191,17 +252,30 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                 codeChallenge: pkce.codeChallenge,
             });
 
-            if (isWeb) {
+            if (Platform.OS === 'web') {
                 // Persist the handshake for the RP callback, then hand the
-                // top-level document to the IdP.
-                persistOAuthHandshake(state, pkce.codeVerifier);
+                // top-level document to the IdP. Without storage the callback
+                // cannot validate `state`, so abort cleanly rather than redirect.
+                if (!persistOAuthHandshake(state, pkce.codeVerifier)) {
+                    return;
+                }
                 redirectToAuthorize(authorizeUrl);
                 return;
             }
 
-            await openAuthorizeUrlNative(authorizeUrl, oauthRedirectUri);
+            // Native: open the in-app auth session, then hand the handshake to the
+            // RP so it can complete the token exchange from its deep-link callback.
+            const { redirectUrl } = await openAuthorizeUrlNative(authorizeUrl, oauthRedirectUri);
+            if (onOAuthResult) {
+                onOAuthResult({ redirectUrl, state, codeVerifier: pkce.codeVerifier });
+                return;
+            }
+            logger.warn(
+                'OxySignInButton: native third-party sign-in cannot complete without an `onOAuthResult` handler; the code exchange is the RP\'s responsibility (state + code_verifier were not surfaced)',
+                { component: 'OxySignInButton', application: app.name },
+            );
         },
-        [clientId, oauthRedirectUri, startOfficialSignIn],
+        [clientId, oauthRedirectUri, onOAuthResult, startOfficialSignIn],
     );
 
     // Resolve the Application once, then route: third-party → OAuth redirect;

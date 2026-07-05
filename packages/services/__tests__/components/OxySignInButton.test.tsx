@@ -10,9 +10,10 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { Platform } from 'react-native';
 import { logger } from '@oxyhq/core';
 import type { PublicApplication } from '@oxyhq/core';
-import { redirectToAuthorize } from '../../src/ui/components/oauthNavigation';
+import { redirectToAuthorize, openAuthorizeUrlNative } from '../../src/ui/components/oauthNavigation';
 import OxySignInButton, {
   OXY_OAUTH_STATE_STORAGE_KEY,
   OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
@@ -58,15 +59,24 @@ jest.mock('../../src/ui/components/OxyLogo', () => ({ __esModule: true, default:
 jest.mock('../../src/ui/components/oauthNavigation', () => ({
   __esModule: true,
   redirectToAuthorize: jest.fn(),
-  openAuthorizeUrlNative: jest.fn(async () => undefined),
+  openAuthorizeUrlNative: jest.fn(async () => ({ redirectUrl: null })),
 }));
 
 const redirectToAuthorizeMock = redirectToAuthorize as jest.MockedFunction<typeof redirectToAuthorize>;
+const openAuthorizeUrlNativeMock = openAuthorizeUrlNative as jest.MockedFunction<
+  typeof openAuthorizeUrlNative
+>;
 
 beforeEach(() => {
   jest.clearAllMocks();
   clientId = 'oxy_dk_test';
+  Platform.OS = 'web';
+  openAuthorizeUrlNativeMock.mockResolvedValue({ redirectUrl: null });
   window.sessionStorage.clear();
+});
+
+afterEach(() => {
+  Platform.OS = 'web';
 });
 
 describe('OxySignInButton', () => {
@@ -157,5 +167,77 @@ describe('OxySignInButton', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(getPublicApplication).not.toHaveBeenCalled();
     expect(openAccountDialog).not.toHaveBeenCalled();
+  });
+
+  it('hands the OAuth handshake to onOAuthResult for a third_party application (native)', async () => {
+    Platform.OS = 'ios';
+    openAuthorizeUrlNativeMock.mockResolvedValue({ redirectUrl: 'myapp://cb?code=abc123&state=xyz' });
+    getPublicApplication.mockResolvedValue(makeApp({ type: 'third_party', isOfficial: false }));
+    const onOAuthResult = jest.fn();
+
+    render(<OxySignInButton oauthRedirectUri="myapp://cb" onOAuthResult={onOAuthResult} />);
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(openAuthorizeUrlNativeMock).toHaveBeenCalledTimes(1));
+    // Native never touches sessionStorage or the web full-page redirect.
+    expect(redirectToAuthorizeMock).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(OXY_OAUTH_STATE_STORAGE_KEY)).toBeNull();
+
+    await waitFor(() => expect(onOAuthResult).toHaveBeenCalledTimes(1));
+    const [authorizeUrl] = openAuthorizeUrlNativeMock.mock.calls[0];
+    const sentState = new URL(authorizeUrl).searchParams.get('state');
+    const result = onOAuthResult.mock.calls[0][0];
+    expect(result.redirectUrl).toBe('myapp://cb?code=abc123&state=xyz');
+    expect(result.state).toBe(sentState);
+    expect(typeof result.codeVerifier).toBe('string');
+    expect(result.codeVerifier.length).toBeGreaterThan(40);
+  });
+
+  it('warns when a native third_party sign-in has no onOAuthResult handler', async () => {
+    Platform.OS = 'ios';
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    getPublicApplication.mockResolvedValue(makeApp({ type: 'third_party', isOfficial: false }));
+
+    render(<OxySignInButton oauthRedirectUri="myapp://cb" />);
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(openAuthorizeUrlNativeMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(warnSpy).toHaveBeenCalled());
+    expect(redirectToAuthorizeMock).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it('re-resolves the application when clientId changes (cache invalidation)', async () => {
+    getPublicApplication.mockResolvedValue(makeApp({ type: 'first_party', isOfficial: true }));
+
+    const { rerender } = render(<OxySignInButton />);
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => expect(getPublicApplication).toHaveBeenCalledWith('oxy_dk_test'));
+
+    clientId = 'oxy_dk_other';
+    rerender(<OxySignInButton />);
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(getPublicApplication).toHaveBeenCalledWith('oxy_dk_other'));
+    expect(getPublicApplication).toHaveBeenCalledTimes(2);
+  });
+
+  it('aborts the third_party web redirect when the handshake cannot be persisted', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const setItemSpy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+    getPublicApplication.mockResolvedValue(makeApp({ type: 'third_party', isOfficial: false }));
+
+    render(<OxySignInButton oauthRedirectUri="https://rp.example/callback" />);
+    fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(warnSpy).toHaveBeenCalled());
+    expect(redirectToAuthorizeMock).not.toHaveBeenCalled();
+    expect(openAccountDialog).not.toHaveBeenCalled();
+
+    setItemSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
