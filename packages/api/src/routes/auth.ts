@@ -2291,10 +2291,8 @@ router.get(
  *       - Authentication
  *     summary: Revoke a connected app's OAuth grant
  *     description: >
- *       Deletes the user's AppGrant for the application so the next sign-in
- *       prompts for consent again. ALSO deletes any FedCMGrant rows for the
- *       user whose origin matches one of the app's registered redirect origins,
- *       so silent FedCM/SSO stops resolving for that app too.
+ *       Deletes the user's AppGrant for the application so the next OAuth
+ *       authorize for this app prompts for consent again.
  *     security:
  *       - bearerAuth: []
  *     parameters:

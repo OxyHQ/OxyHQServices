@@ -7,9 +7,9 @@
  *      `OxyProvider clientId` (`EXPO_PUBLIC_OXY_CLIENT_ID` in
  *      `packages/commons/constants/oxy.ts`) must be a real registered public
  *      `ApplicationCredential`.
- *   2. Oxy Auth        — the FedCM IdP app, which now ALSO acts as its own
- *      Relying Party for the Sign-in-with-Oxy QR handoff and therefore needs a
- *      public client id + its own redirect origins.
+ *   2. Oxy Auth        — the third-party OAuth IdP app, which ALSO acts as its
+ *      own Relying Party for the Sign-in-with-Oxy QR handoff and therefore
+ *      needs a public client id + its own redirect origins.
  *
  * Both Applications live in the production "Oxy" team workspace, owned by the
  * platform user `oxy`. For each app this UPSERTS (never duplicates on re-run):
@@ -110,11 +110,17 @@ const CLIENTS: ClientSpec[] = [
     key: 'AUTH_IDP_CLIENT_ID',
     name: 'Oxy Auth',
     description:
-      'Official Oxy authentication app and FedCM Identity Provider, acting as its own Relying Party for Sign in with Oxy.',
+      'Official Oxy authentication app and third-party OAuth Identity Provider, acting as its own Relying Party for Sign in with Oxy.',
     websiteUrl: 'https://auth.oxy.so',
     type: 'first_party',
     // The IdP now consumes Sign-in-with-Oxy as an RP, so it needs its own origin
-    // + SSO callback registered. UNIONed into any existing redirectUris.
+    // + callback registered. UNIONed into any existing redirectUris.
+    // NOTE (found during the wave-2 comment sweep, NOT fixed here — logic, not
+    // a comment): `cb()` below builds `${origin}${SSO_CALLBACK_PATH}`, i.e.
+    // `https://auth.oxy.so/__oxy/sso-callback` — the deleted SSO-bounce
+    // callback path. If Oxy Auth's own RP flow no longer consumes that path,
+    // this redirectUri may be seeding a dead route; needs an engineer decision
+    // + a live check of what path the QR/Commons RP flow actually redeems.
     redirectUris: ['https://auth.oxy.so', cb('https://auth.oxy.so')],
     scopes: ['user:read'],
   },

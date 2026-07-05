@@ -3,19 +3,21 @@
  * authentication resolution.
  *
  * On a fresh page load / app launch the SDK may have several ways to recover an
- * existing session (silent FedCM, a persisted refresh token, a cross-domain
- * claim, a redirect SSO return, ...). They must be attempted in a deterministic
- * order*, and the FIRST one that yields a session wins — every later step is
- * skipped. This module encodes exactly that contract and nothing else.
+ * existing session (a persisted refresh-token family, a shared-keychain
+ * identity, a cross-domain boot-fragment return, ...). They must be attempted
+ * in a deterministic order, and the FIRST one that yields a session wins —
+ * every later step is skipped. This module encodes exactly that contract and
+ * nothing else.
  *
  * Design constraints (all enforced):
  *   - PURE: no DOM, no `navigator`, no `window`, no React, no platform globals.
  *   - NO module-level mutable state. Every call to {@link runColdBoot} is fully
  *     self-contained, so it is safe under bundler re-evaluation (e.g. the Metro
- *     web bundle, which is precisely why the FedCM silent-SSO guard had to live
- *     in consumers rather than a core singleton).
- *   - Architecture-agnostic: both candidate cross-domain SSO designs consume
- *     this same primitive; it knows nothing about HOW a step resolves a session.
+ *     web bundle — the reason any run-once guard for a step must live in the
+ *     calling consumer, never in a core module-level singleton).
+ *   - Architecture-agnostic: it knows nothing about HOW a step resolves a
+ *     session; `runSessionColdBoot` (`boot/coldBootV2.ts`) is the current
+ *     device-first consumer.
  *
  * A step is skipped (without running) when its `enabled` predicate returns
  * false. Any thrown error — from either `enabled` or `run` — is reported via
@@ -104,15 +106,16 @@ export interface RunColdBootOptions<S> {
    * fails to settle before the deadline, the runner abandons the await for that
    * step (reporting it via `onStepDeadline`) and CONTINUES to the next step,
    * each now racing against an already-expired deadline. This is deliberate:
-   * the runner keeps iterating so the TERMINAL step (e.g. the `/sso` bounce,
-   * whose `run()` performs its side effect synchronously before its first
-   * `await`) still gets to fire. A step that has nothing to contribute after
-   * the deadline simply doesn't settle and is skipped in turn.
+   * the runner keeps iterating so the TERMINAL step (e.g. `coldBootV2`'s
+   * `bootstrap-hop`, whose `run()` performs its navigation side effect
+   * synchronously before its first `await`) still gets to fire. A step that
+   * has nothing to contribute after the deadline simply doesn't settle and is
+   * skipped in turn.
    *
    * Per-step timeouts inside `run()` remain the first line of defense and
    * should keep every step well under this budget on a healthy load; this only
-   * trips when one of them regresses (the production FedCM-silent hang). When
-   * omitted there is no overall deadline.
+   * trips when one of them regresses (a step hanging past its own timeout).
+   * When omitted there is no overall deadline.
    */
   readonly overallDeadlineMs?: number;
   /**

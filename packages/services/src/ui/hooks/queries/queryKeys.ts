@@ -77,7 +77,7 @@ export const queryKeys = {
     usage: (accountScope?: string) => [...queryKeys.storage.all, 'usage', accountScope] as const,
   },
 
-  // Connected apps (FedCM grants the user has authorized)
+  // Connected apps (OAuth grants the user has authorized)
   connectedApps: {
     all: ['connectedApps'] as const,
     list: () => [...queryKeys.connectedApps.all, 'list'] as const,

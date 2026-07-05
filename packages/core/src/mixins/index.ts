@@ -96,9 +96,13 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Base authentication
     OxyServicesAuthMixin,
 
-    // Legacy FedCM "Connected apps" management (list/revoke authorized RP grants).
-    // The FedCM sign-in surface was removed in the device-first cutover; only
-    // this management pair survives until the AppGrant migration.
+    // "Connected apps" management (list/revoke authorized RP grants) on the
+    // AppGrant model — the successor to the retired FedCM authorized-apps
+    // surface. NOTE: `OxyServicesConnectedAppsMixin` below also exposes a
+    // list/revoke pair (`listConnectedApps`/`revokeAppGrant` on `/auth/grants`)
+    // over the SAME AppGrant data — found during the wave-2 comment sweep;
+    // this duplication predates it and wasn't introduced here, flagging for a
+    // follow-up consolidation decision.
     OxyServicesAuthorizedAppsMixin,
 
     // User management (requires auth)

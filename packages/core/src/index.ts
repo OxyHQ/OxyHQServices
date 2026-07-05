@@ -498,11 +498,15 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 // Registrable-domain + central-IdP-apex helpers.
 //
 // The client SSO-bounce / silent-iframe / FedCM machinery was removed in the
-// device-first cutover. These three symbols survive because the api SSO surface
-// and the IdP (both lista B, gated on the ecosystem bump) still import them:
-// `registrableApex` (eTLD+1), `CENTRAL_IDP_APEX`, and the `SSO_CALLBACK_PATH`
-// constant. `@oxyhq/core/server` re-exports `registrableApex` + `SSO_CALLBACK_PATH`
-// for the api; the IdP imports all three from here.
+// device-first cutover (wave 2, ecosystem-wide bump complete). `registrableApex`
+// (eTLD+1) and `CENTRAL_IDP_APEX` are still genuinely used: `registrableApex`
+// via the `@oxyhq/core/server` re-export consumed by
+// `packages/api/src/utils/sameSite.ts` for same-site origin checks, and
+// `CENTRAL_IDP_APEX` by `server/cors.ts`'s `createOxyCors` (auto-allows
+// `*.oxy.so`). `SSO_CALLBACK_PATH` has no remaining importer outside this
+// module as of wave 2 — kept exported for now rather than removed here (an
+// export deletion is a logic change, out of scope for a comment sweep); flag
+// for a follow-up dead-export cleanup pass.
 // ---------------------------------------------------------------------------
 export { registrableApex } from './utils/registrableApex';
 export { CENTRAL_IDP_APEX } from './utils/authWebUrl';

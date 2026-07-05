@@ -1,6 +1,16 @@
 /**
  * Canonical contract for the FedCM ID-token JWT payload.
  *
+ * DEAD SINCE THE WAVE-2 FEDCM DELETION (found during the comment sweep, not
+ * fixed here — this is a published `@oxyhq/contracts` export, so removing it
+ * is a breaking change/major-version decision, out of scope for a comment
+ * fix): `POST /fedcm/exchange`, `fedcm.service.exchangeIdToken`, and
+ * `packages/auth/server/index.ts`'s `mintSessionForClient` — every consumer
+ * and producer this file describes — are all deleted. No current code
+ * imports `fedcmTokenPayloadSchema` / `FedcmTokenPayload` outside this
+ * package. Flag for a follow-up major-version cleanup.
+ *
+ * Original doc (historical, describes the now-deleted system):
  * SINGLE SOURCE OF TRUTH for the decoded claims of the HS256 ID token the auth
  * IdP (`auth.oxy.so`) signs and `POST /fedcm/exchange` consumes. The API decodes
  * the JWT, verifies its signature, then validates the resulting claim object

@@ -11,13 +11,13 @@ export interface SessionStorageKeys {
   language: string;
   /**
    * DURABLE "this device/app has had a signed-in Oxy session before" hint.
-   *
-   * Lives in the SAME `storageKeyPrefix`-scoped durable store as the stored
-   * session ids, so it survives a session expiring (cleared only on explicit
-   * full sign-out). Read at cold boot to drive the smart `sso-bounce` gate:
-   * a returning visitor still gets ONE establish bounce so a central-only
-   * cross-domain session recovers, while a first-time anonymous visitor is
-   * never force-redirected. See `allowSsoBounce` in `@oxyhq/core`.
+   * Originally read at cold boot to drive the FedCM-era smart `sso-bounce`
+   * gate (a returning visitor still got one establish bounce; a first-time
+   * anonymous visitor was never force-redirected). That gate and
+   * `allowSsoBounce` were deleted in the device-first cutover — this storage
+   * key is currently defined but not read anywhere; kept rather than removed
+   * here since deleting a storage key is a logic change, out of scope for a
+   * comment sweep. Flag for a follow-up dead-field cleanup.
    */
   priorSession: string;
 }

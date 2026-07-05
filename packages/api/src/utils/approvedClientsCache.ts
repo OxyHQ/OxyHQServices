@@ -2,8 +2,8 @@ import { getRedisClient } from '../config/redis';
 import { logger } from './logger';
 
 // Short, security-relevant TTL. Deliberately shorter than userCache's 5min:
-// the approved-clients allow-list is part of the SSO/FedCM trust boundary, so
-// we keep cross-task staleness tightly bounded.
+// the approved-clients allow-list is part of the OAuth-consent/device-first
+// trust boundary, so we keep cross-task staleness tightly bounded.
 const DEFAULT_TTL = 60_000; // 60s in ms
 const REDIS_KEY = 'approved:origins';
 const LOCAL_KEY = 'approved:origins';
@@ -13,10 +13,9 @@ const LOG_COMPONENT = 'ApprovedClientsCache';
  * Cached approved-clients snapshot. `origins` is the full approved-clients
  * allow-list (dev/native + trusted-Application origins + manual escape-hatch
  * rows); `trusted` is the strict subset of first-party/official/internal
- * origins the API classifies as never requiring per-user FedCM consent (see
+ * origins the API classifies as never requiring per-user OAuth consent (see
  * `isTrustedApplication`). Both derive from ONE Mongo read and are cached
- * together so the IdP worker can consume both from a single `/fedcm/clients/approved`
- * fetch.
+ * together as a single entry.
  */
 export interface ApprovedClientsData {
   origins: string[];
@@ -24,25 +23,32 @@ export interface ApprovedClientsData {
 }
 
 /**
- * In-process cache for NON-AUTHORITATIVE FedCM approved-client list reads.
+ * In-process cache for NON-AUTHORITATIVE approved-client list reads.
  *
- * Collapses the redundant `FedCMClient`/`Application` reads per SSO/FedCM
- * sign-in (e.g. `getUserGrantedOrigins` / `approved_clients` derivation on cold
- * boot) into at most one Mongo read per TTL window. The approved set is tiny
- * and changes rarely (create / delete / seed only), so the whole origin list is
- * cached as a single entry.
+ * Collapses redundant `Application` reads for consumers that need the
+ * approved-origin/trusted-origin snapshot into at most one Mongo read per TTL
+ * window. The approved set is tiny and changes rarely (create / update /
+ * delete only), so the whole origin list is cached as a single entry.
  *
  * SECURITY BOUNDARY: this cache is safe ONLY for list/catalog-style callers
  * that can tolerate a short refresh delay. Security-sensitive AUTHORIZATION
- * checks (the FedCM token-exchange audience check via
- * `fedcmService.isClientApproved`) must BYPASS this cache and read the canonical
- * registry directly — oxy-api runs as multiple ECS Fargate tasks, so this
- * in-process Map is per-task: a revoke (`removeApprovedClient`) on task A clears
- * only task A's cache, and other tasks would otherwise serve the stale list
- * until their own 60s TTL expires. Authorization reading the registry live
- * closes that cross-task staleness window. The TTL still caps staleness for the
- * non-authoritative readers at 60s; the best-effort Redis tier shortens it
- * further when Valkey is reachable.
+ * checks must BYPASS this cache and read the canonical registry
+ * (`dynamicOriginRegistry` / `isTrustedApplication`) directly — oxy-api runs
+ * as multiple ECS Fargate tasks, so this in-process Map is per-task: an
+ * `invalidate()` on task A clears only task A's cache, and other tasks would
+ * otherwise serve the stale list until their own 60s TTL expires.
+ * Authorization reading the registry live closes that cross-task staleness
+ * window. The TTL still caps staleness for the non-authoritative readers at
+ * 60s; the best-effort Redis tier shortens it further when Valkey is
+ * reachable.
+ *
+ * NOTE: as of the wave-2 FedCM/SSO deletion, `invalidate()` is called from
+ * `routes/applications.ts` on every Application create/update/delete, but no
+ * current code path calls `getApprovedData()` to actually read the cache —
+ * its only consumer (the FedCM IdP worker's approved-clients fetch) was
+ * deleted along with FedCM. Left in place rather than removed here since
+ * deleting a class + its call sites is a logic change, not a comment fix;
+ * flag for a follow-up dead-code pass if no future consumer claims it.
  */
 class ApprovedClientsCache {
   private local: Map<string, { data: ApprovedClientsData; timestamp: number; ttl: number }> = new Map();
@@ -70,8 +76,8 @@ class ApprovedClientsCache {
 
   /**
    * Clear the cached list everywhere this task can reach: the local entry and
-   * the best-effort Redis tier. Called by the only mutators of the allow-list
-   * (`addApprovedClient`, `removeApprovedClient`, `seedApprovedClients`).
+   * the best-effort Redis tier. Called from `routes/applications.ts` on
+   * Application create/update/delete (see the dead-consumer note above).
    */
   invalidate(): void {
     this.local.delete(LOCAL_KEY);

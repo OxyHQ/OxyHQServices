@@ -408,16 +408,18 @@ class SessionService {
   ): Promise<ISession> {
     try {
       const { deviceName, deviceFingerprint, stableDeviceKey, deviceId: explicitDeviceId, operatedByUserId } = options;
-      // For IdP/FedCM-issued sessions the request is a server-to-server call
-      // from the IdP (UA = 'unknown', egress IP varies per call), so the
+      // For a server-to-server session mint where the request itself carries no
+      // stable client identity (UA = 'unknown', egress IP varies per call), the
       // UA/IP-derived deviceId would be random every time and sprawl a new
       // session per exchange. When a `stableDeviceKey` is supplied, derive a
       // deterministic deviceId from (userId, key) and feed it as the provided
       // deviceId so `extractDeviceInfo` skips the UA/IP derivation entirely —
-      // one (user, RP) then reuses a single session via the lookup below. An
-      // explicit `deviceId` (e.g. threaded from a FedCM id_token claim) wins
-      // over the derived stable id, letting the caller stamp a unified central
-      // device id verbatim. Precedence: deviceId > stableDeviceKey > UA/IP > random.
+      // one (user, RP) then reuses a single session via the lookup below (no
+      // current caller passes `stableDeviceKey`; see `SessionCreateOptions`).
+      // An explicit `deviceId` — e.g. the account-switch route threading the
+      // operator's own central deviceId onto the minted managed-account
+      // session — wins over the derived stable id, letting the caller stamp a
+      // unified central device id verbatim. Precedence: deviceId > stableDeviceKey > UA/IP > random.
       // The origin-derived stable id (per (user, RP)). Kept SEPARATELY from the
       // attribution id below so we can still locate a LEGACY per-origin session
       // — one minted before deviceId unification, pinned to this synthetic
@@ -436,9 +438,9 @@ class SessionService {
       // stable deviceId MUST win. Running the `deviceFingerprint` →
       // `registerDevice` override below would call `findExistingDeviceId` and
       // could silently replace the stable id with a fingerprint-matched one,
-      // re-introducing the FedCM session-sprawl this fix exists to prevent.
-      // So we skip that path entirely on the stable-key branch. If a future
-      // caller passes BOTH, `stableDeviceKey` takes precedence and the
+      // re-introducing the per-exchange session-sprawl this branch exists to
+      // prevent. So we skip that path entirely on the stable-key branch. If a
+      // future caller passes BOTH, `stableDeviceKey` takes precedence and the
       // `deviceFingerprint` is ignored (with a single dev warning).
       if (stableId) {
         if (deviceFingerprint) {

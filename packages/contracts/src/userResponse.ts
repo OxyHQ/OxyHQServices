@@ -16,7 +16,8 @@
  *
  * Faithful to the producers:
  *  - `packages/api/src/utils/userTransform.ts` `formatUserResponse` — the
- *    canonical serialization used by `/auth/refresh-all`, device sessions, etc.
+ *    canonical serialization used by the device-first bootstrap/exchange
+ *    endpoints (`deviceAuth.ts`), login/signup, device sessions, etc.
  *    Emits `id` (NOT `_id`), forwards `username` verbatim (may be absent), and
  *    emits `name` as the structured `{ first, last, full, displayName }`
  *    subdocument.
@@ -24,8 +25,6 @@
  *    `''`; `full` and `displayName` are Mongoose VIRTUALS. Formatted API
  *    responses compose both fields, while raw-document responses may omit the
  *    virtuals if the query did not materialise them.
- *  - The `/auth/refresh-all` handler in `packages/api/src/routes/auth.ts`, whose
- *    per-slot `authuser` is the numeric `oxy_rt_${authuser}` cookie slot.
  *
  * Platform-agnostic — zod only, no react/react-native/expo. ESM-safe (no
  * `require()`).

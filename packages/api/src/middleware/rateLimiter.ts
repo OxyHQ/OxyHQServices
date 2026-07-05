@@ -11,7 +11,7 @@ interface RateLimitOptions {
    * that flows through more than one of them increments the same counter
    * multiple times (express-rate-limit emits `ERR_ERL_DOUBLE_COUNT` and the
    * effective per-IP budget is silently halved). Use a short, stable, unique
-   * string per call site, e.g. `'auth:challenge:'`, `'fedcm:nonce:'`.
+   * string per call site, e.g. `'auth:challenge:'`, `'auth:device:bootstrap:'`.
    */
   prefix: string;
   windowMs: number;

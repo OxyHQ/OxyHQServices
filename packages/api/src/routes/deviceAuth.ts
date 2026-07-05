@@ -19,8 +19,11 @@
  *                                   chooser.
  *
  * The legacy `/sso*`, `/fedcm/*`, `/auth/refresh`, `/auth/refresh-all`,
- * `/auth/session`, and `oxy_rt` cookie machinery are BYTE-UNTOUCHED — everything
- * here is new surface. NO token or deviceId is ever placed in a URL/query/
+ * `/auth/session`, and `oxy_rt` cookie machinery were left byte-untouched when
+ * this router was first added (this surface was purely additive); a later
+ * cleanup pass deleted all of that legacy surface entirely once every
+ * consuming app had migrated — this router is now the sole session-bootstrap
+ * surface. NO token or deviceId is ever placed in a URL/query/
  * fragment/response-body of these endpoints (the cookie secret ≠ deviceId, the
  * boot code is opaque, and the deviceToken is opaque).
  */

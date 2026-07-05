@@ -18,10 +18,12 @@ export interface SessionCreateOptions {
   deviceFingerprint?: DeviceFingerprintInput;
   /**
    * When set, the session's deviceId is derived deterministically from
-   * (userId, stableDeviceKey) via `deriveServiceDeviceId` — used for
-   * IdP/FedCM-issued sessions so one (user, RP) reuses a single session. The
-   * request's IP/UA are NOT used for the deviceId on this path. Real device
-   * logins (no stableDeviceKey) are unaffected.
+   * (userId, stableDeviceKey) via `deriveServiceDeviceId` so one (user, RP)
+   * reuses a single session, independent of request IP/UA. Originally added
+   * for IdP/FedCM-issued sessions; no current call site passes this option
+   * post-wave-2 (kept for any future server-minted-session caller that needs
+   * the same stable-per-RP-session property). Real device logins (no
+   * stableDeviceKey) are unaffected.
    */
   stableDeviceKey?: string;
   /**

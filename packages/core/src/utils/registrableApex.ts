@@ -4,12 +4,12 @@
  * The client FAPI auto-detection helper was removed in the device-first cutover
  * (which is why this file is now named for what it actually is, not the old
  * `fapiAutoDetect`). What survives is the pure registrable-domain kernel, still
- * used server-side by the api (`deviceAuth` same-apex trust checks via
- * `sameSite.ts`, `fedcm.service`, `sso.controller`), the `@oxyhq/core/server`
- * CORS/re-export layer, and the IdP worker.
+ * used server-side by the api's device-first same-apex trust checks
+ * (`deviceAuth.ts`'s `POST /auth/device/web-session`, via `sameSite.ts`'s
+ * `isSameSiteTrustedRequest`) and the `@oxyhq/core/server` CORS/re-export layer.
  *
- * `registrableApex` is NOT legacy — `deviceAuth` (device-first) is a live
- * consumer, so this kernel stays regardless of the SSO/FedCM lista-B teardown.
+ * `registrableApex` is NOT legacy — the device-first same-apex check is a live
+ * consumer, so this kernel stays regardless of the SSO/FedCM removal.
  */
 
 import { getDomain } from 'tldts';

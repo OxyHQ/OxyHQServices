@@ -32,7 +32,7 @@ export const mutationKeys = {
     removeDevice: ['mutation', 'session', 'removeDevice'] as const,
   },
 
-  // Connected apps (FedCM grants)
+  // Connected apps (OAuth grants)
   connectedApps: {
     revoke: ['mutation', 'connectedApps', 'revoke'] as const,
   },
