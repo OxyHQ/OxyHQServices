@@ -16,6 +16,10 @@ export interface PublicApplication {
   description?: string;
   icon?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL, rendered as a legal link on the consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL, rendered as a legal link on the consent screen. */
+  termsUrl?: string;
   type: ApplicationType;
   isOfficial: boolean;
   isInternal: boolean;
@@ -47,6 +51,8 @@ export function serializePublicApplication(
     | 'description'
     | 'icon'
     | 'websiteUrl'
+    | 'privacyPolicyUrl'
+    | 'termsUrl'
     | 'type'
     | 'isOfficial'
     | 'isInternal'
@@ -71,6 +77,12 @@ export function serializePublicApplication(
   }
   if (app.websiteUrl !== undefined && app.websiteUrl !== null) {
     result.websiteUrl = app.websiteUrl;
+  }
+  if (app.privacyPolicyUrl !== undefined && app.privacyPolicyUrl !== null) {
+    result.privacyPolicyUrl = app.privacyPolicyUrl;
+  }
+  if (app.termsUrl !== undefined && app.termsUrl !== null) {
+    result.termsUrl = app.termsUrl;
   }
 
   // Developer attribution is only meaningful for non-official apps, and only

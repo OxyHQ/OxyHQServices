@@ -254,6 +254,8 @@ function serializeApplication(
     name: app.name,
     description: app.description,
     websiteUrl: app.websiteUrl,
+    privacyPolicyUrl: app.privacyPolicyUrl,
+    termsUrl: app.termsUrl,
     icon: app.icon,
     type: app.type,
     status: app.status,
@@ -513,6 +515,8 @@ router.post(
       name: string;
       description?: string;
       websiteUrl?: string;
+      privacyPolicyUrl?: string;
+      termsUrl?: string;
       icon?: string;
       redirectUris?: string[];
       scopes?: typeof APPLICATION_SCOPES[number][];
@@ -538,6 +542,8 @@ router.post(
       name: body.name,
       description: body.description,
       websiteUrl: body.websiteUrl || undefined,
+      privacyPolicyUrl: body.privacyPolicyUrl || undefined,
+      termsUrl: body.termsUrl || undefined,
       icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
       redirectUris: resolveRedirectUris(body) ?? [],
       scopes,
@@ -608,6 +614,8 @@ router.patch(
       name?: string;
       description?: string;
       websiteUrl?: string;
+      privacyPolicyUrl?: string;
+      termsUrl?: string;
       icon?: string;
       redirectUris?: string[];
       scopes?: typeof APPLICATION_SCOPES[number][];
@@ -623,6 +631,10 @@ router.patch(
     if (body.name !== undefined) application.name = body.name;
     if (body.description !== undefined) application.description = body.description;
     if (body.websiteUrl !== undefined) application.websiteUrl = body.websiteUrl || undefined;
+    if (body.privacyPolicyUrl !== undefined) {
+      application.privacyPolicyUrl = body.privacyPolicyUrl || undefined;
+    }
+    if (body.termsUrl !== undefined) application.termsUrl = body.termsUrl || undefined;
     if (body.icon !== undefined) application.icon = stripSensitiveUrlQueryParams(body.icon);
     if (body.scopes !== undefined) {
       // Privileged scopes (e.g. federation:write) are staff-only. A non-staff

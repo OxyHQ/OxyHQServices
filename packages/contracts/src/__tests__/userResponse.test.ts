@@ -1,7 +1,7 @@
 import {
     userResponseSchema,
     currentUserResponseSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionsResponseSchema,
     resolveUserId,
     safeParseContract,
 } from '../userResponse';
@@ -116,9 +116,9 @@ describe('currentUserResponseSchema', () => {
     });
 });
 
-describe('deviceSessionsResponseSchema', () => {
+describe('deviceLinkedSessionsResponseSchema', () => {
     it('accepts entries with a structured-name user', () => {
-        const parsed = safeParseContract(deviceSessionsResponseSchema, [
+        const parsed = safeParseContract(deviceLinkedSessionsResponseSchema, [
             {
                 sessionId: 's1',
                 isCurrent: true,
@@ -130,7 +130,7 @@ describe('deviceSessionsResponseSchema', () => {
     });
 
     it('accepts a null user slot', () => {
-        const parsed = safeParseContract(deviceSessionsResponseSchema, [
+        const parsed = safeParseContract(deviceLinkedSessionsResponseSchema, [
             { sessionId: 's1', user: null },
         ]);
         expect(parsed).not.toBeNull();
