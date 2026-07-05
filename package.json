@@ -1,7 +1,7 @@
 {
   "name": "@oxyhq/sdk",
   "version": "1.0.0",
-  "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
+  "description": "OxyHQ SDK Monorepo \u2014 core, auth, services, and API packages",
   "private": true,
   "trustedDependencies": [
     "@shopify/react-native-skia",
@@ -11,7 +11,6 @@
     "packages/contracts",
     "packages/protocol",
     "packages/core",
-    "packages/auth-sdk",
     "packages/services",
     "packages/expo-splash",
     "packages/api",
@@ -32,7 +31,6 @@
     "clean": "turbo run clean",
     "protocol:build": "bun run --filter @oxyhq/protocol build",
     "core:build": "bun run --filter @oxyhq/core build",
-    "auth:build": "bun run --filter @oxyhq/auth build",
     "services:build": "bun run --filter @oxyhq/services build",
     "services:dev": "bun run --filter @oxyhq/services dev",
     "services:test": "bun run --filter @oxyhq/services test",

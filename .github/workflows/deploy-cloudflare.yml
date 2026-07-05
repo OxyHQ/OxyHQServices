@@ -33,7 +33,7 @@ jobs:
             console:
               - 'packages/console/**'
               - 'packages/core/**'
-              - 'packages/auth-sdk/**'
+              - 'packages/services/**'
 
   deploy-auth:
     needs: detect-changes
