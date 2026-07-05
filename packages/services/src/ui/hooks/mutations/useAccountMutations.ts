@@ -632,20 +632,20 @@ export const useUpdateUserPreferences = () => {
 };
 
 /**
- * Revoke the authenticated user's authorization for a specific application (by
- * its OAuth `clientId`). Removes the grant so the app no longer appears in the
- * user's "Connected apps" list — next sign-in for that app will require explicit
+ * Revoke the current user's grant for a connected application (by its
+ * `applicationId`). Removes the grant so the app no longer appears in the user's
+ * "Connected apps" list — next sign-in for that app will require explicit
  * re-consent.
  */
-export const useRevokeAuthorizedApp = () => {
+export const useRevokeConnectedApp = () => {
   const { oxyServices, activeSessionId } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: [...mutationKeys.connectedApps.revoke],
-    mutationFn: async (clientId: string) => {
+    mutationFn: async (applicationId: string) => {
       return authenticatedApiCall<void>(oxyServices, activeSessionId, () =>
-        oxyServices.revokeAuthorizedApp(clientId)
+        oxyServices.revokeAppGrant(applicationId)
       );
     },
     onSuccess: () => {
@@ -653,7 +653,7 @@ export const useRevokeAuthorizedApp = () => {
     },
     onError: (error) => {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to revoke authorized app'
+        error instanceof Error ? error.message : 'Failed to revoke connected app'
       );
     },
   });

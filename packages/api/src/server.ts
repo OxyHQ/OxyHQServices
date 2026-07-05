@@ -30,7 +30,6 @@ import accountRoutes from './routes/accounts';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
-import authorizedAppsRoutes from './routes/authorizedApps';
 import authLinkingRoutes from './routes/authLinking';
 import reputationService from './services/reputation.service';
 import emailRoutes from './routes/email';
@@ -533,9 +532,6 @@ app.use('/accounts', csrfProtection, accountRoutes);
 app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
-// Connected-apps management (OAuth AppGrant). Replaces the deleted FedCM
-// authorized-apps surface. Bearer-auth inside the router; own rate limiters.
-app.use('/apps', authorizedAppsRoutes);
 app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before /email
 app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);

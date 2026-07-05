@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { AuthorizedApp, User } from '@oxyhq/core';
+import type { ConnectedApp, User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { mutationKeys } from '../mutations/mutationKeys';
 import { useOxy } from '../../context/OxyContext';
@@ -205,19 +205,20 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
 };
 
 /**
- * List the authenticated user's authorized OAuth applications
- * (`GET /apps/authorized`). Drives the "Connected apps" management screen.
+ * List the third-party OAuth applications the current user has connected via
+ * the consent flow (`GET /auth/grants`). Drives the "Connected apps" management
+ * screen.
  */
-export const useAuthorizedApps = (options?: { enabled?: boolean }) => {
+export const useConnectedApps = (options?: { enabled?: boolean }) => {
   const { oxyServices, activeSessionId, isAuthenticated } = useOxy();
 
-  return useQuery<AuthorizedApp[]>({
+  return useQuery<ConnectedApp[]>({
     queryKey: queryKeys.connectedApps.list(),
     queryFn: async () => {
-      return authenticatedApiCall<AuthorizedApp[]>(
+      return authenticatedApiCall<ConnectedApp[]>(
         oxyServices,
         activeSessionId,
-        () => oxyServices.listAuthorizedApps()
+        () => oxyServices.listConnectedApps()
       );
     },
     enabled: (options?.enabled !== false) && isAuthenticated,
