@@ -1074,10 +1074,10 @@ bun run services:build
 |------|-----|--------|
 | 0 | audit | ✅ 2026-07-05 — [`oxy-auth-audit.md`](./oxy-auth-audit.md); baselines main: contracts 150 / core 723 / api 1358 / services 165 / auth 51+9f(env); **blockers §10 del audit esperan decisión Nate** |
 | 1 | reconcile-p1 / DeviceSession | ✅ 2026-07-05 — ya estaba en main (waves 1+2); gate re-scoped verificado + colisión DTO resuelta (`DeviceLinkedSession*`, PR #556) |
-| 2 | contracts | 🟡 schemas deviceSession/deviceBoot ya en main+npm; **2b ✅** privacy/terms (PR #556); **2c ⬜ workshop Nate pendiente** |
+| 2 | contracts | 🟡 schemas ya en main+npm; **2b ✅** (PR #556); **2c ⬜ BLOQUEADA hasta workshop Nate** — decisión 2026-07-06: objetivo final cero-cookies confirmado, pero NO tocar transporte (oxy_device + refresh family + bootstrap/exchange se mantienen tal cual) hasta workshop explícito; orden acordado 5→6→7→workshop 2c |
 | 3 | merge-auth-sdk | ✅ 2026-07-05 — console en @oxyhq/services; auth-sdk ELIMINADO; rolldown-vite + vite-plugin-react-native-web; bloom ^0.29.2 (PR #557) |
 | 4 | unify-ui | ✅ 2026-07-06 — OxyAccountDialog sobre Bloom Dialog (placement bottom/md-center; mata bug RNW Modal+StrictMode); OxySignInButton bifurcado official→Dialog / third_party→OAuth+PKCE; helpers PKCE en core; i18n scan* keys |
-| 5 | auth-idp-rnweb | ⬜ Pendiente |
+| 5 | auth-idp-rnweb | 🔨 EN CURSO 2026-07-06 — gate re-scoped con Nate: checkboxes refresh-all/FedCM-server ya satisfechos en main; integración = provider services modo-IdP (sin cold boot / sin session authority, fix upstream limpio) + montar piezas services existentes (QR/device-flow) + OxyConsentScreen nueva en services; consent/password/signup/recover conservan shell DOM+Bloom; /settings/* (rotas: POST /auth/refresh borrado) → DELETE + redirect a accounts.oxy.so |
 | 6 | migrate-apps | ⬜ Pendiente |
 | 7 | clean-cut-docs | ⬜ Pendiente |
 
