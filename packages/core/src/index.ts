@@ -34,9 +34,6 @@ export type { AuthRefreshReason, AuthRefreshHandler } from './HttpService';
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
-// Legacy "Connected apps" management surface (list/revoke FedCM authorization
-// grants). The FedCM sign-in machinery was removed in the device-first cutover.
-export type { AuthorizedApp } from './mixins/OxyServices.authorizedApps';
 export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)

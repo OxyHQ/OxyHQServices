@@ -77,7 +77,7 @@ export {
     useUserByUsername,
     useUsersBySessions,
     usePrivacySettings,
-    useAuthorizedApps,
+    useConnectedApps,
 } from './ui/hooks/queries/useAccountQueries';
 export {
     useSessions,
@@ -124,7 +124,7 @@ export {
     useUpdatePrivacySettings,
     useUpdateNotificationPreferences,
     useUpdateUserPreferences,
-    useRevokeAuthorizedApp,
+    useRevokeConnectedApp,
     useUploadFile,
 } from './ui/hooks/mutations/useAccountMutations';
 export {

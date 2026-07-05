@@ -7,7 +7,6 @@
 
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
-import { OxyServicesAuthorizedAppsMixin } from './OxyServices.authorizedApps';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesIdentityMixin } from './OxyServices.identity';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
@@ -42,7 +41,6 @@ import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
  */
 type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesAuthorizedAppsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesIdentityMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
@@ -95,15 +93,6 @@ type MixinFunction = (Base: new (...args: unknown[]) => OxyServicesBase) => new 
 const MIXIN_PIPELINE: MixinFunction[] = [
     // Base authentication
     OxyServicesAuthMixin,
-
-    // "Connected apps" management (list/revoke authorized RP grants) on the
-    // AppGrant model — the successor to the retired FedCM authorized-apps
-    // surface. NOTE: `OxyServicesConnectedAppsMixin` below also exposes a
-    // list/revoke pair (`listConnectedApps`/`revokeAppGrant` on `/auth/grants`)
-    // over the SAME AppGrant data — found during the wave-2 comment sweep;
-    // this duplication predates it and wasn't introduced here, flagging for a
-    // follow-up consolidation decision.
-    OxyServicesAuthorizedAppsMixin,
 
     // User management (requires auth)
     OxyServicesUserMixin,
