@@ -31,7 +31,7 @@ const REQUIRED_SCOPE = 'federation:write';
  * Uncached loader for the federation domains a given Application may sign for.
  *
  * SECURITY BOUNDARY (see {@link credentialDomainCache}): there is no explicit
- * federation-domain field on the Application, so — mirroring the FedCM
+ * federation-domain field on the Application, so — mirroring the
  * approved-clients derivation — we take the hostnames of the Application's
  * `redirectUris` as the set of domains its credentials may operate on. Only
  * `active` applications qualify; a suspended/deleted/pending app yields an empty

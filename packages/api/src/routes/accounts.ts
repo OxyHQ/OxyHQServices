@@ -389,13 +389,11 @@ router.post(
       throw new Error('Failed to format account data');
     }
 
-    // The device multi-account refresh cookie is deliberately NOT set here — see
-    // the route docstring. The `oxy_rt_<authuser>` cookies are `Path=/auth`
-    // scoped, so this `/accounts/*` route never receives them; issuing one blind
-    // would always pick slot 0 and overwrite the operator's own primary session.
-    // The SDK plants the returned `accessToken` and establishes the cookie via
-    // `POST /auth/session` (under `/auth`, where the slots are visible) so the
-    // switched session lands in a correctly-allocated NEW slot.
+    // No cookie is planted here — the device-set registration above
+    // (`deviceSessionService.addAccount` + `broadcastDeviceState`) is what makes
+    // the switch survive reload and sync cross-domain via the socket room. The
+    // SDK plants the returned `accessToken` directly; there is no separate
+    // cookie-establishing round trip.
 
     // Mirror the canonical login / claimSession response shape.
     const response: SessionAuthResponse = {

@@ -30,7 +30,7 @@
  * CACHE: service-token scopes are read FRESH from Mongo on every
  * `POST /auth/service-token` mint — there is NO scope cache to bust. The change
  * takes effect on the credential's next token mint. (`approvedClientsCache` is
- * unrelated: it caches FedCM approved client ORIGINS derived from Application
+ * unrelated: it caches approved-client ORIGINS derived from Application
  * `redirectUris`, not service-token scopes.)
  *
  * SAFETY:

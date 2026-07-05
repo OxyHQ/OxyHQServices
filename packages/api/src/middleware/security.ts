@@ -57,9 +57,9 @@ export function isIdpServiceToServicePath(path: string): boolean {
 // General rate limiting middleware (exclude file uploads). The previous
 // ceiling of 150/15min was below what a single signed-in user generates
 // against the API in normal usage (feed scrolling, profile loads, sockets'
-// REST fallback, FedCM exchanges), which surfaced as misleading 429s on
-// unrelated endpoints. The userRateLimiter below still caps per-account
-// traffic. IdP worker server-to-server paths are skipped (see
+// REST fallback, device-first refresh/bootstrap calls), which surfaced as
+// misleading 429s on unrelated endpoints. The userRateLimiter below still caps
+// per-account traffic. IdP worker server-to-server paths are skipped (see
 // isIdpServiceToServicePath) so shared-egress traffic never exhausts this budget.
 const rateLimiter = rateLimit({
   ...makeStore('rl:general:'),
@@ -73,11 +73,14 @@ const rateLimiter = rateLimit({
 });
 
 // Dedicated high-ceiling limiter for the IdP worker's server-to-server READ
-// calls (see isIdpServiceToServicePath). Because those paths are skipped by
-// rl:general, this is their SOLE per-IP budget. The ceiling is deliberately
-// high: each hit is the shared Cloudflare Worker egress fanning MANY users'
-// FedCM/SSO flows through one IP, not a single browser — yet it still bounds a
-// runaway or compromised caller. Unique prefix (`rl:fedcm:service:`) keeps its
+// calls (see isIdpServiceToServicePath: /session/validate/* and
+// /auth/device/resolve, the device-account chooser feed's lookup). Because
+// those paths are skipped by rl:general, this is their SOLE per-IP budget.
+// The ceiling is deliberately high: each hit is the shared Cloudflare Worker
+// egress fanning MANY users' device-first/IdP-chooser calls through one IP,
+// not a single browser — yet it still bounds a runaway or compromised caller.
+// Unique prefix (`rl:fedcm:service:` — name predates the wave-2 FedCM
+// deletion, kept as-is to avoid an unnecessary Redis key migration) keeps its
 // counter distinct from every other limiter (no ERR_ERL_DOUBLE_COUNT).
 const idpServiceLimiter = rateLimit({
   ...makeStore('rl:fedcm:service:'),

@@ -4,9 +4,10 @@
  * Registering an Application in OxyConsole (with `redirectUris`) must
  * automatically authorize that app's origin for CORS, with NO code change. The
  * trust gate is the canonical {@link isTrustedApplication} predicate — the SAME
- * staff-controlled boundary FedCM/SSO uses — NOT `status: 'active'` (every
- * self-service third-party app is active too, so `active` alone is never a
- * trust boundary).
+ * staff-controlled boundary the OAuth consent auto-approve decision and the
+ * device-first bootstrap `return_to` validation use — NOT `status: 'active'`
+ * (every self-service third-party app is active too, so `active` alone is
+ * never a trust boundary).
  *
  * Two snapshots are maintained in memory and swapped atomically on refresh:
  *  - `trustedOrigins`     — first-party / internal / system / official apps

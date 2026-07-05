@@ -113,11 +113,21 @@ const SEED_APPS: SeedAppSpec[] = [
   },
   {
     name: 'Oxy Auth',
-    description: 'Official Oxy authentication app and FedCM Identity Provider.',
+    description: 'Official Oxy authentication app and third-party OAuth Identity Provider.',
     websiteUrl: 'https://auth.oxy.so',
     type: 'first_party',
-    // The auth app is the central IdP, but it now ALSO consumes Sign-in-with-Oxy
-    // as its own Relying Party, so it registers its own origin + SSO callback.
+    // The auth app is the third-party OAuth IdP, but it now ALSO consumes
+    // Sign-in-with-Oxy as its own Relying Party, so it registers its own
+    // origin + callback.
+    // NOTE (found during the wave-2 comment sweep, NOT fixed here — logic,
+    // not a comment): `cb()` (defined above) hardcodes `SSO_CALLBACK_PATH =
+    // '/__oxy/sso-callback'` — the deleted SSO-bounce callback path — as the
+    // registered redirectUri for EVERY official app this script seeds, not
+    // just this one. That path is only ever used for its ORIGIN in current
+    // trust derivation (`dynamicOriginRegistry` extracts origins, not exact
+    // paths), so this is likely harmless dead configuration rather than a
+    // functional break, but it needs an engineer decision + verification
+    // before re-running this script for a new official app.
     redirectUris: ['https://auth.oxy.so', cb('https://auth.oxy.so')],
   },
   // ── Ecosystem first-party apps ──

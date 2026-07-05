@@ -13,15 +13,15 @@ import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
  * Accounts owns no sign-in UI of its own. Authentication is an ecosystem
  * concern, so this screen is a thin branded shell — logo, welcome copy, and a
  * single "Sign in with Oxy" button — that hands off entirely to the SDK's
- * `SignInModal` (mounted globally by `OxyProvider`). That modal owns every auth
- * path: the "Continue with Oxy" IdP popup (which internally offers password,
- * social, etc.), the same-device deep-link handoff to the Oxy app, and the
- * cross-device QR. There is no app-local password form, 2FA step, or FedCM path
- * here — the SDK is the single sign-in authority.
+ * in-app `SignInModal` (mounted globally by `OxyProvider`). That modal owns
+ * every auth path: the first-party password + optional-2FA flow as the
+ * primary action, plus the cross-app device flow (same-device deep-link +
+ * "sign in on another device" QR) as a secondary option. There is no
+ * app-local password form, 2FA step, or IdP redirect here — the SDK is the
+ * single sign-in authority, and it never navigates away from the app.
  *
- * Cross-domain web restore (per-apex `/auth/silent` iframe + `/sso` bounce) is
- * owned entirely by the SDK's `OxyProvider` cold boot — this screen never wires
- * it.
+ * Cross-domain restore is device-first, owned entirely by the SDK's
+ * `OxyProvider` cold boot (`runSessionColdBoot`) — this screen never wires it.
  *
  * The root Stack (`app/_layout.tsx`) owns the `(auth)`↔`(tabs)` swap keyed on
  * session, so this screen never navigates across that boundary itself: it

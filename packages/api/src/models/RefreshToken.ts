@@ -3,19 +3,19 @@ import mongoose, { Document, Schema } from "mongoose";
 /**
  * RefreshToken Model
  *
- * Backs the first-party httpOnly refresh-token cookie that enables secure
- * cold-boot session persistence. When a user signs in (password, FedCM, or
- * public-key flow) the server mints an opaque refresh token, stores ONLY its
- * SHA-256 hash here, and drops the raw token into an httpOnly + Secure cookie
- * scoped to `/auth` (so it reaches `/auth/session`, `/auth/refresh`, and
- * `/auth/logout`). On a cold boot the browser replays the cookie to
- * `POST /auth/refresh`, which rotates the token and mints a fresh access token
- * — no bearer credential ever lives in JS-readable storage.
+ * Backs the device-first persisted-refresh lane (see
+ * `services/refreshToken.service.ts`). When a user signs in (password, public
+ * key, or a device exchange) the server mints an opaque refresh token, stores
+ * ONLY its SHA-256 hash here, and hands the raw token to the client, which
+ * persists it itself (web localStorage / native SecureStore) — this is a
+ * body-based rotation, not a cookie. The client rotates it via
+ * `POST /auth/refresh-token` (`deviceAuth.ts`), which consumes the presented
+ * token and mints a fresh access token + the next token in the family.
  *
  * Security model:
- * - Rotation: every successful `/auth/refresh` consumes the presented token
- *   (sets `usedAt`) and issues a brand-new token in the SAME `family` with a
- *   fresh sliding expiry. A refresh token is therefore strictly single-use.
+ * - Rotation: every successful rotation consumes the presented token (sets
+ *   `usedAt`) and issues a brand-new token in the SAME `family` with a fresh
+ *   sliding expiry. A refresh token is therefore strictly single-use.
  * - Reuse-detection = theft signal: a refresh token that is presented AFTER it
  *   has already been consumed (`usedAt` set) can only mean the token leaked and
  *   both the legitimate client and an attacker now hold copies. We treat this as
@@ -24,7 +24,7 @@ import mongoose, { Document, Schema } from "mongoose";
  *   is the OWASP-recommended refresh-token-rotation defense.
  * - Hash-only storage: the raw token is a bearer credential, so we persist only
  *   its SHA-256 hash (`tokenHash`, unique). Leakage of this collection cannot be
- *   replayed against `/auth/refresh` because the attacker never sees a raw token.
+ *   replayed at `/auth/refresh-token` because the attacker never sees a raw token.
  * - Sliding expiry: each rotation extends `expiresAt` by the 30-day TTL, so an
  *   actively-used session stays signed in indefinitely while an abandoned one
  *   lapses after 30 days of inactivity.

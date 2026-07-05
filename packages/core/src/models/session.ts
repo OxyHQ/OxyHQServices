@@ -8,11 +8,10 @@ export interface ClientSession {
   userId?: string;
   isCurrent?: boolean;
   /**
-   * Web-only: the device-local refresh-cookie slot index (0..N) that backs
-   * this session. Populated from `POST /auth/refresh-all` and from login /
-   * signup / fedcm-exchange responses. Required for per-session web token
-   * refresh via `refreshTokenViaCookie({ authuser })` without a bearer token.
-   * Absent on native (RN uses the bearer-protected session id directly).
+   * The account's ordinal slot (0..N) within the device's account set
+   * (`SessionAccount.authuser` in `@oxyhq/contracts`), projected from the
+   * device-first `DeviceSessionState` — used purely for stable Google-style
+   * account-chooser ordering, not for any token-refresh mechanism.
    */
   authuser?: number;
 }

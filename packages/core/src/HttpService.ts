@@ -820,7 +820,7 @@ export class HttpService {
    * `clearCacheByPrefix` sweeps and `clearCacheEntry` base-key matching.
    * The `clearCacheEntry` callsites all pass fixed, dataless logical keys
    * (`GET:/users/<id>`, `GET:/session/user/<sessionId>`,
-   * `GET:/fedcm/me/authorized-apps`), so this readable suffix can never be
+   * `GET:/auth/grants`), so this readable suffix can never be
    * ambiguous with a serialized request body.
    */
   private static readonly CACHE_IDENTITY_DELIM = ' id=';

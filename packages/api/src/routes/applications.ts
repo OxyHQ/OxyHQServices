@@ -546,7 +546,7 @@ router.post(
     });
 
     // A newly-created app is `active` and may carry redirectUris, so it can add
-    // origins to the FedCM/SSO approved-clients allow-list. Drop the cached set.
+    // origins to the approved-clients allow-list. Drop the cached set.
     if (application.status === 'active' && (application.redirectUris?.length ?? 0) > 0) {
       approvedClientsCache.invalidate();
       refreshDynamicCorsOrigins();
@@ -662,7 +662,7 @@ router.patch(
     // status stop authorising federation signing immediately.
     credentialDomainCache.invalidate(application._id.toString());
 
-    // The FedCM/SSO approved-clients allow-list is ALSO derived from active
+    // The approved-clients allow-list is ALSO derived from active
     // Applications' redirectUris — drop the cached origin set.
     approvedClientsCache.invalidate();
     refreshDynamicCorsOrigins();
@@ -696,7 +696,7 @@ router.delete(
 
     // A deleted app must immediately stop authorising federation signing.
     credentialDomainCache.invalidate(application._id.toString());
-    // Likewise drop the FedCM/SSO approved-clients origin set.
+    // Likewise drop the approved-clients origin set.
     approvedClientsCache.invalidate();
     refreshDynamicCorsOrigins();
 

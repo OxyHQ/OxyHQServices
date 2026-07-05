@@ -115,17 +115,24 @@ export function deriveStableDeviceId(
 }
 
 /**
- * Derive a stable, non-PII deviceId for an IdP/FedCM-issued session, keyed by
+ * Derive a stable, non-PII deviceId for a session minted server-to-server on
+ * behalf of a caller with no stable client identity of its own, keyed by
  * `(userId, key)` instead of the request's UA/IP. The output is the first 32
- * hex chars of `sha256("${salt}|${userId}|fedcm|${key}")`.
+ * hex chars of `sha256("${salt}|${userId}|fedcm|${key}")` — the `fedcm` hash
+ * segment is cryptographic derivation material, kept unchanged even though
+ * the feature it was named for (see below) is gone, since changing it would
+ * change every derived deviceId.
  *
- * **Why a separate helper?** FedCM token exchange runs server-to-server from
- * the IdP Cloudflare Worker, so the request's User-Agent is `'unknown'` and
- * the egress IP varies per call. Feeding that into `deriveStableDeviceId`
- * yields a fresh random id every exchange → a brand-new "FedCM Sign-In"
- * session row on every silent-auth / SSO bounce. Keying off the RP origin
- * (`key`) instead makes one `(user, RP)` reuse a single session that simply
- * refreshes its tokens/expiry.
+ * **Why a separate helper?** Originally added for FedCM token exchange, which
+ * ran server-to-server from the IdP Cloudflare Worker, so the request's
+ * User-Agent was `'unknown'` and the egress IP varied per call. Feeding that
+ * into `deriveStableDeviceId` would yield a fresh random id every exchange →
+ * a brand-new session row on every silent-auth/SSO bounce. Keying off a
+ * stable per-caller key (`key`) instead makes one `(user, RP)` reuse a single
+ * session that simply refreshes its tokens/expiry. FedCM itself is deleted
+ * (wave 2); this helper (`deriveServiceDeviceId` / `stableDeviceKey`) has no
+ * current caller but is kept for any future server-minted-session flow that
+ * needs the same stable-per-RP-session property.
  *
  * **Why the `'fedcm'` namespace segment?** It guarantees the output can never
  * collide with an IP/UA-derived id from `deriveStableDeviceId` (whose hash
@@ -144,7 +151,7 @@ export function deriveStableDeviceId(
  * weak/unsalted id.
  *
  * @param userId - Authenticated user id. Required for per-user scoping.
- * @param key - Stable per-RP key (the FedCM `clientOrigin` / token aud).
+ * @param key - Stable per-RP key (originally the FedCM `clientOrigin` / token aud).
  * @throws Error when `DEVICE_ID_SALT` is unset (fail-closed).
  */
 export function deriveServiceDeviceId(userId: string, key: string): string {
@@ -197,7 +204,8 @@ export const generateDeviceFingerprint = (fingerprint: DeviceFingerprintInput): 
  * @param userId - Optional authenticated user id. When set, the derived
  *   deviceId is scoped to this user so two distinct users behind the same
  *   NAT/proxy on the same browser do NOT collide on the same id. Pre-auth
- *   callers (signup, pre-credential FedCM) should pass `null` / omit.
+ *   callers (signup, device bootstrap before a session exists) should pass
+ *   `null` / omit.
  */
 export const extractDeviceInfo = (
   req: Request,

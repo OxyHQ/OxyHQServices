@@ -9,7 +9,7 @@ import { getSocketIO } from './socketLoader';
 import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 
 export interface TokenTransport {
-  /** Ensure this app holds a per-domain access token for state.activeAccountId (mint via FedCM/silent/sso/keychain). Best-effort. */
+  /** Ensure this app holds a per-domain access token for state.activeAccountId (mint via the persisted refresh family / shared keychain). Best-effort. */
   ensureActiveToken(state: DeviceSessionState): Promise<void>;
 }
 

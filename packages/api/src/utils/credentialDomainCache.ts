@@ -7,12 +7,12 @@ import { logger } from './logger';
  * SECURITY BOUNDARY: the federation sign/public-key endpoints must only let a
  * credential operate on keyIds whose host belongs to that credential's own
  * Application. The Application model has no explicit "federation domain" field,
- * so — exactly as the FedCM approved-clients allow-list is DERIVED from active
+ * so — exactly as the approved-clients allow-list is DERIVED from active
  * `Application.redirectUris` (see {@link ApprovedClientsCache}) — we derive the
  * allowed federation hosts from the hostnames of the Application's
- * `redirectUris`. Registering Mention with a
- * `https://mention.earth/__oxy/sso-callback` redirect therefore authorises that
- * credential to sign `mention.earth` keyIds. Nothing is hand-maintained.
+ * `redirectUris`. Registering Mention with a `https://mention.earth/oauth/callback`
+ * redirect therefore authorises that credential to sign `mention.earth`
+ * keyIds. Nothing is hand-maintained.
  *
  * FAIL CLOSED: if the Application is missing, not `active`, or has no usable
  * redirectUri hosts, the allowed set is EMPTY and every host check fails (403).

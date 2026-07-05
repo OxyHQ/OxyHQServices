@@ -24,7 +24,7 @@ export const isDev = (): boolean => {
 
 /**
  * Log a debug message (only in development)
- * @param prefix - Log prefix (e.g., '[FedCM]')
+ * @param prefix - Log prefix (e.g., '[ColdBoot]')
  * @param args - Arguments to log
  */
 export const debugLog = (prefix: string, ...args: unknown[]): void => {
@@ -57,12 +57,12 @@ export const debugError = (prefix: string, ...args: unknown[]): void => {
 
 /**
  * Create a namespaced debug logger
- * @param namespace - Logger namespace (e.g., 'FedCM', 'SilentAuth')
+ * @param namespace - Logger namespace (e.g., 'ColdBoot', 'DeviceAuth')
  * @returns Object with log, warn, error methods
  *
  * @example
  * ```ts
- * const debug = createDebugLogger('FedCM');
+ * const debug = createDebugLogger('ColdBoot');
  * debug.log('Starting authentication');
  * debug.warn('Token expires soon');
  * debug.error('Authentication failed', error);

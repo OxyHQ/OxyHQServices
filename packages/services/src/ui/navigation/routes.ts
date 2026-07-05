@@ -43,7 +43,7 @@ export type RouteName =
     | 'AccountSettings' // Per-account profile edit + members + danger zone
     | 'AvatarCrop' // Square-crop editor presented before avatar upload
     | 'Notifications' // Per-channel notification preferences
-    | 'ConnectedApps' // FedCM-authorized RP apps the user can revoke
+    | 'ConnectedApps' // OAuth-authorized third-party apps the user can revoke
     | 'Preferences'; // General user preferences (theme, reduce-motion, etc.)
 
 // Lazy screen loaders - functions that return screen components on-demand

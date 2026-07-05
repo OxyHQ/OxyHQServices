@@ -1,6 +1,7 @@
 /**
- * Canonical origin-normalisation helper shared across the SSO controller, the
- * SSO router CORS guard, and the FedCM service.
+ * Canonical origin-normalisation helper shared across the CORS/CSRF origin
+ * guard, the dynamic origin registry, and the device-first auth surface
+ * (`deviceAuth.ts`, `auth.ts`).
  *
  * Normalises an origin string for equality / allow-list comparisons:
  *  - lowercases the scheme and the host;
