@@ -128,6 +128,20 @@ describe('buildOAuthAuthorizeUrl', () => {
     expect(new URL(url).searchParams.get('client_id')).toBe(base.clientId);
   });
 
+  it('preserves a query string already present on authorizeBaseUrl', () => {
+    const params = new URL(
+      buildOAuthAuthorizeUrl({
+        ...base,
+        authorizeBaseUrl: 'https://auth.merchant.co/authorize?foo=bar&tenant=acme',
+      }),
+    ).searchParams;
+    // Pre-existing params survive alongside the OAuth params.
+    expect(params.get('foo')).toBe('bar');
+    expect(params.get('tenant')).toBe('acme');
+    expect(params.get('client_id')).toBe(base.clientId);
+    expect(params.get('code_challenge_method')).toBe('S256');
+  });
+
   it('URL-encodes a redirect_uri that carries a query string and special chars', () => {
     const redirectUri = 'https://merchant.co/auth/callback?next=/dashboard&lang=es';
     const url = buildOAuthAuthorizeUrl({ ...base, redirectUri });

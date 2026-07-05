@@ -161,7 +161,10 @@ export async function generateOAuthState(): Promise<string> {
 
 /**
  * Build the `auth.oxy.so/authorize` redirect URL for an OAuth authorization-code
- * + PKCE (S256) flow. All values are URL-encoded via {@link URLSearchParams}.
+ * + PKCE (S256) flow. Built via the WHATWG `URL` API so a custom
+ * `authorizeBaseUrl` that already carries a query string keeps its existing
+ * params (the OAuth params are merged in, not clobbered by a naive `?` concat).
+ * All values are percent-encoded by `URL.searchParams`.
  */
 export function buildOAuthAuthorizeUrl(params: BuildOAuthAuthorizeUrlParams): string {
   const {
@@ -173,15 +176,14 @@ export function buildOAuthAuthorizeUrl(params: BuildOAuthAuthorizeUrlParams): st
     codeChallenge,
   } = params;
 
-  const search = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    state,
-    scope,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-  });
+  const url = new URL(authorizeBaseUrl);
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('state', state);
+  url.searchParams.set('scope', scope);
+  url.searchParams.set('code_challenge', codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
 
-  return `${authorizeBaseUrl}?${search.toString()}`;
+  return url.toString();
 }
