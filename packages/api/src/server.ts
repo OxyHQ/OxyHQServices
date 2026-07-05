@@ -63,7 +63,6 @@ import { startNodeIngestJobs, stopNodeIngestJobs } from './queue/nodeIngest.queu
 import { startLinkPreviewWarmJobs, stopLinkPreviewWarmJobs } from './queue/linkPreviewWarm.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
-import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
@@ -73,7 +72,8 @@ import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { refreshOriginRegistry } from './config/dynamicOriginRegistry';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
-import { initializeIO, deviceRoomFor } from './utils/socket';
+import { initializeIO, socketRoomsFor } from './utils/socket';
+import { resolveSocketIdentity } from './utils/socketAuth';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -218,51 +218,55 @@ interface AuthenticatedSocket extends Socket {
     deviceId?: string;
     [key: string]: any;
   };
+  /**
+   * Anonymous device socket: the server-resolved deviceId for a cookie- or
+   * device-token-authed connection with NO user identity (a signed-out tab
+   * listening on its `device:<id>` room). Never set from client input.
+   */
+  deviceId?: string;
 }
 
 // Socket.IO rate limiting (applied before auth to protect against unauthenticated floods)
 import { createSocketRateLimiter } from './middleware/socketRateLimit';
 io.use(createSocketRateLimiter(100, 10_000)); // 100 events per 10s
 
-// Socket.IO authentication middleware
+// Socket.IO authentication middleware. Accepts either an authenticated user
+// (valid bearer) OR an anonymous device socket (a signed-out tab authed by its
+// first-party `oxy_device` cookie / native device token) — see resolveSocketIdentity.
 io.use((socket: AuthenticatedSocket, next) => {
-  const token = socket.handshake.auth.token;
-
-  if (!token) {
-    return next(new Error('Authentication error'));
-  }
-
-  try {
-    // Verify the token
-    if (!process.env.ACCESS_TOKEN_SECRET) {
-      throw new Error('ACCESS_TOKEN_SECRET is not configured');
-    }
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET) as any;
-    // Normalize userId: tokens use 'userId' field, but socket interface expects 'id'
-    const userId = decoded.userId || decoded.id;
-    if (!userId) {
-      return next(new Error('Token missing user ID'));
-    }
-    socket.user = { id: userId, ...decoded };
-    next();
-  } catch (error) {
-    logger.error('Socket authentication error:', error);
-    next(new Error('Authentication error'));
-  }
+  resolveSocketIdentity(socket.handshake)
+    .then((identity) => {
+      if (!identity) {
+        next(new Error('Authentication error'));
+        return;
+      }
+      if (identity.kind === 'user') {
+        socket.user = identity.user;
+      } else {
+        socket.deviceId = identity.deviceId;
+      }
+      next();
+    })
+    .catch((error) => {
+      logger.error('Socket authentication error:', error);
+      next(new Error('Authentication error'));
+    });
 });
 
-// Socket connection handling for authenticated users
+// Socket connection handling — authenticated users AND anonymous device sockets.
 io.on('connection', (socket: AuthenticatedSocket) => {
   logger.debug('Socket connected', { socketId: socket.id });
 
-  if (socket.user?.id) {
-    const room = `user:${socket.user.id}`;
+  // A user socket joins `user:<id>` + `device:<deviceId>`; an anonymous device
+  // socket joins ONLY `device:<deviceId>` (never a `user:` room). All ids are
+  // server-resolved — see socketRoomsFor.
+  const rooms = socketRoomsFor({ user: socket.user, deviceId: socket.deviceId });
+  for (const room of rooms) {
     socket.join(room);
-    logger.debug('User joined notification room', { userId: socket.user.id, room });
   }
-
-  const deviceRoom = socket.user ? deviceRoomFor(socket.user) : null;
-  if (deviceRoom) socket.join(deviceRoom);
+  if (rooms.length > 0) {
+    logger.debug('Socket joined rooms', { socketId: socket.id, rooms });
+  }
 
   socket.on('disconnect', () => {
     logger.debug('Socket disconnected', { socketId: socket.id });

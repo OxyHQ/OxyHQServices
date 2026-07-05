@@ -4,6 +4,7 @@ import {
   createSessionClientHost,
   type AuthStateStore,
   type OxyServices,
+  type SessionClientOptions,
 } from '@oxyhq/core';
 import { createTokenTransport } from './tokenTransport';
 
@@ -31,12 +32,19 @@ export function createSessionClient(
   oxyServices: OxyServices,
   store: AuthStateStore,
   onUnauthenticated?: () => void,
+  /**
+   * Optional signed-out realtime wiring: `signedOutSocketAuth` (open the socket
+   * while signed out — web returns `true` to ride the `oxy_device` cookie,
+   * native returns the shared device token) and `onSessionAppeared` (self-acquire
+   * when a sibling signs in on this device).
+   */
+  extra?: Pick<SessionClientOptions, 'signedOutSocketAuth' | 'onSessionAppeared'>,
 ): {
   client: SessionClient;
   host: ReturnType<typeof createSessionClientHost>;
 } {
   const host = createSessionClientHost(oxyServices);
   const transport = createTokenTransport(oxyServices, store);
-  const client = new SessionClient(host, { transport, socketFactory: io, onUnauthenticated });
+  const client = new SessionClient(host, { transport, socketFactory: io, onUnauthenticated, ...extra });
   return { client, host };
 }

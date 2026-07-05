@@ -209,7 +209,7 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
     expect(stubs.getUsersByIds).not.toHaveBeenCalled();
   });
 
-  it('injects the statically-imported socket.io factory as the third createSessionClient argument', async () => {
+  it('injects the socket.io factory (3rd arg) + signed-out realtime wiring (4th arg) into createSessionClient', async () => {
     const fake = buildFakeClient(null);
     mockedCreateSessionClient.mockReturnValue({
       client: fake.fakeClient as never,
@@ -225,7 +225,14 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
 
     expect(mockedCreateSessionClient).toHaveBeenCalledTimes(1);
     const args = mockedCreateSessionClient.mock.calls[0];
-    expect(args).toHaveLength(3);
+    expect(args).toHaveLength(4);
+    // 3rd arg: the statically-imported socket.io `io` factory.
     expect(typeof args[2]).toBe('function');
+    // 4th arg: signed-out realtime wiring (cookie socket gate + self-acquire hook).
+    const extra = args[3] as { signedOutSocketAuth?: unknown; onSessionAppeared?: unknown };
+    expect(typeof extra.signedOutSocketAuth).toBe('function');
+    expect(typeof extra.onSessionAppeared).toBe('function');
+    // Web is always `*.oxy.so` → the cookie rides the handshake; the gate returns true.
+    expect((extra.signedOutSocketAuth as () => unknown)()).toBe(true);
   });
 });

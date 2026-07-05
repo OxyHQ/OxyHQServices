@@ -81,6 +81,28 @@ export function setDeviceCookie(res: Response, secret: string): void {
 }
 
 /**
+ * Parse the raw `oxy_device` cookie secret out of a `Cookie` request header.
+ * The ONE header-parsing implementation, shared by the Express path
+ * ({@link readDeviceCookie}) and the Socket.IO handshake path (which only has
+ * `socket.handshake.headers.cookie`, no cookie-parser). Returns `undefined`
+ * when the header is absent/empty or carries no non-empty `oxy_device` value.
+ */
+export function readDeviceCookieFromHeader(cookieHeader: string | undefined): string | undefined {
+  if (typeof cookieHeader !== 'string' || cookieHeader.length === 0) {
+    return undefined;
+  }
+  for (const part of cookieHeader.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const name = part.slice(0, eq).trim();
+    if (name !== DEVICE_COOKIE_NAME) continue;
+    const value = part.slice(eq + 1).trim();
+    return value.length > 0 ? value : undefined;
+  }
+  return undefined;
+}
+
+/**
  * Read the raw `oxy_device` cookie secret from a request. Prefers `req.cookies`
  * (cookie-parser) and falls back to parsing the raw `Cookie` header so the
  * helper works in unit tests that mount a bare router. Returns `undefined` when
@@ -94,16 +116,5 @@ export function readDeviceCookie(req: Request): string | undefined {
   }
 
   const header = req.headers.cookie;
-  if (typeof header !== 'string' || header.length === 0) {
-    return undefined;
-  }
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq === -1) continue;
-    const name = part.slice(0, eq).trim();
-    if (name !== DEVICE_COOKIE_NAME) continue;
-    const value = part.slice(eq + 1).trim();
-    return value.length > 0 ? value : undefined;
-  }
-  return undefined;
+  return readDeviceCookieFromHeader(typeof header === 'string' ? header : undefined);
 }

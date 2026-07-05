@@ -244,6 +244,12 @@ export function WebOxyProvider({
 
   const isAuthenticated = !!user;
 
+  // Re-boot indirection: the SessionClient is built in the ref initializer below
+  // (before the boot is defined), but its `onSessionAppeared` must re-run the cold
+  // boot to self-acquire when a sibling tab signs in on this device. A ref bridges
+  // the ordering; it is assigned right after `runBoot` is declared.
+  const runBootRef = useRef<(() => Promise<void>) | null>(null);
+
   // Device-first web `TokenTransport`: when the `SessionClient` applies a state
   // and no active token is held (e.g. a cross-tab push), mint one by rotating
   // the persisted refresh family. No native shared-key arm (web-only). Best
@@ -268,7 +274,15 @@ export function WebOxyProvider({
     // imported + injected so realtime sync survives Vite/Rolldown bundling of the
     // published core dist (core's lazy dynamic import of a bare specifier does
     // not resolve reliably there).
-    sessionClientPairRef.current = createSessionClient(oxyServices, transport, io);
+    sessionClientPairRef.current = createSessionClient(oxyServices, transport, io, {
+      // Web is always `*.oxy.so`: the first-party `oxy_device` cookie rides the
+      // same-site socket handshake, so an idle signed-out tab can join its
+      // `device:<id>` room and receive a sibling's sign-in push.
+      signedOutSocketAuth: () => true,
+      onSessionAppeared: () => {
+        void runBootRef.current?.();
+      },
+    });
   }
   const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
 
@@ -497,8 +511,41 @@ export function WebOxyProvider({
 
   // Cold boot — device-first, zero-redirect. Delegates the entire ordered
   // resolution to core's `runSessionColdBoot`; the provider only reacts to the
-  // outcome (`onSession` → commit; `onSignedOut` → stop loading). No `signIn`
-  // navigation, no SSO bounce.
+  // outcome (`onSession` → commit; `onSignedOut` → open the signed-out realtime
+  // channel + stop loading). No `signIn` navigation, no SSO bounce. Shared by the
+  // mount effect and `onSessionAppeared`'s re-acquisition (a sibling sign-in).
+  const runBoot = useCallback(async () => {
+    await runSessionColdBoot({
+      oxy: oxyServices,
+      store,
+      platform: { isWeb: true, isNative: false },
+      onSession: async (session) => {
+        await commitBootSession(session);
+      },
+      onSignedOut: () => {
+        setIsLoading(false);
+        // Join this idle tab's `device:<id>` room (via the first-party
+        // `oxy_device` cookie) so a sibling's sign-in wakes it. Idempotent +
+        // best-effort — never throw out of the boot.
+        void sessionClient.start().catch((startError) => {
+          logger.debug(
+            'signed-out socket start failed (non-fatal)',
+            { component: 'WebOxyProvider', method: 'coldBoot' },
+            startError,
+          );
+        });
+      },
+      onStepError: (id, stepError) => {
+        logger.debug(
+          'cold-boot step did not resolve a session',
+          { component: 'WebOxyProvider', method: 'coldBoot', step: id },
+          stepError,
+        );
+      },
+    });
+  }, [oxyServices, store, commitBootSession, sessionClient]);
+  runBootRef.current = runBoot;
+
   useEffect(() => {
     if (skipAutoCheck) {
       setIsLoading(false);
@@ -506,48 +553,25 @@ export function WebOxyProvider({
     }
     let mounted = true;
 
-    const boot = async () => {
-      await runSessionColdBoot({
-        oxy: oxyServices,
-        store,
-        platform: { isWeb: true, isNative: false },
-        onSession: async (session) => {
-          if (!mounted) return;
-          await commitBootSession(session);
-        },
-        onSignedOut: () => {
-          if (!mounted) return;
-          setIsLoading(false);
-        },
-        onStepError: (id, stepError) => {
-          logger.debug(
-            'cold-boot step did not resolve a session',
-            { component: 'WebOxyProvider', method: 'coldBoot', step: id },
-            stepError,
-          );
-        },
-      });
-      if (mounted) {
-        setIsLoading(false);
-      }
-    };
-
     // Safety net: if a step stalls, stop loading after a bound.
     const timeoutId = setTimeout(() => {
       if (mounted) setIsLoading(false);
     }, SESSION_HANDOFF_DEADLINE * 2);
 
-    boot()
+    runBoot()
       .catch((bootError) => {
         if (mounted) handleAuthError(bootError);
       })
-      .finally(() => clearTimeout(timeoutId));
+      .finally(() => {
+        clearTimeout(timeoutId);
+        if (mounted) setIsLoading(false);
+      });
 
     return () => {
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, store, skipAutoCheck, commitBootSession, handleAuthError]);
+  }, [skipAutoCheck, runBoot, handleAuthError]);
 
   useEffect(() => {
     onAuthStateChange?.(user);

@@ -1,5 +1,5 @@
 import type { OxyServices } from '../OxyServices';
-import { SessionClient, type TokenTransport } from './SessionClient';
+import { SessionClient, type SessionClientOptions, type TokenTransport } from './SessionClient';
 import type { SocketIOFactory } from './socketLoader';
 import { createSessionClientHost } from './sessionClientHost';
 
@@ -29,11 +29,18 @@ export function createSessionClient(
   oxyServices: OxyServices,
   transport: TokenTransport,
   socketFactory?: SocketIOFactory,
+  /**
+   * Optional signed-out realtime wiring: `signedOutSocketAuth` (open the socket
+   * while signed out so an idle tab receives its device pushes) and
+   * `onSessionAppeared` (self-acquire when a sibling signs in). See
+   * {@link SessionClientOptions}.
+   */
+  extra?: Pick<SessionClientOptions, 'signedOutSocketAuth' | 'onSessionAppeared'>,
 ): {
   client: SessionClient;
   host: ReturnType<typeof createSessionClientHost>;
 } {
   const host = createSessionClientHost(oxyServices);
-  const client = new SessionClient(host, { transport, socketFactory });
+  const client = new SessionClient(host, { transport, socketFactory, ...extra });
   return { client, host };
 }
