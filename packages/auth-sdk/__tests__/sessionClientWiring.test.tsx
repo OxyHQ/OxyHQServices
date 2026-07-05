@@ -1,7 +1,8 @@
 /**
  * Device-first `WebOxyProvider`: the `SessionClient` device-session set is the
- * SOLE authority for the exposed `sessions` / `activeSessionId` / `user` /
- * `accounts` / `activeAuthuser` projection.
+ * SOLE authority for the exposed `sessions` / `activeSessionId` / `user`
+ * projection. (The unified account list lives on the `AccountDialogController`,
+ * covered in `OxyAccountDialog.integration.test.tsx`.)
  *
  * The cold boot is neutralized (mocked `runSessionColdBoot` resolves signed-out
  * without touching the DOM), so `sessions`/`user` are solely a function of the
@@ -46,6 +47,8 @@ jest.mock('@oxyhq/core', () => {
       onTokensChanged(): () => void { return () => undefined; }
       getUsersByIds(ids: string[]): Promise<User[]> { return stubs.getUsersByIds(ids); }
       getUserById(id: string): Promise<User> { return stubs.getUserById(id); }
+      getFileDownloadUrl(id: string): string { return `https://cdn.test/${id}`; }
+      listAccounts(): Promise<never[]> { return Promise.resolve([]); }
     },
   };
 });
@@ -97,19 +100,15 @@ interface ProbeState {
   userId: string | null;
   sessionsLength: number;
   activeSessionId: string | null;
-  accountsLength: number;
-  activeAuthuser: number | null;
 }
 
 function Probe({ onState }: { onState: (s: ProbeState) => void }) {
-  const { isAuthenticated, user, sessions, activeSessionId, accounts, activeAuthuser } = useAuth();
+  const { isAuthenticated, user, sessions, activeSessionId } = useAuth();
   onState({
     isAuthenticated,
     userId: user?.id ?? null,
     sessionsLength: sessions.length,
     activeSessionId,
-    accountsLength: accounts.length,
-    activeAuthuser,
   });
   return null;
 }
@@ -131,7 +130,7 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
     mockedCreateSessionClient.mockReset();
   });
 
-  it('projects a populated DeviceSessionState onto sessions/activeSessionId/user/accounts', async () => {
+  it('projects a populated DeviceSessionState onto sessions/activeSessionId/user', async () => {
     const deviceState = buildDeviceState('a2');
     const fake = buildFakeClient(deviceState);
     const setCurrentAccountId = jest.fn();
@@ -143,7 +142,6 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
 
     let latest: ProbeState = {
       isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null,
-      accountsLength: 0, activeAuthuser: null,
     };
     renderProvider((s) => { latest = s; });
 
@@ -154,13 +152,11 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
     await waitFor(() => expect(latest.sessionsLength).toBe(2));
     expect(latest.activeSessionId).toBe('sess-a2');
     expect(latest.userId).toBe('a2');
-    expect(latest.accountsLength).toBe(2);
-    expect(latest.activeAuthuser).toBe(1);
     expect(stubs.getUsersByIds).toHaveBeenCalledWith(['a1', 'a2']);
     expect(setCurrentAccountId).toHaveBeenCalledWith('a2');
   });
 
-  it('still lists accounts when the batch profile fetch fails (no bail to empty)', async () => {
+  it('still projects sessions when the batch profile fetch fails (no bail to empty)', async () => {
     const deviceState = buildDeviceState('a2');
     const fake = buildFakeClient(deviceState);
     mockedCreateSessionClient.mockReturnValue({
@@ -172,19 +168,16 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
 
     let latest: ProbeState = {
       isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null,
-      accountsLength: 0, activeAuthuser: null,
     };
     renderProvider((s) => { latest = s; });
     await waitFor(() => expect(latest.isAuthenticated).toBe(false));
 
     act(() => { fake.fire(); });
 
-    // Accounts + sessions are still projected (handle-fallback rows) from the
-    // SessionClient state even though every profile fetch threw.
-    await waitFor(() => expect(latest.accountsLength).toBe(2));
-    expect(latest.sessionsLength).toBe(2);
+    // Sessions are still projected (handle-fallback rows) from the SessionClient
+    // state even though every profile fetch threw.
+    await waitFor(() => expect(latest.sessionsLength).toBe(2));
     expect(latest.activeSessionId).toBe('sess-a2');
-    expect(latest.activeAuthuser).toBe(1);
   });
 
   it('is inert while client.getState() is null (signed-out cold boot)', async () => {
@@ -196,7 +189,6 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
 
     let latest: ProbeState = {
       isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null,
-      accountsLength: 0, activeAuthuser: null,
     };
     renderProvider((s) => { latest = s; });
 
@@ -218,7 +210,6 @@ describe('WebOxyProvider — SessionClient projection (device-first)', () => {
 
     let latest: ProbeState = {
       isAuthenticated: false, userId: null, sessionsLength: 0, activeSessionId: null,
-      accountsLength: 0, activeAuthuser: null,
     };
     renderProvider((s) => { latest = s; });
     await waitFor(() => expect(latest.isAuthenticated).toBe(false));

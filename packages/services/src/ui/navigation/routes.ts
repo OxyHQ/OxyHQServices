@@ -7,7 +7,6 @@ import type { BaseScreenProps } from '../types/navigation';
 
 // Define all available route names
 export type RouteName =
-    | 'OxyAuth'          // Sign in with Oxy (QR code / deep link to Accounts app)
     | 'ManageAccount'    // Unified "Manage your Oxy Account" surface
     | 'AccountVerification'
     | 'PaymentGateway'
@@ -37,7 +36,6 @@ export type RouteName =
     | 'TrustFAQ'
     | 'FollowersList'  // List of user's followers
     | 'FollowingList' // List of users being followed
-    | 'AccountSwitcher' // Unified account switcher (device sign-ins + account graph)
     | 'CreateAccount' // Create a new account (organization / project / bot)
     | 'AccountMembers' // Manage an account's members (invite / roles / transfer)
     | 'AccountSettings' // Per-account profile edit + members + danger zone
@@ -49,7 +47,6 @@ export type RouteName =
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
 const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
-    OxyAuth: () => require('../screens/OxyAuthScreen').default,
     ManageAccount: () => require('../screens/ManageAccountScreen').default,
     AccountVerification: () => require('../screens/AccountVerificationScreen').default,
     PaymentGateway: () => require('../screens/PaymentGatewayScreen').default,
@@ -82,7 +79,6 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     // User list screens (followers/following)
     FollowersList: () => require('../screens/FollowersListScreen').default,
     FollowingList: () => require('../screens/FollowingListScreen').default,
-    AccountSwitcher: () => require('../screens/AccountSwitcherScreen').default,
     CreateAccount: () => require('../screens/CreateAccountScreen').default,
     AccountMembers: () => require('../screens/AccountMembersScreen').default,
     AccountSettings: () => require('../screens/AccountSettingsScreen').default,

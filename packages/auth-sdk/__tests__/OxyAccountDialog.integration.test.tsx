@@ -1,11 +1,12 @@
 /**
- * OxySignInModal v2 — end-to-end through the REAL WebOxyProvider.
+ * OxyAccountDialog — end-to-end through the REAL WebOxyProvider + the REAL
+ * `AccountDialogController`.
  *
- * Proves the provider actually FEEDS device accounts into the modal chooser
- * post-cutover: a populated `SessionClient` state → the provider's `accounts`
- * projection → `signIn()` opens the modal → the chooser lists the real account
- * rows. `createSessionClient` is the one mocked seam (a controllable fake
- * client); the projection + provider are the real implementations.
+ * Proves the provider builds the shared core controller and that it projects the
+ * device's `SessionClient` state (∪ the account graph) via the REAL
+ * `projectSwitchableAccounts` into the dialog's account list. `createSessionClient`
+ * is the one mocked seam (a controllable fake client); the controller, the
+ * projection, and the provider are the real implementations.
  */
 
 import { render, act, waitFor, screen } from '@testing-library/react';
@@ -41,6 +42,7 @@ jest.mock('@oxyhq/core', () => {
       getUsersByIds(ids: string[]): Promise<User[]> { return stubs.getUsersByIds(ids); }
       getUserById(id: string): Promise<User> { return stubs.getUserById(id); }
       getFileDownloadUrl(id: string): string { return `https://cdn.test/${id}`; }
+      listAccounts(): Promise<never[]> { return Promise.resolve([]); }
     },
   };
 });
@@ -89,7 +91,7 @@ function Capture() {
   return null;
 }
 
-describe('OxySignInModal — real provider feeds the chooser', () => {
+describe('OxyAccountDialog — real provider + controller feed the dialog', () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -98,7 +100,7 @@ describe('OxySignInModal — real provider feeds the chooser', () => {
     stubs.getUsersByIds = jest.fn(async () => [user('u1', 'Nate Isern', 'nate'), user('u2', 'Bob Doe', 'bob')]);
   });
 
-  it('projects SessionClient accounts and renders them in the modal chooser', async () => {
+  it('projects SessionClient accounts via the controller and renders them in the dialog', async () => {
     const fake = buildFakeClient(deviceState());
     mockedCreateSessionClient.mockReturnValue({
       client: fake.fakeClient as never,
@@ -112,13 +114,12 @@ describe('OxySignInModal — real provider feeds the chooser', () => {
     );
 
     await waitFor(() => expect(ctxRef).not.toBeNull());
-    // Populate the provider's `accounts` projection from the SessionClient state.
-    act(() => { fake.fire(); });
-    await waitFor(() => expect(ctxRef?.accounts.length).toBe(2));
+    // The provider-built controller loads the switchable account list on start().
+    await waitFor(() => expect(ctxRef?.accountDialog.getSnapshot().accounts.length).toBe(2));
 
-    // Open the modal; the chooser must list the real device accounts.
+    // Opening the dialog on the accounts view lists the real device accounts.
     act(() => { ctxRef?.signIn(); });
-    await waitFor(() => expect(screen.getByText('Choose an account')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Your accounts')).toBeTruthy());
     expect(screen.getByText('Nate Isern')).toBeTruthy();
     expect(screen.getByText('Bob Doe')).toBeTruthy();
     expect(screen.getByText('Active')).toBeTruthy();

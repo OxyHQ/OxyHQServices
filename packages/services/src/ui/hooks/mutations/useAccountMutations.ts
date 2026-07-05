@@ -109,7 +109,7 @@ export const useUpdateProfile = () => {
         refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
       }
 
-      // Invalidate all related queries so every consumer (AccountSwitcher,
+      // Invalidate all related queries so every consumer (the account dialog,
       // session lists, managed accounts, etc.) refetches the fresh profile.
       // This is critical right after `username` is set the first time, when
       // every cached "session profile" still reports the user as unnamed.
