@@ -6,7 +6,7 @@
  * can spy on the exported `toast` object directly.
  */
 
-import { createElement, type ReactNode } from 'react';
+import { createElement, Fragment, type ReactNode } from 'react';
 
 type ToastFn = (message: string, options?: Record<string, unknown>) => void;
 
@@ -56,7 +56,18 @@ export const APP_COLOR_NAMES: readonly string[] = [];
 
 export const APP_COLOR_PRESETS: Record<string, { hex: string }> = {};
 
-export const Dialog = () => null;
+/**
+ * `@oxyhq/bloom/dialog` `<Dialog>` stub. The real component renders its own
+ * portal/backdrop chrome; here we only need the controlled `open` gate and the
+ * `children` so a component under test (e.g. `OxyAccountDialog`) can be queried
+ * for its content. Extra props (`placement`, `onClose`, `dismissOnBackdrop`, …)
+ * are ignored.
+ */
+export const Dialog = ({
+  open,
+  children,
+}: { open?: boolean; children?: ReactNode } & Record<string, unknown>) =>
+  open === false ? null : createElement(Fragment, null, children);
 
 export const useDialogControl = (): {
   open: () => void;
