@@ -1,49 +1,90 @@
-# Oxy Session Architecture (2026)
+# Oxy Session Architecture (2026, device-first / wave 2)
 
 Single source of truth for how Oxy apps sign in, restore sessions, call app
 backends, and resolve user identity.
 
 ## Principle
 
-The central IdP is `auth.oxy.so`. Relying-party apps consume it through the Oxy
-SDK. Apps do not implement their own SSO callback routes, local session
-restore, token plumbing, or auth middleware copies.
+Session restore is **device-first**: a durable, first-party `oxy_device`
+cookie plus a persisted rotating refresh-token family are the session
+authority, resolved entirely by the shared SDK's cold boot
+(`runSessionColdBoot` in `@oxyhq/core`). `auth.oxy.so` is a third-party OAuth
+authorize/consent IdP and a device-account chooser feed — it is **not** a
+redirect target for first-party apps in normal operation. Apps do not
+implement their own session restore, token plumbing, or auth middleware
+copies.
+
+**Wave 2 changed the mechanism, not the principle.** FedCM, the `/sso` bounce,
+the `/auth/silent` iframe, `AuthManager`, `CrossDomainAuth`, and the
+`fedcm_session` / `oxy_rt_*` cookies were all deleted. The "one implementation
+in the shared SDK" rule is unchanged.
 
 ## Current Package Contract
 
-Current package targets:
+Current package targets — read the exact version from each package's
+`package.json` (`bun info <pkg> version`); do not hardcode a version in this
+document:
 
-| Package | Version | Contract |
-|---------|---------|----------|
-| `@oxyhq/core` | `3.4.13` | Platform-agnostic client, SSO helpers, linked clients, and server auth middleware. |
-| `@oxyhq/auth` | `4.1.1` | Web `WebOxyProvider` for RP apps; uses core cold boot and callback handling. |
-| `@oxyhq/services` | `10.2.10` | Expo/RN `OxyProvider`, `useAuth()` / `useOxy()`, private API readiness, native session handling. |
-| `@oxyhq/bloom` | `0.8.5` | Current UI package target for Oxy consumers. |
+| Package | Contract |
+|---------|---------|
+| `@oxyhq/contracts` | Zod schemas shared by client + server, including the device-boot fragment/session contracts. |
+| `@oxyhq/core` | Platform-agnostic client: device-first cold boot (`runSessionColdBoot`), persisted auth-state store, unified refresh handler, `SessionClient`, and server auth middleware. |
+| `@oxyhq/auth` | Web `WebOxyProvider` — a thin binding over core's cold boot; owns the in-app sign-in modal. |
+| `@oxyhq/services` | Expo/RN `OxyProvider`, `useAuth()` / `useOxy()`, private-API readiness (`canUsePrivateApi`/`isPrivateApiPending`), native shared-keychain handling. |
+| `@oxyhq/bloom` | UI package target for Oxy consumers. |
+
+## Device-First Cold Boot (core mechanism)
+
+`runSessionColdBoot` (`packages/core/src/boot/coldBootV2.ts`) resolves a
+device's session in a deterministic order, first step to yield a session wins,
+and an unresolved boot **never** redirects to a login page — it ends
+signed-out and the app renders its own "Sign in with Oxy" UI.
+
+1. **`bootstrap-return`** (web) — consume a `#oxy_boot` return fragment left by
+   a just-completed cross-apex hop: verify the CSRF `state`, exchange the
+   single-use boot `code` via `POST /auth/device/exchange`.
+2. **`stored-tokens`** — warm-plant a still-valid persisted access token, else
+   rotate the persisted refresh-token family via `POST /auth/refresh-token`.
+3. **`shared-key-signin`** (native only) — re-mint a session from the
+   shared-keychain identity; issues/mirrors a shared device token the first
+   time.
+4. **`bootstrap-hop`** (web, terminal):
+   - **same-apex** (e.g. two `*.oxy.so` apps): an inline, credentialed
+     `POST /auth/device/web-session` fetch — no navigation, runs on every boot.
+   - **cross-apex** (e.g. `mention.earth`): **one** visible top-level
+     navigation to the API's `GET /auth/device/bootstrap` (a single canonical
+     host — the RP's own configured `baseURL`, not a per-apex `auth.<rp-apex>`
+     CNAME), guarded to fire **at most once ever per browser+origin** via a
+     persistent `localStorage` flag. It fires on the very first load
+     regardless of outcome (found a session or not) and never repeats for
+     that browser+origin afterward.
+5. Signed out.
+
+Both `WebOxyProvider` (`@oxyhq/auth`) and `OxyContext` (`@oxyhq/services`)
+call this same primitive with platform hints; there is no separate
+web/native cold-boot implementation to keep in sync.
+
+## The `oxy_device` cookie
+
+The device-first anchor, defined once in `packages/api/src/utils/deviceCookie.ts`:
+
+- Name `oxy_device`; `HttpOnly`, `Secure` (prod), `SameSite=Lax`, `Domain=.oxy.so`, 400-day sliding `Max-Age`, re-set on every bootstrap hop.
+- The cookie value is a random 256-bit secret — **never** the deviceId. Server-side it is stored only as its SHA-256 hash (`DeviceSession.cookieKeyHash`); possessing the cookie reveals nothing about the device set.
+- Shared by every `*.oxy.so` first-party surface (api, auth, apps), which is what lets the `auth.oxy.so` device-account chooser feed read it first-party.
 
 ## Frontend RP Contract
 
 Relying-party frontends use the SDK only:
 
 - Web apps use `WebOxyProvider` from `@oxyhq/auth` with a registered `clientId`.
-- Expo/RN apps use `OxyProvider` from `@oxyhq/services` with a registered
-  `clientId`.
-- SDK cold boot owns session restore. On web it runs the ordered restore chain
-  around callback consumption, FedCM/silent auth, cookie restore, stored bearer,
-  and terminal SSO bounce. Native uses the native-safe stored session path.
-- Apps must not add app-local `/__oxy/sso-callback` routes. The SDK intercepts
-  the path and consumes the SSO result universally.
-- Apps that serve root HTML and can receive `/__oxy/sso-callback` should inject
-  `getSsoCallbackBootstrapScript()` from `@oxyhq/core` before React or Expo
-  Router can rewrite the URL.
-- Apps must not copy SSO helpers such as `consumeSsoReturn`,
-  `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, SSO storage keys, or
-  callback bootstrap logic. These live once in `@oxyhq/core`.
-- Private frontend work must be gated by SDK state. Use
-  `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` or the
-  equivalent `useOxy()` state before calling private app APIs such as managed
-  accounts, privacy, follow status, library, preferences, or profile settings.
-- Apps must not keep fetching private APIs after the SDK access token is null,
-  even if stale UI state still has a user object.
+- Expo/RN apps use `OxyProvider` from `@oxyhq/services` with a registered `clientId`.
+- SDK cold boot owns session restore end to end (see above). Apps do not implement local session restore.
+- Apps must not add app-local `/__oxy/sso-callback` routes or any bespoke boot-fragment handling — the SDK owns `#oxy_boot` parsing universally.
+- Apps must not copy device-boot helpers (`consumeDeviceBootReturn`, the device-boot fragment schema, storage keys, etc.). These live once in `@oxyhq/core`.
+- Private frontend work must be gated by SDK state:
+  - Native (`@oxyhq/services`): `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`.
+  - Web (`@oxyhq/auth`): `useAuth().isLoading` / `useAuth().isReady` (the web provider does not expose a separate `canUsePrivateApi` — `isAuthenticated` only flips once cold boot has resolved and a token is planted).
+- Apps must not keep fetching private APIs after the SDK access token is null, even if stale UI state still has a user object.
 
 ## Linked App Backend Clients
 
@@ -88,28 +129,41 @@ Bearer-authenticated writes do not fetch or depend on app-local CSRF tokens.
   Those flows must continue to fetch and send CSRF according to the owning
   backend's cookie contract.
 
-## IdP Exception
+## IdP Role (auth.oxy.so)
 
-`packages/auth` / `auth.oxy.so` is the IdP, not an RP:
+`packages/auth` / `auth.oxy.so` is a **third-party OAuth authorize/consent
+IdP**, not a first-party session authority:
 
-- Do not wrap the auth app in `WebOxyProvider`.
-- Do not run RP cold boot or the RP SSO bounce chain inside the auth app.
-- The auth app uses its first-party IdP session path:
-  `useDeviceAccounts()` reads shared refresh cookies through
-  `POST api.oxy.so/auth/refresh-all` with `credentials: include`.
+- Serves login/signup/authorize/recover/settings pages for third-party apps
+  that integrate via OAuth instead of embedding the SDK.
+- Serves the device-account chooser feed (`GET /api/device-accounts`), which
+  forwards the first-party `oxy_device` cookie to the API's internal
+  `POST /auth/device/resolve` to list the device's signed-in accounts.
+- Does **not** wrap itself in `WebOxyProvider` or run the RP cold boot —
+  doing so would make it bounce to itself. There is no FedCM, `/sso`,
+  `/auth/silent`, or `fedcm_session` cookie left to create a loop with; those
+  were deleted, not replaced by an equivalent self-referential path.
+- Trust for auto-approving OAuth consent is **registry-based**
+  (`Application.isOfficial` / `isInternal` / `type` — staff-controlled), not
+  domain-based.
 - This exception applies only to the IdP. Mention, Allo, Homiio, Alia, TNP,
-  Syra, accounts, console, inbox, and other RP apps follow the SDK RP contract.
+  Syra, accounts, console, inbox, and other RP apps follow the SDK RP contract
+  above and never talk to `auth.oxy.so` for session restore at all — the
+  one-time cross-apex bootstrap hop targets `api.oxy.so` directly (the RP's
+  own configured `baseURL`), not `auth.oxy.so` or any per-apex `auth.<rp-apex>`
+  CNAME.
 
 ## Development Contract
 
-During local cross-package work, consumers should use linked SDK clients and the
-current published package targets above. If a bug is in a shared package, fix and
-build the source package first, then update/verify the consumer. Do not patch the
-consumer with local auth/session workarounds.
+During local cross-package work, consumers should use linked SDK clients and
+the current published package targets above. If a bug is in a shared package,
+fix and build the source package first, then update/verify the consumer. Do
+not patch the consumer with local auth/session workarounds.
 
 ## Obsolete Text
 
-Older notes that said to leave Mention, Homiio, or Alia untouched until a
-`*.oxy.so` foundation was verified are obsolete. The current contract applies to
-all active RP apps. Work should still be sequenced safely: fix shared SDK/server
-helpers upstream, then verify downstream consumers.
+Any older notes describing FedCM, `AuthManager`, `CrossDomainAuth`, the `/sso`
+bounce, the `/auth/silent` iframe, `fedcm_session`/`oxy_rt_*` cookies, or
+per-apex `auth.<rp-apex>` CNAMEs as part of the live session-restore path are
+obsolete — all of that machinery was deleted in the wave-2 device-first
+cutover. The current contract in this document applies to all active RP apps.

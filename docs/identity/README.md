@@ -255,9 +255,9 @@ invalidates the user cache. SDK: `requestDomainVerification`, `verifyDomain`,
 ## 6. Sign in with Oxy
 
 One user-facing entry ("Sign in with Oxy") presents three options: QR scan /
-Commons handoff, username + password, and social/FedCM. Two cryptographic
-mechanisms back the QR/handoff path. (FedCM and the web SSO flow are covered in
-[auth/README.md](../auth/README.md).)
+Commons handoff, username + password, and social login. Two cryptographic
+mechanisms back the QR/handoff path. (The device-first session model and
+cross-domain restore are covered in [auth/README.md](../auth/README.md).)
 
 ### Mechanism A — same-device shared-keychain SSO (native only)
 

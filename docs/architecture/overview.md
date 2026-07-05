@@ -183,8 +183,14 @@ and delegates 401 refresh to the session owner.
 - `@oxyhq/api` → AWS ECS Fargate (`us-west-2`, cluster `oxy-cluster`), behind an
   ALB, image built `linux/arm64` and pushed to ECR by `deploy-aws.yml`. Domains
   `api.oxy.so` (+ website API aliases).
-- The web IdP (`packages/auth`) → Cloudflare Pages, deployed as a `_worker.js`
-  (a static-only deploy returns 405 on `/fedcm/*`).
+- `packages/auth` (third-party OAuth IdP + device-account chooser feed) →
+  Cloudflare Pages: the SPA is pure static output; the one dynamic route
+  (`GET /api/device-accounts`) is a **Pages Function**
+  (`packages/auth/functions/api/device-accounts.ts`), not an advanced-mode
+  `_worker.js` — CF Pages was not reliably invoking a single-file worker on
+  this project. The deploy workflow verifies the Functions directory compiles
+  before deploying via a direct `bunx wrangler@4 pages deploy` step, and a
+  post-deploy smoke gate re-checks the live host. Live-verified working.
 - Web RP frontends (accounts, console, inbox, …) → Cloudflare Pages.
 - `@oxyhq/node` → self-hosted by users (Docker + Caddy) or, for the managed
   vault, an Oxy-operated endpoint (`MANAGED_NODE_BASE_URL`).

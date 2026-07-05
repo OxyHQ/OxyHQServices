@@ -49,7 +49,6 @@ Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered w
 | `AWS_GITHUB_OIDC_ROLE_ARN` | ARN of `oxy-github-deploy`; assumed via OIDC |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens |
 | `DEVICE_ID_SALT` | 64-hex salt for `deriveStableDeviceId` |
 | `MONGODB_URI` | MongoDB cluster URI (no DB name; apps pass `dbName`) |
 | `REDIS_URL` | ElastiCache Valkey URI |
@@ -82,7 +81,6 @@ The image is built for **linux/arm64** (Graviton). x86 images won't run on the F
 | `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName` to `mongoose.connect`) |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens |
 | `DEVICE_ID_SALT` | 64-hex salt scoping `deriveStableDeviceId` |
 | `AWS_REGION` | S3/SES region (`eu-west-1`) |
 | `AWS_S3_BUCKET` | Asset storage bucket |
@@ -115,7 +113,7 @@ node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
 | Project | Source | Notes |
 |---------|--------|-------|
-| `oxy-auth` | `packages/auth/` | Builds the Vite SPA **and** the FedCM IdP `_worker.js`. The workflow has a safety check that fails if `dist/_worker.js` is missing — static-only deploys would 404 on `/fedcm/*`. |
+| `oxy-auth` | `packages/auth/` | Builds the Vite SPA; the one dynamic route (`GET /api/device-accounts`, the device-account chooser) is a **Cloudflare Pages Function** (`packages/auth/functions/api/device-accounts.ts`), not an advanced-mode `_worker.js` (CF Pages did not reliably invoke a single-file worker on this project). The workflow runs `bunx wrangler@4 pages functions build functions` to fail fast on a broken Function, then deploys via a direct `bunx wrangler@4 pages deploy` `run:` step (NOT `cloudflare/wrangler-action`, whose default `npx` path trips npm's override-conflict check against the repo-root `@oxyhq/bloom` override). A post-deploy smoke gate (`scripts/smoke-idp.ts`) re-checks the live host. Live-verified working. |
 | `oxy-accounts` | `packages/accounts/` | Expo Web export -> Cloudflare Pages |
 | `oxy-inbox` | `packages/inbox/` | Expo Web export |
 | `oxy-console` | `packages/console/` | Nuxt or Vite output |
