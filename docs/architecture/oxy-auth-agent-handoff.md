@@ -1078,7 +1078,7 @@ bun run services:build
 | 3 | merge-auth-sdk | ✅ 2026-07-05 — console en @oxyhq/services; auth-sdk ELIMINADO; rolldown-vite + vite-plugin-react-native-web; bloom ^0.29.2 (PR #557) |
 | 4 | unify-ui | ✅ 2026-07-06 — OxyAccountDialog sobre Bloom Dialog (placement bottom/md-center; mata bug RNW Modal+StrictMode); OxySignInButton bifurcado official→Dialog / third_party→OAuth+PKCE; helpers PKCE en core; i18n scan* keys |
 | 5 | auth-idp-rnweb | ✅ 2026-07-06 — IdP sobre rolldown-vite+RN-Web; OxyProvider modo-IdP (coldBoot=false, sin session authority); OxyConsentScreen (services) en authorize; superficie sign-in services en login; /settings/* eliminadas→redirect accounts.oxy.so; browser-verified. Detalle previo: — gate re-scoped con Nate: checkboxes refresh-all/FedCM-server ya satisfechos en main; integración = provider services modo-IdP (sin cold boot / sin session authority, fix upstream limpio) + montar piezas services existentes (QR/device-flow) + OxyConsentScreen nueva en services; consent/password/signup/recover conservan shell DOM+Bloom; /settings/* (rotas: POST /auth/refresh borrado) → DELETE + redirect permanente (password/linked→accounts.oxy.so/security, sessions→/sessions). REGLA DURABLE: el IdP NO expone gestión de cuenta — accounts.oxy.so es el único dueño |
-| 6 | migrate-apps | ⬜ Pendiente |
+| 6 | migrate-apps | ✅ 2026-07-06 — inbox sin bearer manual (SDK http same-origin + SSE/socket justificados); examples reescritos device-first; test-app-expo con clientId; oxy-main-domain (well-known FedCM) eliminado. Bootstrap SSO en +html.tsx y @oxyhq/auth en apps ya estaban a 0 desde main/F3 |
 | 7 | clean-cut-docs | ⬜ Pendiente |
 
 ---

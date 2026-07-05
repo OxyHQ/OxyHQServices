@@ -85,10 +85,7 @@ export function useNaturalLanguageSearch() {
     setError(null);
 
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) throw new Error('Not authenticated');
-
-      const response = await aliaChatCompletion({
+      const response = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: SEARCH_PARSE_PROMPT },
@@ -96,7 +93,6 @@ export function useNaturalLanguageSearch() {
         ],
         maxTokens: 200,
         temperature: 0.3,
-        token,
       });
 
       const trimmed = response.trim();

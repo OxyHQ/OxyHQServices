@@ -96,17 +96,11 @@ export function useAiCompose(): UseAiComposeReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const getToken = useCallback(() => {
-    const token = oxyServices.httpService.getAccessToken();
-    if (!token) throw new Error('Not authenticated');
-    return token;
-  }, [oxyServices]);
-
   const draft = useCallback(async (prompt: string, tone: ComposeTone = 'professional'): Promise<string> => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await aliaChatCompletion({
+      const result = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: DRAFT_SYSTEM_PROMPT },
@@ -114,7 +108,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 800,
         temperature: 0.7,
-        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -124,7 +117,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   const streamDraft = useCallback(async (
     prompt: string,
@@ -135,7 +128,7 @@ export function useAiCompose(): UseAiComposeReturn {
     setError(null);
     try {
       let fullText = '';
-      const generator = streamAliaChatCompletion({
+      const generator = streamAliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: DRAFT_SYSTEM_PROMPT },
@@ -143,7 +136,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 800,
         temperature: 0.7,
-        token: getToken(),
       });
 
       for await (const chunk of generator) {
@@ -159,13 +151,13 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   const polish = useCallback(async (text: string): Promise<string> => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await aliaChatCompletion({
+      const result = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: POLISH_SYSTEM_PROMPT },
@@ -173,7 +165,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 1000,
         temperature: 0.5,
-        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -183,13 +174,13 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   const changeTone = useCallback(async (text: string, tone: ComposeTone): Promise<string> => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await aliaChatCompletion({
+      const result = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: TONE_SYSTEM_PROMPT },
@@ -197,7 +188,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 1000,
         temperature: 0.6,
-        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -207,13 +197,13 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   const adjustLength = useCallback(async (text: string, direction: 'shorter' | 'longer'): Promise<string> => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await aliaChatCompletion({
+      const result = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: LENGTH_SYSTEM_PROMPT },
@@ -221,7 +211,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: direction === 'longer' ? 1500 : 500,
         temperature: 0.5,
-        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -231,13 +220,13 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   const suggestSubject = useCallback(async (body: string): Promise<string> => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await aliaChatCompletion({
+      const result = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
           { role: 'system', content: SUBJECT_SYSTEM_PROMPT },
@@ -245,7 +234,6 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 60,
         temperature: 0.6,
-        token: getToken(),
       });
       return result.trim().replace(/^["']|["']$/g, '');
     } catch (err) {
@@ -255,7 +243,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getToken]);
+  }, [oxyServices]);
 
   return {
     draft,
