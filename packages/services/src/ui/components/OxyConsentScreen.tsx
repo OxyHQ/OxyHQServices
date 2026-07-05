@@ -20,6 +20,7 @@
  */
 import { useCallback } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { logger } from '@oxyhq/core';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Button } from '@oxyhq/bloom/button';
 import { Text } from '@oxyhq/bloom/typography';
@@ -113,7 +114,9 @@ function ConsentLink({
   color: string;
 }) {
   const handlePress = useCallback(() => {
-    void Linking.openURL(url);
+    Linking.openURL(url).catch((error) => {
+      logger.warn('OxyConsentScreen: could not open link', { url, error });
+    });
   }, [url]);
   return (
     <Pressable testID={testID} onPress={handlePress} accessibilityRole="link" style={styles.link}>
@@ -134,6 +137,9 @@ export function OxyConsentScreen({
   const theme = useTheme();
   const { t } = useI18n();
   const appName = application.name;
+  // Scopes key the permission rows — a duplicate in the request would mean
+  // duplicate React keys and redundant rows.
+  const uniqueScopes = [...new Set(scopes)];
 
   const provenanceLabel = application.isOfficial
     ? t('consent.provenance.official')
@@ -198,8 +204,8 @@ export function OxyConsentScreen({
           {t('consent.permissions.title')}
         </Text>
         <View style={[styles.card, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}>
-          {scopes.length > 0 ? (
-            scopes.map((scope) => (
+          {uniqueScopes.length > 0 ? (
+            uniqueScopes.map((scope) => (
               <View key={scope} testID={`consent-scope-${scope}`} style={styles.row}>
                 <View style={[styles.bullet, { backgroundColor: theme.colors.primary }]} />
                 <Text style={[styles.rowText, { color: theme.colors.text }]}>
