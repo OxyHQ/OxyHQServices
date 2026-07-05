@@ -543,37 +543,6 @@ export {
     accountIdsOf,
 } from './session/projectSessionState';
 
-// Unified account-list projection (THE single source of truth for the account
-// chooser: device sign-ins ∪ account graph, deduped by accountId). Pure +
-// I/O-free — the caller hydrates profiles via `getUsersByIds`. Shared by
-// `@oxyhq/services`, `@oxyhq/auth`, and auth.oxy.so so the list can't diverge.
-export {
-    projectSwitchableAccounts,
-    switchableAccountIds,
-} from './session/accountProjection';
-export type {
-    SwitchableAccount,
-    SwitchableAccountUser,
-    ProjectSwitchableAccountsInput,
-} from './session/accountProjection';
-
-// Headless controller for the unified account dialog. Framework-agnostic
-// state machine + subscribe/getSnapshot store (bind via `useSyncExternalStore`)
-// — no password/2FA logic (that lives at the IdP; `openPasswordAtOxyAuth` only
-// hands off). Reuses `SessionClient.switchAccount` / `oxyServices.switchToAccount`
-// for the uniform switch and the existing device-flow methods for sign-in.
-export {
-    AccountDialogController,
-    createAccountDialogController,
-} from './session/accountDialogController';
-export type {
-    AccountDialogControllerOptions,
-    AccountDialogSnapshot,
-    AccountDialogView,
-    SignInFlowPhase,
-    SignInFlowState,
-} from './session/accountDialogController';
-
 // ---------------------------------------------------------------------------
 // Device-first session machinery (auth centralization, wave 1) — additive.
 // Persisted auth-state store, the unified refresh handler + scheduler, the

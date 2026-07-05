@@ -254,11 +254,8 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
       useAuthStore.getState().loginSuccess(authenticatedUser);
     });
 
-    // On auth-ready both the context's `refreshAccounts` AND the account-dialog
-    // controller's own graph refresh call `listAccounts` (two independent
-    // consumers of the same source); the 401 clears provider auth either way.
     await waitFor(() => {
-      expect(listAccountsSpy).toHaveBeenCalled();
+      expect(listAccountsSpy).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
       expect(requireContext(sink).isAuthenticated).toBe(false);

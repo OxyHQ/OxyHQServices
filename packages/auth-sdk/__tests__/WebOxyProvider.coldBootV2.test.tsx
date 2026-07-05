@@ -52,8 +52,6 @@ jest.mock('@oxyhq/core', () => {
       onTokensChanged(): () => void { return () => undefined; }
       getUsersByIds(ids: string[]): Promise<User[]> { return stubs.getUsersByIds(ids); }
       getUserById(id: string): Promise<User> { return stubs.getUserById(id); }
-      getFileDownloadUrl(id: string): string { return `https://cdn.test/${id}`; }
-      listAccounts(): Promise<never[]> { return Promise.resolve([]); }
     },
   };
 });
@@ -108,23 +106,23 @@ describe('WebOxyProvider — device-first cold boot binding', () => {
     };
   });
 
-  it('signed-out boot: settles ready + unauthenticated, dialog stays closed (no navigation)', async () => {
+  it('signed-out boot: settles ready + unauthenticated, modal stays closed (no navigation)', async () => {
     renderProvider();
     await waitFor(() => expect(ctxRef?.isLoading).toBe(false));
     expect(ctxRef?.isAuthenticated).toBe(false);
     expect(ctxRef?.user).toBeNull();
-    // The provider never auto-opens the dialog and — having no navigation code at
+    // The provider never auto-opens the modal and — having no navigation code at
     // all — never redirects; a signed-out boot simply settles ready.
-    expect(ctxRef?.isAccountDialogOpen).toBe(false);
+    expect(ctxRef?.isSignInOpen).toBe(false);
   });
 
-  it('signIn() opens the in-app account dialog instead of navigating', async () => {
+  it('signIn() opens the in-app modal instead of navigating', async () => {
     renderProvider();
     await waitFor(() => expect(ctxRef?.isLoading).toBe(false));
-    expect(ctxRef?.isAccountDialogOpen).toBe(false);
+    expect(ctxRef?.isSignInOpen).toBe(false);
 
     act(() => { ctxRef?.signIn(); });
-    await waitFor(() => expect(ctxRef?.isAccountDialogOpen).toBe(true));
+    await waitFor(() => expect(ctxRef?.isSignInOpen).toBe(true));
   });
 
   it('onSession boot: commits the recovered session and becomes authenticated', async () => {

@@ -21,14 +21,16 @@ export { default as OxySignInButton } from './components/OxySignInButton';
 export { default as OxyAuthPrompt } from './components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './components/OxyAuthPrompt';
 export { default as OxyLogo } from './components/OxyLogo';
-export { RequireOxyAuth } from './components/RequireOxyAuth';
-export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './components/RequireOxyAuth';
 export { default as Avatar } from './components/Avatar';
 export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
 export { FontLoader, setupFonts } from './components/FontLoader';
 export { default as OxyIcon } from './components/icon/OxyIcon';
+export { default as AccountMenu } from './components/AccountMenu';
+export { default as AccountMenuButton } from './components/AccountMenuButton';
 export { default as ProfileButton } from './components/ProfileButton';
+export { default as ProfileMenu } from './components/ProfileMenu';
+export { default as AccountSwitcher, AccountSwitcherView } from './components/AccountSwitcher';
 
 // Context + hooks
 export { useOxy } from './context/OxyContext';
@@ -40,6 +42,7 @@ export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';
 // Screens
 export { default as ProfileScreen } from './screens/ProfileScreen';
 export { default as ManageAccountScreen } from './screens/ManageAccountScreen';
+export { default as AccountSwitcherScreen } from './screens/AccountSwitcherScreen';
 export { default as CreateAccountScreen } from './screens/CreateAccountScreen';
 export { default as AccountMembersScreen } from './screens/AccountMembersScreen';
 export { default as AccountSettingsScreen } from './screens/AccountSettingsScreen';

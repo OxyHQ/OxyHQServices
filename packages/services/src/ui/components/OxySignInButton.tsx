@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
-import { subscribeToSignInModal } from '../navigation/accountDialogManager';
+import { showSignInModal, subscribeToSignInModal } from './SignInModal';
 
 export interface OxySignInButtonProps {
     /**
@@ -84,26 +84,37 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     showWhenAuthenticated = false,
 }) => {
     const theme = useTheme();
-    const { openAccountDialog } = useOxy();
+    const { showBottomSheet } = useOxy();
     const { isAuthenticated, isLoading } = useAuthStore(
         useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
     );
-    // Tracks whether the unified account dialog is open so we can show
-    // "Signing in..." while it is. The manager reports visibility on every
-    // change regardless of platform or what opened/closed it.
+    // Tracks visibility of the web full-screen sign-in modal so we can show
+    // "Signing in..." while it's open. On native we open a bottom sheet whose
+    // visibility is owned by the sheet manager — no subscription needed.
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    useEffect(() => subscribeToSignInModal(setIsModalOpen), []);
+    // Subscribe to web modal visibility only — bottom sheet manages its own state.
+    useEffect(() => {
+        if (Platform.OS !== 'web') return;
+        return subscribeToSignInModal(setIsModalOpen);
+    }, []);
 
-    // Open the unified account dialog on its sign-in view (same surface on web +
-    // native), or defer to a caller-supplied handler.
+    // Handle button press
+    // - Web: full-screen modal (dialog UX fits desktop / browser)
+    // - Native: bottom sheet (sheet UX fits iOS/Android)
     const handlePress = useCallback(() => {
         if (onPress) {
             onPress();
             return;
         }
-        openAccountDialog('signin');
-    }, [onPress, openAccountDialog]);
+
+        if (Platform.OS === 'web') {
+            setIsModalOpen(true);
+            showSignInModal();
+        } else {
+            showBottomSheet?.('OxyAuth');
+        }
+    }, [onPress, showBottomSheet]);
 
     const themedStyles = useMemo(() => StyleSheet.create({
         button: {

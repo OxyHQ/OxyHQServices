@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
     View,
     Pressable,
@@ -14,10 +14,20 @@ import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { useAuth } from '../hooks/useAuth';
-import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import ProfileMenu, { type ProfileMenuAnchor } from './ProfileMenu';
 
 const isWeb = Platform.OS === 'web';
+
+/**
+ * Fixed popover width used by {@link ProfileMenu} on web. `ProfileButton`
+ * mirrors this constant when computing the trigger-relative anchor so the
+ * left-edge clamp keeps the panel fully on-screen. Keep the two in sync.
+ */
+const MENU_WIDTH = 300;
+
+/** Gutter, in px, kept between the popover and the viewport edges on web. */
+const VIEWPORT_GUTTER = 8;
 
 /**
  * Web-only Bluesky-style hover animation timings, mirrored from
@@ -57,15 +67,23 @@ export interface ProfileButtonProps {
      */
     avatarSize?: number;
     /** Navigate to the "Manage account" surface (settings). */
-    onNavigateManage?: () => void;
+    onNavigateManage: () => void;
     /** Start the add-account / sign-in flow for an additional account. */
-    onAddAccount?: () => void;
+    onAddAccount: () => void;
     /** Optional: navigate to the signed-in user's own profile. */
     onNavigateProfile?: () => void;
+    /** Called before the active identity changes so apps can clear scoped state. */
+    onBeforeSessionChange?: () => void | Promise<void>;
     /**
-     * Retained for source compatibility. The trigger now opens the unified
-     * `OxyAccountDialog` (a centered / bottom-sheet modal) rather than an
-     * anchored popover, so popover placement no longer applies.
+     * Web-only popover direction relative to the trigger:
+     *  - `'up'` (default): the menu opens UPWARD, for a trigger placed at the
+     *    BOTTOM of a sidebar (the footer pattern). Pixel-identical to prior
+     *    behavior.
+     *  - `'down'`: the menu opens DOWNWARD, for a trigger placed at the TOP of a
+     *    sidebar (the accounts app pattern).
+     *  - `'auto'`: opens downward when there is more room below the trigger than
+     *    above, otherwise upward.
+     * Native (bottom-sheet) is unaffected — this only influences the web popover.
      */
     placement?: 'up' | 'down' | 'auto';
     /**
@@ -80,27 +98,36 @@ export interface ProfileButtonProps {
 
 /**
  * Self-contained sidebar account trigger, modeled on Bluesky's ProfileCard and
- * the Oxy inbox's `MailboxDrawer` footer. Pressing it opens the unified
- * {@link OxyAccountDialog} — the single account switcher + sign-in surface — via
- * `useOxy().openAccountDialog`.
+ * the Oxy inbox's `MailboxDrawer` footer. Owns its own open state + anchor
+ * measurement, and renders {@link ProfileMenu} (the device-account switcher).
  *
  * Three auth states from {@link useAuth}:
  *  - **Undetermined** (`!isAuthResolved || isPrivateApiPending`): a neutral
  *    avatar-sized skeleton circle, no press.
  *  - **Signed in**: a pressable row — Bloom `Avatar` + display name + `@handle`
- *    + a chevron. Press opens the dialog on its `accounts` view.
- *  - **Signed out**: a "Sign in" row that calls `useAuth().signIn()` (which opens
- *    the dialog on its `signin` view).
+ *    + an `unfold-more-horizontal` chevron. Press opens the menu upward (web)
+ *    against the measured trigger, or as a bottom sheet (native).
+ *  - **Signed out**: a "Sign in" row that calls `useAuth().signIn()`.
  *
  * Styling uses react-native `StyleSheet` + the Bloom theme (via `useTheme`) so
  * the layout renders identically in EVERY consumer — including apps that do not
  * use NativeWind (e.g. the accounts app). Only the web hover animation keeps
  * dynamic inline `style` (the CSS transition/transform values), which is what
  * the `react-native-web-style.d.ts` augmentation exists for.
+ *
+ * All display strings resolve through `@oxyhq/core`'s
+ * `getAccountDisplayName` / `getAccountFallbackHandle` — no hand-rolled name
+ * fallbacks. Avatars pass the bare file id as `source` + `variant="thumb"`, so
+ * the app's registered `ImageResolver` builds the thumbnail URL.
  */
 const ProfileButton: React.FC<ProfileButtonProps> = ({
     expanded = true,
     avatarSize,
+    onNavigateManage,
+    onAddAccount,
+    onNavigateProfile,
+    onBeforeSessionChange,
+    placement = 'up',
     className,
     style,
 }) => {
@@ -111,20 +138,76 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         isPrivateApiPending,
         signIn,
     } = useAuth();
-    const { openAccountDialog } = useOxy();
     const { colors } = useTheme();
     const { t, locale } = useI18n();
+
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [anchor, setAnchor] = useState<ProfileMenuAnchor | null>(null);
 
     // Web-only hover/focus tracking for the Bluesky-style reveal animation.
     // Native has no hover, so these stay false and the row renders statically.
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
 
+    // Trigger ref for the web anchor measurement. RN-Web exposes `measure()` on
+    // host views, so we anchor the popover to the button rect and open upward.
+    const triggerRef = useRef<View | null>(null);
+
     const resolvedAvatarSize = avatarSize ?? (expanded ? 40 : 32);
 
-    const openDialog = useCallback(() => {
-        openAccountDialog('accounts');
-    }, [openAccountDialog]);
+    const openMenu = useCallback(() => {
+        if (!isWeb) {
+            setAnchor(null);
+            setMenuOpen(true);
+            return;
+        }
+        const node = triggerRef.current;
+        if (!node || typeof node.measure !== 'function' || typeof window === 'undefined') {
+            setAnchor(null);
+            setMenuOpen(true);
+            return;
+        }
+        node.measure((_x, _y, _w, height, pageX, pageY) => {
+            if (typeof pageX !== 'number' || typeof pageY !== 'number') {
+                setAnchor(null);
+            } else {
+                // Clamp the panel's left edge inside the viewport gutter.
+                const maxLeft = Math.max(
+                    VIEWPORT_GUTTER,
+                    window.innerWidth - MENU_WIDTH - VIEWPORT_GUTTER,
+                );
+                const left = Math.min(Math.max(VIEWPORT_GUTTER, pageX), maxLeft);
+                // Bottom edge of the trigger in page coordinates. `height` is a
+                // number for host views; guard defensively for non-web shims.
+                const triggerBottom = pageY + (typeof height === 'number' ? height : 0);
+                // Resolve `'auto'` by comparing the room below the trigger with
+                // the room above it; pick whichever direction has more space.
+                const openDown =
+                    placement === 'down' ||
+                    (placement === 'auto' &&
+                        window.innerHeight - triggerBottom > pageY);
+                if (openDown) {
+                    // Anchor the panel's TOP edge just below the trigger bottom so
+                    // the menu opens downward from a top-of-sidebar trigger.
+                    const top = Math.max(VIEWPORT_GUTTER, triggerBottom + VIEWPORT_GUTTER);
+                    setAnchor({ left, top });
+                } else {
+                    // Anchor the panel's BOTTOM edge just above the trigger top so
+                    // the menu opens upward from this footer button.
+                    const bottom = Math.max(
+                        VIEWPORT_GUTTER,
+                        window.innerHeight - pageY + VIEWPORT_GUTTER,
+                    );
+                    setAnchor({ left, bottom });
+                }
+            }
+            setMenuOpen(true);
+        });
+    }, [placement]);
+
+    const handleClose = useCallback(() => {
+        setMenuOpen(false);
+    }, []);
 
     // ── Undetermined: skeleton circle, no interaction. ──────────────────────
     if (!isAuthResolved || isPrivateApiPending) {
@@ -202,10 +285,10 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         />
     );
 
-    // `active` combines hover and keyboard focus — exactly like Bluesky's
-    // `state.hovered || state.focused`. Only web ever sets these, so on native
-    // the row renders statically.
-    const active = hovered || focused;
+    // `active` combines hover, keyboard focus, and menu-open — exactly like
+    // Bluesky's `state.hovered || state.focused || control.isOpen`. Only web
+    // ever sets `hovered`/`focused`, so on native this reduces to `menuOpen`.
+    const active = hovered || focused || menuOpen;
     const accountLabel = t('accountSwitcher.switchWhileSignedInAs', { name: displayName })
         || `Switch account, signed in as ${displayName}`;
 
@@ -235,14 +318,24 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         return (
             <View className={className} style={style}>
                 <Pressable
+                    ref={triggerRef}
                     style={[styles.collapsedTrigger, collapsedBgStyle]}
-                    onPress={openDialog}
+                    onPress={openMenu}
                     accessibilityRole="button"
                     accessibilityLabel={accountLabel}
                     {...webInteractionProps}
                 >
                     {avatarNode}
                 </Pressable>
+                <ProfileMenu
+                    open={menuOpen}
+                    onClose={handleClose}
+                    anchor={anchor}
+                    onNavigateManage={onNavigateManage}
+                    onAddAccount={onAddAccount}
+                    onNavigateProfile={onNavigateProfile}
+                    onBeforeSessionChange={onBeforeSessionChange}
+                />
             </View>
         );
     }
@@ -309,8 +402,9 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     return (
         <View className={className} style={[styles.fullWidth, style]}>
             <Pressable
+                ref={triggerRef}
                 style={[styles.row, styles.rowExpanded, rowStyle]}
-                onPress={openDialog}
+                onPress={openMenu}
                 accessibilityRole="button"
                 accessibilityLabel={accountLabel}
                 {...webInteractionProps}
@@ -340,6 +434,15 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                     />
                 </View>
             </Pressable>
+            <ProfileMenu
+                open={menuOpen}
+                onClose={handleClose}
+                anchor={anchor}
+                onNavigateManage={onNavigateManage}
+                onAddAccount={onAddAccount}
+                onNavigateProfile={onNavigateProfile}
+                onBeforeSessionChange={onBeforeSessionChange}
+            />
         </View>
     );
 };

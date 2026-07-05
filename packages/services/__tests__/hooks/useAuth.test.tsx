@@ -1,14 +1,20 @@
 /**
  * Tests for the high-level `useAuth` hook.
  *
- * The public web sign-in path opens the unified account dialog on its sign-in
- * view (`openAccountDialog('signin')`) — there is NO automatic navigation to any
- * login page. Cross-domain restore is handled during the device-first cold boot;
- * an explicit user click just presents the SDK sign-in surface. Native with a
+ * The public web sign-in path opens the in-app "Sign in with Oxy" modal — there
+ * is NO automatic navigation to any login page. Cross-domain restore is handled
+ * during the device-first cold boot; an explicit user click just presents the
+ * SDK sign-in surface (password / QR device flow / add account). Native with a
  * public key still signs in with the cryptographic identity directly.
  */
 
 import { act, renderHook } from '@testing-library/react';
+
+const showSignInModal = jest.fn();
+jest.mock('../../src/ui/components/SignInModal', () => ({
+  __esModule: true,
+  showSignInModal: () => showSignInModal(),
+}));
 
 interface MockOxyState {
   user: { id: string; username: string } | null;
@@ -29,7 +35,6 @@ interface MockOxyState {
   getPublicKey: jest.Mock;
   showBottomSheet: jest.Mock;
   openAvatarPicker: jest.Mock;
-  openAccountDialog: jest.Mock;
 }
 
 const defaultMockState = (): MockOxyState => ({
@@ -51,7 +56,6 @@ const defaultMockState = (): MockOxyState => ({
   getPublicKey: jest.fn(async () => null),
   showBottomSheet: jest.fn(),
   openAvatarPicker: jest.fn(),
-  openAccountDialog: jest.fn(),
 });
 
 let mockState: MockOxyState = defaultMockState();
@@ -66,6 +70,7 @@ import { useAuth } from '../../src/ui/hooks/useAuth';
 describe('useAuth — state passthrough', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('passes auth state through', () => {
@@ -92,12 +97,13 @@ describe('useAuth — state passthrough', () => {
   });
 });
 
-describe('useAuth.signIn — web dialog path', () => {
+describe('useAuth.signIn — web modal path', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
-  it('opens the unified account dialog on its sign-in view instead of navigating', async () => {
+  it('opens the in-app sign-in modal instead of navigating to a login page', async () => {
     const { result } = renderHook(() => useAuth());
 
     await act(async () => {
@@ -107,7 +113,7 @@ describe('useAuth.signIn — web dialog path', () => {
       await Promise.resolve();
     });
 
-    expect(mockState.openAccountDialog).toHaveBeenCalledWith('signin');
+    expect(showSignInModal).toHaveBeenCalledTimes(1);
     // No key-based sign-in, no redirect helper.
     expect(mockState.signIn).not.toHaveBeenCalled();
   });
@@ -116,6 +122,7 @@ describe('useAuth.signIn — web dialog path', () => {
 describe('useAuth.signIn — native key-based path', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('calls signIn with the provided publicKey when one is passed', async () => {
@@ -126,13 +133,14 @@ describe('useAuth.signIn — native key-based path', () => {
     });
 
     expect(mockState.signIn).toHaveBeenCalledWith('explicit-pubkey');
-    expect(mockState.openAccountDialog).not.toHaveBeenCalled();
+    expect(showSignInModal).not.toHaveBeenCalled();
   });
 });
 
 describe('useAuth.signOut / signOutAll / refresh', () => {
   beforeEach(() => {
     mockState = defaultMockState();
+    showSignInModal.mockClear();
   });
 
   it('delegates signOut to context.logout', async () => {
