@@ -1,12 +1,46 @@
 import type React from 'react';
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
+import {
+    logger,
+    generatePkcePair,
+    generateOAuthState,
+    buildOAuthAuthorizeUrl,
+    type PublicApplication,
+} from '@oxyhq/core';
 import { useAuthStore } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { subscribeToSignInModal } from '../navigation/accountDialogManager';
+import { redirectToAuthorize, openAuthorizeUrlNative } from './oauthNavigation';
+
+const isWeb = Platform.OS === 'web';
+
+/**
+ * `sessionStorage` keys under which a third-party "Sign in with Oxy" OAuth flow
+ * persists its CSRF `state` and PKCE `code_verifier` across the authorize
+ * redirect. The Relying Party's redirect-URI callback reads them back to
+ * validate the returned `state` and replay the verifier on the token exchange.
+ *
+ * Web only: a browser RP navigates away to `auth.oxy.so` and back, so the
+ * handshake must survive a full-page redirect. Native completes the flow inside
+ * a single `WebBrowser` auth session and has no cross-navigation gap to bridge.
+ */
+export const OXY_OAUTH_STATE_STORAGE_KEY = 'oxy_oauth_state';
+export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
+
+/**
+ * Persist the OAuth CSRF `state` + PKCE `code_verifier` for the RP callback.
+ * No-op where `sessionStorage` is unavailable (SSR / non-browser hosts).
+ */
+function persistOAuthHandshake(state: string, codeVerifier: string): void {
+    const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    if (!store) return;
+    store.setItem(OXY_OAUTH_STATE_STORAGE_KEY, state);
+    store.setItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+}
 
 export interface OxySignInButtonProps {
     /**
@@ -48,6 +82,16 @@ export interface OxySignInButtonProps {
      * @default false
      */
     showWhenAuthenticated?: boolean;
+
+    /**
+     * Exact registered redirect URI the OAuth authorization code is returned to.
+     * REQUIRED only for third-party (`type: 'third_party'`) applications, which
+     * sign in via an OAuth + PKCE redirect to `auth.oxy.so`. First-party /
+     * official apps open the in-app dialog and ignore this prop. If a third-party
+     * app resolves without it, the button logs an error and does nothing (it will
+     * not invent a redirect URI).
+     */
+    oauthRedirectUri?: string;
 }
 
 /**
@@ -82,9 +126,10 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     text = 'Sign in with Oxy',
     disabled = false,
     showWhenAuthenticated = false,
+    oauthRedirectUri,
 }) => {
     const theme = useTheme();
-    const { openAccountDialog } = useOxy();
+    const { openAccountDialog, oxyServices, clientId } = useOxy();
     const { isAuthenticated, isLoading } = useAuthStore(
         useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
     );
@@ -95,15 +140,112 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
     useEffect(() => subscribeToSignInModal(setIsModalOpen), []);
 
-    // Open the unified account dialog on its sign-in view (same surface on web +
-    // native), or defer to a caller-supplied handler.
+    // The application's public identity is resolved ONCE per mounted button and
+    // its promise cached here, so the click handler stays lazy (no fetch until
+    // first press) and rapid taps share one in-flight resolve. A rejected resolve
+    // clears the cache so a later press can retry a transient failure.
+    const appResolutionRef = useRef<Promise<PublicApplication> | null>(null);
+    // Re-entrancy guard: a routing pass may await network + crypto before it
+    // redirects, so block a second concurrent press from racing the sessionStorage
+    // handshake against a different PKCE pair.
+    const routingRef = useRef(false);
+
+    const resolvePublicApplication = useCallback((): Promise<PublicApplication> | null => {
+        if (!clientId) return null;
+        if (!appResolutionRef.current) {
+            appResolutionRef.current = oxyServices.getPublicApplication(clientId).catch((error) => {
+                appResolutionRef.current = null;
+                throw error;
+            });
+        }
+        return appResolutionRef.current;
+    }, [clientId, oxyServices]);
+
+    // Official / first-party surface: the in-app account + sign-in dialog.
+    const startOfficialSignIn = useCallback(() => {
+        openAccountDialog('signin');
+    }, [openAccountDialog]);
+
+    // Third-party surface: an OAuth 2.0 authorization-code + PKCE redirect to
+    // auth.oxy.so. No FedCM, no SSO bounce, no Oxy session cookies.
+    const startThirdPartyOAuth = useCallback(
+        async (app: PublicApplication): Promise<void> => {
+            if (!clientId) {
+                startOfficialSignIn();
+                return;
+            }
+            if (!oauthRedirectUri) {
+                logger.error(
+                    'OxySignInButton: a third_party application requires the `oauthRedirectUri` prop to start the OAuth redirect; sign-in aborted',
+                    undefined,
+                    { component: 'OxySignInButton', clientId, application: app.name },
+                );
+                return;
+            }
+
+            const [pkce, state] = await Promise.all([generatePkcePair(), generateOAuthState()]);
+            const authorizeUrl = buildOAuthAuthorizeUrl({
+                clientId,
+                redirectUri: oauthRedirectUri,
+                state,
+                codeChallenge: pkce.codeChallenge,
+            });
+
+            if (isWeb) {
+                // Persist the handshake for the RP callback, then hand the
+                // top-level document to the IdP.
+                persistOAuthHandshake(state, pkce.codeVerifier);
+                redirectToAuthorize(authorizeUrl);
+                return;
+            }
+
+            await openAuthorizeUrlNative(authorizeUrl, oauthRedirectUri);
+        },
+        [clientId, oauthRedirectUri, startOfficialSignIn],
+    );
+
+    // Resolve the Application once, then route: third-party → OAuth redirect;
+    // first-party / official / unresolved → the in-app dialog. Resolution failure
+    // NEVER breaks an official app's sign-in — it falls back to the dialog.
+    const routeSignIn = useCallback(async (): Promise<void> => {
+        if (routingRef.current) return;
+        routingRef.current = true;
+        try {
+            const resolving = resolvePublicApplication();
+            if (!resolving) {
+                startOfficialSignIn();
+                return;
+            }
+            let app: PublicApplication;
+            try {
+                app = await resolving;
+            } catch (error) {
+                logger.warn(
+                    'OxySignInButton: could not resolve the application; opening the sign-in dialog',
+                    { component: 'OxySignInButton', clientId },
+                    error,
+                );
+                startOfficialSignIn();
+                return;
+            }
+            if (app.type === 'third_party' && !app.isOfficial) {
+                await startThirdPartyOAuth(app);
+                return;
+            }
+            startOfficialSignIn();
+        } finally {
+            routingRef.current = false;
+        }
+    }, [resolvePublicApplication, startOfficialSignIn, startThirdPartyOAuth, clientId]);
+
+    // Defer to a caller-supplied handler, otherwise route by application type.
     const handlePress = useCallback(() => {
         if (onPress) {
             onPress();
             return;
         }
-        openAccountDialog('signin');
-    }, [onPress, openAccountDialog]);
+        void routeSignIn();
+    }, [onPress, routeSignIn]);
 
     const themedStyles = useMemo(() => StyleSheet.create({
         button: {
