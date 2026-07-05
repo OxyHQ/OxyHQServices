@@ -73,11 +73,6 @@ jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries }),
 }));
 
-jest.mock('react-native-gesture-handler', () => ({
-  __esModule: true,
-  GestureHandlerRootView: ({ children }: { children?: React.ReactNode }) => children,
-}));
-
 jest.mock('react-native-qrcode-svg', () => ({
   __esModule: true,
   default: ({ value }: { value: string }) =>

@@ -192,7 +192,12 @@ export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 // ---------------------------------------------------------------------------
 export { default as Avatar } from './ui/components/Avatar';
 export type { AvatarProps } from './ui/components/Avatar';
-export { OxySignInButton } from './ui/components/OxySignInButton';
+export {
+  OxySignInButton,
+  OXY_OAUTH_STATE_STORAGE_KEY,
+  OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
+} from './ui/components/OxySignInButton';
+export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
 export { default as OxyLogo } from './ui/components/OxyLogo';

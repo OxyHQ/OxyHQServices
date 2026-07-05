@@ -22,14 +22,29 @@
  * Per-account color re-theming uses Bloom's `APP_COLOR_PRESETS` + `BloomColorScope`
  * (same visual language auth.oxy.so uses). Base theming is `useTheme()` + a
  * `StyleSheet`, so the dialog renders correctly in EVERY consumer — including apps
- * that do not use NativeWind (e.g. the accounts app). Modal contents are wrapped
- * in `<GestureHandlerRootView>` because RN's `Modal` renders into its own window.
+ * that do not use NativeWind (e.g. the accounts app).
+ *
+ * The surface is Bloom's `<Dialog>` (`@oxyhq/bloom/dialog`) with a responsive
+ * `placement` — a bottom sheet on narrow viewports, a centered card on wide ones.
+ * It REPLACES the hand-rolled RN `<Modal>` + `<GestureHandlerRootView>` + manual
+ * backdrop/card wrapper this component used before. That RN `<Modal>` is invisible
+ * under React StrictMode on web: react-native-web's `ModalPortal` appends its host
+ * node during render but removes it in an effect cleanup and never re-attaches, so
+ * the dialog never paints in a dev Vite build. Bloom's `<Dialog>` renders through
+ * its own Portal and has no such lifecycle hazard.
+ *
+ * Open/close is CONTROLLED by `isAccountDialogOpen` (the `open` prop); the Dialog
+ * stays mounted whenever the controller exists so it can animate its own close.
+ * Backdrop / swipe-to-dismiss is disabled (`dismissOnBackdrop={false}`) on purpose:
+ * Bloom's controlled `bottom` placement does not fire `onClose` on a gesture or
+ * backdrop dismissal, so allowing it would desync `isAccountDialogOpen` from the
+ * sheet and block reopening. The header close button (and a successful switch)
+ * drive `closeAccountDialog`, which flips `open` and runs the exit animation.
  */
 
 import type React from 'react';
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -38,11 +53,11 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Button } from '@oxyhq/bloom/button';
+import { Dialog } from '@oxyhq/bloom/dialog';
 import { Text } from '@oxyhq/bloom/typography';
 import {
   useTheme,
@@ -172,7 +187,7 @@ const OxyAccountDialog: React.FC = () => {
     [handleSwitch, controller, handleManage, closeAccountDialog],
   );
 
-  if (!isAccountDialogOpen || !controller) {
+  if (!controller) {
     return null;
   }
 
@@ -180,65 +195,48 @@ const OxyAccountDialog: React.FC = () => {
   const showBack = view === 'qr' || (view === 'add' && snapshot.accounts.length > 0);
 
   return (
-    <Modal
-      visible
-      transparent
-      animationType={isWeb ? 'fade' : 'slide'}
-      statusBarTranslucent
-      onRequestClose={closeAccountDialog}
+    <Dialog
+      open={isAccountDialogOpen}
+      onClose={closeAccountDialog}
+      placement={{ base: 'bottom', md: 'center' }}
+      dismissOnBackdrop={false}
+      maxWidth={420}
+      label={headerCopy(view, snapshot.accounts.length, t).title}
     >
-      <GestureHandlerRootView style={styles.root}>
-        <View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={closeAccountDialog}
-            accessibilityLabel={t('common.actions.close') || 'Close'}
-            accessibilityRole="button"
+      <DialogHeader
+        snapshot={snapshot}
+        theme={theme}
+        t={t}
+        showBack={showBack}
+        onBack={() => controller.setView('accounts')}
+        onClose={closeAccountDialog}
+      />
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {view === 'accounts' ? (
+          <AccountsView snapshot={snapshot} theme={theme} t={t} handlers={handlers} />
+        ) : view === 'qr' ? (
+          <QrView snapshot={snapshot} theme={theme} t={t} onRetry={() => void controller.showQr()} />
+        ) : (
+          <SignInView
+            snapshot={snapshot}
+            theme={theme}
+            t={t}
+            handlers={handlers}
+            onSignInWithOxy={() => void controller.signInWithOxy()}
+            onScanQr={() => void controller.showQr()}
+            onUsePassword={() =>
+              controller.openPasswordAtOxyAuth({
+                returnUrl: isWeb ? currentHref() : undefined,
+              })
+            }
           />
-          <View
-            style={[
-              styles.card,
-              isWeb ? styles.cardCentered : styles.cardSheet,
-              { backgroundColor: theme.colors.card, borderColor: theme.colors.border },
-            ]}
-          >
-            <DialogHeader
-              snapshot={snapshot}
-              theme={theme}
-              t={t}
-              showBack={showBack}
-              onBack={() => controller.setView('accounts')}
-              onClose={closeAccountDialog}
-            />
-            <ScrollView
-              style={styles.body}
-              contentContainerStyle={styles.bodyContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {view === 'accounts' ? (
-                <AccountsView snapshot={snapshot} theme={theme} t={t} handlers={handlers} />
-              ) : view === 'qr' ? (
-                <QrView snapshot={snapshot} theme={theme} t={t} onRetry={() => void controller.showQr()} />
-              ) : (
-                <SignInView
-                  snapshot={snapshot}
-                  theme={theme}
-                  t={t}
-                  handlers={handlers}
-                  onSignInWithOxy={() => void controller.signInWithOxy()}
-                  onScanQr={() => void controller.showQr()}
-                  onUsePassword={() =>
-                    controller.openPasswordAtOxyAuth({
-                      returnUrl: isWeb ? currentHref() : undefined,
-                    })
-                  }
-                />
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </GestureHandlerRootView>
-    </Modal>
+        )}
+      </ScrollView>
+    </Dialog>
   );
 };
 
@@ -583,29 +581,6 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
 };
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  backdrop: {
-    flex: 1,
-    justifyContent: isWeb ? 'center' : 'flex-end',
-    alignItems: 'center',
-  },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
-  },
-  cardCentered: {
-    borderRadius: 28,
-  },
-  cardSheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-  },
   header: {
     alignItems: 'center',
     marginBottom: 12,
