@@ -581,7 +581,11 @@
       "subtitle": "Añade otra cuenta para cambiar rápidamente entre ellas"
     },
     "label": "Selector de cuentas",
-    "searchPlaceholder": "Buscar cuentas"
+    "searchPlaceholder": "Buscar cuentas",
+    "scanTitle": "Escanea para iniciar sesión",
+    "scanSubtitle": "Abre la app de Oxy en tu móvil y escanea este código",
+    "scanWithOxy": "Escanea con la app de Oxy para continuar",
+    "scanQr": "Escanear código QR"
   },
   "feedback": {
     "type": {

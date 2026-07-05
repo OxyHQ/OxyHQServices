@@ -384,7 +384,11 @@
       "subtitle": "Add another account to switch between them quickly"
     },
     "label": "Account switcher",
-    "searchPlaceholder": "Search accounts"
+    "searchPlaceholder": "Search accounts",
+    "scanTitle": "Scan to sign in",
+    "scanSubtitle": "Open the Oxy app on your phone and scan this code",
+    "scanWithOxy": "Scan with the Oxy app to continue",
+    "scanQr": "Scan QR code"
   },
   "reputation": {
     "faq": {
