@@ -11,7 +11,7 @@ import {
   Settings01Icon,
   CommandIcon,
 } from '@hugeicons/core-free-icons';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 import config from '@/lib/config';
 import {
   Sidebar,

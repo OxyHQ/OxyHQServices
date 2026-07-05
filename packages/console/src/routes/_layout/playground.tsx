@@ -66,7 +66,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useModelsStats } from '@/hooks/use-models';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 import config from '@/lib/config';
 import { toast } from 'sonner';
 
@@ -121,7 +121,7 @@ function PlaygroundPage() {
     const expSeconds = token ? oxyServices.getAccessTokenExpiry() : null;
     if (token && expSeconds !== null && expSeconds * 1000 - Date.now() < 60_000) {
       // Expiring within the next minute — refresh before this direct fetch
-      // (WebOxyProvider's own proactive scheduler usually beats this, but a
+      // (OxyProvider's own proactive scheduler usually beats this, but a
       // manual bearer read for a raw `fetch` call still checks defensively).
       token = (await oxyServices.httpService.refreshAccessToken('preflight')) ?? token;
     }

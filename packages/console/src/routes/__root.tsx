@@ -1,7 +1,7 @@
 import { Outlet, createRootRoute } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { WebOxyProvider } from '@oxyhq/auth';
+import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
@@ -40,14 +40,14 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <LocaleProvider>
         <BloomThemeProvider mode="system" colorPreset="oxy">
-          <WebOxyProvider baseURL={config.oxyUrl} clientId={config.clientId}>
+          <OxyProvider baseURL={config.oxyUrl} clientId={config.clientId} queryClient={queryClient}>
             <AccountProvider>
               <TooltipProvider delayDuration={300}>
                 <Outlet />
                 <Toaster position="bottom-right" richColors closeButton />
               </TooltipProvider>
             </AccountProvider>
-          </WebOxyProvider>
+          </OxyProvider>
         </BloomThemeProvider>
       </LocaleProvider>
       {import.meta.env.DEV && (

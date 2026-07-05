@@ -1,7 +1,7 @@
 {
   "name": "@oxyhq/sdk",
   "version": "1.0.0",
-  "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
+  "description": "OxyHQ SDK Monorepo \u2014 core, auth, services, and API packages",
   "private": true,
   "trustedDependencies": [
     "@shopify/react-native-skia",
@@ -11,7 +11,6 @@
     "packages/contracts",
     "packages/protocol",
     "packages/core",
-    "packages/auth-sdk",
     "packages/services",
     "packages/expo-splash",
     "packages/api",
@@ -32,7 +31,6 @@
     "clean": "turbo run clean",
     "protocol:build": "bun run --filter @oxyhq/protocol build",
     "core:build": "bun run --filter @oxyhq/core build",
-    "auth:build": "bun run --filter @oxyhq/auth build",
     "services:build": "bun run --filter @oxyhq/services build",
     "services:dev": "bun run --filter @oxyhq/services dev",
     "services:test": "bun run --filter @oxyhq/services test",
@@ -83,12 +81,12 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@radix-ui/react-slot": "1.2.3",
-    "@oxyhq/bloom": "^0.20.0",
+    "@oxyhq/bloom": "^0.29.2",
     "markdown-it": "12.3.2"
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.15",
-    "@oxyhq/bloom": "^0.24.1",
+    "@oxyhq/bloom": "^0.29.2",
     "expo-contacts": "~56.0.9",
     "expo-splash-screen": "~56.0.10",
     "is-arrayish": "^0.3.2",

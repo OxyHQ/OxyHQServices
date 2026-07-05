@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import reactNativeWeb from 'vite-plugin-react-native-web'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -24,9 +25,18 @@ const appNamePlugin: Plugin = {
   },
 }
 
-const config = defineConfig({
+// The console runs on rolldown-vite (`"vite": "npm:rolldown-vite@^7"`) so the
+// `@oxyhq/services` React Native graph bundles through the maintained
+// `vite-plugin-react-native-web` plugin instead of hand-rolled interop: it
+// aliases react-native→react-native-web, applies `.web.*` platform extension
+// priority in dev AND build, treats RN packages' JSX-in-.js via rolldown
+// moduleTypes, strips Flow types, keeps expo-modules-core's side-effectful web
+// polyfill (`globalThis.expo`) from being tree-shaken, and defines the RN
+// globals.
+const config = defineConfig(({ mode }) => ({
   plugins: [
     appNamePlugin,
+    reactNativeWeb(),
     TanStackRouterVite(),
     tailwindcss(),
     viteReact(),
@@ -34,30 +44,35 @@ const config = defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: resolve(__dirname, './src') },
-      // `@oxyhq/bloom` (peer-deps `react-native`) compiles to JS that still
-      // imports `react-native` for primitives like `Platform` and
-      // `useColorScheme`. On web we route those imports to `react-native-web`,
-      // and stub the deep native-only modules that monorepo hoisting can
-      // pull in transitively (so Vite never tries to parse Flow-typed code).
+      // Deep native-only internals that monorepo hoisting can pull in
+      // transitively and that have no web implementation.
       { find: /^react-native\/Libraries\/.*/, replacement: emptyModule },
-      { find: 'react-native', replacement: 'react-native-web' },
-      { find: 'react-native-svg', replacement: emptyModule },
-      { find: 'react-native-screens', replacement: emptyModule },
-      { find: 'react-native-safe-area-context', replacement: emptyModule },
-      { find: 'react-native-gesture-handler', replacement: emptyModule },
+      // Native-only navigation primitives; `sonner-native` named-imports
+      // FullWindowOverlay, which on web renders straight through (see shim).
+      {
+        find: 'react-native-screens',
+        replacement: resolve(__dirname, './src/shims/react-native-screens.js'),
+      },
+      // react-native-svg asset resolution reaches for RN's Flow-typed CJS asset
+      // registry; on web the one true registry is react-native-web's (ESM, same
+      // registerAsset/getAssetByID API).
+      {
+        find: '@react-native/assets-registry/registry',
+        replacement: 'react-native-web/dist/modules/AssetRegistry',
+      },
     ],
-    extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
   },
   define: {
-    __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
+    // vite-plugin-react-native-web pins __DEV__=false and NODE_ENV=production
+    // unconditionally; re-assert the mode-aware values (user config wins over
+    // plugin config in Vite's merge).
+    __DEV__: JSON.stringify(mode !== 'production'),
+    'process.env.NODE_ENV': JSON.stringify(mode),
     __APP_NAME__: JSON.stringify(appName),
-  },
-  optimizeDeps: {
-    exclude: ['@oxyhq/auth'],
   },
   build: {
     outDir: 'dist',
   },
-})
+}))
 
 export default config

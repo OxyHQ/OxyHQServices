@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Add01Icon, Delete02Icon, Image01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
