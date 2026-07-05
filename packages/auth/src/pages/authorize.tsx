@@ -714,8 +714,12 @@ export function AuthorizePage() {
   const pageError = data.error;
   const application = data.application;
   const currentUser = data.user;
-  const showActions =
-    !pageError && (!effectiveStatus || effectiveStatus === "pending");
+  // Actionable = the request itself is still live (pending). A transient
+  // submit error (e.g. a 403/500 from the authorize POST) keeps the consent
+  // surface — with the application identity — visible, shown inline via the
+  // consent screen's `error` prop so the user can retry. Terminal states
+  // (expired/cancelled) fall through to the page status view instead.
+  const showActions = !effectiveStatus || effectiveStatus === "pending";
 
   // Additive front screen: when the consent request is still actionable and at
   // least one account is signed in on this device, show the Google-style
@@ -796,6 +800,7 @@ export function AuthorizePage() {
             onAllow={() => handleDecision("approve")}
             onDeny={() => handleDecision("deny")}
             busy={submitting}
+            error={pageError}
           />
         </div>
       ) : (

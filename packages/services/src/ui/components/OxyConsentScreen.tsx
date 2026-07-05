@@ -114,6 +114,19 @@ function ConsentLink({
   color: string;
 }) {
   const handlePress = useCallback(() => {
+    // `websiteUrl`/legal URLs are application-controlled metadata rendered on a
+    // high-trust surface: only ever hand web schemes to the OS.
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      logger.warn('OxyConsentScreen: invalid link URL', { url });
+      return;
+    }
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      logger.warn('OxyConsentScreen: blocked non-web link scheme', { url });
+      return;
+    }
     Linking.openURL(url).catch((error) => {
       logger.warn('OxyConsentScreen: could not open link', { url, error });
     });
