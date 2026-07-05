@@ -234,6 +234,20 @@ export interface OxyContextProviderProps {
    * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
    */
   clientId?: string;
+  /**
+   * Whether this provider is the device-first **session authority**. `true`
+   * (default) runs `runSessionColdBoot` on mount and opens the signed-out
+   * device-state socket — the correct behavior for every Relying Party app.
+   *
+   * `false` is the IdP host (`auth.oxy.so`) opt-out: the IdP is NOT a session
+   * authority (handoff "IdP vs RP"), so it must NOT restore or reproject an
+   * ambient device session. With `coldBoot={false}` the cold boot never runs
+   * and the signed-out device socket never opens; auth resolves immediately as
+   * signed out. Interactive sign-in still commits a normal session on this
+   * origin — only the automatic restore/reproject is suppressed.
+   * @default true
+   */
+  coldBoot?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
@@ -336,6 +350,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
+  coldBoot = true,
   onAuthStateChange,
   onError,
 }) => {
@@ -1058,7 +1073,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   runColdBootRef.current = runColdBoot;
 
   useEffect(() => {
-    if (!storage || initialized) {
+    if (initialized) {
+      return;
+    }
+    // IdP mode (`coldBoot={false}`): this provider is NOT the ecosystem session
+    // authority, so it never runs the device-first restore and never opens the
+    // signed-out device-state socket (`runColdBoot` → `onSignedOut` is the sole
+    // place that socket starts). Resolve auth immediately as signed out so there
+    // is no boot spinner; a deliberate sign-in still commits a normal session.
+    if (!coldBoot) {
+      setInitialized(true);
+      markAuthResolved();
+      return;
+    }
+    if (!storage) {
       return;
     }
     setInitialized(true);
@@ -1067,7 +1095,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         logger('Cold boot failed', error);
       }
     });
-  }, [runColdBoot, storage, initialized, logger]);
+  }, [coldBoot, runColdBoot, storage, initialized, logger, markAuthResolved]);
 
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.
