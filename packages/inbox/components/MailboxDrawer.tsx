@@ -599,7 +599,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
             avatarSize={32}
             onNavigateManage={handleNavigateManage}
             onAddAccount={handleAddAccount}
-            onBeforeSessionChange={resetInboxForAccountChange}
           />
         </View>
       )}
@@ -632,7 +631,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
             avatarSize={32}
             onNavigateManage={handleNavigateManage}
             onAddAccount={handleAddAccount}
-            onBeforeSessionChange={resetInboxForAccountChange}
           />
         </View>
       )}

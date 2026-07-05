@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Linking } from 'react-native';
 import { OxyServices, oxyClient } from '@oxyhq/core';
 import type {
   User,
@@ -19,14 +20,21 @@ import type {
   ClientSession,
   AuthStateStore,
   PersistedAuthState,
+  AccountDialogController,
+  AccountDialogView,
 } from '@oxyhq/core';
 import {
   KeyManager,
   runSessionColdBoot,
   installAuthRefreshHandler,
   startTokenRefreshScheduler,
+  createAccountDialogController,
   logger as loggerUtil,
 } from '@oxyhq/core';
+import {
+  registerAccountDialogControls,
+  notifyAccountDialogVisibility,
+} from '../navigation/accountDialogManager';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -156,6 +164,22 @@ export interface OxyContextState {
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
   openAvatarPicker: () => void;
+
+  // Unified account dialog (the single switcher + sign-in surface). The headless
+  // state machine lives in `@oxyhq/core`; `OxyAccountDialog` (mounted by
+  // `OxyProvider`) binds to it. `null` in the no-provider loading state.
+  /** The headless controller driving {@link openAccountDialog}. `null` before mount. */
+  accountDialogController: AccountDialogController | null;
+  /** Whether the unified account dialog is currently presented. */
+  isAccountDialogOpen: boolean;
+  /**
+   * Open the unified account dialog. `accounts` (default) shows the switcher;
+   * `signin` / `add` open the sign-in entry. Replaces every prior device/account
+   * surface and the standalone sign-in modal.
+   */
+  openAccountDialog: (view?: AccountDialogView) => void;
+  /** Dismiss the unified account dialog and cancel any in-flight sign-in flow. */
+  closeAccountDialog: () => void;
 
   // Unified account graph (self, owned orgs/projects/bots, accounts shared with
   // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
@@ -367,6 +391,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   userRef.current = user;
   isAuthenticatedRef.current = isAuthenticated;
   const [initialized, setInitialized] = useState(false);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const setAuthState = useAuthStore.setState;
 
   // Keep the shared `oxyClient` singleton's token store in lockstep with the
@@ -833,6 +858,61 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [commitSession],
   );
 
+  // ── Unified account dialog ─────────────────────────────────────────────────
+  // The single account-chooser + sign-in surface. Built ONCE per provider mount
+  // and bound to the live `oxyServices` + `sessionClient` + this provider's
+  // `handleWebSession` commit funnel. `handleWebSession` is threaded through a ref
+  // so the controller keeps a STABLE `commitSession` (rebuilding the controller
+  // on every commit-identity change would drop its subscription + state).
+  const handleWebSessionRef = useRef(handleWebSession);
+  handleWebSessionRef.current = handleWebSession;
+
+  const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
+  if (!accountDialogControllerRef.current) {
+    accountDialogControllerRef.current = createAccountDialogController({
+      oxyServices,
+      sessionClient,
+      clientId,
+      locale: currentLanguage,
+      commitSession: (session) => handleWebSessionRef.current(session),
+      onSignedIn: () => setAccountDialogOpen(false),
+      openUrl: (url) => {
+        void Linking.openURL(url);
+      },
+    });
+  }
+  const accountDialogController = accountDialogControllerRef.current;
+
+  const openAccountDialog = useCallback((view?: AccountDialogView): void => {
+    accountDialogControllerRef.current?.setView(view ?? 'accounts');
+    setAccountDialogOpen(true);
+  }, []);
+
+  const closeAccountDialog = useCallback((): void => {
+    accountDialogControllerRef.current?.cancelSignIn();
+    setAccountDialogOpen(false);
+  }, []);
+
+  // Start driving the dialog on mount; tear it down on unmount.
+  useEffect(() => {
+    const controller = accountDialogControllerRef.current;
+    controller?.start();
+    return () => controller?.destroy();
+  }, []);
+
+  // Expose the live open/close controls to the imperative manager so
+  // `showSignInModal()` (and any app-level imperative "sign in" handler) works.
+  useEffect(
+    () => registerAccountDialogControls({ open: openAccountDialog, close: closeAccountDialog }),
+    [openAccountDialog, closeAccountDialog],
+  );
+
+  // Broadcast visibility so `OxySignInButton`'s "Signing in…" affordance stays
+  // accurate regardless of what opened or dismissed the dialog.
+  useEffect(() => {
+    notifyAccountDialogVisibility(accountDialogOpen);
+  }, [accountDialogOpen]);
+
   // Keyless password sign-in: username/email + password.
   const signInWithPassword = useCallback(
     async (
@@ -1062,6 +1142,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   useEffect(() => {
     if (isAuthenticated && initialized && tokenReady) {
       refreshAccounts();
+      // Reload the dialog's own account graph too, so a session restored OUTSIDE
+      // the dialog (cold boot / password sign-in) surfaces its graph accounts.
+      void accountDialogControllerRef.current?.refresh();
     }
   }, [isAuthenticated, initialized, tokenReady, refreshAccounts]);
 
@@ -1159,6 +1242,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useFollow: useFollowHook,
       showBottomSheet: showBottomSheetForContext,
       openAvatarPicker,
+      accountDialogController,
+      isAccountDialogOpen: accountDialogOpen,
+      openAccountDialog,
+      closeAccountDialog,
       accounts,
       switchToAccount,
       refreshAccounts,
@@ -1203,6 +1290,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useFollowHook,
       showBottomSheetForContext,
       openAvatarPicker,
+      accountDialogController,
+      accountDialogOpen,
+      openAccountDialog,
+      closeAccountDialog,
       accounts,
       switchToAccount,
       refreshAccounts,
@@ -1265,6 +1356,10 @@ const LOADING_STATE: OxyContextState = {
   clientId: null,
   oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
+  accountDialogController: null,
+  isAccountDialogOpen: false,
+  openAccountDialog: () => {},
+  closeAccountDialog: () => {},
   accounts: [],
   switchToAccount: () => rejectMissingProvider<void>(),
   refreshAccounts: () => rejectMissingProvider<void>(),
