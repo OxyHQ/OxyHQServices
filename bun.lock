@@ -771,7 +771,7 @@
     "@shopify/react-native-skia",
   ],
   "overrides": {
-    "@oxyhq/bloom": "^0.20.0",
+    "@oxyhq/bloom": "^0.24.1",
     "@radix-ui/react-slot": "1.2.3",
     "ioredis": "5.11.1",
     "markdown-it": "12.3.2",
@@ -1624,7 +1624,7 @@
 
     "@oxyhq/auth": ["@oxyhq/auth@workspace:packages/auth-sdk"],
 
-    "@oxyhq/bloom": ["@oxyhq/bloom@0.20.0", "", { "dependencies": { "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "expo-router": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-router", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-tJnfdk+dq2Q7H00k76SPSWyT//fFap3gV05L9oVi1f28G9O++3q+z+WMvp8gN0OdU7wbqXZ6f6H/IiqQXu5U9w=="],
+    "@oxyhq/bloom": ["@oxyhq/bloom@0.24.1", "", { "dependencies": { "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "expo-router": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-router", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-1B08uPoN22z6YcmZXOv5d7jMZrpfp/uB8tNgGxC1umCDVDRHPc41Aje2l3lYyv1Ie+oKIzKDfgQg3612649rww=="],
 
     "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 
