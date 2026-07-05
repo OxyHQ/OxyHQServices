@@ -12,7 +12,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@oxyhq/bloom": "^0.24.1",
+    "@oxyhq/bloom": "^0.29.2",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
     "@base-ui/react": "^1.6.0",
