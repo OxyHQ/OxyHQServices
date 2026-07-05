@@ -9,8 +9,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
+import type { OxyServices } from '@oxyhq/core';
 import { aliaChatCompletion } from '@/services/aliaApi';
 import type { Message } from '@/services/emailApi';
+
+type HttpService = OxyServices['httpService'];
 
 export interface ThreadSummaryResult {
   summary: string;
@@ -90,11 +93,11 @@ function buildThreadPrompt(messages: Message[]): string {
   return parts.join('\n\n---\n\n');
 }
 
-async function fetchThreadSummary(messages: Message[], token: string): Promise<ThreadSummaryResult> {
+async function fetchThreadSummary(messages: Message[], http: HttpService): Promise<ThreadSummaryResult> {
   const prompt = buildThreadPrompt(messages);
 
   try {
-    const response = await aliaChatCompletion({
+    const response = await aliaChatCompletion(http, {
       model: 'alia-lite',
       messages: [
         { role: 'system', content: THREAD_SUMMARY_SYSTEM_PROMPT },
@@ -102,7 +105,6 @@ async function fetchThreadSummary(messages: Message[], token: string): Promise<T
       ],
       maxTokens: 600,
       temperature: 0.5,
-      token,
     });
 
     // Parse JSON from response
@@ -142,14 +144,13 @@ export function useThreadSummary(
   messages: Message[] | undefined,
   options: UseThreadSummaryOptions = {}
 ) {
-  const { oxyServices } = useOxy();
-  const token = oxyServices.httpService.getAccessToken() ?? '';
+  const { oxyServices, user } = useOxy();
   const { enabled = true, minMessages = 4 } = options;
-  const shouldFetch = enabled && !!token && !!messages && messages.length >= minMessages;
+  const shouldFetch = enabled && !!user && !!messages && messages.length >= minMessages;
 
   const query = useQuery({
     queryKey: ['threadSummary', messages?.map((m) => m._id).join(',')],
-    queryFn: () => fetchThreadSummary(messages!, token),
+    queryFn: () => fetchThreadSummary(messages!, oxyServices.httpService),
     enabled: shouldFetch,
     staleTime: 10 * 60 * 1000, // Cache for 10 minutes
     gcTime: 30 * 60 * 1000,

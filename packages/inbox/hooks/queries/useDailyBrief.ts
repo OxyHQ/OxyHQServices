@@ -36,7 +36,7 @@ function getBriefCacheKey(): string[] {
 
 export function useDailyBrief(messages: Message[]) {
   const queryClient = useQueryClient();
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
   const cacheKey = getBriefCacheKey();
 
   const [briefText, setBriefText] = useState('');
@@ -62,8 +62,7 @@ export function useDailyBrief(messages: Message[]) {
       return;
     }
 
-    const token = oxyServices.httpService.getAccessToken();
-    if (!token) return;
+    if (!user) return;
 
     setIsStreaming(true);
     setBriefText('');
@@ -74,12 +73,11 @@ export function useDailyBrief(messages: Message[]) {
       const prompt = buildPrompt(messages);
       let accumulated = '';
 
-      for await (const delta of streamAliaChatCompletion({
+      for await (const delta of streamAliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: prompt,
         maxTokens: 300,
         temperature: 0.7,
-        token,
       })) {
         if (abortRef.current) break;
         accumulated += delta;
@@ -106,7 +104,7 @@ export function useDailyBrief(messages: Message[]) {
         setIsStreaming(false);
       }
     }
-  }, [messages, queryClient, cacheKey, oxyServices]);
+  }, [messages, queryClient, cacheKey, oxyServices, user]);
 
   // Cleanup on unmount
   useEffect(() => {
