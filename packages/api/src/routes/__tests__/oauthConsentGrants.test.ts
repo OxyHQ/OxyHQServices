@@ -271,6 +271,57 @@ describe('GET /auth/oauth/consent', () => {
     expect(mockAppGrantFindOne).not.toHaveBeenCalled();
   });
 
+  it('auto-approves a TRUSTED app when the redirect_uri only matches by origin (deep link / query)', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
+    mockApplicationFindOne.mockResolvedValue({
+      _id: { toString: () => 'app-1' },
+      status: 'active',
+      type: 'first_party',
+      // Only the bare origin is registered; the request carries a path + query.
+      redirectUris: ['https://accounts.oxy.so'],
+    });
+
+    const params = new URLSearchParams({
+      clientId: 'oxy_dk_client',
+      redirectUri: 'https://accounts.oxy.so/manage?v=abc123',
+    });
+
+    const res = await requestJson(
+      server,
+      'GET',
+      `/auth/oauth/consent?${params.toString()}`,
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ consentRequired: false, reason: 'trusted' });
+    expect(mockAppGrantFindOne).not.toHaveBeenCalled();
+  });
+
+  it('rejects a THIRD-PARTY redirect_uri that only matches by origin (no relaxation) with 403', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
+    mockApplicationFindOne.mockResolvedValue({
+      _id: { toString: () => 'app-1' },
+      status: 'active',
+      type: 'third_party',
+      redirectUris: ['https://app.example.com/callback'],
+    });
+
+    const params = new URLSearchParams({
+      clientId: 'oxy_dk_client',
+      redirectUri: 'https://app.example.com/callback?x=1',
+    });
+
+    const res = await requestJson(
+      server,
+      'GET',
+      `/auth/oauth/consent?${params.toString()}`,
+      { Authorization: 'Bearer t' }
+    );
+
+    expect(res.status).toBe(403);
+  });
+
   it('skips consent when a prior grant covers the requested scopes (reason: granted)', async () => {
     mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
     mockApplicationFindOne.mockResolvedValue({

@@ -1809,15 +1809,51 @@ router.post(
 // Access tokens never appear in the URL bar.
 
 /**
- * Validate a redirect URI against the Application allowlist using an exact
- * match (per OAuth2 RFC 6749 §3.1.2). Partial / prefix matching is the
- * source of countless open-redirect vulnerabilities — we never normalise
- * away path or query for the comparison. Constant-time equality keeps the
- * comparison from leaking the allowlist contents via timing.
+ * Parse the http(s) origin of a redirect URI, or null when the URI is malformed
+ * or uses a non-web scheme. Restricting to http/https is deliberate for the
+ * trusted-app origin relaxation below: a custom scheme (e.g. `astro://…`) has an
+ * opaque `URL.origin` of the literal string `"null"`, so two unrelated
+ * custom-scheme URIs would falsely share an origin — never a safe basis for
+ * loosening the redirect allowlist.
  */
-function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: string): boolean {
+function webOriginFromRedirectUri(redirectUri: string): string | null {
+  try {
+    const url = new URL(redirectUri);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate a redirect URI against the Application allowlist.
+ *
+ * THIRD-PARTY apps: strict EXACT match (per OAuth2 RFC 6749 §3.1.2) via a
+ * constant-time comparison — partial / prefix / origin matching is the source
+ * of countless open-redirect vulnerabilities, so we never normalise away path
+ * or query and never relax the boundary for self-service clients. Constant-time
+ * equality also keeps the comparison from leaking the allowlist via timing.
+ *
+ * TRUSTED first-party apps (isOfficial / first_party / internal / system — the
+ * staff-controlled set, never settable via the Console / member RBAC path):
+ * ADDITIONALLY accept a redirect URI whose http(s) ORIGIN matches the origin of
+ * any registered `redirectUris` entry. This lets an official app (accounts,
+ * console, …) pass deep links, sub-routes, and cache-busting query params
+ * (`?v=…`) — and absorbs the trailing slash the IdP's `new URL().toString()`
+ * normalisation adds to a bare origin — without registering every variant,
+ * while still confining the redirect to an origin the app itself registered.
+ * The trust set is not a secret, so the origin compare need not be constant time.
+ */
+function isAllowedRedirectUri(
+  app: Pick<IApplication, 'redirectUris' | 'isOfficial' | 'isInternal' | 'type'>,
+  redirectUri: string
+): boolean {
   const allowlist = app.redirectUris ?? [];
   if (allowlist.length === 0) return false;
+
+  // Strict exact match (constant-time) — the ONLY acceptance path for
+  // third-party clients, and the primary path for trusted apps too.
   const provided = Buffer.from(redirectUri);
   for (const allowed of allowlist) {
     const allowedBuf = Buffer.from(allowed);
@@ -1825,6 +1861,18 @@ function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: str
       return true;
     }
   }
+
+  // Trusted-only origin relaxation. Third-party apps NEVER reach this branch.
+  if (isTrustedApplication(app)) {
+    const providedOrigin = webOriginFromRedirectUri(redirectUri);
+    if (
+      providedOrigin &&
+      allowlist.some((registered) => webOriginFromRedirectUri(registered) === providedOrigin)
+    ) {
+      return true;
+    }
+  }
+
   return false;
 }
 

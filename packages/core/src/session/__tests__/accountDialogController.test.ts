@@ -565,6 +565,69 @@ describe('AccountDialogController — openPasswordAtOxyAuth', () => {
     const url = controller.openPasswordAtOxyAuth({ returnUrl: 'https://alia.onl/' });
     expect(new URL(url).origin).toBe('https://auth.alia.onl');
   });
+
+  it('defaults redirect_uri to the clean origin (not the full href with query/path)', () => {
+    const oxy = makeOxy();
+    const sc = new TestSessionClient(host());
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: sc,
+      clientId: 'oxy_dk_test',
+    });
+    const originalLocation = (globalThis as { location?: unknown }).location;
+    Object.defineProperty(globalThis, 'location', {
+      value: { origin: 'https://accounts.oxy.so', href: 'https://accounts.oxy.so/?v=x' },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const parsed = new URL(controller.openPasswordAtOxyAuth());
+      // The registered redirectUris entry is the bare origin; a live query/path
+      // would fail the IdP's exact-match validation.
+      expect(parsed.searchParams.get('redirect_uri')).toBe('https://accounts.oxy.so');
+      expect(parsed.searchParams.get('redirect_uri')).not.toBe('https://accounts.oxy.so/?v=x');
+    } finally {
+      if (originalLocation === undefined) {
+        delete (globalThis as { location?: unknown }).location;
+      } else {
+        Object.defineProperty(globalThis, 'location', {
+          value: originalLocation,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+  });
+
+  it('honors an explicit returnUrl over the current-origin default', () => {
+    const oxy = makeOxy();
+    const sc = new TestSessionClient(host());
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: sc,
+      clientId: 'oxy_dk_test',
+    });
+    const originalLocation = (globalThis as { location?: unknown }).location;
+    Object.defineProperty(globalThis, 'location', {
+      value: { origin: 'https://accounts.oxy.so', href: 'https://accounts.oxy.so/?v=x' },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const parsed = new URL(controller.openPasswordAtOxyAuth({ returnUrl: 'https://mention.earth/callback' }));
+      expect(parsed.searchParams.get('redirect_uri')).toBe('https://mention.earth/callback');
+    } finally {
+      if (originalLocation === undefined) {
+        delete (globalThis as { location?: unknown }).location;
+      } else {
+        Object.defineProperty(globalThis, 'location', {
+          value: originalLocation,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+  });
 });
 
 describe('AccountDialogController — lifecycle', () => {
