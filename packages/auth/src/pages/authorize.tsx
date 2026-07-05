@@ -756,14 +756,20 @@ export function AuthorizePage() {
             }
           />
         </>
-      ) : application ? (
-        /* Resolved requesting-application identity → the shared services
-           `OxyConsentScreen` (the RN/Bloom consent surface, bundled for web via
-           react-native-web). It is purely presentational; every decision is
-           delegated back to the unchanged IdP `handleDecision` flow. The block
-           wrapper keeps the RN `ScrollView` (flex:1) at content height inside
-           the centered auth card instead of collapsing to zero. An unresolved
-           request surfaces as the error view below instead. */
+      ) : application && showActions ? (
+        /* Resolved requesting-application identity AND an actionable request →
+           the shared services `OxyConsentScreen` (the RN/Bloom consent surface,
+           bundled for web via react-native-web). It is purely presentational;
+           every decision is delegated back to the unchanged IdP `handleDecision`
+           flow. The block wrapper keeps the RN `ScrollView` (flex:1) at content
+           height inside the centered auth card instead of collapsing to zero.
+
+           Gated on `showActions` so a non-actionable request (expired /
+           cancelled, or a transient decision error) never renders a consent
+           surface with dead Allow/Deny buttons — those fall through to the
+           page's status view below. `showActions` already implies `!pageError`,
+           so the consent surface is only ever shown error-free (no `error` prop
+           needed). */
         <div className="w-full">
           <OxyConsentScreen
             application={{
@@ -790,10 +796,12 @@ export function AuthorizePage() {
             onAllow={() => handleDecision("approve")}
             onDeny={() => handleDecision("deny")}
             busy={submitting}
-            error={pageError}
           />
         </div>
       ) : (
+        /* Either no resolved application, or a resolved application whose request
+           is no longer actionable (expired / cancelled / errored). Render the
+           page's status view — message + error — never a consent surface. */
         <>
           <AuthFormHeader
             title={t("authorize.requestTitle")}
