@@ -40,6 +40,48 @@ const rnJsxInJsPlugin: Plugin = {
   },
 }
 
+// Some files inside the RN packages excluded from the dep optimizer are plain
+// CommonJS sitting INSIDE the package's ESM build (react-native-svg ships
+// PEG.js-generated parsers as `module.exports = { … }` under `lib/module/`).
+// `vite build` interops them via Rollup's CJS handling, but dev serves the
+// excluded packages raw, so sibling ESM files' named imports explode with
+// `does not provide an export named '…'`. This wraps exactly those files with
+// a minimal CJS→ESM interop: run the module body, then re-export the keys of
+// the final `module.exports = { … }` object as named exports.
+// Census (grep `module.exports` under each excluded package's ESM tree):
+// react-native-svg's three PEG.js parsers + @expo/vector-icons' vendored
+// object-utils. Reanimated's mock.js and the icon build scripts are never
+// imported at runtime.
+const RN_CJS_IN_ESM_FILES = new RegExp(
+  'node_modules/(?:' +
+    'react-native-svg/lib/module/(?:lib|filter-image)/extract/(?:transform|transformToRn|extractFiltersString)' +
+    '|@expo/vector-icons/build/vendor/react-native-vector-icons/lib/object-utils' +
+    ')\\.js$',
+)
+
+const rnCjsInEsmPlugin: Plugin = {
+  name: 'oxy-rn-cjs-in-esm',
+  enforce: 'pre',
+  apply: 'serve',
+  transform(code, id) {
+    const path = id.split('?')[0]
+    if (!RN_CJS_IN_ESM_FILES.test(path)) return null
+    const assignment = code.match(/module\.exports\s*=\s*\{([^}]*)\}/)
+    if (!assignment) return null
+    const keys = assignment[1]
+      .split(',')
+      .map((entry) => entry.split(':')[0].trim())
+      .filter((key) => /^[A-Za-z_$][\w$]*$/.test(key))
+    const named = keys
+      .map((key) => `export const ${key} = __cjsModule.exports.${key};`)
+      .join('\n')
+    return {
+      code: `const __cjsModule = { exports: {} };\n(function (module, exports) {\n${code}\n})(__cjsModule, __cjsModule.exports);\n${named}\nexport default __cjsModule.exports;\n`,
+      map: null,
+    }
+  },
+}
+
 // Single source of truth for the app display name: public/manifest.json
 // `short_name`. Read once at config load, then injected both as a global
 // constant (__APP_NAME__) for React code and as an `%APP_NAME%` token in
@@ -58,6 +100,7 @@ const config = defineConfig({
   plugins: [
     appNamePlugin,
     rnJsxInJsPlugin,
+    rnCjsInEsmPlugin,
     TanStackRouterVite(),
     tailwindcss(),
     viteReact(),
@@ -77,13 +120,33 @@ const config = defineConfig({
       // that `OxyProvider` (and its `OxyAccountDialog` QR view) render on web.
       { find: /^react-native\/Libraries\/.*/, replacement: emptyModule },
       { find: 'react-native', replacement: 'react-native-web' },
-      { find: 'react-native-screens', replacement: emptyModule },
+      {
+        find: 'react-native-screens',
+        replacement: resolve(__dirname, './src/shims/react-native-screens.js'),
+      },
+      // See src/shims/validate-worklets-version.js — CJS-in-ESM native version
+      // handshake that Vite dev cannot interop with reanimated excluded from
+      // the optimizer.
+      {
+        find: 'react-native-reanimated/scripts/validate-worklets-version',
+        replacement: resolve(__dirname, './src/shims/validate-worklets-version.js'),
+      },
+      // react-native-svg asset resolution reaches for RN's Flow-typed CJS asset
+      // registry; on web the one true registry is react-native-web's (ESM, same
+      // registerAsset/getAssetByID API).
+      {
+        find: '@react-native/assets-registry/registry',
+        replacement: 'react-native-web/dist/modules/AssetRegistry',
+      },
     ],
     extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
   },
   define: {
     __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
     __APP_NAME__: JSON.stringify(appName),
+    // React Native modules (gesture-handler's isFabric, and friends) read the
+    // RN `global` object, which browsers don't define.
+    global: 'globalThis',
   },
   optimizeDeps: {
     // The React Native graph pulled in by `@oxyhq/services` ships native-only
@@ -102,13 +165,34 @@ const config = defineConfig({
       'react-native-safe-area-context',
       'react-native-svg',
       'react-native-qrcode-svg',
-      '@expo/vector-icons',
       '@react-native-community/netinfo',
       'expo-modules-core',
       'sonner-native',
     ],
+    // The excluded RN packages above are served raw, so their CommonJS
+    // dependencies never get the optimizer's CJS→ESM interop — pre-bundle
+    // those explicitly or the browser throws
+    // `does not provide an export named 'default'`.
+    // `@expo/vector-icons` is pre-bundled (NOT excluded): its icon sets
+    // `require()` their .ttf fonts, which only works through the optimizer's
+    // CJS handling + the `.ttf` file loader below.
+    include: [
+      'hoist-non-react-statics',
+      'invariant',
+      'react-native-is-edge-to-edge',
+      '@expo/vector-icons',
+    ],
     esbuildOptions: {
-      loader: { '.js': 'jsx' },
+      // `dataurl` (not `file`) for fonts: the dependency SCANNER runs esbuild
+      // without an output path, and the `file` loader aborts the whole scan
+      // ("Cannot use the file loader without an output path"), silently
+      // disabling pre-bundling. Dev-only cost: icon fonts inlined as data URLs.
+      loader: { '.js': 'jsx', '.ttf': 'dataurl', '.otf': 'dataurl' },
+      // Mirror `resolve.extensions`: expo packages ship platform-split files
+      // (ExpoFontLoader.web.ts vs .ts); without `.web.*` priority the
+      // pre-bundle resolves the native variant and requireNativeModule throws
+      // at runtime.
+      resolveExtensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
     },
   },
   build: {
