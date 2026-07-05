@@ -4,7 +4,7 @@ const config = {
   docsUrl: import.meta.env.VITE_DOCS_URL || 'https://oxy.so/developers/docs',
   // Public OAuth client id for this app (the registered `ApplicationCredential`
   // publicKey). Drives the #214 app-identity flow when passed to
-  // `WebOxyProvider`. Public value — safe to commit. Overridable per
+  // `OxyProvider`. Public value — safe to commit. Overridable per
   // environment via `VITE_OXY_CLIENT_ID`.
   clientId:
     import.meta.env.VITE_OXY_CLIENT_ID ||
