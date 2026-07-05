@@ -2,6 +2,7 @@
  * Device Methods Mixin
  */
 import type { OxyServicesBase } from '../OxyServices.base';
+import type { DeviceLinkedSession, DeviceLinkedSessionLogoutResponse } from '../models/interfaces';
 
 export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -54,11 +55,11 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      * @param sessionId - The session ID
      * @returns Array of device sessions
      */
-    async getDeviceSessions(sessionId: string): Promise<any[]> {
+    async getDeviceSessions(sessionId: string): Promise<DeviceLinkedSession[]> {
       try {
         // Use makeRequest for consistent error handling and optional caching
         // Cache disabled by default to ensure fresh session data
-        return await this.makeRequest<any[]>('GET', `/session/device/sessions/${sessionId}`, undefined, {
+        return await this.makeRequest<DeviceLinkedSession[]>('GET', `/session/device/sessions/${sessionId}`, undefined, {
           cache: false, // Don't cache sessions - always get fresh data
           deduplicate: true, // Deduplicate concurrent requests for same sessionId
         });
@@ -74,12 +75,12 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      * @param excludeCurrent - Whether to exclude the current session
      * @returns Logout result
      */
-    async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<any> {
+    async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<DeviceLinkedSessionLogoutResponse> {
       try {
-        const urlParams: any = {};
+        const urlParams: Record<string, string> = {};
         if (deviceId) urlParams.deviceId = deviceId;
         if (excludeCurrent) urlParams.excludeCurrent = 'true';
-        return await this.makeRequest('POST', `/session/device/logout-all/${sessionId}`, urlParams, { cache: false });
+        return await this.makeRequest<DeviceLinkedSessionLogoutResponse>('POST', `/session/device/logout-all/${sessionId}`, urlParams, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }

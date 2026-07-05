@@ -16,8 +16,8 @@ export {
     userResponseSchema,
     userProfileUpdateSchema,
     currentUserResponseSchema,
-    deviceSessionAccountSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionSchema,
+    deviceLinkedSessionsResponseSchema,
     // Helpers
     resolveUserId,
     safeParseContract,
@@ -28,8 +28,8 @@ export type {
     UserResponse,
     UserProfileUpdate,
     CurrentUserResponseContract,
-    DeviceSessionAccountResponse,
-    DeviceSessionsResponseContract,
+    DeviceLinkedSessionResponse,
+    DeviceLinkedSessionsResponseContract,
 } from './userResponse';
 
 export {

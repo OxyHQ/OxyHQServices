@@ -304,9 +304,9 @@ export type {
     SecurityActivity,
     SecurityActivityResponse,
     AssetUploadProgress,
-    DeviceSession,
-    DeviceSessionsResponse,
-    DeviceSessionLogoutResponse,
+    DeviceLinkedSession,
+    DeviceLinkedSessionsResponse,
+    DeviceLinkedSessionLogoutResponse,
     UpdateDeviceNameResponse,
 } from './models/interfaces';
 export { SECURITY_EVENT_SEVERITY_MAP } from './models/interfaces';

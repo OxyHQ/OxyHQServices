@@ -192,18 +192,18 @@ export type CurrentUserResponseContract = z.infer<typeof currentUserResponseSche
  * session). Backs the multi-account chooser. The embedded user mirrors
  * `formatUserResponse`; it is nullable on slots that lost their user document.
  */
-export const deviceSessionAccountSchema = z.object({
+export const deviceLinkedSessionSchema = z.object({
     sessionId: z.string(),
     isCurrent: z.boolean().optional(),
     user: userResponseSchema.nullable().optional(),
 });
 
-export type DeviceSessionAccountResponse = z.infer<typeof deviceSessionAccountSchema>;
+export type DeviceLinkedSessionResponse = z.infer<typeof deviceLinkedSessionSchema>;
 
 /** Wire shape of `GET /session/device/sessions/:sessionId` (an array). */
-export const deviceSessionsResponseSchema = z.array(deviceSessionAccountSchema);
+export const deviceLinkedSessionsResponseSchema = z.array(deviceLinkedSessionSchema);
 
-export type DeviceSessionsResponseContract = z.infer<typeof deviceSessionsResponseSchema>;
+export type DeviceLinkedSessionsResponseContract = z.infer<typeof deviceLinkedSessionsResponseSchema>;
 
 /**
  * Safely parse a value against a contract schema. Returns the parsed (typed)
