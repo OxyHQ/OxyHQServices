@@ -19,8 +19,8 @@ is four things in one Bun-workspaces monorepo:
    device-account chooser feed.
 
 2. **A client SDK.** `@oxyhq/core` (platform-agnostic client + `/server`
-   middleware), `@oxyhq/auth` (web `WebOxyProvider`), `@oxyhq/services` (Expo/RN
-   `OxyProvider`), and `@oxyhq/contracts` (Zod API contracts). Every Oxy app
+   middleware), `@oxyhq/services` (the single UI SDK — `OxyProvider` on web and
+   Expo/RN), and `@oxyhq/contracts` (Zod API contracts). Every Oxy app
    (Mention, Allo, Homiio, Syra, accounts, console, inbox) consumes these for
    auth, profiles, payments, and media — zero per-app SSO code.
 
@@ -79,7 +79,6 @@ topics and remain authoritative for their areas:
 - [DEPLOYMENT.md](DEPLOYMENT.md) — GitHub OIDC, ECS Fargate, env vars, Cloudflare Pages
 - [REDIS.md](REDIS.md) — ElastiCache Valkey: rate limiting, Socket.IO adapter, caching
 - [EMAIL.md](EMAIL.md) — native email (`username@oxy.so`), DKIM/SPF/DMARC, inbound webhook
-- [EXPO_54_GUIDE.md](EXPO_54_GUIDE.md) — building universal apps with Expo
 
 For the authoritative rules and version matrix, see the repo
 [`AGENTS.md`](../AGENTS.md); for the F5 handoff, see
