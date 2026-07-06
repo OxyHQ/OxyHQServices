@@ -1,18 +1,20 @@
 ---
 title: Accounts (MyAccount)
-description: Identity, security, recovery, and payment methods — the Oxy MyAccount app.
+description: Security, sessions, privacy, and payment methods — the Oxy MyAccount app.
 order: 0
 ---
 
 # Accounts (MyAccount)
 
-The Oxy MyAccount app is the canonical surface for everything tied to a user's identity: account creation, key management, recovery phrase, devices, sessions, privacy, language, payment methods, and security activity. Built on Expo Router + `@oxyhq/services`, it ships as a native iOS/Android app and a web build, all from the same source.
+The Oxy MyAccount app is the canonical surface for managing an existing account: devices, sessions, privacy, language, payment methods, connected apps, and security activity. Built on Expo Router + `@oxyhq/services`, it ships as a native iOS/Android app and a web build, all from the same source.
+
+**Keyless by design**: identity creation, key management, and recovery phrases live in Commons by Oxy (`packages/commons`). `accounts.oxy.so` is the sole owner of account management in the ecosystem — the IdP (`auth.oxy.so`) permanently redirects its former settings pages here.
 
 <Badge variant="success">App</Badge> <Badge>Expo / RN / Web</Badge>
 
 ## What it is
 
-A user-facing app, not a library. Most integrators won't embed it — they'll deep-link or FedCM into it from their own surfaces. The app is open source so the patterns it uses are visible and reusable.
+A user-facing app, not a library. Most integrators won't embed it — they'll deep-link into it from their own surfaces. The app is open source so the patterns it uses are visible and reusable.
 
 ## Highlights
 
@@ -20,53 +22,52 @@ A user-facing app, not a library. Most integrators won't embed it — they'll de
 - **Typed Expo Router routes** — `typedRoutes: true` in `app.json`; every `router.push()` uses a typed path. No `as any`.
 - **Error boundaries** — at root, `(tabs)`, and `(auth)` levels using a shared `ErrorFallback`.
 - **Activity history** — `/(tabs)/activity.tsx` pulls from `GET /security/activity` with infinite scroll.
-- **Mandatory recovery-phrase acknowledgement** — `/(auth)/create-identity/recovery-phrase` blocks identity creation until the user confirms they have stored the phrase. A persistent reminder lives in the Security screen until acknowledged.
-- **Delete account** — signed deletion + `KeyManager.hasIdentity()` pre-flight + username confirmation.
+- **Connected apps** — list and revoke OAuth grants for third-party applications.
+- **Delete account** — signed deletion with username confirmation, followed by a strict local identity purge and sign-out-all.
+
+## Sign-in
+
+Accounts is a standard official relying party on the device-first session model:
+
+- On cold boot, `OxyProvider` restores the session silently from the server-side device session (see [device sessions](../../../docs/auth/device-session.md)). It never auto-redirects to a login page.
+- Logged-out users get the SDK sign-in surface (`OxyAccountDialog`): Commons QR / deep-link first, password collapsed under "Sign in without the app".
+- The app implements no local session restore, callbacks, or token plumbing — the SDK owns all of it.
 
 ## Deep-linking into MyAccount
 
-Most apps integrate by sending the user to MyAccount to perform a specific action and bringing them back:
+Most apps integrate by sending the user to MyAccount to perform a specific action:
 
 ```ts
-// Open the privacy settings sheet
-Linking.openURL('https://accounts.oxy.so/settings/privacy?return_to=https://yourapp.example.com/back');
+// Open the security screen
+Linking.openURL('https://accounts.oxy.so/security');
 ```
 
-Routes the app surfaces externally (working URLs in production):
+Routes the app surfaces externally:
 
 | URL | Purpose |
 |-----|---------|
-| `/sign-in` | Sign in with an existing identity |
-| `/create-identity` | Create a new identity |
-| `/recover` | Recover an identity from a phrase |
-| `/settings` | Top-level settings hub |
-| `/settings/security` | Security & devices |
-| `/settings/privacy` | Privacy settings |
-| `/settings/payment-methods` | Payment methods |
+| `/` | Account overview |
+| `/personal-info` | Profile fields |
+| `/security` | Security & devices |
+| `/sessions` | Active sessions |
 | `/activity` | Security activity log |
-
-## FedCM as Identity Provider
-
-MyAccount's sister app, [`@oxyhq/auth`](/developers/docs/auth), is the FedCM-spec Identity Provider. When `signIn({ method: 'fedcm' })` is invoked in any browser flow, the user is prompted to choose an MyAccount session and consent — no password re-entry, no redirect storm.
+| `/payments` | Payments, subscription, wallet |
+| `/data` | Data & privacy |
+| `/authorize` | Connected apps (OAuth grants) |
 
 ## Internal patterns worth borrowing
 
-These are extracted from the app's `CLAUDE.md` and apply to any Oxy-flavoured Expo app:
+These apply to any Oxy-flavoured Expo app:
 
 - **`useUpdateProfile` for username writes** — `useUpdateProfile().mutateAsync()` gets the optimistic update + cache invalidation; calling `oxyServices.updateProfile()` directly skips both.
 - **Stable lazy initial values** — `useState(() => initial)` for form state initialised from a query, so a remount doesn't reset to stale data.
-- **`useOnboardingStatus`** — when `isAuthenticated && user`, status is `'complete'` or `'in_progress'` regardless of storage lookup result. Re-runs `KeyManager.hasIdentity()` on `isAuthenticated` transitions.
-- **`(auth)/index.tsx` routing** — `status === 'complete'` → `/(tabs)`; `hasIdentity && status === 'in_progress'` → `/(auth)/create-identity`; blank backdrop during `status === 'checking'`. Always clean up timers from entrance animations.
+- **Session-keyed routing** — `(auth)`↔`(tabs)` keys purely on `isAuthResolved` / `isAuthenticated`; the root `<Stack>` is the sole authority for the group swap.
 - **`useUpdatePrivacySettings`** — don't call `invalidateAccountQueries(queryClient)` in `onSuccess` (defeats optimistic merge). Use `{ ...previous, ...requested, ...incoming }` merge in `onMutate`, targeted invalidate in `onError`.
 
 ## Test coverage
 
-- 142 Jest tests in `packages/accounts`
-- 64 in `@oxyhq/core`
-- 39 in `@oxyhq/api`
-
-Run them all from the repo root with `bun run test`.
+Jest tests live in `packages/accounts` and run with the package's own `bun run test` script (ts-jest — never Bun's native test runner).
 
 ## API surface
 
-There is no public JS API for the app — it's a deployed product. For programmatic equivalents, integrate via [`@oxyhq/core`](/developers/docs/core) (Node/server) or [`@oxyhq/services`](/developers/docs/services) (Expo/RN).
+There is no public JS API for the app — it's a deployed product. For programmatic equivalents, integrate via [`@oxyhq/core`](/developers/docs/core) (Node/server) or [`@oxyhq/services`](/developers/docs/services) (Expo/RN/web).

@@ -1,83 +1,75 @@
 ---
-title: Auth App
-description: Standalone Vite auth app and FedCM Identity Provider.
+title: Auth App (IdP)
+description: auth.oxy.so — the OAuth 2.0 authorize/consent Identity Provider for third-party apps.
 order: 0
 ---
 
-# Auth App
+# Auth App (IdP)
 
-The standalone Vite app that powers `auth.oxy.so`. Handles sign-in, sign-up, account authorization, password recovery, two-factor auth, and serves as a FedCM Identity Provider for the rest of the Oxy ecosystem.
+The app that powers `auth.oxy.so`. It is the **OAuth 2.0 authorize/consent Identity Provider** for third-party "Sign in with Oxy", plus sign-in, sign-up, and password recovery for users arriving through an OAuth flow.
 
-<Badge variant="success">App</Badge> <Badge>Vite + React</Badge>
+<Badge variant="success">App</Badge> <Badge>Vite + React Native Web</Badge>
 
 ## What it is
 
-A small, focused app whose only job is authentication. Every other Oxy app (Mention, Inbox, MyAccount, third-party developer apps) redirects users here to sign in, and gets back a short-lived authorization code or a FedCM token.
+A small, focused app whose only job is third-party authorization. Third-party apps registered in the [Oxy Console](https://console.oxy.so) redirect users here with an OAuth authorize request and get back a short-lived, single-use authorization code.
 
-Unlike the rest of the SDKs, this is a deployed app — you don't `bun add` it. You integrate by pointing your sign-in CTA at it.
+It is **not** a relying party and **not** the session authority for first-party apps — official Oxy apps sign in in-app through `@oxyhq/services` and the device-first session model (see [device sessions](../../../docs/auth/device-session.md)); they never redirect here. Legacy browser-mediated identity flows (FedCM and related silent-restore machinery) were removed from the ecosystem.
 
-## Flows
+Unlike the SDKs, this is a deployed app — you don't `bun add` it. You integrate by sending users to `/authorize` (see the [integration guide](../../../docs/auth/integration-guide.md)).
 
-### Sign in (password)
+## Built on the shared SDK
 
-1. User lands on `/sign-in`.
-2. Step 1 — identifier (email or username). The app calls `GET /auth/lookup/:username` to validate existence + fetch the user's Bloom color preset (so the rest of the flow is themed correctly).
-3. Step 2 — password. `POST /auth/login`.
-4. If 2FA is enabled, step 3 — TOTP code. `POST /auth/2fa/verify`.
-5. On success, the app redirects back to the caller with an authorization code or short-lived session token.
+The IdP renders `@oxyhq/services` components via React Native Web, so its sign-in and consent surfaces are pixel-identical to the in-app SDK ones:
 
-Each step has its own entrance animation; the route layout (`AuthLayout`) fades between routes via `useNavigationType()`.
+```tsx
+<OxyProvider baseURL={getApiBaseUrl()} clientId={OXY_CLIENT_ID} coldBoot={false}>
+  {/* routes */}
+</OxyProvider>
+```
 
-### Sign up
+- `coldBoot={false}` — IdP mode. The provider supplies the auth UI context but performs no session restore of its own (the IdP is not an RP).
+- The sign-in surface is the shared SDK one: Commons QR / deep-link first, password collapsed under "Sign in without the app".
+- Consent renders `OxyConsentScreen` from `@oxyhq/services`, fed by the registered `Application` (name, logo, scopes, `privacyPolicyUrl`, `termsUrl`).
 
-`POST /auth/signup` with `{ email, username, password }`. Email verification is queued separately.
+## Routes
 
-### Recovery
+| Route | Purpose |
+|-------|---------|
+| `/login` | Sign in (Commons QR / password) |
+| `/signup` | Keyless password sign-up |
+| `/authorize` | OAuth authorize + consent |
+| `/recover` | Password recovery (request → code → reset) |
+| `/auth/social/callback` | Social-login callback |
+| `/settings/*` | **Permanent redirects to `accounts.oxy.so`** — the IdP does not own account management |
+
+## Authorize flow (OAuth 2.0 + PKCE)
+
+When a third-party app sends the user to `/authorize?client_id=…&redirect_uri=…&response_type=code&state=…&code_challenge=…&code_challenge_method=S256`:
+
+1. The app resolves the registered Application via `GET /auth/oauth/client/:clientId` and validates the `redirect_uri` against `Application.redirectUris` (exact match).
+2. If the user has no IdP session, the sign-in surface is shown first.
+3. `GET /auth/oauth/consent` decides whether consent is required (`third_party` apps: yes, at least on first grant). If so, `OxyConsentScreen` lists the app identity, scopes, and legal links.
+4. On approval, `POST /auth/oauth/authorize` mints a single-use code and the browser is redirected to `redirect_uri?code=…&state=…` — tokens are never in the URL.
+5. The RP exchanges the code at `POST https://api.oxy.so/auth/oauth/token` with its PKCE `codeVerifier` (public clients) or `clientSecret` (confidential clients).
+
+Users can review and revoke grants at any time in **Accounts → Connected apps** (`GET /auth/grants`, `DELETE /auth/grants/:applicationId`).
+
+## Recovery
 
 Multi-step:
 1. `/recover` — enter email or username, app calls `POST /auth/recover/request`.
-2. `/recover/code` — enter the code that landed in email, app calls `POST /auth/recover/verify`.
-3. `/recover/reset` — choose a new password, app calls `POST /auth/recover/reset`.
+2. Enter the emailed code — `POST /auth/recover/verify`.
+3. Choose a new password — `POST /auth/recover/reset`.
 
-### Authorize (OAuth2)
+## Tests
 
-When a third-party app sends the user to `/authorize?client_id=...&redirect_uri=...&scope=...`, the app:
-1. Validates the developer app exists and the redirect URI matches.
-2. Shows a consent screen listing the requested scopes.
-3. On approval, redirects to `redirect_uri?code=...&state=...`.
-
-## FedCM Identity Provider
-
-When a relying party invokes `signIn({ method: 'fedcm' })` (from `@oxyhq/auth`), the browser asks the user to choose an `auth.oxy.so` session. The app serves three FedCM endpoints alongside the SPA:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/.well-known/web-identity` | FedCM discovery |
-| `/fedcm/config.json` | IdP config (accounts endpoint, client_metadata endpoint, …) |
-| `/fedcm/accounts` | List of signed-in accounts (filtered to the relying-party scope) |
-| `/fedcm/token` | Exchange a FedCM grant for an Oxy session token |
-
-These run in the same Vite server / static build — no separate process.
-
-## Shared layout & theming
-
-- `AuthFormLayout` + `AuthFormHeader` — the shared layout every step uses.
-- `AuthLayout` (route layout) — persistent logo / footer, route-level fade transitions via `useNavigationType()`.
-- `applyColorPreset()` from `lib/bloom-css.ts` — applies the looked-up user's Bloom color preset to `:root` CSS vars so the rest of the flow is themed correctly.
-
-## Anti-patterns the app deliberately avoids
-
-These exist as guardrails in the app's `CLAUDE.md` and they're worth lifting wherever you wire authentication:
-
-- **No `useEffect` for syncing props to state.** Derive from props during render.
-- **No `useEffect` for firing toasts.** Call `toast()` directly in event handlers.
-- **No `useEffect` for focus.** Use `requestAnimationFrame` in event handlers.
-- **No `Suspense` wrappers** unless backing a `React.lazy()` or `use()`.
-- **No render-body side effects.** Use `useEffect` for `window.location.href`, or `<Navigate>` from react-router.
+`packages/auth` uses **Bun's native test runner** (`bun test`), not Jest — it is the one package in the monorepo with that setup. Run its own `bun run test` script.
 
 ## API surface
 
 No JS API — this is a deployed app. Programmatic integration happens via:
 
-- [`@oxyhq/auth`](/developers/docs/auth-sdk) — `signIn({ method: 'fedcm' | 'popup' | 'redirect' })`
-- The REST API's `/auth/*` endpoints — see [API reference](/developers/docs/api)
+- [`@oxyhq/core`](/developers/docs/core) — `generatePkcePair`, `generateOAuthState`, `buildOAuthAuthorizeUrl`
+- [`@oxyhq/services`](/developers/docs/services) — `OxySignInButton` (starts the OAuth redirect automatically for `third_party` applications)
+- The REST API's `/auth/oauth/*` endpoints — see the [API reference](/developers/docs/api)

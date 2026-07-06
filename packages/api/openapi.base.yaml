@@ -4,9 +4,10 @@ info:
   version: 1.0.0
   description: >
     The Oxy REST API powers every official Oxy app (web, iOS, Android) and is
-    open to third-party integrations via the developer apps program. It covers
-    authentication, accounts, devices, files, billing, notifications, email,
-    federation (ActivityPub), and developer tooling.
+    open to third-party integrations via Applications registered in the Oxy
+    Console. It covers authentication, device sessions, accounts, files,
+    billing, notifications, email, federation (ActivityPub), and developer
+    tooling.
 servers:
   - url: https://api.oxy.so
     description: Production
@@ -16,7 +17,8 @@ tags:
   - name: Authentication
     description: >
       Sign up, sign in, refresh sessions, 2FA, public-key challenge-response,
-      and FedCM-backed cross-app sign-in. Routes under /auth/*.
+      device-session bootstrap, and OAuth 2.0 for third-party apps. Routes
+      under /auth/*.
   - name: Users
     description: >
       Read / update the current user, follow graph, account export and
@@ -27,8 +29,10 @@ tags:
       similar / recommended profile lookups. Routes under /profiles/*.
   - name: Sessions
     description: >
-      Session management: list, validate, refresh, log out one or all
-      sessions on a device. Routes under /session/*.
+      Session management: list, validate, log out one or all sessions on a
+      device, plus the server-authoritative device-session state (accounts,
+      active account, revision). Routes under /session/* and
+      /session/device/*.
   - name: Devices
     description: >
       List the user's signed-in devices, inspect security signals, and
@@ -59,8 +63,8 @@ tags:
     description: Full-text search across users, profiles, and posts.
   - name: Developer
     description: >
-      Developer apps, API keys, webhook subscriptions, usage analytics,
-      service-token registration. Routes under /developer/*.
+      Applications, credentials, webhook subscriptions, and usage analytics
+      for the developer console. Routes under /applications/*.
   - name: Payments
     description: Stripe-backed payments, saved payment methods, refunds.
   - name: Subscription
@@ -75,8 +79,8 @@ tags:
     description: Oxy Trust — reputation transaction ledger, balances, trust tiers, influence, disputes.
   - name: Federation
     description: >
-      ActivityPub / WebFinger inbox-outbox endpoints and FedCM identity
-      provider routes. Routes under /fedcm/*.
+      ActivityPub / WebFinger inbox-outbox endpoints for cross-instance
+      federation. Routes under /federation/*.
   - name: AI
     description: AI features — Alia assistant, model usage stats.
   - name: Analytics
@@ -100,14 +104,14 @@ components:
       bearerFormat: JWT
       description: >
         Service-to-service JWT obtained from /auth/service-token by exchanging
-        DeveloperApp credentials. For delegated calls also include
-        `X-Oxy-User-Id: <userId>`.
+        a `service`-type ApplicationCredential (publicKey + secret). For
+        delegated calls also include `X-Oxy-User-Id: <userId>`.
     apiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
       description: >
-        Long-lived developer app API key (for third-party integrations that
+        Long-lived application API key (for third-party integrations that
         do not require a delegated user session).
     csrfToken:
       type: apiKey
