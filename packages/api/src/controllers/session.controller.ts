@@ -432,10 +432,11 @@ export class SessionController {
       if (!baseSignupResponse) {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
-      const response: typeof baseSignupResponse & { refreshToken?: string } = baseSignupResponse;
+      const response: typeof baseSignupResponse & { refreshToken?: string; deviceSecret?: string } = baseSignupResponse;
 
       // Register into the device set (add-only) + broadcast, and additively
-      // attach a rotating refresh token when the lane allows it. Best-effort.
+      // attach a rotating refresh token + deviceSecret when the lane allows it.
+      // Best-effort.
       const signupDeviceExtras = await finalizeDeviceLogin({
         req,
         deviceId: signupDevice.deviceId,
@@ -444,6 +445,9 @@ export class SessionController {
       });
       if (signupDeviceExtras.refreshToken) {
         response.refreshToken = signupDeviceExtras.refreshToken;
+      }
+      if (signupDeviceExtras.deviceSecret) {
+        response.deviceSecret = signupDeviceExtras.deviceSecret;
       }
 
       try {
@@ -634,7 +638,7 @@ export class SessionController {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
 
-      const response: SessionAuthResponse & { refreshToken?: string } = {
+      const response: SessionAuthResponse & { refreshToken?: string; deviceSecret?: string } = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
@@ -647,7 +651,8 @@ export class SessionController {
       };
 
       // Register into the device set (add-only) + broadcast, and additively
-      // attach a rotating refresh token when the lane allows it. Best-effort.
+      // attach a rotating refresh token + deviceSecret when the lane allows it.
+      // Best-effort.
       const verifyDeviceExtras = await finalizeDeviceLogin({
         req,
         deviceId: verifyDevice.deviceId,
@@ -656,6 +661,9 @@ export class SessionController {
       });
       if (verifyDeviceExtras.refreshToken) {
         response.refreshToken = verifyDeviceExtras.refreshToken;
+      }
+      if (verifyDeviceExtras.deviceSecret) {
+        response.deviceSecret = verifyDeviceExtras.deviceSecret;
       }
 
       res.json(response);
@@ -792,6 +800,7 @@ export class SessionController {
       const response: SessionAuthResponse & {
         securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> };
         refreshToken?: string;
+        deviceSecret?: string;
       } = baseResponse;
       if (anomalyCheck.hasAnomalies) {
         response.securityAlert = {
@@ -802,7 +811,8 @@ export class SessionController {
 
       // Device-first lane: register the session into the resolved device set
       // (add-only, never flips active) + broadcast, and additively attach a
-      // rotating refresh token when the lane allows it. Best-effort.
+      // rotating refresh token + deviceSecret when the lane allows it.
+      // Best-effort.
       const deviceExtras = await finalizeDeviceLogin({
         req,
         deviceId: loginDevice.deviceId,
@@ -811,6 +821,9 @@ export class SessionController {
       });
       if (deviceExtras.refreshToken) {
         response.refreshToken = deviceExtras.refreshToken;
+      }
+      if (deviceExtras.deviceSecret) {
+        response.deviceSecret = deviceExtras.deviceSecret;
       }
 
       try {

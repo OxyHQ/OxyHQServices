@@ -49,12 +49,14 @@ jest.mock('../../utils/internalSecret', () => ({
 const mockGetStateByCookieKey = jest.fn();
 const mockEnsureDeviceForCookie = jest.fn();
 const mockAddAccount = jest.fn();
+const mockIssueDeviceSecret = jest.fn();
 jest.mock('../../services/deviceSession.service', () => ({
   __esModule: true,
   default: {
     getStateByCookieKey: (...a: unknown[]) => mockGetStateByCookieKey(...a),
     ensureDeviceForCookie: (...a: unknown[]) => mockEnsureDeviceForCookie(...a),
     addAccount: (...a: unknown[]) => mockAddAccount(...a),
+    issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a),
   },
 }));
 
@@ -103,6 +105,7 @@ jest.mock('../../utils/logger', () => ({
 
 import deviceAuthRouter from '../deviceAuth';
 import { errorHandler } from '../../middleware/errorHandler';
+import { logger } from '../../utils/logger';
 
 interface Res {
   status: number;
@@ -476,5 +479,65 @@ describe('POST /auth/device/resolve', () => {
     expect(accounts).toHaveLength(1);
     expect(accounts[0]).toMatchObject({ sessionId: 's-good', accessToken: 'acc2' });
     expect(res.body.activeAccountId).toBe('u2');
+  });
+});
+
+describe('buildTokenBundle — cookie-lane telemetry + deviceSecret (phase 2c)', () => {
+  const sameSite = { host: 'api.oxy.so', origin: 'https://accounts.oxy.so' };
+
+  it('web-session: logs the cookie-lane mint and attaches the rotating deviceSecret', async () => {
+    mockGetStateByCookieKey.mockResolvedValueOnce({
+      deviceId: 'd1',
+      activeAccountId: 'u1',
+      accounts: [{ accountId: 'u1', sessionId: 's1' }],
+    });
+    mockValidateSessionById.mockResolvedValueOnce({ session: {} }); // resolveActiveSessionRef
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'acc', expiresAt: new Date(Date.now() + 60_000) });
+    // buildTokenBundle's own validate — the session carries its device binding.
+    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'd1' }, user: { _id: 'u1', username: 'bob' } });
+    mockIssueDeviceSecret.mockResolvedValueOnce('ds-web-secret');
+
+    const res = await request('POST', '/auth/device/web-session', {
+      body: {},
+      headers: { ...sameSite, cookie: 'oxy_device=known' },
+    });
+
+    expect(res.status).toBe(200);
+    const session = (res.body.data as Record<string, unknown>).session as Record<string, unknown>;
+    expect(session.deviceSecret).toBe('ds-web-secret');
+    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('d1');
+    expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'cookie', deviceId: 'd1' });
+  });
+
+  it('exchange: logs the cookie-lane mint and includes the deviceSecret in the bundle', async () => {
+    mockRedeemBootCode.mockResolvedValueOnce({ sessionId: 's1', userId: 'u1', clientOrigin: 'https://mention.earth' });
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'acc', expiresAt: new Date(Date.now() + 60_000) });
+    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'd2' }, user: { _id: 'u1', username: 'bob' } });
+    mockIssueDeviceSecret.mockResolvedValueOnce('ds-exch-secret');
+
+    const res = await request('POST', '/auth/device/exchange', {
+      body: { code: 'boot-code-abcdefghijklmnopqrst' },
+      headers: { origin: 'https://mention.earth' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.deviceSecret).toBe('ds-exch-secret');
+    expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'cookie', deviceId: 'd2' });
+  });
+
+  it('omits the deviceSecret and does NOT log when the session carries no device binding', async () => {
+    mockRedeemBootCode.mockResolvedValueOnce({ sessionId: 's1', userId: 'u1', clientOrigin: 'https://mention.earth' });
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'acc', expiresAt: new Date(Date.now() + 60_000) });
+    mockValidateSessionById.mockResolvedValueOnce({ session: {}, user: { _id: 'u1', username: 'bob' } });
+
+    const res = await request('POST', '/auth/device/exchange', {
+      body: { code: 'boot-code-abcdefghijklmnopqrst' },
+      headers: { origin: 'https://mention.earth' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.deviceSecret).toBeUndefined();
+    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalledWith('device.token.mint', expect.anything());
   });
 });

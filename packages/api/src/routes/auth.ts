@@ -1575,6 +1575,22 @@ router.post(
 
     const userData = formatUserResponse(user);
 
+    // Additive 2c mint: when the claimed session's device carries a
+    // `DeviceSession` doc, hand the client a rotating `deviceSecret` so it can
+    // migrate onto the zero-cookie lane. Best-effort — a mint failure never fails
+    // the claim, and a device with no doc simply omits the secret.
+    let deviceSecret: string | undefined;
+    try {
+      const { deviceSessionService } = await import('../services/deviceSession.service.js');
+      const minted = await deviceSessionService.issueDeviceSecret(session.deviceId);
+      if (minted) deviceSecret = minted;
+    } catch (error) {
+      logger.warn('[AuthSession] deviceSecret mint failed on claim', {
+        sessionId: authSession.authorizedSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     logger.info('[AuthSession] Claim succeeded', {
       sessionToken: sessionToken.substring(0, 8) + '...',
       sessionId: authSession.authorizedSessionId,
@@ -1589,6 +1605,7 @@ router.post(
       deviceId: session.deviceId,
       expiresAt: tokenResult.expiresAt.toISOString(),
       user: userData,
+      ...(deviceSecret ? { deviceSecret } : {}),
     });
   })
 );

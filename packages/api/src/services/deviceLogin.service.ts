@@ -119,7 +119,10 @@ function shouldReturnRotatingRefresh(req: Request, hasDeviceBinding: boolean): b
  * a rotating refresh token for the response when the lane allows it. Everything
  * is best-effort — a failure here never breaks the sign-in.
  *
- * Returns `{ refreshToken? }` to be merged additively into the auth response.
+ * Returns `{ refreshToken?, deviceSecret? }` to be merged additively into the
+ * auth response. `deviceSecret` (phase 2c) is emitted ONLY when a device binding
+ * resolved — the client persists it first-party and later mints access tokens via
+ * `POST /session/device/token` (zero-cookie lane).
  */
 export async function finalizeDeviceLogin(opts: {
   req: Request;
@@ -127,8 +130,10 @@ export async function finalizeDeviceLogin(opts: {
   session: { sessionId: string; deviceId: string };
   userId: string;
   operatedByUserId?: string;
-}): Promise<{ refreshToken?: string }> {
+}): Promise<{ refreshToken?: string; deviceSecret?: string }> {
   const { req, deviceId, session, userId, operatedByUserId } = opts;
+
+  const result: { refreshToken?: string; deviceSecret?: string } = {};
 
   if (deviceId) {
     try {
@@ -143,6 +148,11 @@ export async function finalizeDeviceLogin(opts: {
         { activate: 'if-empty' },
       );
       if (changed) broadcastDeviceState(state);
+      // Additive 2c mint: hand the client a rotating deviceSecret bound to the
+      // (just-registered) device so it can migrate onto the zero-cookie lane.
+      // Best-effort — a mint failure never breaks the sign-in.
+      const deviceSecret = await deviceSessionService.issueDeviceSecret(session.deviceId);
+      if (deviceSecret) result.deviceSecret = deviceSecret;
     } catch (error) {
       logger.warn('finalizeDeviceLogin: device registration failed', { userId, error });
     }
@@ -151,10 +161,10 @@ export async function finalizeDeviceLogin(opts: {
   if (shouldReturnRotatingRefresh(req, !!deviceId)) {
     try {
       const refresh = await issueRefreshToken({ sessionId: session.sessionId, userId });
-      return { refreshToken: refresh.token };
+      result.refreshToken = refresh.token;
     } catch (error) {
       logger.warn('finalizeDeviceLogin: refresh mint failed', { userId, error });
     }
   }
-  return {};
+  return result;
 }

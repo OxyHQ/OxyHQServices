@@ -1,15 +1,104 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import type { DeviceSessionState } from '@oxyhq/contracts';
+import { deviceTokenMintRequestSchema } from '@oxyhq/contracts';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
+import { rateLimit } from '../middleware/rateLimiter';
+import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
 import deviceSessionService from '../services/deviceSession.service';
 import sessionService from '../services/session.service';
 import { broadcastDeviceState } from '../utils/socket';
 import { readDeviceCookie } from '../utils/deviceCookie';
 import { asyncHandler } from '../utils/asyncHandler';
+import { logger } from '../utils/logger';
 
 const router = Router();
+
+/** Lockout scope for the public deviceSecret mint (per-deviceId sliding window). */
+const DEVICE_TOKEN_LOCKOUT_SCOPE = 'device-token';
+
+const deviceTokenLimiter = rateLimit({
+  prefix: 'rl:session:device-token:',
+  windowMs: 60_000,
+  max: 30,
+});
+
+/**
+ * POST /session/device/token — the phase-2c zero-cookie mint.
+ *
+ * PUBLIC by design and mounted ABOVE the router-wide
+ * `requireSameSiteOrigin, authMiddleware` below: it carries NO bearer and NO
+ * cookies. The client presents the `deviceId` it stored first-party plus the
+ * opaque `deviceSecret`; possession of the secret IS the ownership proof, so the
+ * mint can be initiated from any registered cross-apex origin over normal CORS.
+ *
+ * On a valid secret it mints a short access token for the device's active
+ * account and ROTATES the secret in-use (returns `nextDeviceSecret`; the
+ * presented secret stays valid for a short grace so multi-tab races don't lock
+ * out). A dead/absent active session returns `no_active_session` WITHOUT rotating
+ * — the client must re-authenticate and keeps its still-valid secret. Per-device
+ * lockout + rate limiting blunt online secret-guessing.
+ */
+router.post(
+  '/token',
+  deviceTokenLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = deviceTokenMintRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'deviceId and deviceSecret are required' });
+      return;
+    }
+    const { deviceId, deviceSecret } = parsed.data;
+
+    const lockout = await isLockedOut({ scope: DEVICE_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+    if (lockout.locked) {
+      if (typeof lockout.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(lockout.retryAfterSeconds));
+      }
+      res.status(429).json({ error: 'Too many attempts' });
+      return;
+    }
+
+    const state = await deviceSessionService.getStateBySecret(deviceId, deviceSecret);
+    if (!state) {
+      await recordFailure({ scope: DEVICE_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+      res.status(401).json({ error: 'invalid_device_secret' });
+      return;
+    }
+
+    // The secret matched — clear the failure counter regardless of whether the
+    // device currently has a live active session.
+    await clearFailures({ scope: DEVICE_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+
+    const activeToken = await deviceSessionService.resolveActiveToken(state);
+    if (!activeToken) {
+      // Known device, but no live active session to mint for. Do NOT rotate — the
+      // client re-authenticates and keeps its still-valid secret.
+      res.status(401).json({ error: 'no_active_session' });
+      return;
+    }
+
+    const nextDeviceSecret = await deviceSessionService.issueDeviceSecret(deviceId);
+    if (!nextDeviceSecret) {
+      // The device doc vanished between resolve and rotate (should not happen for
+      // a live session). Fail closed rather than return a secret-less response.
+      logger.error('device.token.mint could not rotate the device secret', new Error('rotation failed'), { deviceId });
+      res.status(500).json({ error: 'Internal server error' });
+      return;
+    }
+
+    logger.info('device.token.mint', { mint_source: 'secret', deviceId });
+    res.json({
+      data: {
+        accessToken: activeToken.accessToken,
+        expiresAt: activeToken.expiresAt,
+        nextDeviceSecret,
+        state,
+      },
+    });
+  }),
+);
 
 async function withActiveToken(state: DeviceSessionState) {
   const activeToken = await deviceSessionService.resolveActiveToken(state);
