@@ -195,7 +195,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
 
-  const activeUserId = user?.id ?? user?._id ?? null;
+  const activeUserId = user?.id ?? null;
   const previousUserIdRef = useRef<string | null>(activeUserId);
 
   useEffect(() => {

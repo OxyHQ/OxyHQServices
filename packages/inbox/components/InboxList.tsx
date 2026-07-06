@@ -615,7 +615,6 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           getItemType={getItemType}
-          estimatedItemSize={72}
           ItemSeparatorComponent={renderSeparator}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
@@ -708,10 +707,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             ref={aliaChatRef}
             apiUrl={ALIA_PROXY_API_URL}
             clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
-            suggestions={[
-              { label: 'Unread emails', icon: 'mail', prompt: 'What emails need my attention?' },
-              { label: "Today's summary", icon: 'text', prompt: 'Summarize my emails from today' },
-              { label: 'With attachments', icon: 'paperclip', prompt: 'Find emails with attachments' },
+            // AliaChatSheet's welcome suggestions are {id, title, description}; per-item icons are no longer supported upstream.
+            welcomeSuggestions={[
+              { id: 'unread', title: 'Unread emails', description: 'What emails need my attention?' },
+              { id: 'today-summary', title: "Today's summary", description: 'Summarize my emails from today' },
+              { id: 'with-attachments', title: 'With attachments', description: 'Find emails with attachments' },
             ]}
           />
         </>

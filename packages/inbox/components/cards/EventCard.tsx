@@ -116,17 +116,15 @@ export function EventCard({ data }: EventCardProps) {
     } else {
       // Native: use expo-file-system and expo-sharing
       try {
-        const FileSystem = await import('expo-file-system');
+        const { File, Paths } = await import('expo-file-system');
         const Sharing = await import('expo-sharing');
 
         const filename = `${(data.title || 'event').replace(/[^a-zA-Z0-9]/g, '_')}.ics`;
-        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, icsContent, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
+        const file = new File(Paths.cache, filename);
+        file.write(icsContent);
 
         if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
+          await Sharing.shareAsync(file.uri, {
             mimeType: 'text/calendar',
             dialogTitle: 'Add to Calendar',
           });
