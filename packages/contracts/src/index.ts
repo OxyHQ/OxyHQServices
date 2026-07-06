@@ -225,15 +225,10 @@ export type {
 export {
     // Schemas
     loginResultSchema,
-    deviceResolveRequestSchema,
-    deviceResolveResponseSchema,
 } from './deviceBoot';
 
 export type {
     LoginTwoFactorRequired,
     LoginSessionResult,
     LoginResult,
-    DeviceResolveRequest,
-    DeviceResolveAccount,
-    DeviceResolveResponse,
 } from './deviceBoot';

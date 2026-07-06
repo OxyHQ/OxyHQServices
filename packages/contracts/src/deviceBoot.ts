@@ -1,13 +1,10 @@
 /**
- * First-party login result + IdP device-resolve contracts.
+ * First-party login result contract.
  *
- * SINGLE SOURCE OF TRUTH for two wire shapes:
- *  - the first-party password login result (2FA arm vs. session arm), and
- *  - the IdP chooser's device-resolve feed.
- *
- * The API validates its OUTPUT against these schemas; every consumer
- * (`@oxyhq/core`'s auth mixin, the IdP chooser) validates its INPUT against the
- * same definitions, so producer and consumers cannot drift.
+ * SINGLE SOURCE OF TRUTH for the first-party password login result (2FA arm vs.
+ * session arm). The API validates its OUTPUT against this schema; every consumer
+ * (`@oxyhq/core`'s auth mixin) validates its INPUT against the same definition,
+ * so producer and consumers cannot drift.
  *
  * The device transport is `deviceId` + `deviceSecret` + `POST /session/device/token`
  * (see `deviceSession.ts`). The legacy cookie/bootstrap/refresh-family lanes were
@@ -26,7 +23,6 @@
  */
 
 import { z } from 'zod';
-import { userResponseSchema, type UserResponse } from './userResponse';
 
 /* -------------------------------------------------------------------------- */
 /*  First-party password login result (2FA arm | session arm)                 */
@@ -91,47 +87,3 @@ export const loginResultSchema: z.ZodType<LoginResult> = z.union([
     loginTwoFactorRequiredSchema,
     loginSessionResultSchema,
 ]);
-
-/* -------------------------------------------------------------------------- */
-/*  IdP chooser device-resolve                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Request body for the IdP chooser's internal device-resolve call — the opaque
- * device key the chooser reads first-party.
- */
-export const deviceResolveRequestSchema = z.object({
-    deviceKey: z.string().min(20),
-});
-
-export type DeviceResolveRequest = z.infer<typeof deviceResolveRequestSchema>;
-
-/** One account resolved for the IdP chooser from a device's session set. */
-export interface DeviceResolveAccount {
-    user: UserResponse;
-    sessionId: string;
-    accessToken: string;
-    expiresAt: string;
-}
-
-/**
- * Wire shape of the IdP chooser's device-resolve feed — the device's active
- * account id (or `null` when signed out of all) plus every account signed in on
- * the device.
- */
-export interface DeviceResolveResponse {
-    activeAccountId: string | null;
-    accounts: DeviceResolveAccount[];
-}
-
-const deviceResolveAccountSchema: z.ZodType<DeviceResolveAccount> = z.object({
-    user: userResponseSchema,
-    sessionId: z.string(),
-    accessToken: z.string(),
-    expiresAt: z.string(),
-});
-
-export const deviceResolveResponseSchema: z.ZodType<DeviceResolveResponse> = z.object({
-    activeAccountId: z.string().nullable(),
-    accounts: z.array(deviceResolveAccountSchema),
-});

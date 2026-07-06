@@ -1,24 +1,18 @@
 import {
     loginResultSchema,
-    deviceResolveRequestSchema,
-    deviceResolveResponseSchema,
     safeParseContract,
 } from '../index';
 import type {
-    DeviceResolveResponse,
     LoginResult,
 } from '../index';
 
 /**
- * The first-party login result + IdP device-resolve contracts MUST round-trip
- * exactly what the `/auth/login` surface emits and what `@oxyhq/core`'s auth
- * mixin / the IdP chooser parse. These tests lock the login-result union
- * discrimination (2FA arm vs session arm) and the device-resolve shape so
+ * The first-party login result contract MUST round-trip exactly what the
+ * `/auth/login` surface emits and what `@oxyhq/core`'s auth mixin parses. These
+ * tests lock the login-result union discrimination (2FA arm vs session arm) so
  * producer and consumers cannot drift. The device transport itself is the
  * zero-cookie `deviceId` + `deviceSecret` mint (see `deviceSession.test.ts`).
  */
-
-const A_TOKEN = 'x'.repeat(24); // >= 20 chars, satisfies the min() guards
 
 describe('loginResultSchema (union discrimination)', () => {
     it('parses the 2FA arm', () => {
@@ -84,53 +78,5 @@ describe('loginResultSchema (union discrimination)', () => {
                 expiresAt: 'e',
             }),
         ).toBeNull();
-    });
-});
-
-describe('deviceResolveRequestSchema', () => {
-    it('parses a valid device key', () => {
-        const v = { deviceKey: A_TOKEN };
-        expect(safeParseContract(deviceResolveRequestSchema, v)).toEqual(v);
-    });
-
-    it('rejects a too-short device key', () => {
-        expect(safeParseContract(deviceResolveRequestSchema, { deviceKey: 'k' })).toBeNull();
-    });
-});
-
-describe('deviceResolveResponseSchema', () => {
-    const response: DeviceResolveResponse = {
-        activeAccountId: 'u1',
-        accounts: [
-            {
-                user: { id: 'u1', username: 'nate', name: { displayName: 'Nate' } },
-                sessionId: 's1',
-                accessToken: 'jwt.access',
-                expiresAt: '2026-07-07T00:00:00.000Z',
-            },
-        ],
-    };
-
-    it('parses a populated device set', () => {
-        const parsed = safeParseContract(deviceResolveResponseSchema, response);
-        expect(parsed?.accounts).toHaveLength(1);
-        expect(parsed?.activeAccountId).toBe('u1');
-    });
-
-    it('accepts activeAccountId=null (signed out of all)', () => {
-        const parsed = safeParseContract(deviceResolveResponseSchema, {
-            activeAccountId: null,
-            accounts: [],
-        });
-        expect(parsed?.activeAccountId).toBeNull();
-        expect(parsed?.accounts).toEqual([]);
-    });
-
-    it('rejects an account missing its accessToken', () => {
-        const bad = {
-            activeAccountId: 'u1',
-            accounts: [{ user: { id: 'u1' }, sessionId: 's1', expiresAt: 'e' }],
-        };
-        expect(safeParseContract(deviceResolveResponseSchema, bad)).toBeNull();
     });
 });
