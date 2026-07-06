@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
+import { useOxy } from "@oxyhq/services"
+import type { SessionLoginResponse } from "@oxyhq/core"
+import { loginResultSchema, safeParseContract } from "@oxyhq/contracts"
 import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { buildPostLoginRedirect } from "@/lib/auth-utils"
 import { LoadingSpinner } from "@/components/auth-form-layout"
@@ -38,6 +41,10 @@ function parseOAuthState(raw: string | null): OAuthState | null {
 export function SocialCallbackPage() {
     const [searchParams] = useSearchParams()
     const navigate = useNavigate()
+    // Social sign-in commits through the SAME device-first SDK funnel every Oxy
+    // app uses (`handleWebSession`): token planted, `{deviceId, deviceSecret}`
+    // persisted, account registered as active — so `/authorize` targets it.
+    const { handleWebSession } = useOxy()
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
@@ -80,13 +87,35 @@ export function SocialCallbackPage() {
 
                 if (controller.signal.aborted) return
 
-                if (!response.ok || !payload?.sessionId) {
+                // The social endpoint returns the same session arm the login
+                // endpoint does — validate it and commit device-first.
+                const parsed = response.ok ? safeParseContract(loginResultSchema, payload) : null
+                if (!parsed || "twoFactorRequired" in parsed || !parsed.accessToken) {
                     const message = typeof payload?.message === "string"
                         ? payload.message
                         : "Social sign in failed"
                     redirectToLogin(message, rawState)
                     return
                 }
+
+                const session: SessionLoginResponse & { deviceSecret?: string } = {
+                    sessionId: parsed.sessionId,
+                    deviceId: parsed.deviceId,
+                    expiresAt: parsed.expiresAt,
+                    accessToken: parsed.accessToken,
+                    // `name` is a throwaway placeholder — `handleWebSession`
+                    // hydrates the full user profile right after committing.
+                    user: {
+                        id: parsed.user.id,
+                        username: parsed.user.username ?? "",
+                        name: {},
+                        avatar: parsed.user.avatar,
+                    },
+                    ...(parsed.deviceSecret ? { deviceSecret: parsed.deviceSecret } : {}),
+                }
+                await handleWebSession(session)
+
+                if (controller.signal.aborted) return
 
                 navigate(buildPostLoginRedirect({
                     sessionToken: oauthState.sessionToken,
@@ -96,7 +125,6 @@ export function SocialCallbackPage() {
                     codeChallenge: oauthState.codeChallenge,
                     codeChallengeMethod: oauthState.codeChallengeMethod,
                     scope: oauthState.scope,
-                    authuser: typeof payload.authuser === "number" ? payload.authuser : undefined,
                 }))
             } catch (err) {
                 if (controller.signal.aborted) return
@@ -123,7 +151,7 @@ export function SocialCallbackPage() {
 
         handleCallback()
         return () => controller.abort()
-    }, [searchParams, navigate])
+    }, [searchParams, navigate, handleWebSession])
 
     if (error) {
         return (

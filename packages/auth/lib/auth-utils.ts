@@ -6,13 +6,18 @@ type PostLoginRedirectParams = {
     codeChallenge?: string
     codeChallengeMethod?: string
     scope?: string
-    authuser?: number
 }
 
 /**
  * Build the URL path for redirecting after a successful login/signup.
  * Navigates to /authorize with the appropriate query params, or sets an
  * error if no authorization request context was provided.
+ *
+ * No `authuser` hint: the caller has already committed the device-first session
+ * through the shared SDK funnel (`signInWithPassword` / `handleWebSession`), so
+ * the just-authenticated account is the SDK's ACTIVE account. `/authorize`
+ * targets that active account and offers the device chooser
+ * (`useSwitchableAccounts`) to switch — the same mechanism every Oxy app uses.
  */
 export function buildPostLoginRedirect({
     sessionToken,
@@ -22,7 +27,6 @@ export function buildPostLoginRedirect({
     codeChallenge,
     codeChallengeMethod,
     scope,
-    authuser,
 }: PostLoginRedirectParams): string {
     const nextUrl = new URL("/authorize", window.location.origin)
     if (sessionToken) nextUrl.searchParams.set("token", sessionToken)
@@ -32,7 +36,6 @@ export function buildPostLoginRedirect({
     if (codeChallenge) nextUrl.searchParams.set("code_challenge", codeChallenge)
     if (codeChallengeMethod) nextUrl.searchParams.set("code_challenge_method", codeChallengeMethod)
     if (scope) nextUrl.searchParams.set("scope", scope)
-    if (typeof authuser === "number") nextUrl.searchParams.set("authuser", String(authuser))
     if (!sessionToken && !redirectUri && !clientId) {
         nextUrl.searchParams.set(
             "error",

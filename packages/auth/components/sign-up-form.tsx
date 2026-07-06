@@ -2,6 +2,9 @@ import { useState, useRef, useCallback } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Check, X, Loader2 } from "lucide-react"
+import { useOxy } from "@oxyhq/services"
+import type { SessionLoginResponse } from "@oxyhq/core"
+import { loginResultSchema, safeParseContract } from "@oxyhq/contracts"
 
 import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
 import { buildPostLoginRedirect } from "@/lib/auth-utils"
@@ -86,6 +89,12 @@ export function SignUpForm({
     ...props
 }: SignUpFormProps) {
     const navigate = useNavigate()
+    // Sign-up commits its session through the SAME device-first SDK funnel every
+    // Oxy app uses (`handleWebSession`): it plants the access token, persists the
+    // zero-cookie `{deviceId, deviceSecret}` credential, and registers the new
+    // account into the device set as the active account — so `/authorize` targets
+    // it with no first-party device cookie.
+    const { handleWebSession } = useOxy()
     const [localError, setLocalError] = useState<string | undefined>()
     const [serverErrors, setServerErrors] = useState<string[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -148,16 +157,34 @@ export function SignUpForm({
                 return
             }
 
-            if (!payload?.sessionId) {
+            // `/auth/signup` returns the same session arm the login endpoint
+            // does — validate it against the shared contract and commit it
+            // device-first. Signup never returns the 2FA arm.
+            const parsed = safeParseContract(loginResultSchema, payload)
+            if (!parsed || "twoFactorRequired" in parsed || !parsed.accessToken) {
                 setLocalError("Unable to sign up")
                 return
             }
 
+            const session: SessionLoginResponse & { deviceSecret?: string } = {
+                sessionId: parsed.sessionId,
+                deviceId: parsed.deviceId,
+                expiresAt: parsed.expiresAt,
+                accessToken: parsed.accessToken,
+                // `name` is a throwaway placeholder — `handleWebSession` hydrates
+                // the full user profile immediately after committing.
+                user: {
+                    id: parsed.user.id,
+                    username: parsed.user.username ?? "",
+                    name: {},
+                    avatar: parsed.user.avatar,
+                },
+                ...(parsed.deviceSecret ? { deviceSecret: parsed.deviceSecret } : {}),
+            }
+            await handleWebSession(session)
+
             didRedirect = true
 
-            // The central device session (the `oxy_device` cookie) is minted
-            // server-side by signup, so there is no client-side session-cookie
-            // plant to do here — proceed straight to `/authorize`.
             navigate(buildPostLoginRedirect({
                 sessionToken,
                 redirectUri,
@@ -166,7 +193,6 @@ export function SignUpForm({
                 codeChallenge,
                 codeChallengeMethod,
                 scope,
-                authuser: typeof payload.authuser === "number" ? payload.authuser : undefined,
             }))
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Unable to sign up"

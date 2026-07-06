@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
-import type { PublicApplication } from "@oxyhq/core";
-import { OxyConsentScreen } from "@oxyhq/services";
+import type { PublicApplication, SwitchableAccount } from "@oxyhq/core";
+import { OxyConsentScreen, useOxy, useSwitchableAccounts } from "@oxyhq/services";
 
 import { Button } from "@oxyhq/bloom/button";
 import {
@@ -12,14 +12,12 @@ import {
   tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
-import { useDeviceAccounts } from "@/lib/use-device-accounts";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   sessionStatusSchema,
   safeParse,
   consentRequiredFromBody,
 } from "@/lib/schemas";
-import type { DeviceAccount } from "@/lib/types";
 import {
   buildRelativeUrl,
   buildAuthUrl,
@@ -27,27 +25,17 @@ import {
   getAvatarUrl,
 } from "@/lib/oxy-api-client";
 
-type UserInfo = {
-  id: string;
-  username?: string;
-  email?: string;
-  avatar?: string;
-  displayName?: string;
-  name?: {
-    first?: string;
-    last?: string;
-  };
-};
-
+/**
+ * The requesting-application + auth-request resolution state. The signed-in
+ * USER, the access token, and the device session id come from the device-first
+ * SDK (`useOxy().user` / `oxyServices.getAccessToken()` / `useSwitchableAccounts`)
+ * — the IdP no longer resolves per-account bearers itself.
+ */
 type AuthorizeData = {
-  user: UserInfo | null;
-  sessionId: string | null;
-  accessToken: string | null;
   sessionStatus: string | null;
   application: PublicApplication | null;
   expiresAt: string | null;
   error: string | null;
-  redirected: boolean;
 };
 
 /** Error shown when the requesting application cannot be resolved. */
@@ -104,12 +92,6 @@ function safeRedirectUrl(value?: string | null): string | null {
   }
 }
 
-function parseAuthuser(value: string | null): number | null {
-  if (!value || !/^\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-}
-
 function parseRequestedScopes(
   scopeValue: string | null,
   fallbackScopes: string[] = []
@@ -137,19 +119,31 @@ export function AuthorizePage() {
   const codeChallenge = searchParams.get("code_challenge");
   const codeChallengeMethod = searchParams.get("code_challenge_method");
   const scope = searchParams.get("scope");
-  const requestedAuthuser = parseAuthuser(searchParams.get("authuser"));
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
 
+  // Device-first SDK: the signed-in user + active bearer + device account set.
+  // The bearer for the OAuth authorize call is ALWAYS the SDK's active-account
+  // token; switching accounts (`switchToAccount`) re-plants it — there is no
+  // per-row bearer anymore.
+  const {
+    user,
+    oxyServices,
+    switchToAccount,
+    isAuthResolved,
+    isAuthenticated,
+  } = useOxy();
+  const {
+    accounts: deviceAccounts,
+    currentSessionId,
+    isLoading: deviceAccountsLoading,
+  } = useSwitchableAccounts();
+
   const [data, setData] = useState<AuthorizeData>({
-    user: null,
-    sessionId: null,
-    accessToken: null,
     sessionStatus: statusParam,
     application: null,
     expiresAt: null,
     error: urlError,
-    redirected: false,
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -160,30 +154,24 @@ export function AuthorizePage() {
   const [autoApproving, setAutoApproving] = useState(false);
 
   // Google-style account chooser shown as an additive front screen before the
-  // consent UI. Detect accounts signed in on this device; selecting the active
-  // account mints+plants its token and reveals consent, while any other account
-  // re-routes to /login (the current cookie cannot mint another account's
-  // token). Dismissed once a choice is made.
-  const {
-    accounts: deviceAccounts,
-    currentSessionId: chooserSessionId,
-    isLoading: deviceAccountsLoading,
-  } = useDeviceAccounts();
+  // consent UI when MORE THAN ONE account is signed in on this device. Selecting
+  // a row switches into it (the uniform device-first switch), re-planting the
+  // active bearer, then reveals consent (or auto-approves). A single-account
+  // device skips the chooser and goes straight to consent for the active account.
   const [chooserDismissed, setChooserDismissed] = useState(false);
-  // The sessionId currently being switched-to via the cookie-mint path. Shown
-  // as a per-row busy state in `<AccountChooser>` and disables sibling rows so
-  // the user can't fire a second mint while one is in flight. Cleared on
-  // success (consent reveal) or on failure (re-auth fallback).
-  const [chooserPendingSessionId, setChooserPendingSessionId] = useState<
+  // The accountId currently being switched-to. Shown as a per-row busy state in
+  // `<AccountChooser>` and disables sibling rows so the user can't fire a second
+  // switch while one is in flight. Cleared on success (consent reveal) or on
+  // failure (re-auth fallback).
+  const [chooserPendingAccountId, setChooserPendingAccountId] = useState<
     string | null
   >(null);
+  // The auto-approve probe runs at most once per mount for the active account.
+  const autoApproveAttemptedRef = useRef(false);
 
   useEffect(() => {
     async function loadData() {
       try {
-        let sessionId: string | null = null;
-        let user: UserInfo | null = null;
-
         // OAuth code flow: resolve the requesting application from its
         // `client_id`. This runs whenever a client_id is present (with or
         // without a device-flow token) and is the authoritative identity source
@@ -202,9 +190,6 @@ export function AuthorizePage() {
             if (!statusResponse.ok) {
               setData((prev) => ({
                 ...prev,
-                sessionId,
-                accessToken: null,
-                user,
                 error: "Unable to load authorization request.",
               }));
               return;
@@ -233,14 +218,10 @@ export function AuthorizePage() {
             // one, otherwise the explicit unresolved-application error.
             if (!sessionInfo) {
               setData({
-                sessionId,
-                accessToken: null,
-                user,
                 sessionStatus: null,
                 application,
                 expiresAt: null,
                 error: application ? null : UNRESOLVED_APP_ERROR,
-                redirected: false,
               });
               return;
             }
@@ -253,34 +234,23 @@ export function AuthorizePage() {
                     ? "Authorization was cancelled."
                     : "This authorization request is no longer active.";
               setData({
-                sessionId,
-                accessToken: null,
-                user,
                 sessionStatus: sessionInfo.status,
                 application,
                 expiresAt: null,
                 error: err,
-                redirected: false,
               });
               return;
             }
 
             setData({
-              sessionId: sessionId || sessionInfo.sessionId || null,
-              accessToken: null,
-              user,
               sessionStatus: sessionInfo.status,
               application,
               expiresAt: sessionInfo.expiresAt ?? null,
               error: application ? null : UNRESOLVED_APP_ERROR,
-              redirected: false,
             });
             return;
           } catch (err) {
             setData({
-              sessionId,
-              accessToken: null,
-              user,
               sessionStatus: null,
               application: oauthApplication,
               expiresAt: null,
@@ -288,7 +258,6 @@ export function AuthorizePage() {
                 err instanceof Error
                   ? err.message
                   : "Unable to load request.",
-              redirected: false,
             });
             return;
           }
@@ -303,14 +272,10 @@ export function AuthorizePage() {
             : null;
 
         setData({
-          sessionId,
-          accessToken: null,
-          user,
           sessionStatus: statusParam,
           application: oauthApplication,
           expiresAt: null,
           error: resolvedError,
-          redirected: false,
         });
       } catch {
         setData((prev) => ({ ...prev, error: "Unable to load request." }));
@@ -352,64 +317,47 @@ export function AuthorizePage() {
     );
   }
 
-  function applyChosenAccount(entry: DeviceAccount): void {
-    setData((prev) => ({
-      ...prev,
-      sessionId: entry.sessionId,
-      accessToken: entry.accessToken,
-      expiresAt: entry.expiresAt ?? prev.expiresAt,
-      user: {
-        id: entry.account.id,
-        username: entry.account.username,
-        email: entry.account.email,
-        avatar: entry.account.avatar,
-        displayName: entry.account.displayName,
-      },
-    }));
-    setChooserDismissed(true);
-  }
-
-  async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
-    setChooserPendingSessionId(entry.sessionId);
+  async function handleChooseAccount(entry: SwitchableAccount): Promise<void> {
+    setChooserPendingAccountId(entry.accountId);
     try {
-      applyChosenAccount(entry);
-      // Selecting an account plants its bearer; with a token in hand the OAuth
-      // path can skip the consent screen when consent isn't required.
-      await maybeAutoApprove(entry.accessToken);
+      // Switching into the account re-plants the active bearer; with a token in
+      // hand the OAuth path can skip the consent screen when consent isn't
+      // required. The active account needs no switch.
+      if (!entry.isCurrent) {
+        await switchToAccount(entry.accountId);
+      }
+      setChooserDismissed(true);
+      await maybeAutoApprove(oxyServices.getAccessToken());
     } catch {
-      gotoLoginWithHint(entry.account.username || entry.account.email);
+      gotoLoginWithHint(entry.user.username ?? undefined);
     } finally {
-      setChooserPendingSessionId(null);
+      setChooserPendingAccountId(null);
     }
   }
 
+  // Single-account device (or once the chooser is dismissed): probe consent for
+  // the active account and auto-approve when it isn't required. Runs at most once
+  // per mount. Multi-account devices go through the chooser first.
   useEffect(() => {
     if (
       deviceAccountsLoading ||
-      chooserDismissed ||
-      requestedAuthuser === null ||
+      autoApproveAttemptedRef.current ||
       data.error ||
-      (data.sessionStatus && data.sessionStatus !== "pending")
+      (data.sessionStatus && data.sessionStatus !== "pending") ||
+      !currentSessionId ||
+      deviceAccounts.length > 1
     ) {
       return;
     }
-
-    const target = deviceAccounts.find(
-      (entry) => entry.authuser === requestedAuthuser
-    );
-    if (target) {
-      applyChosenAccount(target);
-      // The `authuser` hint silently selects the account; mirror the chooser
-      // path and auto-approve when the OAuth request needs no consent.
-      void maybeAutoApprove(target.accessToken);
-    }
+    autoApproveAttemptedRef.current = true;
+    void maybeAutoApprove(oxyServices.getAccessToken());
   }, [
-    deviceAccounts,
+    deviceAccounts.length,
     deviceAccountsLoading,
-    chooserDismissed,
-    requestedAuthuser,
+    currentSessionId,
     data.error,
     data.sessionStatus,
+    oxyServices,
   ]);
 
   // Mint a single-use OAuth code and redirect to `redirect_uri` with
@@ -569,8 +517,9 @@ export function AuthorizePage() {
     //     pending AuthSession via the Bearer-auth endpoint and notify the
     //     polling client via socket.io. No tokens ever appear in the URL.
     try {
-      const sessionId = data.sessionId;
-      const accessToken = data.accessToken;
+      // The bearer is ALWAYS the SDK's active-account token (planted at sign-in /
+      // account switch) — never a per-row bearer.
+      const accessToken = oxyServices.getAccessToken();
 
       if (!accessToken) {
         setData((prev) => ({
@@ -592,15 +541,6 @@ export function AuthorizePage() {
         setData((prev) => ({
           ...prev,
           error: "Missing authorization request token.",
-        }));
-        setSubmitting(false);
-        return;
-      }
-
-      if (!sessionId) {
-        setData((prev) => ({
-          ...prev,
-          error: "No session found. Please sign in again.",
         }));
         setSubmitting(false);
         return;
@@ -692,8 +632,9 @@ export function AuthorizePage() {
     );
   }
 
-  if (!data.sessionId && !data.user && deviceAccounts.length === 0) {
-    // No session - redirect to login
+  // No session on this device (cold boot has resolved and found none) — redirect
+  // to login carrying the full request context.
+  if (isAuthResolved && !isAuthenticated && !currentSessionId && deviceAccounts.length === 0) {
     return (
       <Navigate
         to={buildRelativeUrl("/login", {
@@ -713,7 +654,6 @@ export function AuthorizePage() {
   const effectiveStatus = data.sessionStatus;
   const pageError = data.error;
   const application = data.application;
-  const currentUser = data.user;
   // Actionable = the request itself is still live (pending). A transient
   // submit error (e.g. a 403/500 from the authorize POST) keeps the consent
   // surface — with the application identity — visible, shown inline via the
@@ -721,20 +661,25 @@ export function AuthorizePage() {
   // (expired/cancelled) fall through to the page status view instead.
   const showActions = !effectiveStatus || effectiveStatus === "pending";
 
-  // Additive front screen: when the consent request is still actionable and at
-  // least one account is signed in on this device, show the Google-style
-  // chooser first. Selecting an account keeps its bearer in memory and reveals
-  // the consent UI below. The chooser never intercepts a completed
-  // (approved/denied) state.
-  if (showActions && !chooserDismissed && chooserSessionId && deviceAccounts.length > 0) {
+  // Additive front screen: when the consent request is still actionable and MORE
+  // THAN ONE account is signed in on this device, show the Google-style chooser
+  // first. Selecting an account switches into it and reveals the consent UI. A
+  // single-account device skips straight to consent for the active account. The
+  // chooser never intercepts a completed (approved/denied) state.
+  if (
+    showActions &&
+    !chooserDismissed &&
+    currentSessionId &&
+    deviceAccounts.length > 1
+  ) {
     return (
       <AccountChooser
         accounts={deviceAccounts}
         appName={application?.name}
         onSelectAccount={handleChooseAccount}
         onUseAnother={() => gotoLoginWithHint()}
-        pendingSessionId={chooserPendingSessionId}
-        isLoading={submitting || chooserPendingSessionId !== null}
+        pendingAccountId={chooserPendingAccountId}
+        isLoading={submitting || chooserPendingAccountId !== null}
       />
     );
   }
@@ -787,12 +732,12 @@ export function AuthorizePage() {
             }}
             scopes={parseRequestedScopes(scope, application.scopes)}
             user={
-              currentUser
+              user
                 ? {
-                    displayName: currentUser.displayName,
-                    handle: currentUser.username,
-                    avatarUri: currentUser.avatar
-                      ? getAvatarUrl(currentUser.avatar)
+                    displayName: user.name?.displayName,
+                    handle: user.username,
+                    avatarUri: user.avatar
+                      ? getAvatarUrl(user.avatar)
                       : undefined,
                   }
                 : undefined

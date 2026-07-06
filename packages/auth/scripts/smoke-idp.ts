@@ -1,15 +1,17 @@
 /**
- * Post-deploy smoke gate for auth.oxy.so (third-party OAuth IdP + device chooser).
+ * Post-deploy smoke gate for auth.oxy.so (third-party OAuth IdP).
  *
  * Runs AFTER the `oxy-auth` Cloudflare Pages deploy and hits the LIVE host using
  * ONLY public, unauthenticated endpoints (no cookies, no secrets). It asserts the
  * post-FedCM-deletion contract so a broken deploy turns the workflow RED instead
  * of silently breaking sign-in for the whole ecosystem.
  *
+ * The IdP is now a pure static SPA — it enumerates device accounts through the
+ * SAME device-first SDK path every app uses (`useSwitchableAccounts`), so there
+ * is no bespoke chooser-feed Pages Function to probe anymore.
+ *
  * What it catches:
  *   - SPA renders blank / build totally broken   → `/`, `/login`, `/signup`, `/authorize` lose the SPA root marker.
- *   - Pages Function not registered/running      → `GET /api/device-accounts` returns SPA HTML instead of the Function's JSON.
- *   - device chooser feed broken                 → `GET /api/device-accounts` (no cookie) is not `200 {accounts:[]}`.
  *   - FedCM manifest NOT removed                  → `/.well-known/web-identity` still serves the FedCM config JSON.
  *
  * Usage:
@@ -75,10 +77,6 @@ async function probe(url: string, init?: RequestInit): Promise<FetchOutcome> {
   }
 }
 
-function isHtmlBody(body: string): boolean {
-  return /^\s*<!doctype html/i.test(body) || /^\s*<html[\s>]/i.test(body);
-}
-
 /** Parse a JSON body, returning `null` (never throwing) on invalid JSON. */
 function parseJson(body: string): Record<string, unknown> | null {
   try {
@@ -108,39 +106,6 @@ async function checkSpaPage(hostBase: string, path: string): Promise<void> {
 }
 
 /**
- * `GET /api/device-accounts` with NO `oxy_device` cookie MUST be answered BY THE
- * PAGES FUNCTION as `200 { activeAccountId: null, accounts: [] }` JSON. If the
- * Function is not registered/running the request falls through to the static SPA
- * (HTML) — so this proves the `functions/api/device-accounts` route is live (it
- * is the only dynamic endpoint now).
- */
-async function checkDeviceAccounts(hostBase: string): Promise<void> {
-  const out = await probe(`${hostBase}/api/device-accounts`, { headers: { Accept: 'application/json' } });
-  if (out.error) {
-    record('device-accounts feed', false, `request failed: ${out.error}`);
-    return;
-  }
-  if (isHtmlBody(out.body)) {
-    record('device-accounts feed', false, 'responded with SPA HTML — Pages Function not registered/running');
-    return;
-  }
-  if (out.status !== 200) {
-    record('device-accounts feed', false, `expected 200, got ${out.status}`);
-    return;
-  }
-  const json = parseJson(out.body);
-  if (!json || !Array.isArray(json.accounts)) {
-    record('device-accounts feed', false, `expected JSON {accounts:[]}, got "${out.body.slice(0, 80)}"`);
-    return;
-  }
-  if (json.accounts.length !== 0) {
-    record('device-accounts feed', false, `expected an empty account list without a cookie, got ${json.accounts.length}`);
-    return;
-  }
-  record('device-accounts feed', true, 'Pages Function answered 200 {accounts:[]} (no cookie)');
-}
-
-/**
  * The FedCM manifest MUST be GONE. `GET /.well-known/web-identity` no longer has
  * a handler, so it falls through to the SPA (or 404) — anything EXCEPT a valid
  * `200 application/json` FedCM config with `provider_urls` is a pass. A regression
@@ -166,7 +131,6 @@ async function run(): Promise<void> {
   await checkSpaPage(PRIMARY_TARGET, '/login');
   await checkSpaPage(PRIMARY_TARGET, '/signup');
   await checkSpaPage(PRIMARY_TARGET, '/authorize');
-  await checkDeviceAccounts(PRIMARY_TARGET);
   await checkWebIdentityGone(PRIMARY_TARGET);
 
   const failed = results.filter((r) => !r.ok);

@@ -10,18 +10,21 @@ import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { BrowserRouter } from "react-router-dom"
 
-// No accounts on this device → the form opens on the identifier step (not the
-// chooser / loading spinner), where the third option lives.
-mock.module("@/lib/use-device-accounts", () => ({
-    useDeviceAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),
-}))
-
-// The button opens the services account dialog. Stub `useOxy` so the test can
-// assert the dialog is opened with the 'signin' view without mounting the full
-// OxyProvider / RN overlay stack.
+// The button opens the services account dialog. Stub the services surface so the
+// test can assert the dialog is opened with the 'signin' view without mounting
+// the full OxyProvider / RN overlay stack. `useSwitchableAccounts` returns no
+// accounts → the form opens on the identifier step (not the chooser / loading
+// spinner), where the third option lives.
 const openAccountDialog = mock(() => undefined)
 mock.module("@oxyhq/services", () => ({
-    useOxy: () => ({ openAccountDialog }),
+    useOxy: () => ({
+        openAccountDialog,
+        oxyServices: { lookupUsername: async () => ({ username: "", name: {}, avatar: null, color: null }) },
+        signInWithPassword: async () => ({ status: "ok" as const }),
+        completeTwoFactorSignIn: async () => undefined,
+        switchToAccount: async () => undefined,
+    }),
+    useSwitchableAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),
 }))
 
 const { LoginForm } = await import("@/components/login-form")
