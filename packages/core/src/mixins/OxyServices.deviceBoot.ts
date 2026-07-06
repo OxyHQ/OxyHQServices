@@ -19,9 +19,11 @@ import {
   authTokenBundleSchema,
   tokenRefreshResponseSchema,
   deviceTokenIssueResponseSchema,
+  deviceTokenMintResponseSchema,
   webSessionResultSchema,
   safeParseContract,
   type AuthTokenBundle,
+  type DeviceTokenMintResponse,
   type TokenRefreshResponse,
   type WebSessionResult,
 } from '@oxyhq/contracts';
@@ -127,6 +129,42 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           throw new Error('auth/device/token returned an unexpected response shape');
         }
         return parsed.deviceToken;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Zero-cookie mint (phase 2c). Present the first-party `deviceId` +
+     * `deviceSecret` to `POST /session/device/token` — NO bearer, NO cookies:
+     * possession of the secret IS the device-ownership proof. Returns a fresh
+     * short access token for the device's active account plus `nextDeviceSecret`
+     * (rotation-in-use) and the projected device-session `state`.
+     *
+     * `skipAuth` (like {@link refreshWithToken}): this call carries no bearer, so
+     * a 401 must surface DIRECTLY — never trigger `HttpService`'s 401→refresh→
+     * retry dance (which would pointlessly rotate the refresh family). The cold
+     * boot reads the 401 body (`invalid_device_secret` vs `no_active_session`) to
+     * decide whether to drop the secret and fall back or resolve signed-out.
+     *
+     * @throws if the response does not match {@link deviceTokenMintResponseSchema}.
+     */
+    async mintFromDeviceSecret(
+      deviceId: string,
+      deviceSecret: string,
+    ): Promise<DeviceTokenMintResponse> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/session/device/token',
+          { deviceId, deviceSecret },
+          { cache: false, skipAuth: true },
+        );
+        const parsed = safeParseContract(deviceTokenMintResponseSchema, res);
+        if (!parsed) {
+          throw new Error('session/device/token returned an unexpected response shape');
+        }
+        return parsed;
       } catch (error) {
         throw this.handleError(error);
       }

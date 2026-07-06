@@ -280,6 +280,9 @@ interface CommitInput {
   accessToken?: string;
   refreshToken?: string;
   deviceId?: string;
+  /** Rotating device secret (phase 2c — zero-cookie transport); persisted with
+   * `deviceId` so the cold boot can mint via `POST /session/device/token`. */
+  deviceSecret?: string;
   expiresAt?: string;
   userId?: string;
   /** Minimal user carried by the sign-in response; a best-effort fallback used
@@ -772,6 +775,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             refreshToken: input.refreshToken,
             userId: input.userId,
             ...(deviceToken ? { deviceToken } : {}),
+            // Phase 2c: persist the deviceId + rotating deviceSecret so the next
+            // cold boot can restore via the zero-cookie mint. Both are additive —
+            // absent on cookie-lane sign-ins, which fall back to the refresh family.
+            ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+            ...(input.deviceSecret ? { deviceSecret: input.deviceSecret } : {}),
             ...(input.accessToken ? { accessToken: input.accessToken } : {}),
             ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
           };
@@ -859,9 +867,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         {
           sessionId: session.sessionId,
           accessToken: session.accessToken,
-          // deviceFlow threads a rotating refresh token on the runtime object
-          // even though `SessionLoginResponse` does not type it.
+          // deviceFlow threads a rotating refresh token + deviceSecret on the
+          // runtime object even though `SessionLoginResponse` does not type them.
           refreshToken: (session as { refreshToken?: string }).refreshToken,
+          deviceSecret: (session as { deviceSecret?: string }).deviceSecret,
           deviceId: session.deviceId,
           expiresAt: session.expiresAt,
           userId: session.user.id,
@@ -950,6 +959,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           sessionId: result.sessionId,
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
+          deviceSecret: result.deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
           userId: result.user.id,
@@ -982,6 +992,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           sessionId: result.sessionId,
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
+          deviceSecret: result.deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
           userId: result.user.id,
@@ -1205,6 +1216,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           sessionId: result.sessionId,
           accessToken: result.accessToken,
           refreshToken: (result as { refreshToken?: string }).refreshToken,
+          deviceSecret: (result as { deviceSecret?: string }).deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
           userId: result.user.id,
