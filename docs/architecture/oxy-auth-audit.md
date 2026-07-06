@@ -189,4 +189,5 @@ Grafo completo en main (`account.service.ts`, `/accounts`, `POST /accounts/:id/s
 - [x] `docs/auth/integration-guide.md` + `docs/auth/device-session.md` creados
 - [x] AGENTS.md repo reescrito (secciones auth device-first); `~/AGENTS.md` global alineado; `~/Oxy/AGENTS.md` ya limpio
 - [x] Tests ≥ baselines: contracts 150 · core 740 · api 1363 · services 194 · auth IdP 63/0
-- [ ] **Workshop 2c** — transporte cero-cookies PENDIENTE de Nate (decisión 2026-07-06: transporte actual congelado)
+- [x] **Cierre operativo (2026-07-06):** specs superpowers session-sync phase1-3 BORRADAS (implementadas; citas en los docs canónicos = registro histórico); PR #519 cerrado (superseded); ramas locales+remotas del proyecto purgadas
+- [~] **Workshop 2c CELEBRADO (2026-07-06)** — decisiones: deviceId web POR ORIGEN; rotación en uso + grace 60s; refresh family MUERE; migración aditiva con telemetría mint_source, cookie fuera al llegar ≈0; sin cookie-optimización para el IdP. Implementación en curso (PRs 2c)
