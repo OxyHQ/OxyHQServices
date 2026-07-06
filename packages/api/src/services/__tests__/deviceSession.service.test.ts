@@ -680,7 +680,8 @@ describe('issueDeviceSecret', () => {
     expect(typeof secret).toBe('string');
     expect((secret as string).length).toBeGreaterThan(20);
     const [filter, update] = mockFindOneAndUpdate.mock.calls[0];
-    expect(filter).toEqual({ deviceId: 'd1' });
+    // CAS filter: first issuance requires no secret to exist yet.
+    expect(filter).toEqual({ deviceId: 'd1', secretHash: { $exists: false } });
     // Only the HASH of the returned secret is stored, never the raw value.
     expect(update.$set.secretHash).toBe(nodeCrypto.createHash('sha256').update(secret as string).digest('hex'));
     expect(update.$set.secretHash).not.toBe(secret);
@@ -732,10 +733,39 @@ describe('issueDeviceSecret', () => {
     expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('returns null when the doc vanished between read and write', async () => {
+  it('returns null when the doc vanished between read and write (CAS retry re-reads, doc gone)', async () => {
     mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0 }));
     mockFindOneAndUpdate.mockReturnValueOnce(lean(null));
+    // Retry re-reads; doc is gone → give up.
+    mockFindOne.mockReturnValueOnce(lean(null));
     expect(await deviceSessionService.issueDeviceSecret('d1')).toBeNull();
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('lost CAS race retries once against the concurrent winner hash and succeeds', async () => {
+    // Attempt 1 reads OLDHASH but a concurrent mint wins the CAS → write matches nothing.
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0, secretHash: 'OLDHASH' }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean(null));
+    // Attempt 2 re-reads the winner's hash and rotates on top of it.
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0, secretHash: 'WINNERHASH' }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1' }));
+
+    const secret = await deviceSessionService.issueDeviceSecret('d1');
+
+    expect(typeof secret).toBe('string');
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(2);
+    const [retryFilter, retryUpdate] = mockFindOneAndUpdate.mock.calls[1];
+    // The retry's CAS guard targets the hash it re-read, not the stale one.
+    expect(retryFilter).toEqual({ deviceId: 'd1', secretHash: 'WINNERHASH' });
+    expect(retryUpdate.$set.prevSecretHash).toBe('WINNERHASH');
+    expect(retryUpdate.$set.secretHash).toBe(nodeCrypto.createHash('sha256').update(secret as string).digest('hex'));
+  });
+
+  it('gives up after two lost CAS races (no unbounded retry loop)', async () => {
+    mockFindOne.mockReturnValue(lean({ deviceId: 'd1', accounts: [], revision: 0, secretHash: 'H' }));
+    mockFindOneAndUpdate.mockReturnValue(lean(null));
+    expect(await deviceSessionService.issueDeviceSecret('d1')).toBeNull();
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -1581,9 +1581,11 @@ router.post(
     // the claim, and a device with no doc simply omits the secret.
     let deviceSecret: string | undefined;
     try {
-      const { deviceSessionService } = await import('../services/deviceSession.service.js');
-      const minted = await deviceSessionService.issueDeviceSecret(session.deviceId);
-      if (minted) deviceSecret = minted;
+      if (typeof session.deviceId === 'string' && session.deviceId.length > 0) {
+        const { deviceSessionService } = await import('../services/deviceSession.service.js');
+        const minted = await deviceSessionService.issueDeviceSecret(session.deviceId);
+        if (minted) deviceSecret = minted;
+      }
     } catch (error) {
       logger.warn('[AuthSession] deviceSecret mint failed on claim', {
         sessionId: authSession.authorizedSessionId,

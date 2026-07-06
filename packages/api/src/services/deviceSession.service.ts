@@ -427,26 +427,35 @@ class DeviceSessionService {
    * never to a phantom device (no upsert).
    */
   async issueDeviceSecret(deviceId: string): Promise<string | null> {
-    const current = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
-    if (!current) return null;
+    // Two concurrent rotations (multi-tab mint, parallel sign-ins) must not
+    // clobber each other: last-writer-wins would drop the first writer's fresh
+    // secret entirely (neither current nor prev). Compare-and-swap on the
+    // secretHash we read; on a lost race, re-read once and rotate on top of the
+    // winner — the winner's secret then sits in the grace slot, so BOTH clients
+    // end up holding a mintable secret.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const current = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+      if (!current) return null;
 
-    const rawSecret = base64UrlEncode(crypto.randomBytes(DEVICE_SECRET_BYTES));
-    const secretHash = sha256Hex(rawSecret);
+      const rawSecret = base64UrlEncode(crypto.randomBytes(DEVICE_SECRET_BYTES));
+      const secretHash = sha256Hex(rawSecret);
 
-    const set: { secretHash: string; prevSecretHash?: string; prevSecretExpiresAt?: Date } = { secretHash };
-    if (current.secretHash) {
-      set.prevSecretHash = current.secretHash;
-      set.prevSecretExpiresAt = new Date(Date.now() + DEVICE_SECRET_GRACE_MS);
+      const set: { secretHash: string; prevSecretHash?: string; prevSecretExpiresAt?: Date } = { secretHash };
+      if (current.secretHash) {
+        set.prevSecretHash = current.secretHash;
+        set.prevSecretExpiresAt = new Date(Date.now() + DEVICE_SECRET_GRACE_MS);
+      }
+
+      const updated = await DeviceSession.findOneAndUpdate(
+        current.secretHash
+          ? { deviceId, secretHash: current.secretHash }
+          : { deviceId, secretHash: { $exists: false } },
+        { $set: set },
+        { new: true },
+      ).lean<IDeviceSession>();
+      if (updated) return rawSecret;
     }
-
-    const updated = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      { $set: set },
-      { new: true },
-    ).lean<IDeviceSession>();
-    if (!updated) return null;
-
-    return rawSecret;
+    return null;
   }
 
   /**

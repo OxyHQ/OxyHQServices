@@ -157,8 +157,15 @@ async function buildTokenBundle(
   let deviceSecret: string | undefined;
   if (typeof deviceId === 'string' && deviceId.length > 0) {
     logger.info('device.token.mint', { mint_source: 'cookie', deviceId });
-    const minted = await deviceSessionService.issueDeviceSecret(deviceId);
-    if (minted) deviceSecret = minted;
+    try {
+      const minted = await deviceSessionService.issueDeviceSecret(deviceId);
+      if (minted) deviceSecret = minted;
+    } catch (error) {
+      logger.warn('buildTokenBundle: deviceSecret mint failed (best-effort)', {
+        deviceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   return {
