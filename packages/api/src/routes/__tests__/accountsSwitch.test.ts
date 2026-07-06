@@ -13,7 +13,7 @@
  * records the operator; the response mirrors the login/claimSession shape.
  *
  * ROOT-CAUSE GUARD (slot-clobber regression): the switch route MUST NOT write any
- * `oxy_rt_<authuser>` refresh cookie. Those cookies are `Path=/auth` scoped, so
+ * per-slot refresh cookie (deleted transport). Those cookies were `Path=/auth` scoped, so
  * the browser never sends them to this `/accounts/*` route; issuing one blind here
  * always picks slot 0 and OVERWRITES the operator's own primary session. The SDK
  * establishes the device cookie via `POST /auth/session` (under `/auth`) instead.
@@ -268,7 +268,7 @@ describe('POST /accounts/:id/switch', () => {
     const res = await post(server, `/accounts/${ORG_ID}/switch`);
 
     expect(res.status).toBe(200);
-    // The route lives at /accounts/* — outside the oxy_rt_* cookie's Path=/auth
+    // The route lives at /accounts/* — outside the deleted slot-cookie's Path=/auth
     // scope — so it can never see the device's existing slots. Issuing a cookie
     // here would blindly take slot 0 and destroy the operator's own session.
     // It MUST leave the cookie untouched; the SDK establishes it via /auth/session.

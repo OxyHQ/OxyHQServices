@@ -12,17 +12,20 @@ OxyHQServices (`@oxyhq/sdk`) is the platform layer for the whole Oxy ecosystem. 
 is four things in one Bun-workspaces monorepo:
 
 1. **An API + a device-first session model.** `api.oxy.so` owns the durable
-   `oxy_device` cookie and the rotating refresh-token family; every web/native
-   app restores its session through the shared SDK's device-first cold boot
-   with zero redirects for first-party apps. `auth.oxy.so` is a third-party
-   OAuth authorize/consent IdP (for apps that don't embed the SDK) plus a
-   device-account chooser feed.
+   `oxy_device` cookie, the rotating refresh-token family, and the server-side
+   `DeviceSession` authority (which accounts are signed in on a device, which
+   one is active). Every web/native app restores its session through the shared
+   SDK's device-first cold boot and stays in sync across apps via the
+   `session_state` socket event. `auth.oxy.so` is the third-party OAuth
+   authorize/consent IdP — it is not a relying party and not the session
+   authority.
 
-2. **A client SDK.** `@oxyhq/core` (platform-agnostic client + `/server`
-   middleware), `@oxyhq/auth` (web `WebOxyProvider`), `@oxyhq/services` (Expo/RN
-   `OxyProvider`), and `@oxyhq/contracts` (Zod API contracts). Every Oxy app
+2. **A client SDK.** `@oxyhq/core` (platform-agnostic client, `SessionClient`,
+   `/server` middleware), `@oxyhq/services` (the single UI SDK — `OxyProvider`
+   on web and Expo/RN), `@oxyhq/contracts` (Zod API contracts), and
+   `@oxyhq/protocol` (signed-record/crypto substrate). Every Oxy app
    (Mention, Allo, Homiio, Syra, accounts, console, inbox) consumes these for
-   auth, profiles, payments, and media — zero per-app SSO code.
+   auth, profiles, payments, and media — zero per-app session code.
 
 3. **Oxy ID — self-sovereign identity.** Account-anchored `did:web` documents,
    cryptographically signed records on a per-user hash chain, verifiable
@@ -45,18 +48,25 @@ and in any third-party verifier — using the exact same `@oxyhq/core` code.
 | Doc | What it covers |
 |---|---|
 | [architecture/overview.md](architecture/overview.md) | Monorepo packages, dependency graph, build order, package boundaries, end-to-end request flow |
-| [auth/README.md](auth/README.md) | Device-first session model, the `oxy_device` cookie, `runSessionColdBoot`, the in-app sign-in modal, OAuth consent/trust, service tokens, linked clients, `@oxyhq/core/server` middleware |
+| [auth/README.md](auth/README.md) | Auth & session entry point: device-first model, sign-in surfaces, the IdP's role |
+| [auth/device-session.md](auth/device-session.md) | DeviceSession API (`/session/device/*`), `session_state` socket sync, multi-account switching, `SessionClient` |
+| [auth/integration-guide.md](auth/integration-guide.md) | "Sign in with Oxy" for third-party apps: Console registration, OAuth 2.0 + PKCE (SPA / server / native), `OxySignInButton`, consent, grant revocation |
 | [identity/README.md](identity/README.md) | `did:web` documents (custodial ↔ self-sovereign), signed records (envelope v2, hash chain, `verifyEnvelope`), signed export, domain verification, "Sign in with Oxy" |
 | [reputation/README.md](reputation/README.md) | Oxy Trust ledger (tiers/influence), crypto-owned reputation, F2 real-life attestation + validator jury, F3 proof-of-personhood, F4 verifiable credentials |
 | [nodes/README.md](nodes/README.md) | The data-node model, `@oxyhq/node` server, registration, Oxy→node export, node→Oxy ingest (verify/LWW/fork/counter-sign), managed vault |
+| [architecture/oxy-auth-platform.md](architecture/oxy-auth-platform.md) | The auth platform master plan (phases, decisions, target architecture) |
 | [CHANGELOG.md](CHANGELOG.md) | Chronological "what changed and why" for the whole F0→F5 + Oxy ID rename + Commons/Reputation UI initiative, with commit SHAs |
 
 ### Reading paths
 
 - **New to the platform?** Start with [architecture/overview.md](architecture/overview.md),
   then [auth/README.md](auth/README.md).
-- **Integrating auth/SSO into an app?** [auth/README.md](auth/README.md) is the
-  full reference; RPs use the SDK providers and are zero-config.
+- **Integrating auth into an Oxy app?** [auth/README.md](auth/README.md) +
+  [auth/device-session.md](auth/device-session.md) — RPs mount `OxyProvider`
+  with a registered `clientId` and are otherwise zero-config.
+- **Integrating "Sign in with Oxy" into a third-party app?**
+  [auth/integration-guide.md](auth/integration-guide.md) is the copy-paste
+  OAuth + PKCE walkthrough.
 - **Working on Oxy ID / Commons / civic features?** Read
   [identity/README.md](identity/README.md) → [reputation/README.md](reputation/README.md)
   → [nodes/README.md](nodes/README.md), in that order — each builds on the prior.
@@ -70,20 +80,17 @@ and in any third-party verifier — using the exact same `@oxyhq/core` code.
 These pre-existing documents cover infrastructure, email, and platform-specific
 topics and remain authoritative for their areas:
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — original system architecture / identity vs auth
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system architecture: identity vs auth, device-first sessions, DB schema
 - [AUTHENTICATION.md](AUTHENTICATION.md) — auth integration guide (Expo, Web, Node, WebSockets)
-- [CROSS_DOMAIN_AUTH.md](CROSS_DOMAIN_AUTH.md) — cross-domain SSO (device-first: `oxy_device` cookie + rotating refresh, native shared-keychain)
-- [SESSION-ARCHITECTURE.md](SESSION-ARCHITECTURE.md) — session architecture notes
+- [SESSION-ARCHITECTURE.md](SESSION-ARCHITECTURE.md) — session architecture in depth
 - [SERVICE_TOKENS.md](SERVICE_TOKENS.md) — service-to-service auth (OAuth2 client credentials)
 - [INFRASTRUCTURE.md](INFRASTRUCTURE.md) — AWS resources (ECS, ALB, ECR, ElastiCache, MongoDB)
 - [DEPLOYMENT.md](DEPLOYMENT.md) — GitHub OIDC, ECS Fargate, env vars, Cloudflare Pages
 - [REDIS.md](REDIS.md) — ElastiCache Valkey: rate limiting, Socket.IO adapter, caching
 - [EMAIL.md](EMAIL.md) — native email (`username@oxy.so`), DKIM/SPF/DMARC, inbound webhook
-- [EXPO_54_GUIDE.md](EXPO_54_GUIDE.md) — building universal apps with Expo
 
 For the authoritative rules and version matrix, see the repo
-[`AGENTS.md`](../AGENTS.md); for the F5 handoff, see
-[`CONTINUATION.md`](../CONTINUATION.md).
+[`AGENTS.md`](../AGENTS.md).
 
 ---
 

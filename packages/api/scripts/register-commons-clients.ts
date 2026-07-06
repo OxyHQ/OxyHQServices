@@ -76,9 +76,6 @@ function generatePublicKey(): string {
 const OXY_OWNER_USER_ID = '69b2d3df5d12f58c9800d651';
 const OXY_OWNER_USERNAME = 'oxy';
 
-const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
-const cb = (origin: string): string => `${origin}${SSO_CALLBACK_PATH}`;
-
 type ClientKey = 'COMMONS_CLIENT_ID' | 'AUTH_IDP_CLIENT_ID';
 
 interface ClientSpec {
@@ -113,15 +110,9 @@ const CLIENTS: ClientSpec[] = [
       'Official Oxy authentication app and third-party OAuth Identity Provider, acting as its own Relying Party for Sign in with Oxy.',
     websiteUrl: 'https://auth.oxy.so',
     type: 'first_party',
-    // The IdP now consumes Sign-in-with-Oxy as an RP, so it needs its own origin
-    // + callback registered. UNIONed into any existing redirectUris.
-    // NOTE (found during the wave-2 comment sweep, NOT fixed here — logic, not
-    // a comment): `cb()` below builds `${origin}${SSO_CALLBACK_PATH}`, i.e.
-    // `https://auth.oxy.so/__oxy/sso-callback` — the deleted SSO-bounce
-    // callback path. If Oxy Auth's own RP flow no longer consumes that path,
-    // this redirectUri may be seeding a dead route; needs an engineer decision
-    // + a live check of what path the QR/Commons RP flow actually redeems.
-    redirectUris: ['https://auth.oxy.so', cb('https://auth.oxy.so')],
+    // The IdP now consumes Sign-in-with-Oxy as an RP, so it registers its own
+    // origin as the redirect surface. UNIONed into any existing redirectUris.
+    redirectUris: ['https://auth.oxy.so'],
     scopes: ['user:read'],
   },
 ];

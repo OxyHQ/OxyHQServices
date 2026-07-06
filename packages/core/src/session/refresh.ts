@@ -1,11 +1,8 @@
 /**
  * Unified token refresh — THE single refresh implementation for web + native.
  *
- * Before device-first, refresh was duplicated: `@oxyhq/auth`'s
- * `session/tokenRefresh.ts` (per-apex `/auth/silent` iframe) and
- * `@oxyhq/services`'s `inSessionTokenRefresh.ts` (native shared-key). This
- * module replaces both with ONE persisted-refresh-token rotation shared by
- * every consumer:
+ * ONE persisted-refresh-token rotation shared by every consumer (it replaced
+ * the pre-device-first per-platform duplicates):
  *
  *  - `refreshPersistedSession` — arm 1 rotates the stored refresh-token family
  *    (`POST /auth/refresh-token`), planting + persisting the rotated pair; arm 2
@@ -16,9 +13,8 @@
  *  - `createAuthRefreshHandler` / `installAuthRefreshHandler` wire arm 1+2 into
  *    `HttpService.setAuthRefreshHandler`, keeping that layer's single-flight
  *    dedup + cooldown (this module does NOT reimplement them).
- *  - `startTokenRefreshScheduler` — a proactive scheduler (lifted from the
- *    better of the two prior duplicates, `@oxyhq/auth`'s `tokenRefresh.ts`),
- *    decoupled from any React / auth-sdk type: refreshes ~60s before `exp`,
+ *  - `startTokenRefreshScheduler` — a proactive scheduler decoupled from any
+ *    React type: refreshes ~60s before `exp`,
  *    re-arms on token change + web tab-focus, `.unref?.()`s its timer in Node.
  *
  * Framework-free; no module-level mutable state.

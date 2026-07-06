@@ -1,8 +1,8 @@
 # Getting Started with @oxyhq/services
 
-Zero-config authentication for Expo and React Native apps. Cross-domain SSO is automatic.
+Zero-config authentication for Expo, React Native, and React Native Web apps. Session state syncs automatically across every Oxy app on the same device.
 
-> **Web apps:** Use `@oxyhq/auth` + `@oxyhq/core` instead. See the [Platform Guide](./PLATFORM_GUIDE.md).
+> **Web apps:** Use `@oxyhq/services` too — via `react-native-web`. See the [Platform Guide](./PLATFORM_GUIDE.md).
 >
 > **Backend / Node.js:** Use `@oxyhq/core` only. See the [Platform Guide](./PLATFORM_GUIDE.md).
 
@@ -32,14 +32,17 @@ import { OxyProvider } from '@oxyhq/services';
 
 export default function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
+    <OxyProvider
+      baseURL="https://api.oxy.so"
+      clientId={process.env.EXPO_PUBLIC_OXY_CLIENT_ID}
+    >
       <YourApp />
     </OxyProvider>
   );
 }
 ```
 
-`OxyProvider` works on iOS, Android, and Expo web. Always use `OxyProvider` in Expo apps.
+`OxyProvider` works on iOS, Android, Expo web, and React Native Web. `clientId` is your app's registered credential (`oxy_dk_…`) from the [Oxy Console](https://console.oxy.so).
 
 ### 2. Use Authentication
 
@@ -69,7 +72,28 @@ function HomeScreen() {
 }
 ```
 
-That is it. Cross-domain SSO is automatic. If a user is signed in on any Oxy domain (accounts.oxy.so, mention.earth, homiio.com, etc.), they are automatically signed in on your app.
+That is it. On cold boot the SDK silently restores the device session — if the user has already signed in to any Oxy app on this device, they are signed in to yours too. The full model is documented in [AUTHENTICATION.md](../../docs/AUTHENTICATION.md).
+
+---
+
+## How sign-in works
+
+**Cold boot (silent).** `OxyProvider` restores the ambient device session on mount. It never redirects to a login page and never opens UI on its own. If there is no session, the app simply renders logged-out.
+
+**Interactive sign-in.** `useAuth().signIn()` (or pressing `OxySignInButton` / `ProfileButton`) opens the unified in-app account dialog — a Bloom dialog (bottom sheet on phones, centered on desktop) with:
+
+- the account switcher for accounts already on this device,
+- **Sign in with Oxy** via the Oxy app (QR scan on web, deep link / shared keychain on native),
+- a collapsed username + password form.
+
+**`OxySignInButton` and third-party apps.** The button resolves your registered Application via `oxyServices.getPublicApplication(clientId)` (`GET /auth/oauth/client/:clientId`):
+
+- **Official Oxy apps** → opens the in-app dialog above.
+- **`third_party` apps** → starts the standard OAuth 2.0 Authorization Code + PKCE redirect to `auth.oxy.so` (the SDK generates `state` and the PKCE pair for you). Pass `oauthRedirectUri`, and on native handle `onOAuthResult` to finish the code exchange.
+
+Third-party integration (Console setup, OAuth endpoints, backend verification) is covered end to end in the [integration guide](../../docs/auth/integration-guide.md).
+
+**Server authority.** The server keeps one `DeviceSession` per device — the signed-in accounts and the active one. Every add/switch/sign-out bumps a revision and is pushed over Socket.IO to all apps on the device, so switching accounts in app A updates app B instantly. Details: [device sessions](../../docs/auth/device-session.md).
 
 ---
 
@@ -80,22 +104,27 @@ import { useAuth } from '@oxyhq/services';
 
 const {
   // State
-  user,              // User | null - current user
-  isAuthenticated,   // boolean - is user signed in
-  isLoading,         // boolean - initial auth check
-  isReady,           // boolean - ready for API calls
-  error,             // string | null - error message
+  user,               // User | null - current user
+  isAuthenticated,    // boolean - is user signed in
+  isLoading,          // boolean - initial auth check
+  isReady,            // boolean - ready for API calls
+  isAuthResolved,     // boolean - cold boot finished (before this, "logged out" is undetermined)
+  canUsePrivateApi,   // boolean - authenticated AND bearer token available
+  isPrivateApiPending,// boolean - hold private screens in loading state while true
+  error,              // string | null - error message
 
   // Actions
-  signIn,            // () => Promise<User> - trigger sign in
-  signOut,           // () => Promise<void> - sign out current session
-  signOutAll,        // () => Promise<void> - sign out all devices
-  refresh,           // () => Promise<void> - refresh auth state
+  signIn,             // () => Promise<User> - opens the account dialog
+  signOut,            // () => Promise<void> - sign out current session
+  signOutAll,         // () => Promise<void> - sign out all devices
+  refresh,            // () => Promise<void> - refresh auth state
 
   // Advanced
-  oxyServices,       // OxyServices instance
+  oxyServices,        // OxyServices instance
 } = useAuth();
 ```
+
+Gate private API calls on `canUsePrivateApi` / `isPrivateApiPending` — never fire authenticated requests before cold boot resolves.
 
 ---
 
@@ -132,97 +161,47 @@ export default function RootLayout() {
 }
 ```
 
-### Bottom Sheet Screens
+### Account dialog and bottom sheets
+
+Auth and account switching live in the account dialog:
 
 ```tsx
 import { useOxy } from '@oxyhq/services';
 
+const { openAccountDialog } = useOxy();
+
+openAccountDialog();          // account switcher (default view)
+openAccountDialog('signin');  // sign-in view
+```
+
+Non-auth surfaces still use the bottom-sheet router:
+
+```tsx
 const { showBottomSheet } = useOxy();
 
-// Account
-showBottomSheet('ManageAccount');      // Account hub and account switcher
-showBottomSheet('SessionManagement');  // Manage devices
-
-// Auth
-showBottomSheet('OxyAuth');            // QR code auth
-
-// Features
+showBottomSheet('ManageAccount');      // Account hub (profile, security, devices)
 showBottomSheet('FileManagement');     // Files
 showBottomSheet('LanguageSelector');   // Language
 showBottomSheet('TrustCenter');        // Trust
-
-// Payments
 showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
 ```
 
 ---
 
-## Web Apps (Next.js / React)
+## Web Apps
 
-For web apps without Expo/React Native, use the `@oxyhq/auth` package with `@oxyhq/core`.
+Web apps use the **same package** through `react-native-web`. Install `react-native-web` + `vite-plugin-react-native-web` and mount the same `OxyProvider` — see the [Platform Guide](./PLATFORM_GUIDE.md) for the Vite config (`packages/console` is the reference app).
 
-### Installation
+### How web session restore works
 
-```bash
-bun add @oxyhq/auth @oxyhq/core
-```
+There is no browser-identity API, hidden iframe, or redirect chain involved. The device session is anchored server-side:
 
-### Next.js Example
+1. The user signs in once on this device (dialog: Oxy-app QR, or password).
+2. The API records the account in the device's `DeviceSession` and issues tokens backed by a durable first-party device credential and a rotating refresh-token family.
+3. On reload, `OxyProvider`'s cold boot silently exchanges that device credential for a fresh access token — no UI, no redirects.
+4. Account changes anywhere on the device are pushed live over the `session_state` socket event.
 
-```tsx
-// app/providers.tsx
-'use client';
-import { WebOxyProvider } from '@oxyhq/auth';
-
-export function Providers({ children }) {
-  return (
-    <WebOxyProvider baseURL="https://api.oxy.so">
-      {children}
-    </WebOxyProvider>
-  );
-}
-
-// app/layout.tsx
-import { Providers } from './providers';
-
-export default function RootLayout({ children }) {
-  return (
-    <html>
-      <body>
-        <Providers>{children}</Providers>
-      </body>
-    </html>
-  );
-}
-
-// app/page.tsx
-'use client';
-import { useAuth } from '@oxyhq/auth';
-
-export default function Home() {
-  const { user, isAuthenticated, isLoading, signIn } = useAuth();
-
-  if (isLoading) return <div>Loading...</div>;
-
-  return isAuthenticated ? (
-    <h1>Welcome, {user?.username}!</h1>
-  ) : (
-    <button onClick={() => signIn()}>Sign In</button>
-  );
-}
-```
-
-### How Web SSO Works
-
-Cross-domain SSO uses **FedCM** (Federated Credential Management) -- the browser-native identity API that works without third-party cookies.
-
-1. User signs in on `auth.oxy.so` (or any Oxy app)
-2. Browser stores FedCM credential
-3. Your app's provider uses FedCM to request identity
-4. Browser returns ID token instantly (no network request to IdP)
-5. Your app exchanges token for session
-
-**Browser Support:** Chrome 108+, Safari 16.4+, Edge 108+. For Firefox and older browsers, users click "Sign In" which opens a popup.
+A brand-new browser origin starts logged out until the user signs in there once. Full contract: [device sessions](../../docs/auth/device-session.md).
 
 ---
 
@@ -236,41 +215,33 @@ For server-side usage, install `@oxyhq/core` only.
 bun add @oxyhq/core
 ```
 
-### Quick Start
+### Verifying Oxy users (Express)
+
+Use `@oxyhq/core/server` — do not hand-roll bearer parsing or session-validation middleware:
 
 ```typescript
-import { oxyClient } from '@oxyhq/core';
+import { OxyServices } from '@oxyhq/core';
+import { createOxyAuthMiddleware, getRequiredOxyUserId } from '@oxyhq/core/server';
+import express from 'express';
 
-// Get user
-const user = await oxyClient.getUserById('123');
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const app = express();
+app.use(express.json());
 
-// Validate session
-const { valid, user } = await oxyClient.validateSession(sessionId);
+app.use('/api', createOxyAuthMiddleware(oxy));
+
+app.get('/api/me', (req, res) => {
+  res.json({ userId: getRequiredOxyUserId(req) });
+});
 ```
 
-### Express Middleware
+### Reading public data
 
 ```typescript
 import { oxyClient } from '@oxyhq/core';
 
-async function authMiddleware(req, res, next) {
-  const sessionId = req.headers['x-session-id'] || req.cookies.sessionId;
-
-  if (!sessionId) {
-    return res.status(401).json({ error: 'No session' });
-  }
-
-  try {
-    const { valid, user } = await oxyClient.validateSession(sessionId);
-    if (!valid) return res.status(401).json({ error: 'Invalid session' });
-    req.user = user;
-    next();
-  } catch {
-    res.status(401).json({ error: 'Auth failed' });
-  }
-}
-
-app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
+const user = await oxyClient.getUserById('123');
+const profile = await oxyClient.getProfileByUsername('john_doe');
 ```
 
 ### Next.js API Route
@@ -295,7 +266,6 @@ export async function GET(req, { params }) {
 ```typescript
 // Users
 await oxyClient.getUserById(id);
-await oxyClient.getUserByUsername(username);
 await oxyClient.getProfileByUsername(username);
 await oxyClient.getCurrentUser();
 
@@ -309,13 +279,8 @@ await oxyClient.getUserFollowing(userId);
 await oxyClient.followUser(userId);
 await oxyClient.unfollowUser(userId);
 
-// Wallet
-await oxyClient.getWallet();
-await oxyClient.transferFunds(request);
-
 // Files
-await oxyClient.listFiles();
-await oxyClient.uploadFile(file);
+await oxyClient.listUserFiles();
 await oxyClient.deleteFile(fileId);
 ```
 
@@ -325,17 +290,21 @@ Trust surfaces are exposed as `Trust*` bottom-sheet routes in `@oxyhq/services`.
 
 ## Advanced: useOxy Hook
 
-For full control in Expo/RN apps, use `useOxy` instead of `useAuth`:
+For full control, use `useOxy` instead of `useAuth`:
 
 ```tsx
 import { useOxy } from '@oxyhq/services';
 
 const {
-  // All useAuth properties plus:
-  sessions,            // All active sessions
+  // All useAuth state plus:
+  sessions,            // Sessions signed in on this device
   activeSessionId,     // Current session ID
-  switchSession,       // Switch between accounts
+  switchToAccount,     // Switch active account (device session + account graph)
   refreshSessions,     // Refresh session list
+
+  // Account dialog
+  openAccountDialog,   // Open switcher / sign-in dialog
+  closeAccountDialog,
 
   // Language
   currentLanguage,     // 'en', 'es', etc.
@@ -358,6 +327,7 @@ const {
 ```bash
 # React Native/Expo
 EXPO_PUBLIC_API_URL=https://api.oxy.so
+EXPO_PUBLIC_OXY_CLIENT_ID=oxy_dk_...
 
 # Node.js
 OXY_API_URL=https://api.oxy.so
@@ -369,14 +339,13 @@ OXY_API_URL=https://api.oxy.so
 
 ### "useAuth/useOxy must be used within OxyProvider"
 
-Wrap your app with `<OxyProvider>` (Expo/RN) or `<WebOxyProvider>` from `@oxyhq/auth` (web).
+Wrap your app with `<OxyProvider>` from `@oxyhq/services` (all platforms).
 
-### SSO not working on web
+### Session not restoring on web
 
-1. Ensure you are using HTTPS (required for FedCM)
-2. Check browser version: Chrome 108+, Safari 16.4+, Edge 108+
-3. For Firefox: FedCM not supported, users must click "Sign In" (uses popup)
-4. Verify FedCM config: `https://auth.oxy.so/fedcm.json`
+1. Cold boot is silent — check `isAuthResolved` before treating the user as logged out
+2. A brand-new browser origin is logged out until the user signs in there once
+3. Verify your `clientId` is a registered, active credential in the [Oxy Console](https://console.oxy.so)
 
 ### Native keychain issues
 
@@ -390,4 +359,6 @@ Wrap your app with `<OxyProvider>` (Expo/RN) or `<WebOxyProvider>` from `@oxyhq/
 
 - [README.md](./README.md) - Full API reference
 - [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) - Platform-specific setup guide
-- [CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md) - SSO deep dive
+- [AUTHENTICATION.md](../../docs/AUTHENTICATION.md) - Authentication model
+- [Device sessions](../../docs/auth/device-session.md) - DeviceSession API, socket events, multi-account
+- [Integration guide](../../docs/auth/integration-guide.md) - Sign in with Oxy for third-party apps

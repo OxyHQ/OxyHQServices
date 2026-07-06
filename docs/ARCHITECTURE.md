@@ -7,11 +7,13 @@ Complete architecture documentation for the Oxy ecosystem: identity, authenticat
 1. [Core Concepts](#core-concepts)
 2. [System Architecture](#system-architecture)
 3. [Identity System](#identity-system)
-4. [Authentication Methods](#authentication-methods)
-5. [User Linking](#user-linking)
-6. [API Reference](#api-reference)
-7. [Database Schema](#database-schema)
-8. [Security](#security)
+4. [Sessions — Device-First Model](#sessions--device-first-model)
+5. [Authentication Methods](#authentication-methods)
+6. [User Linking](#user-linking)
+7. [API Reference](#api-reference)
+8. [Database Schema](#database-schema)
+9. [Security](#security)
+10. [Quick Start](#quick-start)
 
 ---
 
@@ -29,15 +31,14 @@ Oxy uses **device-based cryptographic identity** as the primary authentication m
 |  IDENTITY (Private Key)          AUTHENTICATION (Oxy SDK)        |
 |  ----------------------          ----------------------------    |
 |  - Stored ONLY in               - Handles login flows            |
-|    Oxy Accounts app             - Token management               |
-|  - Never leaves device          - Session handling               |
+|    Commons by Oxy app           - Token management               |
+|  - Never leaves device          - Device-first sessions          |
 |  - Device = Password            - Multiple auth methods          |
-|  - BIP39 recovery phrase        - In-app sign-in modal           |
-|                                 - Device-first cross-domain SSO  |
+|  - BIP39 recovery phrase        - In-app sign-in dialog          |
 |                                                                  |
-|  [accounts app]  ----------->   [@oxyhq/core]  (foundation)     |
-|   (native only)                 [@oxyhq/auth]  (web auth)       |
-|                                 [@oxyhq/services] (RN/Expo)     |
+|  [Commons app]  ------------>   [@oxyhq/core]     (foundation)   |
+|   (native only)                 [@oxyhq/services] (all UI:       |
+|                                   Expo, RN, and RN Web)          |
 |                                                                  |
 +-----------------------------------------------------------------+
 ```
@@ -49,83 +50,85 @@ Oxy uses **device-based cryptographic identity** as the primary authentication m
 3. **Multi-Method Auth**: Same user can authenticate via identity, password, or social
 4. **User Linking**: Different auth methods can be linked to same account
 5. **Platform Agnostic**: Auth works on native, web, and backend
+6. **One SDK UI**: `@oxyhq/services` (`OxyProvider`) is the single UI SDK for every platform — web included, via React Native Web. There is no separate web-only auth SDK.
+7. **Server is the session authority**: which accounts are signed in on a device lives in the server-side `DeviceSession` model, never in per-app client state.
 
 ---
 
 ## System Architecture
 
-### 3-Package SDK
-
-The Oxy SDK is split into three independent packages:
+### SDK Packages
 
 | Package | Purpose | Platform |
 |---------|---------|----------|
-| **@oxyhq/core** | Foundation: API client, device-first cold boot, crypto utilities, types | All (Node.js, web, native) |
-| **@oxyhq/auth** | Web authentication: WebOxyProvider, in-app sign-in modal, device-first cold boot | Web only (React, Next.js, Vite) |
-| **@oxyhq/services** | React Native / Expo: OxyProvider, native components, UI | React Native / Expo |
+| **@oxyhq/contracts** | Zod API contracts (request/response schemas, inferred types) | All (only `zod`) |
+| **@oxyhq/protocol** | App-agnostic base substrate: signed-record envelope, canonical JSON, signature/verification, platform crypto | All |
+| **@oxyhq/core** | Foundation: API client (`OxyServices`), `SessionClient`, device-first cold boot, OAuth + PKCE helpers, `/server` middleware | All (Node.js, web, native) |
+| **@oxyhq/services** | The single UI SDK: `OxyProvider`, `useAuth`/`useOxy`, `OxyAccountDialog`, `OxySignInButton`, `OxyConsentScreen`, screens | Expo / React Native / RN Web |
 
 ### Package Structure
 
 ```
 OxyHQServices/
 ├── packages/
-│   ├── accounts/          # Native-only identity wallet app
-│   │   └── (private keys, recovery, QR transfer)
+│   ├── commons/           # Native-only identity vault app ("Commons by Oxy")
+│   │   └── (private keys, recovery, QR approve, attestation)
 │   │
-│   ├── core/              # @oxyhq/core - Foundation
-│   │   ├── /core          # API client, device-first cold boot, SSO (no UI)
+│   ├── contracts/         # @oxyhq/contracts — Zod API contracts
+│   ├── protocol/          # @oxyhq/protocol — signed records + crypto substrate
+│   │
+│   ├── core/              # @oxyhq/core — foundation
+│   │   ├── /session       # SessionClient, cold boot, session-state projection
 │   │   ├── /crypto        # Signing utilities (NOT key storage)
-│   │   └── /shared        # Platform-agnostic utilities
+│   │   └── /server        # Express middleware (@oxyhq/core/server)
 │   │
-│   ├── auth/              # @oxyhq/auth - Web auth provider
-│   │   └── /web           # WebOxyProvider, useAuth (no RN deps)
+│   ├── services/          # @oxyhq/services — the single UI SDK (Expo/RN/RN Web)
 │   │
-│   ├── services/          # @oxyhq/services - React Native / Expo
-│   │   └── /native        # OxyProvider, native components & hooks
+│   ├── api/               # Backend API server (api.oxy.so)
+│   │   └── (users, sessions, DeviceSession, OAuth, device bootstrap)
 │   │
-│   ├── api/               # Backend API server
-│   │   └── (users, sessions, auth, device-first bootstrap)
+│   ├── auth/              # auth.oxy.so — third-party OAuth authorize/consent IdP
+│   │   └── (mounts OxyProvider with coldBoot={false}; not an RP)
 │   │
-│   └── auth-web/          # auth.oxy.so web app
-│       └── (login portal for popup/redirect flows)
+│   └── accounts/          # "Accounts by Oxy" — keyless, management-only
 ```
+
+See [architecture/overview.md](./architecture/overview.md) for the full monorepo map, dependency graph, and build order.
 
 ### Layer Diagram
 
 ```
 +-----------------------------------------------------------------+
 |                         USER APPLICATIONS                        |
-|   Third-party apps, Oxy apps (Posts, Messenger, etc.)           |
+|   Oxy apps (Mention, Homiio, …) + third-party OAuth apps         |
 +-----------------------------------------------------------------+
 |                                                                  |
 |   +-------------------+              +-------------------+       |
-|   |  Oxy Accounts     |              |  Oxy SDK          |       |
+|   |  Commons by Oxy   |              |  Oxy SDK          |       |
 |   |  (Native App)     |              |  (npm packages)   |       |
 |   |                   |              |                    |       |
 |   |  - KeyManager     |   signs ->   |  @oxyhq/core      |       |
-|   |  - Recovery       |   challenges |  @oxyhq/auth      |       |
-|   |  - QR Transfer    |              |  @oxyhq/services  |       |
+|   |  - Recovery       |   challenges |  @oxyhq/services  |       |
+|   |  - QR approve     |              |  @oxyhq/contracts |       |
 |   +---------+---------+              +---------+----------+       |
 |             |                                  |                  |
-|             |  Public Key                      |  API Calls       |
-|             |  + Signature                     |  + Tokens        |
+|             |  Public Key                      |  API calls       |
+|             |  + Signature                     |  + Bearer tokens |
 |             v                                  v                  |
 |   +---------------------------------------------------------+    |
 |   |                      api.oxy.so                          |    |
 |   |                                                          |    |
 |   |  - Challenge-Response Auth    - Password Auth            |    |
-|   |  - Session Management         - Social Auth (OAuth)      |    |
-|   |  - Device-first (oxy_device)  - User Linking             |    |
+|   |  - DeviceSession authority    - Social Auth (OAuth)      |    |
+|   |  - Device-first transport     - User Linking             |    |
+|   |  - OAuth authorize/token      - session_state socket     |    |
 |   +----------------------------+-----------------------------+    |
 |                                |                                  |
 |                                v                                  |
 |   +---------------------------------------------------------+    |
 |   |                       MongoDB                            |    |
-|   |                                                          |    |
-|   |  Users: { publicKey?, email?, username?, password?,      |    |
-|   |          linkedAccounts?, authMethods[] }                |    |
+|   |  Users, Sessions, DeviceSessions, Applications, Grants   |    |
 |   +---------------------------------------------------------+    |
-|                                                                  |
 +-----------------------------------------------------------------+
 ```
 
@@ -133,14 +136,15 @@ OxyHQServices/
 
 ## Identity System
 
-> **IMPORTANT**: Identity (private key storage) exists ONLY in the Oxy Accounts app.
-> The Oxy SDK packages handle authentication but NOT identity storage.
+> **IMPORTANT**: Identity (private key storage) exists ONLY in the Commons by Oxy app.
+> The Oxy SDK packages handle authentication but NOT identity storage. The Accounts
+> app is keyless and management-only.
 
 ### Where Identity Lives
 
 | Component | Identity Storage | Signing | Verification |
 |-----------|-----------------|---------|--------------|
-| accounts app | KeyManager (expo-secure-store) | Yes | Yes |
+| Commons app | KeyManager (expo-secure-store) | Yes | Yes |
 | @oxyhq/core | None | No | Yes (SignatureService.verify) |
 | api.oxy.so | None | No | Yes (server-side) |
 
@@ -154,7 +158,7 @@ OxyHQServices/
 ### Identity Lifecycle
 
 ```
-1. CREATE IDENTITY (in Oxy Accounts app)
+1. CREATE IDENTITY (in Commons by Oxy app)
    +--------------------------------------------------------------+
    |  1. Generate ECDSA keypair locally (works offline)           |
    |  2. Store private key in expo-secure-store                   |
@@ -166,17 +170,16 @@ OxyHQServices/
 2. AUTHENTICATE (sign in to any app)
    +--------------------------------------------------------------+
    |  1. App requests challenge from api.oxy.so                   |
-   |  2. Oxy Accounts app signs challenge with private key        |
+   |  2. Commons app signs challenge with private key             |
    |  3. Server verifies signature matches registered publicKey   |
    |  4. Server creates session, returns JWT tokens               |
    +--------------------------------------------------------------+
 
-3. TRANSFER TO NEW DEVICE (via QR code)
+3. TRANSFER TO NEW DEVICE (via recovery phrase)
    +--------------------------------------------------------------+
-   |  1. Old device: Shows QR with encrypted recovery phrase      |
-   |  2. New device: Scans QR, decrypts recovery phrase           |
-   |  3. New device: Restores keypair from recovery phrase        |
-   |  4. New device: Can now sign as the same identity            |
+   |  1. New device: Enter (or scan) recovery phrase              |
+   |  2. New device: Restores keypair from recovery phrase        |
+   |  3. New device: Can now sign as the same identity            |
    +--------------------------------------------------------------+
 ```
 
@@ -185,14 +188,14 @@ OxyHQServices/
 Crypto utilities are exported from `@oxyhq/core`. They handle **signature verification** and **utilities**, NOT key storage:
 
 ```typescript
-// In Oxy Accounts app (has full KeyManager)
+// In Commons by Oxy app (has full KeyManager)
 import { KeyManager, SignatureService, RecoveryPhraseService } from '@oxyhq/core';
 
-// Generate identity (only in accounts app)
+// Generate identity (only in Commons)
 const publicKey = await KeyManager.createIdentity();
 const { phrase, words } = await RecoveryPhraseService.generateIdentityWithRecovery();
 
-// Sign challenges (only in accounts app)
+// Sign challenges (only in Commons)
 const signature = await SignatureService.sign(challenge);
 
 // -----------------------------------------------------------------
@@ -204,84 +207,122 @@ import { SignatureService } from '@oxyhq/core';
 const isValid = await SignatureService.verify(message, signature, publicKey);
 ```
 
+For the DID layer, signed records, and verifiable credentials built on top of
+this, see [identity/README.md](./identity/README.md).
+
+---
+
+## Sessions — Device-First Model
+
+Sessions are **device-first**: the browser/device carries a durable device
+identity, and the server — not the client — is the authority for which accounts
+are signed in on that device. The full reference lives in
+[SESSION-ARCHITECTURE.md](./SESSION-ARCHITECTURE.md) and
+[auth/device-session.md](./auth/device-session.md); the short version:
+
+### Transport (current)
+
+- A durable, first-party **`oxy_device` cookie** (`Domain=.oxy.so`, opaque
+  secret — the server stores only a hash) identifies the device.
+- A **persisted rotating refresh-token family** backs token renewal
+  (`POST /auth/refresh-token`).
+- Cross-apex web boot uses the **`#oxy_boot` bootstrap fragment**:
+  `GET /auth/device/bootstrap` plants the device cookie and returns a
+  single-use code, which the app burns via `POST /auth/device/exchange`.
+
+> **Status:** this transport is **frozen by decision** until the dedicated
+> transport workshop ("workshop 2c"). A future zero-cookie transport
+> (per-origin device secret mint) is a *pending design goal only* — do not
+> document or implement it as current behavior.
+
+### Server authority
+
+- **`DeviceSession`** model (collection `devicesessions`): `deviceId`,
+  `accounts[{ accountId, sessionId, authuser, operatedByUserId? }]`,
+  `activeAccountId`, `revision`.
+- REST: `GET /session/device/state`, `POST /session/device/add`,
+  `POST /session/device/switch`, `POST /session/device/signout`.
+- Sync: Socket.IO room `device:<deviceId>` (derived from the JWT claim, never
+  from the client) emits **`session_state`** with a token-free payload — every
+  app on the same device converges instantly on add/switch/sign-out.
+- Client: **`SessionClient`** in `@oxyhq/core` (`packages/core/src/session/`)
+  consumes the state, projects it for UI, and drives the cold boot
+  (`runSessionColdBoot`).
+
+The legacy browser-federation stack (FedCM, silent iframes, top-level SSO
+bounce flows, IdP session cookies, per-app callback routes) was **removed
+ecosystem-wide** — none of it exists in the codebase or the product anymore.
+
 ---
 
 ## Authentication Methods
 
-Oxy supports multiple authentication methods that ALL map to the same user account:
+Oxy supports multiple authentication methods that ALL map to the same user account.
+The full guide is [AUTHENTICATION.md](./AUTHENTICATION.md).
 
-### 1. Identity (Passwordless)
+### 1. Identity (Passwordless, Commons-first)
 
-Primary method using cryptographic keypair. The phone IS the password.
+Primary method using the cryptographic keypair. The phone IS the password.
 
-```typescript
-// From third-party app - show Sign In with Oxy button
+```tsx
 import { OxySignInButton } from '@oxyhq/services';
 
 function LoginScreen() {
-  return <OxySignInButton variant="contained" text="Sign in with Oxy" />;
+  return <OxySignInButton />;
 }
-
-// This opens Oxy Accounts app via deep link or shows QR code
-// User authorizes in accounts app -> session created
 ```
 
-**Flow**:
-1. App creates auth session -> gets sessionToken + QR code
-2. User scans QR or opens Oxy Accounts app via deep link
-3. Oxy Accounts app signs authorization with private key
-4. Server verifies, links session to user
-5. Original app receives session via polling
+`OxySignInButton` resolves the app's registered `Application` via
+`GET /auth/oauth/client/:clientId`:
+
+- **Official Oxy apps** (`first_party` / `internal` / `system` / `isOfficial`)
+  → opens the in-app **`OxyAccountDialog`** (Bloom
+  `<Dialog placement={{ base: 'bottom', md: 'center' }}>`): account switcher,
+  Commons QR / deep-link sign-in, and a collapsed password form.
+- **Third-party apps** (`type: third_party`) → standard **OAuth redirect to
+  `auth.oxy.so/authorize` with PKCE** (`generatePkcePair`,
+  `generateOAuthState`, `buildOAuthAuthorizeUrl` from `@oxyhq/core`). See
+  [auth/integration-guide.md](./auth/integration-guide.md).
+
+**Identity flow** (QR / cross-device):
+1. App creates an auth session → gets a secret `sessionToken` + a public QR code
+2. User scans the QR with Commons (or the deep link opens Commons on-device)
+3. Commons signs the authorization with the private key
+4. Server verifies, links the session to the user
+5. Original app receives the session (socket/polling)
 
 ### 2. Password (Traditional)
 
-For web users who prefer traditional login:
+For users who prefer traditional login — surfaced inside the same sign-in
+dialog under "Sign in without the app":
 
 ```typescript
 import { OxyServices } from '@oxyhq/core';
 
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-// Web login form
-const session = await oxy.signIn({
-  email: 'user@example.com',
-  password: 'secret123',
-});
+const session = await oxy.signIn('user@example.com', 'secret123');
 ```
 
 **Requirements**:
 - User must have set email + password on their account
-- Can be added to existing identity account via account linking
+- Can be added to an existing identity account via account linking
 
-### 3. Device-first cross-domain SSO (no FedCM, no popup, no redirect)
+### 3. Third-party OAuth ("Sign in with Oxy")
 
-`WebOxyProvider` restores an existing session automatically on load — no
-browser identity-federation API involved. A same-apex reload uses an inline
-credentialed fetch; a different-apex app takes exactly one top-level
-round-trip to the API and back, ever, per browser+origin. See
-[Cross-Domain Authentication](./CROSS_DOMAIN_AUTH.md) for the full mechanism.
+Apps outside the Oxy ecosystem integrate via standard OAuth 2.0 Authorization
+Code + PKCE against `auth.oxy.so`, with a consent screen (`OxyConsentScreen`
+from `@oxyhq/services`) and per-app grants revocable from Accounts →
+Connected apps. `Application` records carry `privacyPolicyUrl` / `termsUrl`
+for the consent surface. Full walkthrough:
+[auth/integration-guide.md](./auth/integration-guide.md).
 
-```typescript
-import { useAuth } from '@oxyhq/auth';
+### The IdP is not an RP
 
-function LoginButton() {
-  const { signIn, isAuthenticated } = useAuth();
-
-  // Cross-domain restore already ran automatically on mount; signIn() only
-  // opens the in-app modal for a user with no existing session anywhere.
-  return (
-    <button onClick={signIn}>
-      {isAuthenticated ? 'Signed in' : 'Sign in with Oxy'}
-    </button>
-  );
-}
-```
-
-### 4. In-app sign-in modal
-
-When there's no session to restore, `signIn()` opens the in-app "Sign in with
-Oxy" modal — password + 2FA, or the QR/Commons handoff. It never navigates the
-page away.
+`auth.oxy.so` (packages/auth) is the OAuth authorize/consent IdP. It mounts
+`OxyProvider` from `@oxyhq/services` with **`coldBoot={false}`** — IdP mode,
+no session authority — purely to reuse the shared sign-in and consent UI.
+Account management lives exclusively on **accounts.oxy.so**; the IdP's
+`/settings/*` routes permanently redirect there.
 
 ---
 
@@ -300,7 +341,7 @@ Users can have **multiple auth methods** linked to the **same account**.
 
 ```typescript
 // Link identity to existing password account
-POST /api/auth/link
+POST /auth/link
 Headers: { Authorization: "Bearer <jwt>" }  // Must be logged in
 Body: {
   type: "identity",
@@ -310,7 +351,7 @@ Body: {
 }
 
 // Link password to existing identity account
-POST /api/auth/link
+POST /auth/link
 Headers: { Authorization: "Bearer <jwt>" }
 Body: {
   type: "password",
@@ -319,44 +360,12 @@ Body: {
 }
 
 // Get linked auth methods
-GET /api/auth/methods
+GET /auth/methods
 Headers: { Authorization: "Bearer <jwt>" }
-Response: {
-  methods: [
-    { type: "identity", publicKey: "04abc...", linkedAt: "2024-01-15T..." },
-    { type: "password", email: "user@example.com", linkedAt: "2024-01-20T..." }
-  ]
-}
 
 // Unlink auth method (must keep at least one)
-DELETE /api/auth/link/:type
+DELETE /auth/link/:type
 Headers: { Authorization: "Bearer <jwt>" }
-```
-
-### Database Schema for Linking
-
-```javascript
-// User document
-{
-  _id: ObjectId,
-
-  // Primary identifiers (all optional, sparse unique indexes)
-  publicKey: "04abc...",     // ECDSA secp256k1 public key
-  email: "user@example.com",
-  username: "johndoe",
-
-  // Auth credentials
-  password: "hashed...",     // bcrypt hash (select: false)
-
-  // Auth methods tracking
-  authMethods: [
-    { type: "identity", linkedAt: Date, primaryPublicKey: "04abc..." },
-    { type: "password", linkedAt: Date, email: "user@example.com" },
-    { type: "google", linkedAt: Date, googleId: "123..." },
-  ],
-
-  // Profile data...
-}
 ```
 
 ### Linking Rules
@@ -370,58 +379,61 @@ Headers: { Authorization: "Bearer <jwt>" }
 
 ## API Reference
 
-### Authentication Endpoints
+Paths below are as mounted in `packages/api/src/server.ts` (no `/api` prefix).
+
+### Authentication
 
 ```
-POST /api/auth/register           # Register with publicKey (identity)
-POST /api/auth/signup             # Register with email/password
-POST /api/auth/login              # Login with email/password
-POST /api/auth/challenge          # Get challenge for identity auth
-POST /api/auth/verify             # Verify signed challenge
-
-GET  /api/auth/validate           # Validate current token
-GET  /api/auth/check-username/:u  # Check username availability
-GET  /api/auth/check-email/:e     # Check email availability
-GET  /api/auth/check-publickey/:p # Check publicKey registration
+POST /auth/register               # Register with publicKey (identity)
+POST /auth/signup                 # Register with email/password
+POST /auth/login                  # Login with email/password
+POST /auth/challenge              # Get challenge for identity auth
+POST /auth/verify                 # Verify signed challenge
 ```
 
-### Session Endpoints
+### Device-first transport
 
 ```
-POST /api/session/register        # Create session (identity)
-POST /api/session/login           # Create session (password)
-GET  /api/session/user/:id        # Get user by session
-GET  /api/session/validate/:id    # Validate session
-POST /api/session/logout/:id      # Logout specific session
-POST /api/session/logout-all/:id  # Logout all sessions
+GET  /auth/device/bootstrap       # Cross-apex hop target: plants oxy_device, returns a #oxy_boot fragment
+POST /auth/device/web-session     # Same-site fast path: exchange oxy_device cookie for tokens, no redirect
+POST /auth/device/exchange        # Burn a single-use boot code for tokens
+POST /auth/refresh-token          # Rotate the persisted refresh-token family
+POST /auth/device/token           # Bearer-gated: issue the native-channel device token
+POST /auth/device/resolve         # X-Oxy-Internal-gated device-set feed (IdP account chooser)
 ```
 
-### Cross-App Auth (QR Flow)
+### Device session authority
 
 ```
-POST /api/auth/session/create           # Create auth session (for QR)
-GET  /api/auth/session/status/:token    # Poll session status
-POST /api/auth/session/authorize/:token # Authorize from accounts app
-POST /api/auth/session/cancel/:token    # Cancel auth session
+GET  /session/device/state        # Token-free DeviceSessionState for this device
+POST /session/device/add          # Add the bearer's account to the device set
+POST /session/device/switch       # Set activeAccountId (revision++)
+POST /session/device/signout      # Remove one account or all (revision++)
 ```
 
-### Device-First Endpoints
+### Cross-app sign-in (QR / Commons handoff)
 
 ```
-GET  /auth/device/bootstrap             # Cross-apex hop target: plants oxy_device, returns a #oxy_boot fragment
-POST /auth/device/web-session           # Same-site fast path: exchange oxy_device cookie for tokens, no redirect
-POST /auth/device/exchange              # Burn a single-use boot code for tokens
-POST /auth/refresh-token                # Rotate the persisted refresh-token family
-POST /auth/device/token                 # Bearer-gated: issue the native-channel device token
-POST /auth/device/resolve               # X-Oxy-Internal-gated device-set feed (IdP account chooser)
+POST /auth/session/create                     # Create auth session (QR payload + authorizeCode)
+GET  /auth/session/status/:sessionToken       # Poll session status
+GET  /auth/session/approve-info/:authorizeCode  # Public Application identity for the approve screen
+POST /auth/session/authorize-signed/:authorizeCode  # Key-signed approval from Commons
+POST /auth/session/deny/:authorizeCode        # Deny/cancel
 ```
 
-### User Linking Endpoints
+### OAuth (third party) + linking
 
 ```
-POST   /api/auth/link                   # Link new auth method
-GET    /api/auth/methods                # Get linked auth methods
-DELETE /api/auth/link/:type             # Unlink auth method
+POST   /auth/oauth/authorize      # Mint single-use authorization code (IdP, Bearer)
+POST   /auth/oauth/token          # Code → tokens (PKCE or confidential)
+GET    /auth/oauth/consent        # Consent decision for the current user + client
+GET    /auth/oauth/client/:clientId  # Public Application metadata
+GET    /auth/grants               # Connected apps
+DELETE /auth/grants/:applicationId   # Revoke a grant
+
+POST   /auth/link                 # Link new auth method
+GET    /auth/methods              # Get linked auth methods
+DELETE /auth/link/:type           # Unlink auth method
 ```
 
 ---
@@ -440,7 +452,6 @@ DELETE /api/auth/link/:type             # Unlink auth method
 
   // Auth
   password: String,            // bcrypt hash, select: false
-  refreshToken: String,        // select: false
   twoFactorAuth: {
     enabled: Boolean,
     secret: String,            // TOTP secret, select: false
@@ -456,7 +467,7 @@ DELETE /api/auth/link/:type             # Unlink auth method
   }],
 
   // Profile
-  name: { first: String, last: String },
+  name: { first: String, last: String, displayName: String },  // displayName optional
   bio: String,
   avatar: String,              // file ID
   verified: Boolean,
@@ -494,12 +505,30 @@ DELETE /api/auth/link/:type             # Unlink auth method
 }
 ```
 
-### AuthSession Collection (for QR flow)
+### DeviceSession Collection (server session authority)
 
 ```javascript
 {
   _id: ObjectId,
-  sessionToken: String,        // unique, short-lived
+  deviceId: String,            // unique
+  accounts: [{
+    accountId: ObjectId,       // ref: User
+    sessionId: ObjectId,       // ref: Session
+    authuser: Number,          // stable per-device slot index
+    operatedByUserId: ObjectId // set for managed/org accounts (audit)
+  }],
+  activeAccountId: ObjectId,   // ref: User, nullable
+  cookieKeyHash: String,       // sha256 of the opaque oxy_device cookie value (sparse unique)
+  revision: Number             // bumped on every mutation; drives socket sync
+}
+```
+
+### AuthSession Collection (QR / cross-app flow)
+
+```javascript
+{
+  _id: ObjectId,
+  sessionToken: String,        // unique, short-lived, NEVER in the QR
   status: String,              // 'pending' | 'authorized' | 'expired' | 'cancelled'
   appId: String,
   userId: ObjectId,            // set when authorized
@@ -527,31 +556,35 @@ DELETE /api/auth/link/:type             # Unlink auth method
 - **Single-use**: Challenges marked used after verification
 - **Replay protection**: Timestamp included in signed message
 
-### Token Security
+### Token & Device Security
 
-- **JWT tokens**: Short-lived access tokens (15 min)
-- **Refresh tokens**: Long-lived, stored securely, rotated on use
+- **JWT tokens**: Short-lived access tokens
+- **Refresh-token family**: Persisted and rotated on use; reuse of a burned
+  token revokes the family
+- **Opaque device cookie**: the `oxy_device` value reveals nothing about the
+  deviceId; the server stores only its hash
+- **Token-free sync**: the `session_state` socket payload never contains tokens
 - **Session binding**: Tokens bound to device fingerprint
 
 ### Best Practices
 
 1. **Recovery phrase**: Users MUST save their recovery phrase
 2. **2FA**: Encourage enabling TOTP 2FA for password accounts
-3. **Session management**: Review active sessions regularly
+3. **Session management**: Review active sessions in Accounts regularly
 4. **Device trust**: Mark trusted devices, alert on new devices
 
 ---
 
 ## Quick Start
 
-### For Expo/React Native Apps
+One provider for every platform — Expo, React Native, and web (RN Web):
 
 ```tsx
 import { OxyProvider, useAuth } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so" clientId={process.env.OXY_CLIENT_ID}>
       <YourApp />
     </OxyProvider>
   );
@@ -561,111 +594,36 @@ function LoginScreen() {
   const { signIn, user, isAuthenticated } = useAuth();
 
   if (isAuthenticated) {
-    return <Text>Welcome, {user.displayName}</Text>;
+    return <Text>Welcome, {user?.name?.displayName}</Text>;
   }
 
-  return <Button onPress={signIn} title="Sign In" />;
+  // Cold boot already restored an existing device session silently.
+  // signIn() opens the OxyAccountDialog — it never redirects the page.
+  return <Button onPress={() => signIn()} title="Sign in with Oxy" />;
 }
 ```
 
-### For Web Apps (React, Next.js, Vite)
-
-```tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/auth';
-
-function App() {
-  return (
-    <WebOxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
-    </WebOxyProvider>
-  );
-}
-
-function LoginButton() {
-  const { signIn, isLoading } = useAuth();
-
-  return (
-    <button onClick={signIn} disabled={isLoading}>
-      Sign in with Oxy
-    </button>
-  );
-}
-```
-
-### For Node.js/Backend
+### For Node.js / Backend
 
 ```typescript
-import { OxyServices, SignatureService } from '@oxyhq/core';
+import { OxyServices } from '@oxyhq/core';
+import { createOxyAuthMiddleware, getRequiredOxyUserId } from '@oxyhq/core/server';
 
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-// Verify user signature on backend
-function verifyRequest(publicKey: string, data: any, signature: string, timestamp: number) {
-  const age = Date.now() - timestamp;
-  if (age > 5 * 60 * 1000) throw new Error('Request expired');
-
-  const isValid = SignatureService.verifyRequestSignature(publicKey, data, signature, timestamp);
-  if (!isValid) throw new Error('Invalid signature');
-
-  return true;
-}
+app.use('/api', createOxyAuthMiddleware(oxy)); // validates Authorization: Bearer
 ```
 
----
-
-## Migration
-
-### From Password-Only to Identity
-
-```typescript
-// 1. User is logged in with password
-// 2. Open Oxy Accounts app, create identity
-// 3. In your app, link identity:
-
-const linkResponse = await fetch('/api/auth/link', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    type: 'identity',
-    publicKey: await KeyManager.getPublicKey(),
-    signature: await SignatureService.createLinkSignature(),
-    timestamp: Date.now(),
-  }),
-});
-
-// Now user can sign in with either method
-```
-
-### From Identity-Only to Password
-
-```typescript
-// 1. User is logged in with identity
-// 2. Add email and password:
-
-const linkResponse = await fetch('/api/auth/link', {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    type: 'password',
-    email: 'user@example.com',
-    password: 'newpassword123',
-  }),
-});
-
-// Now user can sign in with either method
-```
+Never hand-roll bearer parsers or auth interceptors — `@oxyhq/core/server`
+owns request identity; RP frontends calling their own backend use
+`oxyServices.createLinkedClient({ baseURL })`.
 
 ---
 
 ## Related Documentation
 
-- [Cross-Domain Auth](./CROSS_DOMAIN_AUTH.md) - device-first SSO (oxy_device cookie + rotating refresh, native shared-keychain)
-- [Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md) - Detailed crypto docs
-- [Services Package](../packages/services/README.md) - Full package documentation
-- [API Package](../packages/api/README.md) - Backend API documentation
+- [SESSION-ARCHITECTURE.md](./SESSION-ARCHITECTURE.md) — device-first session architecture in depth
+- [AUTHENTICATION.md](./AUTHENTICATION.md) — auth integration guide (Expo, Web, Node, WebSockets)
+- [auth/device-session.md](./auth/device-session.md) — DeviceSession API, socket events, multi-account
+- [auth/integration-guide.md](./auth/integration-guide.md) — "Sign in with Oxy" for third-party apps (OAuth + PKCE)
+- [identity/README.md](./identity/README.md) — DID documents, signed records, verifiable credentials
+- [architecture/oxy-auth-platform.md](./architecture/oxy-auth-platform.md) — the auth platform master plan

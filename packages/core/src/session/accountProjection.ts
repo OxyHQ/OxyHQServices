@@ -5,7 +5,7 @@
  * merging the device's server-authoritative session set (`DeviceSessionState`
  * from {@link SessionClient}) with the caller's account graph (`AccountNode[]`
  * from `oxyServices.listAccounts()`), deduped by `accountId`. This lives in
- * `@oxyhq/core` so `@oxyhq/services` (RN) and `@oxyhq/auth` (web) — and
+ * `@oxyhq/core` so every `@oxyhq/services` platform variant — and
  * `auth.oxy.so` — all render the SAME list from the SAME logic and cannot
  * diverge.
  *

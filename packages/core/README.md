@@ -2,8 +2,6 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 3.4.16**
-
 ## Installation
 
 ```bash
@@ -13,7 +11,8 @@ bun add @oxyhq/core
 ## Contents
 
 - **OxyServices API client** — all API methods for interacting with OxyHQ services
-- **AuthManager, CrossDomainAuth** — authentication and cross-domain session handling
+- **Device-first session engine** — `SessionClient` (`src/session/`), `runSessionColdBoot`, and the device-session mixin that back `OxyProvider` in `@oxyhq/services`
+- **OAuth helpers** — `generatePkcePair`, `generateOAuthState`, `buildOAuthAuthorizeUrl` for third-party "Sign in with Oxy" (see [docs/auth/integration-guide.md](../../docs/auth/integration-guide.md))
 - **Crypto** — KeyManager, SignatureService, RecoveryPhraseService
 - **Models and types** — User, ApiError, ClientSession, and more
 - **i18n** — translate function and locale files
@@ -21,30 +20,60 @@ bun add @oxyhq/core
 - **Platform detection utilities**
 - **Device management**
 - **Linked clients** for app backends that need the active Oxy bearer token
-- **User identity contracts and handle normalization** so SDK user payloads expose required `id`/`displayName` fields and apps build local/federated profile handles consistently
+- **User identity contracts and handle normalization** so apps render display names and build local/federated profile handles consistently
 - **Server middleware** for Express request identity and per-user rate limiting
 
 ## Exports
 
 The package exposes two public entry points:
 
-- `@oxyhq/core` — main entry (API client, auth, crypto, models, shared utilities, i18n, platform, device)
-- `@oxyhq/core/server` — Express-only helpers (`createOxyRateLimit`, `createOxyAuthMiddleware`, `requireOxyAuth`, `getOxyUserId`, `getRequiredOxyUserId`, and request types)
+- `@oxyhq/core` — main entry (API client, session, crypto, models, shared utilities, i18n, platform, device)
+- `@oxyhq/core/server` — Express-only helpers (`createOxyRateLimit`, `createOxyAuthMiddleware`, `requireOxyAuth`, `getOxyUserId`, `getRequiredOxyUserId`, `createOxyCors`, `safeFetch`, `verifySecret`, and request types)
 
-All client/runtime symbols (including `KeyManager`, `SignatureService`, `RecoveryPhraseService`, and the shared color / theme / error / network / debug helpers) are re-exported from the package root. Server-only Express helpers live under `@oxyhq/core/server` so React Native and browser bundles never import Express.
+All client/runtime symbols (including `SessionClient`, `KeyManager`, `SignatureService`, `RecoveryPhraseService`, and the shared color / theme / error / network / debug helpers) are re-exported from the package root. Server-only Express helpers live under `@oxyhq/core/server` so React Native and browser bundles never import Express.
 
 ## Usage
 
 ```ts
-import { OxyServices, oxyClient, KeyManager, SignatureService } from '@oxyhq/core';
+import { OxyServices, oxyClient, KeyManager } from '@oxyhq/core';
 import type { User, ApiError } from '@oxyhq/core';
 
 // Get user
 const user = await oxyClient.getUserById('123');
 
-// Crypto
-const keyManager = new KeyManager();
+// Crypto (KeyManager methods are static)
+const hasIdentity = await KeyManager.hasIdentity();
 ```
+
+## Device-First Sessions
+
+The session authority is the server-side `DeviceSession` (one document per device: signed-in accounts + active account + revision). `@oxyhq/core` owns the whole client side of that contract:
+
+- **`SessionClient`** (`src/session/`) — reads `GET /session/device/state`, mutates via `POST /session/device/{add,switch,signout}`, and applies `session_state` socket pushes (room `device:<deviceId>`, token-free payload) so every app on the same device stays in sync.
+- **`runSessionColdBoot`** (`src/boot/coldBootV2.ts`) — the ordered, short-circuit cold-boot runner used by `OxyProvider`. It restores silently from device state or resolves to logged-out; it NEVER auto-redirects to a login page.
+- **Boot handoff** — `GET /auth/device/bootstrap` → `#oxy_boot` fragment → `POST /auth/device/exchange` (single-use, origin-bound code) lets a first visit on a sibling origin adopt the existing device session.
+
+The current transport is a durable first-party `oxy_device` cookie (`Domain=.oxy.so`, opaque secret — never the deviceId) plus a persisted rotating refresh-token family. This transport is frozen by decision; a cookie-free `deviceSecret` mint is a pending design goal, not current behavior. Full contract: [docs/auth/device-session.md](../../docs/auth/device-session.md).
+
+Consumers never build session restore themselves — mount `OxyProvider` from `@oxyhq/services` with a registered `clientId`.
+
+## OAuth Helpers (third party)
+
+Third-party apps sign users in with standard OAuth 2.0 Authorization Code + PKCE against `auth.oxy.so`:
+
+```ts
+import { generatePkcePair, generateOAuthState, buildOAuthAuthorizeUrl } from '@oxyhq/core';
+
+const [pkce, state] = await Promise.all([generatePkcePair(), generateOAuthState()]);
+const url = buildOAuthAuthorizeUrl({
+  clientId: 'oxy_dk_…',
+  redirectUri: 'https://merchant.example/auth/callback',
+  codeChallenge: pkce.codeChallenge,
+  state,
+});
+```
+
+`OxySignInButton` in `@oxyhq/services` uses these internally when the resolved Application is `third_party`. See [docs/auth/integration-guide.md](../../docs/auth/integration-guide.md).
 
 ## User Identity And Handles
 
@@ -58,10 +87,10 @@ const id = getNormalizedUserId(user);
 const normalizedUser = normalizeUserIdentity(user);
 ```
 
-`User.displayName` is a required API contract. The API composes it server-side
-from the structured name when present, otherwise from the username/server
-fallback. UI consumers should render `displayName` directly instead of rebuilding
-names from `name.first`, `name.last`, `name.full`, or `username`.
+`User.name.displayName` is **optional** — federated or unresolved actors routinely
+omit it. Render it directly when present; when absent, fall back to the
+normalized handle (`displayName ?? handle`). Never rebuild names from
+`name.first`, `name.last`, `name.full`, or `username`.
 
 For profile display/routing, use `getNormalizedUserHandle()`. It strips a
 leading `@`, preserves an existing `user@instance` handle, and appends
@@ -93,7 +122,7 @@ Linked clients send the current Oxy bearer token for authenticated requests.
 State-changing bearer requests do not fetch app-local CSRF tokens; cookie-only
 writes still use CSRF.
 
-**GET response caching is OFF by default for linked clients** (since 3.9.0). The
+**GET response caching is OFF by default for linked clients.** The
 SDK's per-instance GET cache is only safe on the canonical `OxyServices` client,
 where every mutation (`updateProfile`, `followUser`, `blockUser`, …) busts the
 matching cached GET. A linked client targets the consuming app's own backend,
@@ -145,7 +174,9 @@ using backend-specific fields.
 bun run build
 ```
 
-Compiles with TypeScript, producing CJS, ESM, and type declaration outputs.
+Compiles with TypeScript, producing CJS, ESM, and type declaration outputs. The
+ESM build must never contain `require()` calls — use `await import()` for
+optional/platform-specific modules.
 
 ## KeyManager Safety
 
@@ -153,13 +184,6 @@ Compiles with TypeScript, producing CJS, ESM, and type declaration outputs.
 - `restoreIdentityFromBackup()` treats keychain-read exceptions as transient — never clobbers a healthy-but-locked primary. Rejects mismatched backups (dual mismatch guards).
 - `deleteIdentity(skipBackup=false, force=false, userConfirmed=false)` — `force=true` also deletes the backup slot.
 
-## FedCM (`OxyServices.fedcm.ts`)
-
-- Use W3C-spec `mode` enum: `'active'` / `'passive'`. Do NOT use legacy `'button'` / `'widget'` (Chrome throws TypeError).
-- Client sends `'active'` first, transparently retries with legacy value for Chrome 125–131 backwards compat.
-- Token exchange requires a server-minted nonce from `POST /fedcm/nonce` — local UUID nonces are rejected.
-- **Silent SSO guard is NOT here**: a module-level singleton in core was tried and reverted — it re-evaluates in the Metro web bundle so the guard did not hold. The guard lives in the consumer hooks (`useWebSSO` in `@oxyhq/services` and `@oxyhq/auth`) and in `WebOxyProvider`. Do NOT move it back into a core module-level singleton.
-
 ## `verifyChallenge` Token Planting
 
-`OxyServices.verifyChallenge()` calls `setTokens(accessToken, refreshToken ?? '')` internally before returning. Callers do not need to plant tokens manually after `verifyChallenge` — the SDK handles it.
+`OxyServices.verifyChallenge()` plants the freshly-minted access token internally before returning. Callers do not need to plant tokens manually after `verifyChallenge` — the SDK handles it.

@@ -13,10 +13,14 @@
 OxyHQServices (`@oxyhq/sdk`, a private Bun-workspaces + Turbo monorepo) is the
 **platform layer** for the entire Oxy ecosystem. It is four products in one repo:
 
-1. **An identity provider** (`auth.oxy.so`) and a **backend API** (`api.oxy.so`).
-2. **A client SDK** (`@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`,
-   `@oxyhq/contracts`) that every Oxy app (Mention, Allo, Homiio, Syra, accounts,
+1. **An identity provider** (`auth.oxy.so` — third-party OAuth authorize/consent
+   only) and a **backend API** (`api.oxy.so` — the session authority).
+2. **A client SDK** (`@oxyhq/core`, `@oxyhq/services`, `@oxyhq/contracts`,
+   `@oxyhq/protocol`) that every Oxy app (Mention, Allo, Homiio, Syra, accounts,
    console, inbox, …) consumes for auth, session, profiles, payments, and media.
+   `@oxyhq/services` is the **single UI SDK** — `OxyProvider` serves Expo,
+   React Native, and web (React Native Web) alike; there is no separate
+   web-only auth package.
 3. **A self-sovereign identity layer** — "Oxy ID": `did:web` documents,
    cryptographically signed records (a per-user hash chain), verifiable
    credentials, and proof-of-personhood, surfaced through the native-only
@@ -36,41 +40,38 @@ node, and in any third-party verifier — using the exact same `@oxyhq/core` cod
 ```
 packages/
   contracts/      @oxyhq/contracts   Zod API contracts (zero React/RN/Expo; only zod)
-  core/           @oxyhq/core        Platform-agnostic foundation (client + /server)
-  auth-sdk/       @oxyhq/auth        Web auth SDK (React hooks, WebOxyProvider)
-  services/       @oxyhq/services    Expo/React Native SDK (OxyProvider, screens, sheets)
+  protocol/       @oxyhq/protocol    Signed-record envelope, canonical JSON, platform crypto
+  core/           @oxyhq/core        Platform-agnostic foundation (client + SessionClient + /server)
+  services/       @oxyhq/services    The single UI SDK (OxyProvider — Expo/RN/RN Web)
   api/            @oxyhq/api         Express.js backend (api.oxy.so) — PRIVATE
   node/           @oxyhq/node        Self-hostable personal data-node server — PRIVATE
-  auth/           (web IdP)          Standalone Vite+Hono IdP app (auth.oxy.so) — PRIVATE
+  auth/           (web IdP)          auth.oxy.so — OAuth authorize/consent IdP (Vite + RN Web,
+                                     mounts OxyProvider with coldBoot={false}) — PRIVATE
   accounts/                          Expo "Accounts by Oxy" — keyless, management-only
-  commons/                          Expo "Commons by Oxy" — NATIVE-ONLY identity vault
+  commons/                           Expo "Commons by Oxy" — NATIVE-ONLY identity vault
   inbox/   console/                  Web apps (email, developer console)
-  test-app-expo/  test-app-vite/     Playgrounds
-  oxy-main-domain/                   oxy.so marketing/web
+  expo-splash/    @oxyhq/expo-splash Shared native-splash toolkit for Oxy Expo apps
+  test-app-expo/                     Playground
 ```
 
-### Versions (in-tree workspace vs published)
+The former web-only auth SDK package was **deleted from the monorepo** — its
+provider and hooks were merged into `@oxyhq/services`, which web apps consume
+through React Native Web.
 
-The in-tree `package.json` versions run ahead of npm because the Oxy ID / nodes /
-SSO work has not all been published yet. Internal packages consume each other as
-`workspace:*` (NOT `^x`) so they always resolve TypeScript **source**, not stale
-published types.
+### Versions and publishing
 
-| Package | In-tree | Latest published (npm) | Notes |
-|---|---|---|---|
-| `@oxyhq/contracts` | `0.4.0` | `0.3.0` | 0.4.0 adds the civic types; published only when an external app needs them |
-| `@oxyhq/core` | `3.15.0` | `3.11.0` | 3.12–3.15 added `getUserMutuals`, the nodes mixin, SSO bounce gating |
-| `@oxyhq/auth` (auth-sdk) | `6.0.0` | `5.1.1` | 6.0.0 = SSO bounce gating / `disableAutoSso` removal |
-| `@oxyhq/services` | `12.0.0` | `11.1.0` | 12.0.0 = SSO bounce gating |
-| `@oxyhq/api` | `1.0.3` | — (private) | deploys from source via Docker |
-| `@oxyhq/node` | `0.1.0` | — (private) | self-hosted by users; Docker + Caddy |
-| `auth` (web IdP) | `0.1.0` | — (private) | Cloudflare Pages `_worker.js` |
+`package.json` / npm are the single source of truth for versions — this doc
+does not pin them (run `bun info <pkg> version` for the current target).
+Internal packages consume each other as `workspace:*` (NOT `^x`) so they always
+resolve TypeScript **source**, not stale published types.
 
-> **Publish order is strict:** `contracts` → `core` → `auth`/`services`. When
-> core/api start importing a *new* contracts symbol, `@oxyhq/contracts` must be
-> republished **first**, verified with a clean external `bun add` + `import()`,
-> then the consumers. The API Docker build builds `contracts` from source, so
-> current deploys don't require a contracts publish.
+> **Publish order is strict:** `contracts` → `protocol` → `core` → `services`.
+> When a consumer starts importing a *new* symbol from a dependency, the
+> dependency must be republished **first**, verified with a clean external
+> `bun add` + `import()`, then the consumer. The API Docker build compiles
+> `contracts`/`protocol`/`core` from source, so API deploys don't require an
+> npm publish. `@oxyhq/api`, `@oxyhq/node`, and the web IdP are private and
+> deploy from source.
 
 ---
 
@@ -79,36 +80,39 @@ published types.
 ```mermaid
 graph TD
     contracts[contracts<br/>only zod]
+    protocol[protocol] --> contracts
     core[core] --> contracts
-    authsdk[auth-sdk] --> core
-    authsdk --> contracts
+    core --> protocol
     services[services] --> core
     services --> contracts
     api[api] --> core
     api --> contracts
+    api --> protocol
     node[node] --> core
     node --> contracts
+    node --> protocol
     commons[commons app] --> core
     commons --> services
     accounts[accounts app] --> core
     accounts --> services
     webidp[auth web IdP] --> core
+    webidp --> services
     webidp --> contracts
 ```
 
 Turbo derives the build order from this graph:
 
 1. `contracts`
-2. `core`
-3. `auth-sdk`, `services`, `node` (parallel — all depend on `core`)
-4. `api` (depends on `contracts` + `core`; parallels step 3)
-5. `commons`, `accounts`, web IdP (depend on `core`/`services`)
+2. `protocol`
+3. `core`
+4. `services`, `node`, `api` (parallel — all depend on `core`)
+5. `commons`, `accounts`, `inbox`, `console`, web IdP (depend on `core`/`services`)
 
-`bun run build:all` (= `turbo run build`) builds all 9 build-required packages.
-`contracts` and `core` build dual CJS + ESM + `.d.ts` via `tsc`; `services`
-builds with `react-native-builder-bob`. The `api` and `node` build scripts
-explicitly pre-build `contracts` then `core` before their own `tsc`, because they
-import `@oxyhq/core/server`.
+`bun run build:all` (= `turbo run build`) builds every build-required package.
+`contracts`, `protocol`, and `core` build dual CJS + ESM + `.d.ts` via `tsc`;
+`services` builds with `react-native-builder-bob`. The `api` and `node` build
+scripts explicitly pre-build `contracts` → `protocol` → `core` before their own
+`tsc`, because they import `@oxyhq/core/server`.
 
 ---
 
@@ -116,12 +120,12 @@ import `@oxyhq/core/server`.
 
 - **`@oxyhq/contracts`** — never imports `react`, `react-native`, or `expo-*`.
   Only `zod`. Both server and client import contract types directly from it.
+- **`@oxyhq/protocol`** — platform-agnostic crypto/records substrate; never
+  imports `react`, `react-native`, or `expo-*`.
 - **`@oxyhq/core`** — never imports `react`, `react-native`, or `expo-*`. Dynamic
   `await import(...)` for optional RN modules (expo-crypto, secure-store,
   async-storage) is allowed. Direct dep `tldts` (Public Suffix List). The ESM
   build must contain **no `require()`** (Vite/ESM bundlers crash on it).
-- **`@oxyhq/auth`** — never imports `react-native` or `expo-*`. The only exception
-  is a dynamic import of `@react-native-async-storage/async-storage`.
 - **`@oxyhq/services`** — does **not** re-export from `@oxyhq/core` or
   `@oxyhq/contracts`. Consumers import core types from `@oxyhq/core` and contract
   types from `@oxyhq/contracts` directly.
@@ -135,6 +139,12 @@ There is a hard platform split in `@oxyhq/core`: client code lives under
 is published as the `@oxyhq/core/server` subpath. The server subpath declares
 `express` + `express-rate-limit` as required peers.
 
+Session logic also has a single home: the device-first session machinery
+(`SessionClient`, cold boot, session-state projection) lives in
+`packages/core/src/session/` and is consumed by `OxyProvider` — apps never
+implement their own restore. See
+[../auth/device-session.md](../auth/device-session.md).
+
 ---
 
 ## 5. How a request flows end to end
@@ -143,30 +153,36 @@ Consider a logged-in Oxy app (RP) loading a user's profile:
 
 ```mermaid
 sequenceDiagram
-    participant App as RP app (WebOxyProvider / OxyProvider)
+    participant App as RP app (OxyProvider)
     participant SDK as @oxyhq/core OxyServices
     participant API as api.oxy.so (@oxyhq/api)
     participant DB as MongoDB
 
-    Note over App,SDK: cold boot restored a session (see auth docs)
+    Note over App,SDK: device-first cold boot restored a session (see auth docs)
     App->>SDK: oxyServices.getProfileByUsername("nate")
     SDK->>SDK: HttpService attaches Bearer access token
     SDK->>API: GET /profiles/username/nate
     Note over API: createOptionalOxyAuth / requireOxyAuth resolves req.userId<br/>createOxyRateLimit keys per-user
     API->>DB: load user
-    API->>API: userService.formatUserResponse → composeDisplayName<br/>(emits required name.displayName)
-    API-->>SDK: 200 { ...user, name: { displayName } }
-    SDK-->>App: typed User (renders name.displayName directly)
+    API->>API: userService.formatUserResponse → composeDisplayName<br/>(name.displayName is OPTIONAL — omitted when no real name)
+    API-->>SDK: 200 { ...user, name: { displayName? } }
+    SDK-->>App: typed User (renders displayName ?? normalized handle)
 ```
 
 Cross-cutting rules visible here:
 
-- **Session authority is the SDK.** The app never hand-plants tokens or builds
-  auth interceptors; it relies on the SDK's cold-boot + token planting (see
-  [auth/README.md](../auth/README.md)).
-- **Display names are an API contract.** The server composes a required
-  `name.displayName` (`packages/api/src/utils/displayName.ts`); clients render it
-  directly and must not recompute from `name.first`/`name.last`/`username`.
+- **Session authority is the server + SDK.** The app never hand-plants tokens
+  or builds auth interceptors; `OxyProvider`'s device-first cold boot
+  (`runSessionColdBoot` in `@oxyhq/core`) restores the session silently, and
+  the server-side `DeviceSession` keeps every app on the device in sync via
+  the `session_state` socket event (see
+  [../auth/README.md](../auth/README.md) and
+  [../auth/device-session.md](../auth/device-session.md)).
+- **Display names are an API contract.** `name.displayName` is **optional**
+  (`packages/api/src/utils/displayName.ts` returns a real name or `undefined`);
+  clients render it when present and fall back to the normalized handle via
+  `getNormalizedUserHandle` from `@oxyhq/core` — never recompose from
+  `name.first`/`name.last`/`username`.
 - **Identity/handle normalization** is shared (`getNormalizedUserHandle` in
   `@oxyhq/core`); apps don't build local route helpers.
 - **Backend identity** comes from `@oxyhq/core/server` (`getRequiredOxyUserId`);
@@ -183,14 +199,16 @@ and delegates 401 refresh to the session owner.
 - `@oxyhq/api` → AWS ECS Fargate (`us-west-2`, cluster `oxy-cluster`), behind an
   ALB, image built `linux/arm64` and pushed to ECR by `deploy-aws.yml`. Domains
   `api.oxy.so` (+ website API aliases).
-- `packages/auth` (third-party OAuth IdP + device-account chooser feed) →
-  Cloudflare Pages: the SPA is pure static output; the one dynamic route
-  (`GET /api/device-accounts`) is a **Pages Function**
-  (`packages/auth/functions/api/device-accounts.ts`), not an advanced-mode
-  `_worker.js` — CF Pages was not reliably invoking a single-file worker on
-  this project. The deploy workflow verifies the Functions directory compiles
-  before deploying via a direct `bunx wrangler@4 pages deploy` step, and a
-  post-deploy smoke gate re-checks the live host. Live-verified working.
+- `packages/auth` (the OAuth authorize/consent IdP) → Cloudflare Pages: the
+  Vite + RN-Web SPA is pure static output; the one dynamic route
+  (`GET /api/device-accounts`, the device-account chooser feed) is a **Pages
+  Function** (`packages/auth/functions/api/device-accounts.ts`), not an
+  advanced-mode `_worker.js` — CF Pages was not reliably invoking a
+  single-file worker on this project. The deploy workflow verifies the
+  Functions directory compiles before deploying via a direct
+  `bunx wrangler@4 pages deploy` step, and a post-deploy smoke gate re-checks
+  the live host. Live-verified working. Account management is NOT hosted here:
+  the IdP's `/settings/*` routes permanently redirect to `accounts.oxy.so`.
 - Web RP frontends (accounts, console, inbox, …) → Cloudflare Pages.
 - `@oxyhq/node` → self-hosted by users (Docker + Caddy) or, for the managed
   vault, an Oxy-operated endpoint (`MANAGED_NODE_BASE_URL`).

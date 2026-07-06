@@ -28,7 +28,7 @@ const OXY_API_URL = process.env.OXY_API_URL ?? 'https://api.oxy.so';
 // `BloomThemeProvider` owns theming — `OxySignInButton` (and other services UI)
 // calls Bloom's `useTheme()`, which throws outside a `BloomThemeProvider`.
 // `OxyProvider` is the single session authority; do NOT also mount
-// `WebOxyProvider` (that legacy web provider is gone — one provider only).
+// a separate web provider (the legacy one is gone — one provider only).
 export default function App() {
   return (
     <BloomThemeProvider mode="system">

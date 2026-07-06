@@ -83,7 +83,7 @@ const appFixture: Application = {
   isOfficial: true,
   isInternal: false,
   capabilities: [],
-  redirectUris: ['https://mention.earth/__oxy/sso-callback'],
+  redirectUris: ['https://mention.earth/oauth/callback'],
   scopes: ['profile'],
   createdByUserId: 'u1',
   ownerAccountId: 'acc1',

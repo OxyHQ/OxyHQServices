@@ -23,9 +23,9 @@
  *
  * The raw token is a bearer credential — it is NEVER logged.
  *
- * NOTE: the legacy first-party `oxy_rt_${authuser}` cookie machinery (indexed
+ * NOTE: the legacy first-party per-authuser cookie machinery (indexed
  * multi-account cookies, slot allocation, `issueAndSetRefreshCookie`, etc.) was
- * removed with the `/auth/refresh` + `/auth/refresh-all` + `/auth/session`
+ * removed with the legacy refresh/session cookie endpoints
  * endpoints. This file is now ONLY the storage-backed rotating family.
  */
 

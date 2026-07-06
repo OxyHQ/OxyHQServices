@@ -311,7 +311,7 @@ export interface DeviceResolveAccount {
 /**
  * Wire shape of `POST /auth/device/resolve` — the device's active account id
  * (or `null` when signed out of all) plus every account signed in on the
- * device. Replaces the IdP's `/auth/refresh-all` chooser feed.
+ * device. Replaces the IdP's legacy cookie-based chooser feed.
  */
 export interface DeviceResolveResponse {
     activeAccountId: string | null;

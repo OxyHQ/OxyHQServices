@@ -90,64 +90,65 @@ Look up the exact `.bun/<pkg>@<ver>+<hash>/` directory in the running image (it 
 
 ```bash
 bun run core:build               # Build @oxyhq/core
-bun run auth:build               # Build @oxyhq/auth
 bun run services:build           # Build @oxyhq/services
-bun run build:all                # Build all (order: contracts -> core -> auth -> services -> rest)
+bun run build:all                # Build all (order: contracts -> core -> services -> rest)
 bun run test                     # Run all workspace tests (Jest via turbo — see note below)
 bun run dev                      # Dev mode across workspaces
 bun install                      # Install all workspace deps
 ```
 
 **Test runners — per-package split (CRITICAL):**
-- `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/auth` (auth-sdk), `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
+- `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
 - `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test server/__tests__ lib/__tests__ components/__tests__`.
-- THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing ~32 false failures in core and ~81 in api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
-- **Per-package baselines are STALE post-wave-2** (the device-first cutover deleted whole FedCM/SSO/refresh-all test suites and added new device-first ones — the old counts (core 623, api 997, auth-sdk 86, services 178, auth IdP 10, commons 336, contracts 81) no longer reflect reality). Do not treat any specific number here as current; run each package's own `bun run test` and read its own summary instead of comparing against a hardcoded figure.
+- THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing dozens of false failures in core and api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
+- Per-package baselines (when run under the correct runner): contracts **150**, core **740**, api **≥1363**, services **194**, auth IdP **63**.
 
 ## Architecture
 
-Monorepo (`@oxyhq/sdk`) using Bun workspaces + Turbo. Build order matters: `contracts` -> `core` -> `auth` -> `services` -> rest (turbo derives this from the dependency graph).
+Monorepo (`@oxyhq/sdk`) using Bun workspaces + Turbo. Build order matters: `contracts` -> `core` -> `services` -> rest (turbo derives this from the dependency graph). **`@oxyhq/services` is the single UI SDK for web AND native** (RN Web on web) — the former standalone web SDK package was deleted from the monorepo; do not recreate it.
 
 ```
 packages/
   contracts/      @oxyhq/contracts  Contract-first API schemas (Zod) — zero React/RN/Expo
+  protocol/       @oxyhq/protocol   Shared protocol layer
   core/           @oxyhq/core       Platform-agnostic foundation (zero React/RN)
-  auth-sdk/       @oxyhq/auth       Web auth SDK (React hooks, zero RN/Expo)
-  services/       @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
+  services/       @oxyhq/services   Expo/React Native SDK — the ONLY UI SDK (web via RN Web + native)
   api/            @oxyhq/api        Express.js backend API
+  node/           @oxyhq/node       User-operated data node (signed-records replica)
   accounts/                         Expo accounts app ("Accounts by Oxy" — keyless, management-only)
   commons/                          Expo identity vault app ("Commons by Oxy" — NATIVE-ONLY, no web build)
-  auth/                             Vite auth app (standalone, third-party OAuth IdP + device-account chooser)
-  test-app/                         Expo test/playground app
-  test-app-vite/                    Vite test app (web-only, uses @oxyhq/core + @oxyhq/auth)
+  auth/                             Vite IdP app (auth.oxy.so — OAuth authorize/consent on @oxyhq/services, coldBoot={false})
+  console/                          Developer portal (Vite + @oxyhq/services)
+  inbox/                            Inbox app
+  test-app-expo/                    Expo test/playground app
+  expo-splash/    @oxyhq/expo-splash
 ```
 
 **Dependency graph:**
 ```
 @oxyhq/contracts      no internal deps (only zod)
 @oxyhq/core           dep: @oxyhq/contracts
-@oxyhq/auth           peer: @oxyhq/core, react; dep: @oxyhq/contracts
 @oxyhq/services       dep: @oxyhq/core + @oxyhq/contracts
 @oxyhq/api            dep: @oxyhq/contracts + @oxyhq/core/server for auth middleware
 accounts              dep: @oxyhq/core + @oxyhq/services
 commons               dep: @oxyhq/core + @oxyhq/services  (NATIVE-ONLY — no web build/CF Pages)
-test-app              dep: @oxyhq/services
-test-app-vite         dep: @oxyhq/core + @oxyhq/auth
+console               dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite)
+auth (IdP)            dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite, coldBoot={false})
+test-app-expo         dep: @oxyhq/services
 ```
 
 ## Package Boundaries (strict)
 
 - **@oxyhq/contracts** must never import `react`, `react-native`, or `expo-*`. Only `zod` allowed. Platform-agnostic — both server and client import from it directly.
-- **@oxyhq/core** must never import `react`, `react-native`, or `expo-*`. Dynamic imports (`await import(...)`) for optional RN modules are allowed. Direct deps include `tldts` (Public Suffix List, used in `fapiAutoDetect.ts`).
-- **@oxyhq/auth** must never import `react-native` or `expo-*`. Dynamic import of `@react-native-async-storage/async-storage` is the only exception.
+- **@oxyhq/core** must never import `react`, `react-native`, or `expo-*`. Dynamic imports (`await import(...)`) for optional RN modules are allowed.
 - **@oxyhq/services** does NOT re-export from `@oxyhq/core` or `@oxyhq/contracts`. Consumers import core types directly from `@oxyhq/core` and API contract types directly from `@oxyhq/contracts`.
 - **@oxyhq/api** imports schemas directly from `@oxyhq/contracts`. Server auth helpers come from `@oxyhq/core/server` only; do NOT route contracts through `@oxyhq/core` re-exports.
 
 ## ESM/CJS Compatibility (critical)
 
-Both `@oxyhq/core` and `@oxyhq/auth` ship dual CJS + ESM builds. The ESM build **must not contain `require()` calls** — Vite and other ESM-only bundlers will crash.
+Both `@oxyhq/core` and `@oxyhq/contracts` ship dual CJS + ESM builds. The ESM build **must not contain `require()` calls** — Vite and other ESM-only bundlers will crash.
 
-- **Never** use `require()` in `packages/core/` or `packages/auth-sdk/` source code
+- **Never** use `require()` in `packages/core/` or `packages/contracts/` source code
 - Use `import ... from` for static imports (JSON files, modules)
 - Use `await import(moduleName)` for optional/platform-specific modules (e.g. expo-crypto)
 - Guard any unavoidable `require()` with `typeof require !== 'undefined'`
@@ -156,15 +157,11 @@ Both `@oxyhq/core` and `@oxyhq/auth` ship dual CJS + ESM builds. The ESM build *
 ## Import Conventions
 
 ```typescript
-// Next.js / Vite (web)
-import { OxyServices } from '@oxyhq/core';
+// Web (Vite + RN Web) AND Expo / React Native — ONE provider for both
+import { OxyProvider, useOxy, OxySignInButton, OxyConsentScreen } from '@oxyhq/services';
+import { OxyServices, KeyManager } from '@oxyhq/core';
+import { generatePkcePair, generateOAuthState, buildOAuthAuthorizeUrl } from '@oxyhq/core';
 import type { User, ApiError } from '@oxyhq/core';
-import { WebOxyProvider, useAuth } from '@oxyhq/auth';
-
-// Expo / React Native
-import { OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
-import type { User } from '@oxyhq/core';
-import { KeyManager } from '@oxyhq/core';
 ```
 
 When splitting imports: use `import type` for type-only imports, regular `import` for values.
@@ -180,16 +177,16 @@ When splitting imports: use `import type` for type-only imports, regular `import
 
 ## Auth / Session Contract
 
-**Device-first session model (wave 2, 2026-07).** FedCM, the `/sso` bounce, the `/auth/silent` iframe, `AuthManager`, `CrossDomainAuth`, and the `fedcm_session`/`oxy_rt_*` cookies were deleted from the client, server, and IdP entirely. Session restore is now anchored on a durable, first-party `oxy_device` cookie (`HttpOnly`, `Domain=.oxy.so`, 400-day sliding) plus a persisted, per-origin rotating refresh-token family. See `docs/SESSION-ARCHITECTURE.md` and `docs/auth/README.md` for the full mechanism.
+**Session transport (current — FROZEN until "workshop 2c"):** a durable, first-party `oxy_device` cookie (`HttpOnly`, `Secure`, `Domain=.oxy.so`, `packages/api/src/utils/deviceCookie.ts`) plus a persisted, rotating refresh-token family, with a `#oxy_boot` fragment bootstrap for cross-apex web (`GET /auth/device/bootstrap` → `POST /auth/device/exchange`, single-use, origin-bound; routes in `packages/api/src/routes/deviceAuth.ts`). This transport is FROZEN by Nate's decision — do NOT change it. The eventual zero-cookie `deviceSecret` mint (`POST /session/device/token` final form) is a PENDING future goal only; do not implement it before the workshop. Full mechanism: `docs/SESSION-ARCHITECTURE.md`, `docs/auth/device-session.md`, `docs/architecture/oxy-auth-platform.md`.
 
-Frontend RP apps use the SDK as the only session authority:
-- Web uses `WebOxyProvider` from `@oxyhq/auth` with a registered `clientId`.
-- Expo/RN uses `OxyProvider` from `@oxyhq/services` with a registered `clientId`.
-- The SDK's device-first cold boot (`runSessionColdBoot` in `@oxyhq/core`, `packages/core/src/boot/coldBootV2.ts`) is the SOLE implementation both providers call — there is no separate web/native chain to keep in sync. Order: `bootstrap-return` (consume a `#oxy_boot` fragment) → `stored-tokens` (warm-plant or rotate via `POST /auth/refresh-token`) → `shared-key-signin` (native only) → `bootstrap-hop` (web: same-apex inline `POST /auth/device/web-session` fetch every boot; cross-apex ONE top-level hop, ever, per browser+origin, to the API's own `GET /auth/device/bootstrap` — a single canonical host, never a per-apex `auth.<rp-apex>` CNAME) → signed out. It NEVER auto-redirects to a login page.
-- Interactive sign-in is an **in-app SDK modal** — `useAuth().signIn()` just opens it (password+2FA via `POST /auth/login` + `POST /security/2fa/verify-login`, or the "Sign in with Oxy" QR/Commons handoff). It never navigates to `auth.oxy.so`. Apps do not implement local session restore or sign-in screens.
-- No per-app `/__oxy/sso-callback` routes or bespoke boot-fragment handling — the SDK owns `#oxy_boot` parsing universally.
-- No copied device-first helpers in consumers. The boot-fragment schema/parser, device cookie contracts, and storage keys live once in `@oxyhq/core`.
-- Private app calls wait for SDK readiness: native (`@oxyhq/services`) `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`; web (`@oxyhq/auth`) `useAuth().isLoading` / `useAuth().isReady` (there is no separate `canUsePrivateApi` on the web provider — `isAuthenticated` only flips once cold boot has resolved and a token is planted).
+**Server authority — DeviceSession:** the `DeviceSession` model (collection `devicesessions`: `deviceId`, `accounts[{accountId, sessionId, authuser, operatedByUserId?}]`, `activeAccountId`, `revision`) is the single source of truth for what is signed in on a device. REST surface: `/session/device/{state,add,switch,signout}` (`packages/api/src/routes/sessionDevice.ts`). Every mutation bumps `revision` and broadcasts a token-free `session_state` event to Socket.IO room `device:<deviceId>` — all apps on the same device sync instantly. The client half is `SessionClient` in `@oxyhq/core` (`packages/core/src/session/`).
+
+Frontend apps (web AND native) use the SDK as the only session authority:
+- **ONE provider:** `OxyProvider` from `@oxyhq/services` with a registered `clientId` — on web (RN Web) and on Expo/RN alike. The former standalone web SDK package was deleted from the monorepo; never reintroduce a second provider.
+- The SDK's device-first cold boot (`runSessionColdBoot` in `@oxyhq/core`, `packages/core/src/boot/coldBootV2.ts`) owns session restore end to end and NEVER auto-redirects to a login page. Apps do not implement local session restore, boot-fragment handling, or sign-in screens — the boot-fragment parser, device cookie contracts, and storage keys live once in `@oxyhq/core`.
+- Interactive sign-in is the in-app **`OxyAccountDialog`** (Bloom `<Dialog placement={{ base: 'bottom', md: 'center' }}>`): account switcher + "Sign in with Oxy" (Commons QR / handoff) + collapsed password (password+2FA via `POST /auth/login` + `POST /security/2fa/verify-login`). Open it with `useOxy().openAccountDialog()` or the imperative `showSignInModal()`. It never navigates to `auth.oxy.so`.
+- **`OxySignInButton`** resolves the registered `Application` via `GET /auth/oauth/client/:clientId`: official apps (`first_party`/`internal`/`system`/`isOfficial`) open the dialog; `third_party` apps run the standard OAuth redirect + PKCE (`generatePkcePair` / `generateOAuthState` / `buildOAuthAuthorizeUrl` from `@oxyhq/core`, `packages/core/src/utils/oauthPkce.ts`). Third-party integration guide: `docs/auth/integration-guide.md`.
+- Private app calls wait for SDK readiness: `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` (same hook contract on web and native).
 - App backend clients use `oxyServices.createLinkedClient({ baseURL })`. Do not add app-local token providers, Axios/fetch auth interceptors, manual `Authorization` header plumbing, refresh-cookie retries, or local invalidation.
 
 Backend APIs use `@oxyhq/core/server` for request identity and security:
@@ -204,7 +201,7 @@ Backend APIs use `@oxyhq/core/server` for request identity and security:
 - Do not define local `AuthRequest`, `requireAuth`, `getUserId`, `getAuthenticatedUserId`, bearer parsers, or token-decoding auth middleware in apps. Missing shared behavior belongs in `@oxyhq/core/server`.
 - Bearer-authenticated writes do not fetch app-local CSRF tokens. CSRF remains for ambient cookie credentials and cookie-only writes.
 
-`packages/auth` / `auth.oxy.so` is now a **third-party OAuth authorize/consent IdP** (login/signup/authorize/recover/settings SPA + OAuth consent), not the session authority for first-party apps — it must not use `WebOxyProvider` or RP cold boot (there is no `/sso`/FedCM loop left to create a circularity with; that machinery is gone, not replaced by an equivalent self-referential path). Its account-chooser feed (`GET /api/device-accounts`, a Cloudflare Pages Function at `packages/auth/functions/api/device-accounts.ts`, sharing route logic with `packages/auth/lib/device-accounts.ts`) reads the shared `oxy_device` cookie first-party and forwards it to the API's internal `POST /auth/device/resolve` under an `X-Oxy-Internal` secret. Trust for auto-approving OAuth consent is registry-based (`Application.isOfficial`/`isInternal`/`type`, staff-controlled via `isTrustedApplication()` in `packages/api/src/utils/trustedApplication.ts`), not domain-based.
+`packages/auth` / `auth.oxy.so` is the **OAuth authorize/consent IdP** for third-party apps, NOT a Relying Party and NOT the session authority for first-party apps. It mounts `OxyProvider` from `@oxyhq/services` with `coldBoot={false}` (no-session-authority mode) purely for the shared sign-in surface and `OxyConsentScreen` context — do not enable RP cold boot there. Trust for auto-approving OAuth consent is registry-based (`Application.isOfficial`/`isInternal`/`type`, staff-controlled via `isTrustedApplication()` in `packages/api/src/utils/trustedApplication.ts`), not domain-based. The IdP does NOT expose account management — `accounts.oxy.so` is the sole owner; the IdP's `/settings/*` routes permanently redirect there. See the "Auth App (packages/auth)" section below.
 
 ## Coding Standards
 
@@ -212,7 +209,7 @@ Backend APIs use `@oxyhq/core/server` for request identity and security:
 - Biome for linting (`biome lint --error-on-warnings`)
 - No backward-compatibility re-exports — clean imports only
 - No unnecessary abstractions or over-engineering
-- `packages/core/` and `packages/auth-sdk/` build with `tsc` (CJS + ESM + types -> `dist/`)
+- `packages/core/` and `packages/contracts/` build with `tsc` (CJS + ESM + types -> `dist/`)
 - `packages/services/` builds with `react-native-builder-bob` (-> `lib/`)
 - **Concurrent session ownership (CRITICAL):** when multiple agents or sessions may be editing `packages/api` simultaneously, CONFIRM sole ownership of shared backend files before writing. PATH-SCOPE all git adds (e.g. `git add packages/api/src/routes/civic.ts`) — NEVER `git add -A` or `git add .` in a shared package while another session may have uncommitted work. Incident: a concurrent session's uncommitted federation work was nearly swept into an unrelated commit.
 - **Lockfiles before push (any repo):** after any dependency/version bump, run `bun install` to regenerate `bun.lock` and verify `bun install --frozen-lockfile` passes (CI's exact gate) BEFORE pushing — commit the lockfile in the SAME commit as the `package.json` change. A desynced lockfile red-fails CI and blocks deploys. When bumping a dep across multiple repos, do this per-repo.
@@ -223,7 +220,7 @@ Package: `packages/contracts` → `@oxyhq/contracts`. SINGLE SOURCE OF TRUTH for
 
 **What it contains:**
 - Zod schemas: `userNameSchema` (`displayName` field is optional — `z.string().optional()`), `userResponseSchema` (includes `did?` + `verifiedDomains?`), `userProfileUpdateSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
-- **Device-first schemas (`src/deviceBoot.ts`, wave 2):** `deviceBootReasonSchema`, `deviceBootFragmentSchema`, `deviceExchangeRequestSchema`, `tokenRefreshRequestSchema`, `tokenRefreshResponseSchema`, `deviceTokenIssueResponseSchema`, `deviceResolveRequestSchema`, `deviceResolveResponseSchema` + inferred types `DeviceBootReason`, `DeviceBootFragment`, `DeviceTokenIssueResponse`, `DeviceResolveRequest`, `DeviceResolveAccount`, `DeviceResolveResponse`. The `refreshAllAccountSchema`/`refreshAllResponseSchema` schemas and `RefreshAllAccountResponse`/`RefreshAllResponseContract` types were REMOVED (contracts 0.10.0) — do not reference them; they backed the deleted `/auth/refresh-all` endpoint.
+- **Device-first schemas (`src/deviceBoot.ts`, wave 2):** `deviceBootReasonSchema`, `deviceBootFragmentSchema`, `deviceExchangeRequestSchema`, `tokenRefreshRequestSchema`, `tokenRefreshResponseSchema`, `deviceTokenIssueResponseSchema`, `deviceResolveRequestSchema`, `deviceResolveResponseSchema` + inferred types `DeviceBootReason`, `DeviceBootFragment`, `DeviceTokenIssueResponse`, `DeviceResolveRequest`, `DeviceResolveAccount`, `DeviceResolveResponse`. The legacy multi-account refresh schemas/types (`refreshAllAccountSchema`, `refreshAllResponseSchema`, and their inferred types) were REMOVED (contracts 0.10.0) — do not reference them; the IdP-cookie endpoint they backed no longer exists.
 - **Identity schemas (`src/identity.ts`):** `didDocumentSchema` (+ `verificationMethodSchema`, `didServiceSchema`), `signedRecordEnvelopeSchema`, `verifiedDomainSchema` + domain-request/instructions schemas, `authMethodsResponseSchema` (extended with `did` + per-method `verificationMethodId`), `exportBundleSchema`
 - Helpers: `resolveUserId`, `safeParseContract`
 - Inferred types: `UserNameResponse` (explicit `interface`; `displayName` is **`string | undefined`** — optional; prior to being made explicit it degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`; identity types: `DidDocument`, `VerificationMethod`, `DidService`, `SignedRecordEnvelope`, `VerifiedDomain`, `AuthMethodsResponse`, `ExportBundle`
@@ -265,20 +262,24 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/crypto/canonicalJson.ts` — `canonicalize(value)` (recursive key-sort/JCS-style canonical JSON) + `signedRecordSigningInput`; used by both client signing and server verify
 - `packages/core/src/mixins/OxyServices.identity.ts` — `identity` mixin: `resolveDid`, `getMyDid`, `listAuthMethods`, `linkIdentityKey`, `unlinkAuthMethod`, `linkPassword`, `signRecord`, `publishRecord`, `getRecord`, `verifyRecord`, `exportMyData`, `requestDomainVerification`, `verifyDomain`, `listDomains`, `removeDomain`
 - `packages/core/src/mixins/OxyServices.civic.ts` — `civic` mixin: `getPublicCard`, `getMyIdPayload`, `parseIdPayload`, `buildAttestQrPayload`, `parseAttestPayload`, `submitRealLifeAttestation`, `getValidatorInbox`, `submitValidationVote`, `denyValidation`, `vouchForPerson`, `withdrawVouch`, `getPersonhood`, `getMyPersonhood`, `issueCredential`, `listCredentials`, `listMyCredentials`, `verifyCredential`, `revokeCredential`
-- `packages/auth-sdk/src/index.ts` — all public auth exports
-- `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
-- `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
-- `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
-- `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
+- `packages/core/src/session/` — `SessionClient`, `createSessionClient`, `createSessionClientHost`, session-state projection, account-dialog controller, auth-state store, token-refresh scheduler
+- `packages/core/src/boot/coldBootV2.ts` — `runSessionColdBoot` (device-first cold boot, the SOLE restore chain)
+- `packages/core/src/utils/oauthPkce.ts` — `generatePkcePair`, `generateOAuthState`, `buildOAuthAuthorizeUrl` (third-party OAuth + PKCE helpers)
+- `packages/services/src/index.ts` — all public UI SDK exports (web + native); includes `LogoIcon`, `LogoText`
+- `packages/services/src/ui/context/OxyContext.tsx` — auth context (web + native)
+- `packages/services/src/ui/components/OxyProvider.tsx` — the ONE provider component (accepts `coldBoot={false}` for the IdP)
+- `packages/services/src/ui/components/OxyAccountDialog.tsx` — unified account switcher + sign-in dialog (Bloom `<Dialog>`)
+- `packages/services/src/ui/components/OxySignInButton.tsx` — official → dialog; `third_party` → OAuth redirect + PKCE
+- `packages/services/src/ui/components/OxyConsentScreen.tsx` — the IdP's OAuth consent surface
 
 **NOTE:** `accountUtils.ts` is not a frontend display-name fallback for API user/profile DTOs. API serializers own `name.displayName` (optional); consumers render it when present, then fall back to `getNormalizedUserHandle` — not to `accountUtils`.
 
-## Application Model (#213 + #216) — replaces DeveloperApp (2026-06-14)
+## Application Model (#213 + #216) — replaces the legacy developer-app model (2026-06-14)
 
-**Clean rename, NO migration, NO back-compat.** The `DeveloperApp` model and `routes/developer.ts` are GONE. Production `developerapps` collection was dropped (had 1 record). New collections start empty; apps are recreated in the new Console.
+**Clean rename, NO migration, NO back-compat.** The legacy developer-app model and `routes/developer.ts` are GONE. The production `developerapps` collection was dropped (had 1 record). New collections start empty; apps are recreated in the new Console.
 
 **Three new models in `packages/api/src/models/`:**
-- `Application` (collection `applications`): `type` first_party|third_party|internal|system, `status` active|suspended|deleted|pending_review, `isOfficial`, `isInternal`, `capabilities[]`, `redirectUris[]`, `scopes`, `createdByUserId`. NO apiKey/apiSecret on this model.
+- `Application` (collection `applications`): `type` first_party|third_party|internal|system, `status` active|suspended|deleted|pending_review, `isOfficial`, `isInternal`, `capabilities[]`, `redirectUris[]`, `scopes`, `privacyPolicyUrl?`, `termsUrl?` (shown on the OAuth consent screen), `createdByUserId`. NO apiKey/apiSecret on this model.
 - `ApplicationMember` (collection `applicationmembers`): `applicationId`+`userId` unique; `role` owner|admin|developer|viewer|billing; `permissions[]` derived from role; `status` active|invited|removed.
 - `ApplicationCredential` (collection `applicationcredentials`): `publicKey` = OAuth client_id, `secretHash` = sha256 only (secret shown ONCE on create/rotate), `type` public|confidential|service, `environment`, `scopes`, `status`.
 
@@ -288,7 +289,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 
 **Routes:** `packages/api/src/routes/applications.ts` mounted at `/applications` (Zod schemas in `schemas/application.schemas.ts`). RBAC via `requireAppPermission(permission)`. Full CRUD + members (invite/update/remove/transfer-ownership, can't remove last owner) + credentials (create/rotate return secret ONCE, revoke) + usage. Application responses embed `callerMembership` (caller's own role+permissions) on list + detail.
 
-**OAuth + service tokens:** `clientId` → `ApplicationCredential.publicKey` (active) → `applicationId` → `Application`. Service-token endpoint validates apiKey/apiSecret against an active `type:'service'` `ApplicationCredential` (sha256 secretHash, constant-time). The service JWT payload claim is STILL named `appId` (= applicationId string) — NOT renamed, to avoid breaking `@oxyhq/core` service-token verification. `ApiKeyUsage`/`AuthCode`/`DeveloperApiKey` model refs repointed `'DeveloperApp'`→`'Application'` (DeveloperApiKey model name kept). Platform-stats field: `totalDeveloperApps`→`totalApplications`.
+**OAuth + service tokens:** `clientId` → `ApplicationCredential.publicKey` (active) → `applicationId` → `Application`. Service-token endpoint validates apiKey/apiSecret against an active `type:'service'` `ApplicationCredential` (sha256 secretHash, constant-time). The service JWT payload claim is STILL named `appId` (= applicationId string) — NOT renamed, to avoid breaking `@oxyhq/core` service-token verification. `ApiKeyUsage`/`AuthCode`/`DeveloperApiKey` model refs repointed from the legacy model name to `'Application'` (the `DeveloperApiKey` model name itself was kept). Platform-stats field renamed to `totalApplications`.
 
 **redirectUris (#216):** `redirectUris` is the SOLE canonical redirect field. `redirectUrls` removed entirely (no dual field, no migration). OAuth authorize validates `redirect_uri` exact-match (constant-time) against `application.redirectUris`. Console writes `redirectUris`.
 
@@ -355,7 +356,7 @@ Single source of truth. Key methods:
 - 20 exported types: unions `ReputationCategory`, `TrustTier`, `ReputationTransactionStatus`, `ReputationTargetEntityType`, `ReputationDisputeStatus`, `ReputationInfluenceContext`; entities `ReputationTransaction`, `ReputationBalance`, `ReputationBalanceBreakdown`, `ReputationInfluence`, `ReputationReliability`, `ReputationDispute`, `ReputationRule`, `ReputationLeaderboardEntry`, `ReputationInfluenceResult`, `ReverseReputationTransactionResult`; inputs `AwardReputationInput`, `CreateReputationDisputeInput`, `ResolveReputationDisputeInput`, `UpsertReputationRuleInput`, `ReverseReputationTransactionInput`.
 - Writes sweep `clearCacheByPrefix('GET:/reputation/')`.
 - **Deleted:** karma mixin + `KarmaRule`/`KarmaHistory`/`KarmaLeaderboardEntry`/`KarmaAwardRequest` types + `User.karma` field + `UserStats.karmaScore`.
-- **SEMVER NOTE:** the karma removal was a breaking change. Peer ranges in `@oxyhq/auth` and `@oxyhq/services` were updated at publish time.
+- **SEMVER NOTE:** the karma removal was a breaking change. Peer ranges in `@oxyhq/services` were updated at publish time.
 
 ### Services (`@oxyhq/services`) — Trust screens
 - 4 screens renamed Karma*→Trust* + About/FAQ under `src/ui/screens/trust/`.
@@ -369,7 +370,7 @@ Single source of truth. Key methods:
 
 Registering an `Application` (with `redirectUris`) now auto-authorizes that app's origin ecosystem-wide, no code change needed — this superseded the old FedCM-era approved-client-origins cache when FedCM was deleted. Trust derivation lives in `packages/api/src/config/dynamicOriginRegistry.ts`: two in-memory snapshots (`trustedOrigins` — first-party/internal/system/official, gets the credentialed CORS + device-first bootstrap lane; `thirdPartyOrigins` — ordinary active third-party apps, non-credentialed CORS only) refreshed on boot + 60s interval + on-demand from Application writes. The trust gate is the single `isTrustedApplication()` predicate (`packages/api/src/utils/trustedApplication.ts`) — `status: 'active'` alone is never a trust boundary, since every self-service third-party app is active too. This same registry is what the device-first `GET /auth/device/bootstrap` endpoint's `return_to` validation and the OAuth consent auto-approve decision both read.
 
-**12 official Applications** created in the `oxy` workspace, each with a `public` `ApplicationCredential` (client_id = `oxy_dk_…` publicKey). Their `clientId` is wired into each app's `OxyProvider`/`WebOxyProvider` via env-with-default.
+**12 official Applications** created in the `oxy` workspace, each with a `public` `ApplicationCredential` (client_id = `oxy_dk_…` publicKey). Their `clientId` is wired into each app's `OxyProvider` via env-with-default.
 
 **Credential rotation:**
 - `POST /applications/:appId/credentials/:credId/rotate` — mints a new `ApplicationCredential` (new `publicKey` + `secret` returned once), marks the previous one `deprecated` with `expiresAt = now + CREDENTIAL_ROTATION_GRACE_MS` (7 days). Response: `{ credential, secret, rotatedFrom, graceExpiresAt }`. `rotatedFromCredentialId` on the new credential links new → old for audit.
@@ -487,7 +488,7 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 
 ## Accounts App Patterns (packages/accounts — "Accounts by Oxy")
 
-**Post-PR #415: Accounts is KEYLESS and management-only.** All identity creation, key management, recovery phrase, backup, and key-based flows moved to `packages/commons`. Accounts signs in via password (`oxyServices.signIn(emailOrUsername, password)`), the in-app "Sign in with Oxy" modal (`showSignInModal()` from `@oxyhq/services`, device-first — no FedCM), or Commons QR / shared-keychain. Account deletion deep-links to `commons://delete-account` — Accounts no longer owns the key-signed deletion flow.
+**Post-PR #415: Accounts is KEYLESS and management-only.** All identity creation, key management, recovery phrase, backup, and key-based flows moved to `packages/commons`. Accounts signs in via the shared `OxyAccountDialog` from `@oxyhq/services` (Commons QR / shared-keychain "Sign in with Oxy" + collapsed password) or `oxyServices.signIn(emailOrUsername, password)` directly. Account deletion deep-links to `commons://delete-account` — Accounts no longer owns the key-signed deletion flow.
 
 - **i18n**: `LocaleProvider` + `useTranslation` hook in `packages/accounts/lib/i18n/`; 11 locales (EN + ES fully populated); device locale via `Intl.DateTimeFormat().resolvedOptions().locale` (no `expo-localization` native module needed)
 - **Typed routes**: `typedRoutes: true` in `app.json` — all `router.push()` calls must use typed path strings, no `as any` casts
@@ -498,12 +499,7 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 - **`(auth)` routing** (session-only gate): `(auth)`↔`(tabs)` now keys **purely on session** — `needsAuth = isAuthResolved ? !isAuthenticated : true`. No `hasIdentity`/`KeyManager` in routing. `(auth)/index.tsx`: session resolved + authenticated → `/(tabs)`; not authenticated → sign-in. Always clean up timers from entrance animations.
 - **Username step**: use `useUpdateProfile().mutateAsync()`, NOT `oxyServices.updateProfile()` directly — gets optimistic update + cache invalidation. Stable initial value via lazy `useState` initializer (no `useEffect` reset on remount).
 - **`useUpdatePrivacySettings`**: do NOT call `invalidateAccountQueries(queryClient)` in `onSuccess` (defeats optimistic merge). Use `{ ...previous, ...requested, ...incoming }` merge in `onMutate`. `onError` does targeted `invalidateQueries({ queryKey: queryKeys.privacy.settings(...) })` for reconciliation.
-- **Web sign-in**: `app/(auth)/index.tsx` calls `showSignInModal()` (the shared in-app modal mounted globally by `OxyProvider`) — no FedCM, no redirect. No web identity creation (Commons is native-only; Accounts web is management after sign-in only).
-- **Shared modules** (use these, don't re-duplicate): `utils/relative-time.ts` + `hooks/useRelativeTime.ts` (i18n-aware relative time); `utils/device-utils.ts` (getDeviceIcon, getDeviceDisplayName, DeviceRecord, groupDevicesByType); `hooks/useAvatarUrl.ts`; `hooks/useDebounce.ts`; `constants/payments.ts` (FAIRCOIN_WALLET_URL); `constants/drawer-screens.ts` (typed DrawerScreenConfig[] — lives in `constants/` NOT `app/` so expo-router doesn't register it as a route); `constants/styles.ts` (`floatingPosition`: `Platform.select({ web: 'fixed', default: 'absolute' })` for floating action bar / FAB — used by `(tabs)/_layout.tsx` + `components/ui/bottom-action-bar.tsx`).
-- **Shared UI components** (use these, don't re-duplicate): `components/ui/empty-state-card.tsx` — `EmptyStateCard` (icon + title + subtitle, optional `subtitleColor?`) — single shared empty-state used by security + payments sections; `components/ui/circle-icon-badge.tsx` — `CircleIconBadge` (36dp circular icon wrapper); `components/ui/quick-action-button.tsx` — accepts `size?` prop (default 48).
-- **God-screen decomposition**: section components under `components/sections/` (+ shared `GroupedItem`/`PrioritizedGroupedItem` types in `components/sections/types.ts`), `components/security/`, `components/home/`, `components/payments/`; hooks under `hooks/home/*`; pure helpers `utils/security-recommendations.ts`, `utils/payment-utils.ts`.
-- **`payments.tsx`**: reads `timestamp` field (NOT `createdAt`) for payment/transaction dates.
-- **Removed unused deps**: `@radix-ui/react-tabs`, `react-responsive`, `@lottiefiles/dotlottie-react-native`, `expo-symbols`. KEEP `expo-document-picker` + `expo-image-manipulator` (lazy-loaded optional peers of `@oxyhq/services`) and `@lottiefiles/dotlottie-react` (hard-required by web lottie export).
+- **Web sign-in**: same in-app `OxyAccountDialog` as native — no redirects. No web identity creation (Commons is native-only; Accounts web is management after sign-in only).
 - **Shared modules** (use these, don't re-duplicate): `utils/relative-time.ts` + `hooks/useRelativeTime.ts` (i18n-aware relative time); `utils/device-utils.ts` (getDeviceIcon, getDeviceDisplayName, DeviceRecord, groupDevicesByType); `hooks/useAvatarUrl.ts`; `hooks/useDebounce.ts`; `constants/payments.ts` (FAIRCOIN_WALLET_URL); `constants/drawer-screens.ts` (typed DrawerScreenConfig[] — lives in `constants/` NOT `app/` so expo-router doesn't register it as a route); `constants/styles.ts` (`floatingPosition`: `Platform.select({ web: 'fixed', default: 'absolute' })` for floating action bar / FAB — used by `(tabs)/_layout.tsx` + `components/ui/bottom-action-bar.tsx`).
 - **Shared UI components** (use these, don't re-duplicate): `components/ui/empty-state-card.tsx` — `EmptyStateCard` (icon + title + subtitle, optional `subtitleColor?`) — single shared empty-state used by security + payments sections (replaced 3 duplicated inline empty states); `components/ui/circle-icon-badge.tsx` — `CircleIconBadge` (36dp circular icon wrapper) — shared across identity cards, payments info, home actions; `components/ui/quick-action-button.tsx` — accepts `size?` prop (default 48) — reused by `bottom-action-bar` and `home-bottom-actions` (home footer no longer hand-rolls badge buttons).
 - **God-screen decomposition**: section components under `components/sections/` (+ shared `GroupedItem`/`PrioritizedGroupedItem` types in `components/sections/types.ts`), `components/security/`, `components/home/`, `components/payments/`; hooks under `hooks/home/*`; identity auto-sync in `hooks/identity/useIdentitySync.ts`; pure helpers `utils/security-recommendations.ts`, `utils/payment-utils.ts`.
@@ -583,7 +579,7 @@ Registered in `MIXIN_PIPELINE` + `AllMixinInstances`. Methods: `resolveDid`, `ge
 
 - Commons writes shared identity at creation (`createSharedIdentity` / `migrateToSharedIdentity`); optionally `storeSharedSession` for warm SSO.
 - `OxyServices.signInWithSharedIdentity()` (native-only): `requestChallenge(sharedPubKey)` → sign with shared key → `verifyChallenge` (plants tokens). Returns null on web.
-- New cold-boot step **`shared-key-signin`** added to `OxyContext` (`packages/services`) immediately after `stored-session`, before web probes, native-only, with per-step timeout. `WebOxyProvider` unchanged.
+- **`shared-key-signin`** is a native-only step in the unified device-first cold boot (`runSessionColdBoot` in `@oxyhq/core`), with a per-step timeout.
 - Each native app must declare iOS `keychain-access-groups` including `group.so.oxy.shared` (same Team ID) + Android shared-store config.
 
 ### Mechanism B — Cross-device QR handoff
@@ -606,8 +602,7 @@ New API endpoints (`packages/api/src/routes/auth.ts` + `authSession.service.ts`)
 ### SDK methods (core + services)
 
 - `@oxyhq/core` `OxyServices.auth.ts`: `startCommonsSignIn`, poll (reuse `pollSessionStatus`), `signInWithSharedIdentity`; Commons-side `getCommonsApprovalInfo` / `approveCommonsSignIn` / `denyCommonsSignIn`.
-- `@oxyhq/services` `useOxyAuthSession.ts`: surfaces `authorizeCode` + structured `qrPayload`; Sign-in-with-Oxy added to `SignInModal.tsx` / `OxyAuthScreen.tsx`.
-- `@oxyhq/auth` `WebOxyProvider`: exposes Sign-in-with-Oxy (QR only, no shared-key).
+- `@oxyhq/services`: `OxyAccountDialog` surfaces `authorizeCode` + the structured `qrPayload` — renders the QR on web (QR only; shared-key is native-only) and deep-links Commons on the same device natively.
 
 ## HttpService (services)
 
@@ -619,15 +614,15 @@ New API endpoints (`packages/api/src/routes/auth.ts` + `authSession.service.ts`)
 - React Query `networkMode: 'offlineFirst'` with stable `mutationKey` on all mutations
 - `useMutationStatus` aggregator hook surfaces "Syncing…" indicators across the app
 
-## Offline-First Persistence (services + auth-sdk)
+## Offline-First Persistence (services)
 
-- `@tanstack/react-query-persist-client` wired in both `@oxyhq/services` (AsyncStorage) and `@oxyhq/auth` (localStorage via `createSyncStoragePersister`).
+- `@tanstack/react-query-persist-client` wired in `@oxyhq/services` (AsyncStorage; localStorage-backed on web).
 - Query whitelist: `accounts`, `users`, `sessions`, `devices`, `privacy`, `payments` queries are persisted; mutations always persisted; 30-day TTL; 1s throttle; v1 cache cleanup on startup.
-- `OxyProvider` and `WebOxyProvider` both await `restored` before exposing the QueryClient → first paint serves cached data, not a loading spinner.
-- New `useOnlineStatus()` hook in `@oxyhq/services` — built on `useSyncExternalStore` over `onlineManager`; use for offline banners in app UIs.
-- TanStack Query must use a consistent `^5.x` major version across services, auth-sdk, console, and test-app-expo — check each workspace's `package.json` for the pinned range.
+- `OxyProvider` awaits `restored` before exposing the QueryClient → first paint serves cached data, not a loading spinner.
+- `useOnlineStatus()` hook in `@oxyhq/services` — built on `useSyncExternalStore` over `onlineManager`; use for offline banners in app UIs.
+- TanStack Query must use a consistent `^5.x` major version across services, console, and test-app-expo — check each workspace's `package.json` for the pinned range.
 
-## useSessionSocket (services + auth-sdk)
+## useSessionSocket (services)
 
 - Uses an **explicit switch with a strict whitelist**: only `session_removed`, `device_removed`, `sessions_removed` events may trigger a local sign-out.
 - **Never** add an `else` / default branch that calls sign-out — unknown events log a dev warning only.
@@ -659,16 +654,11 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - `ActivityIndicator` + "Saving…" during processing; Reset link; full a11y + `announceForAccessibility`; reduced-motion respect.
 - i18n keys under `editProfile.crop.*` and `editProfile.toasts.crop*` in en-US.json + es-ES.json.
 
-## Device-First Session Model (core + auth-sdk + services + api + packages/auth IdP) — replaces FedCM (wave 2, 2026-07)
+## Auth (device-first)
 
-**FedCM, the `/sso` bounce, the `/auth/silent` iframe, per-apex `auth.<rp-apex>` CNAMEs, `resolveConfig()`'s per-request `fedcmIssuer`, `FEDCM_ISSUER`/`FEDCM_TOKEN_SECRET`, and the `fedcm_session`/`oxy_rt_*` cookies were ALL deleted** — client, server, and IdP. There is no browser identity-federation API, no multi-domain-FAPI CNAME setup, and no central-vs-per-apex-issuer distinction to reason about anymore; none of that machinery exists to misconfigure. Full mechanism detail: `docs/auth/README.md`, `docs/SESSION-ARCHITECTURE.md`, `docs/CROSS_DOMAIN_AUTH.md`.
+Auth is device-first: `oxy_device` cookie + rotating refresh-token family + `#oxy_boot` bootstrap as transport (FROZEN until workshop 2c), `DeviceSession` as server authority, one `OxyProvider` (`@oxyhq/services`) on web and native. Canonical docs: `docs/architecture/oxy-auth-platform.md` + `docs/SESSION-ARCHITECTURE.md` (see also `docs/auth/device-session.md`, `docs/auth/integration-guide.md`). The full contract lives in "Auth / Session Contract" above — legacy browser-federation/SSO machinery (FedCM etc.) was deleted end to end; do not reintroduce any of it.
 
-- **The session authority is a device, not a browser-mediated federation flow.** A durable, first-party `oxy_device` cookie (`HttpOnly`, `Secure`, `SameSite=Lax`, `Domain=.oxy.so`, 400-day sliding, `packages/api/src/utils/deviceCookie.ts`) plus a persisted, per-origin rotating refresh-token family (`POST /auth/refresh-token`) restore a session with zero redirects for first-party apps.
-- **One cold-boot implementation, not two.** `runSessionColdBoot` (`packages/core/src/boot/coldBootV2.ts`) is called identically by `WebOxyProvider` (`@oxyhq/auth`) and `OxyContext` (`@oxyhq/services`) — built on the same `runColdBoot` pure ordered short-circuit primitive (`packages/core/src/utils/coldBoot.ts`) used before wave 2. Order: `bootstrap-return` → `stored-tokens` → `shared-key-signin` (native) → `bootstrap-hop` (web: same-apex inline fetch every boot; cross-apex ONE top-level hop, ever, per browser+origin, to the API's own `GET /auth/device/bootstrap` — never a per-apex CNAME) → signed out. NEVER auto-redirects to a login page.
-- **Server surface**: `packages/api/src/routes/deviceAuth.ts`, mounted at `/auth` on `api.oxy.so` — `GET /auth/device/bootstrap`, `POST /auth/device/web-session`, `POST /auth/device/exchange`, `POST /auth/refresh-token`, `POST /auth/device/token` (native), `POST /auth/device/resolve` (`X-Oxy-Internal`-gated, feeds the IdP account chooser).
-- **Interactive sign-in is an in-app SDK modal**, not a redirect to an IdP: `useAuth().signIn()` just opens it (password+2FA via `POST /auth/login` + `POST /security/2fa/verify-login`, or the "Sign in with Oxy" QR/Commons handoff — unchanged from before wave 2).
-- **Invalidated bearer token = local sign-out in `@oxyhq/services`**: `HttpService` clears tokens on 401 and emits `onTokensChanged(null)`. `OxyContext` MUST treat that as authoritative when a user is currently authenticated: clear session state, clear managed accounts, and disable private fetches until a new token/session is restored. Never let `isAuthenticated` remain true after `oxyServices.getAccessToken()` becomes null. Consumer apps gate private work with SDK state only: native `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`; web `useAuth().isLoading` / `useAuth().isReady`.
-- **`packages/auth` (auth.oxy.so) is now third-party-OAuth-only** (see "Auth App" section below) — it is not the session authority for first-party apps and does not appear in the cold-boot chain above except as the target of the one-time cross-apex hop (which actually targets `api.oxy.so`, not `auth.oxy.so`).
+- **Invalidated bearer token = local sign-out in `@oxyhq/services`**: `HttpService` clears tokens on 401 and emits `onTokensChanged(null)`. `OxyContext` MUST treat that as authoritative when a user is currently authenticated: clear session state, clear managed accounts, and disable private fetches until a new token/session is restored. Never let `isAuthenticated` remain true after `oxyServices.getAccessToken()` becomes null. Consumer apps gate private work with SDK state only: `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending`.
 
 ## Sign-In Token Planting
 
@@ -688,26 +678,27 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 ## Terminology
 
 - **OxyServices** — main API client class (in core)
-- **OxyProvider** — React Native context provider (in services)
-- **WebOxyProvider** — Web React context provider (in auth)
-- **useOxy** — RN auth hook (services), **useWebOxy** — web auth hook (auth)
-- **Bottom sheet** — native modal navigation system in services (29+ screens)
+- **OxyProvider** — the ONE React context provider (in services; web + native)
+- **useOxy / useAuth** — auth hooks (services; web + native)
+- **OxyAccountDialog** — unified account switcher + sign-in dialog (Bloom `<Dialog>`)
+- **Bottom sheet** — native modal navigation system in services (29+ screens; auth flows use the dialog, not sheets)
 - **LogoIcon / LogoText** — Bloom-themed logo exports from `@oxyhq/services`
 
 ## Auth App (packages/auth)
 
-Standalone Vite app. **Wave 2: third-party OAuth authorize/consent IdP** (sign in, sign up, authorize, recover, settings) + a device-account chooser feed — no longer a FedCM IdP.
+Standalone Vite app at `auth.oxy.so` — the **OAuth authorize/consent IdP** for third-party "Sign in with Oxy" (login, signup, authorize, recover, social-callback). It renders the shared `@oxyhq/services` auth surfaces via RN Web.
 
-**ARCHITECTURE: the auth app is a third-party-OAuth IdP, not a Relying Party (CRITICAL — do not refactor)**
-- `WebOxyProvider` + `runSessionColdBoot` are for RP apps (Mention, accounts, console, inbox, Allo, Homiio) that use the SDK directly — their device-first cold boot never redirects to `auth.oxy.so` for sign-in; the only time it touches the API's IdP-adjacent surface at all is the one-time cross-apex `GET /auth/device/bootstrap` hop, which targets `api.oxy.so`, not `auth.oxy.so`.
-- The auth app is NOT the session authority anymore — there are no `fedcm_session`/`oxy_rt_*` cookies left for it to own. Its own session surface is the device-account chooser feed (`GET /api/device-accounts`, a Cloudflare Pages Function at `packages/auth/functions/api/device-accounts.ts`), which reads the shared, first-party `oxy_device` cookie and forwards it to the API's internal `POST /auth/device/resolve`.
-- There is no FedCM/`/sso` loop left to create circularity with — that machinery is gone, not replaced by an equivalent self-referential path. Using `WebOxyProvider` here would still be wrong (it's not an RP), but there's no bounce-to-itself risk to reason about anymore.
-- DO NOT refactor the auth app onto `WebOxyProvider`/`runSessionColdBoot`.
+**ARCHITECTURE: the auth app IS the IdP, not a Relying Party (CRITICAL — do not refactor)**
+- It mounts `OxyProvider` from `@oxyhq/services` with **`coldBoot={false}`** (`packages/auth/src/main.tsx`) — no-session-authority mode: the provider supplies the shared sign-in surface (Commons QR / device-flow) and the `OxyConsentScreen` context, but runs NO device-first cold boot and owns NO session restore. Do not enable RP cold boot here.
+- `authorize.tsx` renders **`OxyConsentScreen`** from `@oxyhq/services` — the single OAuth consent surface (shows the registered `Application` identity + `privacyPolicyUrl`/`termsUrl`; the auto-approve decision is the registry-based `isTrustedApplication()` predicate server-side).
+- Consent/password/signup/recover keep their DOM+Bloom shell (`AuthFormLayout`, `login-form.tsx`, etc.); the login page mounts the services sign-in surface.
+- **No account management.** `accounts.oxy.so` owns it exclusively; the IdP's `/settings` + `/settings/password` + `/settings/linked-accounts` routes permanently redirect to `accounts.oxy.so/security`, and `/settings/sessions` → `accounts.oxy.so/sessions` (`ExternalRedirect` routes in `src/main.tsx`).
+- RP apps (Mention, accounts, console, inbox, Allo, Homiio) never redirect users to `auth.oxy.so` for first-party sign-in — their in-app dialog handles it; `auth.oxy.so` exists for the third-party OAuth redirect flow.
 
 **Zod schema contract — the device-account chooser reads `deviceResolveResponseSchema` from `@oxyhq/contracts` directly (no local mirror to keep in sync)**
 - `useDeviceAccounts()` (`packages/auth/lib/use-device-accounts.ts`) fetches `/api/device-accounts`, parses with `deviceResolveResponseSchema`/`DeviceResolveResponse`, and maps each `UserResponse` via `resolveUserId` + `getAccountDisplayName` (from `@oxyhq/core`) into the chooser's `Account` shape — a user with only a first name renders that first name, never the lowercase username, and the helper always returns a non-empty string so the chooser never shows a blank row.
 - `user.name` is ALWAYS the structured object `{ first?, last?, full?, displayName? }` — NEVER a plain `z.string()`. `displayName` is optional (see `@oxyhq/contracts` `userNameSchema`).
-- The legacy `/auth/refresh-all`-era `refreshAllResponseSchema`/`currentUserResponseSchema`/`deviceSessionsResponseSchema` schemas and their nullable-`authuser` legacy-slot handling are GONE — `refreshAllAccountSchema` and friends were removed from `@oxyhq/contracts` in the same wave (contracts 0.10.0). Do not re-introduce a local schema mirror in `packages/auth/lib/schemas.ts`; import the device-resolve contract from `@oxyhq/contracts` directly.
+- The legacy multi-account-refresh schemas and their nullable-`authuser` legacy-slot handling are GONE from `@oxyhq/contracts` (0.10.0). Do not re-introduce a local schema mirror in `packages/auth/lib/schemas.ts`; import the device-resolve contract from `@oxyhq/contracts` directly.
 
 **Key patterns:**
 - `AuthFormLayout` + `AuthFormHeader` — shared layout for all auth screens
@@ -732,13 +723,13 @@ Standalone Vite app. **Wave 2: third-party OAuth authorize/consent IdP** (sign i
 - `POST /auth/signup` — account creation
 - `POST /auth/recover/*` — password recovery flow
 - `GET /users/me` — current session check
-- `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`, `POST /auth/oauth/token` — the third-party OAuth authorize/consent/token exchange this app now exists to serve
+- `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`, `GET /auth/oauth/client/:clientId`, `POST /auth/oauth/token` — the third-party OAuth authorize/consent/token surface this app exists to serve
 - `GET /api/device-accounts` (a Cloudflare Pages Function, not an API route) — the device-account chooser feed
 
-**Device-account chooser Pages Function (packages/auth/functions/) — replaces the FedCM IdP server:**
-- `packages/auth/functions/api/device-accounts.ts` (`onRequestGet`) delegates to the shared, framework-free `deviceAccountsResponse` handler in `packages/auth/lib/device-accounts.ts`: reads the first-party `oxy_device` cookie and forwards it to the API's `POST /auth/device/resolve` under a shared `X-Oxy-Internal` secret (`SSO_INTERNAL_SECRET`); fails closed to an empty list on any missing cookie/secret/non-2xx. Everything else is the pure-static Vite SPA (login/signup/authorize/recover/settings) that CF serves directly.
-- **✅ RESOLVED (2026-07-05), durable lesson — for this IdP project, use a Cloudflare Pages Functions DIRECTORY (`functions/`, file-based routing), never an advanced-mode single `dist/_worker.js`.** An earlier attempt (commit `8c44c6fb`/#544) tried to fix a broken deploy by keeping advanced mode and adding an execution-assertion script; that did not fix it — CF Pages was not detecting/invoking the advanced-mode worker on this project AT ALL (reproduced even on the direct `<hash>.oxy-auth.pages.dev` deployment URL, ruling out edge/routing causes). The actual fix (commit `1141ddb7`/#545) was migrating to the Functions-directory shape CF reliably detects; the deploy workflow verifies compilation with `bunx wrangler@4 pages functions build functions --outfile ...` (the same command CF runs internally) before deploying. A second, unrelated deploy failure surfaced right after (`npm error EOVERRIDE` — `cloudflare/wrangler-action@v3`'s `workingDirectory: packages/auth` ran wrangler install via `npx`, which invoked npm's Arborist against the repo-root `overrides["@oxyhq/bloom"]`, a legitimate monorepo-wide override that only bun's resolver tolerates); fixed by replacing that step with a direct `bunx wrangler@4 pages deploy dist ...` `run:` step scoped to the auth job only, so npm is never invoked. **Live-verified**: `curl https://auth.oxy.so/api/device-accounts` → `200 application/json {"activeAccountId":null,"accounts":[]}`.
-- Per-apex `auth.<rp-apex>` CNAMEs, `FEDCM_TOKEN_SECRET`, and `FEDCM_ISSUER` are now INERT — nothing reads them anymore. They are pending decommission in `oxy-infra` (not yet removed as of this writing); do not add new configuration that depends on them.
+**Device-account chooser Pages Function (packages/auth/functions/):**
+- `packages/auth/functions/api/device-accounts.ts` (`onRequestGet`) delegates to the shared, framework-free `deviceAccountsResponse` handler in `packages/auth/lib/device-accounts.ts`: reads the first-party `oxy_device` cookie and forwards it to the API's `POST /auth/device/resolve` under a shared `X-Oxy-Internal` secret (`SSO_INTERNAL_SECRET`); fails closed to an empty list on any missing cookie/secret/non-2xx. Everything else is the pure-static Vite SPA that CF serves directly.
+- **Durable deploy lesson — use a Cloudflare Pages Functions DIRECTORY (`functions/`, file-based routing), never an advanced-mode single `dist/_worker.js`.** CF Pages was not detecting/invoking the advanced-mode worker on this project AT ALL (reproduced even on the direct `<hash>.oxy-auth.pages.dev` deployment URL, ruling out edge/routing causes); the fix (commit `1141ddb7`/#545) was migrating to the Functions-directory shape CF reliably detects. The deploy workflow verifies compilation with `bunx wrangler@4 pages functions build functions --outfile ...` (the same command CF runs internally) before deploying, and deploys via a direct `bunx wrangler@4 pages deploy dist ...` `run:` step — never through npm/npx (npm's Arborist chokes on the repo-root `overrides["@oxyhq/bloom"]`, `npm error EOVERRIDE`; only bun's resolver tolerates it).
+- Leftover per-apex `auth.<rp-apex>` CNAMEs and the deleted federation-era IdP env vars are INERT — nothing reads them; pending decommission in `oxy-infra`. Do not add new configuration that depends on them.
 - Changes require a redeploy of auth.oxy.so to take effect in production.
 
 ## Commons Civic Identity Layer — Oxy ID (Fases 0–4)

@@ -90,7 +90,7 @@ export function useDeviceAccounts(): DeviceAccountsState {
  *
  * `authuser` is a DETERMINISTIC per-account index assigned over the FILTERED,
  * user-id-sorted set — device-session accounts have no persistent
- * `oxy_rt_${n}` slot. It is a client-side `/login → /authorize?authuser=N`
+ * refresh-cookie slot. It is a client-side `/login → /authorize?authuser=N`
  * selection hint only (matched in `authorize.tsx`), never sent to the API.
  * CRITICAL: the index is assigned AFTER dropping any entry whose user fails to
  * resolve, so a skipped entry never leaves a gap that would shift `authuser`

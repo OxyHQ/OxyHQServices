@@ -15,7 +15,7 @@ Complete reference documentation for all OxyServices methods and features.
 - [Location Services](#location-services)
 - [Analytics](#analytics)
 - [Device Management](#device-management)
-- [Developer API](#developer-api)
+- [Applications & Connected Apps](#applications--connected-apps)
 - [Utilities](#utilities)
 
 ## Authentication
@@ -773,43 +773,51 @@ await oxyServices.removeDevice('device123');
 
 ---
 
-## Developer API
+## Applications & Connected Apps
 
-### `getDeveloperApps()`
+Applications are registered and managed in the [Oxy Console](https://console.oxy.so). The SDK exposes the user-facing OAuth surface:
 
-Get developer apps for the current user.
+### `getPublicApplication(clientId)`
 
-```typescript
-const apps = await oxyServices.getDeveloperApps();
-// Returns: DeveloperApp[]
-```
-
-**Returns:** `Promise<any[]>`
-
----
-
-### `createDeveloperApp(data)`
-
-Create a new developer app.
+Resolve an OAuth `client_id` to the owning application's public identity (name, icon, legal URLs, type, scopes). No authentication required — used to render consent/authorize UIs.
 
 ```typescript
-const app = await oxyServices.createDeveloperApp({
-  name: 'My App',
-  description: 'App description',
-  webhookUrl: 'https://example.com/webhook',
-  scopes: ['read:user', 'write:user']
-});
+const app = await oxyServices.getPublicApplication('oxy_dk_...');
+// Returns: PublicApplication
 ```
 
 **Parameters:**
-- `data` (object): App configuration
-  - `name` (string): App name
-  - `description` (string, optional): App description
-  - `webhookUrl` (string): Webhook URL
-  - `devWebhookUrl` (string, optional): Development webhook URL
-  - `scopes` (string[], optional): API scopes
+- `clientId` (string): The OAuth `client_id` (an active credential's public key)
 
-**Returns:** `Promise<any>`
+**Returns:** `Promise<PublicApplication>`
+
+---
+
+### `listConnectedApps()`
+
+List the OAuth-authorized applications the current user has connected via the consent flow.
+
+```typescript
+const apps = await oxyServices.listConnectedApps();
+// Returns: ConnectedApp[]
+```
+
+**Returns:** `Promise<ConnectedApp[]>`
+
+---
+
+### `revokeAppGrant(applicationId)`
+
+Revoke a connected application's grant. The next sign-in from that app asks for consent again.
+
+```typescript
+await oxyServices.revokeAppGrant('68f1c2…'); // the Application id from getAppGrants()
+```
+
+**Parameters:**
+- `applicationId` (string): The connected application's id (from `ConnectedApp.applicationId`)
+
+**Returns:** `Promise<void>`
 
 ---
 
@@ -866,7 +874,7 @@ app.get('/api/protected/user', (req, res) => {
 All methods throw errors that you should handle:
 
 ```typescript
-import { OxyAuthenticationError } from '@oxyhq/services';
+import { OxyAuthenticationError } from '@oxyhq/core';
 
 try {
   await oxyServices.getCurrentUser();
@@ -886,5 +894,5 @@ try {
 All methods are fully typed. Import types for better TypeScript support:
 
 ```typescript
-import type { User, Notification, BlockedUser, RestrictedUser } from '@oxyhq/services';
+import type { User, Notification, BlockedUser, RestrictedUser } from '@oxyhq/core';
 ```

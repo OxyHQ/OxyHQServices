@@ -1,6 +1,6 @@
 # Oxy Auth Platform — Auditoría Fase 0
 
-> **Estado:** COMPLETADA 2026-07-05 (agente implementador)
+> **Estado:** COMPLETADA 2026-07-05 · **FASE 7 DONE 2026-07-06** — checklist §11 verificada abajo
 > **Ground truth:** `origin/main` @ `99405224` ("feat(sdk)!: re-land unified OxyAccountDialog #554")
 > **Plan maestro:** [`oxy-auth-platform.md`](./oxy-auth-platform.md) · **Handoff:** [`oxy-auth-agent-handoff.md`](./oxy-auth-agent-handoff.md)
 > Verificable en Fase 7 contra este doc. Metodología: git grep/ls-tree contra `origin/main` + worktree limpio con tests + 7 subagentes de auditoría en paralelo.
@@ -176,3 +176,17 @@ Grafo completo en main (`account.service.ts`, `/accounts`, `POST /accounts/:id/s
 - [ ] AGENTS.md (repo + ~/Oxy + ~/) reescritos device-first sin FedCM
 - [ ] `docs/auth/integration-guide.md` + `docs/auth/device-session.md` creados
 - [ ] Tests ≥ baselines §4
+
+
+---
+
+## DONE (2026-07-06) — verificación Fase 7
+
+- [x] Grep §5 = 0 hits en `packages/` + `docs/` + `examples/` + `wiki/` (excl. CHANGELOG, `docs/superpowers/` histórico y los 3 docs canónicos del plan que citan los strings como inventario). 2 supervivientes deliberados: assert negativo `oxy_rt_` en `accountsSwitch.test.ts:275` (guard anti-reintroducción) y `@oxyhq/auth-app` (nombre del paquete IdP).
+- [x] `packages/auth-sdk/` eliminado (PR #557); console en services
+- [x] `ssoBounce.ts` + exports core eliminados; seeds sin sso-callback; examples reescritos; openapi regenerado (208 paths, 0 restos fedcm/sso); `oxy-main-domain/web-identity` eliminado
+- [x] Docs: DELETE (EXPO_54_GUIDE) + 4 stubs reescritos + docs/ARCHITECTURE/README/overview + guías services + READMEs/wiki
+- [x] `docs/auth/integration-guide.md` + `docs/auth/device-session.md` creados
+- [x] AGENTS.md repo reescrito (secciones auth device-first); `~/AGENTS.md` global alineado; `~/Oxy/AGENTS.md` ya limpio
+- [x] Tests ≥ baselines: contracts 150 · core 740 · api 1363 · services 194 · auth IdP 63/0
+- [ ] **Workshop 2c** — transporte cero-cookies PENDIENTE de Nate (decisión 2026-07-06: transporte actual congelado)
