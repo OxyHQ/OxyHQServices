@@ -2,11 +2,11 @@
  * `OxyContextProvider` cold-boot opt-out (IdP mode).
  *
  * The provider is the ecosystem's device-first session authority by default:
- * it runs `runSessionColdBoot` on mount and opens the signed-out device-state
- * socket. The IdP host (`auth.oxy.so`) is NOT a session authority, so it mounts
- * the provider with `coldBoot={false}` — the cold boot must never run and the
- * device socket must never open, yet interactive sign-in must still commit a
- * normal session on that origin.
+ * it runs `runSessionColdBoot` on mount. The IdP host (`auth.oxy.so`) is NOT a
+ * session authority, so it mounts the provider with `coldBoot={false}` — the
+ * cold boot must never run (so the bearer-authenticated device socket never
+ * starts), yet interactive sign-in must still commit a normal session on that
+ * origin.
  */
 import { render, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -105,7 +105,8 @@ describe('OxyContextProvider coldBoot opt-out (IdP mode)', () => {
     // No boot spinner: private-API readiness settles to a definitive "no".
     expect(getState()?.isPrivateApiPending).toBe(false);
     expect(getState()?.canUsePrivateApi).toBe(false);
-    // The signed-out device-state socket must never open in IdP mode.
+    // IdP mode never runs the cold boot and never signs in, so the device
+    // socket is never started.
     expect(lastSessionClient().start).not.toHaveBeenCalled();
   });
 
@@ -116,7 +117,7 @@ describe('OxyContextProvider coldBoot opt-out (IdP mode)', () => {
       deviceId: 'd-1',
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       accessToken: 'access-1',
-      refreshToken: 'refresh-1',
+      deviceSecret: 'ds-1',
       user: { id: 'u-1', username: 'alice' },
     };
     jest.spyOn(oxy, 'passwordSignIn').mockResolvedValue(loginResult);
@@ -144,11 +145,11 @@ describe('OxyContextProvider coldBoot opt-out (IdP mode)', () => {
       expect(getState()?.isAuthenticated).toBe(true);
     });
     expect(getState()?.user?.id).toBe('u-1');
-    expect(oxy.passwordSignIn).toHaveBeenCalledWith(
-      'alice',
-      'secret',
-      expect.objectContaining({ deviceToken: undefined }),
-    );
+    // Zero-cookie cutover: no `deviceToken` is threaded into `passwordSignIn`.
+    expect(oxy.passwordSignIn).toHaveBeenCalledWith('alice', 'secret', {
+      deviceName: undefined,
+      deviceFingerprint: undefined,
+    });
   });
 
   it('default (coldBoot omitted): runs the device-first cold boot', async () => {

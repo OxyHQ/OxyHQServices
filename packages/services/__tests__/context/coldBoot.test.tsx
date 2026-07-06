@@ -5,17 +5,18 @@
  *
  * The cold-boot SSO ladder (sso-return / silent-iframe / sso-bounce / IdP
  * session-check) is GONE. Cold boot now = `runSessionColdBoot` from
- * `@oxyhq/core`, and it NEVER redirects to a login page. This suite pins the two
- * end-to-end contracts that matter to consumers:
+ * `@oxyhq/core` — a zero-cookie ladder (`device-secret-mint` on web+native,
+ * `shared-key-signin` on native) that NEVER redirects to a login page. This
+ * suite pins the two end-to-end contracts that matter to consumers:
  *
  *   1. A signed-out boot resolves to `isAuthResolved: true` / `isAuthenticated:
  *      false` WITHOUT any navigation — the app renders its own "Sign in with
  *      Oxy" affordance instead of being bounced.
- *   2. A returning device (a persisted refresh family with a still-valid warm
- *      access token) restores the session on boot: the token is planted, the
- *      account is handed off to the SessionClient (`addCurrentAccount` — cold
- *      boot ensures MEMBERSHIP, not a deliberate activation), and the full user
- *      is hydrated via `getCurrentUser`.
+ *   2. A returning device (a persisted zero-cookie device credential —
+ *      `deviceId` + `deviceSecret`) restores the session on boot: the credential
+ *      mints a fresh access token, the account is handed off to the SessionClient
+ *      (`addCurrentAccount` — cold boot ensures MEMBERSHIP, not a deliberate
+ *      activation), and the full user is hydrated via `getCurrentUser`.
  *
  * `createSessionClient` is mocked so the post-boot handoff is deterministic +
  * offline (the real client opens a socket + hits the backend); its `getState()`
@@ -57,16 +58,14 @@ const API_BASE_URL = 'https://api.oxy.so';
 const USER_ID = 'user_cb_1';
 
 /**
- * A `@oxyhq/core`-shaped stub. `requestWebSession` (the same-apex inline
- * device-cookie probe the web cold boot uses) is controllable so a test can
- * yield "known device, signed out". `getCurrentUser` hydrates the committed
- * session in the restore case.
+ * A `@oxyhq/core`-shaped stub. `mintFromDeviceSecret` is the zero-cookie mint the
+ * web cold boot uses to restore a returning device; it is only called when a
+ * `deviceId` + `deviceSecret` is persisted, so a signed-out boot (no seed) never
+ * reaches it. `getCurrentUser` hydrates the committed session in the restore case.
  */
 function buildStub(overrides: Record<string, unknown> = {}) {
   let currentToken: string | null = null;
-  const buildBootstrapUrl = jest.fn(() => 'https://api.oxy.so/auth/device/bootstrap');
   return {
-    buildBootstrapUrl,
     stub: {
       config: {},
       httpService: {
@@ -82,9 +81,20 @@ function buildStub(overrides: Record<string, unknown> = {}) {
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      buildBootstrapUrl,
-      // Same-apex web probe → known device, signed out (no session arm).
-      requestWebSession: jest.fn(async () => ({ reason: 'signed_out', deviceToken: 'dt-cb' })),
+      // Zero-cookie mint: restores the device's active account from the persisted
+      // device credential. Never invoked when no credential is seeded.
+      mintFromDeviceSecret: jest.fn(async () => ({
+        accessToken: 'cb.minted.access',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        nextDeviceSecret: 'cb.next.secret',
+        state: {
+          deviceId: 'dev-cb',
+          accounts: [{ accountId: USER_ID, sessionId: 'sess_cb', authuser: 0 }],
+          activeAccountId: USER_ID,
+          revision: 1,
+          updatedAt: Date.now(),
+        },
+      })),
       signInWithSharedIdentity: jest.fn(async () => null),
       getCurrentUser: jest.fn(async (): Promise<User> => ({ id: USER_ID, username: 'cbuser' } as User)),
       getUsersByIds: jest.fn(async () => []),
@@ -121,7 +131,7 @@ describe('OxyContext cold boot (device-first)', () => {
   });
 
   it('a signed-out boot resolves auth WITHOUT navigating to any login page', async () => {
-    const { stub, buildBootstrapUrl } = buildStub();
+    const { stub } = buildStub();
 
     renderProvider(stub);
 
@@ -130,51 +140,48 @@ describe('OxyContext cold boot (device-first)', () => {
     // Signed out, but auth is RESOLVED (a definitive "logged out", not undetermined).
     expect(capturedContext?.isAuthenticated).toBe(false);
     expect(capturedContext?.user).toBeNull();
-    // The web boot actually ran (the same-apex inline device-cookie probe), and
-    // resolved signed-out INLINE...
-    expect(stub.requestWebSession).toHaveBeenCalledTimes(1);
-    // ...WITHOUT ever navigating: `buildBootstrapUrl` is the sole argument to the
-    // one `window.location.assign(...)` call in the cold boot, so its absence
-    // proves no redirect occurred. The critical device-first contract: NO
-    // automatic navigation to any login page, ever.
-    expect(buildBootstrapUrl).not.toHaveBeenCalled();
+    // No device credential is persisted, so the zero-cookie mint never runs.
+    // The critical device-first contract: coldBootV2 has no bounce/navigation step
+    // at all — it can only ever resolve signed out INLINE.
+    expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
     // The commit funnel never ran, so the device set was never touched.
     expect(fakeSessionClient.addCurrentAccount).not.toHaveBeenCalled();
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
   });
 
-  it('restores a session from the persisted store (warm-plant) and hands off to the SessionClient', async () => {
-    // A returning device: a persisted refresh family with a still-valid warm
-    // access token → cold boot warm-plants without a network round-trip.
+  it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
+    // A returning device: a persisted zero-cookie device credential (`deviceId` +
+    // `deviceSecret`) → cold boot mints a fresh access token from it.
     window.localStorage.setItem(
       AUTH_STATE_STORAGE_KEY,
       JSON.stringify({
         sessionId: 'sess_cb',
-        refreshToken: 'cb.refresh.token',
         userId: USER_ID,
+        deviceId: 'dev-cb',
+        deviceSecret: 'cb.device.secret',
         accessToken: 'cb.access.token',
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       }),
     );
-    const { stub, buildBootstrapUrl } = buildStub();
+    const { stub } = buildStub();
 
     renderProvider(stub);
 
     await waitFor(() => expect(capturedContext?.isAuthenticated).toBe(true));
     expect(capturedContext?.isAuthResolved).toBe(true);
 
+    // The device credential was presented to the zero-cookie mint.
+    expect(stub.mintFromDeviceSecret).toHaveBeenCalledWith('dev-cb', 'cb.device.secret');
     // The full user was hydrated via getCurrentUser.
     expect(stub.getCurrentUser).toHaveBeenCalled();
     expect(capturedContext?.user?.id).toBe(USER_ID);
-    // The token was planted from the warm store.
-    expect(stub.getAccessToken()).toBe('cb.access.token');
+    // The token was planted from the freshly minted access token.
+    expect(stub.getAccessToken()).toBe('cb.minted.access');
     // Cold boot handoff ensures device-set MEMBERSHIP (addCurrentAccount), not a
     // deliberate activation (registerAndActivate) — the server's own active
     // account wins.
     await waitFor(() => expect(fakeSessionClient.addCurrentAccount).toHaveBeenCalledTimes(1));
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
     expect(fakeSessionClient.start).toHaveBeenCalled();
-    // A warm restore never even reaches the web bootstrap-hop step.
-    expect(buildBootstrapUrl).not.toHaveBeenCalled();
   });
 });

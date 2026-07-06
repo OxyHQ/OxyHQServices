@@ -3,16 +3,18 @@ import {
   createNativeAuthStateStore,
   createMemoryAuthStateStore,
   AUTH_STATE_STORAGE_KEY,
-  DEVICE_TOKEN_STORAGE_KEY,
   type PersistedAuthState,
   type NativeKeyValueStorage,
 } from '../authStateStore';
 
+/**
+ * The zero-cookie persisted shape: `sessionId` + `userId` are the only required
+ * fields; `deviceId` / `deviceSecret` (the mint credential) and
+ * `accessToken` / `expiresAt` (warm-boot) are all optional round-trip fields.
+ */
 const SAMPLE: PersistedAuthState = {
   sessionId: 's-1',
-  refreshToken: 'r-abcdefghijklmnop',
   userId: 'u-1',
-  deviceToken: 'd-1234567890',
   accessToken: 'a-jwt',
   expiresAt: '2030-01-01T00:00:00.000Z',
 };
@@ -65,7 +67,7 @@ describe('createWebAuthStateStore', () => {
     expect(await store.load()).toEqual(SAMPLE);
   });
 
-  it('round-trips the optional phase-2c deviceId + deviceSecret', async () => {
+  it('round-trips the optional deviceId + deviceSecret mint credential', async () => {
     installLocalStorage(makeFakeStorage());
     const store = createWebAuthStateStore();
     const withCreds: PersistedAuthState = { ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' };
@@ -77,45 +79,30 @@ describe('createWebAuthStateStore', () => {
     expect(loaded).toEqual(withCreds);
   });
 
-  it('deserializes a legacy blob with no device credentials (additive — fields absent)', async () => {
+  it('deserializes a minimal blob with no device credentials (fields absent)', async () => {
     const storage = makeFakeStorage();
     installLocalStorage(storage);
     const store = createWebAuthStateStore();
 
-    storage.setItem(
-      AUTH_STATE_STORAGE_KEY,
-      JSON.stringify({ sessionId: 's-1', refreshToken: 'r-abcdefghijklmnop', userId: 'u-1' }),
-    );
+    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify({ sessionId: 's-1', userId: 'u-1' }));
     const loaded = await store.load();
-    expect(loaded).not.toBeNull();
+    expect(loaded).toEqual({ sessionId: 's-1', userId: 'u-1' });
     expect(loaded && 'deviceId' in loaded).toBe(false);
     expect(loaded && 'deviceSecret' in loaded).toBe(false);
+    expect(loaded && 'accessToken' in loaded).toBe(false);
   });
 
-  it('clear() wipes the session but the deviceToken survives', async () => {
+  it('clear() wipes the persisted session', async () => {
     installLocalStorage(makeFakeStorage());
     const store = createWebAuthStateStore();
 
-    await store.save(SAMPLE);
-    await store.saveDeviceToken('device-token-xyz');
+    await store.save({ ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' });
     await store.clear();
 
     expect(await store.load()).toBeNull();
-    expect(await store.loadDeviceToken()).toBe('device-token-xyz');
   });
 
-  it('persists the deviceToken under a separate long-lived key', async () => {
-    const storage = makeFakeStorage();
-    installLocalStorage(storage);
-    const store = createWebAuthStateStore();
-
-    await store.saveDeviceToken('dt');
-    expect(storage.getItem(DEVICE_TOKEN_STORAGE_KEY)).toBe('dt');
-    await store.clearDeviceToken();
-    expect(await store.loadDeviceToken()).toBeNull();
-  });
-
-  it('returns null for a malformed or incomplete blob', async () => {
+  it('returns null for malformed JSON or a blob missing a required field', async () => {
     const storage = makeFakeStorage();
     installLocalStorage(storage);
     const store = createWebAuthStateStore();
@@ -123,7 +110,16 @@ describe('createWebAuthStateStore', () => {
     storage.setItem(AUTH_STATE_STORAGE_KEY, 'not-json');
     expect(await store.load()).toBeNull();
 
-    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify({ sessionId: 's', userId: 'u' }));
+    // Missing userId → invalid.
+    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify({ sessionId: 's' }));
+    expect(await store.load()).toBeNull();
+
+    // Missing sessionId → invalid.
+    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify({ userId: 'u' }));
+    expect(await store.load()).toBeNull();
+
+    // Empty required strings → invalid.
+    storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify({ sessionId: '', userId: '' }));
     expect(await store.load()).toBeNull();
   });
 
@@ -141,23 +137,16 @@ describe('createWebAuthStateStore', () => {
     expect(await store.load()).toEqual(SAMPLE);
   });
 
-  it('swallows a write that throws (quota / private mode) without rejecting', async () => {
+  it('swallows a write that throws (quota / private mode) without rejecting, and the mirror keeps the session live', async () => {
     installLocalStorage(makeFakeStorage({ throwOnSet: true }));
     const store = createWebAuthStateStore();
+    const withCreds: PersistedAuthState = { ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' };
 
-    await expect(store.save(SAMPLE)).resolves.toBeUndefined();
+    await expect(store.save(withCreds)).resolves.toBeUndefined();
     // The write never reached storage...
     expect(localStorage.getItem(AUTH_STATE_STORAGE_KEY)).toBeNull();
-    // ...but the in-memory mirror keeps the session live for this page's lifetime.
-    expect(await store.load()).toEqual(SAMPLE);
-  });
-
-  it('the mirror keeps the deviceToken live when the write throws', async () => {
-    installLocalStorage(makeFakeStorage({ throwOnSet: true }));
-    const store = createWebAuthStateStore();
-
-    await store.saveDeviceToken('dt-mirrored');
-    expect(await store.loadDeviceToken()).toBe('dt-mirrored');
+    // ...but the in-memory mirror keeps the session (incl. the mint credential) live.
+    expect(await store.load()).toEqual(withCreds);
   });
 
   it('a cleared session reads null even if storage later holds a stale blob (mirror wins)', async () => {
@@ -198,13 +187,11 @@ describe('createNativeAuthStateStore', () => {
     expect(await store.load()).toEqual(SAMPLE);
   });
 
-  it('deviceToken survives a session clear', async () => {
+  it('clear() wipes the persisted session', async () => {
     const store = createNativeAuthStateStore(makeNativeStorage());
-    await store.save(SAMPLE);
-    await store.saveDeviceToken('dt-native');
+    await store.save({ ...SAMPLE, deviceId: 'dev-1', deviceSecret: 'ds-1' });
     await store.clear();
     expect(await store.load()).toBeNull();
-    expect(await store.loadDeviceToken()).toBe('dt-native');
   });
 
   it('keeps the session live via the mirror when the injected storage throws (locked keychain)', async () => {

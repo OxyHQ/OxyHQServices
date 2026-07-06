@@ -30,16 +30,14 @@ function makeStore(prefix: string) {
  * Paths hit ONLY by the first-party IdP worker (auth.oxy.so) server-to-server,
  * never by a browser directly:
  *   - GET  /session/validate/:id    (worker: fetchUserFromAPI / validateSession)
- *   - POST /auth/device/resolve     (worker: IdP chooser device feed, X-Oxy-Internal)
  *
- * The IdP worker fans EVERY user's chooser/session flow through these, from a
- * small pool of shared Cloudflare egress IPs. Subjecting them to the per-IP
- * browser budget (rl:general 1000/15min) lets normal multi-user traffic exhaust
- * the budget on one worker IP → 429 → the IdP fails closed → RP auth guards
- * re-bounce and amplify the load. These are trusted infrastructure calls, NOT
- * browser traffic, so they are excluded from the general per-IP limiter and
- * capped instead by their own dedicated route limiters (idpServiceLimiter for
- * `/session/validate/`; `rl:auth:device:resolve:` for `/auth/device/resolve`).
+ * The IdP worker fans EVERY user's session flow through this, from a small pool
+ * of shared Cloudflare egress IPs. Subjecting it to the per-IP browser budget
+ * (rl:general 1000/15min) lets normal multi-user traffic exhaust the budget on
+ * one worker IP → 429 → the IdP fails closed → RP auth guards re-bounce and
+ * amplify the load. These are trusted infrastructure calls, NOT browser traffic,
+ * so they are excluded from the general per-IP limiter and capped instead by
+ * their own dedicated route limiter (idpServiceLimiter for `/session/validate/`).
  *
  * MOUNT-ORDER INVARIANT: the general `rateLimiter` skips these paths, so any
  * path listed here MUST carry its OWN dedicated limiter at its route. Adding a
@@ -48,16 +46,13 @@ function makeStore(prefix: string) {
  * checked and browser-reachable, so it stays under the general budget.
  */
 export function isIdpServiceToServicePath(path: string): boolean {
-  return (
-    path.startsWith('/session/validate/') ||
-    path === '/auth/device/resolve'
-  );
+  return path.startsWith('/session/validate/');
 }
 
 // General rate limiting middleware (exclude file uploads). The previous
 // ceiling of 150/15min was below what a single signed-in user generates
 // against the API in normal usage (feed scrolling, profile loads, sockets'
-// REST fallback, device-first refresh/bootstrap calls), which surfaced as
+// REST fallback, device-first token mints), which surfaced as
 // misleading 429s on unrelated endpoints. The userRateLimiter below still caps
 // per-account traffic. IdP worker server-to-server paths are skipped (see
 // isIdpServiceToServicePath) so shared-egress traffic never exhausts this budget.
@@ -73,9 +68,8 @@ const rateLimiter = rateLimit({
 });
 
 // Dedicated high-ceiling limiter for the IdP worker's server-to-server READ
-// calls (see isIdpServiceToServicePath: /session/validate/* and
-// /auth/device/resolve, the device-account chooser feed's lookup). Because
-// those paths are skipped by rl:general, this is their SOLE per-IP budget.
+// calls (see isIdpServiceToServicePath: /session/validate/*). Because those
+// paths are skipped by rl:general, this is their SOLE per-IP budget.
 // The ceiling is deliberately high: each hit is the shared Cloudflare Worker
 // egress fanning MANY users' device-first/IdP-chooser calls through one IP,
 // not a single browser — yet it still bounds a runaway or compromised caller.

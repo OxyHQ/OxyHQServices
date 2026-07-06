@@ -298,8 +298,7 @@ router.get(
  *
  * The minted managed session is registered into the operator's device set
  * server-side (`deviceSessionService.addAccount`, broadcast to the device room)
- * so it survives reload and syncs cross-domain via the socket, converging on the
- * operator's `oxy_device` device identity.
+ * so it survives reload and syncs across the device's apps via the socket.
  *
  * Returns the SAME shape as login / claimSession (`SessionAuthResponse`) so the
  * client plants it as the active session.

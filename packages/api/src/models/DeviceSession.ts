@@ -13,20 +13,12 @@ export interface IDeviceSession extends Document {
   accounts: IDeviceSessionAccount[];
   activeAccountId: mongoose.Types.ObjectId | null;
   /**
-   * SHA-256 hex of the random 256-bit `oxy_device` cookie secret bound to this
-   * device. The cookie value itself is NEVER the deviceId — it is an opaque
-   * secret, and only its hash is stored, so a Mongo dump cannot forge the cookie
-   * and possessing the cookie reveals nothing about the deviceId. Sparse-unique:
-   * legacy device docs predate it and carry none.
-   */
-  cookieKeyHash?: string;
-  /**
-   * SHA-256 hex of the current `deviceSecret` (phase 2c — zero-cookie transport).
-   * The client stores the raw 256-bit secret first-party (web localStorage /
-   * native SecureStore) and presents it at `POST /session/device/token`; only the
-   * hash is stored server-side, so a Mongo dump cannot forge the secret. Sparse-
-   * unique, exactly like `cookieKeyHash`: legacy device docs predate it and carry
-   * none, and it is populated on the next sign-in / mint.
+   * SHA-256 hex of the current `deviceSecret` (zero-cookie transport). The client
+   * stores the raw 256-bit secret first-party (web localStorage / native
+   * SecureStore) and presents it at `POST /session/device/token`; only the hash
+   * is stored server-side, so a Mongo dump cannot forge the secret. Sparse-unique:
+   * legacy device docs predate it and carry none, and it is populated on the next
+   * sign-in / mint.
    */
   secretHash?: string;
   /**
@@ -59,13 +51,9 @@ const DeviceSessionSchema = new Schema<IDeviceSession>(
     deviceId: { type: String, required: true },
     accounts: { type: [AccountSchema], default: [] },
     activeAccountId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
-    // Sparse-unique: only device docs bound to an `oxy_device` cookie carry a
-    // hash. Never `default: null`, or sparse uniqueness would collide across
-    // legacy docs.
-    cookieKeyHash: { type: String, default: undefined },
     // Sparse-unique: only device docs bound to a `deviceSecret` carry a hash.
     // Never `default: null`, or sparse uniqueness would collide across legacy
-    // docs — same rationale as `cookieKeyHash`.
+    // docs.
     secretHash: { type: String, default: undefined },
     // Transient grace fields — never indexed (they churn on every rotation).
     prevSecretHash: { type: String, default: undefined },
@@ -76,7 +64,6 @@ const DeviceSessionSchema = new Schema<IDeviceSession>(
 );
 
 DeviceSessionSchema.index({ deviceId: 1 }, { unique: true });
-DeviceSessionSchema.index({ cookieKeyHash: 1 }, { unique: true, sparse: true });
 DeviceSessionSchema.index({ secretHash: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<IDeviceSession>('DeviceSession', DeviceSessionSchema);

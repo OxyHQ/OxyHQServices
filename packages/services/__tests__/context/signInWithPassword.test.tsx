@@ -6,8 +6,8 @@
  *
  * `signInWithPassword` calls `oxyServices.passwordSignIn(...)` and:
  *   - on a session arm, commits it through the SAME funnel the QR device flow /
- *     cold boot use (`commitSession`): plants the token, persists the rotating
- *     refresh family, registers + activates the account into the
+ *     cold boot use (`commitSession`): plants the token, persists the zero-cookie
+ *     device credential, registers + activates the account into the
  *     server-authoritative device set (`registerAndActivate`), and hydrates the
  *     full user. Returns `{ status: 'ok' }`. There is NO cross-apex refusal.
  *   - on a 2FA-enabled account (`{ twoFactorRequired, loginToken }`), commits
@@ -68,7 +68,7 @@ const fullSession = {
   sessionId: 'sess_pw',
   deviceId: 'dev_pw',
   accessToken: 'pw.access.token',
-  refreshToken: 'pw.refresh.token',
+  deviceSecret: 'pw.device.secret',
   expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
   user: { id: PASSWORD_USER_ID, username: 'pwuser' },
 } as unknown as SessionLoginResponse;
@@ -149,8 +149,8 @@ describe('useOxy().signInWithPassword', () => {
       outcome = await capturedContext?.signInWithPassword('pwuser', 'hunter2', { deviceName: 'Test Device' });
     });
 
-    // The device-first password call — device token is absent (nothing seeded),
-    // so it is passed as `undefined` (equivalent to an absent key).
+    // The zero-cookie password call threads only `deviceName` / `deviceFingerprint`
+    // (no `deviceToken`).
     expect(passwordSignInSpy).toHaveBeenCalledWith('pwuser', 'hunter2', { deviceName: 'Test Device' });
     expect(outcome).toEqual({ status: 'ok' });
 

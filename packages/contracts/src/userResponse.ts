@@ -16,8 +16,7 @@
  *
  * Faithful to the producers:
  *  - `packages/api/src/utils/userTransform.ts` `formatUserResponse` — the
- *    canonical serialization used by the device-first bootstrap/exchange
- *    endpoints (`deviceAuth.ts`), login/signup, device sessions, etc.
+ *    canonical serialization used by login/signup, device sessions, etc.
  *    Emits `id` (NOT `_id`), forwards `username` verbatim (may be absent), and
  *    emits `name` as the structured `{ first, last, full, displayName }`
  *    subdocument.

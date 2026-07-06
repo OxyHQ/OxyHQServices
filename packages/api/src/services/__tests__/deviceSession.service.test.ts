@@ -26,16 +26,6 @@ jest.mock('../session.service', () => ({
   },
 }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
-// deviceSession.service now additively imports these; mock them so the module
-// graph loads under the global mongoose mock (no real RefreshToken/AuthCode).
-const mockRevokeAllFamiliesBySession = jest.fn();
-jest.mock('../refreshToken.service', () => ({
-  revokeAllFamiliesBySession: (...a: unknown[]) => mockRevokeAllFamiliesBySession(...a),
-}));
-const mockRevokeDeviceTokens = jest.fn();
-jest.mock('../deviceToken.service', () => ({
-  revokeDeviceTokens: (...a: unknown[]) => mockRevokeDeviceTokens(...a),
-}));
 jest.mock('../oauthCode.service', () => {
   const nodeCrypto = jest.requireActual<typeof import('crypto')>('crypto');
   return {
@@ -471,87 +461,6 @@ describe('detachMigratedAccount', () => {
   });
 });
 
-describe('resolveRegisteredSession', () => {
-  it('reuses the session REGISTERED for the account on the device — validated + freshly-minted token', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'central-device',
-      accounts: [
-        { accountId: { toString: () => 'other' }, sessionId: 's-other', authuser: 0 },
-        { accountId: { toString: () => 'acct-1' }, sessionId: 'registered-sess', authuser: 1 },
-      ],
-      activeAccountId: { toString: () => 'other' },
-      revision: 4,
-    }));
-    // The registered session validates (managed act_as re-check passes) and
-    // reports its own stored deviceId — the central device it was minted on.
-    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'central-device' } });
-    const expiresAt = new Date(Date.now() + 60_000);
-    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'fresh-token', expiresAt });
-
-    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
-
-    expect(result).toEqual({
-      sessionId: 'registered-sess',
-      deviceId: 'central-device',
-      accessToken: 'fresh-token',
-      expiresAt,
-    });
-    // Validated + minted against the REGISTERED session id, not the active one.
-    expect(mockValidateSessionById).toHaveBeenCalledWith('registered-sess', false);
-    expect(mockGetAccessToken).toHaveBeenCalledWith('registered-sess');
-  });
-
-  it('returns null when the device doc is absent (first sign-in on the device)', async () => {
-    mockFindOne.mockReturnValueOnce(lean(null));
-    const result = await deviceSessionService.resolveRegisteredSession('unknown-device', 'acct-1');
-    expect(result).toBeNull();
-    expect(mockValidateSessionById).not.toHaveBeenCalled();
-    expect(mockGetAccessToken).not.toHaveBeenCalled();
-  });
-
-  it('returns null when the account is not registered on the device', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'central-device',
-      accounts: [{ accountId: { toString: () => 'other' }, sessionId: 's-other', authuser: 0 }],
-      activeAccountId: { toString: () => 'other' },
-      revision: 1,
-    }));
-    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
-    expect(result).toBeNull();
-    expect(mockValidateSessionById).not.toHaveBeenCalled();
-    expect(mockGetAccessToken).not.toHaveBeenCalled();
-  });
-
-  it('returns null WITHOUT minting a token when the registered session is no longer valid (never resurrect a dead session)', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'central-device',
-      accounts: [{ accountId: { toString: () => 'acct-1' }, sessionId: 'dead-sess', authuser: 0 }],
-      activeAccountId: { toString: () => 'acct-1' },
-      revision: 1,
-    }));
-    mockValidateSessionById.mockResolvedValueOnce(null);
-
-    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
-
-    expect(result).toBeNull();
-    expect(mockGetAccessToken).not.toHaveBeenCalled();
-  });
-
-  it('returns null when the token machinery cannot mint an access token', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'central-device',
-      accounts: [{ accountId: { toString: () => 'acct-1' }, sessionId: 'registered-sess', authuser: 0 }],
-      activeAccountId: { toString: () => 'acct-1' },
-      revision: 1,
-    }));
-    mockValidateSessionById.mockResolvedValueOnce({ session: { deviceId: 'central-device' } });
-    mockGetAccessToken.mockResolvedValueOnce(null);
-
-    const result = await deviceSessionService.resolveRegisteredSession('central-device', 'acct-1');
-    expect(result).toBeNull();
-  });
-});
-
 describe('addAccount — activate option', () => {
   it("'if-empty' does NOT flip the active account when one already exists", async () => {
     mockFindOne.mockReturnValueOnce(lean({
@@ -600,73 +509,6 @@ describe('addAccount — activate option', () => {
 
     const update = mockFindOneAndUpdate.mock.calls[0][1];
     expect(update.$set.activeAccountId).toBe('a2');
-  });
-});
-
-describe('signout — refresh family cascade', () => {
-  it('revokes ALL refresh families for each signed-out session (single-account: deviceTokens untouched)', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'd1',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 2,
-    }));
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 3,
-    }));
-
-    await deviceSessionService.signout('d1', { accountId: 'a1' });
-
-    expect(mockDeactivate).toHaveBeenCalledWith('s1');
-    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
-    // Single-account signout must NOT revoke device tokens — other apps/accounts
-    // on the same device still legitimately use theirs.
-    expect(mockRevokeDeviceTokens).not.toHaveBeenCalled();
-  });
-
-  it('signout-ALL revokes device tokens for the device (after the refresh-family revocation)', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'd1',
-      accounts: [
-        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
-        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
-      ],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 4,
-    }));
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 5,
-    }));
-
-    await deviceSessionService.signout('d1', { all: true });
-
-    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s1');
-    expect(mockRevokeAllFamiliesBySession).toHaveBeenCalledWith('s2');
-    expect(mockRevokeDeviceTokens).toHaveBeenCalledWith('d1');
-  });
-});
-
-describe('getStateByCookieKey', () => {
-  it('returns the projected state for a known cookie secret', async () => {
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'dev-cookie',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 5,
-      updatedAt: new Date(1720000000000),
-    }));
-    const state = await deviceSessionService.getStateByCookieKey('raw-secret');
-    expect(state?.deviceId).toBe('dev-cookie');
-    // Looked up by the HASH of the secret, never the raw value.
-    const query = mockFindOne.mock.calls[0][0];
-    expect(query.cookieKeyHash).toBeDefined();
-    expect(query.cookieKeyHash).not.toBe('raw-secret');
-  });
-
-  it('returns null for an unknown cookie / empty key', async () => {
-    mockFindOne.mockReturnValueOnce(lean(null));
-    expect(await deviceSessionService.getStateByCookieKey('unknown')).toBeNull();
-    expect(await deviceSessionService.getStateByCookieKey('')).toBeNull();
   });
 });
 
@@ -830,7 +672,7 @@ describe('getStateBySecret', () => {
 });
 
 describe('signout — device-secret cleanup (2c)', () => {
-  it('signout-ALL unsets secretHash/prevSecretHash/prevSecretExpiresAt (cookieKeyHash left untouched)', async () => {
+  it('signout-ALL unsets secretHash/prevSecretHash/prevSecretExpiresAt', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
@@ -843,8 +685,6 @@ describe('signout — device-secret cleanup (2c)', () => {
 
     const [, update] = mockFindOneAndUpdate.mock.calls[0];
     expect(update.$unset).toEqual({ secretHash: '', prevSecretHash: '', prevSecretExpiresAt: '' });
-    // The device cookie hash is NEVER cleared here — it lives until the cutover.
-    expect(update.$unset).not.toHaveProperty('cookieKeyHash');
   });
 
   it('single-account signout does NOT unset the device secret (other accounts on the device still use it)', async () => {
@@ -868,122 +708,5 @@ describe('signout — device-secret cleanup (2c)', () => {
 
     const [, update] = mockFindOneAndUpdate.mock.calls[0];
     expect(update.$unset).toBeUndefined();
-  });
-});
-
-describe('ensureDeviceForCookie', () => {
-  it('mints a new device + cookie secret and stores only the hash', async () => {
-    mockCreate.mockResolvedValueOnce({});
-    const { deviceId, rawCookieKey } = await deviceSessionService.ensureDeviceForCookie();
-
-    expect(typeof deviceId).toBe('string');
-    expect(deviceId.length).toBeGreaterThan(0);
-    expect(typeof rawCookieKey).toBe('string');
-    expect(rawCookieKey.length).toBeGreaterThan(20);
-
-    const created = mockCreate.mock.calls[0][0];
-    expect(created.deviceId).toBe(deviceId);
-    // The stored cookieKeyHash is the sha256 of the returned secret — not the secret.
-    expect(created.cookieKeyHash).toBe(
-      nodeCrypto.createHash('sha256').update(rawCookieKey).digest('hex'),
-    );
-    expect(created.cookieKeyHash).not.toBe(rawCookieKey);
-  });
-});
-
-describe('convergeAccountOntoDevice', () => {
-  it('adds the account to the cookie doc, advances its revision past the old doc, detaches (preserving the migrated session), and returns both states', async () => {
-    mockUpdateOne.mockResolvedValue({});
-    // 1) oldBefore load — the retired doc is at revision 5.
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'old-dev',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 5,
-    }));
-    // 2) addAccount loads the (empty) cookie doc.
-    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0 }));
-    // 3) addAccount writes → cookie doc with the account, active, revision 1.
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'cookie-dev',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 1,
-      updatedAt: new Date(1720000000000),
-    }));
-    // 4) revision bump (1 <= 5) → cookie doc revision advanced to old+1 = 6.
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'cookie-dev',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 6,
-      updatedAt: new Date(1720000000000),
-    }));
-    // 5) detachMigratedAccount loads the OLD doc (still holds a1 with session s1).
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'old-dev',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 5,
-    }));
-    // 6) convergeAccountOntoDevice re-loads the OLD doc (now emptied) for oldState.
-    mockFindOne.mockReturnValueOnce(lean({
-      deviceId: 'old-dev', accounts: [], activeAccountId: null, revision: 6, updatedAt: new Date(1720000000001),
-    }));
-
-    const { cookieState, oldState, changed } = await deviceSessionService.convergeAccountOntoDevice(
-      'cookie-dev',
-      'old-dev',
-      { accountId: 'a1', sessionId: 's1' },
-    );
-
-    expect(changed).toBe(true);
-    expect(cookieState.deviceId).toBe('cookie-dev');
-    expect(cookieState.activeAccountId).toBe('a1');
-    expect(cookieState.accounts).toHaveLength(1);
-    // The canonical cookie doc out-ranks the retired doc so the client applies it.
-    expect(cookieState.revision).toBe(6);
-    expect(cookieState.revision).toBeGreaterThan(5);
-    // The bump update targeted the cookie device with the advanced revision.
-    const bumpCall = mockFindOneAndUpdate.mock.calls[1];
-    expect(bumpCall[0]).toEqual({ deviceId: 'cookie-dev' });
-    expect(bumpCall[1]).toEqual({ $set: { revision: 6 } });
-    expect(oldState.deviceId).toBe('old-dev');
-    expect(oldState.accounts).toHaveLength(0);
-    // The just-migrated session (s1) is PRESERVED — never deactivated by detach.
-    expect(mockDeactivate).not.toHaveBeenCalled();
-  });
-
-  it('synthesizes an empty old state WITHOUT upserting when the old doc is absent (no garbage doc)', async () => {
-    mockUpdateOne.mockResolvedValue({});
-    // 1) oldBefore load — no old doc.
-    mockFindOne.mockReturnValueOnce(lean(null));
-    // 2) addAccount loads the (empty) cookie doc.
-    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'cookie-dev', accounts: [], activeAccountId: null, revision: 0 }));
-    // 3) addAccount writes → cookie doc revision 1 (bump path: 1 > oldRevisionBefore 0, so NO bump).
-    mockFindOneAndUpdate.mockReturnValueOnce(lean({
-      deviceId: 'cookie-dev',
-      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
-      activeAccountId: { toString: () => 'a1' },
-      revision: 1,
-      updatedAt: new Date(1720000000000),
-    }));
-    // 4) detachMigratedAccount load (old doc absent → no-op).
-    mockFindOne.mockReturnValueOnce(lean(null));
-    // 5) convergeAccountOntoDevice re-load (old doc still absent → synthetic state).
-    mockFindOne.mockReturnValueOnce(lean(null));
-
-    const { oldState, cookieState } = await deviceSessionService.convergeAccountOntoDevice(
-      'cookie-dev',
-      'missing-old-dev',
-      { accountId: 'a1', sessionId: 's1' },
-    );
-
-    // Synthetic empty old state (deviceId echoed), never persisted.
-    expect(oldState).toEqual({ deviceId: 'missing-old-dev', accounts: [], activeAccountId: null, revision: 0, updatedAt: expect.any(Number) });
-    expect(cookieState.deviceId).toBe('cookie-dev');
-    // Exactly ONE findOneAndUpdate (the addAccount write) — NO getState upsert,
-    // NO revision bump (cookie revision 1 already > old 0).
-    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 });

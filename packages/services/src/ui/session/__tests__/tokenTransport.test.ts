@@ -2,11 +2,12 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
 import { logger, createMemoryAuthStateStore, refreshPersistedSession } from '@oxyhq/core';
 import { createTokenTransport } from '../tokenTransport';
 
-// The device-first transport mints a fallback token by rotating the persisted
-// refresh family via `refreshPersistedSession` (the ONE unified refresh path) —
-// there is no `silentSignIn`/`signInWithSharedIdentity` arm anymore. Mock that
-// one core function so the transport's own coalescing / logging contract can be
-// exercised in isolation; keep the real `logger` + memory store.
+// The device-first transport mints a fallback token from the persisted
+// zero-cookie device credential via `refreshPersistedSession` (the ONE unified
+// refresh path) — there is no `silentSignIn`/`signInWithSharedIdentity` arm
+// anymore. Mock that one core function so the transport's own coalescing /
+// logging contract can be exercised in isolation; keep the real `logger` +
+// memory store.
 jest.mock('@oxyhq/core', () => {
   const actual = jest.requireActual('@oxyhq/core');
   return { __esModule: true, ...actual, refreshPersistedSession: jest.fn() };

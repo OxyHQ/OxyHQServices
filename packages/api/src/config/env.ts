@@ -179,25 +179,6 @@ export function validateRequiredEnvVars(): void {
     }
   }
 
-  // SSO_INTERNAL_SECRET gates the internal `POST /auth/device/resolve` endpoint
-  // the auth.oxy.so IdP chooser calls server-to-server (`X-Oxy-Internal`). It is
-  // NOT required for the API to boot — when unset, `/auth/device/resolve` fails
-  // closed (returns 404), which only disables the IdP chooser's device feed. But
-  // when it IS set it must be strong (≥32 chars), since it is a bearer-equivalent
-  // shared secret.
-  const ssoInternalSecret = process.env.SSO_INTERNAL_SECRET;
-  if (ssoInternalSecret && ssoInternalSecret.length > 0) {
-    if (ssoInternalSecret.length < 32 || WEAK_SECRETS.includes(ssoInternalSecret)) {
-      missing.push('SSO_INTERNAL_SECRET (insecure: must be at least 32 characters and not a default placeholder)');
-    }
-  } else if (isProduction()) {
-    warnings.push(
-      'SSO_INTERNAL_SECRET is unset — the IdP chooser device feed (POST /auth/device/resolve) is disabled. ' +
-      'Provision it (GitHub secret → SSM /oxy/oxy-api/SSO_INTERNAL_SECRET) and set the matching ' +
-      'value on the auth.oxy.so worker to enable it. Generate with: openssl rand -base64 48'
-    );
-  }
-
   // DEVICE_ID_SALT scopes the derived deviceId hash (see
   // `packages/api/src/utils/deviceUtils.ts`). Without it, two users behind
   // the same NAT/proxy on the same browser collide on the same deviceId and

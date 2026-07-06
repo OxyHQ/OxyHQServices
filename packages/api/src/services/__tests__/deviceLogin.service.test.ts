@@ -1,273 +1,85 @@
 /**
- * deviceLogin.service unit tests — the shared device-first login attribution.
+ * deviceLogin.service unit tests — device-first login finalization.
  *
- * Covers:
- *  - resolveLoginDeviceId precedence: oxy_device cookie > deviceToken > none.
- *  - finalizeDeviceLogin is ADD-ONLY: registers with `activate: 'if-empty'`
- *    (never steals the active account) and broadcasts only when the set changed.
- *  - refresh-token lane: attached when a device binding resolved OR the Origin is
- *    trusted-lane / absent; withheld for a third-party-lane browser Origin.
+ * Covers `finalizeDeviceLogin`:
+ *  - ADD-ONLY: registers the session with `activate: 'if-empty'` (never steals
+ *    the active account) and broadcasts only when the set changed.
+ *  - mints the rotating `deviceSecret` the client persists first-party and
+ *    returns it in the extras.
+ *  - best-effort: a registration/mint failure never throws.
  */
 
-import type { Request } from 'express';
-
-const mockGetStateByCookieKey = jest.fn();
 const mockAddAccount = jest.fn();
-const mockEnsureDeviceForCookie = jest.fn();
 const mockIssueDeviceSecret = jest.fn();
 jest.mock('../deviceSession.service', () => {
   const svc = {
-    getStateByCookieKey: (...a: unknown[]) => mockGetStateByCookieKey(...a),
     addAccount: (...a: unknown[]) => mockAddAccount(...a),
-    ensureDeviceForCookie: (...a: unknown[]) => mockEnsureDeviceForCookie(...a),
     issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a),
   };
   // deviceLogin.service dynamically imports the NAMED `deviceSessionService`.
   return { __esModule: true, default: svc, deviceSessionService: svc };
 });
 
-const mockIsSameSiteTrustedRequest = jest.fn(() => false);
-jest.mock('../../utils/sameSite', () => ({
-  isSameSiteTrustedRequest: (...a: unknown[]) => mockIsSameSiteTrustedRequest(...a),
-}));
-
-const mockResolveDeviceToken = jest.fn();
-jest.mock('../deviceToken.service', () => ({
-  resolveDeviceToken: (...a: unknown[]) => mockResolveDeviceToken(...a),
-}));
-
-const mockIssueRefreshToken = jest.fn(async () => ({ token: 'rt', family: 'f', expiresAt: new Date() }));
-jest.mock('../refreshToken.service', () => ({
-  issueRefreshToken: (...a: unknown[]) => mockIssueRefreshToken(...a),
-}));
-
-const mockBroadcast = jest.fn();
+const mockBroadcastDeviceState = jest.fn();
 jest.mock('../../utils/socket', () => ({
-  broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a),
-}));
-
-const mockIsTrustedOrigin = jest.fn(() => false);
-jest.mock('../../config/dynamicOriginRegistry', () => ({
-  isTrustedOrigin: (...a: unknown[]) => mockIsTrustedOrigin(...a),
+  broadcastDeviceState: (...a: unknown[]) => mockBroadcastDeviceState(...a),
 }));
 
 jest.mock('../../utils/logger', () => ({
-  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+  logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { resolveLoginDeviceId, resolveLoginDevice, finalizeDeviceLogin } from '../deviceLogin.service';
+import { finalizeDeviceLogin } from '../deviceLogin.service';
 
-function req(headers: Record<string, string> = {}): Request {
-  return { headers } as unknown as Request;
-}
+const SESSION = { sessionId: 'sess-1', deviceId: 'dev-1' };
 
 beforeEach(() => {
-  jest.resetAllMocks();
-  mockIssueRefreshToken.mockResolvedValue({ token: 'rt', family: 'f', expiresAt: new Date() });
-  mockIsTrustedOrigin.mockReturnValue(false);
-  mockIsSameSiteTrustedRequest.mockReturnValue(false);
+  jest.clearAllMocks();
+  mockAddAccount.mockResolvedValue({ state: { deviceId: 'dev-1', accounts: [], activeAccountId: null, revision: 1 }, changed: true });
+  mockIssueDeviceSecret.mockResolvedValue('ds_minted_secret');
 });
 
-describe('resolveLoginDevice — same-site cookie mint', () => {
-  it('returns the existing binding without minting when a cookie resolves', async () => {
-    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'existing-dev' });
-    const result = await resolveLoginDevice(req({ cookie: 'oxy_device=secret' }), undefined);
-    expect(result).toEqual({ deviceId: 'existing-dev' });
-    expect(mockEnsureDeviceForCookie).not.toHaveBeenCalled();
-  });
-
-  it('mints a device cookie for a same-site trusted login with no existing binding', async () => {
-    mockIsSameSiteTrustedRequest.mockReturnValue(true);
-    mockEnsureDeviceForCookie.mockResolvedValueOnce({ deviceId: 'new-dev', rawCookieKey: 'minted-secret' });
-    const result = await resolveLoginDevice(req({ origin: 'https://accounts.oxy.so' }), undefined);
-    expect(result).toEqual({ deviceId: 'new-dev', setCookieSecret: 'minted-secret' });
-    expect(mockEnsureDeviceForCookie).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT mint for a non-same-site (cross-site / untrusted) login', async () => {
-    mockIsSameSiteTrustedRequest.mockReturnValue(false);
-    const result = await resolveLoginDevice(req({ origin: 'https://third-party.example' }), undefined);
-    expect(result).toEqual({ deviceId: null });
-    expect(mockEnsureDeviceForCookie).not.toHaveBeenCalled();
-  });
-});
-
-describe('resolveLoginDeviceId', () => {
-  it('returns null and consults nothing when neither cookie nor deviceToken is present', async () => {
-    const result = await resolveLoginDeviceId(req(), undefined);
-    expect(result).toBeNull();
-    expect(mockGetStateByCookieKey).not.toHaveBeenCalled();
-    expect(mockResolveDeviceToken).not.toHaveBeenCalled();
-  });
-
-  it('resolves via the oxy_device cookie (winning over a deviceToken)', async () => {
-    mockGetStateByCookieKey.mockResolvedValueOnce({ deviceId: 'cookie-device' });
-    const result = await resolveLoginDeviceId(req({ cookie: 'oxy_device=secret' }), 'a-device-token');
-    expect(result).toBe('cookie-device');
-    // Cookie wins — the deviceToken is never consulted.
-    expect(mockResolveDeviceToken).not.toHaveBeenCalled();
-  });
-
-  it('falls back to the deviceToken when no cookie maps to a device', async () => {
-    mockResolveDeviceToken.mockResolvedValueOnce({ deviceId: 'token-device' });
-    const result = await resolveLoginDeviceId(req(), 'a-device-token');
-    expect(result).toBe('token-device');
-    expect(mockResolveDeviceToken).toHaveBeenCalled();
-  });
-
-  it('returns null when the deviceToken does not resolve', async () => {
-    mockResolveDeviceToken.mockResolvedValueOnce(null);
-    expect(await resolveLoginDeviceId(req(), 'bad-token')).toBeNull();
-  });
-});
-
-describe('finalizeDeviceLogin — device registration (add-only)', () => {
-  it('registers with activate:if-empty and broadcasts when the set changed', async () => {
-    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'd1' }, changed: true });
-
-    const extras = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
+describe('finalizeDeviceLogin', () => {
+  it('registers the session add-only (activate: if-empty) and returns the minted deviceSecret', async () => {
+    const result = await finalizeDeviceLogin({ session: SESSION, userId: 'user-1' });
 
     expect(mockAddAccount).toHaveBeenCalledWith(
-      'd1',
-      { accountId: 'u1', sessionId: 's1' },
+      'dev-1',
+      { accountId: 'user-1', sessionId: 'sess-1' },
       { activate: 'if-empty' },
     );
-    expect(mockBroadcast).toHaveBeenCalledTimes(1);
-    // Device binding present → refresh token attached.
-    expect(extras.refreshToken).toBe('rt');
+    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('dev-1');
+    expect(result).toEqual({ deviceSecret: 'ds_minted_secret' });
   });
 
-  it('does NOT broadcast when the registration was an idempotent no-op', async () => {
-    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'd1' }, changed: false });
-    await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    expect(mockBroadcast).not.toHaveBeenCalled();
-  });
-
-  it('threads operatedByUserId into the registration', async () => {
-    mockAddAccount.mockResolvedValueOnce({ state: {}, changed: false });
-    await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's-org', deviceId: 'd1' },
-      userId: 'org1',
-      operatedByUserId: 'op1',
-    });
+  it('threads operatedByUserId into the device-set registration when present', async () => {
+    await finalizeDeviceLogin({ session: SESSION, userId: 'user-1', operatedByUserId: 'op-9' });
     expect(mockAddAccount).toHaveBeenCalledWith(
-      'd1',
-      { accountId: 'org1', sessionId: 's-org', operatedByUserId: 'op1' },
+      'dev-1',
+      { accountId: 'user-1', sessionId: 'sess-1', operatedByUserId: 'op-9' },
       { activate: 'if-empty' },
     );
   });
-});
 
-describe('finalizeDeviceLogin — deviceSecret emission (phase 2c)', () => {
-  it('mints and attaches a rotating deviceSecret when a device binding resolved', async () => {
-    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'd1' }, changed: true });
-    mockIssueDeviceSecret.mockResolvedValueOnce('ds-first');
+  it('broadcasts the device state only when the set changed', async () => {
+    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'dev-1', accounts: [], activeAccountId: null, revision: 0 }, changed: false });
+    await finalizeDeviceLogin({ session: SESSION, userId: 'user-1' });
+    expect(mockBroadcastDeviceState).not.toHaveBeenCalled();
 
-    const extras = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-
-    // Bound to the session's (just-registered) device.
-    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('d1');
-    expect(extras.deviceSecret).toBe('ds-first');
-    expect(extras.refreshToken).toBe('rt');
+    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'dev-1', accounts: [], activeAccountId: null, revision: 2 }, changed: true });
+    await finalizeDeviceLogin({ session: SESSION, userId: 'user-1' });
+    expect(mockBroadcastDeviceState).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT emit a deviceSecret when there is no device binding', async () => {
-    const extras = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: null,
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
-    expect(extras.deviceSecret).toBeUndefined();
+  it('omits deviceSecret when the mint returns null', async () => {
+    mockIssueDeviceSecret.mockResolvedValueOnce(null);
+    const result = await finalizeDeviceLogin({ session: SESSION, userId: 'user-1' });
+    expect(result).toEqual({});
   });
 
-  it('two successive sign-ins rotate to DIFFERENT device secrets', async () => {
-    mockAddAccount.mockResolvedValue({ state: {}, changed: false });
-    mockIssueDeviceSecret.mockResolvedValueOnce('ds-A').mockResolvedValueOnce('ds-B');
-
-    const first = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    const second = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's2', deviceId: 'd1' },
-      userId: 'u1',
-    });
-
-    expect(first.deviceSecret).toBe('ds-A');
-    expect(second.deviceSecret).toBe('ds-B');
-  });
-
-  it('still returns the refresh token when the deviceSecret mint fails (best-effort)', async () => {
-    mockAddAccount.mockResolvedValueOnce({ state: { deviceId: 'd1' }, changed: true });
-    mockIssueDeviceSecret.mockRejectedValueOnce(new Error('db down'));
-
-    const extras = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: 'd1',
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-
-    expect(extras.deviceSecret).toBeUndefined();
-    expect(extras.refreshToken).toBe('rt');
-  });
-});
-
-describe('finalizeDeviceLogin — refresh-token lane', () => {
-  it('attaches a refresh token when the Origin is absent (native/first-party)', async () => {
-    const extras = await finalizeDeviceLogin({
-      req: req(),
-      deviceId: null,
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    expect(mockAddAccount).not.toHaveBeenCalled();
-    expect(extras.refreshToken).toBe('rt');
-  });
-
-  it('attaches a refresh token for a trusted-lane Origin', async () => {
-    mockIsTrustedOrigin.mockReturnValue(true);
-    const extras = await finalizeDeviceLogin({
-      req: req({ origin: 'https://accounts.oxy.so' }),
-      deviceId: null,
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    expect(extras.refreshToken).toBe('rt');
-  });
-
-  it('withholds the refresh token for a third-party-lane browser Origin', async () => {
-    mockIsTrustedOrigin.mockReturnValue(false);
-    const extras = await finalizeDeviceLogin({
-      req: req({ origin: 'https://third-party.example' }),
-      deviceId: null,
-      session: { sessionId: 's1', deviceId: 'd1' },
-      userId: 'u1',
-    });
-    expect(extras.refreshToken).toBeUndefined();
-    expect(mockIssueRefreshToken).not.toHaveBeenCalled();
+  it('never throws when device registration fails (best-effort)', async () => {
+    mockAddAccount.mockRejectedValueOnce(new Error('db down'));
+    const result = await finalizeDeviceLogin({ session: SESSION, userId: 'user-1' });
+    expect(result).toEqual({});
   });
 });

@@ -106,7 +106,7 @@ export interface AccountDialogControllerOptions {
    * falls back to `SessionClient.registerAndActivate` (registration + activation
    * only — no provider-side durable persist/hydration).
    */
-  commitSession?: (session: SessionLoginResponse & { refreshToken?: string }) => Promise<void>;
+  commitSession?: (session: SessionLoginResponse) => Promise<void>;
   /** Notified after a completed sign-in (bearer planted + session committed). */
   onSignedIn?: (user: MinimalUserData) => void;
   /** Central IdP apex for `openPasswordAtOxyAuth` (defaults to `CENTRAL_IDP_APEX`). */
@@ -142,7 +142,7 @@ export class AccountDialogController {
   private readonly sessionClient: SessionClient;
   private readonly clientId: string | null;
   private readonly locale?: string;
-  private readonly commitSession?: (session: SessionLoginResponse & { refreshToken?: string }) => Promise<void>;
+  private readonly commitSession?: (session: SessionLoginResponse) => Promise<void>;
   private readonly onSignedIn?: (user: MinimalUserData) => void;
   private readonly idpApex: string;
   private readonly pollIntervalMs: number;
@@ -454,7 +454,6 @@ export class AccountDialogController {
             expiresAt: result.expiresAt,
             user: result.user,
             accessToken: result.accessToken,
-            ...(readRefreshToken(result) ? { refreshToken: readRefreshToken(result) } : {}),
           },
           result.user,
         );
@@ -633,7 +632,6 @@ export class AccountDialogController {
       name: claimed.user.name,
       avatar: claimed.user.avatar ?? undefined,
     };
-    const refreshToken = readRefreshToken(claimed);
     try {
       await this.completeSignIn(
         {
@@ -642,7 +640,6 @@ export class AccountDialogController {
           expiresAt: claimed.expiresAt ?? '',
           user: minimalUser,
           accessToken: claimed.accessToken,
-          ...(refreshToken ? { refreshToken } : {}),
         },
         minimalUser,
       );
@@ -656,7 +653,7 @@ export class AccountDialogController {
    * by the shared-key, QR, and mint-switch paths so they cannot drift.
    */
   private async completeSignIn(
-    session: SessionLoginResponse & { refreshToken?: string },
+    session: SessionLoginResponse,
     user: MinimalUserData,
   ): Promise<void> {
     await this.commitAuthorizedSession(session, user);
@@ -675,7 +672,7 @@ export class AccountDialogController {
    * `SessionClient.registerAndActivate` (registration + activation only).
    */
   private async commitAuthorizedSession(
-    session: SessionLoginResponse & { refreshToken?: string },
+    session: SessionLoginResponse,
     user: MinimalUserData,
   ): Promise<void> {
     if (this.commitSession) {
@@ -752,16 +749,6 @@ export function createAccountDialogController(
 // ---------------------------------------------------------------------------
 
 /**
- * The rotating refresh-token family head is threaded on the runtime object by
- * the trusted device-flow / switch lanes even though it is NOT on the typed
- * return of `claimSessionByToken` / `switchToAccount`. Read it defensively so
- * the commit funnel can persist a durable session.
- */
-function readRefreshToken(value: unknown): string | undefined {
-  const token = (value as { refreshToken?: unknown }).refreshToken;
-  return typeof token === 'string' ? token : undefined;
-}
-
 /** Current document URL on web; empty string where `location` is absent (native/SSR). */
 function currentLocationHref(): string {
   const location = (globalThis as { location?: { href?: string } }).location;

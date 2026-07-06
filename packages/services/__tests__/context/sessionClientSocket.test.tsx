@@ -159,9 +159,21 @@ function buildStub(baseURL: string) {
       setTokens: (token: string) => { currentToken = token; },
       clearTokens: () => { currentToken = null; },
       clearCache: jest.fn(),
-      // The device-first cold boot recovers the session from the persisted
-      // refresh family seeded into localStorage before render (the `stored-tokens`
-      // warm-plant step) — no `silentSignIn`/FedCM arm anymore.
+      // The device-first cold boot recovers the session by minting from the
+      // persisted zero-cookie device credential (`deviceId` + `deviceSecret`)
+      // seeded into localStorage before render (the `device-secret-mint` step).
+      mintFromDeviceSecret: jest.fn(async () => ({
+        accessToken: 'a1.access.token',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        nextDeviceSecret: 'a1.next.secret',
+        state: {
+          deviceId: 'dev-1',
+          accounts: [{ accountId: ACCOUNT_A1, sessionId: SESSION_A1, authuser: 0 }],
+          activeAccountId: ACCOUNT_A1,
+          revision: 1,
+          updatedAt: Date.now(),
+        },
+      })),
       signInWithSharedIdentity: jest.fn(async () => null),
       getCurrentUser: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
       getUserBySession: jest.fn(async (): Promise<User> => ({ id: ACCOUNT_A1, username: 'user-a1' } as User)),
@@ -221,17 +233,18 @@ function nextBaseURL(): string {
 }
 
 /**
- * Seed a persisted refresh family (with a still-valid warm access token) so the
- * device-first cold boot's `stored-tokens` step warm-plants a session WITHOUT a
- * network round-trip — the offline stand-in for a returning signed-in device.
+ * Seed a persisted zero-cookie device credential so the device-first cold boot's
+ * `device-secret-mint` step mints a session (via the stubbed
+ * `mintFromDeviceSecret`) — the stand-in for a returning signed-in device.
  */
 function seedWarmSession() {
   window.localStorage.setItem(
     AUTH_STATE_STORAGE_KEY,
     JSON.stringify({
       sessionId: SESSION_A1,
-      refreshToken: 'a1.refresh.token',
       userId: ACCOUNT_A1,
+      deviceId: 'dev-1',
+      deviceSecret: 'a1.device.secret',
       accessToken: bootSession.accessToken,
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     }),
@@ -240,8 +253,8 @@ function seedWarmSession() {
 
 /**
  * Boots the provider through the real device-first cold-boot ladder (the
- * `stored-tokens` step warm-plants the seeded persisted session), then hands off
- * to the fake `SessionClient`, whose `start()` seeds `deviceState` and notifies
+ * `device-secret-mint` step mints from the seeded device credential), then hands
+ * off to the fake `SessionClient`, whose `start()` seeds `deviceState` and notifies
  * — projecting it onto the exposed context exactly like the real handoff.
  */
 async function bootWithDeviceState(deviceState: DeviceSessionState) {

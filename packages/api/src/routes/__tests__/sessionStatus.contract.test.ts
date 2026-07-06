@@ -89,11 +89,6 @@ jest.mock('../../models/User', () => ({
   default: { findOne: jest.fn(), findById: mockUserFindById },
 }));
 
-jest.mock('../../models/RefreshToken', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-  RefreshToken: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-}));
 
 jest.mock('../../utils/userTransform', () => ({
   formatUserResponse: jest.fn(),

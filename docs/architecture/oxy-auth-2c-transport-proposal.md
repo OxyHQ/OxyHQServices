@@ -1,8 +1,7 @@
-# Fase 2c — Propuesta de transporte cero-cookies (para workshop con Nate)
+# Fase 2c — Transporte cero-cookies
 
-> **Estado:** PROPUESTA — nada de esto está implementado ni debe implementarse sin el workshop (regla X8 del [handoff](./oxy-auth-agent-handoff.md)).
-> **Transporte vigente (congelado):** cookie `oxy_device` (`Domain=.oxy.so`) + familia rotativa de refresh tokens + bootstrap `#oxy_boot` (`GET /auth/device/bootstrap` → `POST /auth/device/exchange`). Ver [SESSION-ARCHITECTURE](../SESSION-ARCHITECTURE.md).
-> **Objetivo del plan:** cero cookies de sesión; `deviceId` + `deviceSecret` en storage first-party; mint server-side. Ver [oxy-auth-platform.md](./oxy-auth-platform.md) § Token mint.
+> **Estado:** IMPLEMENTADO (ver § "Estado: implementado" al final). El workshop cerró §4 con las recomendaciones del §2 (deviceSecret rotante-en-uso, la familia refresh MUERE, grace 60s multi-pestaña).
+> **Transporte vigente:** `deviceId` + `deviceSecret` en storage first-party; mint server-side vía `POST /session/device/token`. Cero cookies, cero familia refresh, cero bootstrap `#oxy_boot`. Ver [SESSION-ARCHITECTURE](../SESSION-ARCHITECTURE.md).
 
 ---
 
@@ -67,4 +66,25 @@ Igual que hoy: access cacheado en keychain + React Query persist + cola de mutac
 
 ---
 
-*Preparado 2026-07-06 por el agente implementador tras cerrar Fases 0–7 (PRs #556–#561). El workshop decide §4; la implementación es ~1 PR api (modelo+endpoint+telemetría) + 1 PR core/services (mint client + cold boot v3) + cutover.*
+## Estado: implementado
+
+El transporte cero-cookies se ejecutó en **tres PRs** (aditivo → aditivo → cutover), para migrar sin big-bang:
+
+| PR | Qué | Estado |
+|----|-----|--------|
+| **PR1 — server mint (#563)** | Modelo `DeviceSession.secretHash` + `POST /session/device/token` + `issueDeviceSecret`/`getStateBySecret` + telemetría `device.token.mint { mint_source: 'cookie' \| 'secret' }`. El servidor emite `deviceSecret` en TODO login/claim (aditivo); la cookie/refresh siguen vivas. | Mergeado + publicado (contracts 0.12.0 / core 8.1.0 / services 18.1.0). |
+| **PR2 — client mint + cold boot v3 (#564)** | Cliente prefiere el `deviceSecret` (`mintFromDeviceSecret`, paso `device-secret-mint` primero en el cold boot); cae a las lanes cookie/refresh sólo si no tiene secret. Primer arranque de un cliente nuevo migra: recibe el secret en el login y ya no usa la cookie en ese origen. | Mergeado + publicado. |
+| **PR3 — cutover cero-cookies (este PR)** | BORRADO de las lanes legacy: `deviceAuth.ts` entero (bootstrap/exchange/web-session/`#oxy_boot`/native device-token), la cookie `oxy_device` (`cookieKeyHash`, `deviceCookie` utils, converge cookie↔claim), la familia refresh (`refreshToken.service`, `/auth/refresh-token`, `/auth/logout`), y el lane de atribución `deviceToken` (huérfano tras borrar el mint). Cold boot v3 final = `device-secret-mint` + `shared-key-signin`. Sockets sólo-bearer. | contracts 0.13.0 / core 9.0.0 (BREAKING) / services 19.0.0 (BREAKING). |
+
+**Criterio de merge del cutover (PR3):** el PR3 queda en DRAFT gateado por telemetría. Merge cuando los mints por cookie caigan a ≈0 sostenido durante **48–72h** en producción. Query CloudWatch Insights (log group `/oxy/ecs`):
+
+```
+filter @message like /device.token.mint/
+| stats count() by mint_source
+```
+
+Cuando `mint_source = cookie` sea ≈0 (todos los clientes migrados al `secret`), mergear el cutover. Tras el merge no queda ningún `mint_source: cookie` (esa lane se borra); la telemetría restante es sólo `mint_source: secret`.
+
+**Decisiones §4 resueltas en el workshop:** (1) ámbito deviceId web = **A, por origen** (se acepta perder el chooser instantáneo cross-subdominio; sin cookie compartida); (2) rotación = **rotante-en-uso** con grace 60s; (3) la familia refresh **MUERE** (un solo mecanismo); (4) grace 60s multi-pestaña (no BroadcastChannel lock); (5) la telemetría `mint_source` fue el gate del borrado.
+
+*Preparado 2026-07-06; ejecutado 2026-07-06 (PRs #563, #564, PR3).*

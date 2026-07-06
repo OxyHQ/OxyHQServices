@@ -1,240 +1,24 @@
 import {
-    deviceBootReasonSchema,
-    deviceBootFragmentSchema,
-    deviceExchangeRequestSchema,
-    authTokenBundleSchema,
-    webSessionResultSchema,
-    tokenRefreshRequestSchema,
-    tokenRefreshResponseSchema,
-    deviceTokenIssueResponseSchema,
     loginResultSchema,
     deviceResolveRequestSchema,
     deviceResolveResponseSchema,
     safeParseContract,
 } from '../index';
 import type {
-    AuthTokenBundle,
     DeviceResolveResponse,
     LoginResult,
-    WebSessionResult,
 } from '../index';
 
 /**
- * The device-first bootstrap contracts MUST round-trip exactly what the new
- * `/auth/device/*` + `/auth/refresh-token` + `/auth/login` surface emits and
- * what `@oxyhq/core`'s device-boot mixin / cold boot parse. These tests lock the
- * fragment shape, the login-result union discrimination, and the token
- * bundle/refresh/resolve shapes so producer and consumers cannot drift.
+ * The first-party login result + IdP device-resolve contracts MUST round-trip
+ * exactly what the `/auth/login` surface emits and what `@oxyhq/core`'s auth
+ * mixin / the IdP chooser parse. These tests lock the login-result union
+ * discrimination (2FA arm vs session arm) and the device-resolve shape so
+ * producer and consumers cannot drift. The device transport itself is the
+ * zero-cookie `deviceId` + `deviceSecret` mint (see `deviceSession.test.ts`).
  */
 
 const A_TOKEN = 'x'.repeat(24); // >= 20 chars, satisfies the min() guards
-
-describe('deviceBootReasonSchema', () => {
-    it('accepts each known reason', () => {
-        expect(safeParseContract(deviceBootReasonSchema, 'session')).toBe('session');
-        expect(safeParseContract(deviceBootReasonSchema, 'no_session')).toBe('no_session');
-        expect(safeParseContract(deviceBootReasonSchema, 'new_device')).toBe('new_device');
-    });
-
-    it('rejects an unknown reason', () => {
-        expect(safeParseContract(deviceBootReasonSchema, 'signed_out')).toBeNull();
-    });
-});
-
-describe('deviceBootFragmentSchema', () => {
-    const fragment = {
-        v: 1 as const,
-        state: 'st_abc123',
-        reason: 'session' as const,
-        code: 'c'.repeat(32),
-        deviceToken: A_TOKEN,
-    };
-
-    it('parses a valid session fragment (with code)', () => {
-        expect(safeParseContract(deviceBootFragmentSchema, fragment)).toEqual(fragment);
-    });
-
-    it('parses a no_session fragment without a code', () => {
-        const { code, ...noCode } = fragment;
-        const parsed = safeParseContract(deviceBootFragmentSchema, {
-            ...noCode,
-            reason: 'no_session',
-        });
-        expect(parsed?.reason).toBe('no_session');
-        expect(parsed && 'code' in parsed).toBe(false);
-    });
-
-    it('REJECTS a session fragment missing the code (discriminated union requires it)', () => {
-        const { code, ...noCode } = fragment;
-        expect(safeParseContract(deviceBootFragmentSchema, noCode)).toBeNull();
-    });
-
-    it('strips a stray code on the no_session / new_device arms', () => {
-        const parsedNoSession = safeParseContract(deviceBootFragmentSchema, {
-            ...fragment,
-            reason: 'no_session',
-        });
-        expect(parsedNoSession && 'code' in parsedNoSession).toBe(false);
-
-        const parsedNewDevice = safeParseContract(deviceBootFragmentSchema, {
-            ...fragment,
-            reason: 'new_device',
-        });
-        expect(parsedNewDevice?.reason).toBe('new_device');
-        expect(parsedNewDevice && 'code' in parsedNewDevice).toBe(false);
-    });
-
-    it('rejects v !== 1', () => {
-        expect(safeParseContract(deviceBootFragmentSchema, { ...fragment, v: 2 })).toBeNull();
-    });
-
-    it('rejects an empty state', () => {
-        expect(safeParseContract(deviceBootFragmentSchema, { ...fragment, state: '' })).toBeNull();
-    });
-
-    it('rejects a too-short deviceToken', () => {
-        expect(
-            safeParseContract(deviceBootFragmentSchema, { ...fragment, deviceToken: 'short' }),
-        ).toBeNull();
-    });
-
-    it('rejects a too-short code', () => {
-        expect(
-            safeParseContract(deviceBootFragmentSchema, { ...fragment, code: 'short' }),
-        ).toBeNull();
-    });
-
-    it('rejects an unknown reason', () => {
-        expect(
-            safeParseContract(deviceBootFragmentSchema, { ...fragment, reason: 'whoops' }),
-        ).toBeNull();
-    });
-});
-
-describe('deviceExchangeRequestSchema', () => {
-    it('parses a valid code', () => {
-        const v = { code: 'c'.repeat(40) };
-        expect(safeParseContract(deviceExchangeRequestSchema, v)).toEqual(v);
-    });
-
-    it('rejects a too-short code', () => {
-        expect(safeParseContract(deviceExchangeRequestSchema, { code: 'nope' })).toBeNull();
-    });
-});
-
-describe('authTokenBundleSchema', () => {
-    const bundle: AuthTokenBundle = {
-        sessionId: 's1',
-        accessToken: 'jwt.access',
-        refreshToken: 'rt_family_head',
-        expiresAt: '2026-07-07T00:00:00.000Z',
-        user: { id: 'u1', username: 'nate', name: { displayName: 'Nate' } },
-    };
-
-    it('parses a valid bundle', () => {
-        const parsed = safeParseContract(authTokenBundleSchema, bundle);
-        expect(parsed?.sessionId).toBe('s1');
-        expect(parsed?.user.username).toBe('nate');
-    });
-
-    it('rejects a bundle missing the refreshToken', () => {
-        const { refreshToken, ...noRefresh } = bundle;
-        expect(safeParseContract(authTokenBundleSchema, noRefresh)).toBeNull();
-    });
-
-    it('parses a bundle carrying the optional deviceSecret (2c additive mint)', () => {
-        const withSecret: AuthTokenBundle = { ...bundle, deviceSecret: 'ds_first_secret' };
-        const parsed = safeParseContract(authTokenBundleSchema, withSecret);
-        expect(parsed?.deviceSecret).toBe('ds_first_secret');
-    });
-
-    it('parses a bundle WITHOUT deviceSecret (optional — cookie-lane bundles omit it)', () => {
-        const parsed = safeParseContract(authTokenBundleSchema, bundle);
-        expect(parsed && 'deviceSecret' in parsed).toBe(false);
-    });
-});
-
-describe('webSessionResultSchema (reason-discriminated union)', () => {
-    const bundle: AuthTokenBundle = {
-        sessionId: 's1',
-        accessToken: 'jwt.access',
-        refreshToken: 'rt_family_head',
-        expiresAt: '2026-07-07T00:00:00.000Z',
-        user: { id: 'u1', username: 'nate', name: { displayName: 'Nate' } },
-    };
-
-    it('parses the session arm (bundle nested under `session` + deviceToken)', () => {
-        const sessionArm: WebSessionResult = { reason: 'session', session: bundle, deviceToken: A_TOKEN };
-        expect(safeParseContract(webSessionResultSchema, sessionArm)).toEqual(sessionArm);
-    });
-
-    it('parses the no_session arm (deviceToken only)', () => {
-        const noSessionArm: WebSessionResult = { reason: 'no_session', deviceToken: A_TOKEN };
-        expect(safeParseContract(webSessionResultSchema, noSessionArm)).toEqual(noSessionArm);
-    });
-
-    it('parses the new_device arm', () => {
-        const newDeviceArm: WebSessionResult = { reason: 'new_device', deviceToken: A_TOKEN };
-        expect(safeParseContract(webSessionResultSchema, newDeviceArm)).toEqual(newDeviceArm);
-    });
-
-    it('REJECTS the old bare-bundle shape (no reason wrapper)', () => {
-        expect(safeParseContract(webSessionResultSchema, bundle)).toBeNull();
-    });
-
-    it('rejects a session arm missing the nested session bundle', () => {
-        expect(
-            safeParseContract(webSessionResultSchema, { reason: 'session', deviceToken: A_TOKEN }),
-        ).toBeNull();
-    });
-
-    it('rejects any arm missing the deviceToken', () => {
-        expect(safeParseContract(webSessionResultSchema, { reason: 'session', session: bundle })).toBeNull();
-        expect(safeParseContract(webSessionResultSchema, { reason: 'no_session' })).toBeNull();
-    });
-
-    it('rejects an unknown reason', () => {
-        expect(safeParseContract(webSessionResultSchema, { reason: 'signed_out', deviceToken: A_TOKEN })).toBeNull();
-    });
-});
-
-describe('tokenRefreshRequestSchema / tokenRefreshResponseSchema', () => {
-    it('parses a valid refresh request', () => {
-        const v = { refreshToken: A_TOKEN };
-        expect(safeParseContract(tokenRefreshRequestSchema, v)).toEqual(v);
-    });
-
-    it('rejects a too-short refresh token', () => {
-        expect(safeParseContract(tokenRefreshRequestSchema, { refreshToken: 'tiny' })).toBeNull();
-    });
-
-    it('parses a valid refresh response', () => {
-        const v = {
-            accessToken: 'jwt.access',
-            refreshToken: 'rt_next',
-            expiresAt: '2026-07-07T00:15:00.000Z',
-            sessionId: 's1',
-        };
-        expect(safeParseContract(tokenRefreshResponseSchema, v)).toEqual(v);
-    });
-
-    it('rejects a refresh response missing sessionId', () => {
-        const v = { accessToken: 'a', refreshToken: 'r', expiresAt: 'e' };
-        expect(safeParseContract(tokenRefreshResponseSchema, v)).toBeNull();
-    });
-});
-
-describe('deviceTokenIssueResponseSchema', () => {
-    it('parses a device token', () => {
-        expect(safeParseContract(deviceTokenIssueResponseSchema, { deviceToken: 'dt' })).toEqual({
-            deviceToken: 'dt',
-        });
-    });
-
-    it('rejects a non-string device token', () => {
-        expect(safeParseContract(deviceTokenIssueResponseSchema, { deviceToken: 42 })).toBeNull();
-    });
-});
 
 describe('loginResultSchema (union discrimination)', () => {
     it('parses the 2FA arm', () => {
@@ -245,13 +29,12 @@ describe('loginResultSchema (union discrimination)', () => {
         expect(parsed && 'twoFactorRequired' in parsed && parsed.twoFactorRequired).toBe(true);
     });
 
-    it('parses the session arm (with optional refreshToken)', () => {
+    it('parses the session arm', () => {
         const session: LoginResult = {
             sessionId: 's1',
             deviceId: 'd1',
             expiresAt: '2026-07-07T00:00:00.000Z',
             accessToken: 'jwt.access',
-            refreshToken: 'rt_head',
             user: { id: 'u1', username: 'nate' },
         };
         const parsed = safeParseContract(loginResultSchema, session);
@@ -260,7 +43,7 @@ describe('loginResultSchema (union discrimination)', () => {
         expect(parsed && 'sessionId' in parsed && parsed.sessionId).toBe('s1');
     });
 
-    it('parses the session arm without accessToken/refreshToken (both optional)', () => {
+    it('parses the session arm without accessToken (optional)', () => {
         const session = {
             sessionId: 's1',
             deviceId: 'd1',
@@ -270,7 +53,7 @@ describe('loginResultSchema (union discrimination)', () => {
         expect(safeParseContract(loginResultSchema, session)).not.toBeNull();
     });
 
-    it('parses the session arm carrying the optional deviceSecret (2c additive mint)', () => {
+    it('parses the session arm carrying the deviceSecret (zero-cookie mint credential)', () => {
         const session: LoginResult = {
             sessionId: 's1',
             deviceId: 'd1',

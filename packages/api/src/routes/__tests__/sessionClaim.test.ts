@@ -10,7 +10,7 @@
  *  - cancelled sessionToken            -> 401 invalid_grant
  *  - expired sessionToken              -> 401 invalid_grant
  *  - already-consumed sessionToken     -> 401 invalid_grant (replay prevention)
- *  - happy path                        -> 200 with accessToken+refreshToken+sessionId+user
+ *  - happy path                        -> 200 with accessToken+sessionId+user
  *
  * Race-condition coverage is in `services/__tests__/authSession.service.test.ts`.
  */
@@ -64,8 +64,7 @@ jest.mock('../../services/oauthCode.service', () => {
     issueAuthCode: jest.fn(),
     exchangeAuthCode: jest.fn(),
     AUTH_CODE_TTL_MS: 60_000,
-    // The claim handler now mints a rotating refresh-family token via
-    // `issueRefreshToken`, which pulls these hashing helpers from here.
+    // Hashing helpers used elsewhere in the OAuth-code flow of auth.ts.
     sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
     base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
   };
@@ -116,12 +115,6 @@ jest.mock('../../models/ApplicationCredential', () => ({
   __esModule: true,
   ApplicationCredential: { findOne: jest.fn() },
   default: { findOne: jest.fn() },
-}));
-
-jest.mock('../../models/RefreshToken', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-  RefreshToken: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
 }));
 
 // The claim handler now (phase 2c) dynamically imports deviceSessionService to
@@ -320,7 +313,6 @@ describe('POST /auth/session/claim', () => {
     mockSessionFindOne.mockReturnValueOnce({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue({
-          refreshToken: 'refresh-jwt',
           deviceId: 'dev-1',
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         }),
@@ -334,22 +326,19 @@ describe('POST /auth/session/claim', () => {
     });
 
     expect(res.status).toBe(200);
-    // sendSuccess wraps the body in { data: ... }. The claim now returns a fresh
-    // ROTATING refresh-family token (minted via issueRefreshToken), NOT the
-    // legacy Session-embedded JWT, so we assert its presence as a non-empty
-    // string rather than a fixed value.
+    // sendSuccess wraps the body in { data: ... }. Post zero-cookie cutover the
+    // claim no longer returns any refresh token — the client restores via the
+    // rotating deviceSecret + `POST /session/device/token` instead.
     expect(res.body).toEqual({
       data: {
         accessToken: 'access-jwt',
-        refreshToken: expect.any(String),
         sessionId,
         deviceId: 'dev-1',
         expiresAt: expiresAt.toISOString(),
         user: { id: userId, username: 'alice' },
       },
     });
-    expect(res.body.data.refreshToken).not.toBe('refresh-jwt');
-    expect(res.body.data.refreshToken.length).toBeGreaterThan(0);
+    expect(res.body.data.refreshToken).toBeUndefined();
     expect(mockGetAccessToken).toHaveBeenCalledWith(sessionId);
     // No device doc for this session → no deviceSecret in the base response.
     expect(res.body.data.deviceSecret).toBeUndefined();
@@ -464,25 +453,5 @@ describe('POST /auth/session/claim', () => {
     });
 
     expect(res.status).toBe(401);
-  });
-});
-
-describe('POST /auth/logout (rotating-family revoke)', () => {
-  const mockRefreshTokenFindOne = jest.requireMock('../../models/RefreshToken').default.findOne as jest.Mock;
-
-  it('revokes the family behind a presented body refreshToken and returns success', async () => {
-    // A known token → refreshToken.service.revokeFamilyByRawToken finds the row
-    // and revokes its family (best-effort). Logout always returns 200.
-    mockRefreshTokenFindOne.mockResolvedValueOnce({ family: 'fam1', sessionId: 's1' });
-    const res = await requestJson(server, 'POST', '/auth/logout', { refreshToken: 'stored-refresh-token-value' });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true });
-    expect(mockRefreshTokenFindOne).toHaveBeenCalled();
-  });
-
-  it('is idempotent: succeeds with no body token (nothing to revoke)', async () => {
-    const res = await requestJson(server, 'POST', '/auth/logout', {});
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true });
   });
 });
