@@ -20,6 +20,24 @@ export interface IDeviceSession extends Document {
    * legacy device docs predate it and carry none.
    */
   cookieKeyHash?: string;
+  /**
+   * SHA-256 hex of the current `deviceSecret` (phase 2c — zero-cookie transport).
+   * The client stores the raw 256-bit secret first-party (web localStorage /
+   * native SecureStore) and presents it at `POST /session/device/token`; only the
+   * hash is stored server-side, so a Mongo dump cannot forge the secret. Sparse-
+   * unique, exactly like `cookieKeyHash`: legacy device docs predate it and carry
+   * none, and it is populated on the next sign-in / mint.
+   */
+  secretHash?: string;
+  /**
+   * The PREVIOUS `deviceSecret` hash, kept valid for a short grace window
+   * (`prevSecretExpiresAt`) after a rotation so a multi-tab race presenting the
+   * just-superseded secret still succeeds (rotation-in-use, mirroring the
+   * refresh-family single-use-with-grace pattern). Transient — never indexed.
+   */
+  prevSecretHash?: string;
+  /** Epoch after which `prevSecretHash` is no longer accepted. Transient. */
+  prevSecretExpiresAt?: Date;
   revision: number;
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +63,13 @@ const DeviceSessionSchema = new Schema<IDeviceSession>(
     // hash. Never `default: null`, or sparse uniqueness would collide across
     // legacy docs.
     cookieKeyHash: { type: String, default: undefined },
+    // Sparse-unique: only device docs bound to a `deviceSecret` carry a hash.
+    // Never `default: null`, or sparse uniqueness would collide across legacy
+    // docs — same rationale as `cookieKeyHash`.
+    secretHash: { type: String, default: undefined },
+    // Transient grace fields — never indexed (they churn on every rotation).
+    prevSecretHash: { type: String, default: undefined },
+    prevSecretExpiresAt: { type: Date, default: undefined },
     revision: { type: Number, default: 0 },
   },
   { timestamps: true },
@@ -52,5 +77,6 @@ const DeviceSessionSchema = new Schema<IDeviceSession>(
 
 DeviceSessionSchema.index({ deviceId: 1 }, { unique: true });
 DeviceSessionSchema.index({ cookieKeyHash: 1 }, { unique: true, sparse: true });
+DeviceSessionSchema.index({ secretHash: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<IDeviceSession>('DeviceSession', DeviceSessionSchema);

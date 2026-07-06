@@ -41,6 +41,12 @@ jest.mock('../oauthCode.service', () => {
   return {
     sha256Hex: (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex'),
     base64UrlEncode: (buf: Buffer) => buf.toString('base64url'),
+    timingSafeStringEqual: (a: string, b: string) => {
+      const ab = Buffer.from(a);
+      const bb = Buffer.from(b);
+      if (ab.length !== bb.length) return false;
+      return nodeCrypto.timingSafeEqual(ab, bb);
+    },
   };
 });
 
@@ -661,6 +667,177 @@ describe('getStateByCookieKey', () => {
     mockFindOne.mockReturnValueOnce(lean(null));
     expect(await deviceSessionService.getStateByCookieKey('unknown')).toBeNull();
     expect(await deviceSessionService.getStateByCookieKey('')).toBeNull();
+  });
+});
+
+describe('issueDeviceSecret', () => {
+  it('mints a fresh secret and stores only its hash — no prior secret means no prev fields', async () => {
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0 }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1' }));
+
+    const secret = await deviceSessionService.issueDeviceSecret('d1');
+
+    expect(typeof secret).toBe('string');
+    expect((secret as string).length).toBeGreaterThan(20);
+    const [filter, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ deviceId: 'd1' });
+    // Only the HASH of the returned secret is stored, never the raw value.
+    expect(update.$set.secretHash).toBe(nodeCrypto.createHash('sha256').update(secret as string).digest('hex'));
+    expect(update.$set.secretHash).not.toBe(secret);
+    // First issuance → no previous secret to grace.
+    expect(update.$set.prevSecretHash).toBeUndefined();
+    expect(update.$set.prevSecretExpiresAt).toBeUndefined();
+  });
+
+  it('rotates: moves the existing secret to prev with a ~60s grace expiry and sets the new secret', async () => {
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 0, secretHash: 'OLDHASH' }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1' }));
+
+    const before = Date.now();
+    const secret = await deviceSessionService.issueDeviceSecret('d1');
+    const after = Date.now();
+
+    const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    // The just-superseded secret stays valid for a short grace (rotation-in-use).
+    expect(update.$set.prevSecretHash).toBe('OLDHASH');
+    expect(update.$set.prevSecretExpiresAt).toBeInstanceOf(Date);
+    const graceExpiry = (update.$set.prevSecretExpiresAt as Date).getTime();
+    expect(graceExpiry).toBeGreaterThanOrEqual(before + 60_000);
+    expect(graceExpiry).toBeLessThanOrEqual(after + 60_000);
+    expect(update.$set.secretHash).toBe(nodeCrypto.createHash('sha256').update(secret as string).digest('hex'));
+    // The new secret differs from the old hash it replaced.
+    expect(update.$set.secretHash).not.toBe('OLDHASH');
+  });
+
+  it('two successive mints return DIFFERENT secrets (each mint rotates)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0 }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1' }));
+    const first = await deviceSessionService.issueDeviceSecret('d1');
+
+    // Second mint sees the (now-stored) first secret as current.
+    const firstHash = nodeCrypto.createHash('sha256').update(first as string).digest('hex');
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0, secretHash: firstHash }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1' }));
+    const second = await deviceSessionService.issueDeviceSecret('d1');
+
+    expect(second).not.toBe(first);
+    // The first secret is preserved as prev (grace) so a lagging tab still mints.
+    const [, secondUpdate] = mockFindOneAndUpdate.mock.calls[1];
+    expect(secondUpdate.$set.prevSecretHash).toBe(firstHash);
+  });
+
+  it('returns null when the device doc does not exist (never mints a secret bound to a phantom device)', async () => {
+    mockFindOne.mockReturnValueOnce(lean(null));
+    expect(await deviceSessionService.issueDeviceSecret('ghost')).toBeNull();
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the doc vanished between read and write', async () => {
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], revision: 0 }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean(null));
+    expect(await deviceSessionService.issueDeviceSecret('d1')).toBeNull();
+  });
+});
+
+describe('getStateBySecret', () => {
+  const rawSecret = 'raw-device-secret-value';
+  const secretHash = nodeCrypto.createHash('sha256').update(rawSecret).digest('hex');
+
+  it('returns the projected state when the secret matches the current secretHash (constant-time)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+      updatedAt: new Date(1720000000000),
+      secretHash,
+    }));
+    const state = await deviceSessionService.getStateBySecret('d1', rawSecret);
+    expect(state?.deviceId).toBe('d1');
+    expect(state?.activeAccountId).toBe('a1');
+    // Looked up by deviceId; the raw secret is never part of the query.
+    expect(mockFindOne).toHaveBeenCalledWith({ deviceId: 'd1' });
+  });
+
+  it('accepts the PREVIOUS secret within the grace window', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 1, updatedAt: new Date(1720000000000),
+      secretHash: 'CURRENTHASH', prevSecretHash: secretHash, prevSecretExpiresAt: new Date(Date.now() + 30_000),
+    }));
+    const state = await deviceSessionService.getStateBySecret('d1', rawSecret);
+    expect(state?.deviceId).toBe('d1');
+  });
+
+  it('rejects the previous secret once the grace window has expired', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 1, updatedAt: new Date(),
+      secretHash: 'CURRENTHASH', prevSecretHash: secretHash, prevSecretExpiresAt: new Date(Date.now() - 1_000),
+    }));
+    expect(await deviceSessionService.getStateBySecret('d1', rawSecret)).toBeNull();
+  });
+
+  it('returns null on a secret mismatch', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1', accounts: [], activeAccountId: null, revision: 1, updatedAt: new Date(),
+      secretHash: 'A-DIFFERENT-HASH',
+    }));
+    expect(await deviceSessionService.getStateBySecret('d1', rawSecret)).toBeNull();
+  });
+
+  it('returns null when the doc carries no secretHash at all', async () => {
+    mockFindOne.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 1, updatedAt: new Date() }));
+    expect(await deviceSessionService.getStateBySecret('d1', rawSecret)).toBeNull();
+  });
+
+  it('returns null for an unknown device, and short-circuits (no query) for empty inputs', async () => {
+    mockFindOne.mockReturnValueOnce(lean(null));
+    expect(await deviceSessionService.getStateBySecret('d1', rawSecret)).toBeNull();
+    // Empty deviceId / empty secret never touch the DB.
+    expect(await deviceSessionService.getStateBySecret('d1', '')).toBeNull();
+    expect(await deviceSessionService.getStateBySecret('', rawSecret)).toBeNull();
+    expect(mockFindOne).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('signout — device-secret cleanup (2c)', () => {
+  it('signout-ALL unsets secretHash/prevSecretHash/prevSecretExpiresAt (cookieKeyHash left untouched)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 3 }));
+
+    await deviceSessionService.signout('d1', { all: true });
+
+    const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(update.$unset).toEqual({ secretHash: '', prevSecretHash: '', prevSecretExpiresAt: '' });
+    // The device cookie hash is NEVER cleared here — it lives until the cutover.
+    expect(update.$unset).not.toHaveProperty('cookieKeyHash');
+  });
+
+  it('single-account signout does NOT unset the device secret (other accounts on the device still use it)', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 }],
+      activeAccountId: { toString: () => 'a2' },
+      revision: 3,
+    }));
+
+    await deviceSessionService.signout('d1', { accountId: 'a1' });
+
+    const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(update.$unset).toBeUndefined();
   });
 });
 

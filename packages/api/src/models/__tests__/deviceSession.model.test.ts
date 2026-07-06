@@ -27,4 +27,32 @@ describe('DeviceSession model', () => {
     expect(doc.accounts[0].authuser).toBe(0);
     expect(doc.accounts[0].addedAt).toBeInstanceOf(Date);
   });
+
+  it('leaves the phase-2c device-secret fields unset by default (sparse — legacy docs predate them)', () => {
+    const doc = new DeviceSession({ deviceId: 'd1' });
+    expect(doc.secretHash).toBeUndefined();
+    expect(doc.prevSecretHash).toBeUndefined();
+    expect(doc.prevSecretExpiresAt).toBeUndefined();
+  });
+
+  it('stores the device-secret fields when provided', () => {
+    const expiresAt = new Date();
+    const doc = new DeviceSession({ deviceId: 'd1', secretHash: 'h1', prevSecretHash: 'h0', prevSecretExpiresAt: expiresAt });
+    expect(doc.secretHash).toBe('h1');
+    expect(doc.prevSecretHash).toBe('h0');
+    expect(doc.prevSecretExpiresAt).toBe(expiresAt);
+  });
+
+  it('declares a sparse-unique index on secretHash (mirrors cookieKeyHash)', () => {
+    const indexes = DeviceSession.schema.indexes();
+    const secretIndex = indexes.find(([keys]) => keys.secretHash === 1);
+    expect(secretIndex).toBeDefined();
+    expect(secretIndex?.[1]).toMatchObject({ unique: true, sparse: true });
+  });
+
+  it('does NOT declare an index on the transient prev-secret fields', () => {
+    const indexes = DeviceSession.schema.indexes();
+    expect(indexes.some(([keys]) => keys.prevSecretHash !== undefined)).toBe(false);
+    expect(indexes.some(([keys]) => keys.prevSecretExpiresAt !== undefined)).toBe(false);
+  });
 });

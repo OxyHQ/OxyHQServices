@@ -4,8 +4,17 @@ import DeviceSession, { IDeviceSession, IDeviceSessionAccount } from '../models/
 import sessionService from './session.service';
 import { revokeAllFamiliesBySession } from './refreshToken.service';
 import { revokeDeviceTokens } from './deviceToken.service';
-import { sha256Hex, base64UrlEncode } from './oauthCode.service';
+import { sha256Hex, base64UrlEncode, timingSafeStringEqual } from './oauthCode.service';
 import { logger } from '../utils/logger';
+
+/** Number of random bytes in a raw `deviceSecret` (256-bit). */
+const DEVICE_SECRET_BYTES = 32;
+/**
+ * Grace window during which the just-superseded `deviceSecret` is still accepted
+ * after a rotation, so a multi-tab race presenting the previous secret is not
+ * locked out (rotation-in-use — mirrors the refresh-family single-use-with-grace).
+ */
+const DEVICE_SECRET_GRACE_MS = 60_000;
 
 function idToString(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -267,9 +276,18 @@ class DeviceSessionService {
     const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
+    // Signout-ALL also revokes the device's `deviceSecret` (phase 2c): clear the
+    // secret hashes so a retained secret can never later mint a token for the now-
+    // empty set. Single-account signout leaves the secret alone — other accounts
+    // on the SAME device still legitimately mint with it. `cookieKeyHash` is NEVER
+    // cleared here; it lives until the cookie-lane cutover.
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },
-      { $set: { accounts: remaining, activeAccountId: nextActive }, $inc: { revision: 1 } },
+      {
+        $set: { accounts: remaining, activeAccountId: nextActive },
+        $inc: { revision: 1 },
+        ...('all' in target ? { $unset: { secretHash: '', prevSecretHash: '', prevSecretExpiresAt: '' } } : {}),
+      },
       { new: true, upsert: true },
     ).lean<IDeviceSession>();
     return projectState(updated as IDeviceSession);
@@ -391,6 +409,74 @@ class DeviceSessionService {
       cookieKeyHash,
     });
     return { deviceId, rawCookieKey };
+  }
+
+  /**
+   * Issue (rotating) the `deviceSecret` bound to a device (phase 2c — zero-cookie
+   * transport). Mints a fresh 256-bit secret, stores only its `sha256` in
+   * `secretHash`, and — when a prior secret existed — moves that prior hash into
+   * `prevSecretHash` with a short `prevSecretExpiresAt` grace so a concurrent tab
+   * presenting the just-superseded secret is not locked out (rotation-in-use).
+   *
+   * The WRITE is a single atomic `findOneAndUpdate`; the grace window (not a lock)
+   * is the multi-tab concurrency mitigation — mirroring the refresh family. The
+   * raw secret is returned to the caller EXACTLY ONCE and is NEVER logged.
+   *
+   * Returns null when no `DeviceSession` doc exists for `deviceId` (or it vanished
+   * between read and write): a secret is only ever bound to a real device doc,
+   * never to a phantom device (no upsert).
+   */
+  async issueDeviceSecret(deviceId: string): Promise<string | null> {
+    const current = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+    if (!current) return null;
+
+    const rawSecret = base64UrlEncode(crypto.randomBytes(DEVICE_SECRET_BYTES));
+    const secretHash = sha256Hex(rawSecret);
+
+    const set: { secretHash: string; prevSecretHash?: string; prevSecretExpiresAt?: Date } = { secretHash };
+    if (current.secretHash) {
+      set.prevSecretHash = current.secretHash;
+      set.prevSecretExpiresAt = new Date(Date.now() + DEVICE_SECRET_GRACE_MS);
+    }
+
+    const updated = await DeviceSession.findOneAndUpdate(
+      { deviceId },
+      { $set: set },
+      { new: true },
+    ).lean<IDeviceSession>();
+    if (!updated) return null;
+
+    return rawSecret;
+  }
+
+  /**
+   * Resolve the `DeviceSessionState` bound to a raw `deviceSecret` (phase 2c). The
+   * secret is hashed and matched — constant-time — against the device's current
+   * `secretHash` OR, within the grace window, its `prevSecretHash`. Returns null
+   * when the device is unknown, carries no secret, or the secret does not match
+   * (possession of the deviceId alone reveals nothing).
+   */
+  async getStateBySecret(deviceId: string, rawSecret: string): Promise<DeviceSessionState | null> {
+    if (typeof deviceId !== 'string' || deviceId.length === 0) return null;
+    if (typeof rawSecret !== 'string' || rawSecret.length === 0) return null;
+
+    const doc = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+    if (!doc) return null;
+
+    const hash = sha256Hex(rawSecret);
+    if (typeof doc.secretHash === 'string' && doc.secretHash.length > 0 && timingSafeStringEqual(hash, doc.secretHash)) {
+      return projectState(doc);
+    }
+    if (
+      typeof doc.prevSecretHash === 'string' &&
+      doc.prevSecretHash.length > 0 &&
+      doc.prevSecretExpiresAt instanceof Date &&
+      doc.prevSecretExpiresAt.getTime() > Date.now() &&
+      timingSafeStringEqual(hash, doc.prevSecretHash)
+    ) {
+      return projectState(doc);
+    }
+    return null;
   }
 
   /**
