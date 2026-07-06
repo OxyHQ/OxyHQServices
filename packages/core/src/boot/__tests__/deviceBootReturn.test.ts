@@ -134,6 +134,23 @@ describe('consumeDeviceBootReturn', () => {
     expect(persisted?.deviceId).toBe('dev-prev');
   });
 
+  it('preserves a prior deviceSecret when the bundle omits one (never orphans the mint lane)', async () => {
+    const { deps, store } = makeDeps(encodeHash(fragmentObject()));
+    await store.save({
+      sessionId: 'prev',
+      refreshToken: 'r-prevabcdefghij',
+      userId: 'user-1',
+      deviceId: 'dev-prev',
+      deviceSecret: 'ds-still-valid',
+    });
+
+    await consumeDeviceBootReturn(deps);
+
+    const persisted = await store.load();
+    expect(persisted?.deviceSecret).toBe('ds-still-valid');
+    expect(persisted?.deviceId).toBe('dev-prev');
+  });
+
   it('rejects a state mismatch without persisting or exchanging', async () => {
     const { deps, calls, store } = makeDeps(encodeHash(fragmentObject()), { expectedState: 'WRONG' });
     expect(await consumeDeviceBootReturn(deps)).toEqual({ kind: 'state-mismatch' });

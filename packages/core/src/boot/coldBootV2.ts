@@ -243,8 +243,13 @@ type MintFailure = 'invalid_secret' | 'no_active_session' | 'transient';
 
 function classifyMintFailure(error: unknown): MintFailure {
   if (extractErrorStatus(error) === 401) {
-    const message = error instanceof Error ? error.message : '';
-    return message.includes('no_active_session') ? 'no_active_session' : 'invalid_secret';
+    // Structural read (not `instanceof Error`): the thrown value can be a plain
+    // ApiError-shaped object or come from another realm, where instanceof fails
+    // and a `no_active_session` would be misread as a stale secret and dropped.
+    const message = (error as { message?: unknown })?.message;
+    return typeof message === 'string' && message.includes('no_active_session')
+      ? 'no_active_session'
+      : 'invalid_secret';
   }
   return 'transient';
 }
@@ -481,8 +486,12 @@ export async function runSessionColdBoot(
           if (prior?.deviceId) {
             next.deviceId = prior.deviceId;
           }
-          if (bundle.deviceSecret) {
-            next.deviceSecret = bundle.deviceSecret;
+          // Prefer the bundle's secret (the server just rotated onto it); keep the
+          // prior one when the bundle omits it — this lane also runs as the
+          // TRANSIENT-mint fallback, and must not orphan a still-valid secret.
+          const carriedSecret = bundle.deviceSecret ?? prior?.deviceSecret;
+          if (carriedSecret) {
+            next.deviceSecret = carriedSecret;
           }
           await store.save(next);
           oxy.setTokens(bundle.accessToken);

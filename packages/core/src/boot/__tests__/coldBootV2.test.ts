@@ -316,6 +316,25 @@ describe('runSessionColdBoot — device-secret-mint (phase 2c)', () => {
     expect((await store.load())?.deviceSecret).toBe('ds-secret-orig');
   });
 
+  it('classifies a PLAIN-OBJECT 401 (no Error prototype) — no_active_session still keeps the secret', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    // Cross-realm / ApiError-shaped throw: not `instanceof Error`. Must still be
+    // read as no_active_session — misreading it as a stale secret would drop it.
+    const mintFromDeviceSecret = jest.fn(async () => {
+      throw { status: 401, message: 'no_active_session' };
+    });
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+    const onSignedOut = jest.fn();
+
+    const outcome = await runSessionColdBoot({
+      oxy, store, platform: WEB, dom: makeDom().dom, onSignedOut,
+    });
+
+    expect(outcome).toEqual({ kind: 'unauthenticated' });
+    expect((await store.load())?.deviceSecret).toBe('ds-secret-orig');
+  });
+
   it('transient (non-401) mint error → keeps the secret and falls through', async () => {
     const { store, seed } = makeCredStore();
     await seed();
@@ -329,6 +348,32 @@ describe('runSessionColdBoot — device-secret-mint (phase 2c)', () => {
     expect(outcome).toMatchObject({ kind: 'session', via: 'stored-tokens' });
     // The secret survives a transient failure (rotation preserved through refresh).
     expect((await store.load())?.deviceSecret).toBe('ds-secret-orig');
+  });
+
+  it('transient mint + cookie-lane hop whose bundle omits a secret → prior secret preserved', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    // Mint down, refresh family down → the chain lands on bootstrap-hop, whose
+    // web-session BUNDLE carries no deviceSecret. The still-valid prior secret
+    // must survive the store overwrite (else the mint lane is orphaned forever).
+    const mintFromDeviceSecret = jest.fn(async () => {
+      throw new Error('network down');
+    });
+    const refreshWithToken = jest.fn(async () => {
+      throw new Error('refresh down');
+    });
+    const requestWebSession = jest.fn(
+      async () => ({ reason: 'session', session: BUNDLE, deviceToken: 'dt-rotated' }) as WebSessionResult,
+    );
+    const { oxy } = makeOxy({ mintFromDeviceSecret, refreshWithToken, requestWebSession });
+    const domHandle = makeDom({ hostname: 'accounts.oxy.so' });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: domHandle.dom });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'bootstrap-hop' });
+    const persisted = await store.load();
+    expect(persisted?.deviceSecret).toBe('ds-secret-orig');
+    expect(persisted?.deviceId).toBe('dev-mint');
   });
 
   it('is gated OFF while a #oxy_boot return fragment is present (bootstrap-return wins)', async () => {

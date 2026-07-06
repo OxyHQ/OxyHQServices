@@ -186,8 +186,12 @@ export async function consumeDeviceBootReturn(
       if (prior?.deviceId) {
         next.deviceId = prior.deviceId;
       }
-      if (bundle.deviceSecret) {
-        next.deviceSecret = bundle.deviceSecret;
+      // Prefer the bundle's secret (the server just rotated onto it); keep the
+      // prior one when the bundle omits it so a cookie-lane boot can never orphan
+      // a still-valid secret captured by an earlier login lane.
+      const carriedSecret = bundle.deviceSecret ?? prior?.deviceSecret;
+      if (carriedSecret) {
+        next.deviceSecret = carriedSecret;
       }
       await deps.store.save(next);
       deps.plantAccessToken(bundle.accessToken);
