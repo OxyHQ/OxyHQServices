@@ -88,7 +88,7 @@ OxyHQServices/
 │   │   └── (users, sessions, DeviceSession, OAuth, device bootstrap)
 │   │
 │   ├── auth/              # auth.oxy.so — third-party OAuth authorize/consent IdP
-│   │   └── (mounts OxyProvider with coldBoot={false}; not an RP)
+│   │   └── (mounts OxyProvider device-first like every app; a shell, not an RP)
 │   │
 │   └── accounts/          # "Accounts by Oxy" — keyless, management-only
 ```
@@ -319,10 +319,12 @@ for the consent surface. Full walkthrough:
 ### The IdP is not an RP
 
 `auth.oxy.so` (packages/auth) is the OAuth authorize/consent IdP. It mounts
-`OxyProvider` from `@oxyhq/services` with **`coldBoot={false}`** — IdP mode,
-no session authority — purely to reuse the shared sign-in and consent UI.
-Account management lives exclusively on **accounts.oxy.so**; the IdP's
-`/settings/*` routes permanently redirect there.
+`OxyProvider` from `@oxyhq/services` device-first like every Oxy app (normal
+cold boot from its own `{deviceId, deviceSecret}`, `useSwitchableAccounts`
+chooser, `signInWithPassword`/`completeTwoFactorSignIn`/`handleWebSession`
+funnels). It stays a SHELL that emits the OAuth code after authenticating —
+NOT a Relying Party. Account management lives exclusively on
+**accounts.oxy.so**; the IdP's `/settings/*` routes permanently redirect there.
 
 ---
 
@@ -399,7 +401,6 @@ POST /auth/device/web-session     # Same-site fast path: exchange oxy_device coo
 POST /auth/device/exchange        # Burn a single-use boot code for tokens
 POST /auth/refresh-token          # Rotate the persisted refresh-token family
 POST /auth/device/token           # Bearer-gated: issue the native-channel device token
-POST /auth/device/resolve         # X-Oxy-Internal-gated device-set feed (IdP account chooser)
 ```
 
 ### Device session authority

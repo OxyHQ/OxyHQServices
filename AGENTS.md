@@ -117,7 +117,7 @@ packages/
   node/           @oxyhq/node       User-operated data node (signed-records replica)
   accounts/                         Expo accounts app ("Accounts by Oxy" — keyless, management-only)
   commons/                          Expo identity vault app ("Commons by Oxy" — NATIVE-ONLY, no web build)
-  auth/                             Vite IdP app (auth.oxy.so — OAuth authorize/consent on @oxyhq/services, coldBoot={false})
+  auth/                             Vite IdP app (auth.oxy.so — OAuth authorize/consent on @oxyhq/services, device-first like every app)
   console/                          Developer portal (Vite + @oxyhq/services)
   inbox/                            Inbox app
   test-app-expo/                    Expo test/playground app
@@ -133,7 +133,7 @@ packages/
 accounts              dep: @oxyhq/core + @oxyhq/services
 commons               dep: @oxyhq/core + @oxyhq/services  (NATIVE-ONLY — no web build/CF Pages)
 console               dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite)
-auth (IdP)            dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite, coldBoot={false})
+auth (IdP)            dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite, device-first cold boot)
 test-app-expo         dep: @oxyhq/services
 ```
 
@@ -201,7 +201,7 @@ Backend APIs use `@oxyhq/core/server` for request identity and security:
 - Do not define local `AuthRequest`, `requireAuth`, `getUserId`, `getAuthenticatedUserId`, bearer parsers, or token-decoding auth middleware in apps. Missing shared behavior belongs in `@oxyhq/core/server`.
 - Bearer-authenticated writes do not fetch app-local CSRF tokens. CSRF remains for ambient cookie credentials and cookie-only writes.
 
-`packages/auth` / `auth.oxy.so` is the **OAuth authorize/consent IdP** for third-party apps, NOT a Relying Party and NOT the session authority for first-party apps. It mounts `OxyProvider` from `@oxyhq/services` with `coldBoot={false}` (no-session-authority mode) purely for the shared sign-in surface and `OxyConsentScreen` context — do not enable RP cold boot there. Trust for auto-approving OAuth consent is registry-based (`Application.isOfficial`/`isInternal`/`type`, staff-controlled via `isTrustedApplication()` in `packages/api/src/utils/trustedApplication.ts`), not domain-based. The IdP does NOT expose account management — `accounts.oxy.so` is the sole owner; the IdP's `/settings/*` routes permanently redirect there. See the "Auth App (packages/auth)" section below.
+`packages/auth` / `auth.oxy.so` is the **OAuth authorize/consent IdP** for third-party apps, NOT a Relying Party. It mounts `OxyProvider` from `@oxyhq/services` with NO special props — it is a device-first origin like every Oxy app (its own per-origin `{deviceId, deviceSecret}`, normal SDK cold boot, `useSwitchableAccounts` chooser, `signInWithPassword`/`completeTwoFactorSignIn`/`handleWebSession` funnels) — but it stays a SHELL that emits the OAuth authorization code for the third-party after authenticating; do not turn it into an RP that bounces elsewhere for its own session. There is NO transport/chooser exception anymore (the `coldBoot={false}` exception existed for the deleted SSO bounce). Trust for auto-approving OAuth consent is registry-based (`Application.isOfficial`/`isInternal`/`type`, staff-controlled via `isTrustedApplication()` in `packages/api/src/utils/trustedApplication.ts`), not domain-based. The IdP does NOT expose account management — `accounts.oxy.so` is the sole owner; the IdP's `/settings/*` routes permanently redirect there. See the "Auth App (packages/auth)" section below.
 
 ## Coding Standards
 
@@ -220,7 +220,7 @@ Package: `packages/contracts` → `@oxyhq/contracts`. SINGLE SOURCE OF TRUTH for
 
 **What it contains:**
 - Zod schemas: `userNameSchema` (`displayName` field is optional — `z.string().optional()`), `userResponseSchema` (includes `did?` + `verifiedDomains?`), `userProfileUpdateSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
-- **Device-first schemas (`src/deviceBoot.ts`, wave 2):** `deviceBootReasonSchema`, `deviceBootFragmentSchema`, `deviceExchangeRequestSchema`, `tokenRefreshRequestSchema`, `tokenRefreshResponseSchema`, `deviceTokenIssueResponseSchema`, `deviceResolveRequestSchema`, `deviceResolveResponseSchema` + inferred types `DeviceBootReason`, `DeviceBootFragment`, `DeviceTokenIssueResponse`, `DeviceResolveRequest`, `DeviceResolveAccount`, `DeviceResolveResponse`. The legacy multi-account refresh schemas/types (`refreshAllAccountSchema`, `refreshAllResponseSchema`, and their inferred types) were REMOVED (contracts 0.10.0) — do not reference them; the IdP-cookie endpoint they backed no longer exists.
+- **Device-first schemas (`src/deviceBoot.ts`, wave 2):** `deviceBootReasonSchema`, `deviceBootFragmentSchema`, `deviceExchangeRequestSchema`, `tokenRefreshRequestSchema`, `tokenRefreshResponseSchema`, `deviceTokenIssueResponseSchema`, `loginResultSchema` + inferred types `DeviceBootReason`, `DeviceBootFragment`, `DeviceTokenIssueResponse`, `LoginResult`/`LoginSessionResult`/`LoginTwoFactorRequired`. The legacy multi-account refresh schemas/types (`refreshAllAccountSchema`, `refreshAllResponseSchema`) AND the IdP `deviceResolve*` chooser schemas/types (`deviceResolveRequestSchema`, `deviceResolveResponseSchema`, `DeviceResolveRequest`, `DeviceResolveAccount`, `DeviceResolveResponse`) were REMOVED — do not reference them; the IdP now enumerates device accounts via the device-first SDK (`useSwitchableAccounts`), not a cookie/resolve feed.
 - **Identity schemas (`src/identity.ts`):** `didDocumentSchema` (+ `verificationMethodSchema`, `didServiceSchema`), `signedRecordEnvelopeSchema`, `verifiedDomainSchema` + domain-request/instructions schemas, `authMethodsResponseSchema` (extended with `did` + per-method `verificationMethodId`), `exportBundleSchema`
 - Helpers: `resolveUserId`, `safeParseContract`
 - Inferred types: `UserNameResponse` (explicit `interface`; `displayName` is **`string | undefined`** — optional; prior to being made explicit it degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`; identity types: `DidDocument`, `VerificationMethod`, `DidService`, `SignedRecordEnvelope`, `VerifiedDomain`, `AuthMethodsResponse`, `ExportBundle`
@@ -267,7 +267,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/utils/oauthPkce.ts` — `generatePkcePair`, `generateOAuthState`, `buildOAuthAuthorizeUrl` (third-party OAuth + PKCE helpers)
 - `packages/services/src/index.ts` — all public UI SDK exports (web + native); includes `LogoIcon`, `LogoText`
 - `packages/services/src/ui/context/OxyContext.tsx` — auth context (web + native)
-- `packages/services/src/ui/components/OxyProvider.tsx` — the ONE provider component (accepts `coldBoot={false}` for the IdP)
+- `packages/services/src/ui/components/OxyProvider.tsx` — the ONE provider component (device-first cold boot on by default; every consumer including the IdP mounts it the same way)
 - `packages/services/src/ui/components/OxyAccountDialog.tsx` — unified account switcher + sign-in dialog (Bloom `<Dialog>`)
 - `packages/services/src/ui/components/OxySignInButton.tsx` — official → dialog; `third_party` → OAuth redirect + PKCE
 - `packages/services/src/ui/components/OxyConsentScreen.tsx` — the IdP's OAuth consent surface
@@ -688,17 +688,17 @@ Auth is device-first and **zero-cookie**: `deviceId` + `deviceSecret` as transpo
 
 Standalone Vite app at `auth.oxy.so` — the **OAuth authorize/consent IdP** for third-party "Sign in with Oxy" (login, signup, authorize, recover, social-callback). It renders the shared `@oxyhq/services` auth surfaces via RN Web.
 
-**ARCHITECTURE: the auth app IS the IdP, not a Relying Party (CRITICAL — do not refactor)**
-- It mounts `OxyProvider` from `@oxyhq/services` with **`coldBoot={false}`** (`packages/auth/src/main.tsx`) — no-session-authority mode: the provider supplies the shared sign-in surface (Commons QR / device-flow) and the `OxyConsentScreen` context, but runs NO device-first cold boot and owns NO session restore. Do not enable RP cold boot here.
-- `authorize.tsx` renders **`OxyConsentScreen`** from `@oxyhq/services` — the single OAuth consent surface (shows the registered `Application` identity + `privacyPolicyUrl`/`termsUrl`; the auto-approve decision is the registry-based `isTrustedApplication()` predicate server-side).
-- Consent/password/signup/recover keep their DOM+Bloom shell (`AuthFormLayout`, `login-form.tsx`, etc.); the login page mounts the services sign-in surface.
+**ARCHITECTURE: the auth app is a device-first origin AND the OAuth authorize/consent IdP — NOT a Relying Party**
+- It mounts `OxyProvider` from `@oxyhq/services` with NO special props (`packages/auth/src/main.tsx`): it runs the SAME device-first cold boot every Oxy app runs (restore THIS origin's device session from its own persisted `{deviceId, deviceSecret}`), enumerates device accounts through `useSwitchableAccounts`, authenticates through the SDK's `signInWithPassword` / `completeTwoFactorSignIn` / `handleWebSession` funnels, and switches accounts through `switchToAccount`. There is NO transport/chooser exception — the IdP is a device-first origin like accounts.oxy.so. The former `coldBoot={false}` exception existed for the SSO bounce the zero-cookie cutover deleted; it is gone.
+- **Still a shell, NOT a Relying Party:** the IdP does not lose its authorize/consent role. After the SDK authenticates the user device-first, `authorize.tsx` still emits the OAuth authorization code for the third-party (`POST /auth/oauth/authorize`, gated by `GET /auth/oauth/consent`) using the SDK's ACTIVE-account bearer (`oxyServices.getAccessToken()`). Do NOT turn it into an RP that bounces elsewhere for its own session.
+- `authorize.tsx` renders **`OxyConsentScreen`** from `@oxyhq/services` — the single OAuth consent surface (shows the registered `Application` identity + `privacyPolicyUrl`/`termsUrl`; the auto-approve decision is the registry-based `isTrustedApplication()` predicate server-side). The account chooser is the shared `AccountChooser` fed by `useSwitchableAccounts` (multi-account) or the consent screen directly (single account).
+- Consent/password/signup/recover keep their DOM+Bloom shell (`AuthFormLayout`, `login-form.tsx`, etc.); the login page drives the SDK device-first funnels.
 - **No account management.** `accounts.oxy.so` owns it exclusively; the IdP's `/settings` + `/settings/password` + `/settings/linked-accounts` routes permanently redirect to `accounts.oxy.so/security`, and `/settings/sessions` → `accounts.oxy.so/sessions` (`ExternalRedirect` routes in `src/main.tsx`).
 - RP apps (Mention, accounts, console, inbox, Allo, Homiio) never redirect users to `auth.oxy.so` for first-party sign-in — their in-app dialog handles it; `auth.oxy.so` exists for the third-party OAuth redirect flow.
 
-**Zod schema contract — the device-account chooser reads `deviceResolveResponseSchema` from `@oxyhq/contracts` directly (no local mirror to keep in sync)**
-- `useDeviceAccounts()` (`packages/auth/lib/use-device-accounts.ts`) fetches `/api/device-accounts`, parses with `deviceResolveResponseSchema`/`DeviceResolveResponse`, and maps each `UserResponse` via `resolveUserId` + `getAccountDisplayName` (from `@oxyhq/core`) into the chooser's `Account` shape — a user with only a first name renders that first name, never the lowercase username, and the helper always returns a non-empty string so the chooser never shows a blank row.
+**Device-account chooser — same device-first SDK chain as every app (no bespoke IdP feed)**
+- The chooser reads `useSwitchableAccounts()` from `@oxyhq/services` (the SAME `projectSwitchableAccounts` projection accounts.oxy.so uses); selecting a row calls `useOxy().switchToAccount(accountId)`. There is NO `oxy_device` cookie, NO `/auth/device/resolve` call, NO `/api/device-accounts` Pages Function, and NO `deviceResolve*` contract — all deleted in the 2c cutover. `login-form.tsx` and `authorize.tsx` feed the shared presentational `AccountChooser` with `SwitchableAccount[]`.
 - `user.name` is ALWAYS the structured object `{ first?, last?, full?, displayName? }` — NEVER a plain `z.string()`. `displayName` is optional (see `@oxyhq/contracts` `userNameSchema`).
-- The legacy multi-account-refresh schemas and their nullable-`authuser` legacy-slot handling are GONE from `@oxyhq/contracts` (0.10.0). Do not re-introduce a local schema mirror in `packages/auth/lib/schemas.ts`; import the device-resolve contract from `@oxyhq/contracts` directly.
 
 **Key patterns:**
 - `AuthFormLayout` + `AuthFormHeader` — shared layout for all auth screens
@@ -706,8 +706,7 @@ Standalone Vite app at `auth.oxy.so` — the **OAuth authorize/consent IdP** for
 - Login form multi-step: identifier → password → 2FA, with per-step animations
 - `applyColorPreset()` from `lib/bloom-css.ts` — applies user's Bloom color theme to CSS vars on `:root`
 - `OxyServices.lookupUsername()` — lightweight user lookup for login flow (validates existence + gets color)
-- Zod schemas in `lib/schemas.ts` for API response validation
-- Shared types in `lib/types.ts`
+- Zod schemas in `lib/schemas.ts` for API response validation (the shared `loginResultSchema` from `@oxyhq/contracts` validates the `/auth/login` + `/auth/signup` session responses committed via `handleWebSession`)
 
 **Anti-patterns to avoid:**
 - No `useEffect` for syncing props to state — derive from props during render
@@ -724,11 +723,10 @@ Standalone Vite app at `auth.oxy.so` — the **OAuth authorize/consent IdP** for
 - `POST /auth/recover/*` — password recovery flow
 - `GET /users/me` — current session check
 - `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`, `GET /auth/oauth/client/:clientId`, `POST /auth/oauth/token` — the third-party OAuth authorize/consent/token surface this app exists to serve
-- `GET /api/device-accounts` (a Cloudflare Pages Function, not an API route) — the device-account chooser feed
+- `POST /auth/social/:provider` — social sign-in (now returns the device-first session arm incl. `deviceSecret`, committed via `handleWebSession`)
 
-**Device-account chooser Pages Function (packages/auth/functions/):**
-- `packages/auth/functions/api/device-accounts.ts` (`onRequestGet`) delegates to the shared, framework-free `deviceAccountsResponse` handler in `packages/auth/lib/device-accounts.ts`: reads the first-party `oxy_device` cookie and forwards it to the API's `POST /auth/device/resolve`. **BROKEN by the zero-cookie cutover:** the `oxy_device` cookie and the `/auth/device/resolve` endpoint were deleted (this router lived in the removed `deviceAuth.ts`), so the chooser now resolves an empty list — the IdP account chooser must be migrated off the cookie/resolve lane (pending IdP follow-up; the `deviceResolveResponseSchema` contract is retained only so `packages/auth` still builds). Everything else is the pure-static Vite SPA that CF serves directly.
-- **Durable deploy lesson — use a Cloudflare Pages Functions DIRECTORY (`functions/`, file-based routing), never an advanced-mode single `dist/_worker.js`.** CF Pages was not detecting/invoking the advanced-mode worker on this project AT ALL (reproduced even on the direct `<hash>.oxy-auth.pages.dev` deployment URL, ruling out edge/routing causes); the fix (commit `1141ddb7`/#545) was migrating to the Functions-directory shape CF reliably detects. The deploy workflow verifies compilation with `bunx wrangler@4 pages functions build functions --outfile ...` (the same command CF runs internally) before deploying, and deploys via a direct `bunx wrangler@4 pages deploy dist ...` `run:` step — never through npm/npx (npm's Arborist chokes on the repo-root `overrides["@oxyhq/bloom"]`, `npm error EOVERRIDE`; only bun's resolver tolerates it).
+**Pure-static SPA — NO Pages Function.** The device-account chooser is served entirely by the device-first SDK (`useSwitchableAccounts`), so `packages/auth/functions/` and its `/api/device-accounts` feed were DELETED in the 2c cutover. The IdP is now a pure-static Vite SPA that CF serves directly, with SPA history-fallback for unmatched navigations.
+- **Durable deploy lesson (retained for any FUTURE Pages Function) — use a Cloudflare Pages Functions DIRECTORY (`functions/`, file-based routing), never an advanced-mode single `dist/_worker.js`.** CF Pages was not detecting/invoking the advanced-mode worker on this project AT ALL (reproduced even on the direct `<hash>.oxy-auth.pages.dev` deployment URL); the fix (commit `1141ddb7`/#545) was migrating to the Functions-directory shape CF reliably detects. Deploy via a direct `bunx wrangler@4 pages deploy dist ...` `run:` step — never through npm/npx (npm's Arborist chokes on the repo-root `overrides["@oxyhq/bloom"]`, `npm error EOVERRIDE`; only bun's resolver tolerates it).
 - Leftover per-apex `auth.<rp-apex>` CNAMEs and the deleted federation-era IdP env vars are INERT — nothing reads them; pending decommission in `oxy-infra`. Do not add new configuration that depends on them.
 - Changes require a redeploy of auth.oxy.so to take effect in production.
 

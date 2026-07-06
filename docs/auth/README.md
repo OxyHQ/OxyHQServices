@@ -20,19 +20,19 @@ It does **not** own account management: every `/settings/*` path permanently red
 
 Session authority and transport live entirely in `api.oxy.so`: the durable first-party `oxy_device` cookie (`Domain=.oxy.so`) plus a rotating refresh-token family, with the `#oxy_boot` fragment handoff (`GET /auth/device/bootstrap` → `POST /auth/device/exchange`) for bootstrapping a new browsing context. The server-side model is `DeviceSession` (`/session/device/*` + the `session_state` socket event) — see [device-session.md](./device-session.md). This transport is frozen by decision until the phase-2c workshop; a cookie-free `deviceSecret` mint remains a **pending future design**, not the current state. FedCM and the legacy silent/cross-domain restore machinery were deleted from the IdP and the SDK.
 
-## Provider mount — `OxyProvider` in IdP mode
+## Provider mount — `OxyProvider`, device-first like every app
 
-The IdP mounts the single UI SDK, `@oxyhq/services`, with cold boot disabled (`packages/auth/src/main.tsx`). The previous separate web SDK package no longer exists in the monorepo.
+The IdP mounts the single UI SDK, `@oxyhq/services`, with NO special props — it is a device-first origin exactly like accounts.oxy.so (`packages/auth/src/main.tsx`). The previous separate web SDK package no longer exists in the monorepo.
 
 ```tsx
 import { OxyProvider } from '@oxyhq/services';
 
-<OxyProvider baseURL={getApiBaseUrl()} clientId={OXY_CLIENT_ID} coldBoot={false}>
+<OxyProvider baseURL={getApiBaseUrl()} clientId={OXY_CLIENT_ID}>
   <BrowserRouter>{/* routes */}</BrowserRouter>
 </OxyProvider>
 ```
 
-`coldBoot={false}` means the provider supplies UI context only — the `OxyAccountDialog` (Commons QR device-flow sign-in, opened from the login form via `useOxy().openAccountDialog`) and the `OxyConsentScreen` rendering context — without ever acting as a session-restoring RP. The IdP is the identity provider; treating it as its own RP would be circular.
+The provider runs the SAME device-first cold boot every Oxy app runs (restore this origin's session from its own persisted `{deviceId, deviceSecret}`), enumerates device accounts through `useSwitchableAccounts`, authenticates through the SDK funnels (`signInWithPassword` / `completeTwoFactorSignIn` / `handleWebSession`), and switches accounts through `switchToAccount`. It still supplies the `OxyAccountDialog` (Commons QR device-flow sign-in) and the `OxyConsentScreen` context. **It remains a SHELL** — after authenticating device-first it emits the OAuth authorization code for the third-party; it is NOT a Relying Party that bounces elsewhere for its own session. The former `coldBoot={false}` exception existed for the SSO bounce the zero-cookie cutover deleted.
 
 ## Routes / pages
 
@@ -47,18 +47,16 @@ import { OxyProvider } from '@oxyhq/services';
 | `/settings/sessions` | `ExternalRedirect` | → `https://accounts.oxy.so/sessions` |
 | `/` | `ExternalRedirect` | → `https://oxy.so` |
 | `*` | `Navigate` | → `/login` |
-| `GET /api/device-accounts` | `functions/api/device-accounts.ts` (Pages Function) | Device-account chooser feed — the app's only dynamic route |
 
-## Device-account chooser feed
+## Device-account chooser — device-first SDK (no bespoke feed)
 
-The chooser ("Choose an account to continue") is fed by the one server-side route:
+The chooser ("Choose an account to continue") uses the SAME device-first SDK chain every Oxy app uses — there is NO server-side feed, NO `oxy_device` cookie, and NO Pages Function anymore (all deleted in the 2c cutover):
 
-1. Browser hits same-origin `GET /api/device-accounts` (Cloudflare Pages Function, file-routed from `functions/api/device-accounts.ts`; logic in the framework-free `lib/device-accounts.ts`).
-2. The function reads the first-party `oxy_device` cookie and forwards its raw value to the API's internal `POST /auth/device/resolve` under the `X-Oxy-Internal` secret. Fail-closed: no cookie, no secret, non-2xx, or malformed body all yield an empty account list.
-3. The response is the device's `DeviceSession` account set (`activeAccountId` + accounts), each with a fresh server-minted bearer held **in memory only** — tokens are never persisted to Web Storage.
-4. `lib/use-device-accounts.ts` consumes the feed; `components/account-chooser.tsx` renders it on `/login` and `/authorize`. Selecting the active account continues immediately; selecting another routes to `/login?login_hint=…` for re-auth.
+1. `useSwitchableAccounts()` (from `@oxyhq/services`) projects the device's account set (`projectSwitchableAccounts` — the same projection accounts.oxy.so renders).
+2. `components/account-chooser.tsx` renders that `SwitchableAccount[]` on `/login` and `/authorize`.
+3. Selecting the active account continues immediately; selecting a sibling calls `useOxy().switchToAccount(accountId)` (the uniform device-first switch, which re-plants the active bearer), then proceeds. A switch that can't complete falls back to `/login?login_hint=…` for explicit re-auth.
 
-Everything else (login, signup, authorize, recover) is the pure-static Vite SPA with history-fallback — no advanced-mode worker.
+The whole app (login, signup, authorize, recover) is a pure-static Vite SPA with history-fallback — no dynamic routes, no Pages Function, no advanced-mode worker.
 
 ## API endpoints the IdP calls
 
@@ -74,7 +72,6 @@ All against `api.oxy.so` (`VITE_OXY_API_URL` in dev):
 | `GET /auth/oauth/client/:clientId` | Resolve the requesting Application (public identity) |
 | `GET /auth/oauth/consent` | Consent decision for the signed-in user |
 | `POST /auth/oauth/authorize` | Mint the single-use authorization code |
-| `POST /auth/device/resolve` (internal, via Pages Function) | Device-account chooser feed |
 | `GET /csrf-token` | CSRF for cookie-credentialed writes |
 
 The code→token exchange (`POST /auth/oauth/token`) happens on the RP side, never on the IdP — see [integration-guide.md](./integration-guide.md).
@@ -82,7 +79,7 @@ The code→token exchange (`POST /auth/oauth/token`) happens on the RP side, nev
 ## Development
 
 - **Tests:** `cd packages/auth && bun run test` — this package uses Bun's native test runner (`bunfig.toml` preload), not Jest. Never blanket-run `bun test` across the monorepo.
-- **Deploy:** Cloudflare Pages (static SPA + `functions/` directory). The Pages Function needs `OXY_API_URL` and the internal-resolve secret as project bindings.
+- **Deploy:** Cloudflare Pages (pure-static SPA — no `functions/` directory / Pages Function anymore).
 
 ## Related docs
 
