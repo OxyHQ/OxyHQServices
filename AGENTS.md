@@ -77,8 +77,8 @@ This breaks naive `require('<pkg>')` from a `node -e` one-liner inside the conta
 
 ```bash
 aws --profile oxy --region us-west-2 ecs run-task \
-  --cluster oxy-cluster --task-definition oxy-api --launch-type FARGATE \
-  --network-configuration 'awsvpcConfiguration={subnets=[subnet-0012b3093e9af9f57,subnet-09dfe34a5a68a889d],securityGroups=[sg-02137cbd3bcbe11a4],assignPublicIp=ENABLED}' \
+  --cluster oxy-cluster --task-definition oxy-oxy-api --launch-type FARGATE \
+  --network-configuration 'awsvpcConfiguration={subnets=[subnet-08f5cc132b3cab15c,subnet-0bfb367f29d1fd375],securityGroups=[sg-0f0ca416eacab578c],assignPublicIp=ENABLED}' \
   --overrides '{"containerOverrides":[{"name":"oxy-api","command":["sh","-c","node -e \"const Redis=require('"'"'/app/node_modules/.bun/ioredis@5.11.1+f89edaf472774726/node_modules/ioredis'"'"');/* ... */\""]}]}'
 ```
 
