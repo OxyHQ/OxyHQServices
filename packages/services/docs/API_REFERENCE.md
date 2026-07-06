@@ -811,7 +811,7 @@ const apps = await oxyServices.listConnectedApps();
 Revoke a connected application's grant. The next sign-in from that app asks for consent again.
 
 ```typescript
-await oxyServices.revokeAppGrant(app.applicationId);
+await oxyServices.revokeAppGrant('68f1c2…'); // the Application id from getAppGrants()
 ```
 
 **Parameters:**
