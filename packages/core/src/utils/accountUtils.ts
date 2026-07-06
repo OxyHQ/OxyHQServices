@@ -1,6 +1,6 @@
 /**
  * Shared account types and pure helper functions.
- * Used by both @oxyhq/services (React Native) and @oxyhq/auth (Web) account stores.
+ * Used by the @oxyhq/services account stores (Expo/RN and RN-Web).
  */
 
 import { translate } from '../i18n';

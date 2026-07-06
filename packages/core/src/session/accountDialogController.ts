@@ -3,7 +3,7 @@
  *
  * A framework-agnostic state machine + subscribe/getSnapshot store (the same
  * pattern {@link SessionClient} uses — no React, no RN) that both
- * `@oxyhq/services` (RN `OxyProvider`) and `@oxyhq/auth` (web `WebOxyProvider`)
+ * every `OxyProvider` platform variant (Expo/RN and RN-Web)
  * bind to via `useSyncExternalStore`, so the account chooser is ONE
  * implementation across the ecosystem instead of the five drifting copies it
  * replaces.

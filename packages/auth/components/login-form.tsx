@@ -275,7 +275,7 @@ export function LoginForm({
             // Compute (or read cached) device fingerprint BEFORE the login
             // POST. The server uses it to dedupe device-local refresh-cookie
             // slots: a second sign-in from the same browser reuses an
-            // existing `oxy_rt_${n}` slot instead of allocating a fresh
+            // existing device-account slot instead of allocating a fresh
             // one, matching Google's multi-account model. Null is allowed —
             // the server treats a missing fingerprint as "no dedupe hint".
             const deviceFingerprint = await getOrCreateDeviceFingerprint()

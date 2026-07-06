@@ -26,7 +26,7 @@ export type Account = {
  * Storage.
  *
  * `authuser` is a DETERMINISTIC per-account index (0..N-1) the hook assigns from
- * the sorted device-account set — NOT a persistent `oxy_rt_${n}` cookie slot
+ * the sorted device-account set — NOT a persistent per-slot refresh cookie
  * (those are gone). It is a client-side `/login → /authorize` selection hint
  * only, never sent to the API.
  */

@@ -128,7 +128,7 @@ const CSRF_FETCH_RETRY_DELAY_MS = 500;
 /**
  * Cooldown (ms) applied after a failed access-token refresh before another
  * refresh is attempted. Prevents a refresh storm (and server hammering) when
- * the AuthManager's refresh handler is failing — every in-flight request that
+ * the auth refresh handler is failing — every in-flight request that
  * hits a 401 would otherwise trigger its own refresh.
  */
 const TOKEN_REFRESH_COOLDOWN_MS = 15000;
@@ -244,7 +244,7 @@ export class HttpService {
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
-   * explicit `setTokens`, `clearTokens`, an AuthManager-owned refresh, and the
+   * explicit `setTokens`, `clearTokens`, a refresh-handler rotation, and the
    * internal 401-driven clear. This is a Set so multiple independent observers
    * can mirror token state without clobbering each other.
    *
@@ -527,9 +527,9 @@ export class HttpService {
 
         // Handle response
         if (!response.ok) {
-          // On 401, delegate refresh to AuthManager and retry once before
-          // giving up. HttpService deliberately does not know any session
-          // routes; the AuthManager is the single session authority.
+          // On 401, delegate to the installed auth refresh handler and retry
+          // once before giving up. HttpService deliberately does not know any
+          // session routes; the refresh handler owns session rotation.
           if (response.status === 401 && !config._isAuthRetry && !config.skipAuth) {
             const refreshed = await this.refreshAccessToken('response-401');
             if (refreshed) {
@@ -1045,7 +1045,7 @@ export class HttpService {
             this.tokenStore.setTokens(newToken);
             this.notifyTokenChange();
           }
-          this.logger.debug('Token refreshed via AuthManager');
+          this.logger.debug('Token refreshed via the auth refresh handler');
           return newToken;
         })
         .catch((error) => {

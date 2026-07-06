@@ -18,7 +18,7 @@
  *   POST /auth/device/resolve     — X-Oxy-Internal device-set feed for the IdP
  *                                   chooser.
  *
- * The legacy `/sso*`, `/fedcm/*`, `/auth/refresh`, `/auth/refresh-all`,
+ * The legacy SSO/FedCM and cookie refresh endpoints,
  * `/auth/session`, and `oxy_rt` cookie machinery were left byte-untouched when
  * this router was first added (this surface was purely additive); a later
  * cleanup pass deleted all of that legacy surface entirely once every

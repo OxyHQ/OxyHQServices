@@ -538,7 +538,7 @@ export type { SocketIOFactory, MinimalSocket } from './session/socketLoader';
 
 // Shared SessionClient integration layer: the host adapter, the pure
 // DeviceSessionState projection helpers, and the client factory are defined
-// ONCE here so `@oxyhq/services` and `@oxyhq/auth` both reuse them instead of
+// ONCE here so every `@oxyhq/services` platform variant reuses them instead of
 // duplicating a local copy. Each consumer supplies its own `TokenTransport`
 // (native vs. web mint strategies differ) to `createSessionClient`.
 export { createSessionClientHost } from './session/sessionClientHost';
@@ -553,7 +553,7 @@ export {
 // Unified account-list projection (THE single source of truth for the account
 // chooser: device sign-ins ∪ account graph, deduped by accountId). Pure +
 // I/O-free — the caller hydrates profiles via `getUsersByIds`. Shared by
-// `@oxyhq/services`, `@oxyhq/auth`, and auth.oxy.so so the list can't diverge.
+// `@oxyhq/services` and auth.oxy.so so the list can't diverge.
 export {
     projectSwitchableAccounts,
     switchableAccountIds,
