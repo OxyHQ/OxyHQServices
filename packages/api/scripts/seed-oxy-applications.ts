@@ -80,13 +80,15 @@ interface SeedAppSpec {
   scopes?: ApplicationScope[];
 }
 
-const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
-const cb = (origin: string): string => `${origin}${SSO_CALLBACK_PATH}`;
-
 /**
  * The official Oxy ecosystem apps that integrate Oxy auth.
  * `name` is the idempotency key (with createdByUserId=oxyId) — DO NOT rename
  * casually, a rename creates a new Application rather than updating one.
+ *
+ * `redirectUris` are OAuth redirect URIs. Trust derivation
+ * (`dynamicOriginRegistry`, FedCM approved clients) keys on the ORIGIN of each
+ * URI, so web apps register their apex origin as the redirect surface; native
+ * apps register their deep-link schemes.
  */
 const SEED_APPS: SeedAppSpec[] = [
   // ── OxyHQServices first-party web apps (CF Pages) ──
@@ -95,21 +97,21 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy account management app (My Account).',
     websiteUrl: 'https://accounts.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://accounts.oxy.so')],
+    redirectUris: ['https://accounts.oxy.so'],
   },
   {
     name: 'Oxy Console',
     description: 'Official Oxy developer console (Cloud).',
     websiteUrl: 'https://console.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://console.oxy.so')],
+    redirectUris: ['https://console.oxy.so'],
   },
   {
     name: 'Oxy Inbox',
     description: 'Official Oxy email/inbox app.',
     websiteUrl: 'https://inbox.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://inbox.oxy.so')],
+    redirectUris: ['https://inbox.oxy.so'],
   },
   {
     name: 'Oxy Auth',
@@ -118,17 +120,8 @@ const SEED_APPS: SeedAppSpec[] = [
     type: 'first_party',
     // The auth app is the third-party OAuth IdP, but it now ALSO consumes
     // Sign-in-with-Oxy as its own Relying Party, so it registers its own
-    // origin + callback.
-    // NOTE (found during the wave-2 comment sweep, NOT fixed here — logic,
-    // not a comment): `cb()` (defined above) hardcodes `SSO_CALLBACK_PATH =
-    // '/__oxy/sso-callback'` — the deleted SSO-bounce callback path — as the
-    // registered redirectUri for EVERY official app this script seeds, not
-    // just this one. That path is only ever used for its ORIGIN in current
-    // trust derivation (`dynamicOriginRegistry` extracts origins, not exact
-    // paths), so this is likely harmless dead configuration rather than a
-    // functional break, but it needs an engineer decision + verification
-    // before re-running this script for a new official app.
-    redirectUris: ['https://auth.oxy.so', cb('https://auth.oxy.so')],
+    // origin as the redirect surface.
+    redirectUris: ['https://auth.oxy.so'],
   },
   // ── Ecosystem first-party apps ──
   {
@@ -136,7 +129,7 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy social media app with fediverse support.',
     websiteUrl: 'https://mention.earth',
     type: 'first_party',
-    redirectUris: [cb('https://mention.earth')],
+    redirectUris: ['https://mention.earth'],
     // Mention federates: its service credential signs HTTP-Signatures and
     // resolves federated users. The mint intersects credential scopes with these
     // app scopes, so the app MUST carry federation:write for the credential's
@@ -153,56 +146,56 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy real estate platform.',
     websiteUrl: 'https://homiio.com',
     type: 'first_party',
-    redirectUris: [cb('https://homiio.com')],
+    redirectUris: ['https://homiio.com'],
   },
   {
     name: 'Allo',
     description: 'Official Oxy encrypted messaging app.',
     websiteUrl: 'https://allo.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://allo.oxy.so')],
+    redirectUris: ['https://allo.oxy.so'],
   },
   {
     name: 'Alia',
     description: 'Official Oxy AI platform (chat app, console, canvas, gateway).',
     websiteUrl: 'https://alia.onl',
     type: 'first_party',
-    redirectUris: [cb('https://alia.onl')],
+    redirectUris: ['https://alia.onl'],
   },
   {
     name: 'Syra',
     description: 'Official Oxy app.',
     websiteUrl: 'https://syra.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://syra.oxy.so')],
+    redirectUris: ['https://syra.oxy.so'],
   },
   {
     name: 'TNP',
     description: 'Official Oxy alternative DNS/namespace system.',
     websiteUrl: 'https://tnp.network',
     type: 'first_party',
-    redirectUris: [cb('https://tnp.network')],
+    redirectUris: ['https://tnp.network'],
   },
   {
     name: 'Oxy Website',
     description: 'Official Oxy / FairCoin marketing website.',
     websiteUrl: 'https://oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://oxy.so'), cb('https://fairco.in')],
+    redirectUris: ['https://oxy.so', 'https://fairco.in'],
   },
   {
     name: 'Oxy Pay',
     description: 'Official Oxy payments app.',
     websiteUrl: 'https://pay.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://pay.oxy.so')],
+    redirectUris: ['https://pay.oxy.so'],
   },
   {
     name: 'Noted',
     description: 'Official Oxy notes app.',
     websiteUrl: 'https://noted.oxy.so',
     type: 'first_party',
-    redirectUris: [cb('https://noted.oxy.so')],
+    redirectUris: ['https://noted.oxy.so'],
   },
   {
     name: 'Commons by Oxy',
@@ -211,8 +204,7 @@ const SEED_APPS: SeedAppSpec[] = [
     type: 'first_party',
     // Commons is native-only (no web). Its public client id (the credential
     // publicKey) wires into OxyProvider; the redirect surface is the app's two
-    // deep-link schemes from packages/commons/app.json. SSO matches the RP by
-    // approved redirect-URI origin, so both schemes are listed.
+    // deep-link schemes from packages/commons/app.json, so both are listed.
     redirectUris: ['commons://', 'oxycommons://'],
   },
   {
@@ -222,14 +214,13 @@ const SEED_APPS: SeedAppSpec[] = [
     websiteUrl: 'https://mercaria.co',
     type: 'first_party',
     // Storefront (mercaria.co) + the two first-party admin surfaces that share
-    // this client: the store/merchant dashboard and the point-of-sale app. The
-    // SSO `/sso?client_id=<origin>` flow matches the RP by the origin of an
-    // approved redirect URI, so each subdomain's `/__oxy/sso-callback` must be
-    // listed here or its login bounce 400s.
+    // this client: the store/merchant dashboard and the point-of-sale app.
+    // Trust derivation matches the RP by the origin of an approved redirect
+    // URI, so each subdomain's origin is listed here.
     redirectUris: [
-      cb('https://mercaria.co'),
-      cb('https://dashboard.mercaria.co'),
-      cb('https://pos.mercaria.co'),
+      'https://mercaria.co',
+      'https://dashboard.mercaria.co',
+      'https://pos.mercaria.co',
     ],
   },
   {
@@ -238,11 +229,8 @@ const SEED_APPS: SeedAppSpec[] = [
     websiteUrl: 'https://moovo.now',
     type: 'first_party',
     redirectUris: [
-      cb('https://moovo.now'),
       'https://moovo.now',
-      cb('https://go.moovo.now'),
       'https://go.moovo.now',
-      cb('https://hub.moovo.now'),
       'https://hub.moovo.now',
     ],
   },

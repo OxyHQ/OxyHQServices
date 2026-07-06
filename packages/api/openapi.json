@@ -3,7 +3,7 @@
   "info": {
     "title": "Oxy REST API",
     "version": "1.0.0",
-    "description": "The Oxy REST API powers every official Oxy app (web, iOS, Android) and is open to third-party integrations via the developer apps program. It covers authentication, accounts, devices, files, billing, notifications, email, federation (ActivityPub), and developer tooling."
+    "description": "The Oxy REST API powers every official Oxy app (web, iOS, Android) and is open to third-party integrations via Applications registered in the Oxy Console. It covers authentication, device sessions, accounts, files, billing, notifications, email, federation (ActivityPub), and developer tooling."
   },
   "servers": [
     {
@@ -27,13 +27,13 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Service-to-service JWT obtained from /auth/service-token by exchanging DeveloperApp credentials. For delegated calls also include `X-Oxy-User-Id: <userId>`."
+        "description": "Service-to-service JWT obtained from /auth/service-token by exchanging a `service`-type ApplicationCredential (publicKey + secret). For delegated calls also include `X-Oxy-User-Id: <userId>`."
       },
       "apiKeyAuth": {
         "type": "apiKey",
         "in": "header",
         "name": "X-API-Key",
-        "description": "Long-lived developer app API key (for third-party integrations that do not require a delegated user session)."
+        "description": "Long-lived application API key (for third-party integrations that do not require a delegated user session)."
       },
       "csrfToken": {
         "type": "apiKey",
@@ -269,285 +269,68 @@
     }
   },
   "paths": {
-    "/assets": {
+    "/session/user/{sessionId}": {
       "get": {
         "tags": [
-          "Files"
+          "Sessions"
         ],
-        "summary": "List the user's files",
-        "description": "Paginated list of files owned by the authenticated user, including upload status, deduplication info (`sha256`), variants (thumbnails, resized renditions), and any entity links.\n",
+        "summary": "Resolve a session ID to the user it belongs to",
+        "description": "Look up the user record for a given session ID. Requires a valid access token whose user owns the referenced session — callers cannot look up sessions belonging to other users. Used by SDK clients (e.g. `@oxyhq/core`) to hydrate user state from a stored session reference. Expired, revoked, or non-owned sessions return 404.\n",
         "parameters": [
           {
-            "name": "limit",
-            "in": "query",
-            "required": false,
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0
+              "type": "string",
+              "example": "sess_64f7c2a1b8e9d3f4a1c2b3d4"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated file list.",
+            "description": "User attached to this session.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "files": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "total": {
-                      "type": "integer"
-                    },
-                    "hasMore": {
-                      "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      }
-    },
-    "/assets/init": {
-      "post": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Initialise a file upload",
-        "description": "First call in the two-step upload flow. Submit the file's SHA-256, size, and MIME type and receive a `fileId` plus a pre-signed S3 upload URL. If a file with the same SHA-256 already exists for the caller, the server short-circuits and returns the existing record (de-duplication).\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "sha256",
-                  "size",
-                  "mime"
-                ],
-                "properties": {
-                  "sha256": {
-                    "type": "string",
-                    "minLength": 64,
-                    "maxLength": 64,
-                    "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                  },
-                  "size": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "example": 12345
-                  },
-                  "mime": {
-                    "type": "string",
-                    "example": "image/png"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Upload initialised.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "fileId": {
-                      "type": "string"
-                    },
-                    "uploadUrl": {
-                      "type": "string",
-                      "description": "Pre-signed S3 PUT URL."
-                    },
-                    "storageKey": {
-                      "type": "string"
-                    },
-                    "deduplicated": {
-                      "type": "boolean",
-                      "description": "True if the SHA-256 was already present."
-                    }
-                  }
+                  "$ref": "#/components/schemas/User"
                 }
               }
             }
           },
           "400": {
-            "description": "Validation failed."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      }
-    },
-    "/assets/complete": {
-      "post": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Complete a file upload",
-        "description": "Second call in the two-step upload flow. Call this after the client has finished PUTing the file to the pre-signed S3 URL returned by `/assets/init`. Commits the metadata, marks the file ready, and enqueues variant generation (thumbnails, image resizes) where applicable.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "fileId",
-                  "originalName",
-                  "size",
-                  "mime"
-                ],
-                "properties": {
-                  "fileId": {
-                    "type": "string"
-                  },
-                  "originalName": {
-                    "type": "string",
-                    "example": "profile.png"
-                  },
-                  "size": {
-                    "type": "integer",
-                    "example": 12345
-                  },
-                  "mime": {
-                    "type": "string",
-                    "example": "image/png"
-                  },
-                  "visibility": {
-                    "type": "string",
-                    "enum": [
-                      "private",
-                      "public",
-                      "unlisted"
-                    ],
-                    "default": "private"
-                  },
-                  "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "File committed.",
+            "description": "Malformed sessionId.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "assetId": {
-                      "type": "string"
-                    },
-                    "file": {
-                      "type": "object"
-                    }
-                  }
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
-          "400": {
-            "description": "Validation failed."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      }
-    },
-    "/assets/upload": {
-      "post": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Upload a file in a single request",
-        "description": "Convenience endpoint that wraps the init/PUT/complete flow into a single multipart upload. The backend computes the SHA-256 itself. Use this for small files where the round-trip cost outweighs the benefit of direct-to-S3 streaming.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  },
-                  "visibility": {
-                    "type": "string",
-                    "enum": [
-                      "private",
-                      "public",
-                      "unlisted"
-                    ],
-                    "default": "private"
-                  },
-                  "metadata": {
-                    "type": "string",
-                    "description": "Optional JSON-encoded metadata object."
-                  }
+          "404": {
+            "description": "Session not found or expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           }
-        },
-        "responses": {
-          "200": {
-            "description": "File uploaded and committed."
-          },
-          "400": {
-            "description": "Missing file or malformed metadata."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
         }
       }
     },
-    "/assets/{id}": {
+    "/session/sessions/{sessionId}": {
       "get": {
         "tags": [
-          "Files"
+          "Sessions"
         ],
-        "summary": "Get file metadata",
-        "description": "Return metadata for the file (size, MIME, SHA-256, variants, links, usage count, status). Only the owner can fetch metadata; signed URLs (`/assets/:id/url` or `/assets/:id/stream`) are the public access path.\n",
+        "summary": "List all sessions for the user of the given session",
+        "description": "Return every active session the user has across all devices, with a flag marking the current session. Requires a valid access token whose user owns the referenced session.\n",
         "parameters": [
           {
-            "name": "id",
+            "name": "sessionId",
             "in": "path",
             "required": true,
             "schema": {
@@ -557,138 +340,552 @@
         ],
         "responses": {
           "200": {
-            "description": "File metadata."
+            "description": "Active sessions for the user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found or expired."
+          }
+        }
+      }
+    },
+    "/session/logout/{sessionId}": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sign out the given session",
+        "description": "Revoke the session identified by `sessionId`. After this call any bearer token tied to that session is rejected. Idempotent — calling twice is a no-op on the second call.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session revoked."
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/logout/{sessionId}/{targetSessionId}": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sign another session out via an authenticated session",
+        "description": "Use `sessionId` (which must be a valid active session) to revoke a different session identified by `targetSessionId`. This is how the \"sign out other devices\" flow works.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "targetSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Target session revoked."
+          },
+          "401": {
+            "description": "The acting session is not valid."
+          },
+          "404": {
+            "description": "Target session not found."
+          }
+        }
+      }
+    },
+    "/session/logout-all/{sessionId}": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sign out every session for this user",
+        "description": "Revoke every session belonging to the user behind `sessionId`, including the calling session itself. Recommended after a password reset or suspected compromise.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All sessions revoked."
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/validate/{sessionId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "security": [],
+        "summary": "Validate a session ID",
+        "description": "Cheap liveness check — returns 200 with a small payload if the session is still active, 404 otherwise. Use this in lieu of the heavier `/session/user/:id` lookup when you only need a yes/no.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session is active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found or expired."
+          }
+        }
+      }
+    },
+    "/session/validate-header/{sessionId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Validate a session using a header-bound bearer token",
+        "description": "Like `/session/validate/:sessionId` but cross-checks the bearer token against the session — returns 200 only if the token still belongs to the session.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session and bearer token match."
+          },
+          "401": {
+            "description": "Token does not match the session."
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/device/sessions/{sessionId}": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "List sessions on the same device as the given session",
+        "description": "Return every active session that shares the device fingerprint of the supplied session. Used to power \"this device has these accounts\" UI in the auth picker.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions on this device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/device/logout-all/{sessionId}": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Sign out every session on this device",
+        "description": "Revoke every session that shares the device fingerprint of the supplied session. Useful for a one-click \"sign out this device\" button.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device sessions revoked."
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/device/name/{sessionId}": {
+      "put": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Rename the device for the given session",
+        "description": "Update the human-readable device label shown in the user's devices list. The change applies to every session sharing the device fingerprint.\n",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deviceName"
+                ],
+                "properties": {
+                  "deviceName": {
+                    "type": "string",
+                    "example": "Living room iPad"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Device renamed."
+          },
+          "400": {
+            "description": "Validation failed."
+          },
+          "404": {
+            "description": "Session not found."
+          }
+        }
+      }
+    },
+    "/session/users/batch": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Resolve multiple session IDs in one call",
+        "description": "Batch counterpart of `/session/user/:sessionId`. Pass an array of session IDs and get back a map of user records — used by clients that need to render multiple connected accounts at once (e.g. the account switcher).\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionIds"
+                ],
+                "properties": {
+                  "sessionIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "pair": {
+                  "value": {
+                    "sessionIds": [
+                      "sess_64f7c2a1b8e9d3f4a1c2b3d4",
+                      "sess_74f7c2a1b8e9d3f4a1c2b3d5"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User records keyed by session ID. Missing sessions are omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed."
+          }
+        }
+      }
+    },
+    "/users/me/app-data/{namespace}/{key}": {
+      "get": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "Read a single per-user JSON value",
+        "description": "Returns the value stored under `(namespace, key)` for the authenticated user. The response body is always `{ value }`. If no value has ever been stored, `value` is `null` (the endpoint does not 404 on missing entries — a missing entry is semantically a `null` value).\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current value (or null when not stored).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "description": "Arbitrary JSON value previously stored, or null."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "Upsert a single per-user JSON value",
+        "description": "Stores (or replaces) the value under `(namespace, key)` for the authenticated user. Body must be `{ value: <any JSON-serializable value> }`. Serialized JSON is capped at 64 KB.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "description": "Arbitrary JSON value to persist."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored value, echoed back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "description": "The value that is now stored."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (bad namespace/key, oversized value)."
           },
           "401": {
             "description": "Missing or invalid bearer token."
           },
-          "404": {
-            "description": "File not found."
+          "429": {
+            "description": "Per-user write rate limit exceeded."
           }
         }
       },
       "delete": {
         "tags": [
-          "Files"
+          "UserAppData"
         ],
-        "summary": "Delete file with impact summary",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/assets.ts` to fill in summary, description, request/response examples.",
+        "summary": "Delete a single per-user JSON value",
+        "description": "Removes the value under `(namespace, key)` for the authenticated user. Idempotent — succeeds with 204 whether or not the entry existed.\n",
         "parameters": [
           {
-            "name": "id",
             "in": "path",
+            "name": "namespace",
             "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/assets/{id}/url": {
-      "get": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Get a download URL for a file",
-        "description": "Return a CDN URL (for public files) or a pre-signed S3 URL (for private files) suitable for `<img src>` or direct download. The URL is valid for `expiresIn` seconds (default 3600).\n",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "variant",
-            "in": "query",
-            "required": false,
             "schema": {
               "type": "string",
-              "description": "Variant name (e.g. \"thumb-256\", \"medium\")."
+              "pattern": "^[a-z0-9_-]{1,64}$"
             }
           },
           {
-            "name": "expiresIn",
-            "in": "query",
-            "required": false,
+            "in": "path",
+            "name": "key",
+            "required": true,
             "schema": {
-              "type": "integer",
-              "default": 3600,
-              "description": "Seconds the signed URL stays valid."
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted (or was already absent)."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "429": {
+            "description": "Per-user write rate limit exceeded."
+          }
+        }
+      }
+    },
+    "/users/me/app-data/{namespace}": {
+      "get": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "List every value in a namespace for the current user",
+        "description": "Returns `{ entries }` where `entries` is a `key -> value` map of everything stored under `namespace` for the authenticated user. The response is bounded by the 128-key namespace quota and by the 64 KB cap per individual value. If an older namespace exceeds the current quota, the endpoint refuses to materialize it in one response.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Signed URL.",
+            "description": "Map of every key in the namespace to its value.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "url": {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    "variant": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "expiresIn": {
-                      "type": "integer"
+                    "entries": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "description": "Stored JSON value."
+                      }
                     }
                   }
                 }
@@ -697,63 +894,6 @@
           },
           "401": {
             "description": "Missing or invalid bearer token."
-          },
-          "404": {
-            "description": "File not found."
-          }
-        }
-      }
-    },
-    "/assets/{id}/stream": {
-      "get": {
-        "tags": [
-          "Files"
-        ],
-        "summary": "Stream file bytes (with correct headers)",
-        "description": "Public endpoint that streams the raw file bytes back to the caller. Sends correct `Content-Type` and `Cache-Control` headers and falls back to a placeholder if the underlying object is missing (`?fallback=placeholder|placeholderVisible|icon`). For private files the caller must supply a bearer token.\n",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "variant",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "fallback",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "placeholder",
-                "placeholderVisible",
-                "icon"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "File bytes streamed (or placeholder if fallback requested)."
-          },
-          "302": {
-            "description": "Redirect to pre-signed S3 URL."
-          },
-          "403": {
-            "description": "Access denied."
-          },
-          "404": {
-            "description": "File not found (and no fallback requested)."
           }
         }
       }
@@ -1449,153 +1589,17 @@
         }
       }
     },
-    "/auth/refresh": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "security": [],
-        "summary": "Rotate the httpOnly refresh cookie and mint a fresh access token",
-        "description": "Cold-boot session persistence. The refresh token lives ONLY in a first-party httpOnly + Secure cookie (`oxy_rt`) scoped to this path — it is never readable from JavaScript (XSS-proof) and is never accepted from the body, query, or path. On each call the presented token is rotated (single-use): a brand-new token is issued in the same rotation family with a fresh 30-day sliding expiry, and a new short-lived access token is returned in the body.\nReuse-detection: presenting an already-consumed or revoked token is treated as a theft signal — the entire rotation family is revoked and the underlying session is deactivated, forcing a fresh sign-in. All failure modes collapse to a single generic 401 (the specific reason is only logged) to avoid leaking which step failed.\nNo `Authorization` header is required: the httpOnly cookie IS the credential.\n",
-        "responses": {
-          "200": {
-            "description": "Access token minted; a rotated `oxy_rt` cookie is set.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accessToken": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing, invalid, expired, revoked, or reused refresh token."
-          },
-          "429": {
-            "description": "Too many refresh attempts from this IP."
-          }
-        }
-      }
-    },
-    "/auth/refresh-all": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "security": [],
-        "summary": "Rotate every device-local account in a single round-trip",
-        "description": "Rebuilds the Google-style multi-account view for a device. The browser presents every `oxy_rt*` cookie it has (legacy un-suffixed + every indexed `oxy_rt_${authuser}`); the server rotates each in parallel and returns one entry per VALID account. Per-slot reuse-detection still applies: a lone used cookie revokes ONLY that slot's family and is simply omitted from the response — siblings are unaffected. Slot-level errors are logged (warn) but never fail the endpoint as a whole; the worst case is a `200 { accounts: [] }`.\n",
-        "responses": {
-          "200": {
-            "description": "Zero or more rotated accounts, sorted by authuser asc.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accounts": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "authuser": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "accessToken": {
-                            "type": "string"
-                          },
-                          "expiresAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "sessionId": {
-                            "type": "string"
-                          },
-                          "user": {
-                            "$ref": "#/components/schemas/User"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Origin not allowlisted (BAD_ORIGIN)."
-          },
-          "429": {
-            "description": "Too many requests from this IP."
-          }
-        }
-      }
-    },
-    "/auth/session": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Establish the first-party refresh cookie for the caller's session",
-        "description": "Called by an app (or its same-site session bridge) right after a successful FedCM / interactive sign-in to obtain its first-party httpOnly refresh cookie (`oxy_rt`). REQUIRES the user's bearer access token: the session the cookie is bound to is derived ONLY from that already-validated token — never from the URL, body, or query. On success a fresh `oxy_rt` cookie is set (scoped to `/auth`) and a new short-lived access token is returned in the body, mirroring `POST /auth/refresh`.\n",
-        "responses": {
-          "200": {
-            "description": "Refresh cookie established; a fresh access token is minted.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accessToken": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bearer token was sent in the URL query string (header-only endpoint)."
-          },
-          "401": {
-            "description": "Missing, invalid, or expired bearer access token."
-          },
-          "429": {
-            "description": "Too many requests from this IP."
-          }
-        }
-      }
-    },
     "/auth/logout": {
       "post": {
         "tags": [
           "Authentication"
         ],
         "security": [],
-        "summary": "Revoke the refresh family and clear the first-party cookie",
-        "description": "Signs the caller out of the first-party session. Reads the httpOnly `oxy_rt` cookie (the credential being revoked) and, if present, revokes the entire rotation family server-side and deactivates the underlying session so reuse-detection state stays clean. ALWAYS clears the cookie and returns 200 — it is idempotent and best-effort, so a missing or garbage cookie still succeeds. No `Authorization` header is required: a logged-out client may no longer hold a valid access token, and the cookie itself is the thing being revoked.\n",
+        "summary": "Revoke the presented rotating refresh family",
+        "description": "Signs the caller out by revoking the rotating refresh-token family behind the `refreshToken` presented in the body (the persisted-refresh lane used by web localStorage / native storage). Revocation deactivates the underlying session and burns the whole family so a stored token can no longer mint access tokens. Idempotent + best-effort: a missing or unknown token still returns 200. No `Authorization` header is required — the refresh token itself is the credential being revoked.\n",
         "responses": {
           "200": {
-            "description": "Logged out; the `oxy_rt` cookie is cleared.",
+            "description": "Logged out (idempotent).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2088,7 +2092,7 @@
         ],
         "security": [],
         "summary": "Exchange a sessionToken for the first access token (device flow)",
-        "description": "Final step of the QR-code / \"Open Oxy Auth\" device sign-in flow. After another authenticated device has approved this session via `POST /auth/session/authorize/{sessionToken}`, the originating client — which alone knows the secret `sessionToken` — calls this endpoint to atomically claim the resulting access token, refresh token, and session ID.\nNo `Authorization` header is required: the 128-bit `sessionToken` (held only by the originating client, never echoed back to observers) IS the credential, exactly as in RFC 8628 §3.4. The exchange is single-use: a successful claim transitions the AuthSession status from `authorized` -> `consumed`, so a replayed sessionToken is rejected. Time-bound by the AuthSession TTL (default 5 minutes). Status-bound: only `authorized` rows are claimable.\nThis endpoint replaces the previous SDK fallback of calling `GET /session/token/{sessionId}` after the device-flow socket update — that path requires bearer auth and the originating client has no bearer token yet, so the call was always 401.\n",
+        "description": "Final step of the QR-code / \"Open Oxy Auth\" device sign-in flow. After another authenticated device has approved this session via `POST /auth/session/authorize/{sessionToken}`, the originating client — which alone knows the secret `sessionToken` — calls this endpoint to atomically claim the resulting access token, refresh token, and session ID.\nNo `Authorization` header is required: the 128-bit `sessionToken` (held only by the originating client, never echoed back to observers) IS the credential, exactly as in RFC 8628 §3.4. The exchange is single-use: a successful claim transitions the AuthSession status from `authorized` -> `consumed`, so a replayed sessionToken is rejected. Time-bound by the AuthSession TTL (default 5 minutes). Status-bound: only `authorized` rows are claimable.\nThis endpoint is the only device-flow token handoff: the originating client starts with no bearer token, so it must claim exactly once with the secret sessionToken it created.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -2218,6 +2222,117 @@
           },
           "403": {
             "description": "Redirect URI is not registered for this client."
+          }
+        }
+      }
+    },
+    "/auth/oauth/consent": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Server-authoritative decision on whether OAuth consent is needed",
+        "description": "Called by the auth UI before rendering the consent screen. Resolves the `clientId` to an Application (validating the `redirectUri` exactly like `POST /auth/oauth/authorize`) and decides whether the user must consent:\n- TRUSTED apps (first-party / internal / system / official) are\n  auto-approved → `consentRequired: false, reason: 'trusted'`.\n- A prior grant whose scopes cover the requested `scope` →\n  `consentRequired: false, reason: 'granted'`.\n- A prior grant missing some requested scope →\n  `consentRequired: true, reason: 'scope_changed'`.\n- No prior grant → `consentRequired: true, reason: 'new'`.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "clientId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirectUri",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consent decision."
+          },
+          "400": {
+            "description": "Invalid client."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "description": "Redirect URI is not registered for this client."
+          }
+        }
+      }
+    },
+    "/auth/grants": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "List the third-party apps the user has authorized (Connected apps)",
+        "description": "Returns the user's revocable OAuth grants joined with the application's name + logo + granted scopes + timestamps. Trusted (auto-approved) apps are never recorded as grants, so they never appear here.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user's connected applications."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/auth/grants/{applicationId}": {
+      "delete": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Revoke a connected app's OAuth grant",
+        "description": "Deletes the user's AppGrant for the application so the next OAuth authorize for this app prompts for consent again.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "applicationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grant revoked (idempotent)."
+          },
+          "400": {
+            "description": "Invalid applicationId."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
           }
         }
       }
@@ -2452,13 +2567,98 @@
         }
       }
     },
-    "/contacts/discover": {
-      "post": {
+    "/cdn/{id}": {
+      "get": {
+        "summary": "Resolve a public asset id to its cloud.oxy.so CDN URL (302).",
+        "description": "Public CDN origin endpoint (no auth). Redirects to the `cloud.oxy.so` CDN URL for a PUBLIC, CDN-backed asset. Private/unlisted assets, files that are not active, files with no public copy, and unknown ids all return 404 — this path never streams bytes and never exposes a non-public asset.\n",
         "tags": [
-          "Contacts"
+          "Assets"
         ],
-        "summary": "Discover which contacts are on Oxy",
-        "description": "Privacy-preserving contact-book matching. Clients SHA-256 hash each email and phone number locally (lowercased; phone numbers normalised to E.164 — see `utils/contactHash.ts` in `@oxyhq/core`) and upload only the resulting 64-character hex digests. The server intersects them against precomputed indexes on the `User` collection and returns matched Oxy user IDs.\nPrivacy invariants:\n  - Raw email / phone never traverses this endpoint.\n  - The response contains no PII — only Oxy user IDs and the hash the\n    caller supplied (so the client can map matches back to the local\n    contact that produced them).\n  - The endpoint never writes to the database. Discovery is stateless.\n\nRate limits: 5 requests per minute per authenticated user; up to 200 hashed identifiers per channel (~400 total) per request. Service tokens are explicitly rejected with 403.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "variant",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional variant (e.g. `thumb`, `w320`); omitted = original."
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to the public cloud.oxy.so CDN URL."
+          },
+          "404": {
+            "description": "No public CDN-backed asset for this id."
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get the current authenticated user",
+        "description": "Returns the full profile for the bearer-token holder, including privacy settings, identity flags, and connected account types. This is the canonical \"who am I\" endpoint that every Oxy app calls on startup.\n",
+        "responses": {
+          "200": {
+            "description": "Current user profile.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "id": "64f7c2a1b8e9d3f4a1c2b3d4",
+                      "username": "alice",
+                      "name": {
+                        "first": "Alice",
+                        "last": "Example"
+                      },
+                      "description": "Coffee, code, and open source.",
+                      "type": "local",
+                      "_count": {
+                        "followers": 42,
+                        "following": 17
+                      },
+                      "createdAt": "2024-01-15T12:34:56.789Z",
+                      "updatedAt": "2025-05-12T09:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update the current authenticated user",
+        "description": "Partial profile update for the authenticated user. Only fields supplied in the body are touched — missing fields keep their existing values. The server enforces uniqueness on `email` and `username`; conflicts return 409. Always invalidates the in-memory user cache so the next read returns the updated record.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -2466,36 +2666,50 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "hashedEmails": {
-                    "type": "array",
-                    "maxItems": 200,
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$",
-                      "description": "SHA-256 hex of `email.toLowerCase().trim()`."
+                  "username": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30,
+                    "pattern": "^[a-zA-Z0-9]{3,30}$",
+                    "example": "alice"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "alice@placeholder.example"
+                  },
+                  "name": {
+                    "type": "object",
+                    "properties": {
+                      "first": {
+                        "type": "string",
+                        "example": "Alice"
+                      },
+                      "last": {
+                        "type": "string",
+                        "example": "Example"
+                      }
                     }
                   },
-                  "hashedPhones": {
-                    "type": "array",
-                    "maxItems": 200,
-                    "items": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$",
-                      "description": "SHA-256 hex of the E.164-normalised phone number."
-                    }
+                  "description": {
+                    "type": "string",
+                    "example": "Updated bio."
+                  },
+                  "avatar": {
+                    "type": "string",
+                    "description": "Asset ID or absolute URL.",
+                    "example": "64f7c2a1b8e9d3f4a1c2b3d4"
                   }
                 }
               },
               "examples": {
-                "addressBook": {
-                  "summary": "Mixed email + phone request",
+                "rename": {
+                  "summary": "Update the display name",
                   "value": {
-                    "hashedEmails": [
-                      "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd"
-                    ],
-                    "hashedPhones": [
-                      "9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba"
-                    ]
+                    "name": {
+                      "first": "Alice",
+                      "last": "Example"
+                    }
                   }
                 }
               }
@@ -2504,60 +2718,17 @@
         },
         "responses": {
           "200": {
-            "description": "Discovery completed. Empty `matches` means no overlap.",
+            "description": "Updated user profile.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "matches": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": [
-                          "userId",
-                          "hashedIdentifier",
-                          "matchType"
-                        ],
-                        "properties": {
-                          "userId": {
-                            "type": "string",
-                            "example": "64f7c2a1b8e9d3f4a1c2b3d4"
-                          },
-                          "hashedIdentifier": {
-                            "type": "string",
-                            "example": "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd"
-                          },
-                          "matchType": {
-                            "type": "string",
-                            "enum": [
-                              "email",
-                              "phone"
-                            ]
-                          }
-                        }
-                      }
-                    }
-                  }
-                },
-                "examples": {
-                  "oneMatch": {
-                    "value": {
-                      "matches": [
-                        {
-                          "userId": "64f7c2a1b8e9d3f4a1c2b3d4",
-                          "hashedIdentifier": "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd",
-                          "matchType": "email"
-                        }
-                      ]
-                    }
-                  }
+                  "$ref": "#/components/schemas/User"
                 }
               }
             }
           },
           "400": {
-            "description": "Validation failed (empty payload, malformed hash, oversized batch).",
+            "description": "Validation failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2569,241 +2740,24 @@
           "401": {
             "description": "Missing or invalid bearer token."
           },
-          "403": {
-            "description": "Service token used — must use a user session token."
-          },
-          "429": {
-            "description": "Rate limit exceeded (5 requests / minute / user)."
-          }
-        }
-      }
-    },
-    "/devices": {
-      "get": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "List the user's devices",
-        "description": "Return every device that has at least one active session for the authenticated user. Useful for \"Where am I signed in?\" screens.\n",
-        "responses": {
-          "200": {
-            "description": "List of devices.",
+          "409": {
+            "description": "Email or username conflict.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Device"
-                  }
-                },
-                "examples": {
-                  "twoDevices": {
-                    "value": [
-                      {
-                        "id": "dev_64f7c2a1b8e9d3f4a1c2b3d4",
-                        "name": "MacBook Pro 16",
-                        "platform": "macOS",
-                        "firstSeenAt": "2024-01-15T12:34:56.789Z",
-                        "lastSeenAt": "2025-05-12T09:00:00.000Z",
-                        "sessionCount": 2
-                      },
-                      {
-                        "id": "dev_74f7c2a1b8e9d3f4a1c2b3d5",
-                        "name": "iPhone 15 Pro",
-                        "platform": "iOS",
-                        "firstSeenAt": "2024-02-01T08:00:00.000Z",
-                        "lastSeenAt": "2025-05-12T08:55:00.000Z",
-                        "sessionCount": 1
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      }
-    },
-    "/devices/security": {
-      "get": {
-        "tags": [
-          "Devices",
-          "Security"
-        ],
-        "summary": "Get aggregate security info for the user's devices",
-        "description": "Return high-level security signals across the user's devices (count of active sessions, unusual logins, last suspicious activity, etc.). Used to surface a security health summary on the account dashboard.\n",
-        "responses": {
-          "200": {
-            "description": "Security info payload."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      }
-    },
-    "/devices/{deviceId}": {
-      "delete": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Remove a device",
-        "description": "Revoke every active session attached to the given device. The user on that device will be signed out the next time their client tries to refresh its access token.\n",
-        "parameters": [
-          {
-            "name": "deviceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "example": "dev_64f7c2a1b8e9d3f4a1c2b3d4"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Device removed."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          },
-          "404": {
-            "description": "Device not found."
-          }
-        }
-      }
-    },
-    "/fedcm/nonce": {
-      "post": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [],
-        "summary": "Mint a single-use FedCM nonce",
-        "description": "The auth UI requests a server-issued nonce just before invoking `navigator.credentials.get({ identity: { nonce } })`. The IdP signs the nonce into the issued ID token; `/fedcm/exchange` will only accept tokens whose nonce was minted here and has not yet been used. Bound to the requesting origin so a nonce minted for one site cannot be exchanged from another.\n",
-        "responses": {
-          "200": {
-            "description": "Nonce issued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "nonce": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Missing or invalid Origin header."
-          }
-        }
-      }
-    },
-    "/fedcm/exchange": {
-      "post": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [],
-        "summary": "Exchange a FedCM ID token for an Oxy session",
-        "description": "Implements the FedCM (Federated Credential Management) token exchange. The relying party passes the ID token it just received from the browser's FedCM API and gets back an Oxy `AuthSuccess` payload (user + sessionId + access/refresh tokens). This is the cookie-less, cross-origin SSO entry point.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "idToken"
-                ],
-                "properties": {
-                  "idToken": {
-                    "type": "string",
-                    "description": "FedCM ID token from the browser."
-                  },
-                  "clientId": {
-                    "type": "string",
-                    "description": "Calling app's registered client ID."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Oxy session issued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthSuccess"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid token format."
-          },
-          "401": {
-            "description": "ID token verification failed."
-          },
-          "403": {
-            "description": "Origin not on the approved-clients list."
-          }
-        }
-      }
-    },
-    "/fedcm/clients/approved": {
-      "get": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [],
-        "summary": "List origins approved for FedCM token exchange",
-        "description": "Public list of `origin` strings that may call `/fedcm/exchange`. Browsers query this list when displaying the FedCM account picker.\n",
-        "responses": {
-          "200": {
-            "description": "Approved client origins.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "origins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           }
         }
       },
-      "post": {
+      "delete": {
         "tags": [
-          "Federation"
+          "Users"
         ],
-        "security": [
-          {
-            "serviceTokenAuth": []
-          }
-        ],
-        "summary": "Approve an origin for FedCM (internal services only)",
-        "description": "Add a new origin to the FedCM approved-clients list. Requires a service token — third-party developers cannot self-approve.\n",
+        "summary": "Permanently delete the current account",
+        "description": "Hard-delete the authenticated user's account. To prove identity at the time of deletion the client signs `delete:{publicKey}:{timestamp}` with the local secp256k1 private key (see `KeyManager.sign` in `@oxyhq/core`). The signature is rejected if it is older than 5 minutes, if the confirmation text does not match the account's username, or if the account has no associated public key.\nSuccessful deletion removes all mailboxes, messages, and S3 attachments owned by the user.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -2811,12 +2765,25 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "origin"
+                  "signature",
+                  "timestamp",
+                  "confirmText"
                 ],
                 "properties": {
-                  "origin": {
+                  "signature": {
                     "type": "string",
-                    "example": "https://example.com"
+                    "description": "Hex-encoded secp256k1 signature over `delete:{publicKey}:{timestamp}`.",
+                    "example": "3045022100abcd...3045022100efgh"
+                  },
+                  "timestamp": {
+                    "type": "integer",
+                    "description": "Unix milliseconds when the signature was produced.",
+                    "example": 1714576800000
+                  },
+                  "confirmText": {
+                    "type": "string",
+                    "description": "Must equal the account's username.",
+                    "example": "alice"
                   }
                 }
               }
@@ -2825,49 +2792,15 @@
         },
         "responses": {
           "200": {
-            "description": "Origin added."
-          },
-          "401": {
-            "description": "Service token missing or invalid."
-          },
-          "403": {
-            "description": "Token is not a service token."
-          }
-        }
-      }
-    },
-    "/fedcm/grants/{userId}": {
-      "get": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [],
-        "summary": "List RP origins a user has granted via FedCM",
-        "description": "Returns the relying-party origins the user has previously authorized through FedCM, intersected with the currently-approved client list. The IdP accounts endpoint (auth.oxy.so) calls this server-to-server to populate the FedCM `approved_clients` array, which lets Chrome treat the account as a returning account for those RPs (skips the disclosure UI and enables silent mediation). Carries no token material or PII.\n",
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "The user's id (24-char hex ObjectId)."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Granted origins (possibly empty).",
+            "description": "Account deleted.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "origins": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                    "message": {
+                      "type": "string",
+                      "example": "Account deleted successfully"
                     }
                   }
                 }
@@ -2875,139 +2808,34 @@
             }
           },
           "400": {
-            "description": "Missing or malformed userId."
-          }
-        }
-      }
-    },
-    "/fedcm/clients/approved/{origin}": {
-      "delete": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [
-          {
-            "serviceTokenAuth": []
-          }
-        ],
-        "summary": "Remove an approved origin (internal services only)",
-        "parameters": [
-          {
-            "name": "origin",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "URL-encoded origin to remove."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Origin removed."
-          },
-          "401": {
-            "description": "Service token missing or invalid."
-          },
-          "403": {
-            "description": "Token is not a service token."
-          },
-          "404": {
-            "description": "Origin not on the list."
-          }
-        }
-      }
-    },
-    "/fedcm/me/authorized-apps": {
-      "get": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "List the authenticated user's authorized RP apps",
-        "description": "Returns the intersection of the user's FedCM grants with the currently approved RP client catalog. Powers the \"Connected apps\" management UI.\n",
-        "responses": {
-          "200": {
-            "description": "Authorized apps (possibly empty).",
+            "description": "Missing field, expired signature, or mismatched confirmText.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "apps": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "origin": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "description": {
-                            "type": "string"
-                          },
-                          "firstGrantedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          },
-                          "lastUsedAt": {
-                            "type": "string",
-                            "format": "date-time"
-                          }
-                        }
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication required."
-          }
-        }
-      }
-    },
-    "/fedcm/me/authorized-apps/{origin}": {
-      "delete": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "summary": "Revoke the authenticated user's authorization for an RP origin",
-        "parameters": [
-          {
-            "name": "origin",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "URL-encoded RP origin to revoke."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Authorization revoked."
-          },
-          "400": {
-            "description": "Origin missing or malformed."
-          },
-          "401": {
-            "description": "Authentication required."
+            "description": "Invalid signature.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
-            "description": "No grant exists for this user+origin."
+            "description": "User not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -3230,77 +3058,100 @@
         }
       }
     },
-    "/profiles/username/{username}": {
+    "/devices": {
       "get": {
         "tags": [
-          "Profiles"
+          "Devices"
         ],
-        "security": [],
-        "summary": "Public profile lookup by username",
-        "description": "Resolve a username to a public profile, with follower/following counts. Federated handles (`user@domain`) are resolved on the fly via WebFinger + ActivityPub; if the actor has never been seen the endpoint will upsert it as a federated user before returning.\nThis endpoint is unauthenticated and may be cached by edge.\n",
-        "parameters": [
-          {
-            "name": "username",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "description": "Local username (alphanumeric, 3-30 chars) or fediverse handle.",
-              "examples": {
-                "local": "alice",
-                "federated": "alice@mastodon.social"
-              }
-            }
-          }
-        ],
+        "summary": "List the user's devices",
+        "description": "Return every device that has at least one active session for the authenticated user. Useful for \"Where am I signed in?\" screens.\n",
         "responses": {
           "200": {
-            "description": "Profile found.",
+            "description": "List of devices.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/User"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Device"
+                  }
                 },
                 "examples": {
-                  "local": {
-                    "value": {
-                      "id": "64f7c2a1b8e9d3f4a1c2b3d4",
-                      "username": "alice",
-                      "name": {
-                        "first": "Alice",
-                        "last": "Example"
+                  "twoDevices": {
+                    "value": [
+                      {
+                        "id": "dev_64f7c2a1b8e9d3f4a1c2b3d4",
+                        "name": "MacBook Pro 16",
+                        "platform": "macOS",
+                        "firstSeenAt": "2024-01-15T12:34:56.789Z",
+                        "lastSeenAt": "2025-05-12T09:00:00.000Z",
+                        "sessionCount": 2
                       },
-                      "description": "Coffee, code, and open source.",
-                      "type": "local",
-                      "_count": {
-                        "followers": 42,
-                        "following": 17
+                      {
+                        "id": "dev_74f7c2a1b8e9d3f4a1c2b3d5",
+                        "name": "iPhone 15 Pro",
+                        "platform": "iOS",
+                        "firstSeenAt": "2024-02-01T08:00:00.000Z",
+                        "lastSeenAt": "2025-05-12T08:55:00.000Z",
+                        "sessionCount": 1
                       }
-                    }
+                    ]
                   }
                 }
               }
             }
           },
-          "400": {
-            "description": "Malformed username.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/devices/security": {
+      "get": {
+        "tags": [
+          "Devices",
+          "Security"
+        ],
+        "summary": "Get aggregate security info for the user's devices",
+        "description": "Return high-level security signals across the user's devices (count of active sessions, unusual logins, last suspicious activity, etc.). Used to surface a security health summary on the account dashboard.\n",
+        "responses": {
+          "200": {
+            "description": "Security info payload."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/devices/{deviceId}": {
+      "delete": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Remove a device",
+        "description": "Revoke every active session attached to the given device. The user on that device will be signed out the next time their client tries to refresh its access token.\n",
+        "parameters": [
+          {
+            "name": "deviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "dev_64f7c2a1b8e9d3f4a1c2b3d4"
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device removed."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
           },
           "404": {
-            "description": "Profile not found (and federation lookup failed).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "description": "Device not found."
           }
         }
       }
@@ -3743,386 +3594,74 @@
         }
       }
     },
-    "/session/user/{sessionId}": {
+    "/assets": {
       "get": {
         "tags": [
-          "Sessions"
+          "Files"
         ],
-        "summary": "Resolve a session ID to the user it belongs to",
-        "description": "Look up the user record for a given session ID. Requires a valid access token whose user owns the referenced session — callers cannot look up sessions belonging to other users. Used by SDK clients (e.g. `@oxyhq/core`) to hydrate user state from a stored session reference. Expired, revoked, or non-owned sessions return 404.\n",
+        "summary": "List the user's files",
+        "description": "Paginated list of files owned by the authenticated user, including upload status, deduplication info (`sha256`), variants (thumbnails, resized renditions), and any entity links.\n",
         "parameters": [
           {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
+            "name": "limit",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "example": "sess_64f7c2a1b8e9d3f4a1c2b3d4"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "User attached to this session.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Malformed sessionId.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found or expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/session/token/{sessionId}": {
-      "get": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Issue a fresh access token from a session ID",
-        "description": "Exchange a long-lived session ID for a short-lived access token (typically 15 minutes). Requires a valid access token whose user owns the referenced session — callers cannot mint tokens for sessions belonging to other users.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "New access token.",
+            "description": "Paginated file list.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "accessToken": {
-                      "type": "string"
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
                     },
-                    "expiresIn": {
-                      "type": "integer",
-                      "example": 900
+                    "total": {
+                      "type": "integer"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
                     }
                   }
                 }
               }
             }
           },
-          "404": {
-            "description": "Session not found or expired."
-          }
-        }
-      }
-    },
-    "/session/sessions/{sessionId}": {
-      "get": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "List all sessions for the user of the given session",
-        "description": "Return every active session the user has across all devices, with a flag marking the current session. Requires a valid access token whose user owns the referenced session.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Active sessions for the user.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Session"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found or expired."
-          }
-        }
-      }
-    },
-    "/session/logout/{sessionId}": {
-      "post": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Sign out the given session",
-        "description": "Revoke the session identified by `sessionId`. After this call any bearer token tied to that session is rejected. Idempotent — calling twice is a no-op on the second call.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session revoked."
-          },
-          "404": {
-            "description": "Session not found."
-          }
-        }
-      }
-    },
-    "/session/logout/{sessionId}/{targetSessionId}": {
-      "post": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Sign another session out via an authenticated session",
-        "description": "Use `sessionId` (which must be a valid active session) to revoke a different session identified by `targetSessionId`. This is how the \"sign out other devices\" flow works.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "targetSessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Target session revoked."
-          },
           "401": {
-            "description": "The acting session is not valid."
-          },
-          "404": {
-            "description": "Target session not found."
+            "description": "Missing or invalid bearer token."
           }
         }
       }
     },
-    "/session/logout-all/{sessionId}": {
+    "/assets/init": {
       "post": {
         "tags": [
-          "Sessions"
+          "Files"
         ],
-        "summary": "Sign out every session for this user",
-        "description": "Revoke every session belonging to the user behind `sessionId`, including the calling session itself. Recommended after a password reset or suspected compromise.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "All sessions revoked."
-          },
-          "404": {
-            "description": "Session not found."
-          }
-        }
-      }
-    },
-    "/session/validate/{sessionId}": {
-      "get": {
-        "tags": [
-          "Sessions"
-        ],
-        "security": [],
-        "summary": "Validate a session ID",
-        "description": "Cheap liveness check — returns 200 with a small payload if the session is still active, 404 otherwise. Use this in lieu of the heavier `/session/user/:id` lookup when you only need a yes/no.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session is active.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "valid": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found or expired."
-          }
-        }
-      }
-    },
-    "/session/validate-header/{sessionId}": {
-      "get": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Validate a session using a header-bound bearer token",
-        "description": "Like `/session/validate/:sessionId` but cross-checks the bearer token against the session — returns 200 only if the token still belongs to the session.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session and bearer token match."
-          },
-          "401": {
-            "description": "Token does not match the session."
-          },
-          "404": {
-            "description": "Session not found."
-          }
-        }
-      }
-    },
-    "/session/device/sessions/{sessionId}": {
-      "get": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "List sessions on the same device as the given session",
-        "description": "Return every active session that shares the device fingerprint of the supplied session. Used to power \"this device has these accounts\" UI in the auth picker.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Sessions on this device.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Session"
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session not found."
-          }
-        }
-      }
-    },
-    "/session/device/logout-all/{sessionId}": {
-      "post": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Sign out every session on this device",
-        "description": "Revoke every session that shares the device fingerprint of the supplied session. Useful for a one-click \"sign out this device\" button.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Device sessions revoked."
-          },
-          "404": {
-            "description": "Session not found."
-          }
-        }
-      }
-    },
-    "/session/device/name/{sessionId}": {
-      "put": {
-        "tags": [
-          "Devices"
-        ],
-        "summary": "Rename the device for the given session",
-        "description": "Update the human-readable device label shown in the user's devices list. The change applies to every session sharing the device fingerprint.\n",
-        "parameters": [
-          {
-            "name": "sessionId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "summary": "Initialise a file upload",
+        "description": "First call in the two-step upload flow. Submit the file's SHA-256, size, and MIME type and receive a `fileId` plus a pre-signed S3 upload URL. If a file with the same SHA-256 already exists for the caller, the server short-circuits and returns the existing record (de-duplication).\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -4130,12 +3669,25 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "deviceName"
+                  "sha256",
+                  "size",
+                  "mime"
                 ],
                 "properties": {
-                  "deviceName": {
+                  "sha256": {
                     "type": "string",
-                    "example": "Living room iPad"
+                    "minLength": 64,
+                    "maxLength": 64,
+                    "example": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 12345
+                  },
+                  "mime": {
+                    "type": "string",
+                    "example": "image/png"
                   }
                 }
               }
@@ -4144,24 +3696,47 @@
         },
         "responses": {
           "200": {
-            "description": "Device renamed."
+            "description": "Upload initialised.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fileId": {
+                      "type": "string"
+                    },
+                    "uploadUrl": {
+                      "type": "string",
+                      "description": "Pre-signed S3 PUT URL."
+                    },
+                    "storageKey": {
+                      "type": "string"
+                    },
+                    "deduplicated": {
+                      "type": "boolean",
+                      "description": "True if the SHA-256 was already present."
+                    }
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed."
           },
-          "404": {
-            "description": "Session not found."
+          "401": {
+            "description": "Missing or invalid bearer token."
           }
         }
       }
     },
-    "/session/users/batch": {
+    "/assets/complete": {
       "post": {
         "tags": [
-          "Sessions"
+          "Files"
         ],
-        "summary": "Resolve multiple session IDs in one call",
-        "description": "Batch counterpart of `/session/user/:sessionId`. Pass an array of session IDs and get back a map of user records — used by clients that need to render multiple connected accounts at once (e.g. the account switcher).\n",
+        "summary": "Complete a file upload",
+        "description": "Second call in the two-step upload flow. Call this after the client has finished PUTing the file to the pre-signed S3 URL returned by `/assets/init`. Commits the metadata, marks the file ready, and enqueues variant generation (thumbnails, image resizes) where applicable.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -4169,126 +3744,186 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "sessionIds"
+                  "fileId",
+                  "originalName",
+                  "size",
+                  "mime"
                 ],
                 "properties": {
-                  "sessionIds": {
+                  "fileId": {
+                    "type": "string"
+                  },
+                  "originalName": {
+                    "type": "string",
+                    "example": "profile.png"
+                  },
+                  "size": {
+                    "type": "integer",
+                    "example": 12345
+                  },
+                  "mime": {
+                    "type": "string",
+                    "example": "image/png"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "public",
+                      "unlisted"
+                    ],
+                    "default": "private"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File committed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/assets/upload": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Upload a file in a single request",
+        "description": "Convenience endpoint that wraps the init/PUT/complete flow into a single multipart upload. The backend computes the SHA-256 itself. Use this for small files where the round-trip cost outweighs the benefit of direct-to-S3 streaming.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "public",
+                      "unlisted"
+                    ],
+                    "default": "private"
+                  },
+                  "metadata": {
+                    "type": "string",
+                    "description": "Optional JSON-encoded metadata object."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "File uploaded and committed."
+          },
+          "400": {
+            "description": "Missing file or malformed metadata."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/assets/service/by-ids": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Batch-resolve asset metadata for a service",
+        "description": "Service-token-only batch metadata read. Given up to 100 file ids, returns the content hash (`sha256`), `mime`, `size`, and `status` for each KNOWN, non-deleted file. This is a METADATA-ONLY surface — it never returns bytes, signed URLs, owner ids, links, or any other field, so a service token can map a file id to its content hash without being able to read private file contents. Unknown, invalid, or deleted ids are silently omitted from `data` (the batch never 404s as a whole).\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
                     "type": "array",
                     "minItems": 1,
+                    "maxItems": 100,
                     "items": {
                       "type": "string"
                     }
                   }
                 }
-              },
-              "examples": {
-                "pair": {
-                  "value": {
-                    "sessionIds": [
-                      "sess_64f7c2a1b8e9d3f4a1c2b3d4",
-                      "sess_74f7c2a1b8e9d3f4a1c2b3d5"
-                    ]
-                  }
-                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "User records keyed by session ID. Missing sessions are omitted.",
+            "description": "Resolved asset metadata (order not guaranteed).",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/User"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation failed."
-          }
-        }
-      }
-    },
-    "/sso/code": {
-      "post": {
-        "tags": [
-          "Federation"
-        ],
-        "security": [],
-        "summary": "Mint a single-use SSO code (internal, server-to-server)",
-        "description": "Called ONLY by the auth.oxy.so worker after it has minted a real Oxy session via the existing FedCM pipeline. Gated by the internal `X-Oxy-Internal` shared secret (mismatch/absence returns 404 to hide the route). Wraps the supplied session in an opaque, origin-bound, 30s single-use code that the RP later redeems at `/sso/exchange`.\n",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "X-Oxy-Internal",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Shared secret equal to SSO_INTERNAL_SECRET."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "session",
-                  "clientOrigin"
-                ],
-                "properties": {
-                  "clientOrigin": {
-                    "type": "string",
-                    "description": "Approved RP origin the code is bound to."
-                  },
-                  "session": {
-                    "type": "object",
-                    "required": [
-                      "sessionId",
-                      "accessToken",
-                      "user"
-                    ],
-                    "properties": {
-                      "sessionId": {
-                        "type": "string"
-                      },
-                      "accessToken": {
-                        "type": "string"
-                      },
-                      "expiresAt": {
-                        "type": "string",
-                        "format": "date-time"
-                      },
-                      "authuser": {
-                        "type": "integer"
-                      },
-                      "user": {
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
                         "type": "object",
-                        "required": [
-                          "id"
-                        ],
                         "properties": {
                           "id": {
                             "type": "string"
                           },
-                          "username": {
+                          "sha256": {
                             "type": "string"
                           },
-                          "email": {
+                          "mime": {
                             "type": "string"
                           },
-                          "avatar": {
-                            "type": "string"
+                          "size": {
+                            "type": "integer"
                           },
-                          "name": {
-                            "type": "string"
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "trash"
+                            ]
                           }
                         }
                       }
@@ -4297,44 +3932,26 @@
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Code issued.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "expiresInSeconds": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
           },
           "400": {
-            "description": "Invalid session payload or unapproved clientOrigin."
+            "description": "Validation failed (empty array or more than 100 ids)."
           },
-          "404": {
-            "description": "Internal secret missing or invalid."
+          "401": {
+            "description": "Missing or expired service token."
+          },
+          "403": {
+            "description": "Not a service token, or missing the files:read scope."
           }
         }
       }
     },
-    "/sso/exchange": {
+    "/assets/service/by-sha256": {
       "post": {
         "tags": [
-          "Federation"
+          "Files"
         ],
-        "security": [],
-        "summary": "Redeem an SSO code for a session (RP browser, cross-origin)",
-        "description": "The RP calls this with the opaque code it received in the redirect fragment. The code is burned single-use (atomic GETDEL); the requesting Origin must match the approved origin the code was bound to. Returns the wrapped session. No cookies are involved (Access-Control-Allow- Credentials: false); the access token is in the body.\n",
+        "summary": "Reverse content-address resolve assets by SHA-256",
+        "description": "Service-token-only batch REVERSE lookup. Given up to 100 lowercase hex SHA-256 content hashes, resolves each to the live (non-deleted) Oxy asset holding that content: its file `id`, `mime`, byte `size`, `status`, and — for ACTIVE, PUBLIC, CDN-reachable assets only — a public `url` (`cloud.oxy.so`). This is the inverse of `POST /assets/service/by-ids`: callers (e.g. Mention's MTN materializer / node-blob sync) that hold a record's `blob.sha256` use it to find the servable asset for that content. Private/unlisted assets omit `url`. Unknown, invalid, or deleted hashes are silently omitted from `data` (the batch never 404s as a whole); the result may be shorter than the requested list — map by `sha256`.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -4342,11 +3959,17 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "code"
+                  "sha256s"
                 ],
                 "properties": {
-                  "code": {
-                    "type": "string"
+                  "sha256s": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
                   }
                 }
               }
@@ -4355,42 +3978,40 @@
         },
         "responses": {
           "200": {
-            "description": "Session issued.",
+            "description": "Resolved asset metadata (order not guaranteed).",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "accessToken": {
-                      "type": "string"
-                    },
-                    "sessionId": {
-                      "type": "string"
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "authuser": {
-                      "type": "integer"
-                    },
-                    "user": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string"
-                        },
-                        "username": {
-                          "type": "string"
-                        },
-                        "email": {
-                          "type": "string"
-                        },
-                        "avatar": {
-                          "type": "string"
-                        },
-                        "name": {
-                          "type": "string"
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "mime": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "trash"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "description": "Public CDN URL; present only for active, public, CDN-reachable assets."
+                          }
                         }
                       }
                     }
@@ -4400,13 +4021,233 @@
             }
           },
           "400": {
-            "description": "Missing code."
+            "description": "Validation failed (empty array, > 100 hashes, or a non-hex digest)."
+          },
+          "401": {
+            "description": "Missing or expired service token."
           },
           "403": {
-            "description": "Requesting Origin does not match the code's bound origin."
+            "description": "Not a service token, or missing the files:read scope."
+          }
+        }
+      }
+    },
+    "/assets/{id}": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Get file metadata",
+        "description": "Return metadata for the file (size, MIME, SHA-256, variants, links, usage count, status). Only the owner can fetch metadata; signed URLs (`/assets/:id/url` or `/assets/:id/stream`) are the public access path.\n",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File metadata."
           },
-          "410": {
-            "description": "Code is invalid, expired, or already used."
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "404": {
+            "description": "File not found."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Delete file with impact summary",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/assets.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/assets/{id}/url": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Get a download URL for a file",
+        "description": "Return a CDN URL (for public files) or a pre-signed S3 URL (for private files) suitable for `<img src>` or direct download. The URL is valid for `expiresIn` seconds (default 3600).\n",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Variant name (e.g. \"thumb-256\", \"medium\")."
+            }
+          },
+          {
+            "name": "expiresIn",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 3600,
+              "description": "Seconds the signed URL stays valid."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signed URL.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "variant": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "expiresIn": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "404": {
+            "description": "File not found."
+          }
+        }
+      }
+    },
+    "/assets/{id}/stream": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Stream file bytes (with correct headers)",
+        "description": "Public endpoint that streams the raw file bytes back to the caller. Sends correct `Content-Type` and `Cache-Control` headers and falls back to a placeholder if the underlying object is missing (`?fallback=placeholder|placeholderVisible|icon`). For private files the caller must supply a bearer token.\n",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fallback",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "placeholder",
+                "placeholderVisible",
+                "icon"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes streamed (or placeholder if fallback requested)."
+          },
+          "302": {
+            "description": "Redirect to pre-signed S3 URL."
+          },
+          "403": {
+            "description": "Access denied."
+          },
+          "404": {
+            "description": "File not found (and no fallback requested)."
           }
         }
       }
@@ -4452,92 +4293,50 @@
         }
       }
     },
-    "/users/me/app-data/{namespace}/{key}": {
-      "get": {
+    "/contacts/discover": {
+      "post": {
         "tags": [
-          "UserAppData"
+          "Contacts"
         ],
-        "summary": "Read a single per-user JSON value",
-        "description": "Returns the value stored under `(namespace, key)` for the authenticated user. The response body is always `{ value }`. If no value has ever been stored, `value` is `null` (the endpoint does not 404 on missing entries — a missing entry is semantically a `null` value).\n",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "namespace",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          },
-          {
-            "in": "path",
-            "name": "key",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Current value (or null when not stored).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "value": {
-                      "description": "Arbitrary JSON value previously stored, or null."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "UserAppData"
-        ],
-        "summary": "Upsert a single per-user JSON value",
-        "description": "Stores (or replaces) the value under `(namespace, key)` for the authenticated user. Body must be `{ value: <any JSON-serializable value> }`. Serialized JSON is capped at 64 KB.\n",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "namespace",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          },
-          {
-            "in": "path",
-            "name": "key",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          }
-        ],
+        "summary": "Discover which contacts are on Oxy",
+        "description": "Privacy-preserving contact-book matching. Clients SHA-256 hash each email and phone number locally (lowercased; phone numbers normalised to E.164 — see `utils/contactHash.ts` in `@oxyhq/core`) and upload only the resulting 64-character hex digests. The server intersects them against precomputed indexes on the `User` collection and returns matched Oxy user IDs only when the matched user has opted in to contact discovery for that identifier type.\nPrivacy invariants:\n  - Raw email / phone never traverses this endpoint.\n  - The response contains no PII — only Oxy user IDs and the hash the\n    caller supplied (so the client can map matches back to the local\n    contact that produced them).\n  - The endpoint never writes to the database. Discovery is stateless.\n\nRate limits: 5 requests per minute per authenticated user; up to 200 hashed identifiers per channel (~400 total) per request. Service tokens are explicitly rejected with 403.\n",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "value"
-                ],
                 "properties": {
+                  "hashedEmails": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "SHA-256 hex of `email.toLowerCase().trim()`."
+                    }
+                  },
+                  "hashedPhones": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$",
+                      "description": "SHA-256 hex of the E.164-normalised phone number."
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "addressBook": {
+                  "summary": "Mixed email + phone request",
                   "value": {
-                    "description": "Arbitrary JSON value to persist."
+                    "hashedEmails": [
+                      "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd"
+                    ],
+                    "hashedPhones": [
+                      "9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba"
+                    ]
                   }
                 }
               }
@@ -4546,14 +4345,52 @@
         },
         "responses": {
           "200": {
-            "description": "The stored value, echoed back.",
+            "description": "Discovery completed. Empty `matches` means no overlap.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "matches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "userId",
+                          "hashedIdentifier",
+                          "matchType"
+                        ],
+                        "properties": {
+                          "userId": {
+                            "type": "string",
+                            "example": "64f7c2a1b8e9d3f4a1c2b3d4"
+                          },
+                          "hashedIdentifier": {
+                            "type": "string",
+                            "example": "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd"
+                          },
+                          "matchType": {
+                            "type": "string",
+                            "enum": [
+                              "email",
+                              "phone"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "examples": {
+                  "oneMatch": {
                     "value": {
-                      "description": "The value that is now stored."
+                      "matches": [
+                        {
+                          "userId": "64f7c2a1b8e9d3f4a1c2b3d4",
+                          "hashedIdentifier": "7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd",
+                          "matchType": "email"
+                        }
+                      ]
                     }
                   }
                 }
@@ -4561,115 +4398,60 @@
             }
           },
           "400": {
-            "description": "Validation failed (bad namespace/key, oversized value)."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          },
-          "429": {
-            "description": "Per-user write rate limit exceeded."
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "UserAppData"
-        ],
-        "summary": "Delete a single per-user JSON value",
-        "description": "Removes the value under `(namespace, key)` for the authenticated user. Idempotent — succeeds with 204 whether or not the entry existed.\n",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "namespace",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          },
-          {
-            "in": "path",
-            "name": "key",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Deleted (or was already absent)."
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          },
-          "429": {
-            "description": "Per-user write rate limit exceeded."
-          }
-        }
-      }
-    },
-    "/users/me/app-data/{namespace}": {
-      "get": {
-        "tags": [
-          "UserAppData"
-        ],
-        "summary": "List every value in a namespace for the current user",
-        "description": "Returns `{ entries }` where `entries` is a `key -> value` map of everything stored under `namespace` for the authenticated user. The response is bounded by the per-user write rate limit upstream and by the 64 KB cap per individual value; consumers should still expect to paginate large namespaces themselves.\n",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "namespace",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[a-z0-9_-]{1,64}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Map of every key in the namespace to its value.",
+            "description": "Validation failed (empty payload, malformed hash, oversized batch).",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "entries": {
-                      "type": "object",
-                      "additionalProperties": {
-                        "description": "Stored JSON value."
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
           },
           "401": {
             "description": "Missing or invalid bearer token."
+          },
+          "403": {
+            "description": "Service token used — must use a user session token."
+          },
+          "429": {
+            "description": "Rate limit exceeded (5 requests / minute / user)."
           }
         }
       }
     },
-    "/users/me": {
+    "/profiles/username/{username}": {
       "get": {
         "tags": [
-          "Users"
+          "Profiles"
         ],
-        "summary": "Get the current authenticated user",
-        "description": "Returns the full profile for the bearer-token holder, including privacy settings, identity flags, and connected account types. This is the canonical \"who am I\" endpoint that every Oxy app calls on startup.\n",
+        "security": [],
+        "summary": "Public profile lookup by username",
+        "description": "Resolve a username to a public profile, with follower/following counts. Federated handles (`user@domain`) are resolved on the fly via WebFinger + ActivityPub; if the actor has never been seen the endpoint will upsert it as a federated user before returning.\nThis endpoint is unauthenticated and may be cached by edge.\n",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Local username (alphanumeric, 3-30 chars) or fediverse handle.",
+              "examples": {
+                "local": "alice",
+                "federated": "alice@mastodon.social"
+              }
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Current user profile.",
+            "description": "Profile found.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/User"
                 },
                 "examples": {
-                  "success": {
+                  "local": {
                     "value": {
                       "id": "64f7c2a1b8e9d3f4a1c2b3d4",
                       "username": "alice",
@@ -4682,193 +4464,15 @@
                       "_count": {
                         "followers": 42,
                         "following": 17
-                      },
-                      "createdAt": "2024-01-15T12:34:56.789Z",
-                      "updatedAt": "2025-05-12T09:00:00.000Z"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid bearer token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "Update the current authenticated user",
-        "description": "Partial profile update for the authenticated user. Only fields supplied in the body are touched — missing fields keep their existing values. The server enforces uniqueness on `email` and `username`; conflicts return 409. Always invalidates the in-memory user cache so the next read returns the updated record.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "username": {
-                    "type": "string",
-                    "minLength": 3,
-                    "maxLength": 30,
-                    "pattern": "^[a-zA-Z0-9]{3,30}$",
-                    "example": "alice"
-                  },
-                  "email": {
-                    "type": "string",
-                    "format": "email",
-                    "example": "alice@placeholder.example"
-                  },
-                  "name": {
-                    "type": "object",
-                    "properties": {
-                      "first": {
-                        "type": "string",
-                        "example": "Alice"
-                      },
-                      "last": {
-                        "type": "string",
-                        "example": "Example"
                       }
                     }
-                  },
-                  "description": {
-                    "type": "string",
-                    "example": "Updated bio."
-                  },
-                  "avatar": {
-                    "type": "string",
-                    "description": "Asset ID or absolute URL.",
-                    "example": "64f7c2a1b8e9d3f4a1c2b3d4"
-                  }
-                }
-              },
-              "examples": {
-                "rename": {
-                  "summary": "Update the display name",
-                  "value": {
-                    "name": {
-                      "first": "Alice",
-                      "last": "Example"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated user profile.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid bearer token."
-          },
-          "409": {
-            "description": "Email or username conflict.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "Permanently delete the current account",
-        "description": "Hard-delete the authenticated user's account. To prove identity at the time of deletion the client signs `delete:{publicKey}:{timestamp}` with the local secp256k1 private key (see `KeyManager.sign` in `@oxyhq/core`). The signature is rejected if it is older than 5 minutes, if the confirmation text does not match the account's username, or if the account has no associated public key.\nSuccessful deletion removes all mailboxes, messages, and S3 attachments owned by the user.\n",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "signature",
-                  "timestamp",
-                  "confirmText"
-                ],
-                "properties": {
-                  "signature": {
-                    "type": "string",
-                    "description": "Hex-encoded secp256k1 signature over `delete:{publicKey}:{timestamp}`.",
-                    "example": "3045022100abcd...3045022100efgh"
-                  },
-                  "timestamp": {
-                    "type": "integer",
-                    "description": "Unix milliseconds when the signature was produced.",
-                    "example": 1714576800000
-                  },
-                  "confirmText": {
-                    "type": "string",
-                    "description": "Must equal the account's username.",
-                    "example": "alice"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Account deleted.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "message": {
-                      "type": "string",
-                      "example": "Account deleted successfully"
-                    }
                   }
                 }
               }
             }
           },
           "400": {
-            "description": "Missing field, expired signature, or mismatched confirmText.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid signature.",
+            "description": "Malformed username.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4878,7 +4482,7 @@
             }
           },
           "404": {
-            "description": "User not found.",
+            "description": "Profile not found (and federation lookup failed).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5058,8 +4662,8 @@
         "tags": [
           "Profiles"
         ],
-        "summary": "Get recommended user profiles.",
-        "description": "Optional auth: when a valid session token is present the response is\npersonalized via mutual-connection overlap (people followed by the people\nyou follow), topped up with a random sample. When NO user is present\n(logged-out / public callers) the personalized aggregate is skipped and\nthe endpoint returns popular public profiles ranked by follower count.\nPrivate accounts are always excluded; `excludeTypes` filters out\nfederated/agent/automated users on either path.\n\n  (federated, agent, automated)",
+        "summary": "Get recommended user profiles. Maps the query string to the shared",
+        "description": "{@link buildRecommendations}, which runs the reputation-weighted scorer.\n\nOptional auth: when a valid session token is present the response is\npersonalized; when absent it returns popular public profiles. Private accounts\nare always excluded; `excludeTypes` filters federated/agent/automated users.\n\n  (federated, agent, automated)",
         "parameters": [],
         "responses": {
           "200": {
@@ -5077,9 +4681,32 @@
           }
         },
         "security": [
-          {
-            "bearerAuth": []
+          {}
+        ]
+      },
+      "post": {
+        "tags": [
+          "Profiles"
+        ],
+        "summary": "Rich recommendation surface accepting a JSON body: per-app weight profile",
+        "description": "(`clientId`), explicit `excludeIds`, editorial `boosts`, and per-request\n`signalWeights`. Optional auth (same personalization rules as GET). Validates\nthe body against `recommendationRequestSchema`. Shares the exact builder/cache\nwith GET, so identical inputs yield identical output.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
           },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
           {}
         ]
       }
@@ -5313,8 +4940,8 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Get all linked authentication methods for the current user",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/authLinking.ts` to fill in summary, description, request/response examples.",
+        "summary": "Get the account DID and all linked authentication methods for the current",
+        "description": "user, shaped to the `authMethodsResponseSchema` contract. Identity methods\ncarry their DID verification-method id (`#key-1`); password/social methods\ncarry none.",
         "parameters": [],
         "responses": {
           "200": {
@@ -5407,6 +5034,9 @@
                     "minLength": 8
                   },
                   "providerId": {
+                    "type": "string"
+                  },
+                  "providerToken": {
                     "type": "string"
                   }
                 },
@@ -5628,6 +5258,56 @@
         ],
         "summary": "Stream-upload a remote/federated media file into the reserved cache",
         "description": "namespace. The raw bytes are sent as the request body (NOT multipart)\n      so large video streams straight to S3 without buffering in RAM.\n      Content-Type must be image/*, video/*, or audio/*.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "serviceTokenAuth": []
+          }
+        ]
+      }
+    },
+    "/assets/service/federation": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Stream-upload durable federated media into a normal public file owned by",
+        "description": "the resolved federated Oxy user. Unlike `/service/cache`, files created\n      here are not in the eviction namespace and can safely be referenced from\n      persisted Mention posts.",
         "parameters": [],
         "responses": {
           "200": {
@@ -6200,32 +5880,6 @@
       }
     },
     "/notifications": {
-      "get": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "GET /notifications",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/notifications.routes.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
       "post": {
         "tags": [
           "Notifications"
@@ -6247,6 +5901,26 @@
               }
             }
           },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "5XX": {
             "description": "Server error",
             "content": {
@@ -6259,7 +5933,9 @@
           }
         },
         "security": [
-          {}
+          {
+            "serviceTokenAuth": []
+          }
         ],
         "requestBody": {
           "required": true,
@@ -6310,6 +5986,32 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "GET /notifications",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/notifications.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/notifications/unread-count": {
@@ -6600,8 +6302,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1001,
+              "default": 1
             }
           },
           {
@@ -6609,8 +6313,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
             }
           }
         ],
@@ -6627,6 +6333,204 @@
                 }
               }
             }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/users/follow/bulk": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Follow many users in a single request. Follow-only and idempotent — users",
+        "description": "already followed stay followed and are never unfollowed. One bad/invalid id\nnever fails the whole batch; every supplied id gets a per-target result.\n\nRegistered BEFORE the `/:userId` param routes so Express never treats\n`follow` as a `:userId` value.\n\n  per-target list of `{ userId, success, alreadyFollowing }` and\n  `followedCount` counts only NEWLY created follows.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/users/unfollow/bulk": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Unfollow many users in a single request. Unfollow-only and idempotent — ids",
+        "description": "that are not currently followed are left untouched and reported as already in\nthe desired (not-following) state. One bad/invalid id never fails the whole\nbatch; every supplied id gets a per-target result.\n\nRegistered BEFORE the `/:userId` param routes so Express never treats\n`unfollow` as a `:userId` value.\n\n  per-target list of `{ userId, success, wasFollowing }` and `unfollowedCount`\n  counts only follows that were actually removed.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/users/by-ids": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Batch-resolve PUBLIC user DTOs for up to 100 ids in a single round-trip.",
+        "description": "Returns an array of the SAME shape as `GET /users/:id` — canonical\n`name.displayName` (server-owned) plus `_count: { followers, following }` for\nevery resolved user. Built for server-to-server feed/notification hydration so\nconsumers (Mention) avoid N+1 single-user fetches.\n\nRegistered BEFORE the `/:userId` param routes so Express never treats\n`by-ids` as a `:userId` value.\n\nAuth: optional dual-auth — accepts a service token (the server-to-server case\nMention uses), a user session, or an anonymous caller. The payload is exactly\nthe already-public `GET /users/:id` profile data, so no scope is required and\nno viewer-specific fields are returned. ids that are not valid ObjectIds (or\nmatch no user) are dropped from the result.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/mutual-ids": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "The authenticated VIEWER's OWN mutual-follow user ids — the accounts the viewer",
+        "description": "follows that ALSO follow the viewer back. Lean, ids-only, bounded payload built\nto SEED Mention's \"Mutuals\" feed (which then hydrates and ranks the posts\nitself), so it returns bare ids rather than the hydrated DTOs of\n`GET /users/:userId/mutuals` (\"followers you know\" about ANOTHER profile).\n\nThe viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`\n(the same dual-auth as `/mutuals` and `/by-ids`) — never a client-supplied id,\nand there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics: an\nanonymous caller (or a service token with no user context) has no \"you follow\"\nset → `{ data: [] }`.\n\nRegistered BEFORE the `/:userId` param routes so Express never treats\n`mutual-ids` as a `:userId` value.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/users/follows-of-follows-ids": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "The authenticated VIEWER's bounded \"follows-of-follows\" user ids — the union",
+        "description": "of the accounts followed by the accounts the viewer follows (a two-hop walk of\nthe follow graph), MINUS the viewer's own follows and the viewer themselves.\nLean, ids-only, bounded payload built to SEED Mention's friends-of-friends\nfeed (which then hydrates and ranks the posts itself), so it returns bare ids\nrather than hydrated DTOs. Candidates are ordered by frequency (accounts\nfollowed by more of the viewer's follows first), then recency.\n\nThe viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`\n(the same dual-auth as `/mutual-ids` and `/by-ids`) — never a client-supplied\nid, and there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics:\nan anonymous caller (or a service token with no user context) has no \"you\nfollow\" set → `{ data: [] }`.\n\nRegistered BEFORE the `/:userId` param routes so Express never treats\n`follows-of-follows-ids` as a `:userId` value.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
           },
           "5XX": {
             "description": "Server error",
@@ -6765,6 +6669,63 @@
         ],
         "summary": "Get users that this user is following with pagination",
         "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/users.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/users/{userId}/mutuals": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "\"Followers you know\" — the MUTUAL followers between the authenticated viewer",
+        "description": "and the target user: users U such that the VIEWER follows U AND U follows\n:userId.\n\nThe viewer is derived SERVER-SIDE from the auth token (never a client-supplied\nparam) via `resolveViewerId`, the same dual-auth viewer resolution the\nrecommendation surfaces use. OPTIONAL semantics — the request is never\nrejected: an anonymous caller (or a service token with no user context) has no\n\"you follow\" set, so the response is an empty page; a self-target\n(`:userId === viewer`) is likewise empty. The empty/self guards live in the\nservice so the route stays thin.",
         "parameters": [
           {
             "name": "userId",
@@ -7321,6 +7282,79 @@
               }
             }
           },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/users/me/export": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Signed, open-format self-sovereign data export (\"credible exit\"). Returns the",
+        "description": "`ExportBundle` (DID document, profile, verified domains, auth methods, signed\nrecords, app data, social graph) sealed with an Oxy provenance attestation.\n`?format=ndjson` streams each section as newline-delimited JSON for large\naccounts.",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "ndjson"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Insufficient privileges",
             "content": {
@@ -7646,8 +7680,8 @@
         "tags": [
           "Reputation"
         ],
-        "summary": "Awarding is restricted to service tokens (the canonical path — a source app",
-        "description": "reports an action) and platform staff. Regular users may NOT award reputation\n(no self-award). When called with a service token the `applicationId` /\n`credentialId` are resolved from `req.serviceApp` and any client-supplied\nvalues for those fields are ignored.",
+        "summary": "Awarding is restricted to service tokens with the privileged",
+        "description": "`reputation:write` scope (the canonical path — a source app reports an\naction) and platform staff. Regular users may NOT award reputation\n(no self-award). When called with a service token the `applicationId` /\n`credentialId` are resolved from `req.serviceApp` and any client-supplied\nvalues for those fields are ignored.",
         "parameters": [],
         "responses": {
           "200": {
@@ -8746,6 +8780,159 @@
         ]
       }
     },
+    "/email/messages/bulk/flags": {
+      "post": {
+        "tags": [
+          "Email"
+        ],
+        "summary": "POST /email/messages/bulk/flags",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "flags": {
+                    "type": "object",
+                    "properties": {
+                      "seen": {
+                        "type": "boolean"
+                      },
+                      "starred": {
+                        "type": "boolean"
+                      },
+                      "answered": {
+                        "type": "boolean"
+                      },
+                      "forwarded": {
+                        "type": "boolean"
+                      },
+                      "draft": {
+                        "type": "boolean"
+                      },
+                      "pinned": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "messageIds",
+                  "flags"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/messages/bulk/move": {
+      "post": {
+        "tags": [
+          "Email"
+        ],
+        "summary": "POST /email/messages/bulk/move",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "mailboxId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "messageIds",
+                  "mailboxId"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "/email/messages/{messageId}": {
       "get": {
         "tags": [
@@ -9366,159 +9553,6 @@
         "security": [
           {}
         ]
-      }
-    },
-    "/email/messages/bulk/flags": {
-      "post": {
-        "tags": [
-          "Email"
-        ],
-        "summary": "POST /email/messages/bulk/flags",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "messageIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1,
-                    "maxItems": 100
-                  },
-                  "flags": {
-                    "type": "object",
-                    "properties": {
-                      "seen": {
-                        "type": "boolean"
-                      },
-                      "starred": {
-                        "type": "boolean"
-                      },
-                      "answered": {
-                        "type": "boolean"
-                      },
-                      "forwarded": {
-                        "type": "boolean"
-                      },
-                      "draft": {
-                        "type": "boolean"
-                      },
-                      "pinned": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                },
-                "required": [
-                  "messageIds",
-                  "flags"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/email/messages/bulk/move": {
-      "post": {
-        "tags": [
-          "Email"
-        ],
-        "summary": "POST /email/messages/bulk/move",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "messageIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "minItems": 1,
-                    "maxItems": 100
-                  },
-                  "mailboxId": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "messageIds",
-                  "mailboxId"
-                ]
-              }
-            }
-          }
-        }
       }
     },
     "/email/labels": {
@@ -11585,6 +11619,266 @@
         ]
       }
     },
+    "/auth/session/approve-info/{authorizeCode}": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "PUBLIC. Returns the server-resolved, sanitized Application identity (never the",
+        "description": "QR's self-asserted strings) plus the bound origin and status, so the Commons\napproval screen renders the TRUE app. Never leaks the secret `sessionToken`.",
+        "parameters": [
+          {
+            "name": "authorizeCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/auth/session/authorize-signed/{authorizeCode}": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "NO bearer auth — this is the gap-filler. The Commons vault approves with its",
+        "description": "local secp256k1 key: it proves key control with a single-use challenge\nsignature (`verifyChallengeResponse` + atomic burn), and the resolved signer\nbecomes the authorizing user. The session is bound by `authorizeCode`. The\nwaiting originator is notified over the socket on the row's `sessionToken`.",
+        "parameters": [
+          {
+            "name": "authorizeCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "publicKey": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "challenge": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "signature": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "deviceName": {
+                    "type": "string"
+                  },
+                  "deviceFingerprint": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "publicKey",
+                  "challenge",
+                  "signature",
+                  "timestamp"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/session/deny/{authorizeCode}": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "The Commons vault denies a pending approval. It never holds the secret",
+        "description": "`sessionToken`, so it cannot use `/session/cancel/:sessionToken`; it cancels\nby the public `authorizeCode` instead. Only a PENDING session can be denied\n(so a knower of the code cannot cancel an already-authorized session).",
+        "parameters": [
+          {
+            "name": "authorizeCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/wallet/{userId}": {
       "get": {
         "tags": [
@@ -12710,377 +13004,6 @@
         ]
       }
     },
-    "/managed-accounts": {
-      "post": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "POST /managed-accounts",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "get": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "GET /managed-accounts",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/managed-accounts/verify": {
-      "get": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "GET /managed-accounts/verify",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/managed-accounts/{accountId}": {
-      "get": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "GET /managed-accounts/{accountId}",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "put": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "PUT /managed-accounts/{accountId}",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "DELETE /managed-accounts/{accountId}",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/managed-accounts/{accountId}/managers": {
-      "post": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "POST /managed-accounts/{accountId}/managers",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/managed-accounts/{accountId}/managers/{userId}": {
-      "delete": {
-        "tags": [
-          "Users"
-        ],
-        "summary": "DELETE /managed-accounts/{accountId}/managers/{userId}",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/managedAccounts.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
     "/auth/social/google": {
       "post": {
         "tags": [
@@ -13877,7 +13800,7 @@
   "tags": [
     {
       "name": "Authentication",
-      "description": "Sign up, sign in, refresh sessions, 2FA, public-key challenge-response, and FedCM-backed cross-app sign-in. Routes under /auth/*."
+      "description": "Sign up, sign in, refresh sessions, 2FA, public-key challenge-response, device-session bootstrap, and OAuth 2.0 for third-party apps. Routes under /auth/*."
     },
     {
       "name": "Users",
@@ -13889,7 +13812,7 @@
     },
     {
       "name": "Sessions",
-      "description": "Session management: list, validate, refresh, log out one or all sessions on a device. Routes under /session/*."
+      "description": "Session management: list, validate, log out one or all sessions on a device, plus the server-authoritative device-session state (accounts, active account, revision). Routes under /session/* and /session/device/*."
     },
     {
       "name": "Devices",
@@ -13925,7 +13848,7 @@
     },
     {
       "name": "Developer",
-      "description": "Developer apps, API keys, webhook subscriptions, usage analytics, service-token registration. Routes under /developer/*."
+      "description": "Applications, credentials, webhook subscriptions, and usage analytics for the developer console. Routes under /applications/*."
     },
     {
       "name": "Payments",
@@ -13953,7 +13876,7 @@
     },
     {
       "name": "Federation",
-      "description": "ActivityPub / WebFinger inbox-outbox endpoints and FedCM identity provider routes. Routes under /fedcm/*."
+      "description": "ActivityPub / WebFinger inbox-outbox endpoints for cross-instance federation. Routes under /federation/*."
     },
     {
       "name": "AI",

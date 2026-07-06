@@ -289,7 +289,7 @@ function officialApp() {
     isInternal: false,
     scopes: ['user:read'],
     createdByUserId: { toString: () => 'staff-1' },
-    redirectUris: ['https://accounts.oxy.so/__oxy/sso-callback'],
+    redirectUris: ['https://accounts.oxy.so/oauth/callback'],
   };
 }
 
