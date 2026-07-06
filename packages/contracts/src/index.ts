@@ -209,6 +209,8 @@ export {
     deviceSessionStateSchema,
     activeTokenSchema,
     deviceSessionSyncSchema,
+    deviceTokenMintRequestSchema,
+    deviceTokenMintResponseSchema,
 } from './deviceSession';
 
 export type {
@@ -216,6 +218,8 @@ export type {
     DeviceSessionState,
     ActiveToken,
     DeviceSessionSync,
+    DeviceTokenMintRequest,
+    DeviceTokenMintResponse,
 } from './deviceSession';
 
 export {

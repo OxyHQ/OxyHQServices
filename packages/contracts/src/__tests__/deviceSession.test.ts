@@ -1,4 +1,4 @@
-import { deviceSessionStateSchema, sessionAccountSchema, deviceSessionSyncSchema, safeParseContract } from '../index';
+import { deviceSessionStateSchema, sessionAccountSchema, deviceSessionSyncSchema, deviceTokenMintRequestSchema, deviceTokenMintResponseSchema, safeParseContract } from '../index';
 
 describe('deviceSessionStateSchema', () => {
   const account = { accountId: 'a1', sessionId: 's1', authuser: 0 };
@@ -39,5 +39,44 @@ describe('deviceSessionSyncSchema', () => {
   });
   it('rejects a state-less sync', () => {
     expect(safeParseContract(deviceSessionSyncSchema, { activeToken: null })).toBeNull();
+  });
+});
+
+describe('deviceTokenMintRequestSchema', () => {
+  it('parses a valid { deviceId, deviceSecret }', () => {
+    const v = { deviceId: 'd1', deviceSecret: 'secret_abc' };
+    expect(safeParseContract(deviceTokenMintRequestSchema, v)).toEqual(v);
+  });
+
+  it('rejects a missing deviceSecret', () => {
+    expect(safeParseContract(deviceTokenMintRequestSchema, { deviceId: 'd1' })).toBeNull();
+  });
+
+  it('rejects a missing deviceId', () => {
+    expect(safeParseContract(deviceTokenMintRequestSchema, { deviceSecret: 's' })).toBeNull();
+  });
+
+  it('rejects an empty deviceId / deviceSecret', () => {
+    expect(safeParseContract(deviceTokenMintRequestSchema, { deviceId: '', deviceSecret: 's' })).toBeNull();
+    expect(safeParseContract(deviceTokenMintRequestSchema, { deviceId: 'd1', deviceSecret: '' })).toBeNull();
+  });
+});
+
+describe('deviceTokenMintResponseSchema', () => {
+  const state = { deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: 3, updatedAt: 1720000000000 };
+
+  it('parses a valid mint response', () => {
+    const v = { accessToken: 'jwt.access', expiresAt: '2026-07-07T00:00:00.000Z', nextDeviceSecret: 'next_secret', state };
+    expect(safeParseContract(deviceTokenMintResponseSchema, v)).toEqual(v);
+  });
+
+  it('rejects a response missing nextDeviceSecret', () => {
+    const v = { accessToken: 'jwt.access', expiresAt: '2026-07-07T00:00:00.000Z', state };
+    expect(safeParseContract(deviceTokenMintResponseSchema, v)).toBeNull();
+  });
+
+  it('rejects a response with an invalid nested state', () => {
+    const v = { accessToken: 'a', expiresAt: 'e', nextDeviceSecret: 'n', state: { deviceId: 'd1' } };
+    expect(safeParseContract(deviceTokenMintResponseSchema, v)).toBeNull();
   });
 });

@@ -111,6 +111,14 @@ export interface AuthTokenBundle {
     refreshToken: string;
     expiresAt: string;
     user: UserResponse;
+    /**
+     * The device secret (phase 2c — zero-cookie transport). Present ONLY when
+     * the bundle is minted for a device that carries a `DeviceSession` doc; the
+     * client persists it first-party and later mints access tokens via
+     * `POST /session/device/token`. Optional and additive: cookie-lane bundles
+     * for a device with no doc omit it, so existing consumers are unaffected.
+     */
+    deviceSecret?: string;
 }
 
 export const authTokenBundleSchema: z.ZodType<AuthTokenBundle> = z.object({
@@ -119,6 +127,7 @@ export const authTokenBundleSchema: z.ZodType<AuthTokenBundle> = z.object({
     refreshToken: z.string(),
     expiresAt: z.string(),
     user: userResponseSchema,
+    deviceSecret: z.string().optional(),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -252,6 +261,13 @@ export interface LoginSessionResult {
     expiresAt: string;
     accessToken?: string;
     refreshToken?: string;
+    /**
+     * The device secret (phase 2c — zero-cookie transport). Present ONLY when
+     * the sign-in resolved a device binding; the client persists it first-party
+     * and later mints access tokens via `POST /session/device/token`. Optional
+     * and additive — wired identically to `refreshToken`.
+     */
+    deviceSecret?: string;
     user: {
         id: string;
         username?: string;
@@ -273,6 +289,7 @@ const loginSessionResultSchema = z.object({
     expiresAt: z.string(),
     accessToken: z.string().optional(),
     refreshToken: z.string().optional(),
+    deviceSecret: z.string().optional(),
     user: z.object({
         id: z.string(),
         username: z.string().optional(),
