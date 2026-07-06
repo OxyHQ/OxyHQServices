@@ -28,6 +28,7 @@
 import { resolveUserId } from '@oxyhq/contracts';
 import { runColdBoot, type ColdBootOutcome, type ColdBootStep } from '../utils/coldBoot';
 import { isWeb as detectWeb, isNative as detectNative } from '../utils/platform';
+import { extractErrorStatus } from '../utils/errorUtils';
 import { KeyManager } from '../crypto/keyManager';
 import { logger } from '../utils/loggerUtils';
 import type { OxyServices } from '../OxyServices';
@@ -226,6 +227,29 @@ function sessionFromPersisted(state: PersistedAuthState, accessToken: string): D
 }
 
 /**
+ * How a `mintFromDeviceSecret` (phase 2c) call failed, distinguished so the cold
+ * boot can react per the transport contract:
+ *  - `invalid_secret` — the presented secret no longer matches (another tab/
+ *    device rotated it, or theft divergence). Drop it and fall back.
+ *  - `no_active_session` — the device is known but has no live session.
+ *    Authoritative signed-out; keep the secret, do not fall back to the hop.
+ *  - `transient` — network / 5xx. Keep the secret and let the fallback lanes try.
+ *
+ * The mint is bearer-less (`skipAuth`), so `HttpService` surfaces the server's
+ * 401 body string (`invalid_device_secret` | `no_active_session`) as the thrown
+ * error's `message`; any non-401 is transport/server failure.
+ */
+type MintFailure = 'invalid_secret' | 'no_active_session' | 'transient';
+
+function classifyMintFailure(error: unknown): MintFailure {
+  if (extractErrorStatus(error) === 401) {
+    const message = error instanceof Error ? error.message : '';
+    return message.includes('no_active_session') ? 'no_active_session' : 'invalid_secret';
+  }
+  return 'transient';
+}
+
+/**
  * Run the device-first cold boot. Resolves to the `runColdBoot` outcome and, as
  * a side effect, invokes `onSession` (winning session, token already planted)
  * or `onSignedOut` (no session — unless the boot is navigating away for the
@@ -243,8 +267,78 @@ export async function runSessionColdBoot(
   // they cannot leak across boots or break under bundler re-evaluation.
   let signedOutReason: SignedOutReason = 'no_session';
   let navigating = false;
+  // Set when the zero-cookie mint reports `no_active_session` (phase 2c): the
+  // device is authoritatively signed out, so the migratory fallback lanes below
+  // (stored-tokens / shared-key / bootstrap-hop) must NOT run — we already know
+  // there is no session and must not bounce a known-signed-out device.
+  let deviceKnownSignedOut = false;
 
   const steps: Array<ColdBootStep<DeviceBootSession>> = [];
+
+  // 0. device-secret-mint (phase 2c) — the zero-cookie fast path. When the
+  //    origin persisted a deviceId + deviceSecret, mint a short access token with
+  //    a single bearer-less POST (no cookie, no navigation). FIRST in the chain
+  //    so it wins over the migratory cookie lanes below. Gated OFF while a
+  //    #oxy_boot return fragment is present so `bootstrap-return` still consumes
+  //    + strips it first (a device holding a secret never triggers that hop, so
+  //    this only defers a rare stale/forged fragment). The rest of the chain
+  //    stays as the additive migratory fallback for devices not yet on the secret.
+  steps.push({
+    id: 'device-secret-mint',
+    enabled: () => !(isWeb && hashHasBootFragment(dom.getHash())),
+    run: async () => {
+      const persisted = await store.load();
+      if (!persisted?.deviceId || !persisted?.deviceSecret) {
+        return { kind: 'skip' };
+      }
+      try {
+        const mint = await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
+        // Rotation-in-use anti-loss: persist the NEXT secret (+ refreshed warm
+        // fields, + the server's authoritative active account) BEFORE planting
+        // the minted access token, so a multi-tab race that rotates again can
+        // never strand this tab with a superseded secret.
+        const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
+        const next: PersistedAuthState = {
+          ...persisted,
+          deviceId: mint.state.deviceId,
+          deviceSecret: mint.nextDeviceSecret,
+          accessToken: mint.accessToken,
+          expiresAt: mint.expiresAt,
+          ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
+        };
+        await store.save(next);
+        oxy.setTokens(mint.accessToken);
+        return {
+          kind: 'session',
+          session: { sessionId: next.sessionId, userId: next.userId, accessToken: mint.accessToken },
+        };
+      } catch (error) {
+        const failure = classifyMintFailure(error);
+        if (failure === 'invalid_secret') {
+          // Stale/diverged secret — drop it so the mint lane stops firing, then
+          // fall through to the migratory refresh/cookie lanes. Setting it
+          // undefined drops the key on the store's JSON serialization, and the
+          // mint guard treats undefined as absent.
+          await store.save({ ...persisted, deviceSecret: undefined });
+          return { kind: 'skip' };
+        }
+        if (failure === 'no_active_session') {
+          // Device known, no live session — authoritative signed-out. KEEP the
+          // secret and stop the chain (do not bounce a known-signed-out device).
+          deviceKnownSignedOut = true;
+          signedOutReason = 'no_session';
+          return { kind: 'skip' };
+        }
+        // Transient (network / 5xx): keep the secret, let the fallback lanes try.
+        logger.debug(
+          'device-secret mint failed (transient) — keeping secret, falling back',
+          { component: 'coldBootV2', method: 'device-secret-mint' },
+          error,
+        );
+        return { kind: 'skip' };
+      }
+    },
+  });
 
   // 1. bootstrap-return (web) — consume a #oxy_boot fragment.
   steps.push({
@@ -279,6 +373,7 @@ export async function runSessionColdBoot(
   // 2. stored-tokens — warm-plant or rotate the persisted refresh family.
   steps.push({
     id: 'stored-tokens',
+    enabled: () => !deviceKnownSignedOut,
     run: async () => {
       const persisted = await store.load();
       if (!persisted) {
@@ -308,7 +403,7 @@ export async function runSessionColdBoot(
   // 3. shared-key-signin (native) — re-mint from the shared identity.
   steps.push({
     id: 'shared-key-signin',
-    enabled: () => isNative,
+    enabled: () => isNative && !deviceKnownSignedOut,
     run: async () => {
       const session = await oxy.signInWithSharedIdentity();
       if (!session?.accessToken) {
@@ -345,7 +440,7 @@ export async function runSessionColdBoot(
   // 4. bootstrap-hop (web, terminal) — same-apex inline fetch OR cross-apex nav.
   steps.push({
     id: 'bootstrap-hop',
-    enabled: () => isWeb,
+    enabled: () => isWeb && !deviceKnownSignedOut,
     run: async () => {
       const pageHost = dom.getLocationHostname();
       let apiHost: string | null = null;
@@ -378,6 +473,17 @@ export async function runSessionColdBoot(
             accessToken: bundle.accessToken,
             expiresAt: bundle.expiresAt,
           };
+          // Phase 2c: the web-session bundle may carry a rotating `deviceSecret`
+          // but NOT a deviceId. Persist the secret and carry any prior deviceId
+          // (from a deviceId-bearing login lane) forward so the mint lane stays
+          // usable — this overwrite must not orphan it.
+          const prior = await store.load();
+          if (prior?.deviceId) {
+            next.deviceId = prior.deviceId;
+          }
+          if (bundle.deviceSecret) {
+            next.deviceSecret = bundle.deviceSecret;
+          }
           await store.save(next);
           oxy.setTokens(bundle.accessToken);
           return { kind: 'session', session: sessionFromPersisted(next, bundle.accessToken) };

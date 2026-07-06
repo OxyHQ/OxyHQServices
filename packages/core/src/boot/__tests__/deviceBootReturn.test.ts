@@ -119,6 +119,21 @@ describe('consumeDeviceBootReturn', () => {
     expect(await store.loadDeviceToken()).toBe(DEVICE_TOKEN);
   });
 
+  it('captures the bundle deviceSecret (phase 2c) and preserves a prior deviceId', async () => {
+    const { deps, store } = makeDeps(encodeHash(fragmentObject()), {
+      exchangeBootCode: async () => ({ ...BUNDLE, deviceSecret: 'ds-from-exchange' }),
+    });
+    // A prior deviceId-bearing login persisted a deviceId; the bundle carries no
+    // deviceId, so the overwrite must preserve it to keep the mint lane usable.
+    await store.save({ sessionId: 'prev', refreshToken: 'r-prevabcdefghij', userId: 'user-1', deviceId: 'dev-prev' });
+
+    await consumeDeviceBootReturn(deps);
+
+    const persisted = await store.load();
+    expect(persisted?.deviceSecret).toBe('ds-from-exchange');
+    expect(persisted?.deviceId).toBe('dev-prev');
+  });
+
   it('rejects a state mismatch without persisting or exchanging', async () => {
     const { deps, calls, store } = makeDeps(encodeHash(fragmentObject()), { expectedState: 'WRONG' });
     expect(await consumeDeviceBootReturn(deps)).toEqual({ kind: 'state-mismatch' });

@@ -178,6 +178,17 @@ export async function consumeDeviceBootReturn(
         accessToken: bundle.accessToken,
         expiresAt: bundle.expiresAt,
       };
+      // Phase 2c: the cookie-bootstrap bundle may carry a rotating `deviceSecret`
+      // but NOT a deviceId. Persist the secret, and carry any prior deviceId
+      // forward (from a deviceId-bearing login lane) so the pair stays usable by
+      // the zero-cookie mint — an overwrite here must not orphan the mint lane.
+      const prior = await deps.store.load();
+      if (prior?.deviceId) {
+        next.deviceId = prior.deviceId;
+      }
+      if (bundle.deviceSecret) {
+        next.deviceSecret = bundle.deviceSecret;
+      }
       await deps.store.save(next);
       deps.plantAccessToken(bundle.accessToken);
       return {

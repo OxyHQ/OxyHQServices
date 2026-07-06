@@ -39,6 +39,26 @@ export interface PersistedAuthState {
   refreshToken: string;
   userId: string;
   deviceToken?: string;
+  /**
+   * The stable device identifier this session is bound to (phase 2c —
+   * zero-cookie transport). Persisted alongside {@link deviceSecret} because the
+   * `POST /session/device/token` mint presents BOTH — the secret is the proof,
+   * the deviceId selects the device doc. Sourced from the lanes that carry it
+   * (password login / 2FA / QR claim / challenge verify); the cookie-bootstrap
+   * lanes (`AuthTokenBundle`) omit it and preserve any prior value. Additive: a
+   * blob without it simply never takes the mint lane and falls back to the
+   * refresh family.
+   */
+  deviceId?: string;
+  /**
+   * The rotating device secret (phase 2c — zero-cookie transport). Possession of
+   * it mints a short access token for the device's active account via
+   * `POST /session/device/token`, replacing the cookie lane. Rotated in-use: the
+   * mint returns `nextDeviceSecret`, which the cold boot persists BEFORE planting
+   * the minted access token (multi-tab anti-loss). Additive and optional — same
+   * XSS risk profile as the already-persisted `refreshToken`.
+   */
+  deviceSecret?: string;
   /** Optional warm-boot access token (short-lived; see interface docs). */
   accessToken?: string;
   /** Optional warm-boot access-token expiry, ISO-8601. */
@@ -129,6 +149,12 @@ function deserialize(raw: string | null): PersistedAuthState | null {
   };
   if (typeof candidate.deviceToken === 'string' && candidate.deviceToken.length > 0) {
     state.deviceToken = candidate.deviceToken;
+  }
+  if (typeof candidate.deviceId === 'string' && candidate.deviceId.length > 0) {
+    state.deviceId = candidate.deviceId;
+  }
+  if (typeof candidate.deviceSecret === 'string' && candidate.deviceSecret.length > 0) {
+    state.deviceSecret = candidate.deviceSecret;
   }
   if (typeof candidate.accessToken === 'string' && candidate.accessToken.length > 0) {
     state.accessToken = candidate.accessToken;

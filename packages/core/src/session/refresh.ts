@@ -134,6 +134,15 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
       if (persisted.deviceToken) {
         next.deviceToken = persisted.deviceToken;
       }
+      // The refresh response carries no device credentials — carry the persisted
+      // deviceId/deviceSecret (phase 2c) forward so a rotation never drops the
+      // zero-cookie mint lane (mirrors the deviceToken preservation above).
+      if (persisted.deviceId) {
+        next.deviceId = persisted.deviceId;
+      }
+      if (persisted.deviceSecret) {
+        next.deviceSecret = persisted.deviceSecret;
+      }
       await store.save(next);
       return rotated.accessToken;
     } catch (error) {

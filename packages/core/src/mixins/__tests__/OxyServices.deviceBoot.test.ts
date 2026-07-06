@@ -3,7 +3,12 @@
  * and asserts each method's route/shape, contract validation, and the
  * `skipAuth` flag on the refresh call.
  */
-import type { AuthTokenBundle, TokenRefreshResponse, WebSessionResult } from '@oxyhq/contracts';
+import type {
+  AuthTokenBundle,
+  DeviceTokenMintResponse,
+  TokenRefreshResponse,
+  WebSessionResult,
+} from '@oxyhq/contracts';
 import { OxyServices } from '../../OxyServices';
 
 const BUNDLE: AuthTokenBundle = {
@@ -93,6 +98,44 @@ describe('OxyServices.deviceBoot', () => {
       makeRequest.mockResolvedValueOnce({ deviceToken: 'native-dt' });
       expect(await oxy.issueNativeDeviceToken()).toBe('native-dt');
       expect(makeRequest).toHaveBeenCalledWith('POST', '/auth/device/token', undefined, { cache: false });
+    });
+  });
+
+  describe('mintFromDeviceSecret', () => {
+    const MINT: DeviceTokenMintResponse = {
+      accessToken: 'access-minted',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      nextDeviceSecret: 'ds-next-secret',
+      state: {
+        deviceId: 'dev-1',
+        accounts: [{ accountId: 'user-1', sessionId: 'sess-1', authuser: 0 }],
+        activeAccountId: 'user-1',
+        revision: 3,
+        updatedAt: 1_700_000_000_000,
+      },
+    };
+
+    it('POSTs deviceId + deviceSecret with skipAuth and returns the validated mint', async () => {
+      makeRequest.mockResolvedValueOnce(MINT);
+      const result = await oxy.mintFromDeviceSecret('dev-1', 'ds-current-secret');
+      expect(result).toEqual(MINT);
+      expect(makeRequest).toHaveBeenCalledWith(
+        'POST',
+        '/session/device/token',
+        { deviceId: 'dev-1', deviceSecret: 'ds-current-secret' },
+        { cache: false, skipAuth: true },
+      );
+    });
+
+    it('throws on an unexpected response shape', async () => {
+      makeRequest.mockResolvedValueOnce({ accessToken: 'a', expiresAt: 'b' });
+      await expect(oxy.mintFromDeviceSecret('dev-1', 'ds')).rejects.toThrow();
+    });
+
+    it('propagates a rejected request (e.g. 401 invalid_device_secret)', async () => {
+      const err = Object.assign(new Error('invalid_device_secret'), { status: 401 });
+      makeRequest.mockRejectedValueOnce(err);
+      await expect(oxy.mintFromDeviceSecret('dev-1', 'ds')).rejects.toThrow('invalid_device_secret');
     });
   });
 

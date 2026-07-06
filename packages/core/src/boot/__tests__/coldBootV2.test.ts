@@ -1,5 +1,10 @@
 import type { OxyServices } from '../../OxyServices';
-import type { AuthTokenBundle, TokenRefreshResponse, WebSessionResult } from '@oxyhq/contracts';
+import type {
+  AuthTokenBundle,
+  DeviceTokenMintResponse,
+  TokenRefreshResponse,
+  WebSessionResult,
+} from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../../models/session';
 import {
   runSessionColdBoot,
@@ -34,6 +39,7 @@ interface OxyOverrides {
   signInWithSharedIdentity?: OxyServices['signInWithSharedIdentity'];
   issueNativeDeviceToken?: OxyServices['issueNativeDeviceToken'];
   requestWebSession?: OxyServices['requestWebSession'];
+  mintFromDeviceSecret?: OxyServices['mintFromDeviceSecret'];
 }
 
 function makeOxy(overrides: OxyOverrides = {}): { oxy: OxyServices; setTokens: jest.Mock } {
@@ -48,10 +54,35 @@ function makeOxy(overrides: OxyOverrides = {}): { oxy: OxyServices; setTokens: j
     requestWebSession:
       overrides.requestWebSession
       ?? (async () => ({ reason: 'no_session', deviceToken: 'dt-web' }) as WebSessionResult),
+    // Default: no persisted secret in these fixtures, so the mint step skips
+    // before ever calling this. Tests that exercise the mint pass an override.
+    mintFromDeviceSecret:
+      overrides.mintFromDeviceSecret
+      ?? (async () => {
+        throw new Error('mintFromDeviceSecret not stubbed');
+      }),
     buildBootstrapUrl: (returnTo: string, state: string) =>
       `https://api.oxy.so/auth/device/bootstrap?return_to=${encodeURIComponent(returnTo)}&state=${state}`,
   } as unknown as OxyServices;
   return { oxy, setTokens };
+}
+
+const MINT: DeviceTokenMintResponse = {
+  accessToken: 'access-minted',
+  expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+  nextDeviceSecret: 'ds-next-secret',
+  state: {
+    deviceId: 'dev-mint',
+    accounts: [{ accountId: 'user-mint', sessionId: 'sess-mint', authuser: 0 }],
+    activeAccountId: 'user-mint',
+    revision: 2,
+    updatedAt: 1_700_000_000_000,
+  },
+};
+
+/** A 401 error shaped like `HttpService`/`handleError` output for the given body. */
+function mint401(body: string): Error & { status: number } {
+  return Object.assign(new Error(body), { status: 401 });
 }
 
 interface DomHandle {
@@ -180,6 +211,144 @@ describe('runSessionColdBoot — step ordering', () => {
     expect(domHandle.strip).toHaveBeenCalled();
     expect(setTokens).toHaveBeenCalledWith('access-boot');
     expect(onSession).toHaveBeenCalledWith(expect.objectContaining({ via: 'bootstrap-return' }));
+  });
+});
+
+describe('runSessionColdBoot — device-secret-mint (phase 2c)', () => {
+  function makeCredStore(extra: Partial<import('../../session/authStateStore').PersistedAuthState> = {}) {
+    const store = createMemoryAuthStateStore();
+    return { store, seed: async () => {
+      await store.save({
+        sessionId: 'sess-old',
+        refreshToken: 'r-abcdefghij',
+        userId: 'user-old',
+        deviceId: 'dev-mint',
+        deviceSecret: 'ds-secret-orig',
+        ...extra,
+      });
+    } };
+  }
+
+  it('wins FIRST via the mint, persisting nextDeviceSecret BEFORE planting the token', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+    const saveSpy = jest.spyOn(store, 'save');
+    const onSession = jest.fn();
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: makeDom().dom, onSession });
+
+    expect(outcome).toEqual({ kind: 'session', via: 'device-secret-mint', session: expect.any(Object) });
+    expect(mintFromDeviceSecret).toHaveBeenCalledWith('dev-mint', 'ds-secret-orig');
+    expect(setTokens).toHaveBeenCalledWith('access-minted');
+    // Session identity comes from the mint's authoritative active account.
+    expect(onSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'sess-mint', userId: 'user-mint', via: 'device-secret-mint' }),
+    );
+    // Rotation-in-use anti-loss: the store held the NEXT secret before the plant.
+    const lastSaveOrder = Math.max(...saveSpy.mock.invocationCallOrder);
+    const firstPlantOrder = Math.min(...setTokens.mock.invocationCallOrder);
+    expect(lastSaveOrder).toBeLessThan(firstPlantOrder);
+    expect(await store.load()).toMatchObject({
+      deviceSecret: 'ds-next-secret',
+      sessionId: 'sess-mint',
+      userId: 'user-mint',
+      accessToken: 'access-minted',
+    });
+  });
+
+  it('skips (no mint) when only one of deviceId / deviceSecret is persisted', async () => {
+    const store = createMemoryAuthStateStore();
+    await store.save({ sessionId: 's', refreshToken: 'r-abcdefghij', userId: 'u', deviceSecret: 'ds-only' });
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: makeDom().dom });
+
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+    // Falls through to the migratory refresh family.
+    expect(outcome).toEqual({ kind: 'session', via: 'stored-tokens', session: expect.any(Object) });
+  });
+
+  it('401 invalid_device_secret → drops the secret (keeps deviceId) and falls through', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => {
+      throw mint401('invalid_device_secret');
+    });
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: makeDom().dom });
+
+    expect(mintFromDeviceSecret).toHaveBeenCalled();
+    // The migratory refresh lane recovers the session.
+    expect(outcome.kind).toBe('session');
+    expect(outcome).toMatchObject({ via: 'stored-tokens' });
+    const persisted = await store.load();
+    expect(persisted?.deviceSecret).toBeUndefined();
+    expect(persisted?.deviceId).toBe('dev-mint');
+  });
+
+  it('401 no_active_session → keeps the secret, signed out, NEVER falls to the hop', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => {
+      throw mint401('no_active_session');
+    });
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+    const refreshWithToken = jest.spyOn(oxy, 'refreshWithToken');
+    const requestWebSession = jest.spyOn(oxy, 'requestWebSession');
+    const domHandle = makeDom();
+    const onSignedOut = jest.fn();
+
+    const outcome = await runSessionColdBoot({
+      oxy, store, platform: WEB, dom: domHandle.dom, onSignedOut,
+    });
+
+    expect(outcome).toEqual({ kind: 'unauthenticated' });
+    expect(onSignedOut).toHaveBeenCalledWith('no_session');
+    // The known-signed-out device is not bounced and no fallback lane runs.
+    expect(refreshWithToken).not.toHaveBeenCalled();
+    expect(requestWebSession).not.toHaveBeenCalled();
+    expect(domHandle.navigate).not.toHaveBeenCalled();
+    // The secret is retained — the device may sign in again.
+    expect((await store.load())?.deviceSecret).toBe('ds-secret-orig');
+  });
+
+  it('transient (non-401) mint error → keeps the secret and falls through', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => {
+      throw new Error('network down');
+    });
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: makeDom().dom });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'stored-tokens' });
+    // The secret survives a transient failure (rotation preserved through refresh).
+    expect((await store.load())?.deviceSecret).toBe('ds-secret-orig');
+  });
+
+  it('is gated OFF while a #oxy_boot return fragment is present (bootstrap-return wins)', async () => {
+    const { store, seed } = makeCredStore();
+    await seed();
+    const frag = { v: 1, state: 'state-match', reason: 'session', code: 'c'.repeat(24), deviceToken: 'd'.repeat(24) };
+    const b64 = Buffer.from(JSON.stringify(frag), 'utf-8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    const domHandle = makeDom({ hash: `#oxy_boot=${b64}`, sessionState: 'state-match' });
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, dom: domHandle.dom });
+
+    expect(outcome).toMatchObject({ via: 'bootstrap-return' });
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(domHandle.strip).toHaveBeenCalled();
   });
 });
 

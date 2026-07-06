@@ -53,6 +53,20 @@ describe('refreshPersistedSession — arm 1 (refresh-token rotation)', () => {
     });
   });
 
+  it('carries the persisted deviceId + deviceSecret (phase 2c) forward across a rotation', async () => {
+    const store = createMemoryAuthStateStore();
+    await store.save({ ...STORED, deviceId: 'dev-mint', deviceSecret: 'ds-secret-orig' });
+    const { oxy } = makeOxy();
+
+    await refreshPersistedSession({ oxy, store, allowSharedKeyFallback: false });
+
+    const persisted = await store.load();
+    expect(persisted?.deviceId).toBe('dev-mint');
+    expect(persisted?.deviceSecret).toBe('ds-secret-orig');
+    // The refresh family head still rotated.
+    expect(persisted?.refreshToken).toBe('refresh-new-abcdefghij');
+  });
+
   it('clears the store on a family-revoked (401) error', async () => {
     const store = createMemoryAuthStateStore();
     await store.save(STORED);

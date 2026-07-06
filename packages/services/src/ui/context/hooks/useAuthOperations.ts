@@ -147,11 +147,18 @@ export const useAuthOperations = ({
       if (refreshToken) {
         try {
           const deviceToken = (await store.loadDeviceToken()) ?? undefined;
+          // Phase 2c: mirror the refreshToken handling for the rotating
+          // deviceSecret — persist it with the response's deviceId so the next
+          // cold boot restores via the zero-cookie mint. `SessionLoginResponse`
+          // types neither; read the secret defensively from the runtime payload.
+          const deviceSecret = (sessionResponse as { deviceSecret?: string }).deviceSecret;
           await store.save({
             sessionId: sessionResponse.sessionId,
             refreshToken,
             userId: sessionResponse.user.id,
             ...(deviceToken ? { deviceToken } : {}),
+            ...(sessionResponse.deviceId ? { deviceId: sessionResponse.deviceId } : {}),
+            ...(deviceSecret ? { deviceSecret } : {}),
             ...(sessionResponse.accessToken ? { accessToken: sessionResponse.accessToken } : {}),
             ...(sessionResponse.expiresAt ? { expiresAt: sessionResponse.expiresAt } : {}),
           });

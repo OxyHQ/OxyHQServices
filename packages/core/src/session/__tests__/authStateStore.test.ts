@@ -65,6 +65,33 @@ describe('createWebAuthStateStore', () => {
     expect(await store.load()).toEqual(SAMPLE);
   });
 
+  it('round-trips the optional phase-2c deviceId + deviceSecret', async () => {
+    installLocalStorage(makeFakeStorage());
+    const store = createWebAuthStateStore();
+    const withCreds: PersistedAuthState = { ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' };
+
+    await store.save(withCreds);
+    const loaded = await store.load();
+    expect(loaded?.deviceId).toBe('dev-abc');
+    expect(loaded?.deviceSecret).toBe('ds-secret-xyz');
+    expect(loaded).toEqual(withCreds);
+  });
+
+  it('deserializes a legacy blob with no device credentials (additive — fields absent)', async () => {
+    const storage = makeFakeStorage();
+    installLocalStorage(storage);
+    const store = createWebAuthStateStore();
+
+    storage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({ sessionId: 's-1', refreshToken: 'r-abcdefghijklmnop', userId: 'u-1' }),
+    );
+    const loaded = await store.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded && 'deviceId' in loaded).toBe(false);
+    expect(loaded && 'deviceSecret' in loaded).toBe(false);
+  });
+
   it('clear() wipes the session but the deviceToken survives', async () => {
     installLocalStorage(makeFakeStorage());
     const store = createWebAuthStateStore();
