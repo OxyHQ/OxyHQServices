@@ -748,7 +748,6 @@ export function createAccountDialogController(
 // Local helpers
 // ---------------------------------------------------------------------------
 
-/**
 /** Current document URL on web; empty string where `location` is absent (native/SSR). */
 function currentLocationHref(): string {
   const location = (globalThis as { location?: { href?: string } }).location;
