@@ -18,6 +18,7 @@ import { validate } from '../middleware/validate';
 import { googleSignInSchema, appleSignInSchema, githubSignInSchema } from '../schemas/socialAuth.schemas';
 import { logger } from '../utils/logger';
 import sessionService from '../services/session.service';
+import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { buildSessionAuthResponse } from '../controllers/session.controller';
 import securityActivityService from '../services/securityActivityService';
 import socialAuthService from '../services/socialAuth.service';
@@ -124,9 +125,22 @@ async function handleSocialSignIn(
   });
 
   // 5. Build response (same shape as password sign-in)
-  const response = buildSessionAuthResponse(session, user);
-  if (!response) {
+  const baseResponse = buildSessionAuthResponse(session, user);
+  if (!baseResponse) {
     throw new Error('Failed to format user data');
+  }
+  const response: typeof baseResponse & { deviceSecret?: string } = baseResponse;
+
+  // Device-first lane (parity with password sign-in / signup): register the
+  // session into the device set (add-only) + broadcast, and mint the
+  // deviceSecret the client persists first-party so the session restores on
+  // reload via `POST /session/device/token`. Best-effort.
+  const deviceExtras = await finalizeDeviceLogin({
+    session,
+    userId: user._id.toString(),
+  });
+  if (deviceExtras.deviceSecret) {
+    response.deviceSecret = deviceExtras.deviceSecret;
   }
 
   // 6. Log security event (non-blocking)
