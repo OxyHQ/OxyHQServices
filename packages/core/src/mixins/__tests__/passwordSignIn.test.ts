@@ -59,6 +59,23 @@ describe('passwordSignIn', () => {
     );
   });
 
+  it('preserves the securityAlert on the session arm (contract parse must not strip it)', async () => {
+    const withAlert: LoginResult = {
+      ...SESSION_ARM,
+      securityAlert: {
+        message: 'Unusual activity detected on your account',
+        anomalies: [{ type: 'new_device', reason: 'first seen', details: 'Chrome / macOS' }],
+      },
+    };
+    makeRequest.mockResolvedValueOnce(withAlert);
+    const result = await oxy.passwordSignIn('alice', 'pw');
+    expect('twoFactorRequired' in result).toBe(false);
+    if (!('twoFactorRequired' in result)) {
+      expect(result.securityAlert?.message).toBe('Unusual activity detected on your account');
+      expect(result.securityAlert?.anomalies[0]?.type).toBe('new_device');
+    }
+  });
+
   it('throws on an unexpected response shape', async () => {
     makeRequest.mockResolvedValueOnce({ nope: true });
     await expect(oxy.passwordSignIn('alice', 'pw')).rejects.toThrow();

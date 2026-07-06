@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, QrCode } from "lucide-react"
+import { ArrowLeft, QrCode, ShieldAlert } from "lucide-react"
 import type { SwitchableAccount } from "@oxyhq/core"
+import type { SecurityAlert } from "@oxyhq/contracts"
 import { useOxy, useSwitchableAccounts } from "@oxyhq/services"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { getAvatarUrl } from "@/lib/oxy-api-client"
@@ -38,7 +39,7 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     loginHint?: string
 }
 
-type LoginStep = "identifier" | "password" | "2fa"
+type LoginStep = "identifier" | "password" | "2fa" | "security-alert"
 
 type LookupResult = {
     username: string
@@ -114,6 +115,10 @@ export function LoginForm({
     const [otpValue, setOtpValue] = useState("")
     const [useBackupCode, setUseBackupCode] = useState(false)
     const [backupCode, setBackupCode] = useState("")
+    // The server-flagged "New sign-in detected" alert (new device / location),
+    // shown as an interstitial after a committed sign-in before continuing to
+    // the OAuth authorize step. Null when the sign-in was unremarkable.
+    const [securityAlert, setSecurityAlert] = useState<SecurityAlert | null>(null)
 
     const passwordRef = useRef<HTMLInputElement>(null)
     const identifierRef = useRef<HTMLInputElement>(null)
@@ -254,6 +259,22 @@ export function LoginForm({
         }))
     }
 
+    /**
+     * A device-first sign-in (password or 2FA) has already committed the session.
+     * If the server flagged it as anomalous, show the "New sign-in detected"
+     * acknowledgement first; otherwise continue straight to the OAuth authorize
+     * step. Covers BOTH the one-step and 2FA paths.
+     */
+    function proceedAfterSignIn(alert?: SecurityAlert) {
+        if (alert) {
+            setSecurityAlert(alert)
+            setIsSubmitting(false)
+            goToStep("security-alert", "forward")
+            return
+        }
+        redirectAfterLogin()
+    }
+
     /** Map a thrown sign-in error onto the inline error UI (rate-limit aware). */
     function handleSignInError(err: unknown, fallback: string) {
         const status = errorStatus(err)
@@ -293,7 +314,7 @@ export function LoginForm({
                 return
             }
 
-            redirectAfterLogin()
+            proceedAfterSignIn(result.securityAlert)
         } catch (err) {
             handleSignInError(err, "Unable to sign in")
             setIsSubmitting(false)
@@ -306,12 +327,12 @@ export function LoginForm({
         setIsSubmitting(true)
 
         try {
-            await completeTwoFactorSignIn({
+            const { securityAlert: alert } = await completeTwoFactorSignIn({
                 loginToken,
                 token: useBackupCode ? undefined : otpValue,
                 backupCode: useBackupCode ? backupCode.trim() : undefined,
             })
-            redirectAfterLogin()
+            proceedAfterSignIn(alert)
         } catch (err) {
             const status = errorStatus(err)
             if (status === 429) {
@@ -374,7 +395,11 @@ export function LoginForm({
 
     if (isLoading) return <LoadingSpinner className={className} />
 
-    if (accounts.length > 0 && currentSessionId && !showLoginForm) {
+    // The chooser is the INITIAL front screen (returning device). Gate it on the
+    // identifier step so the reactive `useSwitchableAccounts` update that fires
+    // once a sign-in commits (the just-created account appears on the device)
+    // cannot re-mask a later step — notably the "New sign-in detected" alert.
+    if (step === "identifier" && accounts.length > 0 && currentSessionId && !showLoginForm) {
         return (
             <AccountChooser
                 className={className}
@@ -530,6 +555,31 @@ export function LoginForm({
                         </div>
                     </FieldGroup>
                 </form>
+            )}
+
+            {/* Step 4: Security alert (new device, unusual location, etc.). The
+                session is ALREADY committed device-first — this is an
+                acknowledgement interstitial before continuing to OAuth authorize. */}
+            {step === "security-alert" && (
+                <div key="security-alert" className={animationClass}>
+                    <FieldGroup>
+                        <div className="flex flex-col items-center gap-4 text-center">
+                            <div className="size-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                <ShieldAlert className="size-8 text-amber-600 dark:text-amber-400" />
+                            </div>
+                            <h1 className="text-3xl font-extrabold tracking-tight">New sign-in detected</h1>
+                            <p className="text-base text-muted-foreground">{securityAlert?.message}</p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setSecurityAlert(null); goToStep("identifier", "back") }}>
+                                That wasn&apos;t me
+                            </Button>
+                            <Button size="lg" className="flex-1" onClick={() => redirectAfterLogin()}>
+                                Yes, it was me
+                            </Button>
+                        </div>
+                    </FieldGroup>
+                </div>
             )}
 
         </AuthFormLayout>

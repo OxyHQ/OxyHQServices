@@ -60,6 +60,35 @@ describe('loginResultSchema (union discrimination)', () => {
         expect(parsed && 'deviceSecret' in parsed && parsed.deviceSecret).toBe('ds_first_secret');
     });
 
+    it('preserves the securityAlert on the session arm (New sign-in detected)', () => {
+        const session: LoginResult = {
+            sessionId: 's1',
+            deviceId: 'd1',
+            expiresAt: '2026-07-07T00:00:00.000Z',
+            accessToken: 'jwt.access',
+            securityAlert: {
+                message: 'Unusual activity detected on your account',
+                anomalies: [{ type: 'new_device', reason: 'first seen', details: 'Chrome / macOS' }],
+            },
+            user: { id: 'u1', username: 'nate' },
+        };
+        const parsed = safeParseContract(loginResultSchema, session);
+        expect(parsed && 'securityAlert' in parsed && parsed.securityAlert?.message).toBe(
+            'Unusual activity detected on your account',
+        );
+        expect(parsed && 'securityAlert' in parsed && parsed.securityAlert?.anomalies[0]?.type).toBe('new_device');
+    });
+
+    it('parses the session arm without a securityAlert (the common case)', () => {
+        const parsed = safeParseContract(loginResultSchema, {
+            sessionId: 's1',
+            deviceId: 'd1',
+            expiresAt: 'e',
+            user: { id: 'u1' },
+        });
+        expect(parsed && 'securityAlert' in parsed ? parsed.securityAlert : undefined).toBeUndefined();
+    });
+
     it('rejects a 2FA arm with twoFactorRequired: false', () => {
         expect(
             safeParseContract(loginResultSchema, { twoFactorRequired: false, loginToken: 'x' }),

@@ -231,4 +231,6 @@ export type {
     LoginTwoFactorRequired,
     LoginSessionResult,
     LoginResult,
+    SecurityAlert,
+    SecurityAlertAnomaly,
 } from './deviceBoot';

@@ -21,7 +21,7 @@ mock.module("@oxyhq/services", () => ({
         openAccountDialog,
         oxyServices: { lookupUsername: async () => ({ username: "", name: {}, avatar: null, color: null }) },
         signInWithPassword: async () => ({ status: "ok" as const }),
-        completeTwoFactorSignIn: async () => undefined,
+        completeTwoFactorSignIn: async () => ({}),
         switchToAccount: async () => undefined,
     }),
     useSwitchableAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),

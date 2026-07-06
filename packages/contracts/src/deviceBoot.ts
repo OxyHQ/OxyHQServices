@@ -28,6 +28,24 @@ import { z } from 'zod';
 /*  First-party password login result (2FA arm | session arm)                 */
 /* -------------------------------------------------------------------------- */
 
+/** One anomalous signal the server flagged on a sign-in (new device, location, …). */
+export interface SecurityAlertAnomaly {
+    type: string;
+    reason: string;
+    details?: string;
+}
+
+/**
+ * The "New sign-in detected" payload the API attaches to a successful
+ * `POST /auth/login` when anomaly detection fires (`session.controller.ts`).
+ * The IdP renders `message` and gates the flow on user acknowledgement before
+ * continuing to the OAuth authorize step.
+ */
+export interface SecurityAlert {
+    message: string;
+    anomalies: SecurityAlertAnomaly[];
+}
+
 /**
  * `POST /auth/login` when the account has 2FA enabled: a short-lived login
  * token to be presented at the 2FA challenge, and no session yet.
@@ -55,6 +73,13 @@ export interface LoginSessionResult {
      * a best-effort mint can fail — it is the sole restore credential.
      */
     deviceSecret?: string;
+    /**
+     * Present only when the server's anomaly detection flagged this sign-in.
+     * The IdP shows a "New sign-in detected" acknowledgement before proceeding.
+     * The session is already established regardless — this is an interstitial,
+     * not a gate on the credential check.
+     */
+    securityAlert?: SecurityAlert;
     user: {
         id: string;
         username?: string;
@@ -70,12 +95,24 @@ const loginTwoFactorRequiredSchema = z.object({
     loginToken: z.string(),
 });
 
+const securityAlertSchema: z.ZodType<SecurityAlert> = z.object({
+    message: z.string(),
+    anomalies: z.array(
+        z.object({
+            type: z.string(),
+            reason: z.string(),
+            details: z.string().optional(),
+        }),
+    ),
+});
+
 const loginSessionResultSchema = z.object({
     sessionId: z.string(),
     deviceId: z.string(),
     expiresAt: z.string(),
     accessToken: z.string().optional(),
     deviceSecret: z.string().optional(),
+    securityAlert: securityAlertSchema.optional(),
     user: z.object({
         id: z.string(),
         username: z.string().optional(),

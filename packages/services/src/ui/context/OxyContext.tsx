@@ -31,6 +31,7 @@ import {
   createAccountDialogController,
   logger as loggerUtil,
 } from '@oxyhq/core';
+import type { SecurityAlert } from '@oxyhq/contracts';
 import {
   registerAccountDialogControls,
   notifyAccountDialogVisibility,
@@ -113,14 +114,16 @@ export interface OxyContextState {
   /**
    * Complete a 2FA-gated password sign-in started by {@link signInWithPassword}.
    * Presents the short-lived `loginToken` with a TOTP `token` or a `backupCode`;
-   * on success the session is committed exactly like a one-step sign-in.
+   * on success the session is committed exactly like a one-step sign-in. Returns
+   * any `securityAlert` the server attached so the caller can show the same
+   * "New sign-in detected" acknowledgement as the one-step path.
    */
   completeTwoFactorSignIn: (params: {
     loginToken: string;
     token?: string;
     backupCode?: string;
     deviceName?: string;
-  }) => Promise<void>;
+  }) => Promise<{ securityAlert?: SecurityAlert }>;
 
   /**
    * Commit a session obtained out-of-band (the "Sign in with Oxy" QR device
@@ -213,13 +216,16 @@ const OxyContext = createContext<OxyContextState | null>(null);
  *
  * `'ok'` — the password was accepted and the session committed (so
  * `isAuthenticated` / `user` are updated and the device credential persisted).
+ * `securityAlert` is present when the server flagged this sign-in as anomalous
+ * (new device / location) — the caller shows a "New sign-in detected"
+ * acknowledgement before proceeding; the session is already committed.
  *
  * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
  * created. Complete the challenge with the returned short-lived `loginToken`
  * via {@link OxyContextState.completeTwoFactorSignIn}.
  */
 export type PasswordSignInResult =
-  | { status: 'ok' }
+  | { status: 'ok'; securityAlert?: SecurityAlert }
   | { status: '2fa_required'; loginToken: string };
 
 export interface OxyContextProviderProps {
@@ -935,7 +941,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
         { activate: true },
       );
-      return { status: 'ok' };
+      return { status: 'ok', ...(result.securityAlert ? { securityAlert: result.securityAlert } : {}) };
     },
     [oxyServices, commitSession],
   );
@@ -946,7 +952,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       token?: string;
       backupCode?: string;
       deviceName?: string;
-    }): Promise<void> => {
+    }): Promise<{ securityAlert?: SecurityAlert }> => {
       const result = await oxyServices.completeTwoFactorSignIn({
         loginToken: params.loginToken,
         token: params.token,
@@ -965,6 +971,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
         { activate: true },
       );
+      return { securityAlert: result.securityAlert };
     },
     [oxyServices, commitSession],
   );
@@ -1329,7 +1336,7 @@ const LOADING_STATE: OxyContextState = {
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),
   signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
-  completeTwoFactorSignIn: () => rejectMissingProvider<void>(),
+  completeTwoFactorSignIn: () => rejectMissingProvider<{ securityAlert?: SecurityAlert }>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),
