@@ -234,10 +234,9 @@ describe('runColdBoot', () => {
     });
 
     /**
-     * Reproduces the production hang: a step whose `run()` promise NEVER
-     * settles (the FedCM-silent `navigator.credentials.get` that ignored its
-     * abort signal). WITHOUT a deadline the whole `runColdBoot` promise hangs
-     * forever and the terminal step never runs.
+     * A step whose `run()` promise NEVER settles (e.g. an async call that
+     * ignores its abort signal). WITHOUT a deadline the whole `runColdBoot`
+     * promise hangs forever and the terminal step never runs.
      */
     it('hangs forever when a step never settles and no deadline is set', async () => {
       const terminalRan = jest.fn();
@@ -247,7 +246,7 @@ describe('runColdBoot', () => {
         steps: [
           {
             id: 'never-settles',
-            // Never resolves or rejects — models the hung FedCM credential get.
+            // Never resolves or rejects — models a hung async call.
             run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
           },
           {
@@ -275,9 +274,8 @@ describe('runColdBoot', () => {
 
     /**
      * With `overallDeadlineMs` set, the non-settling step is abandoned at the
-     * deadline, the runner CONTINUES to the terminal step (so the cross-domain
-     * `/sso` bounce equivalent still fires), and the whole boot settles to
-     * `unauthenticated` within the bounded budget.
+     * deadline, the runner CONTINUES to the terminal step, and the whole boot
+     * settles to `unauthenticated` within the bounded budget.
      */
     it('abandons a non-settling step at the deadline and still runs the terminal step', async () => {
       const terminalRan = jest.fn();
@@ -310,12 +308,12 @@ describe('runColdBoot', () => {
     });
 
     /**
-     * The terminal step's synchronous side effect (the real `sso-bounce`
-     * navigates BEFORE its first await) must still execute when the deadline
-     * trips on an earlier step — the cross-domain fallback is preserved.
+     * A terminal step may run a synchronous side effect before its first
+     * `await`; that side effect must still execute when the deadline trips on
+     * an earlier step — the terminal fallback is preserved.
      */
     it('lets the terminal step fire its synchronous side effect after the deadline trips', async () => {
-      const bounced = jest.fn();
+      const terminalSideEffect = jest.fn();
 
       const outcomePromise = runColdBoot<TestSession>({
         overallDeadlineMs: 3000,
@@ -325,10 +323,10 @@ describe('runColdBoot', () => {
             run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
           },
           {
-            id: 'sso-bounce',
+            id: 'terminal',
             run: async (): Promise<ColdBootStepResult<TestSession>> => {
-              // Synchronous navigation side effect, exactly like the real bounce.
-              bounced();
+              // Synchronous side effect that fires before the first await.
+              terminalSideEffect();
               return { kind: 'skip' };
             },
           },
@@ -338,7 +336,7 @@ describe('runColdBoot', () => {
       await jest.advanceTimersByTimeAsync(3000);
       await outcomePromise;
 
-      expect(bounced).toHaveBeenCalledTimes(1);
+      expect(terminalSideEffect).toHaveBeenCalledTimes(1);
     });
 
     /**
@@ -375,29 +373,22 @@ describe('runColdBoot', () => {
   });
 
   /**
-   * End-to-end reproduction of the production FedCM-silent hang at the REAL
-   * overall deadline the SDK ships.
-   *
-   * `OxyContext` runs the web cold-boot chain with `COLD_BOOT_OVERALL_DEADLINE`
-   * (20000 ms): fedcm-silent → /auth/silent iframe → cookie restore →
-   * stored-session → /sso top-level bounce (terminal). The documented gotcha:
-   * `navigator.credentials.get({mediation:'silent'})` can sit pending forever,
-   * ignoring its AbortController. WITHOUT the overall deadline the whole chain
-   * hangs and the terminal `/sso` bounce never fires.
-   *
-   * These tests model that exact chain shape against the real deadline value and
-   * assert the runner (a) abandons the hung silent step at the deadline,
-   * (b) still fires the terminal bounce's synchronous side effect, and
+   * End-to-end deadline semantics over a longer chain at the real overall
+   * deadline a consumer arms (the runner itself has no default). Models a chain
+   * whose FIRST step never settles — its `run()` promise ignores the abort
+   * signal and stays pending — followed by several no-op steps and a terminal
+   * step. Asserts the runner (a) abandons the hung step at the deadline,
+   * (b) still fires the terminal step's synchronous side effect, and
    * (c) always settles within the bounded budget — it never hangs.
    */
-  describe('production cold-boot deadline semantics (FedCM-silent hang)', () => {
+  describe('long-chain overall-deadline semantics', () => {
     /**
-     * Mirror of `COLD_BOOT_OVERALL_DEADLINE` in
-     * `@oxyhq/services` `OxyContext` (the only consumer that arms the deadline).
-     * Kept as a local literal because core does not — and must not — import the
-     * services package; if the consumer's value changes, update this to match.
+     * Mirror of the overall-deadline value a consumer arms (e.g. `@oxyhq/services`
+     * cold boot — the only consumer that arms the deadline). Kept as a local
+     * literal because core does not — and must not — import a consumer package;
+     * if the consumer's value changes, update this to match.
      */
-    const COLD_BOOT_OVERALL_DEADLINE = 20000;
+    const OVERALL_DEADLINE = 20000;
 
     beforeEach(() => {
       jest.useFakeTimers();
@@ -407,55 +398,54 @@ describe('runColdBoot', () => {
       jest.useRealTimers();
     });
 
-    /** A step whose `run()` never settles — the hung `credentials.get`. */
-    const hungFedcmSilentStep = (): ColdBootStep<TestSession> => ({
-      id: 'fedcm-silent',
+    /** A step whose `run()` never settles — models a hung async call. */
+    const neverSettlingStep = (): ColdBootStep<TestSession> => ({
+      id: 'never-settles',
       run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
     });
 
-    it('abandons the hung fedcm-silent step at the 20s deadline and fires the terminal /sso bounce', async () => {
-      const ssoBounced = jest.fn();
+    it('abandons the hung step at the deadline and fires the terminal step', async () => {
+      const terminalRan = jest.fn();
       const onStepDeadline = jest.fn();
 
       const outcomePromise = runColdBoot<TestSession>({
-        overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE,
+        overallDeadlineMs: OVERALL_DEADLINE,
         onStepDeadline,
         steps: [
-          hungFedcmSilentStep(),
+          neverSettlingStep(),
           // Every intermediate step has nothing to contribute on this load.
-          skipStep('auth-silent-iframe'),
-          skipStep('cookie-restore'),
-          skipStep('stored-session'),
+          skipStep('intermediate-1'),
+          skipStep('intermediate-2'),
+          skipStep('intermediate-3'),
           {
-            id: 'sso-bounce',
-            // Terminal: navigates synchronously before its first await, exactly
-            // like the real top-level `/sso` bounce.
+            id: 'terminal',
+            // Runs a synchronous side effect before its first await.
             run: async (): Promise<ColdBootStepResult<TestSession>> => {
-              ssoBounced();
+              terminalRan();
               return { kind: 'skip' };
             },
           },
         ],
       });
 
-      // Nothing settles before the deadline — the chain is "stuck" on silent.
-      await jest.advanceTimersByTimeAsync(COLD_BOOT_OVERALL_DEADLINE - 1);
-      expect(ssoBounced).not.toHaveBeenCalled();
+      // Nothing settles before the deadline — the chain is stuck on the first step.
+      await jest.advanceTimersByTimeAsync(OVERALL_DEADLINE - 1);
+      expect(terminalRan).not.toHaveBeenCalled();
 
-      // At the deadline the silent step is abandoned and the chain proceeds.
+      // At the deadline the hung step is abandoned and the chain proceeds.
       await jest.advanceTimersByTimeAsync(1);
       const outcome = await outcomePromise;
 
-      expect(onStepDeadline).toHaveBeenCalledWith('fedcm-silent');
-      expect(ssoBounced).toHaveBeenCalledTimes(1);
+      expect(onStepDeadline).toHaveBeenCalledWith('never-settles');
+      expect(terminalRan).toHaveBeenCalledTimes(1);
       expect(outcome).toEqual({ kind: 'unauthenticated' });
     });
 
     it('settles within the bounded budget instead of hanging forever', async () => {
       let settled = false;
       const outcomePromise = runColdBoot<TestSession>({
-        overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE,
-        steps: [hungFedcmSilentStep(), skipStep('terminal')],
+        overallDeadlineMs: OVERALL_DEADLINE,
+        steps: [neverSettlingStep(), skipStep('terminal')],
       }).then((o) => {
         settled = true;
         return o;
@@ -463,7 +453,7 @@ describe('runColdBoot', () => {
 
       // Just before the deadline: still pending (proves the deadline, not an
       // accidental early settle, is what unblocks it).
-      await jest.advanceTimersByTimeAsync(COLD_BOOT_OVERALL_DEADLINE - 1);
+      await jest.advanceTimersByTimeAsync(OVERALL_DEADLINE - 1);
       expect(settled).toBe(false);
 
       await jest.advanceTimersByTimeAsync(1);
@@ -471,19 +461,19 @@ describe('runColdBoot', () => {
       expect(settled).toBe(true);
     });
 
-    it('does not penalize a fast silent success — it wins well before the deadline', async () => {
+    it('does not penalize a fast first-step success — it wins well before the deadline', async () => {
       const laterRan = jest.fn();
       const outcomePromise = runColdBoot<TestSession>({
-        overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE,
+        overallDeadlineMs: OVERALL_DEADLINE,
         steps: [
           {
-            id: 'fedcm-silent',
+            id: 'first',
             run: async (): Promise<ColdBootStepResult<TestSession>> => {
               await Promise.resolve();
-              return { kind: 'session', session: { userId: 'u-silent' } };
+              return { kind: 'session', session: { userId: 'u-fast' } };
             },
           },
-          sessionStep('sso-bounce', 'u-should-not-run', laterRan),
+          sessionStep('terminal', 'u-should-not-run', laterRan),
         ],
       });
 
@@ -492,8 +482,8 @@ describe('runColdBoot', () => {
 
       expect(outcome).toEqual({
         kind: 'session',
-        via: 'fedcm-silent',
-        session: { userId: 'u-silent' },
+        via: 'first',
+        session: { userId: 'u-fast' },
       });
       expect(laterRan).not.toHaveBeenCalled();
     });
