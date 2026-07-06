@@ -14,6 +14,11 @@ const mockGetSession = jest.fn();
 const mockGetStateByCookieKey = jest.fn();
 const mockConvergeAccountOntoDevice = jest.fn();
 const mockMigrateSessionToDevice = jest.fn();
+const mockGetStateBySecret = jest.fn();
+const mockIssueDeviceSecret = jest.fn();
+const mockIsLockedOut = jest.fn();
+const mockRecordFailure = jest.fn();
+const mockClearFailures = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...a: unknown[]) => mockAuthMiddleware(...a),
@@ -36,6 +41,8 @@ jest.mock('../../services/deviceSession.service', () => ({
     resolveActiveToken: (...a: unknown[]) => mockResolveActiveToken(...a),
     getStateByCookieKey: (...a: unknown[]) => mockGetStateByCookieKey(...a),
     convergeAccountOntoDevice: (...a: unknown[]) => mockConvergeAccountOntoDevice(...a),
+    getStateBySecret: (...a: unknown[]) => mockGetStateBySecret(...a),
+    issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a),
   },
 }));
 jest.mock('../../services/session.service', () => ({
@@ -45,11 +52,17 @@ jest.mock('../../services/session.service', () => ({
     migrateSessionToDevice: (...a: unknown[]) => mockMigrateSessionToDevice(...a),
   },
 }));
+jest.mock('../../services/loginLockout.service', () => ({
+  isLockedOut: (...a: unknown[]) => mockIsLockedOut(...a),
+  recordFailure: (...a: unknown[]) => mockRecordFailure(...a),
+  clearFailures: (...a: unknown[]) => mockClearFailures(...a),
+}));
 jest.mock('../../utils/socket', () => ({ broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a) }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
 import sessionDeviceRouter from '../sessionDevice';
 import { errorHandler } from '../../middleware/errorHandler';
+import { logger } from '../../utils/logger';
 
 const STATE = { deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: 1, updatedAt: 1720000000000 };
 
@@ -84,6 +97,10 @@ beforeEach(() => {
   // Default to an active first-party session; individual tests override this
   // to exercise managed sessions or the expired/revoked (null) 401 path.
   mockGetSession.mockResolvedValue({ operatedByUserId: null });
+  // Default: device is not locked out. Tests override for the 429 path.
+  mockIsLockedOut.mockResolvedValue({ locked: false, attempts: 0 });
+  mockRecordFailure.mockResolvedValue({ locked: false, attempts: 1 });
+  mockClearFailures.mockResolvedValue(undefined);
 });
 
 describe('GET /session/device/state', () => {
@@ -304,5 +321,93 @@ describe('POST /session/device/add — cookie-device convergence', () => {
     expect(mockGetStateByCookieKey).not.toHaveBeenCalled();
     expect(mockConvergeAccountOntoDevice).not.toHaveBeenCalled();
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
+  });
+});
+
+describe('POST /session/device/token (phase 2c — public deviceSecret mint)', () => {
+  const SECRET_STATE = {
+    deviceId: 'd1',
+    accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }],
+    activeAccountId: 'a1',
+    revision: 3,
+    updatedAt: 1720000000000,
+  };
+
+  it('mints a short access token and rotates the device secret on a valid secret', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(SECRET_STATE);
+    mockResolveActiveToken.mockResolvedValueOnce({ accessToken: 'jwt-mint', expiresAt: '2026-07-07T00:00:00.000Z' });
+    mockIssueDeviceSecret.mockResolvedValueOnce('next-secret-value');
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret' });
+
+    expect(res.status).toBe(200);
+    expect(mockGetStateBySecret).toHaveBeenCalledWith('d1', 'raw-secret');
+    expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'device-token', identifier: 'd1' });
+    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('d1');
+    expect(res.body.data).toEqual({
+      accessToken: 'jwt-mint',
+      expiresAt: '2026-07-07T00:00:00.000Z',
+      nextDeviceSecret: 'next-secret-value',
+      state: SECRET_STATE,
+    });
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+    // Telemetry: the mint is attributed to the secret lane.
+    expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'secret', deviceId: 'd1' });
+  });
+
+  it('401 invalid_device_secret and records a failure on an unknown/mismatched secret', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'bad' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_device_secret');
+    expect(mockRecordFailure).toHaveBeenCalledWith({ scope: 'device-token', identifier: 'd1' });
+    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
+    expect(mockClearFailures).not.toHaveBeenCalled();
+  });
+
+  it('429 when the device is locked out — never touches the secret', async () => {
+    mockIsLockedOut.mockResolvedValueOnce({ locked: true, retryAfterSeconds: 42, attempts: 5 });
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'x' });
+
+    expect(res.status).toBe(429);
+    expect(mockGetStateBySecret).not.toHaveBeenCalled();
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+  });
+
+  it('401 no_active_session WITHOUT rotating when the secret is valid but the session is dead', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(SECRET_STATE);
+    mockResolveActiveToken.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('no_active_session');
+    // Valid secret → failures cleared, but the secret is NOT rotated: the client
+    // must re-auth and keeps its still-valid secret.
+    expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'device-token', identifier: 'd1' });
+    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+  });
+
+  it('accepts an in-grace (previous) secret — the route trusts getStateBySecret and rotates', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(SECRET_STATE);
+    mockResolveActiveToken.mockResolvedValueOnce({ accessToken: 'jwt-grace', expiresAt: '2026-07-07T00:00:00.000Z' });
+    mockIssueDeviceSecret.mockResolvedValueOnce('rotated-again');
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'previous-secret' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toBe('jwt-grace');
+    expect(res.body.data.nextDeviceSecret).toBe('rotated-again');
+  });
+
+  it('400 when the body shape is invalid (missing deviceSecret)', async () => {
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1' });
+    expect(res.status).toBe(400);
+    expect(mockGetStateBySecret).not.toHaveBeenCalled();
+    expect(mockIsLockedOut).not.toHaveBeenCalled();
   });
 });

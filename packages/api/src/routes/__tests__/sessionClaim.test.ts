@@ -124,6 +124,15 @@ jest.mock('../../models/RefreshToken', () => ({
   RefreshToken: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
 }));
 
+// The claim handler now (phase 2c) dynamically imports deviceSessionService to
+// additively mint a rotating deviceSecret. Mock it — default: no secret (the
+// device carries no doc), so the base response shape is unchanged.
+const mockIssueDeviceSecret = jest.fn();
+jest.mock('../../services/deviceSession.service', () => {
+  const svc = { issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a) };
+  return { __esModule: true, default: svc, deviceSessionService: svc };
+});
+
 jest.mock('../../utils/userTransform', () => ({
   formatUserResponse: (...args: unknown[]) => mockFormatUserResponse(...args),
 }));
@@ -342,6 +351,70 @@ describe('POST /auth/session/claim', () => {
     expect(res.body.data.refreshToken).not.toBe('refresh-jwt');
     expect(res.body.data.refreshToken.length).toBeGreaterThan(0);
     expect(mockGetAccessToken).toHaveBeenCalledWith(sessionId);
+    // No device doc for this session → no deviceSecret in the base response.
+    expect(res.body.data.deviceSecret).toBeUndefined();
+  });
+
+  it('includes a rotating deviceSecret when the claimed session carries a device doc (phase 2c)', async () => {
+    const userId = '64f7c2a1b8e9d3f4a1c2b3d4';
+    const sessionId = 'sess-with-device';
+    const expiresAt = new Date(Date.now() + 60_000);
+
+    mockClaimAuthSession.mockResolvedValueOnce({
+      ok: true,
+      authSession: {
+        sessionToken: 'good-token',
+        authorizedSessionId: sessionId,
+        authorizedUserId: { toString: () => userId },
+        applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3ab' },
+      },
+    });
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'access-jwt', expiresAt });
+    mockUserFindById.mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({ _id: userId, username: 'alice' }) });
+    mockSessionFindOne.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ deviceId: 'dev-9', expiresAt: new Date(Date.now() + 60 * 60 * 1000) }),
+      }),
+    });
+    mockFormatUserResponse.mockReturnValueOnce({ id: userId, username: 'alice' });
+    mockIssueDeviceSecret.mockResolvedValueOnce('claim-device-secret');
+
+    const res = await requestJson(server, 'POST', '/auth/session/claim', { sessionToken: 'good-token' });
+
+    expect(res.status).toBe(200);
+    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('dev-9');
+    expect(res.body.data.deviceSecret).toBe('claim-device-secret');
+  });
+
+  it('still succeeds without a deviceSecret when the mint throws (best-effort)', async () => {
+    const userId = '64f7c2a1b8e9d3f4a1c2b3d4';
+    const sessionId = 'sess-mint-fail';
+    const expiresAt = new Date(Date.now() + 60_000);
+
+    mockClaimAuthSession.mockResolvedValueOnce({
+      ok: true,
+      authSession: {
+        sessionToken: 'good-token',
+        authorizedSessionId: sessionId,
+        authorizedUserId: { toString: () => userId },
+        applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3ab' },
+      },
+    });
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'access-jwt', expiresAt });
+    mockUserFindById.mockReturnValueOnce({ lean: jest.fn().mockResolvedValue({ _id: userId, username: 'alice' }) });
+    mockSessionFindOne.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ deviceId: 'dev-9', expiresAt: new Date(Date.now() + 60 * 60 * 1000) }),
+      }),
+    });
+    mockFormatUserResponse.mockReturnValueOnce({ id: userId, username: 'alice' });
+    mockIssueDeviceSecret.mockRejectedValueOnce(new Error('db down'));
+
+    const res = await requestJson(server, 'POST', '/auth/session/claim', { sessionToken: 'good-token' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toBe('access-jwt');
+    expect(res.body.data.deviceSecret).toBeUndefined();
   });
 
   it('rejects with 401 if the access token cannot be issued', async () => {

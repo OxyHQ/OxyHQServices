@@ -417,10 +417,11 @@ export async function verify2FALogin(req: Request, res: Response) {
     if (!baseTwoFactorResponse) {
       return res.status(500).json({ message: 'Failed to format user data' });
     }
-    const response: typeof baseTwoFactorResponse & { refreshToken?: string } = baseTwoFactorResponse;
+    const response: typeof baseTwoFactorResponse & { refreshToken?: string; deviceSecret?: string } = baseTwoFactorResponse;
 
     // Register into the device set (add-only) + broadcast, and additively attach
-    // a rotating refresh token when the lane allows it. Best-effort.
+    // a rotating refresh token + deviceSecret when the lane allows it.
+    // Best-effort.
     const twoFactorDeviceExtras = await finalizeDeviceLogin({
       req,
       deviceId: twoFactorDevice.deviceId,
@@ -429,6 +430,9 @@ export async function verify2FALogin(req: Request, res: Response) {
     });
     if (twoFactorDeviceExtras.refreshToken) {
       response.refreshToken = twoFactorDeviceExtras.refreshToken;
+    }
+    if (twoFactorDeviceExtras.deviceSecret) {
+      response.deviceSecret = twoFactorDeviceExtras.deviceSecret;
     }
 
     try {

@@ -141,6 +141,17 @@ describe('authTokenBundleSchema', () => {
         const { refreshToken, ...noRefresh } = bundle;
         expect(safeParseContract(authTokenBundleSchema, noRefresh)).toBeNull();
     });
+
+    it('parses a bundle carrying the optional deviceSecret (2c additive mint)', () => {
+        const withSecret: AuthTokenBundle = { ...bundle, deviceSecret: 'ds_first_secret' };
+        const parsed = safeParseContract(authTokenBundleSchema, withSecret);
+        expect(parsed?.deviceSecret).toBe('ds_first_secret');
+    });
+
+    it('parses a bundle WITHOUT deviceSecret (optional — cookie-lane bundles omit it)', () => {
+        const parsed = safeParseContract(authTokenBundleSchema, bundle);
+        expect(parsed && 'deviceSecret' in parsed).toBe(false);
+    });
 });
 
 describe('webSessionResultSchema (reason-discriminated union)', () => {
@@ -257,6 +268,19 @@ describe('loginResultSchema (union discrimination)', () => {
             user: { id: 'u1' },
         };
         expect(safeParseContract(loginResultSchema, session)).not.toBeNull();
+    });
+
+    it('parses the session arm carrying the optional deviceSecret (2c additive mint)', () => {
+        const session: LoginResult = {
+            sessionId: 's1',
+            deviceId: 'd1',
+            expiresAt: '2026-07-07T00:00:00.000Z',
+            accessToken: 'jwt.access',
+            deviceSecret: 'ds_first_secret',
+            user: { id: 'u1', username: 'nate' },
+        };
+        const parsed = safeParseContract(loginResultSchema, session);
+        expect(parsed && 'deviceSecret' in parsed && parsed.deviceSecret).toBe('ds_first_secret');
     });
 
     it('rejects a 2FA arm with twoFactorRequired: false', () => {

@@ -137,6 +137,7 @@ async function buildTokenBundle(
   refreshToken: string;
   expiresAt: string;
   user: SerializedUser;
+  deviceSecret?: string;
 } | null> {
   const tokenResult = await sessionService.getAccessToken(sessionId);
   if (!tokenResult) return null;
@@ -147,12 +148,33 @@ async function buildTokenBundle(
 
   const refresh = await issueRefreshToken({ sessionId, userId });
 
+  // Cookie-lane mint telemetry + additive deviceSecret (phase 2c). When the
+  // session is bound to a device doc, record the cookie-lane mint (feeds the
+  // `mint_source` cutover metric) and hand the client a rotating `deviceSecret`
+  // so it can migrate onto the zero-cookie lane. Best-effort: a device with no
+  // doc simply omits the secret.
+  const deviceId = resolved?.session?.deviceId;
+  let deviceSecret: string | undefined;
+  if (typeof deviceId === 'string' && deviceId.length > 0) {
+    logger.info('device.token.mint', { mint_source: 'cookie', deviceId });
+    try {
+      const minted = await deviceSessionService.issueDeviceSecret(deviceId);
+      if (minted) deviceSecret = minted;
+    } catch (error) {
+      logger.warn('buildTokenBundle: deviceSecret mint failed (best-effort)', {
+        deviceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     sessionId,
     accessToken: tokenResult.accessToken,
     refreshToken: refresh.token,
     expiresAt: tokenResult.expiresAt.toISOString(),
     user,
+    ...(deviceSecret ? { deviceSecret } : {}),
   };
 }
 
