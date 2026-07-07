@@ -157,8 +157,12 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     });
   }
 
-  // Tokens must match (timing-safe comparison)
-  if (!crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+  // Tokens must match (timing-safe comparison). Length must match first —
+  // timingSafeEqual throws RangeError on mismatched buffer lengths.
+  if (
+    cookieToken.length !== headerToken.length ||
+    !crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))
+  ) {
     logger.warn('CSRF token mismatch', {
       method: req.method,
       path: req.path,

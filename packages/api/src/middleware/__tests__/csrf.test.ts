@@ -67,6 +67,24 @@ describe('verifyCsrfToken', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('rejects cookie-authenticated requests when header and cookie tokens differ in length', () => {
+    const { res, next } = runVerify({
+      cookies: {
+        csrf_token: 'short',
+      },
+      headers: {
+        'x-csrf-token': 'much-longer-header-token-value',
+      },
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.body).toEqual({
+      message: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID',
+    });
+  });
+
   it('still rejects cookie-authenticated state-changing requests without a CSRF header', () => {
     const { res, next } = runVerify({
       cookies: {

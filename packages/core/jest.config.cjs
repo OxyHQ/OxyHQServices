@@ -4,6 +4,9 @@ module.exports = {
   testEnvironment: 'node',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'json'],
   moduleNameMapper: {
+    // Resolve workspace deps from TypeScript SOURCE so core tests do not depend
+    // on packages being built first (mirrors packages/api/jest.config.js).
+    '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
     // Resolve @oxyhq/protocol from its TypeScript SOURCE so core tests do not
     // depend on the protocol package being built first, and so the
     // `jest.mock('@oxyhq/protocol', () => ({ ...jest.requireActual(...) }))`
