@@ -1,14 +1,14 @@
 # Oxy Authentication, Sessions & Account System — Plan Maestro
 
-> **Estado:** Aprobado para ejecución (2026-07-05, Nate + agente planificación)  
+> **Estado:** ✅ **IMPLEMENTADO — proyecto cerrado (2026-07-07).** Fases 0–7 + 2c en `main` y en producción (core 9 / services 19 / contracts 0.13; sesión device-first cero-cookie; IdP device-first sin excepción de transporte/chooser). Este documento es el plan maestro de referencia; el estado de ejecución y el cierre están en [`oxy-auth-audit.md`](./oxy-auth-audit.md) → "🏁 PROYECTO AUTH-PLATFORM CERRADO". Aprobado para ejecución 2026-07-05 (Nate + agente planificación).  
 > **Ubicación canónica:** `docs/architecture/oxy-auth-platform.md`  
-> **Handoff agente implementador:** [`docs/architecture/oxy-auth-agent-handoff.md`](./oxy-auth-agent-handoff.md) — checklist, gates, subagentes, inventario borrado  
+> **Handoff agente implementador (archivado):** [`docs/architecture/archive/oxy-auth-agent-handoff.md`](./archive/oxy-auth-agent-handoff.md) — checklist, gates, subagentes, inventario borrado  
 
 ---
 
 ## Briefing para el agente implementador
 
-1. **Leer este doc completo** antes de tocar código. **Luego leer** [`oxy-auth-agent-handoff.md`](./oxy-auth-agent-handoff.md) — reglas contractuales, gates, anti-derailments. **Ignorar** FedCM/SSO/cookies en AGENTS.md y docs legacy hasta Fase 7.
+1. **Leer este doc completo** antes de tocar código. **Luego leer** [`oxy-auth-agent-handoff.md`](./archive/oxy-auth-agent-handoff.md) — reglas contractuales, gates, anti-derailments. **Ignorar** FedCM/SSO/cookies en AGENTS.md y docs legacy hasta Fase 7.
 2. **Principios no negociables:** cero cookies, cero trucos (no FedCM, no SSO iframe, no cross-apex gating oculto), Commons-first, Bloom Dialog.
 3. **Cherry-pick selectivo de p1** — traer DeviceSession + SessionClient + socket; **NO** traer cookie transport / silent iframe / SSO bounce de p1.
 4. **Un solo SDK UI:** `@oxyhq/services` (`OxyProvider`); eliminar `@oxyhq/auth-sdk`.

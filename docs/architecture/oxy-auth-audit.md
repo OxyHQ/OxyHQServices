@@ -2,7 +2,7 @@
 
 > **Estado:** COMPLETADA 2026-07-05 · **FASE 7 DONE 2026-07-06** — checklist §11 verificada abajo
 > **Ground truth:** `origin/main` @ `99405224` ("feat(sdk)!: re-land unified OxyAccountDialog #554")
-> **Plan maestro:** [`oxy-auth-platform.md`](./oxy-auth-platform.md) · **Handoff:** [`oxy-auth-agent-handoff.md`](./oxy-auth-agent-handoff.md)
+> **Plan maestro:** [`oxy-auth-platform.md`](./oxy-auth-platform.md) · **Handoff:** [`oxy-auth-agent-handoff.md`](./archive/oxy-auth-agent-handoff.md)
 > Verificable en Fase 7 contra este doc. Metodología: git grep/ls-tree contra `origin/main` + worktree limpio con tests + 7 subagentes de auditoría en paralelo.
 
 ---
@@ -25,7 +25,9 @@ La sección "Estado del repo al generar este handoff" del handoff se escribió d
 
 ## 2. Estado real por fase (contra origin/main)
 
-| Fase | Plan | Estado real |
+> ⚠️ **HISTÓRICO (snapshot 2026-07-05).** Esta tabla capturó el estado al arrancar el proyecto. **TODAS las fases 0–7 + 2c están COMPLETADAS, en `main` y en producción** (ver el cierre "🏁 PROYECTO AUTH-PLATFORM CERRADO" al final de este documento). Se conserva solo como registro del punto de partida.
+
+| Fase | Plan | Estado real (al 2026-07-05, ver cierre para el estado final) |
 |------|------|-------------|
 | 0 audit | este doc | ✅ HECHA |
 | 1 DeviceSession server | model/service/routes/socket | ✅ **YA EN MAIN** — spec cumplida y superada: `models/DeviceSession.ts` (= spec + `cookieKeyHash`), `deviceSession.service.ts` (idempotencia, heal, revocación families/device-tokens, `activate:'always'\|'if-empty'`), `routes/sessionDevice.ts` (GET /state, POST /add /switch /signout; deviceId del claim bearer; add deriva del bearer = fix IDOR; respuesta `{data:{state,activeToken}}` = `deviceSessionSyncSchema`), broadcast `session_state` token-free |

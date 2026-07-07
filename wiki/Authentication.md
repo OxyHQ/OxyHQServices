@@ -2,127 +2,110 @@
 
 ## Overview
 
-Oxy uses JWT-based authentication with server-side session validation. Tokens are issued on login and validated against the database on each request.
+Oxy authentication is **device-first and zero-cookie**. A short-lived access token authorizes each request (bearer). The durable session transport is a first-party `{ deviceId, deviceSecret }` pair the client persists **per origin** (web `localStorage`, native SecureStore); the client mints a fresh access token by presenting that pair to the API. The `DeviceSession` document is the server-side session authority.
 
-## Token Types
+There is **no session cookie of any kind** — no `oxy_device` cookie, no refresh-token family, no `#oxy_boot` bootstrap, no FedCM, no `/sso` bounce. All of that legacy browser-federation machinery was removed.
 
-| Token | Lifetime | Storage | Validation |
+## Token / credential types
+
+| Credential | Lifetime | Storage | Validation |
 |-------|----------|---------|------------|
-| Access Token | Short-lived | Memory / `Authorization` header | Server-side session check |
-| Refresh Token | Long-lived | httpOnly cookie | Database lookup |
-| Service Token | 1 hour | Memory (cached) | Stateless JWT signature verification |
-| FedCM Token | Short-lived | Browser FedCM API | Signed JWT |
+| Access token | Short-lived | Memory / `Authorization: Bearer` header | Server-side session check |
+| Device secret | Rotating (in-use, short grace) | First-party per-origin (localStorage / SecureStore) | `sha256` match against `DeviceSession.secretHash` (constant-time) |
+| Service token | 1 hour | Memory (cached) | Stateless JWT signature verification |
 
-## Authentication Flow
+The device secret is the SOLE restore credential; possession of it proves device ownership. Only its `sha256` hash is stored server-side, so a database dump cannot forge it.
 
-### 1. Login
+## Authentication flow
 
-```
-Client -> POST /api/auth/login { username, password }
-Server -> { accessToken, refreshToken, user }
-```
-
-### 2. Authenticated Request
+### 1. Sign in
 
 ```
-Client -> GET /api/protected
+Client -> POST /auth/login { username, password }   (2FA / signup / social variants exist)
+Server -> { accessToken, expiresAt, user, deviceSecret }
+```
+
+The response carries a fresh `deviceSecret` (device-first lanes only). The client persists `{ deviceId, deviceSecret }` first-party.
+
+### 2. Authenticated request
+
+```
+Client -> GET /protected
           Authorization: Bearer <accessToken>
-          X-CSRF-Token: <csrfToken>  (browser mode)
-Server -> Validate session -> 200 OK
+Server -> validate session -> 200 OK
 ```
 
-### 3. Token Refresh
+### 3. Restore / re-mint (replaces refresh-token flow)
+
+When the short access token expires — or on cold boot / page reload — the client mints a new one with a single bearer-less, cookie-less POST:
 
 ```
-Client -> POST /api/auth/refresh { refreshToken }
-Server -> { accessToken, refreshToken }
+Client -> POST /session/device/token { deviceId, deviceSecret }
+Server -> { accessToken, expiresAt, nextDeviceSecret, state }
 ```
 
-## CSRF Protection
+The secret rotates in use: persist `nextDeviceSecret` **before** using the returned access token (multi-tab anti-loss). The just-superseded secret stays valid for a short grace so concurrent tabs don't lock out. The SDK cold boot (`runSessionColdBoot` in `@oxyhq/core`) owns this end to end — apps never implement local session restore.
 
-Implements the **double-submit cookie pattern** (stateless, no server-side session storage for CSRF).
+## CSRF
 
-### Browser Mode
-1. Server sets `csrf_token` cookie (httpOnly, secure, sameSite)
-2. Server exposes token via `X-CSRF-Token` response header
-3. Client includes token in `X-CSRF-Token` request header
-4. Server verifies cookie matches header (timing-safe comparison)
+With no ambient session cookie, state-changing requests are authenticated by the bearer access token and are **not** vulnerable to CSRF; bearer-authenticated writes do not fetch a CSRF token. CSRF protection (double-submit) remains only for any residual cookie-credentialed, cookie-only write paths.
 
-### Native App Mode
-- Client sends `X-Native-App: true` header
-- Only requires `X-CSRF-Token` header (no cookie matching)
-- Must have `Authorization: Bearer` to prevent browser-based bypass
+## Auth middleware (`@oxyhq/core/server`)
 
-### CSRF Exemptions
-- Safe methods: `GET`, `HEAD`, `OPTIONS`
-- Service tokens (`type: 'service'` in JWT payload) — bearer-only, not vulnerable to CSRF
-
-### Get CSRF Token
-
-```bash
-curl https://api.oxy.so/api/csrf-token
-# Response: { "csrfToken": "..." }
-# Also sets csrf_token cookie
-```
-
-## Auth Middleware (`oxy.auth()`)
-
-The `@oxyhq/core` package provides Express middleware for protecting routes:
+Backends use the shared helpers — never app-local `AuthRequest` / `requireAuth` / bearer parsers.
 
 ```typescript
-import { OxyServices } from '@oxyhq/core';
-
-const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+import { createOxyAuthMiddleware, createOptionalOxyAuth, getRequiredOxyUserId } from '@oxyhq/core/server';
 
 // Require authentication
-app.use('/api/protected', oxy.auth());
+app.use('/api/protected', createOxyAuthMiddleware(oxy));
 
 // Optional auth (attach user if present, don't block)
-app.use('/api/public', oxy.auth({ optional: true }));
+app.use('/api/public', createOptionalOxyAuth(oxy));
 
-// Load full user profile
-app.use('/api/admin', oxy.auth({ loadUser: true }));
+// Inside a protected handler:
+const userId = getRequiredOxyUserId(req);
 ```
 
-### Request Properties Set by Middleware
+### Request properties set by middleware
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `req.userId` | `string \| null` | User ID from token |
-| `req.user` | `User \| null` | User object (minimal unless `loadUser: true`) |
+| `req.user` | `User \| null` | User object (minimal unless full profile requested) |
 | `req.accessToken` | `string` | The validated access token |
 | `req.sessionId` | `string \| undefined` | Session ID (if session-based token) |
 | `req.serviceApp` | `ServiceApp \| undefined` | Service app metadata (if service token) |
 
-## Socket.IO Authentication
+## Socket.IO authentication
+
+Use the shared socket authenticator — derive rooms from `socket.user.id`, never from client-supplied ids, and ownership-check before joins.
 
 ```typescript
+import { authSocket } from '@oxyhq/core/server';
+
 // Server
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-  socket.user = { id: decoded.userId };
-  next();
+io.use(oxy.authSocket());
+io.on('connection', (socket) => {
+  socket.join(`user:${socket.user.id}`); // room derived server-side
 });
 
 // Client
-const socket = io('https://api.oxy.so', {
-  auth: { token: accessToken }
-});
+const socket = io('https://api.oxy.so', { auth: { token: accessToken } });
 ```
 
-## Rate Limiting
+## Rate limiting
 
-| Limiter | Window | Max Requests | Scope |
-|---------|--------|-------------|-------|
-| General | 15 min | 150 (prod) / 2000 (dev) | Per IP |
-| Auth | 15 min | 50 (prod) / 500 (dev) | Per IP |
-| User | 15 min | 200 (prod) / 2000 (dev) | Per user ID |
-| Brute Force | 15 min | 100 before slowdown | Per IP, +500ms delay |
+| Limiter | Window | Max | Scope |
+|---------|--------|-----|-------|
+| General | 15 min | 1000 | Per IP (`rl:general:`) |
+| Auth | 15 min | 300 | Per IP (`rl:auth:`) |
+| User | 15 min | 200 | Per user ID (`rl:user:`) |
+| Device-token mint | 60 s | 30 | Per deviceId (`rl:session:device-token:`) + per-device lockout |
 
-All rate limiters use Redis when `REDIS_URL` is configured (counters shared across instances, survive restarts). Falls back to in-memory otherwise.
+All rate limiters use `rate-limit-redis` over a shared client with a **unique prefix per limiter** (a shared key would double-count and halve the budget). Falls back to in-memory when `REDIS_URL` is unset.
 
-## Security Headers (Helmet)
+## Security headers (Helmet)
 
 | Header | Value |
 |--------|-------|

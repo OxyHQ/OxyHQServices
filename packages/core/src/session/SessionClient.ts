@@ -36,8 +36,8 @@ export interface SessionClientOptions {
   onUnauthenticated?: () => void;
   /**
    * Statically-injected `socket.io-client` factory (its `io` export).
-   * `@oxyhq/services` and `@oxyhq/auth` list `socket.io-client` as a real
-   * dependency and pass `io` in directly, so realtime session sync never
+   * `@oxyhq/services` lists `socket.io-client` as a real dependency and
+   * passes `io` in directly, so realtime session sync never
    * depends on a runtime dynamic `import('socket.io-client')` of a bare
    * specifier — which is bundler-fragile in Metro/Expo-web and Vite when
    * `@oxyhq/core` is consumed as its published dist (the import resolves to

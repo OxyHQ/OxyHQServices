@@ -11,7 +11,7 @@
  *
  * This package (`@oxyhq/contracts`) is the dedicated, zero-dependency home for
  * these contracts so the backend (`@oxyhq/api`) and the client SDKs
- * (`@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`) can all depend on it without
+ * (`@oxyhq/core`, `@oxyhq/services`) can all depend on it without
  * the backend having to depend on a client SDK to obtain its schemas.
  *
  * Faithful to the producers:

@@ -3,7 +3,7 @@
 > The monorepo layout, the package dependency graph, package boundaries, build
 > order, and how a request flows end to end.
 >
-> Related: [Auth platform plan (2026)](./oxy-auth-platform.md) · [Agent handoff — ejecutar aquí](./oxy-auth-agent-handoff.md) · [Identity / Oxy ID](../identity/README.md) ·
+> Related: [Auth platform plan (2026)](./oxy-auth-platform.md) · [Agent handoff — ejecutar aquí](./archive/oxy-auth-agent-handoff.md) · [Identity / Oxy ID](../identity/README.md) ·
 > [Reputation](../reputation/README.md) · [Nodes](../nodes/README.md) · [Changelog](../CHANGELOG.md)
 
 ---
