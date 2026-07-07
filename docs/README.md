@@ -11,11 +11,12 @@ decentralization (user data nodes) layer.
 OxyHQServices (`@oxyhq/sdk`) is the platform layer for the whole Oxy ecosystem. It
 is four things in one Bun-workspaces monorepo:
 
-1. **An API + a device-first session model.** `api.oxy.so` owns the durable
-   `oxy_device` cookie, the rotating refresh-token family, and the server-side
-   `DeviceSession` authority (which accounts are signed in on a device, which
-   one is active). Every web/native app restores its session through the shared
-   SDK's device-first cold boot and stays in sync across apps via the
+1. **An API + a device-first, zero-cookie session model.** `api.oxy.so` owns
+   the server-side `DeviceSession` authority (which accounts are signed in on
+   a device, which one is active), addressed by a `deviceId` + `deviceSecret`
+   the client persists first-party (no cookies, no refresh-token family).
+   Every web/native app restores its session through the shared SDK's
+   device-first cold boot and stays in sync across apps via the
    `session_state` socket event. `auth.oxy.so` is the third-party OAuth
    authorize/consent IdP — it is not a relying party and not the session
    authority.

@@ -51,7 +51,6 @@ Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered w
 | `AWS_GITHUB_OIDC_ROLE_ARN` | ARN of `oxy-github-deploy`; assumed via OIDC |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens |
 | `DEVICE_ID_SALT` | 64-hex salt for `deriveStableDeviceId` |
 | `MONGODB_URI` | MongoDB cluster URI (no DB name) |
 | `REDIS_URL` | ElastiCache Valkey URI |
@@ -95,7 +94,6 @@ CMD ["bun", "run", "packages/api/dist/server.js"]
 | `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName`) | `mongodb://<private-mongo-host>:27017` |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens | 64+ hex |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens | 64+ hex |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens | 64+ hex |
 | `DEVICE_ID_SALT` | 64-hex salt scoping `deriveStableDeviceId` | 64 hex |
 | `AWS_REGION` | S3/SES region | `eu-west-1` |
 | `AWS_S3_BUCKET` | Asset storage bucket | |
@@ -126,7 +124,7 @@ openssl rand -hex 64
 
 | Project | Source | Notes |
 |---------|--------|-------|
-| `oxy-auth` | `packages/auth/` | Builds the Vite SPA **and** the FedCM IdP `_worker.js`. The workflow has a safety check that fails if `dist/_worker.js` is missing — a static-only deploy would 404 on `/fedcm/*`. |
+| `oxy-auth` | `packages/auth/` | Pure-static Vite SPA (no Pages Function, no `_worker.js`) — the OAuth authorize/consent IdP. Post-deploy smoke gate (`bun run smoke:idp`) asserts the SPA renders and that the FedCM manifest stays deleted. |
 | `oxy-accounts` | `packages/accounts/` | Expo Web export |
 | `oxy-inbox` | `packages/inbox/` | Expo Web export |
 | `oxy-console` | `packages/console/` | Nuxt or Vite output |

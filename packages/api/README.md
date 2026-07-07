@@ -71,19 +71,16 @@ Routes are mounted without a prefix (e.g. `POST /auth/login`). A leading `/api/`
 | `/auth/login` | POST | Password login (email/username + password) |
 | `/auth/challenge` | POST | Request public-key challenge |
 | `/auth/verify` | POST | Verify signed challenge |
-| `/auth/refresh-token` | POST | Rotate the refresh-token family, mint a new access token |
-| `/auth/logout` | POST | Logout user |
 | `/auth/validate` | GET | Validate current token |
 | `/auth/recover/request` | POST | Request account recovery code |
 | `/auth/recover/verify` | POST | Verify recovery code |
 | `/auth/recover/reset` | POST | Reset password with verified code |
 | `/auth/service-token` | POST | Exchange a `service` ApplicationCredential (publicKey + secret) for a 1h service JWT |
 
-### Device sessions (server session authority)
+### Device sessions (server session authority, zero-cookie)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/auth/device/bootstrap` | GET | Issue a single-use, origin-bound boot code (returned via `#oxy_boot` fragment) |
-| `/auth/device/exchange` | POST | Redeem a boot code for tokens on a sibling origin |
+| `/session/device/token` | POST | Zero-cookie mint: `{ deviceId, deviceSecret }` (no bearer, no cookies) → short access token + rotated `deviceSecret` |
 | `/session/device/state` | GET | Current `DeviceSession` state (accounts, active account, revision) — token-free |
 | `/session/device/add` | POST | Add the bearer's account to the device session |
 | `/session/device/switch` | POST | Switch the active account (`revision++`, socket broadcast) |

@@ -1,6 +1,6 @@
 # auth.oxy.so — the Oxy IdP
 
-`packages/auth` is the standalone identity-provider app served at **auth.oxy.so**: a Vite + React DOM SPA deployed to Cloudflare Pages, plus exactly one Pages Function. It owns:
+`packages/auth` is the standalone identity-provider app served at **auth.oxy.so**: a pure-static Vite + React DOM SPA deployed to Cloudflare Pages (no Pages Function — see "Development" below). It owns:
 
 - The **OAuth 2.0 authorize + consent** surface for third-party "Sign in with Oxy" (Authorization Code + PKCE) — see [integration-guide.md](./integration-guide.md).
 - The fallback **login / signup / recover** flows (keyless password accounts, 2FA, social providers).
@@ -18,7 +18,7 @@ It does **not** own account management: every `/settings/*` path permanently red
 | **Is not** | The session authority — that is `api.oxy.so` (`DeviceSession`, see below) |
 | **Is not** | An account-management surface — `/settings/*` redirects to accounts.oxy.so |
 
-Session authority and transport live entirely in `api.oxy.so`: the durable first-party `oxy_device` cookie (`Domain=.oxy.so`) plus a rotating refresh-token family, with the `#oxy_boot` fragment handoff (`GET /auth/device/bootstrap` → `POST /auth/device/exchange`) for bootstrapping a new browsing context. The server-side model is `DeviceSession` (`/session/device/*` + the `session_state` socket event) — see [device-session.md](./device-session.md). This transport is frozen by decision until the phase-2c workshop; a cookie-free `deviceSecret` mint remains a **pending future design**, not the current state. FedCM and the legacy silent/cross-domain restore machinery were deleted from the IdP and the SDK.
+Session authority and transport live entirely in `api.oxy.so`: zero-cookie `deviceId` + `deviceSecret` persisted first-party by the client, minted/refreshed via `POST /session/device/token` (no bearer, no cookies — possession of the secret is the proof). The server-side model is `DeviceSession` (`/session/device/*` + the `session_state` socket event) — see [device-session.md](./device-session.md). There is no cookie and no refresh-token family. FedCM and the legacy silent/cross-domain restore machinery were deleted from the IdP and the SDK.
 
 ## Provider mount — `OxyProvider`, device-first like every app
 

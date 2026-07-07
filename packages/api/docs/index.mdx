@@ -37,7 +37,7 @@ The most common scheme. Used by every first-party Oxy app. The token is obtained
 Authorization: Bearer <accessToken>
 ```
 
-Access tokens expire (typically 15 minutes). Refresh with `POST /auth/refresh-token` using the refresh token returned at sign-in (the SDK rotates the persisted refresh-token family for you) and keep the new access token in memory.
+Access tokens expire (typically 15 minutes). Sign-in also returns a `deviceId` + `deviceSecret` (zero-cookie transport), which the client persists first-party (localStorage per web origin; SecureStore on native). To refresh, POST `{ deviceId, deviceSecret }` to `POST /session/device/token` (no bearer, no cookies — possession of the secret is the proof); the response includes a new access token plus a rotated `deviceSecret`. There is no cookie and no refresh-token family.
 
 If the user has 2FA enabled, `POST /auth/login` returns `{ twoFactorRequired: true, loginToken }` and you must finish with `POST /security/2fa/verify-login`. The final response is the same `AuthSuccess` shape.
 
@@ -65,7 +65,7 @@ The server-side `DeviceSession` is the session authority for first-party apps: o
 | `POST /session/device/add` | Add the bearer's account to the device |
 | `POST /session/device/switch` | Switch active account (`revision++`) |
 | `POST /session/device/signout` | Remove one or all accounts |
-| `GET /auth/device/bootstrap` → `POST /auth/device/exchange` | Single-use, origin-bound boot-code handoff (`#oxy_boot` fragment) for sibling origins |
+| `POST /session/device/token` | Zero-cookie mint/refresh: `{ deviceId, deviceSecret }` (no bearer, no cookies) → access token + rotated `deviceSecret` |
 
 Every mutation broadcasts a token-free `session_state` event to the Socket.IO room `device:<deviceId>`, so all apps on the same device sync instantly.
 
@@ -167,7 +167,7 @@ Each SDK is generated against the same OpenAPI document you see at [`/developers
 |-------|----------|
 | Authentication | `/auth/login`, `/auth/signup`, `/auth/verify`, `/auth/service-token`, `/auth/session/*` |
 | OAuth | `/auth/oauth/authorize`, `/auth/oauth/token`, `/auth/oauth/consent`, `/auth/oauth/client/{clientId}`, `/auth/grants` |
-| Device sessions | `/session/device/state`, `/session/device/add`, `/session/device/switch`, `/session/device/signout`, `/auth/device/bootstrap`, `/auth/device/exchange` |
+| Device sessions | `/session/device/state`, `/session/device/add`, `/session/device/switch`, `/session/device/signout`, `/session/device/token` |
 | Users | `/users/me`, `/users/{userId}`, `/users/search`, `/users/me/data` |
 | Profiles | `/profiles/username/{username}`, `/profiles/search`, `/profiles/resolve` |
 | Sessions | `/session/user/{id}`, `/session/logout/{id}`, `/session/logout-all/{id}` |

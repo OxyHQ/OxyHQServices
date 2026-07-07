@@ -1,6 +1,6 @@
 # Oxy Auth Web
 
-Standalone Vite app — the Oxy authentication gateway (OAuth-like, similar to "Sign in with Google") and FedCM Identity Provider. Handles sign in, sign up, recovery, and authorization for third-party apps. Not a user dashboard.
+Standalone Vite app — the Oxy authentication gateway (OAuth-like, similar to "Sign in with Google"): OAuth 2.0 authorize/consent IdP for third-party "Sign in with Oxy". Handles sign in, sign up, recovery, and authorization for third-party apps. Not a user dashboard.
 
 ## Routes
 
@@ -42,27 +42,11 @@ Default ports:
 3. The auth gateway signs in the user and authorizes the session.
 4. The app receives the session token/access token and completes login.
 
-## FedCM Identity Provider (IdP) Server
-
-The `server/` directory serves the FedCM IdP endpoints. Requirements for Chrome to accept them:
-
-- `/.well-known/web-identity` MUST be served as `application/json` (not `application/octet-stream` — Chrome rejects it).
-- `id_assertion_endpoint` and `disconnect` MUST include:
-  - `Access-Control-Allow-Origin: <RP origin>`
-  - `Access-Control-Allow-Credentials: true`
-  - Enforce the `Sec-Fetch-Dest: webidentity` request guard.
-- `POST /fedcm/nonce` mints a server-bound, origin-scoped nonce required before token exchange — purely local UUID nonces are rejected with `invalid_nonce`.
-
-Changes to the IdP server require a redeploy of auth.oxy.so to take effect in production.
-
 ## Deploy Safety (IdP is production-only — there is NO staging)
 
-`auth.oxy.so` is the SSO Identity Provider for the entire Oxy ecosystem and has **no staging environment** — every push to `main` deploys straight to production for all users. A broken IdP build (blank SPA, a static-only deploy that drops the `_worker.js`, a crashed `/sso` error page, or a pinned multi-domain issuer) takes SSO down everywhere.
+`auth.oxy.so` is the OAuth authorize/consent IdP for the entire Oxy ecosystem and has **no staging environment** — every push to `main` deploys straight to production for all users. The IdP is a **pure-static Vite SPA** deployed to Cloudflare Pages — no Pages Function, no `_worker.js`, no server directory. It authenticates device-first through the same `OxyProvider` (`@oxyhq/services`) every Oxy app uses; the device-account chooser enumerates accounts via the shared device-first SDK (`useSwitchableAccounts`), not a bespoke feed. FedCM and the legacy `/sso` bounce machinery were removed from the IdP entirely. A broken IdP build (blank SPA, or a regression that re-adds the FedCM manifest) takes "Sign in with Oxy" down everywhere.
 
-Two gates protect the deploy (`.github/workflows/deploy-cloudflare.yml`, job `deploy-auth`):
-
-1. **Build-time**: `bun run build:worker` runs and the job fails fast unless `dist/_worker.js` exists, so a static-only build can never ship.
-2. **Post-deploy smoke gate**: after the Cloudflare Pages deploy, `bun run smoke:idp` (`scripts/smoke-idp.ts`) hits the LIVE host on PUBLIC, unauthenticated endpoints only and turns the job RED on any failure. It asserts: `/.well-known/web-identity` is 200 JSON with `provider_urls`; the FedCM config is JSON (not SPA HTML); `/`, `/login`, `/signup` carry the SPA root marker; `/sso` (no params) renders the branded error page instead of crashing; `POST /fedcm/assertion` is answered by the worker as 4xx JSON (proving `_worker.js` is live, not a 405/SPA-HTML static deploy); and each per-apex host (`auth.mention.earth`, `auth.alia.onl`, `auth.homiio.com`, `auth.syra.fm`) reports its OWN issuer in `provider_urls` (the multi-domain FAPI contract).
+One gate protects the deploy (`.github/workflows/deploy-cloudflare.yml`, job `deploy-auth`): after the Cloudflare Pages deploy, `bun run smoke:idp` (`scripts/smoke-idp.ts`) hits the LIVE host on PUBLIC, unauthenticated endpoints only and turns the job RED on any failure. It asserts: `/login`, `/signup`, and `/authorize` carry the SPA root marker (build not broken); and `/.well-known/web-identity` does NOT serve a FedCM manifest (asserts the deletion stays deleted — a regression that re-adds `provider_urls` fails the gate).
 
 Run it locally against production any time:
 
@@ -70,7 +54,6 @@ Run it locally against production any time:
 cd packages/auth
 bun run smoke:idp                                   # default target https://auth.oxy.so
 SMOKE_TARGET=https://auth.mention.earth bun run smoke:idp
-SMOKE_SKIP_SECONDARY=1 bun run smoke:idp            # primary host only
 ```
 
 **Contribution norm for IdP changes:**

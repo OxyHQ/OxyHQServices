@@ -53,7 +53,7 @@ const me: User = await oxy.getCurrentUser();
 | Mixin | Source | Representative methods |
 |-------|--------|------------------------|
 | Auth | `OxyServices.auth.ts` | `signIn`, `signUp`, `requestChallenge`, `verifyChallenge`, `getServiceToken` |
-| Device boot | `OxyServices.deviceBoot.ts` | `exchangeBootCode`, `requestWebSession`, `refreshWithToken` |
+| Device session mint | `OxyServices.deviceBoot.ts` | `mintFromDeviceSecret` (zero-cookie `{deviceId, deviceSecret}` → access token) |
 | User | `OxyServices.user.ts` | `getCurrentUser`, `getUserById`, `getProfileByUsername`, `updateProfile` |
 | Assets | `OxyServices.assets.ts` | `assetUpload`, `getFileDownloadUrl`, `listUserFiles` |
 | Privacy | `OxyServices.privacy.ts` | `getPrivacySettings`, `updatePrivacySettings` |
@@ -72,9 +72,7 @@ The server-side `DeviceSession` is the single session authority: one document pe
 
 - **`SessionClient`** (`src/session/`) — fetches `GET /session/device/state`, mutates via `POST /session/device/{add,switch,signout}`, and applies `session_state` socket pushes (room `device:<deviceId>`, token-free payload) so every Oxy app on the same device syncs instantly.
 - **`runSessionColdBoot`** (`src/boot/coldBootV2.ts`) — deterministic, short-circuit cold boot. Restores silently when device state exists; otherwise resolves logged-out. It never redirects to a login page.
-- **Boot handoff** — `GET /auth/device/bootstrap` issues a single-use, origin-bound code delivered in a `#oxy_boot` URL fragment; `POST /auth/device/exchange` redeems it, letting a sibling origin adopt the device session on first visit.
-
-The transport in production today is a durable first-party `oxy_device` cookie (`Domain=.oxy.so`; an opaque secret, never the deviceId) plus a persisted rotating refresh-token family. That transport is intentionally frozen; a cookie-free `deviceSecret` mint is a pending future design, not current behavior. Full API and socket contract: [device sessions](../../../docs/auth/device-session.md).
+- **Zero-cookie transport** — every successful sign-in returns `deviceId` + a 256-bit `deviceSecret`, persisted first-party (localStorage per web origin; SecureStore on native). `mintFromDeviceSecret` (`OxyServices.deviceBoot.ts`) POSTs `{ deviceId, deviceSecret }` to `POST /session/device/token` (no bearer, no cookies) to mint/refresh a short access token and rotate the secret in-use. There is no cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop. Full API and socket contract: [device sessions](../../../docs/auth/device-session.md).
 
 React apps do not use `SessionClient` directly — `OxyProvider` from `@oxyhq/services` wires it up.
 

@@ -47,7 +47,7 @@ Oxy services are distributed across three specialized domains:
 | Domain | Purpose | Use For |
 |--------|---------|---------|
 | **api.oxy.so** | API | All data operations - users, sessions, posts, social features |
-| **auth.oxy.so** | Authentication | Identity provider - login, signup, SSO, FedCM |
+| **auth.oxy.so** | Authentication | OAuth authorize/consent IdP for third-party "Sign in with Oxy" - login, signup, recovery |
 | **cloud.oxy.so** | Media/CDN | File storage, images, videos, static assets |
 
 ```
@@ -56,7 +56,7 @@ Oxy services are distributed across three specialized domains:
 │  (Identity)     │     │   (Data API)    │     │  (Media CDN)    │
 │                 │     │                 │     │                 │
 │  • Login/Signup │     │  • Users        │     │  • Images       │
-│  • SSO/FedCM    │     │  • Sessions     │     │  • Videos       │
+│  • Recovery     │     │  • Sessions     │     │  • Videos       │
 │  • OAuth flows  │     │  • Posts        │     │  • Files        │
 │                 │     │  • Social       │     │  • Avatars      │
 └─────────────────┘     └─────────────────┘     └─────────────────┘

@@ -220,20 +220,21 @@ are signed in on that device. The full reference lives in
 [SESSION-ARCHITECTURE.md](./SESSION-ARCHITECTURE.md) and
 [auth/device-session.md](./auth/device-session.md); the short version:
 
-### Transport (current)
+### Transport (zero-cookie)
 
-- A durable, first-party **`oxy_device` cookie** (`Domain=.oxy.so`, opaque
-  secret — the server stores only a hash) identifies the device.
-- A **persisted rotating refresh-token family** backs token renewal
-  (`POST /auth/refresh-token`).
-- Cross-apex web boot uses the **`#oxy_boot` bootstrap fragment**:
-  `GET /auth/device/bootstrap` plants the device cookie and returns a
-  single-use code, which the app burns via `POST /auth/device/exchange`.
-
-> **Status:** this transport is **frozen by decision** until the dedicated
-> transport workshop ("workshop 2c"). A future zero-cookie transport
-> (per-origin device secret mint) is a *pending design goal only* — do not
-> document or implement it as current behavior.
+- **`deviceId` + `deviceSecret`** — every successful sign-in (password, 2FA,
+  QR claim, challenge verify) returns the session's `deviceId` and a 256-bit
+  `deviceSecret`. The client persists both first-party (localStorage per web
+  origin; SecureStore on native) — the server stores only
+  `sha256(deviceSecret)` (`DeviceSession.secretHash`, sparse-unique).
+- **Mint** — to restore or refresh, the client POSTs `{ deviceId,
+  deviceSecret }` to `POST /session/device/token` (no bearer, no cookies —
+  possession of the secret is the proof) and gets a short access token plus a
+  rotated `nextDeviceSecret` (rotation-in-use, 60s grace).
+- **No cookie, no refresh-token family, no `#oxy_boot` bootstrap hop** — all
+  deleted in the zero-cookie cutover (2026-07-07). A `deviceId` is per web
+  origin / per native app-group; there is no implicit cross-subdomain or
+  cross-app device sync (the deliberate trade for zero cookies).
 
 ### Server authority
 
@@ -393,23 +394,14 @@ POST /auth/challenge              # Get challenge for identity auth
 POST /auth/verify                 # Verify signed challenge
 ```
 
-### Device-first transport
+### Device session — transport & authority
 
 ```
-GET  /auth/device/bootstrap       # Cross-apex hop target: plants oxy_device, returns a #oxy_boot fragment
-POST /auth/device/web-session     # Same-site fast path: exchange oxy_device cookie for tokens, no redirect
-POST /auth/device/exchange        # Burn a single-use boot code for tokens
-POST /auth/refresh-token          # Rotate the persisted refresh-token family
-POST /auth/device/token           # Bearer-gated: issue the native-channel device token
-```
-
-### Device session authority
-
-```
-GET  /session/device/state        # Token-free DeviceSessionState for this device
-POST /session/device/add          # Add the bearer's account to the device set
-POST /session/device/switch       # Set activeAccountId (revision++)
-POST /session/device/signout      # Remove one account or all (revision++)
+POST /session/device/token         # Zero-cookie mint: {deviceId, deviceSecret} -> access token + rotated deviceSecret (no bearer, no cookies)
+GET  /session/device/state         # Token-free DeviceSessionState for this device
+POST /session/device/add           # Add the bearer's account to the device set
+POST /session/device/switch        # Set activeAccountId (revision++)
+POST /session/device/signout       # Remove one account or all (revision++)
 ```
 
 ### Cross-app sign-in (QR / Commons handoff)
@@ -519,7 +511,8 @@ DELETE /auth/link/:type           # Unlink auth method
     operatedByUserId: ObjectId // set for managed/org accounts (audit)
   }],
   activeAccountId: ObjectId,   // ref: User, nullable
-  cookieKeyHash: String,       // sha256 of the opaque oxy_device cookie value (sparse unique)
+  secretHash: String,          // sha256 of the current deviceSecret (sparse unique)
+  prevSecretHash: String,      // sha256 of the just-superseded secret (short grace window)
   revision: Number             // bumped on every mutation; drives socket sync
 }
 ```
@@ -560,10 +553,11 @@ DELETE /auth/link/:type           # Unlink auth method
 ### Token & Device Security
 
 - **JWT tokens**: Short-lived access tokens
-- **Refresh-token family**: Persisted and rotated on use; reuse of a burned
-  token revokes the family
-- **Opaque device cookie**: the `oxy_device` value reveals nothing about the
-  deviceId; the server stores only its hash
+- **`deviceSecret` rotation-in-use**: each mint via `POST /session/device/token`
+  rotates the secret; the just-superseded secret stays valid for a short grace
+  window (60s) so a multi-tab race is not locked out
+- **Secret never stored raw**: the server stores only `sha256(deviceSecret)`
+  (`DeviceSession.secretHash`); a database dump cannot forge the secret
 - **Token-free sync**: the `session_state` socket payload never contains tokens
 - **Session binding**: Tokens bound to device fingerprint
 

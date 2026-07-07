@@ -62,7 +62,7 @@ Key props (`OxyProviderProps`):
 
 ### `coldBoot` — RP mode vs IdP mode
 
-- **`coldBoot={true}` (default — every Relying Party app):** on mount the provider runs `runSessionColdBoot` from `@oxyhq/core` (boot-fragment return → stored tokens → shared key / bootstrap hop) and opens the signed-out device-state socket, so an idle tab self-acquires a session when a sibling app on the same device signs in. Cold boot **never** auto-redirects to a login page — signed-out apps stay silent until the user opens the account dialog.
+- **`coldBoot={true}` (default — every Relying Party app):** on mount the provider runs `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native, re-mint from the shared Commons identity in the app-group keychain). Cold boot **never** auto-redirects to a login page — signed-out apps stay silent until the user opens the account dialog.
 - **`coldBoot={false}` (the IdP host, `auth.oxy.so`):** the IdP is **not** an RP and **not** a session authority. With `coldBoot={false}` the provider skips the cold boot entirely and never opens the signed-out device socket; auth resolves immediately as signed out. Interactive sign-in (password, 2FA, the "Sign in with Oxy" QR device flow) still commits a normal session scoped to that origin — which is all the IdP needs to drive its OAuth authorize/consent flow. Account management is owned solely by `accounts.oxy.so`; the IdP redirects its former `/settings/*` paths there.
 
 ## Session model (consumed from `@oxyhq/core`)
@@ -76,11 +76,11 @@ The SDK contains no session logic of its own — it binds UI to the shared sessi
 | `accountProjection` | `SwitchableAccount[]` — the ONE account list: device sign-ins ∪ account graph, deduped by account id. |
 | `accountDialogController` | Headless state machine for the account dialog (views, sign-in flow phases). Framework-agnostic; bound via `useSyncExternalStore`. |
 | `authStateStore`, `refresh` | Persisted auth state + the unified token-refresh handler/scheduler. |
-| `boot/coldBootV2`, `boot/deviceBootReturn` | `runSessionColdBoot` and the `#oxy_boot` return-fragment consumer. |
+| `boot/coldBootV2` | `runSessionColdBoot` — the ordered, short-circuit cold-boot runner (`device-secret-mint` then `shared-key-signin`). |
 
-**Server authority:** the `DeviceSession` document (Mongo collection `devicesessions`: `deviceId`, `accounts[{ accountId, sessionId, authuser, operatedByUserId? }]`, `activeAccountId`, `revision`) behind `/session/device/{state,add,switch,signout}`. Every mutation bumps `revision` and broadcasts a token-free `session_state` event to the Socket.IO room `device:<deviceId>`, so all apps on the same device converge instantly. See [device-session.md](../../../docs/auth/device-session.md).
+**Server authority:** the `DeviceSession` document (Mongo collection `devicesessions`: `deviceId`, `accounts[{ accountId, sessionId, authuser, operatedByUserId? }]`, `activeAccountId`, `secretHash`, `revision`) behind `/session/device/{token,state,add,switch,signout}`. Every mutation bumps `revision` and broadcasts a token-free `session_state` event to the Socket.IO room `device:<deviceId>`, so all apps on the same device converge instantly. See [device-session.md](../../../docs/auth/device-session.md).
 
-**Session transport (current, frozen):** a durable first-party `oxy_device` cookie (`Domain=.oxy.so`) plus a persisted rotating refresh-token family, with the `#oxy_boot` bootstrap hop (`GET /auth/device/bootstrap` → `POST /auth/device/exchange`) for cross-subdomain restore. This transport is frozen by decision until the token-mint workshop (phase 2c); a zero-cookie `deviceSecret` mint is a **pending future goal only** — do not implement or document it as current.
+**Session transport (zero-cookie):** every successful sign-in returns `deviceId` + a 256-bit `deviceSecret`, persisted first-party (localStorage per web origin; SecureStore on native) — the server stores only `sha256(deviceSecret)` (`DeviceSession.secretHash`). To restore or refresh, the client POSTs `{ deviceId, deviceSecret }` to `POST /session/device/token` (no bearer, no cookies — possession of the secret is the proof) and gets a short access token plus a rotated secret (rotation-in-use, 60s grace). There is no cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop — all deleted in the zero-cookie cutover. A `deviceId` is per web origin / per native app-group; there is no implicit cross-subdomain or cross-app device sync.
 
 ## Auth surfaces
 

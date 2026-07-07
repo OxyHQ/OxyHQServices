@@ -88,7 +88,7 @@ Redesign to the "Connect account" reference using Bloom:
 - Title (`sectionTitle`) + subtitle (`bodySmall`, `text-tertiary`), centered.
 - Benefits card (`BenefitRow`/`FeatureList`) — 3 icon+caption rows in a `border-image` + `shadow-s` card.
 - Primary full-width `Button` ("Continue to …") + disclaimer caption.
-- Keep all existing IdP logic intact: `useDeviceAccounts`, `AccountChooser`, `sessionStatusSchema`/`safeParse`, the real `PublicApplication` identity, approval/redirect flow. This is a **visual** redesign over unchanged auth behavior. (Web app uses Bloom web + the new token classes; translate the current shadcn classes.)
+- Keep all existing IdP logic intact: `useDeviceAccounts`, `AccountChooser`, `sessionStatusSchema`/`safeParse`, the real `PublicApplication` identity, approval/redirect flow. This is a **visual** redesign over unchanged auth behavior. (Web app uses Bloom web + the new token classes; translate the current shadcn classes.) — *Historical note (2026-07-07): `useDeviceAccounts` was deleted in the zero-cookie cutover; the IdP now enumerates accounts via the device-first SDK's `useSwitchableAccounts` (`@oxyhq/services`). The visual-redesign intent of this spec still stands — target the current hook.*
 
 ### W2 — oxy-services Welcome (`WelcomeNewUserScreen.tsx`)
 - Apply the design language; swap the name-step inputs to the floating `TextField` variant once W0b ships.
