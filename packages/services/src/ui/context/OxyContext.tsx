@@ -126,6 +126,19 @@ export interface OxyContextState {
   }) => Promise<{ securityAlert?: SecurityAlert }>;
 
   /**
+   * Repudiate the sign-in that just committed — the "That wasn't me" response to
+   * a server-flagged {@link SecurityAlert}. Revokes the current device session
+   * server-side (via the same device-first `POST /session/device/signout` path
+   * {@link logout} uses) and, when no other account remains on this device,
+   * clears the persisted zero-cookie `{deviceId, deviceSecret}` credential and
+   * local session state so the next cold boot finds nothing to restore. Any
+   * sibling accounts already signed in on the device are preserved. There is NO
+   * dedicated "report suspicious" API endpoint — repudiation IS device-session
+   * revocation, so a compromised new sign-in cannot be restored.
+   */
+  revokeSuspiciousSignIn: () => Promise<void>;
+
+  /**
    * Commit a session obtained out-of-band (the "Sign in with Oxy" QR device
    * flow). Plants tokens, persists the zero-cookie device credential, registers
    * the account into the device set, and hydrates the full user profile.
@@ -653,6 +666,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setAuthState,
     logger,
   });
+
+  // "That wasn't me": repudiating a flagged sign-in IS revoking the device
+  // session that just committed — the same server-authoritative
+  // `sessionClient.signOut(...)` path `logout` uses, which also clears the
+  // persisted device credential + local state when no sibling account remains.
+  // No dedicated "report suspicious" API endpoint exists (or is needed).
+  const revokeSuspiciousSignIn = useCallback(async (): Promise<void> => {
+    await logout();
+  }, [logout]);
 
   const clearAllAccountData = useCallback(async (): Promise<void> => {
     queryClient.clear();
@@ -1221,6 +1243,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signIn,
       signInWithPassword,
       completeTwoFactorSignIn,
+      revokeSuspiciousSignIn,
       handleWebSession,
       logout,
       logoutAll,
@@ -1270,6 +1293,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signIn,
       signInWithPassword,
       completeTwoFactorSignIn,
+      revokeSuspiciousSignIn,
       handleWebSession,
       logout,
       logoutAll,
@@ -1337,6 +1361,7 @@ const LOADING_STATE: OxyContextState = {
   signIn: () => rejectMissingProvider<User>(),
   signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
   completeTwoFactorSignIn: () => rejectMissingProvider<{ securityAlert?: SecurityAlert }>(),
+  revokeSuspiciousSignIn: () => rejectMissingProvider<void>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),

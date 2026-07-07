@@ -4,6 +4,7 @@ import { User } from '../models/User';
 import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
+import anomalyDetectionService from '../services/anomalyDetection.service';
 import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { buildSessionAuthResponse } from './session.controller';
@@ -395,6 +396,15 @@ export async function verify2FALogin(req: Request, res: Response) {
     user.twoFactorAuth.verifiedAt = new Date();
     await user.save();
 
+    // Check for anomalous login patterns BEFORE creating the session, so the
+    // just-minted session does not mask "new device" detection. Mirrors the
+    // password path in `session.controller.ts` — attaches a `securityAlert` to
+    // the (already-committed) session response when anomalies are detected.
+    const anomalyCheck = await anomalyDetectionService.checkForAnomalies(
+      user._id.toString(),
+      req
+    );
+
     // Create session (same as signIn would)
     const session = await sessionService.createSession(
       user._id.toString(),
@@ -406,7 +416,16 @@ export async function verify2FALogin(req: Request, res: Response) {
     if (!baseTwoFactorResponse) {
       return res.status(500).json({ message: 'Failed to format user data' });
     }
-    const response: typeof baseTwoFactorResponse & { deviceSecret?: string } = baseTwoFactorResponse;
+    const response: typeof baseTwoFactorResponse & {
+      securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> };
+      deviceSecret?: string;
+    } = baseTwoFactorResponse;
+    if (anomalyCheck.hasAnomalies) {
+      response.securityAlert = {
+        message: 'Unusual activity detected on your account',
+        anomalies: anomalyCheck.anomalies,
+      };
+    }
 
     // Register into the device set (add-only) + broadcast, and mint the
     // deviceSecret the client persists first-party. Best-effort.
