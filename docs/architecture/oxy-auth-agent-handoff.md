@@ -1,7 +1,7 @@
 # Oxy Auth Platform — Handoff completo para agente implementador
 
 > **Para Nate:** copia el [Prompt de arranque](#prompt-de-arranque) al agente que ejecute.  
-> **Estado:** 2026-07-05 — documento de handoff; **no implica que el código esté migrado**.  
+> **Estado:** ✅ **PROYECTO CERRADO — DONE (2026-07-07).** Fases 0–7 + 2c en `main` y en producción (core 9 / services 19 / contracts 0.13; sesión device-first cero-cookie; IdP device-first sin excepción). Ver el cierre en [`oxy-auth-audit.md`](./oxy-auth-audit.md) → "🏁 PROYECTO AUTH-PLATFORM CERRADO". Este doc queda como registro histórico del handoff.  
 > **Plan maestro:** [`oxy-auth-platform.md`](./oxy-auth-platform.md) (decisiones de producto/arquitectura).  
 > **Este doc:** checklist ejecutable, inventario real del repo, fases, borrados, docs, third party, **reglas anti-desvío**.
 
