@@ -25,6 +25,7 @@ import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECON
 import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 import User from '../models/User';
 import { isValidObjectId } from '../utils/validation';
+import { serviceAssetMetadataFields } from '../utils/fileMediaMetadata';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -843,13 +844,21 @@ router.post(
     // maps to a live asset.
     const data = files
       .filter((file) => file.status !== 'deleted')
-      .map((file) => ({
-        id: file._id.toString(),
-        sha256: file.sha256,
-        mime: file.mime,
-        size: file.size,
-        status: file.status,
-      }));
+      .map((file) => {
+        const media = serviceAssetMetadataFields(file);
+        return {
+          id: file._id.toString(),
+          sha256: file.sha256,
+          mime: file.mime,
+          size: file.size,
+          status: file.status,
+          ...(media.width !== undefined ? { width: media.width } : {}),
+          ...(media.height !== undefined ? { height: media.height } : {}),
+          ...(media.durationSec !== undefined ? { durationSec: media.durationSec } : {}),
+          ...(media.orientation !== undefined ? { orientation: media.orientation } : {}),
+          ...(media.aspectRatio !== undefined ? { aspectRatio: media.aspectRatio } : {}),
+        };
+      });
 
     logger.debug('POST /assets/service/by-ids', {
       appId: req.serviceApp?.appId,
@@ -955,6 +964,7 @@ router.post(
     const data = await Promise.all(
       files.map(async (file) => {
         const url = await assetService.getPublicCdnUrl(file);
+        const media = serviceAssetMetadataFields(file);
         return {
           sha256: file.sha256,
           id: file._id.toString(),
@@ -962,6 +972,11 @@ router.post(
           size: file.size,
           status: file.status,
           ...(url ? { url } : {}),
+          ...(media.width !== undefined ? { width: media.width } : {}),
+          ...(media.height !== undefined ? { height: media.height } : {}),
+          ...(media.durationSec !== undefined ? { durationSec: media.durationSec } : {}),
+          ...(media.orientation !== undefined ? { orientation: media.orientation } : {}),
+          ...(media.aspectRatio !== undefined ? { aspectRatio: media.aspectRatio } : {}),
         };
       })
     );

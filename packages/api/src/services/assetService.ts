@@ -1001,6 +1001,8 @@ export class AssetService {
       mime: mimeType,
     });
 
+    this.queueVariantGeneration(file);
+
     return file;
   }
 

@@ -520,6 +520,16 @@ export interface ServiceAssetMetadata {
   mime: string;
   size: number;
   status: 'active' | 'trash';
+  /** Intrinsic width in pixels when variant/metadata extraction has run. */
+  width?: number;
+  /** Intrinsic height in pixels when variant/metadata extraction has run. */
+  height?: number;
+  /** Playback duration in seconds for video/audio assets. */
+  durationSec?: number;
+  /** Derived once from width/height at asset processing time. */
+  orientation?: 'portrait' | 'landscape' | 'square';
+  /** width / height, derived at asset processing time. */
+  aspectRatio?: number;
 }
 
 /**
@@ -544,6 +554,11 @@ export interface ServiceAssetMetadataBySha {
   size: number;
   status: 'active' | 'trash';
   url?: string;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  orientation?: 'portrait' | 'landscape' | 'square';
+  aspectRatio?: number;
 }
 
 /**

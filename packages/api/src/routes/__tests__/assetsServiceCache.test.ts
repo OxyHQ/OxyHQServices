@@ -529,11 +529,12 @@ describe('POST /assets/service/by-ids', () => {
         mime: 'image/png',
         size: 1234,
         status: 'active',
+        metadata: { image: { width: 800, height: 600 }, media: { width: 800, height: 600, orientation: 'landscape', aspectRatio: 800 / 600 } },
+        variants: [{ type: 'thumb', key: 'k', width: 256, height: 192 }],
         // Fields below must NOT leak into the response.
         storageKey: 'public/content/2026/06/aa/secret.png',
         ownerUserId: 'owner-1',
         links: [{ app: 'mention' }],
-        variants: [{ type: 'thumb', key: 'k' }],
       },
       {
         _id: { toString: () => USER_FILE_ID },
@@ -561,9 +562,15 @@ describe('POST /assets/service/by-ids', () => {
       mime: 'image/png',
       size: 1234,
       status: 'active',
+      width: 800,
+      height: 600,
+      orientation: 'landscape',
+      aspectRatio: 800 / 600,
     });
-    // Metadata-only contract: no bytes/url/owner/links/variants/storageKey.
-    expect(Object.keys(data[0]).sort()).toEqual(['id', 'mime', 'sha256', 'size', 'status']);
+    // Metadata-only contract: no bytes/url/owner/links/storageKey; variants not exposed.
+    expect(Object.keys(data[0]).sort()).toEqual(
+      ['aspectRatio', 'height', 'id', 'mime', 'orientation', 'sha256', 'size', 'status', 'width'].sort(),
+    );
   });
 
   it('omits unknown ids (no whole-batch 404)', async () => {

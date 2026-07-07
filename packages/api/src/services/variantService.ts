@@ -8,6 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import { execSync, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
+import { applyCanonicalMediaMetadata } from '../utils/fileMediaMetadata';
 
 // FFprobe metadata interfaces for type safety
 interface FFprobeStream {
@@ -268,9 +269,12 @@ export class VariantService {
       });
 
       if (existingFile && existingFile.variants.length > 0) {
-        // Reuse existing variants
-  file.variants = existingFile.variants;
-  await this.commitVariants(file);
+        // Reuse existing variants and intrinsic metadata from the content-address twin.
+        file.variants = existingFile.variants;
+        if (existingFile.metadata) {
+          file.metadata = { ...(file.metadata ?? {}), ...existingFile.metadata };
+        }
+        await this.commitVariants(file);
         
         logger.info('Reused existing variants for duplicate content', { 
           fileId, 
@@ -341,6 +345,14 @@ export class VariantService {
         });
 
         logger.debug('Generated image variant', { fileId: file._id, type: config.type, key: variantKey });
+      }
+
+      if (meta.width && meta.height) {
+        file.metadata = {
+          ...(file.metadata ?? {}),
+          image: { width: meta.width, height: meta.height },
+        };
+        applyCanonicalMediaMetadata(file, { width: meta.width, height: meta.height });
       }
 
   file.variants = variants;
@@ -427,6 +439,11 @@ export class VariantService {
           audioCodec: metadata.audioCodec
         }
       };
+      applyCanonicalMediaMetadata(file, {
+        width: metadata.width,
+        height: metadata.height,
+        durationSec: metadata.duration,
+      });
 
       file.variants = variants;
       await this.commitVariants(file);
@@ -1232,10 +1249,14 @@ declare module './variantService' {
 VariantService.prototype.commitVariants = async function(file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> {
   const { maxRetries = 2, retryDelay = 60 } = options;
   let attempt = 0;
-  // We only update the variants field to avoid version key conflicts; using updateOne bypasses optimistic concurrency
+  // Persist variants and intrinsic metadata together.
   while (attempt <= maxRetries) {
     try {
-      await File.updateOne({ _id: file._id }, { $set: { variants: file.variants } }).exec();
+      const $set: Record<string, unknown> = { variants: file.variants };
+      if (file.metadata !== undefined) {
+        $set.metadata = file.metadata;
+      }
+      await File.updateOne({ _id: file._id }, { $set }).exec();
       return;
     } catch (err: unknown) {
       const error = err as { name?: string };
