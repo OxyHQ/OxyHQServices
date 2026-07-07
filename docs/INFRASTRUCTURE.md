@@ -1,20 +1,20 @@
 # Infrastructure
 
-All Oxy production infrastructure runs on **AWS** in the **eu-west-1 (Ireland)** region in the production AWS account. Infrastructure-as-code lives in the `oxy-infra` repo (Terraform; state in a private S3 backend).
+All Oxy production infrastructure runs on **AWS** in the **us-west-2 (Oregon)** region in the production AWS account. Infrastructure-as-code lives in the `oxy-infra` repo (Terraform; state in a private S3 backend).
 
 ## Resources Overview
 
 | Resource | Type | Identifier | Region | Purpose |
 |----------|------|------------|--------|---------|
-| `oxy-cluster` | ECS Fargate cluster | — | eu-west-1 | Runs all 6 backend services as Fargate tasks (linux/arm64) |
-| `oxy-alb` | Application Load Balancer | `<alb-dns-name>` | eu-west-1 | HTTPS termination (ACM multi-SAN cert) + path/host routing to ECS services |
-| `oxy-valkey` | ElastiCache (Valkey) | — | eu-west-1 | Rate limiting + Socket.IO adapter |
-| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `<mongo-instance-id>` (EIP `<mongo-public-ip>`) | eu-west-1 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
-| `<mongo-backup-bucket>` | S3 bucket | — | eu-west-1 | Daily mongodump under `daily/` (14-day retention) |
-| `<terraform-state-bucket>` | S3 bucket | — | eu-west-1 | Terraform remote state |
-| ECR repos | `<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/<app>` | one per service | eu-west-1 | linux/arm64 images for each backend |
+| `oxy-cluster` | ECS Fargate cluster | — | us-west-2 | Runs all 6 backend services as Fargate tasks (linux/arm64) |
+| `oxy-alb` | Application Load Balancer | `<alb-dns-name>` | us-west-2 | HTTPS termination (ACM multi-SAN cert) + path/host routing to ECS services |
+| `oxy-valkey` | ElastiCache (Valkey) | — | us-west-2 | Rate limiting + Socket.IO adapter |
+| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `<mongo-instance-id>` (EIP `<mongo-public-ip>`) | us-west-2 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
+| `<mongo-backup-bucket>` | S3 bucket | — | us-west-2 | Daily mongodump under `daily/` (14-day retention) |
+| `<terraform-state-bucket>` | S3 bucket | — | us-west-2 | Terraform remote state |
+| ECR repos | `237343248947.dkr.ecr.us-west-2.amazonaws.com/oxy/<app>` | one per service | us-west-2 | linux/arm64 images for each backend |
 | `oxy-github-deploy` | IAM role | — | — | Trust policy for GitHub OIDC; no static AWS keys in GitHub |
-| SES | — | — | eu-west-1 | Outbound email |
+| SES | — | — | us-west-2 | Outbound email |
 | Cloudflare Pages | — | — | — | Static frontends (accounts, auth, console, inbox, os, syra, allo) |
 
 ### Services running on `oxy-cluster`
@@ -44,7 +44,7 @@ All tasks run `assign_public_ip=true` so there is no NAT gateway in the path.
 - ALB listener on `:443` terminates TLS with the ACM multi-SAN cert (DNS-validated through the Cloudflare API). HTTP `:80` redirects to `:443`.
 - ALB target groups route by `Host:` header to the matching ECS service.
 - Cloudflare DNS is **DNS-only** (grey cloud) for the API hostnames so the ALB sees real client IPs and ACM can complete DNS-01 validation.
-- ECS tasks talk to ElastiCache and the MongoDB EC2 instance over the default VPC inside `eu-west-1`.
+- ECS tasks talk to ElastiCache and the MongoDB EC2 instance over the default VPC inside `us-west-2`.
 - Security group on the MongoDB EC2 instance allows `:27017` only from the ECS task ENIs and from the ops bastion path (SSM Session Manager — no SSH key on disk).
 
 ## Database: MongoDB (self-hosted on EC2)

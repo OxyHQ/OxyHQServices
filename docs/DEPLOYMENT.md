@@ -4,9 +4,9 @@
 
 | Environment | Platform | URL | Trigger |
 |-------------|----------|-----|---------|
-| **API** | AWS ECS Fargate (eu-west-1) | `api.oxy.so` | Push to `main` -> `deploy-aws.yml` |
+| **API** | AWS ECS Fargate (us-west-2) | `api.oxy.so` | Push to `main` -> `deploy-aws.yml` |
 | **Static frontends** | Cloudflare Pages | `auth.oxy.so`, `accounts.oxy.so`, `inbox.oxy.so`, `console.oxy.so` | Push to `main` -> `deploy-cloudflare.yml` |
-| **Other backends** | AWS ECS Fargate (eu-west-1) | `api.mention.earth`, `api.homiio.com`, `api.alia.onl`, `api.syra.oxy.so`, `api.allo.oxy.so` | Push to their repos -> per-repo `deploy-aws.yml` |
+| **Other backends** | AWS ECS Fargate (us-west-2) | `api.mention.earth`, `api.homiio.com`, `api.alia.onl`, `api.syra.oxy.so`, `api.allo.oxy.so` | Push to their repos -> per-repo `deploy-aws.yml` |
 
 ## AWS deployment (`api.oxy.so`)
 
@@ -37,7 +37,7 @@ There is no Caddy, no SMTP server, and no NAT gateway in this path. Outbound ema
 1. Sync the relevant GitHub Actions secrets into SSM (`/oxy/oxy-api/*` and the shared parameter namespace). The deploy workflow is the source of truth that mirrors GitHub secrets to AWS — see lines 36-46 of the workflow.
 2. Authenticate to AWS using **GitHub OIDC** (no static AWS keys in repo secrets) -> assume the IAM role `oxy-github-deploy`.
 3. `docker buildx build --platform linux/arm64 ...` against the API Dockerfile.
-4. Push the resulting image to ECR (`<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`).
+4. Push the resulting image to ECR (`237343248947.dkr.ecr.us-west-2.amazonaws.com/oxy/oxy-api`).
 5. `aws ecs update-service --cluster oxy-cluster --service oxy-api --force-new-deployment` -- ECS pulls the new image, drains old tasks behind the ALB and replaces them.
 
 Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered with `aws ecs register-task-definition` when env / secret mappings change; image-only updates reuse the existing task definition.
@@ -82,7 +82,7 @@ The image is built for **linux/arm64** (Graviton). x86 images won't run on the F
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
 | `DEVICE_ID_SALT` | 64-hex salt scoping `deriveStableDeviceId` |
-| `AWS_REGION` | S3/SES region (`eu-west-1`) |
+| `AWS_REGION` | S3/SES region (`us-west-2`) |
 | `AWS_S3_BUCKET` | Asset storage bucket |
 | `NODE_ENV` | `production` or `development` |
 | `PORT` | `8080` |
@@ -137,7 +137,7 @@ curl https://api.oxy.so/health
 
 ## Operational notes
 
-- **Logs**: ECS task stdout/stderr is shipped to CloudWatch Logs (`/ecs/oxy-api`). Use `aws logs tail /ecs/oxy-api --follow` (configure profile `oxy`) to stream the live log.
+- **Logs**: ECS task stdout/stderr is shipped to CloudWatch Logs (`/oxy/ecs`). Use `aws logs tail /oxy/ecs --follow --log-stream-name-prefix oxy-api` (profile `oxy`) to stream the live log.
 - **Rollback**: re-run a previous successful deploy workflow, or `aws ecs update-service --task-definition oxy-oxy-api:<previous-rev>`.
 - **SSH-less access**: the MongoDB EC2 instance has no SSH keys. Use AWS SSM Session Manager: `aws ssm start-session --target <mongo-instance-id>`.
 - **Backups**: `s3://<mongo-backup-bucket>/daily/`. Restore runbook lives in `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.
