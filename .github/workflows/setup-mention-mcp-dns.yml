@@ -38,5 +38,5 @@ jobs:
                 --data "$body" | jq -c --arg n "$name" '{op:"create",name:$n,success,errors}'
             fi
           }
-          upsert CNAME "mcp.mention.earth" "$ALB_DNS" true
+          upsert CNAME "mcp.mention.earth" "$ALB_DNS" false
           upsert CNAME "_05fcd9b35de10c5aa2b9660fbbf833fa.mcp.mention.earth" "_8086e146534f1dba36d48897eb67e058.jkddzztszm.acm-validations.aws" false
