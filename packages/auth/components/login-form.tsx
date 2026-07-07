@@ -82,6 +82,7 @@ export function LoginForm({
         oxyServices,
         signInWithPassword,
         completeTwoFactorSignIn,
+        revokeSuspiciousSignIn,
         switchToAccount,
         openAccountDialog,
     } = useOxy()
@@ -273,6 +274,32 @@ export function LoginForm({
             return
         }
         redirectAfterLogin()
+    }
+
+    /**
+     * "That wasn't me": the just-committed sign-in was flagged as anomalous and
+     * the user is repudiating it. Revoke the device session server-side and clear
+     * the local zero-cookie device credential via the SDK (no app-local auth
+     * plumbing), then return to the identifier step. Revocation failure is
+     * non-fatal — we still drop the alert and bounce back so the compromised UI
+     * never lingers.
+     */
+    async function handleDenySignIn() {
+        setIsSubmitting(true)
+        try {
+            await revokeSuspiciousSignIn()
+        } catch (err) {
+            const message = err instanceof Error && err.message ? err.message : "Couldn't revoke that sign-in."
+            toast.error("Revoke failed", { description: message })
+        } finally {
+            setSecurityAlert(null)
+            setIsSubmitting(false)
+            // Re-show the identifier form rather than the account chooser: the
+            // repudiated account was just revoked, so returning to the chooser
+            // would be confusing.
+            setShowLoginForm(true)
+            goToStep("identifier", "back")
+        }
     }
 
     /** Map a thrown sign-in error onto the inline error UI (rate-limit aware). */
@@ -571,10 +598,10 @@ export function LoginForm({
                             <p className="text-base text-muted-foreground">{securityAlert?.message}</p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setSecurityAlert(null); goToStep("identifier", "back") }}>
+                            <Button variant="outline" size="lg" className="flex-1" loading={isSubmitting} disabled={isSubmitting} onClick={() => { void handleDenySignIn() }}>
                                 That wasn&apos;t me
                             </Button>
-                            <Button size="lg" className="flex-1" onClick={() => redirectAfterLogin()}>
+                            <Button size="lg" className="flex-1" disabled={isSubmitting} onClick={() => redirectAfterLogin()}>
                                 Yes, it was me
                             </Button>
                         </div>
