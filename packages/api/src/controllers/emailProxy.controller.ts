@@ -5,9 +5,9 @@
  * and provide tracking protection for users.
  */
 
+import type { IncomingMessage } from 'node:http';
 import { Request, Response as ExpressResponse } from 'express';
-import { lookup } from 'dns/promises';
-import net from 'net';
+import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { BadRequestError } from '../utils/error';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
@@ -33,41 +33,9 @@ const TRANSPARENT_GIF = Buffer.from(
   'base64'
 );
 
-// ─── SSRF Protection ──────────────────────────────────────────────
+// ─── URL validation ───────────────────────────────────────────────
 
-function isPrivateIpAddress(address: string): boolean {
-  const ipVersion = net.isIP(address);
-
-  if (ipVersion === 4) {
-    const [a, b] = address.split('.').map(Number);
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 198 && (b === 18 || b === 19)) ||
-      a >= 224
-    );
-  }
-
-  if (ipVersion === 6) {
-    const normalized = address.toLowerCase();
-    return (
-      normalized === '::1' ||
-      normalized === '::' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe80:')
-    );
-  }
-
-  return false;
-}
-
-async function validateProxyUrl(urlString: string): Promise<URL> {
+function parseProxyUrl(urlString: string): string {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -79,28 +47,38 @@ async function validateProxyUrl(urlString: string): Promise<URL> {
     throw new BadRequestError('Only HTTP(S) URLs are allowed');
   }
 
-  const hostname = url.hostname.toLowerCase();
-  if (
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local') ||
-    isPrivateIpAddress(hostname)
-  ) {
-    throw new BadRequestError('Private network URLs are not allowed');
-  }
+  return url.href;
+}
 
-  let addresses: Array<{ address: string }>;
-  try {
-    addresses = await lookup(hostname, { all: true, verbatim: false });
-  } catch {
-    throw new BadRequestError('Unable to resolve URL host');
-  }
+function readBodyLimited(response: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
+  return new Promise<Buffer | null>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
 
-  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateIpAddress(address))) {
-    throw new BadRequestError('Private network URLs are not allowed');
-  }
+    const finish = (value: Buffer | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
 
-  return url;
+    response.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        response.destroy();
+        finish(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    response.on('end', () => finish(Buffer.concat(chunks, total)));
+    response.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    response.on('close', () => finish(null));
+  });
 }
 
 // ─── Tracking Protection ──────────────────────────────────────────
@@ -224,7 +202,8 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
     decodedUrl = decodeURIComponent(encodedUrl);
   }
 
-  const url = await validateProxyUrl(decodedUrl);
+  const normalizedUrl = parseProxyUrl(decodedUrl);
+  const url = new URL(normalizedUrl);
 
   // Block tracking URLs
   if (isTrackingUrl(url)) {
@@ -239,82 +218,66 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
     return sendProxiedResponse(res, cached.buffer, cached.contentType, true);
   }
 
-  // Fetch the resource
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-
   try {
-    let currentUrl = url;
-    let response: globalThis.Response | undefined;
+    const result = await safeFetch(normalizedUrl, {
+      headers: {
+        'User-Agent': 'OxyMail/1.0 (Image Proxy)',
+        Accept: 'image/*,font/*,*/*',
+      },
+      maxRedirects: MAX_REDIRECTS,
+      headersTimeoutMs: FETCH_TIMEOUT,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    });
 
-    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-      response = await fetch(currentUrl.href, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'OxyMail/1.0 (Image Proxy)',
-          Accept: 'image/*,font/*,*/*',
-        },
-        redirect: 'manual',
-      });
+    const { response, status, headers, finalUrl } = result;
 
-      if (![301, 302, 303, 307, 308].includes(response.status)) {
-        break;
-      }
-
-      const location = response.headers.get('location');
-      if (!location) {
-        break;
-      }
-
-      if (redirects === MAX_REDIRECTS) {
-        clearTimeout(timeoutId);
+    try {
+      if (status < 200 || status >= 300) {
         return sendTransparentGif(res, 3600);
       }
 
-      currentUrl = await validateProxyUrl(new URL(location, currentUrl).href);
+      const contentTypeHeader = headers['content-type'];
+      const contentType = (Array.isArray(contentTypeHeader)
+        ? contentTypeHeader[0]
+        : contentTypeHeader) || 'application/octet-stream';
+      const finalParsed = new URL(finalUrl);
+
+      // Validate content type — allow octet-stream for font files (many servers
+      // serve .ttf/.woff as application/octet-stream instead of font/*)
+      const isAllowedType = /^(image\/|font\/|application\/(font|x-font))/i.test(contentType);
+      const isFontByExtension = contentType === 'application/octet-stream'
+        && FONT_EXTENSIONS.test(finalParsed.pathname);
+      if (!isAllowedType && !isFontByExtension) {
+        throw new BadRequestError('Only images and fonts allowed');
+      }
+
+      const buffer = await readBodyLimited(response, MAX_IMAGE_SIZE);
+      if (!buffer) {
+        throw new BadRequestError('Resource too large');
+      }
+
+      // Block tracking pixels (very small images)
+      if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
+        logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
+        return sendTransparentGif(res);
+      }
+
+      // Use correct MIME when upstream sends generic octet-stream for fonts
+      let resolvedType = contentType;
+      if (isFontByExtension) {
+        const ext = finalParsed.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
+        if (ext && FONT_MIME[ext]) resolvedType = FONT_MIME[ext];
+      }
+
+      addToCache(cacheKey, buffer, resolvedType);
+      sendProxiedResponse(res, buffer, resolvedType, false);
+    } finally {
+      response.destroy();
     }
-
-    if (!response || !response.ok) {
-      clearTimeout(timeoutId);
-      return sendTransparentGif(res, 3600);
-    }
-
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
-
-    // Validate content type — allow octet-stream for font files (many servers
-    // serve .ttf/.woff as application/octet-stream instead of font/*)
-    const isAllowedType = /^(image\/|font\/|application\/(font|x-font))/i.test(contentType);
-    const isFontByExtension = contentType === 'application/octet-stream' && FONT_EXTENSIONS.test(currentUrl.pathname);
-    if (!isAllowedType && !isFontByExtension) {
-      clearTimeout(timeoutId);
-      throw new BadRequestError('Only images and fonts allowed');
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    clearTimeout(timeoutId);
-    const buffer = Buffer.from(arrayBuffer);
-
-    if (buffer.length > MAX_IMAGE_SIZE) {
-      throw new BadRequestError('Resource too large');
-    }
-
-    // Block tracking pixels (very small images)
-    if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
-      logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
-      return sendTransparentGif(res);
-    }
-
-    // Use correct MIME when upstream sends generic octet-stream for fonts
-    let resolvedType = contentType;
-    if (isFontByExtension) {
-      const ext = currentUrl.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
-      if (ext && FONT_MIME[ext]) resolvedType = FONT_MIME[ext];
-    }
-
-    addToCache(cacheKey, buffer, resolvedType);
-    sendProxiedResponse(res, buffer, resolvedType, false);
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (error instanceof SsrfRejection) {
+      throw new BadRequestError('Private network URLs are not allowed');
+    }
 
     if (error instanceof BadRequestError) throw error;
 

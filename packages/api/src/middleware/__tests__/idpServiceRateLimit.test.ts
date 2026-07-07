@@ -2,13 +2,9 @@
  * IdP worker server-to-server rate-limit exemption.
  *
  * The auth.oxy.so Cloudflare worker calls a small set of oxy-api endpoints
- * server-to-server for EVERY user's FedCM / SSO / silent-restore flow, from a
- * shared pool of egress IPs:
+ * server-to-server for session validation, from a shared pool of egress IPs:
  *
- *   - GET  /fedcm/clients/approved   (resolveApprovedClientOrigin)
- *   - GET  /fedcm/grants/:userId     (fetchApprovedClients, X-Oxy-Internal)
  *   - GET  /session/validate/:id     (fetchUserFromAPI / validateSession)
- *   - POST /sso/code                 (mint SSO code, X-Oxy-Internal)
  *
  * These MUST NOT share the per-IP browser budget (`rl:general`, 1000/15min):
  * one worker IP fans many users through them, so browser-scale traffic would
@@ -18,9 +14,8 @@
  *
  * MOUNT-ORDER INVARIANT (documented, enforced by these tests): every path
  * matched by `isIdpServiceToServicePath` is excluded from `rl:general`, so it
- * MUST carry its own route-level limiter (reads → `idpServiceLimiter`;
- * /sso/code → its secret-gated `rl:sso:code:` codeLimiter). `isIdpServiceToServicePath`
- * and the route wiring must be kept in sync.
+ * MUST carry its own route-level limiter (reads → `idpServiceLimiter`).
+ * `isIdpServiceToServicePath` and the route wiring must be kept in sync.
  */
 import express from 'express';
 import http from 'http';

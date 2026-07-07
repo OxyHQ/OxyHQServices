@@ -20,6 +20,20 @@ const mockAuthMiddleware = jest.fn();
 const mockUserFindOne = jest.fn();
 const mockUserFindOneAndUpdate = jest.fn();
 const mockScheduleAvatarRefresh = jest.fn();
+const mockSafeFetch = jest.fn();
+
+class FakeSsrfRejection extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SsrfRejection';
+  }
+}
+
+jest.mock('@oxyhq/core/server', () => ({
+  __esModule: true,
+  safeFetch: (...args: unknown[]) => mockSafeFetch(...args),
+  SsrfRejection: FakeSsrfRejection,
+}));
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -85,6 +99,19 @@ jest.mock('../../models/User', () => ({
 
 import usersRouter from '../users';
 import { errorHandler } from '../../middleware/errorHandler';
+import { Readable } from 'stream';
+
+function makeSafeFetchResult(
+  status: number,
+  headers: Record<string, string>,
+  body: Buffer | string = Buffer.alloc(0),
+  finalUrl = 'https://example.com/.well-known/webfinger',
+) {
+  const buffer = typeof body === 'string' ? Buffer.from(body) : body;
+  const response = Readable.from([buffer]) as Readable & { destroy: jest.Mock };
+  response.destroy = jest.fn();
+  return { status, headers, finalUrl, response };
+}
 
 interface JsonResponse {
   status: number;
@@ -184,9 +211,7 @@ describe('PUT /users/resolve (C4)', () => {
   });
 
   it('rejects when actorUri hostname does not match the asserted domain', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response('{}', { status: 404 }),
-    );
+    mockSafeFetch.mockResolvedValue(makeSafeFetchResult(404, {}, '{}'));
 
     const res = await requestJson(server, 'PUT', '/users/resolve', {
       type: 'federated',
@@ -198,13 +223,11 @@ describe('PUT /users/resolve (C4)', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/actorUri hostname/i);
-    expect(fetchSpy).toHaveBeenCalledWith(
+    expect(mockSafeFetch).toHaveBeenCalledWith(
       'https://mastodon.social/.well-known/webfinger?resource=acct%3Amallory%40mastodon.social',
       expect.anything(),
     );
     expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
-
-    fetchSpy.mockRestore();
   });
 
   it('rejects agent username that collides with an existing local user', async () => {
@@ -354,16 +377,17 @@ describe('PUT /users/resolve (C4)', () => {
 
   it('allows non-www actor hosts only when WebFinger loops back to the actor URI', async () => {
     const actorUri = 'https://ap.example.com/users/alice';
-    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({
-        subject: 'acct:alice@example.com',
-        links: [
-          { rel: 'self', type: 'application/activity+json', href: actorUri },
-        ],
-      }), {
-        status: 200,
-        headers: { 'content-type': 'application/jrd+json' },
-      }),
+    mockSafeFetch.mockResolvedValue(
+      makeSafeFetchResult(
+        200,
+        { 'content-type': 'application/jrd+json' },
+        JSON.stringify({
+          subject: 'acct:alice@example.com',
+          links: [
+            { rel: 'self', type: 'application/activity+json', href: actorUri },
+          ],
+        }),
+      ),
     );
 
     const leanResult = jest.fn().mockResolvedValue(null);
@@ -383,7 +407,7 @@ describe('PUT /users/resolve (C4)', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(fetchSpy).toHaveBeenCalledWith(
+    expect(mockSafeFetch).toHaveBeenCalledWith(
       'https://example.com/.well-known/webfinger?resource=acct%3Aalice%40example.com',
       expect.anything(),
     );
@@ -398,8 +422,21 @@ describe('PUT /users/resolve (C4)', () => {
       }),
       expect.anything(),
     );
+  });
 
-    fetchSpy.mockRestore();
+  it('rejects non-matching actor hosts when WebFinger fetch is blocked by SSRF guard', async () => {
+    mockSafeFetch.mockRejectedValue(new FakeSsrfRejection('blocked'));
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@example.com',
+      actorUri: 'https://ap.example.com/users/alice',
+      domain: 'example.com',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/actorUri hostname/i);
+    expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
   // ----------------------------------------------------------------------
@@ -411,7 +448,7 @@ describe('PUT /users/resolve (C4)', () => {
   // ----------------------------------------------------------------------
 
   it('resolves a did:plc: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    mockSafeFetch.mockClear();
 
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -432,7 +469,7 @@ describe('PUT /users/resolve (C4)', () => {
 
     expect(res.status).toBe(200);
     // No WebFinger / host-binding network call for a DID actor.
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockSafeFetch).not.toHaveBeenCalled();
     // DID stored verbatim as both the dedup filter key and the persisted value.
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
       { 'federation.actorUri': actorUri },
@@ -450,12 +487,10 @@ describe('PUT /users/resolve (C4)', () => {
       }),
       expect.anything(),
     );
-
-    fetchSpy.mockRestore();
   });
 
   it('resolves a did:web: actorUri verbatim and skips the AP host-binding/WebFinger check', async () => {
-    const fetchSpy = jest.spyOn(globalThis, 'fetch');
+    mockSafeFetch.mockClear();
 
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -475,7 +510,7 @@ describe('PUT /users/resolve (C4)', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockSafeFetch).not.toHaveBeenCalled();
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
       { 'federation.actorUri': actorUri },
       expect.objectContaining({
@@ -487,8 +522,6 @@ describe('PUT /users/resolve (C4)', () => {
       }),
       expect.anything(),
     );
-
-    fetchSpy.mockRestore();
   });
 
   it('refresh: schedules an off-request-path avatar download with force=true and returns immediately', async () => {

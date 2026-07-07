@@ -20,11 +20,9 @@ export interface RequiredEnvVars {
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
 
-  // Central cross-domain SSO: shared secret the auth.oxy.so worker presents in
-  // the `X-Oxy-Internal` header on `POST /sso/code`. Must be provisioned
-  // (GitHub secret → SSM `/oxy/oxy-api/SSO_INTERNAL_SECRET`) and match the
-  // worker's value. When unset the `/sso/code` mint endpoint fails closed
-  // (returns 404 to every caller), disabling code-based SSO. ≥32 chars.
+  // Legacy cross-domain SSO secret (FedCM / POST /sso/code removed in wave 2).
+  // Still synced from GitHub → SSM for environments that haven't dropped it yet;
+  // no live route reads it. Safe to omit in new deployments.
   SSO_INTERNAL_SECRET?: string;
 
   // Device-id derivation salt (security review H1). Required in production

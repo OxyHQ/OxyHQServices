@@ -11,6 +11,8 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
+import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
+import { readBoundedBody } from '../services/linkPreview/boundedBody';
 import User from '../models/User';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -1402,6 +1404,8 @@ function isAtprotoDidActorUri(actorUri: string): boolean {
   return ATPROTO_DID_ACTOR_URI.test(actorUri);
 }
 
+const WEBFINGER_MAX_BYTES = 64 * 1024;
+
 async function verifyFederatedWebFingerBinding(username: string, actorUri: string): Promise<boolean> {
   const atIndex = username.indexOf('@');
   if (atIndex === -1 || atIndex === username.length - 1) return false;
@@ -1411,32 +1415,49 @@ async function verifyFederatedWebFingerBinding(username: string, actorUri: strin
   const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
   try {
-    const response = await fetch(url, {
+    const result = await safeFetch(url, {
       headers: { Accept: 'application/jrd+json, application/json' },
+      headersTimeoutMs: 10_000,
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return false;
 
-    const data = await response.json() as {
-      subject?: unknown;
-      links?: Array<{ rel?: unknown; type?: unknown; href?: unknown }>;
-    };
-    const normalizedSubject = typeof data.subject === 'string'
-      ? normalizeFederatedResolveUsername(data.subject.replace(/^acct:/, ''))
-      : null;
-    if (normalizedSubject !== username) return false;
+    const { response, status } = result;
+    try {
+      if (status < 200 || status >= 300) return false;
 
-    const selfLink = data.links?.find((link) => (
-      link.rel === 'self'
-      && typeof link.href === 'string'
-      && (
-        link.type === 'application/activity+json'
-        || link.type === 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
-      )
-    ));
+      const body = await readBoundedBody(response, { maxBytes: WEBFINGER_MAX_BYTES });
+      const data = JSON.parse(body) as {
+        subject?: unknown;
+        links?: Array<{ rel?: unknown; type?: unknown; href?: unknown }>;
+      };
+      const normalizedSubject = typeof data.subject === 'string'
+        ? normalizeFederatedResolveUsername(data.subject.replace(/^acct:/, ''))
+        : null;
+      if (normalizedSubject !== username) return false;
 
-    return selfLink?.href === actorUri;
+      const selfLink = data.links?.find((link) => (
+        link.rel === 'self'
+        && typeof link.href === 'string'
+        && (
+          link.type === 'application/activity+json'
+          || link.type === 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
+        )
+      ));
+
+      return selfLink?.href === actorUri;
+    } finally {
+      response.destroy();
+    }
   } catch (error) {
+    if (error instanceof SsrfRejection) {
+      logger.warn('Blocked federated WebFinger binding fetch', {
+        username,
+        actorUri,
+        reason: error.message,
+      });
+      return false;
+    }
+
     logger.warn('Failed to verify federated WebFinger binding', {
       username,
       actorUri,
