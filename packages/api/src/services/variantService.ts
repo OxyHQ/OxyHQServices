@@ -66,9 +66,22 @@ function getFfmpegPath(): string {
     const error = e as Error;
     logger.error('[VariantService] Error loading ffmpeg-static', { message: error.message, stack: error.stack });
   }
-  
-  // Fallback to system ffmpeg
-  logger.warn('[VariantService] Falling back to system ffmpeg (may not be installed)');
+
+  // Fallback to system ffmpeg - resolve via PATH so callers that check
+  // fs.existsSync() get an absolute path (arm64 Linux has no ffmpeg-static binary,
+  // but the Docker image installs system ffmpeg at /usr/bin/ffmpeg).
+  try {
+    const resolved = execSync('which ffmpeg', { encoding: 'utf8' }).trim();
+    if (resolved) {
+      logger.info('[VariantService] Using system ffmpeg', { binaryPath: resolved });
+      return resolved;
+    }
+  } catch {
+    // `which` exits non-zero when ffmpeg is not on PATH
+  }
+
+  logger.warn('[VariantService] System ffmpeg not found in PATH - video processing may fail. Install with: apk add ffmpeg (or apt-get install ffmpeg)');
+  // Still return the bare command as a last resort - spawn will surface the error.
   return 'ffmpeg';
 }
 
