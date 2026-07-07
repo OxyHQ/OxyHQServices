@@ -1,27 +1,15 @@
 /**
- * Device-first bootstrap & token contracts (auth centralization, wave 1).
+ * First-party login result contract.
  *
- * SINGLE SOURCE OF TRUTH for the wire shape of the new device-first session
- * bootstrap: the top-level `#oxy_boot=…` fragment the API hands back from
- * `GET /auth/device/bootstrap`, the token bundle a boot code / web-session
- * fast-path exchanges into, the persisted-refresh rotation, the native
- * device-token issuance, the IdP chooser's device-resolve, and the first-party
- * password login result (2FA arm vs. session arm). The API validates its OUTPUT
- * against these schemas; every consumer (`@oxyhq/core`'s device-boot mixin, the
- * SDK cold boot, the IdP chooser) validates its INPUT against the same
- * definitions, so producer and consumers cannot drift.
+ * SINGLE SOURCE OF TRUTH for the first-party password login result (2FA arm vs.
+ * session arm). The API validates its OUTPUT against this schema; every consumer
+ * (`@oxyhq/core`'s auth mixin) validates its INPUT against the same definition,
+ * so producer and consumers cannot drift.
  *
- * Design anchors (from the auth-centralization plan):
- *  - The bootstrap fragment carries NO tokens and NO deviceId — only a
- *    `state` echo (CSRF), a `reason`, a short-lived single-use `code`, and an
- *    opaque `deviceToken`. Tokens are obtained by exchanging the `code` at
- *    `POST /auth/device/exchange` (origin-bound GETDEL burn).
- *  - Refresh is ONE rotating, single-use family shared by web and native.
- *  - `loginResult` mirrors what `POST /auth/login` returns today
- *    (`buildSessionAuthResponse` in the API's `session.controller.ts`): either a
- *    2FA challenge (`{ twoFactorRequired: true, loginToken }`) or a session
- *    payload. The session arm matches `SessionAuthResponse` EXACTLY, plus an
- *    optional `refreshToken` the new server adds for the persisted-refresh lane.
+ * The device transport is `deviceId` + `deviceSecret` + `POST /session/device/token`
+ * (see `deviceSession.ts`). The legacy cookie/bootstrap/refresh-family lanes were
+ * removed in the zero-cookie cutover — nothing here carries a refresh token or a
+ * boot fragment.
  *
  * Nested-object response shapes are declared as explicit `interface`s with the
  * runtime schema annotated `z.ZodType<Interface>` — the same rationale as
@@ -35,209 +23,28 @@
  */
 
 import { z } from 'zod';
-import { userResponseSchema, type UserResponse } from './userResponse';
-
-/* -------------------------------------------------------------------------- */
-/*  Bootstrap fragment                                                        */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Why the bootstrap hop resolved the way it did.
- *  - `session` — the device cookie resolved an active session; a `code` is
- *    present to exchange for tokens.
- *  - `no_session` — the device is known but has no active session; no `code`.
- *  - `new_device` — first contact; the cookie was just planted, no session yet.
- */
-export const deviceBootReasonSchema = z.enum(['session', 'no_session', 'new_device']);
-
-export type DeviceBootReason = z.infer<typeof deviceBootReasonSchema>;
-
-/**
- * The `#oxy_boot=<json>` fragment `GET /auth/device/bootstrap` appends to the
- * `return_to` URL. Carries the CSRF `state` echo, the resolution `reason`, the
- * opaque `deviceToken`, and — ONLY on the `session` arm — the single-use
- * exchange `code`. NEVER carries tokens or a deviceId.
- *
- * Discriminated on `reason` so the code↔reason coupling is enforced by the
- * schema, not by the consumer: the `session` arm REQUIRES `code`, and the
- * `no_session` / `new_device` arms omit it (a stray `code` on those arms is
- * stripped). A `session` fragment WITHOUT a code therefore fails to parse and
- * is treated as "no usable fragment" rather than half-processed.
- */
-const deviceBootFragmentBase = {
-    v: z.literal(1),
-    state: z.string().min(1).max(256),
-    deviceToken: z.string().min(20).max(512),
-};
-
-export const deviceBootFragmentSchema = z.discriminatedUnion('reason', [
-    z.object({
-        ...deviceBootFragmentBase,
-        reason: z.literal('session'),
-        code: z.string().min(20).max(128),
-    }),
-    z.object({
-        ...deviceBootFragmentBase,
-        reason: z.literal('no_session'),
-    }),
-    z.object({
-        ...deviceBootFragmentBase,
-        reason: z.literal('new_device'),
-    }),
-]);
-
-export type DeviceBootFragment = z.infer<typeof deviceBootFragmentSchema>;
-
-/* -------------------------------------------------------------------------- */
-/*  Boot-code exchange                                                        */
-/* -------------------------------------------------------------------------- */
-
-/** Request body for `POST /auth/device/exchange` — the single-use boot code. */
-export const deviceExchangeRequestSchema = z.object({
-    code: z.string().min(20).max(128),
-});
-
-export type DeviceExchangeRequest = z.infer<typeof deviceExchangeRequestSchema>;
-
-/**
- * The token bundle returned by `POST /auth/device/exchange` and
- * `POST /auth/device/web-session` — the freshly-minted access token, its
- * rotating refresh-family head, the owning `sessionId`, and the full canonical
- * user object. `expiresAt` is an ISO string.
- */
-export interface AuthTokenBundle {
-    sessionId: string;
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: string;
-    user: UserResponse;
-    /**
-     * The device secret (phase 2c — zero-cookie transport). Present ONLY when
-     * the bundle is minted for a device that carries a `DeviceSession` doc; the
-     * client persists it first-party and later mints access tokens via
-     * `POST /session/device/token`. Optional and additive: cookie-lane bundles
-     * for a device with no doc omit it, so existing consumers are unaffected.
-     */
-    deviceSecret?: string;
-}
-
-export const authTokenBundleSchema: z.ZodType<AuthTokenBundle> = z.object({
-    sessionId: z.string(),
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    expiresAt: z.string(),
-    user: userResponseSchema,
-    deviceSecret: z.string().optional(),
-});
-
-/* -------------------------------------------------------------------------- */
-/*  Web-session fast path (`POST /auth/device/web-session`)                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The `*.oxy.so` same-site fast path returns a `reason`-discriminated result:
- * a full session (the device cookie resolved an active session) OR a
- * signed-out arm (the device is known / was just planted). BOTH arms carry the
- * rotated opaque `deviceToken` to persist — the deviceToken is device-level
- * attribution, not session-level, so it is refreshed even when signed out.
- *
- * IMPORTANT: the success arm nests the token bundle under `session` — it is
- * NOT a bare {@link AuthTokenBundle}. That distinction is load-bearing for the
- * consumer (`@oxyhq/core`'s cold boot uses `result.session` and persists the
- * `deviceToken` from the SAME envelope).
- */
-
-/**
- * Success arm: an active session resolved from the same-site device cookie.
- */
-export interface WebSessionSession {
-    reason: 'session';
-    session: AuthTokenBundle;
-    deviceToken: string;
-}
-
-/**
- * Signed-out arm: the device is known (or freshly planted) but has no active
- * session. Carries only the rotated `deviceToken`.
- */
-export interface WebSessionNoSession {
-    reason: 'no_session' | 'new_device';
-    deviceToken: string;
-}
-
-/** The `reason`-discriminated outcome of `POST /auth/device/web-session`. */
-export type WebSessionResult = WebSessionSession | WebSessionNoSession;
-
-// Internal (unexported) arm schemas — PLAIN `z.object` literals (no
-// `z.ZodType<>` annotation) so `z.discriminatedUnion` can introspect the
-// `reason` discriminator. The node10 `.d.ts`-degradation safety comes from the
-// EXPORTED symbols instead: the public types are explicit interfaces
-// (`WebSessionSession` / `WebSessionNoSession` / `WebSessionResult`) and the
-// exported schema is annotated `z.ZodType<WebSessionResult>` below, so the
-// emitted declaration states the shape literally rather than a degradable
-// `z.infer<>` of the nested `session` object.
-const webSessionSessionSchema = z.object({
-    reason: z.literal('session'),
-    session: authTokenBundleSchema,
-    deviceToken: z.string().min(1),
-});
-
-const webSessionNoSessionSchema = z.object({
-    reason: z.enum(['no_session', 'new_device']),
-    deviceToken: z.string().min(1),
-});
-
-// Discriminated on `reason` — a true `discriminatedUnion` (not `z.union`): it
-// dispatches on the discriminator instead of sequentially probing each arm,
-// giving precise per-arm errors.
-export const webSessionResultSchema: z.ZodType<WebSessionResult> = z.discriminatedUnion('reason', [
-    webSessionSessionSchema,
-    webSessionNoSessionSchema,
-]);
-
-/* -------------------------------------------------------------------------- */
-/*  Refresh-token rotation (web + native, one implementation)                 */
-/* -------------------------------------------------------------------------- */
-
-/** Request body for `POST /auth/refresh-token` — the current refresh token. */
-export const tokenRefreshRequestSchema = z.object({
-    refreshToken: z.string().min(20),
-});
-
-export type TokenRefreshRequest = z.infer<typeof tokenRefreshRequestSchema>;
-
-/**
- * Wire shape of `POST /auth/refresh-token`: the rotated (single-use) family —
- * a new access token, the next refresh token, the new access-token expiry, and
- * the owning session id. `expiresAt` is an ISO string.
- */
-export const tokenRefreshResponseSchema = z.object({
-    accessToken: z.string(),
-    refreshToken: z.string(),
-    expiresAt: z.string(),
-    sessionId: z.string(),
-});
-
-export type TokenRefreshResponse = z.infer<typeof tokenRefreshResponseSchema>;
-
-/* -------------------------------------------------------------------------- */
-/*  Native device-token issuance                                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Wire shape of `POST /auth/device/token` — issues (or rotates) the opaque
- * device token for the native channel. The deviceId is taken from the bearer
- * JWT claims server-side; only the token comes back.
- */
-export const deviceTokenIssueResponseSchema = z.object({
-    deviceToken: z.string(),
-});
-
-export type DeviceTokenIssueResponse = z.infer<typeof deviceTokenIssueResponseSchema>;
 
 /* -------------------------------------------------------------------------- */
 /*  First-party password login result (2FA arm | session arm)                 */
 /* -------------------------------------------------------------------------- */
+
+/** One anomalous signal the server flagged on a sign-in (new device, location, …). */
+export interface SecurityAlertAnomaly {
+    type: string;
+    reason: string;
+    details?: string;
+}
+
+/**
+ * The "New sign-in detected" payload the API attaches to a successful
+ * `POST /auth/login` when anomaly detection fires (`session.controller.ts`).
+ * The IdP renders `message` and gates the flow on user acknowledgement before
+ * continuing to the OAuth authorize step.
+ */
+export interface SecurityAlert {
+    message: string;
+    anomalies: SecurityAlertAnomaly[];
+}
 
 /**
  * `POST /auth/login` when the account has 2FA enabled: a short-lived login
@@ -250,8 +57,7 @@ export interface LoginTwoFactorRequired {
 
 /**
  * `POST /auth/login` when authentication completed in one step. Matches the
- * API's `SessionAuthResponse` EXACTLY (`buildSessionAuthResponse`), plus the
- * optional `refreshToken` the persisted-refresh lane adds. `user` is the
+ * API's `SessionAuthResponse` EXACTLY (`buildSessionAuthResponse`). `user` is the
  * truncated session-user shape the login endpoint emits (NOT the full
  * `userResponseSchema`).
  */
@@ -260,14 +66,20 @@ export interface LoginSessionResult {
     deviceId: string;
     expiresAt: string;
     accessToken?: string;
-    refreshToken?: string;
     /**
-     * The device secret (phase 2c — zero-cookie transport). Present ONLY when
-     * the sign-in resolved a device binding; the client persists it first-party
-     * and later mints access tokens via `POST /session/device/token`. Optional
-     * and additive — wired identically to `refreshToken`.
+     * The device secret (zero-cookie transport). Emitted on every successful
+     * sign-in; the client persists it first-party alongside `deviceId` and later
+     * mints access tokens via `POST /session/device/token`. Optional only because
+     * a best-effort mint can fail — it is the sole restore credential.
      */
     deviceSecret?: string;
+    /**
+     * Present only when the server's anomaly detection flagged this sign-in.
+     * The IdP shows a "New sign-in detected" acknowledgement before proceeding.
+     * The session is already established regardless — this is an interstitial,
+     * not a gate on the credential check.
+     */
+    securityAlert?: SecurityAlert;
     user: {
         id: string;
         username?: string;
@@ -283,13 +95,24 @@ const loginTwoFactorRequiredSchema = z.object({
     loginToken: z.string(),
 });
 
+const securityAlertSchema: z.ZodType<SecurityAlert> = z.object({
+    message: z.string(),
+    anomalies: z.array(
+        z.object({
+            type: z.string(),
+            reason: z.string(),
+            details: z.string().optional(),
+        }),
+    ),
+});
+
 const loginSessionResultSchema = z.object({
     sessionId: z.string(),
     deviceId: z.string(),
     expiresAt: z.string(),
     accessToken: z.string().optional(),
-    refreshToken: z.string().optional(),
     deviceSecret: z.string().optional(),
+    securityAlert: securityAlertSchema.optional(),
     user: z.object({
         id: z.string(),
         username: z.string().optional(),
@@ -301,48 +124,3 @@ export const loginResultSchema: z.ZodType<LoginResult> = z.union([
     loginTwoFactorRequiredSchema,
     loginSessionResultSchema,
 ]);
-
-/* -------------------------------------------------------------------------- */
-/*  IdP chooser device-resolve                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Request body for `POST /auth/device/resolve` (X-Oxy-Internal, called by the
- * IdP chooser) — the device key the chooser read from the first-party
- * `oxy_device` cookie.
- */
-export const deviceResolveRequestSchema = z.object({
-    deviceKey: z.string().min(20),
-});
-
-export type DeviceResolveRequest = z.infer<typeof deviceResolveRequestSchema>;
-
-/** One account resolved for the IdP chooser from a device's session set. */
-export interface DeviceResolveAccount {
-    user: UserResponse;
-    sessionId: string;
-    accessToken: string;
-    expiresAt: string;
-}
-
-/**
- * Wire shape of `POST /auth/device/resolve` — the device's active account id
- * (or `null` when signed out of all) plus every account signed in on the
- * device. Replaces the IdP's legacy cookie-based chooser feed.
- */
-export interface DeviceResolveResponse {
-    activeAccountId: string | null;
-    accounts: DeviceResolveAccount[];
-}
-
-const deviceResolveAccountSchema: z.ZodType<DeviceResolveAccount> = z.object({
-    user: userResponseSchema,
-    sessionId: z.string(),
-    accessToken: z.string(),
-    expiresAt: z.string(),
-});
-
-export const deviceResolveResponseSchema: z.ZodType<DeviceResolveResponse> = z.object({
-    activeAccountId: z.string().nullable(),
-    accounts: z.array(deviceResolveAccountSchema),
-});

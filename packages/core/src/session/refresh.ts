@@ -1,21 +1,22 @@
 /**
- * Unified token refresh — THE single refresh implementation for web + native.
+ * Unified token refresh — THE single access-token re-mint for web + native.
  *
- * ONE persisted-refresh-token rotation shared by every consumer (it replaced
- * the pre-device-first per-platform duplicates):
+ * The access token is short-lived; there is no refresh token. To keep a session
+ * alive past the access token's TTL the client re-mints via the zero-cookie
+ * device transport:
  *
- *  - `refreshPersistedSession` — arm 1 rotates the stored refresh-token family
- *    (`POST /auth/refresh-token`), planting + persisting the rotated pair; arm 2
- *    (native only) re-mints via the shared-keychain identity when there is no
- *    live refresh token. It is used BOTH reactively (wrapped as the
- *    `AuthRefreshHandler` installed on `HttpService`) AND proactively (the
- *    cold-boot `stored-tokens` step calls it directly).
+ *  - `refreshPersistedSession` — arm 1 mints a fresh access token from the
+ *    persisted `deviceId` + `deviceSecret` (`POST /session/device/token`),
+ *    planting + persisting the rotated secret; arm 2 (native only) re-mints via
+ *    the shared-keychain identity when there is no usable secret. It is used BOTH
+ *    reactively (wrapped as the `AuthRefreshHandler` installed on `HttpService`)
+ *    AND proactively (the scheduler below calls it).
  *  - `createAuthRefreshHandler` / `installAuthRefreshHandler` wire arm 1+2 into
  *    `HttpService.setAuthRefreshHandler`, keeping that layer's single-flight
  *    dedup + cooldown (this module does NOT reimplement them).
  *  - `startTokenRefreshScheduler` — a proactive scheduler decoupled from any
- *    React type: refreshes ~60s before `exp`,
- *    re-arms on token change + web tab-focus, `.unref?.()`s its timer in Node.
+ *    React type: re-mints ~60s before `exp`, re-arms on token change + web
+ *    tab-focus, `.unref?.()`s its timer in Node.
  *
  * Framework-free; no module-level mutable state.
  */
@@ -23,13 +24,14 @@ import type { OxyServices } from '../OxyServices';
 import type { AuthRefreshHandler, AuthRefreshReason } from '../HttpService';
 import type { AuthStateStore, PersistedAuthState } from './authStateStore';
 import { isNative } from '../utils/platform';
+import { extractErrorStatus } from '../utils/errorUtils';
 import { logger } from '../utils/loggerUtils';
 
 /**
  * Lead time (ms) before access-token expiry at which the proactive scheduler
- * refreshes. Mirrors `HttpService`'s per-request `TOKEN_REFRESH_LEAD_SECONDS`
- * (60s) so the scheduled refresh and the request-time preflight refresh use
- * the same window — the scheduler just fires it during idle/background.
+ * re-mints. Mirrors `HttpService`'s per-request `TOKEN_REFRESH_LEAD_SECONDS`
+ * (60s) so the scheduled re-mint and the request-time preflight use the same
+ * window — the scheduler just fires it during idle/background.
  */
 export const TOKEN_REFRESH_LEAD_MS = 60_000;
 
@@ -43,14 +45,14 @@ const MAX_TIMEOUT_DELAY_MS = 2_147_483_647;
 /**
  * Floor (ms) on ANY scheduled delay. An already-expired / in-lead-window token
  * computes a non-positive `exp − now − lead`; without this floor that becomes
- * `setTimeout(…, 0)`, and a FAILING refresh (offline / server error) would
+ * `setTimeout(…, 0)`, and a FAILING re-mint (offline / server error) would
  * re-arm at 0 in the finally block → a tight 100%-CPU busy loop. The floor
  * guarantees every re-arm yields the event loop.
  */
 const MIN_SCHEDULE_DELAY_MS = 1_000;
 
 /**
- * Backoff schedule (ms) applied when a scheduled refresh FAILS: first retry
+ * Backoff schedule (ms) applied when a scheduled re-mint FAILS: first retry
  * after {@link MIN_FAILURE_BACKOFF_MS}, doubling up to {@link MAX_FAILURE_BACKOFF_MS}.
  * Reset to 0 on any success or token change. This is what converts the former
  * zero-delay failure loop into a bounded, backing-off retry.
@@ -58,61 +60,32 @@ const MIN_SCHEDULE_DELAY_MS = 1_000;
 const MIN_FAILURE_BACKOFF_MS = 5_000;
 const MAX_FAILURE_BACKOFF_MS = 5 * 60_000;
 
-/**
- * Error codes (in addition to HTTP 401/403) that mean the stored refresh token
- * is permanently unusable — the family was revoked or a reuse was detected. On
- * any of these the persisted store is CLEARED (the session is truly over);
- * transient failures (network, 5xx) leave the store intact so a later attempt
- * can still succeed.
- */
-const REVOKED_REFRESH_CODES = new Set([
-  'invalid_grant',
-  'refresh_token_revoked',
-  'refresh_token_reuse',
-  'token_reuse',
-  'invalid_token',
-]);
-
-interface HttpishError {
-  status?: number;
-  code?: string;
-}
-
-/** Does this error mean the refresh token is permanently dead (vs. transient)? */
-function isRevokedRefreshError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const e = error as HttpishError;
-  if (e.status === 401 || e.status === 403) {
-    return true;
-  }
-  return typeof e.code === 'string' && REVOKED_REFRESH_CODES.has(e.code);
-}
-
 export interface RefreshDeps {
   oxy: OxyServices;
   store: AuthStateStore;
   /**
-   * Whether to fall back to the native shared-keychain re-mint (arm 2) when
-   * there is no live refresh token / arm 1 is revoked. Defaults to `isNative()`
-   * — web has no shared keychain. Exposed for tests.
+   * Whether to fall back to the native shared-keychain re-mint (arm 2) when the
+   * persisted secret is absent / rejected. Defaults to `isNative()` — web has no
+   * shared keychain. Exposed for tests.
    */
   allowSharedKeyFallback?: boolean;
 }
 
 /**
- * Rotate the persisted session and return the fresh access token, or `null`
+ * Re-mint the persisted session and return the fresh access token, or `null`
  * when no arm could produce one.
  *
- * Arm 1 (`POST /auth/refresh-token`): if the store holds a refresh token, rotate
- * it — on success plant + persist the rotated pair; on a REVOKED error clear the
- * store; on a transient error leave the store and return `null`.
+ * Arm 1 (`POST /session/device/token`): if the store holds a `deviceId` +
+ * `deviceSecret`, mint — on success plant + persist the rotated secret. A 401
+ * means the secret is diverged (`invalid_device_secret`) or the device has no
+ * live session (`no_active_session`): drop the secret so the mint lane stops (or
+ * clear the store on web, where there is no fallback). A transient error leaves
+ * the store and returns `null`.
  *
- * Arm 2 (native shared-keychain): when there is no refresh token or arm 1 was
- * revoked, re-mint via `signInWithSharedIdentity` (which plants tokens). The
- * shared keychain — not the per-origin store — is the durable native credential,
- * so this arm does not write the store.
+ * Arm 2 (native shared-keychain): when the secret is absent or was just rejected,
+ * re-mint via `signInWithSharedIdentity` (which plants tokens). The shared
+ * keychain — not the per-origin store — is the durable native credential, so this
+ * arm does not write the store.
  */
 export async function refreshPersistedSession(deps: RefreshDeps): Promise<string | null> {
   const { oxy, store } = deps;
@@ -120,39 +93,34 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
 
   const persisted = await store.load();
 
-  if (persisted?.refreshToken) {
+  if (persisted?.deviceId && persisted?.deviceSecret) {
     try {
-      const rotated = await oxy.refreshWithToken(persisted.refreshToken);
-      oxy.setTokens(rotated.accessToken);
+      const mint = await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
+      oxy.setTokens(mint.accessToken);
+      const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
       const next: PersistedAuthState = {
-        sessionId: rotated.sessionId,
-        refreshToken: rotated.refreshToken,
-        userId: persisted.userId,
-        accessToken: rotated.accessToken,
-        expiresAt: rotated.expiresAt,
+        ...persisted,
+        deviceId: mint.state.deviceId,
+        deviceSecret: mint.nextDeviceSecret,
+        accessToken: mint.accessToken,
+        expiresAt: mint.expiresAt,
+        ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
       };
-      if (persisted.deviceToken) {
-        next.deviceToken = persisted.deviceToken;
-      }
-      // The refresh response carries no device credentials — carry the persisted
-      // deviceId/deviceSecret (phase 2c) forward so a rotation never drops the
-      // zero-cookie mint lane (mirrors the deviceToken preservation above).
-      if (persisted.deviceId) {
-        next.deviceId = persisted.deviceId;
-      }
-      if (persisted.deviceSecret) {
-        next.deviceSecret = persisted.deviceSecret;
-      }
       await store.save(next);
-      return rotated.accessToken;
+      return mint.accessToken;
     } catch (error) {
-      if (isRevokedRefreshError(error)) {
-        await store.clear();
-        // Fall through to the native shared-key arm below — on a shared-key
-        // device the refresh family being revoked does not end the session.
+      if (extractErrorStatus(error) === 401) {
+        // Secret diverged / no active session. On a shared-key device drop only
+        // the secret so arm 2 below can recover; otherwise the session is over.
+        if (allowSharedKeyFallback) {
+          await store.save({ ...persisted, deviceSecret: undefined });
+        } else {
+          await store.clear();
+        }
+        // Fall through to the native shared-key arm.
       } else {
         logger.debug(
-          'Persisted refresh failed (transient) — keeping store',
+          'Persisted deviceSecret mint failed (transient) — keeping store',
           { component: 'refresh', method: 'refreshPersistedSession' },
           error,
         );
@@ -169,7 +137,7 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
       }
     } catch (error) {
       logger.debug(
-        'Shared-key refresh fallback failed',
+        'Shared-key re-mint fallback failed',
         { component: 'refresh', method: 'refreshPersistedSession' },
         error,
       );
@@ -209,7 +177,7 @@ export interface TokenRefreshSchedulerHandle {
 }
 
 /**
- * Start the proactive refresh scheduler against `oxy`.
+ * Start the proactive re-mint scheduler against `oxy`.
  *
  * Schedules a single timer to fire {@link TOKEN_REFRESH_LEAD_MS} before the
  * current access token's `exp`, calling
@@ -217,18 +185,18 @@ export interface TokenRefreshSchedulerHandle {
  * handler; deduped + cooldown-guarded). After every attempt it reschedules
  * from the possibly-rotated token. It also reschedules whenever the token
  * changes (a sign-out that clears the token cancels the timer) and, on web
- * tab-focus, refreshes immediately if already inside the lead window (a
+ * tab-focus, re-mints immediately if already inside the lead window (a
  * long-hidden tab throttles timers, so the token can be expired on return).
  *
  * No-ops cleanly when there is no token or an opaque/no-`exp` token — the
- * reactive 401 path stays the only refresh trigger in that case. The timer is
+ * reactive 401 path stays the only re-mint trigger in that case. The timer is
  * `.unref?.()`-ed so it never keeps a Node/Jest event loop alive.
  */
 export function startTokenRefreshScheduler(oxy: OxyServices): TokenRefreshSchedulerHandle {
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   // 0 = no active backoff; grows on consecutive failures, resets on success /
-  // token change. Keeps a failing refresh from re-arming at zero delay.
+  // token change. Keeps a failing re-mint from re-arming at zero delay.
   let failureBackoffMs = 0;
 
   const clearTimer = (): void => {
@@ -243,11 +211,11 @@ export function startTokenRefreshScheduler(oxy: OxyServices): TokenRefreshSchedu
     clearTimer();
     const clamped = Math.min(Math.max(delayMs, MIN_SCHEDULE_DELAY_MS), MAX_TIMEOUT_DELAY_MS);
     timer = setTimeout(runRefresh, clamped);
-    // Never keep a Node/Jest event loop alive for a background refresh timer.
+    // Never keep a Node/Jest event loop alive for a background re-mint timer.
     timer.unref?.();
   };
 
-  /** Schedule the next refresh from the current token's expiry (the healthy path). */
+  /** Schedule the next re-mint from the current token's expiry (the healthy path). */
   const scheduleFromExpiry = (): void => {
     clearTimer();
     if (disposed || !oxy.getAccessToken()) {

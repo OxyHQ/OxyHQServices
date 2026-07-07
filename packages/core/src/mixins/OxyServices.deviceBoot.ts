@@ -1,151 +1,39 @@
 /**
- * Device-first bootstrap mixin (auth centralization, wave 1).
+ * Device-first token mint mixin.
  *
- * The client half of the new device-first session bootstrap: the four network
- * calls the cold boot (`coldBootV2`) and the unified refresh handler
- * (`refresh.ts`) make, plus the URL builder for the cross-apex bootstrap hop.
- * Every response is validated against the `@oxyhq/contracts` `deviceBoot`
- * schemas via `safeParseContract`, so producer (oxy-api) and consumer cannot
+ * The client half of the zero-cookie device transport: the single network call
+ * the cold boot (`coldBootV2`) and the unified re-mint handler (`refresh.ts`)
+ * make to turn a first-party `deviceId` + `deviceSecret` into a fresh access
+ * token. The response is validated against the `@oxyhq/contracts`
+ * `deviceTokenMintResponseSchema`, so producer (oxy-api) and consumer cannot
  * drift — an unexpected shape throws here rather than silently corrupting the
  * persisted store.
  *
- * These methods are ADDITIVE and carry NO persistence or token-planting side
- * effects of their own (except the bearer-authenticated calls that naturally
- * flow through `HttpService`). The cold boot / refresh handler own persistence
- * and `setTokens`, so the same network primitive can be reused from either
- * without double-planting.
+ * This method carries NO persistence or token-planting side effects of its own;
+ * the cold boot / re-mint handler own persistence and `setTokens`, so the same
+ * primitive can be reused from either without double-planting.
  */
 import {
-  authTokenBundleSchema,
-  tokenRefreshResponseSchema,
-  deviceTokenIssueResponseSchema,
   deviceTokenMintResponseSchema,
-  webSessionResultSchema,
   safeParseContract,
-  type AuthTokenBundle,
   type DeviceTokenMintResponse,
-  type TokenRefreshResponse,
-  type WebSessionResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 
 export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     /**
-     * Exchange a single-use boot `code` (from the `#oxy_boot` return fragment)
-     * for a token bundle. Origin-bound + GETDEL-burned server-side.
+     * Zero-cookie mint. Present the first-party `deviceId` + `deviceSecret` to
+     * `POST /session/device/token` — NO bearer, NO cookies: possession of the
+     * secret IS the device-ownership proof. Returns a fresh short access token
+     * for the device's active account plus `nextDeviceSecret` (rotation-in-use)
+     * and the projected device-session `state`.
      *
-     * @throws if the response does not match {@link authTokenBundleSchema}.
-     */
-    async exchangeBootCode(code: string): Promise<AuthTokenBundle> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/auth/device/exchange',
-          { code },
-          { cache: false },
-        );
-        const parsed = safeParseContract(authTokenBundleSchema, res);
-        if (!parsed) {
-          throw new Error('device/exchange returned an unexpected response shape');
-        }
-        return parsed;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Same-site fast path (`*.oxy.so` apps). Reads the first-party `oxy_device`
-     * cookie via a credentialed same-origin fetch and either resolves a full
-     * session bundle or reports the device is known-but-signed-out. Never
-     * redirects.
-     *
-     * @throws if the response matches neither arm of {@link webSessionResultSchema}.
-     */
-    async requestWebSession(): Promise<WebSessionResult> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/auth/device/web-session',
-          undefined,
-          { cache: false },
-        );
-        const parsed = safeParseContract(webSessionResultSchema, res);
-        if (!parsed) {
-          throw new Error('device/web-session returned an unexpected response shape');
-        }
-        return parsed;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Rotate the persisted refresh-token family (web + native, one call). The
-     * caller (refresh handler / cold boot) plants + persists the rotated pair.
-     *
-     * @throws if the response does not match {@link tokenRefreshResponseSchema}.
-     */
-    async refreshWithToken(refreshToken: string): Promise<TokenRefreshResponse> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/auth/refresh-token',
-          { refreshToken },
-          // `skipAuth`: refresh-token is body-authenticated and is called from
-          // inside the refresh handler — sending the near-expired bearer through
-          // the preflight would deadlock. See RequestOptions.skipAuth.
-          { cache: false, skipAuth: true },
-        );
-        const parsed = safeParseContract(tokenRefreshResponseSchema, res);
-        if (!parsed) {
-          throw new Error('auth/refresh-token returned an unexpected response shape');
-        }
-        return parsed;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Issue (or rotate) the native channel's opaque device token. Bearer-gated —
-     * the server derives the deviceId from the JWT. Native apps mirror the
-     * returned token into the shared keychain via
-     * `KeyManager.setSharedDeviceToken`.
-     *
-     * @throws if the response does not match {@link deviceTokenIssueResponseSchema}.
-     */
-    async issueNativeDeviceToken(): Promise<string> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/auth/device/token',
-          undefined,
-          { cache: false },
-        );
-        const parsed = safeParseContract(deviceTokenIssueResponseSchema, res);
-        if (!parsed) {
-          throw new Error('auth/device/token returned an unexpected response shape');
-        }
-        return parsed.deviceToken;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Zero-cookie mint (phase 2c). Present the first-party `deviceId` +
-     * `deviceSecret` to `POST /session/device/token` — NO bearer, NO cookies:
-     * possession of the secret IS the device-ownership proof. Returns a fresh
-     * short access token for the device's active account plus `nextDeviceSecret`
-     * (rotation-in-use) and the projected device-session `state`.
-     *
-     * `skipAuth` (like {@link refreshWithToken}): this call carries no bearer, so
-     * a 401 must surface DIRECTLY — never trigger `HttpService`'s 401→refresh→
-     * retry dance (which would pointlessly rotate the refresh family). The cold
-     * boot reads the 401 body (`invalid_device_secret` vs `no_active_session`) to
-     * decide whether to drop the secret and fall back or resolve signed-out.
+     * `skipAuth`: this call carries no bearer, so a 401 must surface DIRECTLY —
+     * never trigger `HttpService`'s 401→refresh→retry dance. The cold boot / re-
+     * mint handler read the 401 body (`invalid_device_secret` vs
+     * `no_active_session`) to decide whether to drop the secret and fall back or
+     * resolve signed-out.
      *
      * @throws if the response does not match {@link deviceTokenMintResponseSchema}.
      */
@@ -168,17 +56,6 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
       } catch (error) {
         throw this.handleError(error);
       }
-    }
-
-    /**
-     * Build the top-level `GET /auth/device/bootstrap` URL for the cross-apex
-     * hop. The server validates `return_to` against the trusted-origin lane and
-     * echoes `state` back in the return fragment for CSRF verification.
-     */
-    buildBootstrapUrl(returnTo: string, state: string): string {
-      const base = this.getBaseURL().replace(/\/+$/, '');
-      const params = new URLSearchParams({ return_to: returnTo, state });
-      return `${base}/auth/device/bootstrap?${params.toString()}`;
     }
   };
 }

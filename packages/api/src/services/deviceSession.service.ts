@@ -2,8 +2,6 @@ import * as crypto from 'crypto';
 import type { DeviceSessionState, SessionAccount } from '@oxyhq/contracts';
 import DeviceSession, { IDeviceSession, IDeviceSessionAccount } from '../models/DeviceSession';
 import sessionService from './session.service';
-import { revokeAllFamiliesBySession } from './refreshToken.service';
-import { revokeDeviceTokens } from './deviceToken.service';
 import { sha256Hex, base64UrlEncode, timingSafeStringEqual } from './oauthCode.service';
 import { logger } from '../utils/logger';
 
@@ -241,46 +239,15 @@ class DeviceSessionService {
       } catch (error) {
         logger.warn('deviceSession.signout: deactivate failed', { sessionId: a.sessionId, error });
       }
-      // Cascade the signout to the persisted rotating refresh families:
-      // deactivateSession alone leaves a stored refresh token able to mint fresh
-      // access tokens, so revoke EVERY family bound to the session. Best-effort —
-      // a revoke failure must never block the signout.
-      try {
-        await revokeAllFamiliesBySession(a.sessionId);
-      } catch (error) {
-        logger.warn('deviceSession.signout: refresh family revoke failed', { sessionId: a.sessionId, error });
-      }
-    }
-
-    // Signout-ALL also severs the device's ATTRIBUTION bindings: revoke every
-    // deviceToken issued for this device so a retained token (400-day sliding
-    // TTL) can never later attach a fresh sign-in as active into the now-empty
-    // set. Only on the {all} path — a single-account signout deliberately leaves
-    // deviceTokens alone, since other apps/accounts on the SAME device still
-    // legitimately use theirs to attribute their own sign-ins. Best-effort — a
-    // revoke failure must never block signout.
-    //
-    // We deliberately do NOT clear the `oxy_device` cookie here: device identity
-    // is not an account credential (an empty device set grants NOTHING via
-    // bootstrap — reason resolves to `no_session`), and clearing a cookie via
-    // Set-Cookie on a cross-apex fetch response is 3rd-party-cookie-blocked
-    // anyway. The next bootstrap simply re-uses the same empty device.
-    if ('all' in target) {
-      try {
-        await revokeDeviceTokens(deviceId);
-      } catch (error) {
-        logger.warn('deviceSession.signout: device token revoke failed', { deviceId, error });
-      }
     }
 
     const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
-    // Signout-ALL also revokes the device's `deviceSecret` (phase 2c): clear the
-    // secret hashes so a retained secret can never later mint a token for the now-
-    // empty set. Single-account signout leaves the secret alone — other accounts
-    // on the SAME device still legitimately mint with it. `cookieKeyHash` is NEVER
-    // cleared here; it lives until the cookie-lane cutover.
+    // Signout-ALL also revokes the device's `deviceSecret`: clear the secret
+    // hashes so a retained secret can never later mint a token for the now-empty
+    // set. Single-account signout leaves the secret alone — other accounts on the
+    // SAME device still legitimately mint with it.
     const updated = await DeviceSession.findOneAndUpdate(
       { deviceId },
       {
@@ -291,49 +258,6 @@ class DeviceSessionService {
       { new: true, upsert: true },
     ).lean<IDeviceSession>();
     return projectState(updated as IDeviceSession);
-  }
-
-  /**
-   * Resolve the session ALREADY REGISTERED for `accountId` on `deviceId` (added
-   * via `/session/device/add`) so an IdP mint can REUSE it instead of minting a
-   * separate per-origin session. This enforces the "ONE session per account per
-   * device" invariant: every RP origin that authenticates this account on this
-   * device converges on the SAME sessionId the DeviceSession entry holds — they
-   * join one socket room and see each other's cross-domain broadcasts. Without
-   * it each origin gets its own per-origin session, and the device doc (which
-   * stores ONE sessionId per account) can never make them converge.
-   *
-   * Returns null — the caller falls through to a fresh create — when the device
-   * has no entry for the account (true first sign-in on this device), the
-   * registered session is no longer valid (signed out, or a managed act_as
-   * membership was revoked), or the token machinery cannot mint. NEVER
-   * resurrects a dead session: validation runs BEFORE any token is minted. The
-   * access token is minted/rotated through the standard `getAccessToken` path,
-   * so it carries the registered session's central `deviceId` claim.
-   */
-  async resolveRegisteredSession(
-    deviceId: string,
-    accountId: string,
-  ): Promise<{ sessionId: string; deviceId: string; accessToken: string; expiresAt: Date } | null> {
-    const current = await this.load(deviceId);
-    if (!current) return null;
-    const entry = (current.accounts ?? []).find((a) => idToString(a.accountId) === accountId);
-    if (!entry) return null;
-
-    // Re-validate before minting: for a managed-account session this re-checks
-    // the operator's act_as membership and refuses a revoked session. A dead
-    // session yields null (fall through to create) — it is never resurrected.
-    const validated = await sessionService.validateSessionById(entry.sessionId, false);
-    if (!validated) return null;
-    const token = await sessionService.getAccessToken(entry.sessionId);
-    if (!token) return null;
-
-    return {
-      sessionId: entry.sessionId,
-      deviceId: validated.session.deviceId,
-      accessToken: token.accessToken,
-      expiresAt: token.expiresAt,
-    };
   }
 
   /**
@@ -375,44 +299,7 @@ class DeviceSessionService {
   }
 
   /**
-   * Resolve the `DeviceSessionState` bound to an `oxy_device` cookie SECRET.
-   * The cookie value is hashed and looked up against `cookieKeyHash` — the raw
-   * secret is never stored, and the deviceId is never derivable from the cookie.
-   * Returns null when the cookie maps to no device (unknown / pruned / never
-   * planted).
-   */
-  async getStateByCookieKey(rawCookieKey: string): Promise<DeviceSessionState | null> {
-    if (typeof rawCookieKey !== 'string' || rawCookieKey.length === 0) return null;
-    const cookieKeyHash = sha256Hex(rawCookieKey);
-    const doc = await DeviceSession.findOne({ cookieKeyHash }).lean<IDeviceSession>();
-    if (!doc) return null;
-    return projectState(doc);
-  }
-
-  /**
-   * Ensure a device exists for a fresh `oxy_device` cookie. Mints a NEW random
-   * deviceId AND a NEW random 256-bit cookie secret, persists a device doc bound
-   * to `sha256(secret)`, and returns both. Called by the bootstrap hop when the
-   * request carries no (or an unknown) device cookie — the caller then plants the
-   * returned `rawCookieKey` as the `oxy_device` cookie. The deviceId is server-
-   * minted and never leaves the server; only the opaque cookie secret does.
-   */
-  async ensureDeviceForCookie(): Promise<{ deviceId: string; rawCookieKey: string }> {
-    const deviceId = crypto.randomUUID();
-    const rawCookieKey = base64UrlEncode(crypto.randomBytes(32));
-    const cookieKeyHash = sha256Hex(rawCookieKey);
-    await DeviceSession.create({
-      deviceId,
-      accounts: [],
-      activeAccountId: null,
-      revision: 0,
-      cookieKeyHash,
-    });
-    return { deviceId, rawCookieKey };
-  }
-
-  /**
-   * Issue (rotating) the `deviceSecret` bound to a device (phase 2c — zero-cookie
+   * Issue (rotating) the `deviceSecret` bound to a device (zero-cookie
    * transport). Mints a fresh 256-bit secret, stores only its `sha256` in
    * `secretHash`, and — when a prior secret existed — moves that prior hash into
    * `prevSecretHash` with a short `prevSecretExpiresAt` grace so a concurrent tab
@@ -459,8 +346,8 @@ class DeviceSessionService {
   }
 
   /**
-   * Resolve the `DeviceSessionState` bound to a raw `deviceSecret` (phase 2c). The
-   * secret is hashed and matched — constant-time — against the device's current
+   * Resolve the `DeviceSessionState` bound to a raw `deviceSecret`. The secret is
+   * hashed and matched — constant-time — against the device's current
    * `secretHash` OR, within the grace window, its `prevSecretHash`. Returns null
    * when the device is unknown, carries no secret, or the secret does not match
    * (possession of the deviceId alone reveals nothing).
@@ -486,59 +373,6 @@ class DeviceSessionService {
       return projectState(doc);
     }
     return null;
-  }
-
-  /**
-   * Converge a caller's account onto the CANONICAL `oxy_device`-cookie device
-   * doc. Fixes the split-brain where a pre-cookie session lives on the old
-   * JWT-claims-era device doc while the cookie doc (born via `ensureDeviceForCookie`
-   * during bootstrap) is empty — so `/auth/device/resolve` + bootstrap/web-session
-   * saw an empty device despite live sessions.
-   *
-   * The session must ALREADY have been migrated onto `cookieDeviceId` at the
-   * Session level (`sessionService.migrateSessionToDevice`) BEFORE this call, so
-   * the follow-up `resolveActiveToken(cookieState)` mints an access token whose
-   * `deviceId` claim addresses the cookie device. Here we: register the account
-   * on the cookie doc (`activate: 'always'` — an explicit `/add` sets it active,
-   * matching today's behaviour), detach it from the old doc (preserving the
-   * just-migrated session), and return BOTH resulting states so the route can
-   * broadcast both device rooms. `changed` is the cookie-doc mutation flag.
-   */
-  async convergeAccountOntoDevice(
-    cookieDeviceId: string,
-    oldDeviceId: string,
-    input: { accountId: string; sessionId: string; operatedByUserId?: string },
-  ): Promise<{ cookieState: DeviceSessionState; oldState: DeviceSessionState; changed: boolean }> {
-    // Capture the old doc's revision BEFORE detaching. The client's `applyState`
-    // is last-writer-wins by `revision` ACROSS the device set, so the canonical
-    // cookie doc must out-rank the retired doc's revision — otherwise the fresh
-    // (low-revision) converged state loses to the stale high-revision old-device
-    // state the client still holds and the migration would never be applied.
-    const oldBefore = await this.load(oldDeviceId);
-    const oldRevisionBefore = oldBefore?.revision ?? 0;
-
-    const { state: added, changed } = await this.addAccount(cookieDeviceId, input);
-
-    let cookieState = added;
-    if (changed && added.revision <= oldRevisionBefore) {
-      const bumped = await DeviceSession.findOneAndUpdate(
-        { deviceId: cookieDeviceId },
-        { $set: { revision: oldRevisionBefore + 1 } },
-        { new: true },
-      ).lean<IDeviceSession>();
-      if (bumped) cookieState = projectState(bumped);
-    }
-
-    await this.detachMigratedAccount(oldDeviceId, input.accountId, input.sessionId);
-    // Plain find, NEVER `getState` — the latter UPSERTS an empty doc, which would
-    // manufacture a garbage device record for a retired/unknown old deviceId. When
-    // the old doc is absent (session was never registered on a device doc, or the
-    // id is stale), synthesize an empty state to broadcast WITHOUT persisting.
-    const oldDoc = await this.load(oldDeviceId);
-    const oldState: DeviceSessionState = oldDoc
-      ? projectState(oldDoc)
-      : { deviceId: oldDeviceId, accounts: [], activeAccountId: null, revision: 0, updatedAt: Date.now() };
-    return { cookieState, oldState, changed };
   }
 }
 

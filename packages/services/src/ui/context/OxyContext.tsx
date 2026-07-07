@@ -31,6 +31,7 @@ import {
   createAccountDialogController,
   logger as loggerUtil,
 } from '@oxyhq/core';
+import type { SecurityAlert } from '@oxyhq/contracts';
 import {
   registerAccountDialogControls,
   notifyAccountDialogVisibility,
@@ -99,7 +100,7 @@ export interface OxyContextState {
    *
    * Commits a successful session into context state through the SAME path the
    * QR device-flow and cold boot use (so `isAuthenticated` / `user` update and
-   * the rotating refresh family is persisted). Returns a discriminated result
+   * the zero-cookie device credential is persisted). Returns a discriminated result
    * so the caller can branch on the two-factor-required case — which creates NO
    * session; the caller completes the 2FA challenge with the returned
    * `loginToken` via {@link OxyContextState.completeTwoFactorSignIn}.
@@ -113,19 +114,21 @@ export interface OxyContextState {
   /**
    * Complete a 2FA-gated password sign-in started by {@link signInWithPassword}.
    * Presents the short-lived `loginToken` with a TOTP `token` or a `backupCode`;
-   * on success the session is committed exactly like a one-step sign-in.
+   * on success the session is committed exactly like a one-step sign-in. Returns
+   * any `securityAlert` the server attached so the caller can show the same
+   * "New sign-in detected" acknowledgement as the one-step path.
    */
   completeTwoFactorSignIn: (params: {
     loginToken: string;
     token?: string;
     backupCode?: string;
     deviceName?: string;
-  }) => Promise<void>;
+  }) => Promise<{ securityAlert?: SecurityAlert }>;
 
   /**
    * Commit a session obtained out-of-band (the "Sign in with Oxy" QR device
-   * flow). Plants tokens, persists the rotating refresh family, registers the
-   * account into the device set, and hydrates the full user profile.
+   * flow). Plants tokens, persists the zero-cookie device credential, registers
+   * the account into the device set, and hydrates the full user profile.
    */
   handleWebSession: (session: SessionLoginResponse) => Promise<void>;
 
@@ -212,14 +215,17 @@ const OxyContext = createContext<OxyContextState | null>(null);
  * Result of {@link OxyContextState.signInWithPassword}.
  *
  * `'ok'` — the password was accepted and the session committed (so
- * `isAuthenticated` / `user` are updated and the refresh family persisted).
+ * `isAuthenticated` / `user` are updated and the device credential persisted).
+ * `securityAlert` is present when the server flagged this sign-in as anomalous
+ * (new device / location) — the caller shows a "New sign-in detected"
+ * acknowledgement before proceeding; the session is already committed.
  *
  * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
  * created. Complete the challenge with the returned short-lived `loginToken`
  * via {@link OxyContextState.completeTwoFactorSignIn}.
  */
 export type PasswordSignInResult =
-  | { status: 'ok' }
+  | { status: 'ok'; securityAlert?: SecurityAlert }
   | { status: '2fa_required'; loginToken: string };
 
 export interface OxyContextProviderProps {
@@ -272,16 +278,15 @@ const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const SESSION_HANDOFF_DEADLINE = 6000;
 
-/** The internal commit input — a session plus the device-first extras that are
- * not on the public `SessionLoginResponse` (a rotating refresh token, a device
- * token). All extras optional so `SessionLoginResponse` is assignable. */
+/** The internal commit input — a session plus the zero-cookie device credential
+ * (`deviceId` + `deviceSecret`) that is not on the public `SessionLoginResponse`.
+ * All extras optional so `SessionLoginResponse` is assignable. */
 interface CommitInput {
   sessionId: string;
   accessToken?: string;
-  refreshToken?: string;
   deviceId?: string;
-  /** Rotating device secret (phase 2c — zero-cookie transport); persisted with
-   * `deviceId` so the cold boot can mint via `POST /session/device/token`. */
+  /** Rotating device secret (zero-cookie transport); persisted with `deviceId`
+   * so the cold boot can mint via `POST /session/device/token`. */
   deviceSecret?: string;
   expiresAt?: string;
   userId?: string;
@@ -371,9 +376,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }
   const oxyServices = oxyServicesRef.current;
 
-  // The device-first persisted auth-state store (per-origin refresh family on
-  // web; SecureStore session blob + shared-keychain device token on native).
-  // Built ONCE per provider mount.
+  // The device-first persisted auth-state store (per-origin zero-cookie device
+  // credential on web; SecureStore session blob on native). Built ONCE per
+  // provider mount.
   const authStoreRef = useRef<AuthStateStore | null>(null);
   if (!authStoreRef.current) {
     authStoreRef.current = createPlatformAuthStateStore();
@@ -548,19 +553,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const markAuthResolvedRef = useRef(markAuthResolved);
   markAuthResolvedRef.current = markAuthResolved;
 
-  // Re-boot indirection: the SessionClient is built in the ref initializer below
-  // (before `runColdBoot` is defined), but its `onSessionAppeared` must re-run the
-  // cold boot to self-acquire when a sibling signs in on this device. A ref bridges
-  // the ordering; it is assigned right after `runColdBoot` is declared.
-  const runColdBootRef = useRef<(() => Promise<void>) | null>(null);
-
   // Server-authoritative device session client. Built ONCE per `oxyServices`
-  // instance. `onUnauthenticated` (a device signout-all pushed over the socket,
-  // or bootstrapped as zero-account) clears the persisted store + local state so
-  // a reload does not try to restore a session the device no longer has.
-  // `signedOutSocketAuth` + `onSessionAppeared` power the signed-out sync channel:
-  // an idle tab joins its `device:<id>` room (web via the `oxy_device` cookie,
-  // native via the shared device token) and self-acquires on a sibling sign-in.
+  // instance. `onUnauthenticated` (a device signout-all pushed over the
+  // bearer-authenticated socket, or bootstrapped as zero-account) clears the
+  // persisted store + local state so a reload does not try to restore a session
+  // the device no longer has. The realtime socket is bearer-only now: a
+  // signed-out tab cannot join any device room, so there is no signed-out sync
+  // wiring here.
   const sessionClientPairRef = useRef<ReturnType<typeof createSessionClient> | null>(null);
   if (!sessionClientPairRef.current) {
     sessionClientPairRef.current = createSessionClient(
@@ -571,22 +570,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         void clearSessionStateRef.current().catch((clearError) => {
           logger('Failed to clear local state on remote sign-out', clearError);
         });
-      },
-      {
-        signedOutSocketAuth: async () => {
-          // Web (`*.oxy.so`): the first-party `oxy_device` cookie rides the
-          // same-site handshake automatically — just connect.
-          if (isWebBrowser()) return true;
-          // Native (no cookie jar): present the shared device token if we have one.
-          try {
-            return (await authStore.loadDeviceToken()) ?? false;
-          } catch {
-            return false;
-          }
-        },
-        onSessionAppeared: () => {
-          void runColdBootRef.current?.();
-        },
       },
     );
   }
@@ -681,7 +664,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     }
     await clearSessionState();
-    // Explicit FULL wipe: also drop the persisted refresh family so a reload
+    // Explicit FULL wipe: also drop the persisted device credential so a reload
     // finds nothing to restore.
     await authStore.clear();
     useAccountStore.getState().reset();
@@ -739,10 +722,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [logger, oxyServices]);
 
   // Unified in-session refresh (SDK-owned; every RP inherits it). Installs the
-  // ONE core refresh handler (rotate the persisted refresh family; native falls
-  // back to the shared keychain) plus the proactive scheduler that refreshes
-  // ~60s before expiry and on tab-focus. Replaces the deleted services-local
-  // `inSessionTokenRefresh` module.
+  // ONE core refresh handler (re-mint from the persisted zero-cookie device
+  // credential via `POST /session/device/token`) plus the proactive scheduler
+  // that refreshes ~60s before expiry and on tab-focus. Replaces the deleted
+  // services-local `inSessionTokenRefresh` module.
   useEffect(() => {
     const dispose = installAuthRefreshHandler({ oxy: oxyServices, store: authStore });
     const scheduler = startTokenRefreshScheduler(oxyServices);
@@ -754,32 +737,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // ── Session commit funnel ────────────────────────────────────────────────
   // The single place a session becomes committed: plant tokens, persist the
-  // rotating refresh family, register the account into the server-authoritative
-  // device set, and hydrate the full user. Used by the QR device flow
-  // (`handleWebSession`), password sign-in, 2FA completion, and the cold boot.
+  // zero-cookie device credential (`deviceId` + `deviceSecret`), register the
+  // account into the server-authoritative device set, and hydrate the full user.
+  // Used by the QR device flow (`handleWebSession`), password sign-in, 2FA
+  // completion, and the cold boot.
   const commitSession = useCallback(
     async (input: CommitInput, options: { activate: boolean }): Promise<void> => {
       if (input.accessToken) {
         oxyServices.setTokens(input.accessToken);
       }
 
-      // Persist the durable blob when a rotating refresh token is present
-      // (trusted-lane sign-ins). The cold boot has usually persisted already;
-      // this is idempotent. A missing refresh token means the session survives
-      // reload via the device cookie (web) / shared keychain (native) instead.
-      if (input.refreshToken && input.userId) {
+      // Persist the durable blob when the zero-cookie device credential
+      // (`deviceId` + `deviceSecret`) is present. The cold boot has usually
+      // persisted already; this is idempotent. Without the credential there is
+      // nothing durable to persist and the session lives only for this runtime.
+      if (input.deviceId && input.deviceSecret && input.userId) {
         try {
-          const deviceToken = (await authStore.loadDeviceToken()) ?? undefined;
           const next: PersistedAuthState = {
             sessionId: input.sessionId,
-            refreshToken: input.refreshToken,
             userId: input.userId,
-            ...(deviceToken ? { deviceToken } : {}),
-            // Phase 2c: persist the deviceId + rotating deviceSecret so the next
-            // cold boot can restore via the zero-cookie mint. Both are additive —
-            // absent on cookie-lane sign-ins, which fall back to the refresh family.
-            ...(input.deviceId ? { deviceId: input.deviceId } : {}),
-            ...(input.deviceSecret ? { deviceSecret: input.deviceSecret } : {}),
+            deviceId: input.deviceId,
+            deviceSecret: input.deviceSecret,
             ...(input.accessToken ? { accessToken: input.accessToken } : {}),
             ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
           };
@@ -867,9 +845,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         {
           sessionId: session.sessionId,
           accessToken: session.accessToken,
-          // deviceFlow threads a rotating refresh token + deviceSecret on the
-          // runtime object even though `SessionLoginResponse` does not type them.
-          refreshToken: (session as { refreshToken?: string }).refreshToken,
+          // deviceFlow threads the rotating deviceSecret on the runtime object
+          // even though `SessionLoginResponse` does not type it.
           deviceSecret: (session as { deviceSecret?: string }).deviceSecret,
           deviceId: session.deviceId,
           expiresAt: session.expiresAt,
@@ -944,9 +921,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       password: string,
       opts?: { deviceName?: string; deviceFingerprint?: string },
     ): Promise<PasswordSignInResult> => {
-      const deviceToken = (await authStore.loadDeviceToken()) ?? undefined;
       const result = await oxyServices.passwordSignIn(identifier, password, {
-        deviceToken,
         deviceName: opts?.deviceName,
         deviceFingerprint: opts?.deviceFingerprint,
       });
@@ -958,7 +933,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         {
           sessionId: result.sessionId,
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
           deviceSecret: result.deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
@@ -967,9 +941,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
         { activate: true },
       );
-      return { status: 'ok' };
+      return { status: 'ok', ...(result.securityAlert ? { securityAlert: result.securityAlert } : {}) };
     },
-    [oxyServices, authStore, commitSession],
+    [oxyServices, commitSession],
   );
 
   const completeTwoFactorSignIn = useCallback(
@@ -978,20 +952,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       token?: string;
       backupCode?: string;
       deviceName?: string;
-    }): Promise<void> => {
-      const deviceToken = (await authStore.loadDeviceToken()) ?? undefined;
+    }): Promise<{ securityAlert?: SecurityAlert }> => {
       const result = await oxyServices.completeTwoFactorSignIn({
         loginToken: params.loginToken,
         token: params.token,
         backupCode: params.backupCode,
-        deviceToken,
         deviceName: params.deviceName,
       });
       await commitSession(
         {
           sessionId: result.sessionId,
           accessToken: result.accessToken,
-          refreshToken: result.refreshToken,
           deviceSecret: result.deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
@@ -1000,8 +971,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
         { activate: true },
       );
+      return { securityAlert: result.securityAlert };
     },
-    [oxyServices, authStore, commitSession],
+    [oxyServices, commitSession],
   );
 
   // ── Cold boot ────────────────────────────────────────────────────────────
@@ -1042,19 +1014,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           markAuthResolvedRef.current();
         },
         onSignedOut: () => {
+          // The realtime socket is bearer-only: a signed-out tab cannot join any
+          // device room, so there is no signed-out socket to start here.
           markAuthResolvedRef.current();
-          // Open the signed-out realtime channel so this idle tab joins its
-          // `device:<id>` room (web `oxy_device` cookie / native device token)
-          // and self-acquires when a sibling signs in. Idempotent, best-effort.
-          void sessionClient.start().catch((startError) => {
-            if (__DEV__) {
-              loggerUtil.debug(
-                'signed-out socket start failed (non-fatal)',
-                { component: 'OxyContext', method: 'runColdBoot' },
-                startError as unknown,
-              );
-            }
-          });
         },
         onStepError: (id, error) => {
           if (__DEV__) {
@@ -1078,20 +1040,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Backstop: resolve on every exit path so the gate can never hang.
       markAuthResolvedRef.current();
     }
-  }, [oxyServices, authStore, sessionClient]);
-  // Bridge for `onSessionAppeared` (SessionClient) → re-run the cold boot to
-  // self-acquire when a sibling signs in on this device while this tab is idle.
-  runColdBootRef.current = runColdBoot;
+  }, [oxyServices, authStore]);
 
   useEffect(() => {
     if (initialized) {
       return;
     }
     // IdP mode (`coldBoot={false}`): this provider is NOT the ecosystem session
-    // authority, so it never runs the device-first restore and never opens the
-    // signed-out device-state socket (`runColdBoot` → `onSignedOut` is the sole
-    // place that socket starts). Resolve auth immediately as signed out so there
-    // is no boot spinner; a deliberate sign-in still commits a normal session.
+    // authority, so it never runs the device-first restore. Resolve auth
+    // immediately as signed out so there is no boot spinner; a deliberate sign-in
+    // still commits a normal session.
     if (!coldBoot) {
       setInitialized(true);
       markAuthResolved();
@@ -1215,7 +1173,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         {
           sessionId: result.sessionId,
           accessToken: result.accessToken,
-          refreshToken: (result as { refreshToken?: string }).refreshToken,
           deviceSecret: (result as { deviceSecret?: string }).deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
@@ -1379,7 +1336,7 @@ const LOADING_STATE: OxyContextState = {
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),
   signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
-  completeTwoFactorSignIn: () => rejectMissingProvider<void>(),
+  completeTwoFactorSignIn: () => rejectMissingProvider<{ securityAlert?: SecurityAlert }>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),

@@ -1,18 +1,15 @@
-import { useState, useRef, useMemo, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, ShieldAlert, QrCode } from "lucide-react"
-import { OxyServices } from "@oxyhq/core"
-import { useOxy } from "@oxyhq/services"
+import { ArrowLeft, QrCode, ShieldAlert } from "lucide-react"
+import type { SwitchableAccount } from "@oxyhq/core"
+import type { SecurityAlert } from "@oxyhq/contracts"
+import { useOxy, useSwitchableAccounts } from "@oxyhq/services"
 import { Avatar } from "@oxyhq/bloom/avatar"
-import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
-import { withCsrfHeader } from "@/lib/csrf"
+import { getAvatarUrl } from "@/lib/oxy-api-client"
 import { buildPostLoginRedirect } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
-import { loginResponseSchema, safeParse } from "@/lib/schemas"
-import type { DeviceAccount } from "@/lib/types"
-import { useDeviceAccounts } from "@/lib/use-device-accounts"
 import { getOrCreateDeviceFingerprint } from "@/lib/device-fingerprint"
 import { Button } from "@oxyhq/bloom/button"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -51,6 +48,14 @@ type LookupResult = {
     color: string | null
 }
 
+/** Read an HTTP status off a thrown SDK error (ApiError-shaped or axios-shaped). */
+function errorStatus(err: unknown): number | undefined {
+    return (
+        (err as { status?: number } | undefined)?.status ??
+        (err as { response?: { status?: number } } | undefined)?.response?.status
+    )
+}
+
 export function LoginForm({
     className,
     error,
@@ -66,11 +71,20 @@ export function LoginForm({
     ...props
 }: LoginFormProps) {
     const navigate = useNavigate()
-    const oxy = useMemo(() => new OxyServices({ baseURL: getApiBaseUrl() }), [])
-    // "Sign in with Oxy" opens the services OxyAccountDialog (QR / Commons
-    // device-flow handoff) mounted by the OxyProvider at the app root, replacing
-    // the IdP's bespoke inline QR step.
-    const { openAccountDialog } = useOxy()
+    // The IdP authenticates through the SAME device-first SDK path every Oxy app
+    // uses: `signInWithPassword` / `completeTwoFactorSignIn` verify credentials,
+    // persist the zero-cookie `{deviceId, deviceSecret}` credential, plant the
+    // access token, and register the account into the device set. There is NO
+    // bespoke login fetch or first-party device cookie anymore. "Sign in with
+    // Oxy" opens the shared services OxyAccountDialog (QR / Commons device-flow
+    // handoff) mounted by the OxyProvider at the app root.
+    const {
+        oxyServices,
+        signInWithPassword,
+        completeTwoFactorSignIn,
+        switchToAccount,
+        openAccountDialog,
+    } = useOxy()
     const { setLogoSlot } = useLayoutContext()
 
     const [localError, setLocalError] = useState<string | undefined>()
@@ -78,15 +92,16 @@ export function LoginForm({
     const displayError = rateLimitSeconds > 0 ? `Too many attempts. Try again in ${rateLimitSeconds}s.` : (localError ?? error)
 
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
+    const [pendingAccountId, setPendingAccountId] = useState<string | null>(null)
     // When a login_hint is supplied (the chooser routed a non-active account
     // here for re-auth), bypass the chooser and go straight to the sign-in form.
     const [showLoginForm, setShowLoginForm] = useState(Boolean(loginHint))
 
-    // Detect every account signed in on this device (1..N). The chooser is shown
-    // as an additive front screen whenever at least one account is present and
-    // the user hasn't opted into "Use a different account".
-    const { isLoading, currentSessionId, accounts } = useDeviceAccounts()
+    // Every account signed in on this device (1..N) — the same device-first SDK
+    // projection every Oxy app renders. The chooser is shown as an additive front
+    // screen whenever at least one account is present and the user hasn't opted
+    // into "Use a different account".
+    const { isLoading, currentSessionId, accounts } = useSwitchableAccounts()
 
     const [stepState, setStepState] = useState<{ step: LoginStep; direction: "forward" | "back" }>({
         step: "identifier",
@@ -100,8 +115,10 @@ export function LoginForm({
     const [otpValue, setOtpValue] = useState("")
     const [useBackupCode, setUseBackupCode] = useState(false)
     const [backupCode, setBackupCode] = useState("")
-    const [securityAlert, setSecurityAlert] = useState<string | null>(null)
-    const [pendingRedirect, setPendingRedirect] = useState<{ authuser?: number } | null>(null)
+    // The server-flagged "New sign-in detected" alert (new device / location),
+    // shown as an interstitial after a committed sign-in before continuing to
+    // the OAuth authorize step. Null when the sign-in was unremarkable.
+    const [securityAlert, setSecurityAlert] = useState<SecurityAlert | null>(null)
 
     const passwordRef = useRef<HTMLInputElement>(null)
     const identifierRef = useRef<HTMLInputElement>(null)
@@ -155,15 +172,6 @@ export function LoginForm({
         }, 1000)
     }
 
-    function handleApiError(response: Response, payload: Record<string, unknown> | null): string {
-        if (response.status === 429) {
-            const retryAfter = Number(response.headers.get("retry-after")) || 60
-            startRateLimitCountdown(retryAfter)
-            return `Too many attempts. Try again in ${retryAfter}s.`
-        }
-        return typeof payload?.message === "string" ? payload.message : "Something went wrong"
-    }
-
     function goToStep(next: LoginStep, dir: "forward" | "back" = "forward") {
         setLocalError(undefined)
         if (next === "identifier") {
@@ -196,7 +204,7 @@ export function LoginForm({
         setLocalError(undefined)
         setIsSubmitting(true)
         try {
-            const result = await oxy.lookupUsername(username)
+            const result = await oxyServices.lookupUsername(username)
             setLookupResult({
                 username: result.username,
                 // `name.displayName` is optional on the contract — fall back to
@@ -211,8 +219,7 @@ export function LoginForm({
             goToStep("password", "forward")
         } catch (err) {
             setIsSubmitting(false)
-            const status = (err as { status?: number; response?: { status?: number } } | undefined)?.status
-                ?? (err as { response?: { status?: number } } | undefined)?.response?.status
+            const status = errorStatus(err)
             if (status === 429) {
                 startRateLimitCountdown(60)
                 setLocalError("Too many attempts. Please wait a minute and try again.")
@@ -236,12 +243,11 @@ export function LoginForm({
         await runLookup(username)
     }
 
-    function redirectAfterLogin(authuser?: number) {
-        // The central device session (the `oxy_device` cookie) is minted
-        // server-side by `POST /auth/login`, so there is no client-side
-        // session-cookie plant to do here — proceed straight to `/authorize`.
-        // `/authorize` targets the intended account via the `authuser` hint plus
-        // the device-account chooser feed (`/api/device-accounts`).
+    function redirectAfterLogin() {
+        // The device-first session is already committed by the SDK funnel (token
+        // planted, `{deviceId, deviceSecret}` persisted, account registered as
+        // the active device account), so there is nothing to plant here — proceed
+        // straight to `/authorize`, which targets the SDK's active account.
         navigate(buildPostLoginRedirect({
             sessionToken,
             redirectUri,
@@ -250,18 +256,36 @@ export function LoginForm({
             codeChallenge,
             codeChallengeMethod,
             scope,
-            authuser,
         }))
     }
 
-    function completeLogin(authuser?: number, alert?: string) {
+    /**
+     * A device-first sign-in (password or 2FA) has already committed the session.
+     * If the server flagged it as anomalous, show the "New sign-in detected"
+     * acknowledgement first; otherwise continue straight to the OAuth authorize
+     * step. Covers BOTH the one-step and 2FA paths.
+     */
+    function proceedAfterSignIn(alert?: SecurityAlert) {
         if (alert) {
             setSecurityAlert(alert)
-            setPendingRedirect({ authuser })
+            setIsSubmitting(false)
             goToStep("security-alert", "forward")
             return
         }
-        redirectAfterLogin(authuser)
+        redirectAfterLogin()
+    }
+
+    /** Map a thrown sign-in error onto the inline error UI (rate-limit aware). */
+    function handleSignInError(err: unknown, fallback: string) {
+        const status = errorStatus(err)
+        if (status === 429) {
+            startRateLimitCountdown(60)
+            setLocalError("Too many attempts. Please wait a minute and try again.")
+            return
+        }
+        const message = err instanceof Error && err.message ? err.message : fallback
+        setLocalError(message)
+        toast.error("Sign in failed", { description: message })
     }
 
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -272,59 +296,27 @@ export function LoginForm({
         const password = String(new FormData(e.currentTarget).get("password") || "")
 
         try {
-            // Compute (or read cached) device fingerprint BEFORE the login
-            // POST. The server uses it to dedupe device-local refresh-cookie
-            // slots: a second sign-in from the same browser reuses an
-            // existing device-account slot instead of allocating a fresh
-            // one, matching Google's multi-account model. Null is allowed —
-            // the server treats a missing fingerprint as "no dedupe hint".
+            // Compute (or read cached) device fingerprint BEFORE the sign-in call.
+            // The server uses it to dedupe device-local account slots: a second
+            // sign-in from the same browser reuses an existing device-account slot
+            // instead of allocating a fresh one, matching Google's multi-account
+            // model. Null is allowed — the server treats a missing fingerprint as
+            // "no dedupe hint".
             const deviceFingerprint = await getOrCreateDeviceFingerprint()
-            const body: Record<string, string> = {
-                identifier: identifier.trim(),
-                password,
-            }
-            if (deviceFingerprint) {
-                body.deviceFingerprint = deviceFingerprint
-            }
-            const response = await fetch(buildAuthUrl("/login"), {
-                method: "POST",
-                headers: await withCsrfHeader({ "content-type": "application/json" }),
-                credentials: "include",
-                body: JSON.stringify(body),
+            const result = await signInWithPassword(identifier.trim(), password, {
+                deviceFingerprint: deviceFingerprint ?? undefined,
             })
-            const payload = await response.json().catch(() => ({}))
 
-            if (!response.ok) {
-                const msg = handleApiError(response, payload)
-                setLocalError(msg)
-                if (response.status !== 429) toast.error("Sign in failed", { description: msg })
-                setIsSubmitting(false)
-                return
-            }
-
-            const parsed = safeParse(loginResponseSchema, payload)
-            if (!parsed) {
-                setLocalError("Unable to sign in")
-                setIsSubmitting(false)
-                return
-            }
-
-            if (parsed.twoFactorRequired && parsed.loginToken) {
-                setLoginToken(parsed.loginToken)
+            if (result.status === "2fa_required") {
+                setLoginToken(result.loginToken)
                 setIsSubmitting(false)
                 goToStep("2fa", "forward")
                 return
             }
 
-            if (!parsed.sessionId) {
-                setLocalError("Unable to sign in")
-                setIsSubmitting(false)
-                return
-            }
-
-            completeLogin(parsed.authuser, payload.securityAlert)
+            proceedAfterSignIn(result.securityAlert)
         } catch (err) {
-            setLocalError(err instanceof Error ? err.message : "Unable to sign in")
+            handleSignInError(err, "Unable to sign in")
             setIsSubmitting(false)
         }
     }
@@ -334,110 +326,63 @@ export function LoginForm({
         setLocalError(undefined)
         setIsSubmitting(true)
 
-        const body: Record<string, string> = { loginToken }
-        if (useBackupCode) body.backupCode = backupCode.trim()
-        else body.token = otpValue
-
         try {
-            // Correct endpoint: /security/2fa/verify-login (creates session)
-            const response = await fetch(buildApiUrl("/security/2fa/verify-login"), {
-                method: "POST",
-                headers: await withCsrfHeader({ "content-type": "application/json" }),
-                credentials: "include",
-                body: JSON.stringify(body),
+            const { securityAlert: alert } = await completeTwoFactorSignIn({
+                loginToken,
+                token: useBackupCode ? undefined : otpValue,
+                backupCode: useBackupCode ? backupCode.trim() : undefined,
             })
-            const payload = await response.json().catch(() => ({}))
-
-            if (!response.ok) {
-                const msg = handleApiError(response, payload)
-                setLocalError(msg)
-                if (response.status !== 429) toast.error("Verification failed", { description: msg })
-                setIsSubmitting(false)
-                return
+            proceedAfterSignIn(alert)
+        } catch (err) {
+            const status = errorStatus(err)
+            if (status === 429) {
+                startRateLimitCountdown(60)
+                setLocalError("Too many attempts. Please wait a minute and try again.")
+            } else {
+                const message = err instanceof Error && err.message ? err.message : "Unable to verify"
+                setLocalError(message)
+                toast.error("Verification failed", { description: message })
             }
-
-            const parsed = safeParse(loginResponseSchema, payload)
-            if (!parsed?.sessionId) {
-                setLocalError("Unable to verify")
-                setIsSubmitting(false)
-                return
-            }
-
-            completeLogin(parsed.authuser, payload.securityAlert)
-        } catch (err) {
-            setLocalError(err instanceof Error ? err.message : "Unable to verify")
-            setIsSubmitting(false)
-        }
-    }
-
-    /**
-     * Continue with an account already present in the refresh-cookie account
-     * list. The chooser carries only its non-secret `authuser` slot forward so
-     * `/authorize` can target the same account without storing a bearer.
-     */
-    async function continueWithCurrentAccount(entry: DeviceAccount): Promise<void> {
-        setPendingSessionId(entry.sessionId)
-        setIsSubmitting(true)
-        try {
-            redirectAfterLogin(entry.authuser)
-        } catch (err) {
-            setLocalError(err instanceof Error ? err.message : "Unable to continue")
-            setPendingSessionId(null)
-            setIsSubmitting(false)
-        }
-    }
-
-    /**
-     * Activate a sibling signed-in account WITHOUT a password. The only value
-     * carried to `/authorize` is `authuser`, a device-local cookie slot index.
-     * If a row has no indexed slot, it cannot be targeted cleanly and we ask for
-     * explicit re-authentication.
-     */
-    async function activateSiblingAccount(entry: DeviceAccount): Promise<void> {
-        if (typeof entry.authuser !== "number") {
-            routeToReauth(entry)
-            return
-        }
-        setPendingSessionId(entry.sessionId)
-        setIsSubmitting(true)
-        try {
-            redirectAfterLogin(entry.authuser)
-        } catch (err) {
-            setLocalError(err instanceof Error ? err.message : "Unable to continue")
-            setPendingSessionId(null)
             setIsSubmitting(false)
         }
     }
 
     /**
      * Reveal the sign-in form pre-filled for `entry`'s account so the user can
-     * re-authenticate explicitly. Used only when a chosen account's session
-     * cannot be activated silently. Clears any in-flight pending state so the
-     * chooser row never spins while we transition to the password step.
+     * re-authenticate explicitly. Used when a chosen account cannot be switched
+     * into silently. Clears any in-flight pending state so the chooser row never
+     * spins while we transition to the password step.
      */
-    function routeToReauth(entry: DeviceAccount): void {
-        setPendingSessionId(null)
+    function routeToReauth(entry: SwitchableAccount): void {
+        setPendingAccountId(null)
         setIsSubmitting(false)
-        const hint = entry.account.username || entry.account.email
-        if (hint) setIdentifier(hint)
-        setShowLoginForm(true)
-        if (entry.account.username) {
-            void runLookup(entry.account.username)
+        const hint = entry.user.username ?? undefined
+        if (hint) {
+            setIdentifier(hint)
+            setShowLoginForm(true)
+            void runLookup(hint)
+        } else {
+            setShowLoginForm(true)
         }
     }
 
     /**
-     * A chooser row was selected. Google-style: EVERY signed-in account (active
-     * OR a sibling slot) continues without a password. The password form is
-     * reached only via "Use a different account" or when a slot can't be
-     * targeted cleanly.
+     * A chooser row was selected. Google-style: EVERY signed-in account continues
+     * without a password. The active account proceeds straight to `/authorize`;
+     * any sibling is switched into first (the uniform device-first switch), then
+     * `/authorize` targets it. A switch failure falls back to explicit re-auth.
      */
-    async function handleSelectAccount(entry: DeviceAccount): Promise<void> {
-        if (entry.isCurrent) {
-            await continueWithCurrentAccount(entry)
-            return
+    async function handleSelectAccount(entry: SwitchableAccount): Promise<void> {
+        setPendingAccountId(entry.accountId)
+        setIsSubmitting(true)
+        try {
+            if (!entry.isCurrent) {
+                await switchToAccount(entry.accountId)
+            }
+            redirectAfterLogin()
+        } catch {
+            routeToReauth(entry)
         }
-        await activateSiblingAccount(entry)
     }
 
     function handleUseDifferentAccount(): void {
@@ -445,25 +390,23 @@ export function LoginForm({
         setShowLoginForm(true)
     }
 
-    function handleSecurityAlertDismiss() {
-        if (pendingRedirect) {
-            redirectAfterLogin(pendingRedirect.authuser)
-        }
-    }
-
     // Resolve app context for OAuth flows
     const appContext = sessionToken ? "Sign in to continue" : "Use your Oxy account"
 
     if (isLoading) return <LoadingSpinner className={className} />
 
-    if (accounts.length > 0 && currentSessionId && !showLoginForm) {
+    // The chooser is the INITIAL front screen (returning device). Gate it on the
+    // identifier step so the reactive `useSwitchableAccounts` update that fires
+    // once a sign-in commits (the just-created account appears on the device)
+    // cannot re-mask a later step — notably the "New sign-in detected" alert.
+    if (step === "identifier" && accounts.length > 0 && currentSessionId && !showLoginForm) {
         return (
             <AccountChooser
                 className={className}
                 accounts={accounts}
                 onSelectAccount={handleSelectAccount}
                 onUseAnother={handleUseDifferentAccount}
-                pendingSessionId={pendingSessionId}
+                pendingAccountId={pendingAccountId}
                 isLoading={isSubmitting}
                 {...props}
             />
@@ -614,7 +557,9 @@ export function LoginForm({
                 </form>
             )}
 
-            {/* Step 4: Security alert (new device, unusual location, etc.) */}
+            {/* Step 4: Security alert (new device, unusual location, etc.). The
+                session is ALREADY committed device-first — this is an
+                acknowledgement interstitial before continuing to OAuth authorize. */}
             {step === "security-alert" && (
                 <div key="security-alert" className={animationClass}>
                     <FieldGroup>
@@ -623,13 +568,13 @@ export function LoginForm({
                                 <ShieldAlert className="size-8 text-amber-600 dark:text-amber-400" />
                             </div>
                             <h1 className="text-3xl font-extrabold tracking-tight">New sign-in detected</h1>
-                            <p className="text-base text-muted-foreground">{securityAlert}</p>
+                            <p className="text-base text-muted-foreground">{securityAlert?.message}</p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setPendingRedirect(null); goToStep("identifier", "back") }}>
+                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setSecurityAlert(null); goToStep("identifier", "back") }}>
                                 That wasn&apos;t me
                             </Button>
-                            <Button size="lg" className="flex-1" onClick={handleSecurityAlertDismiss}>
+                            <Button size="lg" className="flex-1" onClick={() => redirectAfterLogin()}>
                                 Yes, it was me
                             </Button>
                         </div>

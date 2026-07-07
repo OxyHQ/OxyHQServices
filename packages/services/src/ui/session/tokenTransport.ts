@@ -13,10 +13,9 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
  * `ensureActiveToken` is the fallback the client uses when a `session_state`
  * push arrived WITHOUT an embedded `activeToken` and the app currently holds no
  * bearer. It mints one through the ONE unified refresh path
- * (`refreshPersistedSession`): rotate the persisted refresh-token family
- * (`POST /auth/refresh-token`) and, on native, fall back to the shared-keychain
- * re-mint. There is no FedCM/silent-iframe arm anymore — the per-origin
- * persisted refresh token is the durable web credential.
+ * (`refreshPersistedSession`), which presents the persisted zero-cookie device
+ * credential (`deviceId` + `deviceSecret`) at `POST /session/device/token`. The
+ * persisted device credential is the sole durable restore credential.
  *
  * Concurrent pushes coalesce onto one in-flight mint. A failure is logged and
  * swallowed: this method must never throw out (it runs inside the socket state

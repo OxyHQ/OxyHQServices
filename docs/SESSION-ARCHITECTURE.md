@@ -32,7 +32,8 @@ Model: `packages/api/src/models/DeviceSession.ts` (collection `devicesessions`).
 deviceId          string   unique — stable identifier for one device/origin
 accounts[]        { accountId, sessionId, authuser, addedAt, operatedByUserId? }
 activeAccountId   ObjectId | null
-cookieKeyHash     sha256 of the device cookie secret (sparse-unique; see Transport)
+secretHash        sha256 of the current deviceSecret (sparse-unique; see Transport)
+prevSecretHash    sha256 of the just-superseded secret (short grace; transient)
 revision          number   monotonic — $inc on every mutation
 ```
 
@@ -43,16 +44,17 @@ order: state application is last-writer-wins by revision across the device set.
 
 ### REST surface (`/session/device/*`)
 
-Routes: `packages/api/src/routes/sessionDevice.ts`. All require a bearer token; the
-`deviceId` is always derived from the **validated JWT claim** (or the device cookie),
-never from the request body.
+Routes: `packages/api/src/routes/sessionDevice.ts`. All routes except the mint require a
+bearer token; the `deviceId` is always derived from the **validated JWT claim**, never
+from the request body.
 
 | Method | Route | Body | Behavior |
 |--------|-------|------|----------|
-| GET | `/session/device/state` | — | Returns current state. Converges a split-brain (JWT device vs. canonical cookie device) on read. |
+| POST | `/session/device/token` | `{ deviceId, deviceSecret }` | **The zero-cookie mint** — PUBLIC (no bearer, no cookies): possession of the secret is the device-ownership proof. Verifies `sha256(deviceSecret)` (constant-time) against the device's `secretHash`, mints a short access token for the active account, and rotates the secret in-use (`nextDeviceSecret`; the presented secret stays valid for a short grace). Per-device lockout + rate limit blunt online guessing. |
+| GET | `/session/device/state` | — | Returns current state for the caller's JWT device. |
 | POST | `/session/device/add` | — | Registers the caller's account into the device set. Account + session ids come from the bearer (IDOR-safe); `operatedByUserId` is resolved from the session document. Idempotent — an unchanged re-register does not broadcast. |
 | POST | `/session/device/switch` | `{ accountId }` | Sets `activeAccountId`, bumps `revision`, broadcasts. If the target session was revoked, heals the device set (drops the dead account), broadcasts the healed state, and returns 403. |
-| POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes one account or clears the device set; picks the next active account; broadcasts. |
+| POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes one account or clears the device set; picks the next active account; broadcasts. `{ all: true }` also clears the device's `secretHash`. |
 
 Every response is validated against `deviceSessionSyncSchema` from `@oxyhq/contracts`:
 
@@ -64,35 +66,30 @@ Contracts (`packages/contracts/src/deviceSession.ts`): `sessionAccountSchema`,
 `deviceSessionStateSchema`, `activeTokenSchema`, `deviceSessionSyncSchema` — shared by
 the server (output validation) and `SessionClient` (input validation).
 
-## Session transport (current)
+## Session transport (zero-cookie)
 
-The transport that carries "which device is this?" across reloads and origins is, today:
+The transport that carries "which device is this?" across reloads is **`deviceId` +
+`deviceSecret`** — no cookies, no refresh-token family, no boot-fragment hop.
 
-1. **`oxy_device` cookie** — a durable, first-party cookie (`Domain=.oxy.so`) holding an
-   opaque random 256-bit secret. The server stores only its SHA-256
-   (`DeviceSession.cookieKeyHash`), so a database dump cannot forge the cookie and the
-   cookie value reveals nothing about the `deviceId`.
-2. **Rotating refresh-token family** — persisted per app (localStorage on web,
-   SecureStore on native) and rotated via `POST /auth/refresh-token`. A revoked family
-   clears the local store.
-3. **Boot fragment handoff** — an origin that cannot present the cookie to the API
-   directly performs one top-level hop: `GET /auth/device/bootstrap?return_to&state`
-   reads the cookie and bounces back to the app with a `#oxy_boot` fragment; the app then
-   burns the single-use, origin-bound code with `POST /auth/device/exchange` (atomic
-   GETDEL) and receives the session bundle. Same-apex web origins skip the hop entirely
-   and use an inline credentialed `POST /auth/device/web-session` fetch.
-4. **Converge on read/write** — `/session/device/{state,add}` reconcile a caller whose
-   JWT carries a different `deviceId` than the canonical cookie device, merging the two
-   documents and out-ranking the retired document's `revision` so stale state can never
-   win.
-5. **Native** — no cookies. A shared device token in the app-group keychain
-   (`group.so.oxy.shared`, issued via `POST /auth/device/token`) joins every native Oxy
-   app on the phone to the same `DeviceSession`.
-
-> **Frozen by decision.** This transport is intentionally frozen until the "workshop 2c"
-> design session. The long-term objective — a zero-cookie transport where a per-device
-> secret mints tokens directly — is **pending only**: do not implement it, and do not
-> modify the current transport, ahead of that workshop.
+1. **`deviceId` + `deviceSecret`** — every successful sign-in (password, 2FA, QR claim,
+   challenge verify) returns the session's `deviceId` and a 256-bit `deviceSecret`. The
+   client persists both first-party (localStorage on web per origin; SecureStore on
+   native). The server stores only `sha256(deviceSecret)` (`DeviceSession.secretHash`,
+   sparse-unique), so a database dump cannot forge the secret and the secret reveals
+   nothing about any other device.
+2. **Mint** — to restore or refresh, the client POSTs `{ deviceId, deviceSecret }` to
+   `POST /session/device/token` (no bearer, no cookies). The server verifies the secret
+   (constant-time) and returns a short access token for the active account plus a
+   rotated `nextDeviceSecret`. **Rotation-in-use:** the presented secret stays valid for
+   a short grace window (60s) so a multi-tab race is not locked out; the client persists
+   the next secret BEFORE planting the minted token.
+3. **Revocation** — sign-out-all (`POST /session/device/signout { all: true }`) clears
+   `secretHash` so a retained secret can never mint again. A theft divergence is detected
+   at the next mint (the loser's secret no longer matches → `invalid_device_secret`).
+4. **No cross-origin implicit sync.** A `deviceId` is per origin (web) / per app-group
+   (native). Each new web origin does its own first sign-in; there is no shared device
+   cookie tying `*.oxy.so` subdomains together and no cross-app device token on native.
+   This is the deliberate trade for zero cookies.
 
 ## Cold boot
 
@@ -100,40 +97,31 @@ The transport that carries "which device is this?" across reloads and origins is
 `@oxyhq/core`) is a pure ordered short-circuit: the first step that yields a session
 wins. It is invoked by `OxyProvider` on mount — apps never implement restore themselves.
 
-1. **`bootstrap-return`** (web) — consume a `#oxy_boot` fragment: verify the expected
-   `state`, exchange the code, plant the token.
-2. **`stored-tokens`** — warm-plant a still-valid persisted access token (no network), or
-   rotate the persisted refresh family.
-3. **`shared-key-signin`** (native) — re-mint from the shared Commons identity in the
-   keychain; on first use, issue and mirror the shared device token so all native apps
-   share one device.
-4. **`bootstrap-hop`** (web, terminal) — same-apex: inline credentialed web-session
-   fetch; cross-apex: **one** visible top-level navigation to
-   `GET /auth/device/bootstrap`, attempted once ever per origin.
+1. **`device-secret-mint`** (web + native) — when the origin persisted a `deviceId` +
+   `deviceSecret`, mint a short access token with a single bearer-less POST to
+   `/session/device/token`, persist the rotated secret, plant the token. A
+   `no_active_session` 401 is an authoritative signed-out; an `invalid_device_secret` 401
+   drops the (diverged) secret.
+2. **`shared-key-signin`** (native) — re-mint from the shared Commons identity in the
+   app-group keychain.
 
 If nothing yields a session, the app is silently signed out — no redirect, no dialog.
+The proactive scheduler + the reactive 401 handler both re-mint via the same
+`deviceSecret` path (`refreshPersistedSession`), so a long-lived session stays alive past
+the short access-token TTL without any refresh token.
 
 ```mermaid
 flowchart TD
   Mount["OxyProvider mount"] --> CB["runSessionColdBoot"]
-  CB --> Frag{"boot fragment in URL?"}
-  Frag -->|yes| Exchange["POST /auth/device/exchange"]
-  Exchange -->|session| In["Authenticated — no UI"]
-  Exchange -->|no session| Stored
-  Frag -->|no| Stored{"persisted tokens?"}
-  Stored -->|warm access token| In
-  Stored -->|rotate family| Rotate["POST /auth/refresh-token"]
-  Rotate -->|ok| In
-  Rotate -->|revoked| Native
-  Stored -->|none| Native{"native + Commons key?"}
+  CB --> Secret{"persisted deviceId + deviceSecret?"}
+  Secret -->|yes| Mint["POST /session/device/token"]
+  Mint -->|session| In["Authenticated — no UI"]
+  Mint -->|"401 no_active_session"| Out["Signed out — silent"]
+  Mint -->|"401 invalid_device_secret / transient"| Native
+  Secret -->|no| Native{"native + Commons key?"}
   Native -->|yes| Shared["signInWithSharedIdentity"]
   Shared --> In
-  Native -->|no / web| Apex{"same apex as API?"}
-  Apex -->|yes| WS["POST /auth/device/web-session"]
-  WS -->|session| In
-  WS -->|signed out| Out["Signed out — silent"]
-  Apex -->|"cross-apex, once ever"| Hop["top-level hop: GET /auth/device/bootstrap → back with boot fragment"]
-  Hop --> Frag
+  Native -->|"no / web"| Out
   Out --> Btn["User taps profile button → OxyAccountDialog"]
 ```
 
@@ -261,14 +249,24 @@ function Home() {
 
 ### IdP exception
 
-auth.oxy.so is the OAuth authorize/consent surface, **not** a relying party and not a
-session authority. It mounts `OxyProvider` with `coldBoot={false}` — no cold boot, no
-device-session ownership — and redirects all `/settings/*` paths to accounts.oxy.so,
-which is the sole owner of account management.
+auth.oxy.so is the OAuth authorize/consent surface, **not** a relying party. It mounts
+`OxyProvider` device-first like every Oxy app (normal cold boot from its own per-origin
+`{deviceId, deviceSecret}`, `useSwitchableAccounts` chooser) but stays a SHELL that emits
+the OAuth code after authenticating — it does not bounce elsewhere for its own session.
+It redirects all `/settings/*` paths to accounts.oxy.so, which is the sole owner of
+account management. (The former `coldBoot={false}` exception existed for the deleted
+SSO bounce.)
 
 ### Removed
 
 FedCM, the silent-restore iframe, the cross-domain redirect-chain restore, and the
-legacy client-side auth manager were all deleted. Cold boot is the four-step device-first
-chain above — nothing else. Do not reintroduce multi-provider setups or per-app session
-restore.
+legacy client-side auth manager were all deleted earlier. The **zero-cookie cutover**
+then deleted the entire cookie/refresh transport: the `oxy_device` cookie
+(`cookieKeyHash`, the `/auth/device/bootstrap` + `/auth/device/exchange` +
+`/auth/device/web-session` hop, the `#oxy_boot` fragment), the rotating refresh-token
+family (`/auth/refresh-token`, `/auth/logout`), and the opaque device-attribution token
+(the `POST /auth/device/token` native mint, the shared-keychain device token, and the
+anonymous device socket). Sockets are **bearer-only** — a signed-out client opens no
+socket. Cold boot is the two-step device-secret chain above — nothing else. Do not
+reintroduce cookies, a refresh-token family, a boot-fragment hop, an anonymous device
+socket, or per-app session restore.

@@ -20,12 +20,7 @@ import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswor
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
 import { recordFailure, clearFailures } from '../services/loginLockout.service';
-import {
-  revokeFamilyBySession,
-  revokeAllUserFamilies,
-} from '../services/refreshToken.service';
-import { resolveLoginDevice, finalizeDeviceLogin } from '../services/deviceLogin.service';
-import { setDeviceCookie } from '../utils/deviceCookie';
+import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import type { AuthRequest } from '../middleware/auth';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
@@ -331,7 +326,7 @@ export class SessionController {
    */
   static async signUp(req: Request, res: Response) {
     try {
-      const { email, username, password, name, deviceName, deviceFingerprint, deviceToken } = req.body;
+      const { email, username, password, name, deviceName, deviceFingerprint } = req.body;
 
       if (
         !email ||
@@ -412,40 +407,24 @@ export class SessionController {
         });
       }
 
-      // Device-first attribution (oxy_device cookie > deviceToken > same-site
-      // cookie mint > none), resolved before mint so the session carries the
-      // central deviceId.
-      const signupDevice = await resolveLoginDevice(req, deviceToken);
-
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(signupDevice.deviceId ? { deviceId: signupDevice.deviceId } : {}) }
+        { deviceName, deviceFingerprint }
       );
-
-      // Plant the freshly-minted device cookie (same-site trusted signups only).
-      if (signupDevice.setCookieSecret) {
-        setDeviceCookie(res, signupDevice.setCookieSecret);
-      }
 
       const baseSignupResponse = buildSessionAuthResponse(session, user);
       if (!baseSignupResponse) {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
-      const response: typeof baseSignupResponse & { refreshToken?: string; deviceSecret?: string } = baseSignupResponse;
+      const response: typeof baseSignupResponse & { deviceSecret?: string } = baseSignupResponse;
 
-      // Register into the device set (add-only) + broadcast, and additively
-      // attach a rotating refresh token + deviceSecret when the lane allows it.
-      // Best-effort.
+      // Register into the device set (add-only) + broadcast, and mint the
+      // deviceSecret the client persists first-party. Best-effort.
       const signupDeviceExtras = await finalizeDeviceLogin({
-        req,
-        deviceId: signupDevice.deviceId,
         session,
         userId: user._id.toString(),
       });
-      if (signupDeviceExtras.refreshToken) {
-        response.refreshToken = signupDeviceExtras.refreshToken;
-      }
       if (signupDeviceExtras.deviceSecret) {
         response.deviceSecret = signupDeviceExtras.deviceSecret;
       }
@@ -531,7 +510,7 @@ export class SessionController {
    */
   static async verifyChallenge(req: Request, res: Response) {
     try {
-      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint, deviceToken } = req.body;
+      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint } = req.body;
 
       if (!publicKey || !challenge || !signature || !timestamp) {
         return res.status(400).json({
@@ -578,23 +557,13 @@ export class SessionController {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Device-first attribution (oxy_device cookie > deviceToken > same-site
-      // cookie mint > none), resolved before mint so the session carries the
-      // central deviceId.
-      const verifyDevice = await resolveLoginDevice(req, deviceToken);
-
       // Create session
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(verifyDevice.deviceId ? { deviceId: verifyDevice.deviceId } : {}) }
+        { deviceName, deviceFingerprint }
       );
       const sessionAfterCreate = Date.now();
-
-      // Plant the freshly-minted device cookie (same-site trusted logins only).
-      if (verifyDevice.setCookieSecret) {
-        setDeviceCookie(res, verifyDevice.setCookieSecret);
-      }
 
       // Log security event for sign-in only if this is a new session
       // More reliable detection: check if session was created during this request
@@ -638,7 +607,7 @@ export class SessionController {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
 
-      const response: SessionAuthResponse & { refreshToken?: string; deviceSecret?: string } = {
+      const response: SessionAuthResponse & { deviceSecret?: string } = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
@@ -650,18 +619,12 @@ export class SessionController {
         }
       };
 
-      // Register into the device set (add-only) + broadcast, and additively
-      // attach a rotating refresh token + deviceSecret when the lane allows it.
-      // Best-effort.
+      // Register into the device set (add-only) + broadcast, and mint the
+      // deviceSecret the client persists first-party. Best-effort.
       const verifyDeviceExtras = await finalizeDeviceLogin({
-        req,
-        deviceId: verifyDevice.deviceId,
         session,
         userId: user._id.toString(),
       });
-      if (verifyDeviceExtras.refreshToken) {
-        response.refreshToken = verifyDeviceExtras.refreshToken;
-      }
       if (verifyDeviceExtras.deviceSecret) {
         response.deviceSecret = verifyDeviceExtras.deviceSecret;
       }
@@ -691,7 +654,7 @@ export class SessionController {
    */
   static async signIn(req: Request, res: Response) {
     try {
-      const { identifier, email, username, password, deviceName, deviceFingerprint, deviceToken } = req.body;
+      const { identifier, email, username, password, deviceName, deviceFingerprint } = req.body;
       const loginIdentifier = identifier || email || username;
 
       if (!loginIdentifier || !password || typeof password !== 'string') {
@@ -772,23 +735,11 @@ export class SessionController {
         req
       );
 
-      // Resolve the device this sign-in attaches to (oxy_device cookie >
-      // deviceToken > none) BEFORE minting the session so its central deviceId
-      // is stamped onto the session's token claims. For a same-site trusted login
-      // with no existing binding, a device cookie is minted (planted below).
-      // Additive — null keeps the pre-existing device attribution (UA/IP/random).
-      const loginDevice = await resolveLoginDevice(req, deviceToken);
-
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint, ...(loginDevice.deviceId ? { deviceId: loginDevice.deviceId } : {}) }
+        { deviceName, deviceFingerprint }
       );
-
-      // Plant the freshly-minted device cookie (same-site trusted logins only).
-      if (loginDevice.setCookieSecret) {
-        setDeviceCookie(res, loginDevice.setCookieSecret);
-      }
 
       const baseResponse = buildSessionAuthResponse(session, user);
 
@@ -799,7 +750,6 @@ export class SessionController {
       // Include anomaly information in response if detected
       const response: SessionAuthResponse & {
         securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> };
-        refreshToken?: string;
         deviceSecret?: string;
       } = baseResponse;
       if (anomalyCheck.hasAnomalies) {
@@ -809,19 +759,13 @@ export class SessionController {
         };
       }
 
-      // Device-first lane: register the session into the resolved device set
-      // (add-only, never flips active) + broadcast, and additively attach a
-      // rotating refresh token + deviceSecret when the lane allows it.
-      // Best-effort.
+      // Device-first lane: register the session into the device set (add-only,
+      // never flips active) + broadcast, and mint the deviceSecret the client
+      // persists first-party. Best-effort.
       const deviceExtras = await finalizeDeviceLogin({
-        req,
-        deviceId: loginDevice.deviceId,
         session,
         userId: user._id.toString(),
       });
-      if (deviceExtras.refreshToken) {
-        response.refreshToken = deviceExtras.refreshToken;
-      }
       if (deviceExtras.deviceSecret) {
         response.deviceSecret = deviceExtras.deviceSecret;
       }
@@ -1199,17 +1143,6 @@ export class SessionController {
         }
       }
 
-      // Revoke any rotating refresh-token family bound to this session. Cleanup
-      // must never fail the logout itself.
-      try {
-        await revokeFamilyBySession(sessionIdToLogout);
-      } catch (error) {
-        logger.error('Failed to revoke refresh family during logout', error instanceof Error ? error : new Error(String(error)), {
-          component: 'SessionController',
-          method: 'logoutSession',
-        });
-      }
-
       logger.info(`Logged out session: ${sessionIdToLogout.substring(0, 8)}...`);
       res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
@@ -1255,18 +1188,6 @@ export class SessionController {
         emitSessionUpdate(userId, {
           type: 'sessions_removed',
           sessionIds: sessionIds
-        });
-      }
-
-      // Revoke every rotating refresh-token family for this user. Cleanup must
-      // never fail the logout itself.
-      try {
-        await revokeAllUserFamilies(userId);
-      } catch (error) {
-        logger.error('Failed to revoke refresh families during logout-all', error instanceof Error ? error : new Error(String(error)), {
-          component: 'SessionController',
-          method: 'logoutAllSessions',
-          userId,
         });
       }
 

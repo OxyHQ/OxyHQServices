@@ -105,21 +105,21 @@ describe('SessionClient socket', () => {
     c.stop();
   });
 
-  it('does not connect the socket when there is no token (autoConnect false)', async () => {
+  it('does not open a socket at all when signed out (bearer-only)', async () => {
     const c = new SessionClient(makeHost({ getAccessToken: () => null }));
     await c.start();
-    const [, opts] = ioMock.mock.calls[0];
-    expect(opts?.autoConnect).toBe(false);
+    expect(ioMock).not.toHaveBeenCalled();
     c.stop();
   });
 
-  it('reconnects when a token arrives after being disconnected', async () => {
-    let tokenListener: ((t: string | null) => void) | null = null;
-    const host = makeHost({ getAccessToken: () => null, onTokensChanged: (l) => { tokenListener = l; return () => undefined; } });
+  it('reconnects an existing socket when a fresh token arrives after a transient drop', async () => {
+    const listeners: Array<(t: string | null) => void> = [];
+    const host = makeHost({ onTokensChanged: (l) => { listeners.push(l); return () => undefined; } });
     const c = new SessionClient(host);
     await c.start();
-    fakeSocket.connected = false;
-    tokenListener?.('fresh-token');
+    expect(fakeSocket.connected).toBe(true); // authenticated connect on start
+    fakeSocket.connected = false; // simulate a transient socket drop
+    listeners.forEach((l) => l('fresh-token'));
     expect(fakeSocket.connected).toBe(true);
     c.stop();
   });

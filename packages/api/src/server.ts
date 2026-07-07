@@ -21,7 +21,6 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import linksRoutes from './routes/links';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
-import deviceAuthRoutes from './routes/deviceAuth';
 import assetRoutes from './routes/assets';
 import cdnRoutes from './routes/cdn';
 import storageRoutes from './routes/storage';
@@ -230,9 +229,8 @@ interface AuthenticatedSocket extends Socket {
 import { createSocketRateLimiter } from './middleware/socketRateLimit';
 io.use(createSocketRateLimiter(100, 10_000)); // 100 events per 10s
 
-// Socket.IO authentication middleware. Accepts either an authenticated user
-// (valid bearer) OR an anonymous device socket (a signed-out tab authed by its
-// first-party `oxy_device` cookie / native device token) — see resolveSocketIdentity.
+// Socket.IO authentication middleware. Requires an authenticated user (valid
+// bearer access token) — see resolveSocketIdentity.
 io.use((socket: AuthenticatedSocket, next) => {
   resolveSocketIdentity(socket.handshake)
     .then((identity) => {
@@ -240,11 +238,7 @@ io.use((socket: AuthenticatedSocket, next) => {
         next(new Error('Authentication error'));
         return;
       }
-      if (identity.kind === 'user') {
-        socket.user = identity.user;
-      } else {
-        socket.deviceId = identity.deviceId;
-      }
+      socket.user = identity.user;
       next();
     })
     .catch((error) => {
@@ -253,14 +247,13 @@ io.use((socket: AuthenticatedSocket, next) => {
     });
 });
 
-// Socket connection handling — authenticated users AND anonymous device sockets.
+// Socket connection handling — authenticated users only.
 io.on('connection', (socket: AuthenticatedSocket) => {
   logger.debug('Socket connected', { socketId: socket.id });
 
-  // A user socket joins `user:<id>` + `device:<deviceId>`; an anonymous device
-  // socket joins ONLY `device:<deviceId>` (never a `user:` room). All ids are
-  // server-resolved — see socketRoomsFor.
-  const rooms = socketRoomsFor({ user: socket.user, deviceId: socket.deviceId });
+  // A user socket joins `user:<id>` + `device:<deviceId>` (JWT claim). All ids
+  // are server-resolved — see socketRoomsFor.
+  const rooms = socketRoomsFor({ user: socket.user });
   for (const room of rooms) {
     socket.join(room);
   }
@@ -494,11 +487,6 @@ app.use(bruteForceProtection);
 app.get('/csrf-token', getCsrfToken);
 
 // API Routes
-// Device-first auth surface (ADDITIVE). Mounted BEFORE the generic `/auth` so
-// `/auth/device/*` and `/auth/refresh-token` are owned by this router; it brings
-// its own per-endpoint rate limiters (NOT the broad `authRateLimiter`, avoiding
-// double-counting). Unmatched paths fall through to the generic `/auth` router.
-app.use("/auth", deviceAuthRoutes);
 // Apply stricter rate limiting to auth routes
 app.use("/auth", authRateLimiter, authRoutes);
 app.use("/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)

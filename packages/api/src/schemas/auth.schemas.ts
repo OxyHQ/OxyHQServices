@@ -14,9 +14,6 @@ export const signupSchema = z.object({
   }).optional(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
-  // Opaque add-only device attribution token (device-first auth). Optional;
-  // absent for the legacy path. Never a session credential.
-  deviceToken: z.string().trim().max(512).optional(),
 }).superRefine((data, ctx) => {
   // Native users must supply a clean display name (letters/spaces/apostrophe
   // only). Federated names are stripped silently elsewhere; native names are
@@ -45,7 +42,6 @@ export const loginSchema = z.object({
   password: z.string().min(1),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
-  deviceToken: z.string().trim().max(512).optional(),
 });
 
 // POST /auth/register (public key)
@@ -70,7 +66,6 @@ export const verifyChallengeSchema = z.object({
   timestamp: z.number(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
-  deviceToken: z.string().trim().max(512).optional(),
 });
 
 // POST /auth/recover/request
@@ -125,9 +120,6 @@ export const authSessionCreateSchema = z.object({
   clientId: z.string().trim().min(1).optional(),
   applicationId: z.string().trim().min(1).optional(),
   expiresAt: z.union([z.string(), z.number()]).optional(),
-  // Optional add-only device attribution (device-flow QR started from a device
-  // that already holds a session). Persisted onto the AuthSession as `deviceId`.
-  deviceToken: z.string().trim().max(512).optional(),
 }).refine(
   (data) => Boolean(data.clientId) || Boolean(data.applicationId),
   { message: 'Either clientId or applicationId is required' }
@@ -205,13 +197,6 @@ export const oauthTokenSchema = z.object({
   redirectUri: z.string().trim().url(),
   clientSecret: z.string().trim().min(1).optional(),
   codeVerifier: z.string().trim().min(43).max(128).optional(),
-  // Optional add-only device attribution: an RP that persisted an oxy_device
-  // deviceToken at bootstrap may present it here so the minted session lands on
-  // the caller's CENTRAL device set (one session per account per device) instead
-  // of orphaning a fresh UA/IP-derived deviceId. Absent (the common back-channel
-  // exchange) → the grant still resolves the device from the oxy_device cookie
-  // when the exchange is same-apex, else no device attribution.
-  deviceToken: z.string().trim().min(1).optional(),
 }).refine(
   (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
   { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }

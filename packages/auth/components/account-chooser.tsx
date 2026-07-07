@@ -1,45 +1,38 @@
 import { ChevronRight, UserPlus } from "lucide-react"
-import { getAccountDisplayName } from "@oxyhq/core"
+import type { SwitchableAccount } from "@oxyhq/core"
 import { cn } from "@/lib/utils"
 import { Button } from "@oxyhq/bloom/button"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { AuthFormHeader } from "@/components/auth-form-layout"
-import { getAvatarUrl } from "@/lib/oxy-api-client"
-import type { DeviceAccount } from "@/lib/types"
 import { useHoverColorPreset } from "@/lib/use-hover-color-preset"
 
 type AccountChooserProps = React.ComponentProps<"div"> & {
-    /** Accounts signed in on this device (1..N), current account first. */
-    accounts: DeviceAccount[]
+    /**
+     * Accounts signed in on this device (1..N), current account first. Sourced
+     * from the SAME device-first SDK projection every Oxy app uses
+     * (`useSwitchableAccounts` → `projectSwitchableAccounts`). Each row carries a
+     * resolved `displayName` / `email` / `avatarUrl` / `color` — the IdP no
+     * longer re-derives any of them.
+     */
+    accounts: SwitchableAccount[]
     /** App name to continue to, e.g. "Console". Falls back to a generic label. */
     appName?: string | null
-    /** Selecting an account row. `isCurrent` distinguishes continue vs re-auth. */
-    onSelectAccount: (account: DeviceAccount) => void
+    /** Selecting an account row. The IdP switches INTO `account.accountId`. */
+    onSelectAccount: (account: SwitchableAccount) => void
     /** "Use a different account" → reveals the sign-in form. */
     onUseAnother: () => void
-    /** The sessionId currently being acted on (disables that row's spinner peers). */
-    pendingSessionId?: string | null
+    /** The accountId currently being switched to (disables that row's spinner peers). */
+    pendingAccountId?: string | null
     /** Disables every row while a selection is in flight. */
     isLoading?: boolean
 }
 
 /**
- * Resolve the row's display name via the canonical `getAccountDisplayName`
- * helper. `Account.displayName` is already populated upstream by the same helper
- * (in `useDeviceAccounts`), so this is a belt-and-suspenders convergence: it
- * never re-derives a hand-rolled `displayName || username` chain that could pick
- * the lowercase handle for a first-name-only account.
- */
-function displayNameFor(account: DeviceAccount["account"]): string {
-    return getAccountDisplayName(account)
-}
-
-/**
  * Google-style account chooser. Lists every account signed in on this device
  * and a "Use a different account" affordance. Rendered as an additive FRONT
- * screen before the sign-in form / OAuth consent — selecting a row funnels into
- * the SAME completion path that exists today (continue for the current account,
- * pre-filled re-auth for the others).
+ * screen before the sign-in form / OAuth consent — selecting a row switches into
+ * that account through the shared device-first switch path
+ * (`useOxy().switchToAccount`) exactly like every other Oxy surface.
  */
 export function AccountChooser({
     className,
@@ -47,7 +40,7 @@ export function AccountChooser({
     appName,
     onSelectAccount,
     onUseAnother,
-    pendingSessionId,
+    pendingAccountId,
     isLoading,
     ...props
 }: AccountChooserProps) {
@@ -62,16 +55,15 @@ export function AccountChooser({
             <AuthFormHeader title="Choose an account" description={description} />
             <div className="space-y-2">
                 {accounts.map((entry) => {
-                    const { account } = entry
-                    const isPending = pendingSessionId === entry.sessionId
-                    const hoverHandlers = hoverPreset.getHandlers(account.color)
+                    const isPending = pendingAccountId === entry.accountId
+                    const hoverHandlers = hoverPreset.getHandlers(entry.color)
                     return (
                         // The hover/focus handlers drive the per-account color
                         // preset; the Bloom Button forwards no DOM hover/focus
                         // events, so they live on a wrapping element that also
                         // bubbles keyboard focus (React onFocus/onBlur bubble).
                         <div
-                            key={entry.sessionId}
+                            key={entry.accountId}
                             onMouseEnter={hoverHandlers.onMouseEnter}
                             onMouseLeave={hoverHandlers.onMouseLeave}
                             onFocus={hoverHandlers.onFocus}
@@ -83,23 +75,16 @@ export function AccountChooser({
                                 className="w-full h-auto p-4 justify-start"
                                 onClick={() => onSelectAccount(entry)}
                                 disabled={isLoading}
-                                aria-label={`Continue as ${displayNameFor(account)}`}
+                                aria-label={`Continue as ${entry.displayName}`}
                             >
-                                <Avatar
-                                    source={
-                                        account.avatar
-                                            ? getAvatarUrl(account.avatar)
-                                            : undefined
-                                    }
-                                    size={40}
-                                />
+                                <Avatar source={entry.avatarUrl} size={40} />
                                 <div className="flex-1 text-left ml-3 min-w-0" aria-busy={isPending}>
                                     <div className="font-medium truncate">
-                                        {displayNameFor(account)}
+                                        {entry.displayName}
                                     </div>
-                                    {account.email && (
+                                    {entry.email && (
                                         <div className="text-sm text-muted-foreground truncate">
-                                            {account.email}
+                                            {entry.email}
                                         </div>
                                     )}
                                 </div>

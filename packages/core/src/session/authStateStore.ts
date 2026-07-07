@@ -1,12 +1,12 @@
 /**
  * Persisted auth state — ONE shape, web + native.
  *
- * The device-first session model (auth-centralization wave 1) persists the
- * rotating refresh-token family head per ORIGIN so a reload restores the
- * session locally without a redirect. This module is the storage seam: a tiny
- * `load / save / clear` interface plus platform factories, so the cold boot
- * (`coldBootV2`) and the unified refresh handler (`refresh.ts`) never touch a
- * platform storage API directly.
+ * The zero-cookie device transport persists the device credential per ORIGIN so
+ * a reload restores the session locally without a redirect: `deviceId` +
+ * `deviceSecret` mint a fresh access token via `POST /session/device/token`.
+ * This module is the storage seam: a tiny `load / save / clear` interface plus
+ * platform factories, so the cold boot (`coldBootV2`) and the unified re-mint
+ * handler (`refresh.ts`) never touch a platform storage API directly.
  *
  * Platform-agnostic — the native factory takes an INJECTED key/value store
  * (`@oxyhq/services` passes a SecureStore-backed adapter) so `@oxyhq/core`
@@ -20,43 +20,36 @@
 /**
  * The persisted session credential set for a single origin.
  *
- * `refreshToken` is the rotating single-use family head; `sessionId` + `userId`
- * identify the owning device session and account. `deviceToken` is the opaque,
- * add-only device attribution token (mirrored to the shared keychain on native
- * so every Oxy app on one phone shares one DeviceSession).
+ * `sessionId` + `userId` identify the owning device session and active account.
+ * `deviceId` + `deviceSecret` are the zero-cookie mint credential: the client
+ * presents BOTH at `POST /session/device/token` — the secret is the proof, the
+ * deviceId selects the device doc. The secret is rotated in-use: the mint returns
+ * `nextDeviceSecret`, which the cold boot / re-mint handler persist BEFORE
+ * planting the minted access token (multi-tab anti-loss).
  *
- * `accessToken` + `expiresAt` are OPTIONAL warm-boot fields. Persisting them
- * lets the cold boot plant a still-valid access token on the very first paint
- * WITHOUT a blocking `/auth/refresh-token` round-trip — the proactive scheduler
- * then rotates it in the background. They are a strict optimization: the store
- * is fully functional (via `refreshToken`) when they are absent or stale, and
- * the access token is short-lived, so persisting it adds no exposure the
- * already-persisted refresh token does not (see the plan's XSS risk note — the
- * refresh token is the dominant secret either way).
+ * `accessToken` + `expiresAt` are OPTIONAL warm-boot fields. Persisting them lets
+ * the cold boot plant a still-valid access token on the very first paint WITHOUT
+ * a blocking mint round-trip — the proactive scheduler then rotates it in the
+ * background. They are a strict optimization: the store is fully functional (via
+ * `deviceSecret`) when they are absent or stale, and the access token is
+ * short-lived, so persisting it adds no exposure the already-persisted
+ * `deviceSecret` does not.
  */
 export interface PersistedAuthState {
   sessionId: string;
-  refreshToken: string;
   userId: string;
-  deviceToken?: string;
   /**
-   * The stable device identifier this session is bound to (phase 2c —
-   * zero-cookie transport). Persisted alongside {@link deviceSecret} because the
-   * `POST /session/device/token` mint presents BOTH — the secret is the proof,
-   * the deviceId selects the device doc. Sourced from the lanes that carry it
-   * (password login / 2FA / QR claim / challenge verify); the cookie-bootstrap
-   * lanes (`AuthTokenBundle`) omit it and preserve any prior value. Additive: a
-   * blob without it simply never takes the mint lane and falls back to the
-   * refresh family.
+   * The stable device identifier this session is bound to (zero-cookie
+   * transport). Persisted alongside {@link deviceSecret} because the
+   * `POST /session/device/token` mint presents BOTH. Sourced from every login
+   * lane (password / 2FA / QR claim / challenge verify) via the response's
+   * `deviceId`.
    */
   deviceId?: string;
   /**
-   * The rotating device secret (phase 2c — zero-cookie transport). Possession of
-   * it mints a short access token for the device's active account via
-   * `POST /session/device/token`, replacing the cookie lane. Rotated in-use: the
-   * mint returns `nextDeviceSecret`, which the cold boot persists BEFORE planting
-   * the minted access token (multi-tab anti-loss). Additive and optional — same
-   * XSS risk profile as the already-persisted `refreshToken`.
+   * The rotating device secret (zero-cookie transport). Possession of it mints a
+   * short access token for the device's active account via
+   * `POST /session/device/token`. Rotated in-use.
    */
   deviceSecret?: string;
   /** Optional warm-boot access token (short-lived; see interface docs). */
@@ -66,27 +59,15 @@ export interface PersistedAuthState {
 }
 
 /**
- * The storage seam consumed by the cold boot and the refresh handler. Async
+ * The storage seam consumed by the cold boot and the re-mint handler. Async
  * throughout so one interface fits both synchronous web `localStorage` and
- * asynchronous native SecureStore/AsyncStorage.
- *
- * Two lifetimes:
- *  - The SESSION credential blob (`load`/`save`/`clear`) is per-sign-in and is
- *    wiped on `clear()` (sign-out).
- *  - The DEVICE token (`loadDeviceToken`/`saveDeviceToken`/`clearDeviceToken`)
- *    is long-lived device attribution that SURVIVES `clear()`: a signed-out
- *    browser is still the same device, and a later in-app (cross-apex,
- *    cookie-less) login sends this token so the new session joins the SAME
- *    server-side DeviceSession. Only an explicit device signout-all
- *    (`clearDeviceToken`) removes it.
+ * asynchronous native SecureStore/AsyncStorage. `clear()` (sign-out) wipes the
+ * per-sign-in credential blob.
  */
 export interface AuthStateStore {
   load(): Promise<PersistedAuthState | null>;
   save(state: PersistedAuthState): Promise<void>;
   clear(): Promise<void>;
-  loadDeviceToken(): Promise<string | null>;
-  saveDeviceToken(token: string): Promise<void>;
-  clearDeviceToken(): Promise<void>;
 }
 
 /**
@@ -105,13 +86,6 @@ export interface NativeKeyValueStorage {
  * `oxy_shared_*` keychain keys in `KeyManager`, so it never collides.
  */
 export const AUTH_STATE_STORAGE_KEY = 'oxy.auth.v1';
-
-/**
- * Storage key for the long-lived device-attribution token. Separate from
- * {@link AUTH_STATE_STORAGE_KEY} because it must OUTLIVE a session `clear()`
- * (sign-out) — the device is unchanged across sign-ins.
- */
-export const DEVICE_TOKEN_STORAGE_KEY = 'oxy.device.v1';
 
 /**
  * Parse + shape-validate a stored blob. Returns `null` for anything that is
@@ -134,22 +108,16 @@ function deserialize(raw: string | null): PersistedAuthState | null {
   const candidate = parsed as Record<string, unknown>;
   if (
     typeof candidate.sessionId !== 'string' ||
-    typeof candidate.refreshToken !== 'string' ||
     typeof candidate.userId !== 'string' ||
     candidate.sessionId.length === 0 ||
-    candidate.refreshToken.length === 0 ||
     candidate.userId.length === 0
   ) {
     return null;
   }
   const state: PersistedAuthState = {
     sessionId: candidate.sessionId,
-    refreshToken: candidate.refreshToken,
     userId: candidate.userId,
   };
-  if (typeof candidate.deviceToken === 'string' && candidate.deviceToken.length > 0) {
-    state.deviceToken = candidate.deviceToken;
-  }
   if (typeof candidate.deviceId === 'string' && candidate.deviceId.length > 0) {
     state.deviceId = candidate.deviceId;
   }
@@ -173,7 +141,6 @@ function deserialize(raw: string | null): PersistedAuthState | null {
  */
 export function createMemoryAuthStateStore(): AuthStateStore {
   let current: PersistedAuthState | null = null;
-  let deviceToken: string | null = null;
   return {
     load: async () => current,
     save: async (state) => {
@@ -181,13 +148,6 @@ export function createMemoryAuthStateStore(): AuthStateStore {
     },
     clear: async () => {
       current = null;
-    },
-    loadDeviceToken: async () => deviceToken,
-    saveDeviceToken: async (token) => {
-      deviceToken = token;
-    },
-    clearDeviceToken: async () => {
-      deviceToken = null;
     },
   };
 }
@@ -220,8 +180,8 @@ function safeGetLocalStorage(): Storage | null {
  *    for this page's lifetime — never throws on construction.
  *  - Individual `getItem`/`setItem`/`removeItem` are each wrapped: a read that
  *    throws yields `null`; a write that throws (quota, private mode) is
- *    swallowed. The persisted-refresh lane treats a failed persist as "no
- *    durable state" (falls back to the bootstrap hop) rather than crashing.
+ *    swallowed. The re-mint lane treats a failed persist as "no durable state"
+ *    rather than crashing.
  */
 export function createWebAuthStateStore(): AuthStateStore {
   const storage = safeGetLocalStorage();
@@ -233,7 +193,6 @@ export function createWebAuthStateStore(): AuthStateStore {
   // means "never written this session" → fall back to storage; any set value
   // (including `null` after clear) is authoritative and preferred over storage.
   let sessionMirror: PersistedAuthState | null | undefined;
-  let deviceTokenMirror: string | null | undefined;
   return {
     load: async () => {
       if (sessionMirror !== undefined) {
@@ -262,32 +221,6 @@ export function createWebAuthStateStore(): AuthStateStore {
         // Non-fatal — see save().
       }
     },
-    loadDeviceToken: async () => {
-      if (deviceTokenMirror !== undefined) {
-        return deviceTokenMirror;
-      }
-      try {
-        return storage.getItem(DEVICE_TOKEN_STORAGE_KEY);
-      } catch {
-        return null;
-      }
-    },
-    saveDeviceToken: async (token) => {
-      deviceTokenMirror = token;
-      try {
-        storage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
-      } catch {
-        // Non-fatal — see save().
-      }
-    },
-    clearDeviceToken: async () => {
-      deviceTokenMirror = null;
-      try {
-        storage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
-      } catch {
-        // Non-fatal — see save().
-      }
-    },
   };
 }
 
@@ -303,7 +236,6 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
   // Same in-memory mirror as the web store — a locked/failed SecureStore write
   // must not silently lose the session for the app's lifetime.
   let sessionMirror: PersistedAuthState | null | undefined;
-  let deviceTokenMirror: string | null | undefined;
   return {
     load: async () => {
       if (sessionMirror !== undefined) {
@@ -327,32 +259,6 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       sessionMirror = null;
       try {
         await storage.removeItem(AUTH_STATE_STORAGE_KEY);
-      } catch {
-        // Non-fatal.
-      }
-    },
-    loadDeviceToken: async () => {
-      if (deviceTokenMirror !== undefined) {
-        return deviceTokenMirror;
-      }
-      try {
-        return await storage.getItem(DEVICE_TOKEN_STORAGE_KEY);
-      } catch {
-        return null;
-      }
-    },
-    saveDeviceToken: async (token) => {
-      deviceTokenMirror = token;
-      try {
-        await storage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
-      } catch {
-        // Non-fatal.
-      }
-    },
-    clearDeviceToken: async () => {
-      deviceTokenMirror = null;
-      try {
-        await storage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
       } catch {
         // Non-fatal.
       }

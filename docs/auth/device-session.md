@@ -15,7 +15,7 @@ Source of truth (code):
 
 Related docs: [third-party integration guide](./integration-guide.md) (OAuth — third parties never use DeviceSession), [oxy-auth-platform.md](../architecture/oxy-auth-platform.md) (architecture plan).
 
-> **Transport note (frozen):** device identity today rides the durable first-party `oxy_device` cookie (`Domain=.oxy.so`) plus a persisted rotating refresh-token family, bootstrapped through `GET /auth/device/bootstrap` → `POST /auth/device/exchange` (`#oxy_boot` fragment). This transport is intentionally frozen; a future zero-cookie token-mint design is a **pending workshop item**, not current behavior. This document describes what exists today.
+> **Transport note (zero-cookie):** device identity rides `deviceId` + `deviceSecret` in first-party storage (localStorage per web origin; SecureStore on native). Restore/refresh mints a short access token via `POST /session/device/token` (no bearer, no cookies). There is no `oxy_device` cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop — all deleted in the zero-cookie cutover. See [SESSION-ARCHITECTURE.md](../SESSION-ARCHITECTURE.md) § Session transport.
 
 ---
 
@@ -28,7 +28,7 @@ interface IDeviceSession {
   deviceId: string;                       // server-minted, never client-supplied
   accounts: IDeviceSessionAccount[];      // the device set
   activeAccountId: ObjectId | null;       // which account the device is "on"
-  cookieKeyHash?: string;                 // sha256 of the oxy_device cookie secret (sparse-unique)
+  secretHash?: string;                    // sha256 of the current deviceSecret (sparse-unique)
   revision: number;                       // monotone change counter
   createdAt: Date; updatedAt: Date;
 }
@@ -99,17 +99,18 @@ The API validates its output against these schemas and `SessionClient` validates
 
 ## REST API — `/session/device/*`
 
-Router: `packages/api/src/routes/sessionDevice.ts`, mounted at `/session/device` in `server.ts`. All four routes share two gates:
+Router: `packages/api/src/routes/sessionDevice.ts`, mounted at `/session/device` in `server.ts`. `POST /session/device/token` is **public** (no bearer, no cookies) — possession of the `deviceSecret` is the proof. The other four routes share two gates:
 
 1. **`requireSameSiteOrigin`** — browser-enforced CSRF guard (`Origin` allowlist / `Sec-Fetch-Site` fallback).
 2. **Bearer auth** (`authMiddleware`). The `deviceId` is always read from the **bearer JWT's `deviceId` claim** — never from the body, query, or a header. There is no way to address another device's document.
 
 | Method | Path | Body | Behavior |
 |--------|------|------|----------|
-| GET | `/session/device/state` | — | Returns the device set. Runs cookie↔claim convergence first (see below). `401` when the bearer carries no `deviceId` claim. |
+| POST | `/session/device/token` | `{ deviceId, deviceSecret }` | **Zero-cookie mint** — public. Verifies `sha256(deviceSecret)` (constant-time) against the device's `secretHash`, mints a short access token for the active account, and rotates the secret in-use (returns `nextDeviceSecret`; the presented secret stays valid for a 60s grace). `401 invalid_device_secret` on a bad/diverged secret; `401 no_active_session` when the device is known but has no live session (no rotation). Per-device lockout + `rl:session:device-token:` rate limit. |
+| GET | `/session/device/state` | — | Returns the device set for the caller's JWT device. `401` when the bearer carries no `deviceId` claim. |
 | POST | `/session/device/add` | — | Registers the **caller's own bearer session** (account id from `req.user`, session id from the JWT) into the device set. Idempotent: re-registering the same account+session (the reload handoff) is a pure no-op — no active flip, no revision bump, no broadcast. A different sessionId for an existing account replaces the entry and deactivates the displaced session. `401` when the session record is expired/revoked. |
 | POST | `/session/device/switch` | `{ accountId }` | Sets `activeAccountId` after re-validating the target session. `404` when the account is not on this device; `403` (plus a broadcast of the healed state) when the target session was revoked. |
-| POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes the account (or all). Cascades: removes operated accounts of the signed-out operator, deactivates each removed session, revokes its rotating refresh-token families, and — on `all` only — revokes the device's attribution tokens. Elects the next remaining account as active (or `null`). |
+| POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes the account (or all). Cascades: removes operated accounts of the signed-out operator, deactivates each removed session, and — on `all` only — clears the device's `secretHash`. Elects the next remaining account as active (or `null`). |
 
 **Response shape (all routes):** `{ data: DeviceSessionSync }` — i.e. `{ data: { state, activeToken } }` validating `deviceSessionSyncSchema`. `activeToken` is minted per response after re-validating the active account's session; it is `null` rather than stale when the session cannot mint.
 
@@ -118,7 +119,7 @@ Router: `packages/api/src/routes/sessionDevice.ts`, mounted at `/session/device`
 Registration also happens server-side outside this router:
 
 - `POST /accounts/:id/switch` (account graph, `packages/api/src/routes/accounts.ts`) registers the freshly-minted managed session into the operator's device set with `activate: 'always'` and broadcasts.
-- The OAuth token grant (`packages/api/src/routes/auth.ts`) registers a device-attributed sign-in with `activate: 'if-empty'` — add-only, never steals the device's current active selection; the account only becomes active when the device has none.
+- Every first-party sign-in (`/auth/login`, `/auth/signup`, `/auth/verify`, `/security/2fa/verify-login`) registers itself into its device set with `activate: 'if-empty'` and mints the `deviceSecret` for the response (`finalizeDeviceLogin`, `packages/api/src/services/deviceLogin.service.ts`) — add-only, never steals the device's current active selection.
 
 > **Do not confuse** these routes with the older fingerprint-based listing at `GET /session/device/sessions/:sessionId` / `POST /session/device/logout-all/:sessionId` (routes in `packages/api/src/routes/session.ts`, DTO `DeviceLinkedSession*` in contracts). Those enumerate `Session` documents that share a device fingerprint for the security screen; they are **not** the device set and do not carry `revision`/`activeAccountId`.
 
@@ -133,26 +134,8 @@ Every mutation broadcasts the projected state to the device's room:
 server.to(`device:${state.deviceId}`).emit('session_state', state); // DeviceSessionState — token-free
 ```
 
-- **Payload is `DeviceSessionState` only.** No access tokens, no refresh material ever crosses the socket. A client that needs the active token follows up with `GET /session/device/state` (bearer-authed), which returns `activeToken` alongside the same state.
-- **Rooms are server-resolved** (`socketRoomsFor` in `utils/socket.ts`): an authenticated socket joins `user:<id>` + `device:<deviceId>` from its **JWT claims**; an anonymous device socket (a signed-out tab) joins **only** `device:<deviceId>`, resolved from the first-party `oxy_device` cookie riding the same-site handshake (web) or an opaque native device token presented in the handshake auth. Client-supplied room ids are never trusted, and an anonymous socket never joins a `user:` room — it can learn only that its own device's session set changed.
-- The signed-out lane is what lets an idle tab flip to signed-in the instant a sibling app on the same device signs in: the push arrives, `SessionClient` sees `accounts.length > 0`, and runs the consumer's acquisition callback.
-
----
-
-## Device convergence (cookie ↔ JWT claim)
-
-The device document is reachable two ways: the IdP + bootstrap lane resolves it by `cookieKeyHash` (sha256 of the opaque `oxy_device` cookie secret — the raw secret is never stored and the deviceId is never derivable from the cookie), while RP apps resolve it by the bearer JWT's `deviceId` claim. A session minted before the cookie existed can live on a document the cookie lane never sees — a split-brain where the IdP chooser and the app show different account lists.
-
-`GET /state` and `POST /add` collapse this (`convergeCallerOntoCookieDevice` in `sessionDevice.ts`):
-
-1. If the request carries an `oxy_device` cookie that resolves to a **different** device than the JWT claim, the caller's session is migrated onto the cookie device (`sessionService.migrateSessionToDevice`) — first, so the returned token carries the cookie deviceId claim.
-2. The account is registered onto the canonical cookie document (`convergeAccountOntoDevice`), which also out-ranks the retired document's revision so the client's last-writer-wins logic accepts the converged state.
-3. The account is detached from the old document (preserving the just-migrated session), and **both** device rooms are broadcast — the cookie device (account arrived) and the old device (account left).
-4. The response returns the converged `{ state, activeToken }` with a fresh access token bound to the cookie device; `SessionClient` plants it immediately, so subsequent calls and the socket room all address the canonical document.
-
-Same-site is proven by the cookie itself (`SameSite=Lax`, `HttpOnly`, `Domain=.oxy.so`) plus the mandatory bearer; the cookie never travels off `*.oxy.so`, and no-cookie / same-device / cross-apex requests short-circuit to the normal path. Convergence is idempotent — a no-op re-converge broadcasts nothing.
-
-Sign-out deliberately does **not** clear the `oxy_device` cookie: device identity is not an account credential (an empty device set grants nothing), and the next bootstrap simply reuses the same empty device.
+- **Payload is `DeviceSessionState` only.** No access tokens ever cross the socket. A client that needs the active token follows up with `GET /session/device/state` (bearer-authed), which returns `activeToken` alongside the same state.
+- **Rooms are server-resolved** (`socketRoomsFor` in `utils/socket.ts`): a socket must present a valid bearer access token and joins `user:<id>` + `device:<deviceId>` from its **JWT claims**. Client-supplied room ids are never trusted. Sockets are **bearer-only** — a signed-out client (no bearer) opens no socket, so there is no anonymous device socket.
 
 ---
 
@@ -189,9 +172,8 @@ Behavior worth knowing:
 
 - **`applyState`** validates against `deviceSessionStateSchema` and applies last-writer-wins by revision (per device, with the cross-device reset described above). **`applySync`** additionally plants `activeToken` on the host when the response's active account still matches — token planting is decoupled from whether the revision advanced.
 - **`registerAndActivate`** exists because `POST /add` alone honors the server's add semantics (a background add must not steal focus); after a deliberate sign-in the client adds *and then* switches to the authenticated account.
-- **Signed-out realtime** (`signedOutSocketAuth` option): return `true` to connect relying on the same-site `oxy_device` cookie (web), or a string device token (native, no cookie jar). The signed-out socket joins only the device room; when a push shows accounts on the device, `onSessionAppeared` runs the consumer's acquisition exactly once at a time.
+- **Sockets are bearer-only:** a signed-out client opens no socket (there is no anonymous device socket). Cross-app instant sync therefore applies between authenticated sessions on the same device; a signed-out surface picks up a sibling's sign-in on its next reload / cold boot.
 - **`onUnauthenticated`** fires when an applied state has zero accounts (a device signout-all), so the provider clears its persisted auth store and a reload does not resurrect a dead session.
-- **Same-origin tabs** additionally wake each other through a `BroadcastChannel` (`'oxy.session'`) commit ping — instant and network-free; no state or tokens cross the channel. Same-apex cross-origin (`accounts` ↔ `console` ↔ `inbox`) is covered by the cookie-authed device socket; cross-apex origins rely on a reload (documented limitation of the current transport).
 
 ---
 

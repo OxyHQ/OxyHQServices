@@ -16,12 +16,14 @@ jest.mock('socket.io-client', () => ({ __esModule: true, io: (...args: unknown[]
 
 import { createSessionClient } from '../createSessionClient';
 
+// Sockets are bearer-only: `start()` opens a socket only when a bearer token is
+// held. This mock reports one so the wiring test exercises the socket factory.
 function fakeOxy() {
   const listeners = new Set<(t: string | null) => void>();
   return {
     makeRequest: jest.fn().mockResolvedValue(undefined),
     getBaseURL: jest.fn().mockReturnValue('https://api.oxy.so'),
-    getAccessToken: jest.fn().mockReturnValue(null),
+    getAccessToken: jest.fn().mockReturnValue('bearer.jwt.token'),
     setTokens: jest.fn(),
     onTokensChanged: jest.fn((l: (t: string | null) => void) => {
       listeners.add(l);

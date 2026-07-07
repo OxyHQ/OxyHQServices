@@ -1,18 +1,16 @@
 /**
  * Platform `AuthStateStore` for `@oxyhq/services`.
  *
- * The device-first session model persists the rotating refresh-token family
- * head per origin (web) / per device (native). `@oxyhq/core` owns the store
- * shape + logic (`createWebAuthStateStore` / `createNativeAuthStateStore`); this
- * module only supplies the platform storage seam and wires the native device
- * token to the SHARED keychain so every native Oxy app joins one DeviceSession:
+ * The zero-cookie device model persists the durable device credential
+ * (`deviceId` + `deviceSecret`) per origin (web) / per device (native), and the
+ * SDK re-mints the access token from that credential on cold boot. `@oxyhq/core`
+ * owns the store shape + logic (`createWebAuthStateStore` /
+ * `createNativeAuthStateStore`); this module only supplies the platform storage
+ * seam:
  *
  *  - web  → `createWebAuthStateStore()` (localStorage, in-memory fallback).
- *  - native → `createNativeAuthStateStore(secureKV)` for the SESSION blob
- *    (refresh token) over `expo-secure-store` (AsyncStorage fallback), with the
- *    long-lived DEVICE token delegated to `KeyManager`'s shared keychain
- *    (`group.so.oxy.shared`) instead of per-app storage — so an in-app login on
- *    any native Oxy app attributes to the SAME server-side DeviceSession.
+ *  - native → `createNativeAuthStateStore(secureKV)` for the SESSION blob over
+ *    `expo-secure-store` (AsyncStorage fallback).
  *
  * `expo-secure-store` is loaded via a runtime-computed dynamic import (the same
  * optional-native-module pattern `OxyProvider` uses for netinfo / keyboard
@@ -20,12 +18,10 @@
  * back to AsyncStorage rather than crashing.
  */
 import {
-  KeyManager,
   createWebAuthStateStore,
   createNativeAuthStateStore,
   type AuthStateStore,
   type NativeKeyValueStorage,
-  logger,
 } from '@oxyhq/core';
 import { createPlatformStorage, isReactNative } from '../utils/storageHelpers';
 
@@ -112,53 +108,14 @@ function createNativeSecureKeyValueStorage(): NativeKeyValueStorage {
 /**
  * Build the platform {@link AuthStateStore} for this runtime.
  *
- * Native additionally routes the device token through the shared keychain so
- * every native Oxy app shares one server-side DeviceSession; the session blob
- * (refresh token) stays per-app in SecureStore. Best-effort keychain access —
- * a locked/failed shared-keychain read degrades to "no device token" rather
- * than throwing out of cold boot / refresh.
+ * Native persists the SESSION blob (`deviceId` + `deviceSecret` + cached access
+ * token) per-app in SecureStore; the SDK re-mints the access token from the
+ * device credential on the next cold boot.
  */
 export function createPlatformAuthStateStore(): AuthStateStore {
   if (!isReactNative()) {
     return createWebAuthStateStore();
   }
 
-  const base = createNativeAuthStateStore(createNativeSecureKeyValueStorage());
-  return {
-    ...base,
-    loadDeviceToken: async () => {
-      try {
-        return await KeyManager.getSharedDeviceToken();
-      } catch (error) {
-        logger.debug(
-          'Shared device-token read failed (treating as none)',
-          { component: 'authStore', method: 'loadDeviceToken' },
-          error,
-        );
-        return null;
-      }
-    },
-    saveDeviceToken: async (token) => {
-      try {
-        await KeyManager.setSharedDeviceToken(token);
-      } catch (error) {
-        logger.debug(
-          'Shared device-token write failed (non-fatal)',
-          { component: 'authStore', method: 'saveDeviceToken' },
-          error,
-        );
-      }
-    },
-    clearDeviceToken: async () => {
-      try {
-        await KeyManager.clearSharedDeviceToken();
-      } catch (error) {
-        logger.debug(
-          'Shared device-token clear failed (non-fatal)',
-          { component: 'authStore', method: 'clearDeviceToken' },
-          error,
-        );
-      }
-    },
-  };
+  return createNativeAuthStateStore(createNativeSecureKeyValueStorage());
 }

@@ -74,13 +74,13 @@ export interface RequestOptions {
    * Skip BOTH the bearer auth header (and its near-expiry preflight refresh)
    * AND the 401-driven auto-refresh/retry for this request.
    *
-   * Required for the body-authenticated refresh endpoint (`POST
-   * /auth/refresh-token`): it does not need a bearer, and — critically — it is
+   * Required for the body-authenticated device-secret mint (`POST
+   * /session/device/token`): it does not need a bearer, and — critically — it is
    * itself invoked from inside the registered `AuthRefreshHandler`. If it went
    * through the normal preflight, `getAuthHeader` would call
    * `refreshAccessToken` while the handler-owning `tokenRefreshPromise` is
    * still in flight and await ITSELF (deadlock). Skipping auth makes the
-   * refresh call fully independent of the current (near-expired) bearer.
+   * mint call fully independent of the current (near-expired) bearer.
    */
   skipAuth?: boolean;
 }

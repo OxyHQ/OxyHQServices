@@ -15,10 +15,9 @@ export interface UseAuthOperationsOptions {
   /**
    * The device-first persisted auth-state store. On EXPLICIT full sign-out the
    * session blob is cleared (`store.clear()`) so a reload's cold boot finds no
-   * refresh family to restore; on sign-in a returned rotating refresh token is
-   * persisted so the next boot warm-restores without a redirect. The long-lived
-   * device token SURVIVES sign-out (the device is unchanged), so it is never
-   * cleared here.
+   * device credential to restore; on sign-in the returned zero-cookie device
+   * credential (`deviceId` + `deviceSecret`) is persisted so the next boot
+   * warm-restores without a redirect.
    */
   store: AuthStateStore;
   activeSessionId: string | null;
@@ -61,7 +60,7 @@ const LOGOUT_ERROR_CODE = 'LOGOUT_ERROR';
 const LOGOUT_ALL_ERROR_CODE = 'LOGOUT_ALL_ERROR';
 
 /**
- * Clear the persisted refresh-token family on an explicit full sign-out.
+ * Clear the persisted device credential on an explicit full sign-out.
  * Best-effort and non-blocking: sign-out must never fail because a storage
  * write threw. Exported so `OxyContext`'s zero-account branch (a REMOTE full
  * sign-out pushed over the socket) runs the EXACT same cleanup as the local
@@ -136,29 +135,21 @@ export const useAuthOperations = ({
         deviceFingerprint,
       );
 
-      // Persist the per-origin refresh family so a reload warm-restores this
+      // Persist the durable device credential so a reload warm-restores this
       // session without a redirect. `verifyChallenge` plants the access token
-      // internally; when the (trusted-lane) response also carries a rotating
-      // refresh token, persist the durable blob. Best-effort — a failed persist
-      // never fails the sign-in (native additionally re-mints via the shared
-      // keychain on the next cold boot). `SessionLoginResponse` does not type
-      // `refreshToken`; read it defensively from the runtime payload.
-      const refreshToken = (sessionResponse as { refreshToken?: string }).refreshToken;
-      if (refreshToken) {
+      // internally; when the response also carries the zero-cookie device
+      // credential (`deviceId` + `deviceSecret`), persist the durable blob so the
+      // next cold boot re-mints an access token from it. Best-effort — a failed
+      // persist never fails the sign-in. `SessionLoginResponse` does not type
+      // `deviceSecret`; read it defensively from the runtime payload.
+      const deviceSecret = (sessionResponse as { deviceSecret?: string }).deviceSecret;
+      if (sessionResponse.deviceId && deviceSecret) {
         try {
-          const deviceToken = (await store.loadDeviceToken()) ?? undefined;
-          // Phase 2c: mirror the refreshToken handling for the rotating
-          // deviceSecret — persist it with the response's deviceId so the next
-          // cold boot restores via the zero-cookie mint. `SessionLoginResponse`
-          // types neither; read the secret defensively from the runtime payload.
-          const deviceSecret = (sessionResponse as { deviceSecret?: string }).deviceSecret;
           await store.save({
             sessionId: sessionResponse.sessionId,
-            refreshToken,
             userId: sessionResponse.user.id,
-            ...(deviceToken ? { deviceToken } : {}),
-            ...(sessionResponse.deviceId ? { deviceId: sessionResponse.deviceId } : {}),
-            ...(deviceSecret ? { deviceSecret } : {}),
+            deviceId: sessionResponse.deviceId,
+            deviceSecret,
             ...(sessionResponse.accessToken ? { accessToken: sessionResponse.accessToken } : {}),
             ...(sessionResponse.expiresAt ? { expiresAt: sessionResponse.expiresAt } : {}),
           });
@@ -309,7 +300,7 @@ export const useAuthOperations = ({
 
         if (sessionToLogout === activeSessionId && remainingAccounts.length === 0) {
           // Genuine FULL sign-out (no sessions remain): clear the persisted
-          // refresh family so a reload's cold boot finds nothing to restore,
+          // device credential so a reload's cold boot finds nothing to restore,
           // then tear down local state.
           clearPersistedAuthSafe(store, logger);
           await clearSessionState();
@@ -363,9 +354,9 @@ export const useAuthOperations = ({
       // `{ all: true }`) — replaces the bearer `logoutAllSessions` +
       // web-cookie `logoutAllSessionsViaCookie` pair.
       await sessionClient.signOut({ all: true });
-      // logoutAll is ALWAYS a full sign-out: clear the persisted refresh family
-      // so the next cold boot finds no session to restore, then tear down local
-      // state. The long-lived device token survives (the device is unchanged).
+      // logoutAll is ALWAYS a full sign-out: clear the persisted device
+      // credential so the next cold boot finds no session to restore, then tear
+      // down local state.
       clearPersistedAuthSafe(store, logger);
       await clearSessionState();
     } catch (error) {

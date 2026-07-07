@@ -38,10 +38,9 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
 // Neutralize the mount-time network effects so the provider settles
 // deterministically without a backend — mirrors `oxyClientTokenSync.test.tsx`.
 // Forcing the device-first cold boot onto the NATIVE ladder (`isWebBrowser: () =>
-// false`) disables every web-only step (bootstrap-return / bootstrap-hop),
-// leaving only the (empty-store → skip) `stored-tokens` step and the native
-// shared-key step (`signInWithSharedIdentity` returns null off-device), so the
-// real `OxyServices` instance the provider constructs never attempts a network
+// false`) leaves only the (empty-store → skip) `device-secret-mint` step and the
+// native shared-key step (`signInWithSharedIdentity` returns null off-device), so
+// the real `OxyServices` instance the provider constructs never attempts a network
 // call on its own; the ONLY network-shaped call this suite exercises is
 // `getUsersByIds`, driven entirely by the SessionClient projection under test.
 jest.mock('../../src/ui/utils/isWebBrowser', () => ({

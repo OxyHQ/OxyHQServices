@@ -1128,16 +1128,15 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * (`{ twoFactorRequired, loginToken }`) to complete via
      * {@link completeTwoFactorSignIn}, or a session arm.
      *
-     * `options.deviceToken` attributes the new session to the caller's existing
-     * device set (so an in-app login from a cross-apex, cookie-less web app
-     * still joins the same DeviceSession). On the session arm, a returned access
-     * token is planted immediately (mirroring {@link verifyChallenge}), so the
-     * caller has an authenticated client without a second round-trip.
+     * On the session arm, a returned access token is planted immediately
+     * (mirroring {@link verifyChallenge}), so the caller has an authenticated
+     * client without a second round-trip. The response's `deviceId` +
+     * `deviceSecret` are the zero-cookie restore credential the caller persists.
      */
     async passwordSignIn(
       identifier: string,
       password: string,
-      options: { deviceToken?: string; deviceName?: string; deviceFingerprint?: string } = {},
+      options: { deviceName?: string; deviceFingerprint?: string } = {},
     ): Promise<LoginResult> {
       try {
         const res = await this.makeRequest<unknown>('POST', '/auth/login', {
@@ -1145,7 +1144,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           password,
           deviceName: options.deviceName,
           deviceFingerprint: options.deviceFingerprint,
-          deviceToken: options.deviceToken,
         }, { cache: false });
         const parsed = safeParseContract(loginResultSchema, res);
         if (!parsed) {
@@ -1171,7 +1169,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       loginToken: string;
       token?: string;
       backupCode?: string;
-      deviceToken?: string;
       deviceName?: string;
     }): Promise<LoginSessionResult> {
       try {
@@ -1179,7 +1176,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           loginToken: params.loginToken,
           token: params.token,
           backupCode: params.backupCode,
-          deviceToken: params.deviceToken,
           deviceName: params.deviceName,
         }, { cache: false });
         const parsed = safeParseContract(loginResultSchema, res);

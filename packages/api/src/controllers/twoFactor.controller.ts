@@ -5,8 +5,7 @@ import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
-import { resolveLoginDevice, finalizeDeviceLogin } from '../services/deviceLogin.service';
-import { setDeviceCookie } from '../utils/deviceCookie';
+import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { buildSessionAuthResponse } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
@@ -296,7 +295,7 @@ export async function verify2FAToken(req: Request, res: Response) {
  */
 export async function verify2FALogin(req: Request, res: Response) {
   try {
-    const { loginToken, token, backupCode, deviceName, deviceFingerprint, deviceToken } = req.body;
+    const { loginToken, token, backupCode, deviceName, deviceFingerprint } = req.body;
 
     if (!loginToken) {
       return res.status(400).json({ message: 'Login token is required' });
@@ -396,41 +395,25 @@ export async function verify2FALogin(req: Request, res: Response) {
     user.twoFactorAuth.verifiedAt = new Date();
     await user.save();
 
-    // Device-first attribution (oxy_device cookie > deviceToken > same-site
-    // cookie mint > none), resolved before mint so the session carries the
-    // central deviceId.
-    const twoFactorDevice = await resolveLoginDevice(req, deviceToken);
-
     // Create session (same as signIn would)
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      { deviceName, deviceFingerprint, ...(twoFactorDevice.deviceId ? { deviceId: twoFactorDevice.deviceId } : {}) }
+      { deviceName, deviceFingerprint }
     );
-
-    // Plant the freshly-minted device cookie (same-site trusted logins only).
-    if (twoFactorDevice.setCookieSecret) {
-      setDeviceCookie(res, twoFactorDevice.setCookieSecret);
-    }
 
     const baseTwoFactorResponse = buildSessionAuthResponse(session, user);
     if (!baseTwoFactorResponse) {
       return res.status(500).json({ message: 'Failed to format user data' });
     }
-    const response: typeof baseTwoFactorResponse & { refreshToken?: string; deviceSecret?: string } = baseTwoFactorResponse;
+    const response: typeof baseTwoFactorResponse & { deviceSecret?: string } = baseTwoFactorResponse;
 
-    // Register into the device set (add-only) + broadcast, and additively attach
-    // a rotating refresh token + deviceSecret when the lane allows it.
-    // Best-effort.
+    // Register into the device set (add-only) + broadcast, and mint the
+    // deviceSecret the client persists first-party. Best-effort.
     const twoFactorDeviceExtras = await finalizeDeviceLogin({
-      req,
-      deviceId: twoFactorDevice.deviceId,
       session,
       userId: user._id.toString(),
     });
-    if (twoFactorDeviceExtras.refreshToken) {
-      response.refreshToken = twoFactorDeviceExtras.refreshToken;
-    }
     if (twoFactorDeviceExtras.deviceSecret) {
       response.deviceSecret = twoFactorDeviceExtras.deviceSecret;
     }

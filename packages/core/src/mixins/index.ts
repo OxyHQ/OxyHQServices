@@ -129,9 +129,8 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // so apps stop scraping link metadata locally.
     OxyServicesLinksMixin,
 
-    // Device-first session bootstrap: the client half of the new
-    // /auth/device/* + /auth/refresh-token surface (exchange, web-session,
-    // refresh, native device-token, bootstrap-url builder).
+    // Device-first token mint: the client half of the zero-cookie transport
+    // (`mintFromDeviceSecret` → `POST /session/device/token`).
     OxyServicesDeviceBootMixin,
 
     // Utility (last, can use all above)

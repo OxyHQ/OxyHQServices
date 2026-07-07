@@ -43,7 +43,7 @@ describe('DeviceSession model', () => {
     expect(doc.prevSecretExpiresAt).toBe(expiresAt);
   });
 
-  it('declares a sparse-unique index on secretHash (mirrors cookieKeyHash)', () => {
+  it('declares a sparse-unique index on secretHash', () => {
     const indexes = DeviceSession.schema.indexes();
     const secretIndex = indexes.find(([keys]) => keys.secretHash === 1);
     expect(secretIndex).toBeDefined();

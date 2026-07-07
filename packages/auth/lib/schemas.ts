@@ -41,23 +41,6 @@ export type {
     ApplicationTypeContract,
 }
 
-export const loginResponseSchema = z.object({
-    sessionId: z.string().optional(),
-    accessToken: z.string().optional(),
-    expiresAt: z.string().optional(),
-    authuser: z.number().int().nonnegative().optional(),
-    twoFactorRequired: z.boolean().optional(),
-    loginToken: z.string().optional(),
-    message: z.string().optional(),
-})
-
-export const signupResponseSchema = z.object({
-    sessionId: z.string().optional(),
-    authuser: z.number().int().nonnegative().optional(),
-    message: z.string().optional(),
-    errors: z.array(z.string()).optional(),
-})
-
 export const lookupResponseSchema = z.object({
     exists: z.boolean(),
     username: z.string(),

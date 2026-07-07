@@ -68,15 +68,15 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
   // The real `/auth/verify` always returns the first access token in its body,
   // and `OxyServices.verifyChallenge` now PLANTS that token internally
   // (mirroring `claimSessionByToken`). The mock returns the token to mirror the
-  // real response shape, but the consumer no longer reads it directly. A
-  // rotating refresh token is returned so `performSignIn` persists the durable
-  // blob (`store.save`).
+  // real response shape, but the consumer no longer reads it directly. The
+  // zero-cookie device credential (`deviceId` + `deviceSecret`) is returned so
+  // `performSignIn` persists the durable blob (`store.save`).
   verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
     sessionId: 'new-session',
     deviceId: 'device-1',
     expiresAt: '2030-01-01',
     accessToken: 'verify-access-token',
-    refreshToken: 'verify-refresh-token',
+    deviceSecret: 'verify-device-secret',
     user: { id: 'user-1', username: 'alice' },
   })),
   setTokens: jest.fn(),
@@ -129,9 +129,6 @@ function buildFakeStore() {
     load: jest.fn(async () => null),
     save: jest.fn(async () => undefined),
     clear: jest.fn(async () => undefined),
-    loadDeviceToken: jest.fn(async () => null),
-    saveDeviceToken: jest.fn(async () => undefined),
-    clearDeviceToken: jest.fn(async () => undefined),
   };
 }
 
@@ -237,10 +234,15 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
     // ...and critically must not depend on any legacy session-id token fetch.
     expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
-    // The response carried a rotating refresh token, so the durable blob was
-    // persisted for a redirect-less reload restore.
+    // The response carried the zero-cookie device credential, so the durable blob
+    // was persisted for a redirect-less reload restore.
     expect(helpers.store.save).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'new-session', refreshToken: 'verify-refresh-token', userId: 'user-1' }),
+      expect.objectContaining({
+        sessionId: 'new-session',
+        userId: 'user-1',
+        deviceId: 'device-1',
+        deviceSecret: 'verify-device-secret',
+      }),
     );
     // The recovered account+session is registered into the server-authoritative
     // device-session set AND made active (`registerAndActivate`).
@@ -442,7 +444,7 @@ describe('useAuthOperations.logout', () => {
     expect(sessionClient.signOut).toHaveBeenCalledWith({ accountId: 'acc-1' });
     expect(helpers.syncFromClient).toHaveBeenCalledTimes(1);
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
-    // Genuine FULL sign-out → the persisted refresh family is cleared so the
+    // Genuine FULL sign-out → the persisted device credential is cleared so the
     // next cold boot finds nothing to restore.
     expect(helpers.store.clear).toHaveBeenCalledTimes(1);
   });
@@ -533,7 +535,7 @@ describe('useAuthOperations.logoutAll', () => {
     });
     expect(sessionClient.signOut).toHaveBeenCalledWith({ all: true });
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
-    // logoutAll is ALWAYS a full sign-out → the persisted refresh family is
+    // logoutAll is ALWAYS a full sign-out → the persisted device credential is
     // cleared so the next cold boot finds nothing to restore.
     expect(helpers.store.clear).toHaveBeenCalledTimes(1);
   });

@@ -40,7 +40,6 @@ jest.mock('../../models/AuthCode', () => ({ __esModule: true, AuthCode: { create
 jest.mock('../../models/Application', () => ({ __esModule: true, Application: { findOne: jest.fn(), findById: jest.fn() }, default: { findOne: jest.fn(), findById: jest.fn() } }));
 jest.mock('../../models/ApplicationCredential', () => ({ __esModule: true, ApplicationCredential: { findOne: jest.fn() }, default: { findOne: jest.fn() } }));
 jest.mock('../../models/User', () => ({ __esModule: true, User: { findOne: jest.fn(), findById: jest.fn() }, default: { findOne: jest.fn(), findById: jest.fn() } }));
-jest.mock('../../models/RefreshToken', () => ({ __esModule: true, default: {}, RefreshToken: {} }));
 jest.mock('../../utils/userTransform', () => ({ formatUserResponse: jest.fn() }));
 jest.mock('../../utils/authSessionSocket', () => ({ emitAuthSessionUpdate: (...args: unknown[]) => mockEmitAuthSessionUpdate(...args) }));
 jest.mock('../../services/session.service', () => ({ __esModule: true, default: { createSession: jest.fn() } }));

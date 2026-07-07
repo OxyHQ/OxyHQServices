@@ -46,7 +46,7 @@ packages/
   api/            @oxyhq/api         Express.js backend (api.oxy.so) — PRIVATE
   node/           @oxyhq/node        Self-hostable personal data-node server — PRIVATE
   auth/           (web IdP)          auth.oxy.so — OAuth authorize/consent IdP (Vite + RN Web,
-                                     mounts OxyProvider with coldBoot={false}) — PRIVATE
+                                     mounts OxyProvider device-first like every app) — PRIVATE
   accounts/                          Expo "Accounts by Oxy" — keyless, management-only
   commons/                           Expo "Commons by Oxy" — NATIVE-ONLY identity vault
   inbox/   console/                  Web apps (email, developer console)
@@ -200,15 +200,13 @@ and delegates 401 refresh to the session owner.
   ALB, image built `linux/arm64` and pushed to ECR by `deploy-aws.yml`. Domains
   `api.oxy.so` (+ website API aliases).
 - `packages/auth` (the OAuth authorize/consent IdP) → Cloudflare Pages: the
-  Vite + RN-Web SPA is pure static output; the one dynamic route
-  (`GET /api/device-accounts`, the device-account chooser feed) is a **Pages
-  Function** (`packages/auth/functions/api/device-accounts.ts`), not an
-  advanced-mode `_worker.js` — CF Pages was not reliably invoking a
-  single-file worker on this project. The deploy workflow verifies the
-  Functions directory compiles before deploying via a direct
-  `bunx wrangler@4 pages deploy` step, and a post-deploy smoke gate re-checks
-  the live host. Live-verified working. Account management is NOT hosted here:
-  the IdP's `/settings/*` routes permanently redirect to `accounts.oxy.so`.
+  Vite + RN-Web SPA is now **pure static output** — the device-account chooser
+  runs entirely in the device-first SDK (`useSwitchableAccounts`), so the former
+  `/api/device-accounts` Pages Function was deleted in the 2c cutover. The deploy
+  workflow deploys via a direct `bunx wrangler@4 pages deploy` step, and a
+  post-deploy smoke gate re-checks the live host. Account management is NOT
+  hosted here: the IdP's `/settings/*` routes permanently redirect to
+  `accounts.oxy.so`.
 - Web RP frontends (accounts, console, inbox, …) → Cloudflare Pages.
 - `@oxyhq/node` → self-hosted by users (Docker + Caddy) or, for the managed
   vault, an Oxy-operated endpoint (`MANAGED_NODE_BASE_URL`).

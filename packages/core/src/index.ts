@@ -582,18 +582,17 @@ export type {
 } from './session/accountDialogController';
 
 // ---------------------------------------------------------------------------
-// Device-first session machinery (auth centralization, wave 1) — additive.
-// Persisted auth-state store, the unified refresh handler + scheduler, the
-// cold-boot v2 runner, and the device-boot return-fragment consumer. Built ON
-// the existing `runColdBoot` primitive + `SessionClient`; the legacy
-// FedCM/SSO/CrossDomainAuth surface is untouched (cutover happens in F4).
+// Device-first session machinery (zero-cookie transport).
+// Persisted auth-state store, the unified re-mint handler + scheduler, and the
+// cold-boot runner. Built ON the `runColdBoot` primitive + `SessionClient`. The
+// device credential is `deviceId` + `deviceSecret`; the access token is re-minted
+// via `POST /session/device/token`.
 // ---------------------------------------------------------------------------
 export {
     createWebAuthStateStore,
     createNativeAuthStateStore,
     createMemoryAuthStateStore,
     AUTH_STATE_STORAGE_KEY,
-    DEVICE_TOKEN_STORAGE_KEY,
 } from './session/authStateStore';
 export type {
     PersistedAuthState,
@@ -610,34 +609,12 @@ export {
 } from './session/refresh';
 export type { RefreshDeps, TokenRefreshSchedulerHandle } from './session/refresh';
 
-export {
-    runSessionColdBoot,
-    createBrowserColdBootDom,
-    isSameApex,
-    BOOT_ATTEMPTED_KEY,
-} from './boot/coldBootV2';
+export { runSessionColdBoot } from './boot/coldBootV2';
 export type {
     RunSessionColdBootOptions,
-    ColdBootDom,
     SignedOutReason,
-} from './boot/coldBootV2';
-
-export {
-    consumeDeviceBootReturn,
-    parseDeviceBootFragment,
-    hashHasBootFragment,
-    BOOT_FRAGMENT_PARAM,
-    BOOT_STATE_SESSION_KEY,
-} from './boot/deviceBootReturn';
-export type {
     DeviceBootSession,
-    DeviceBootReturnOutcome,
-    ConsumeDeviceBootReturnDeps,
-} from './boot/deviceBootReturn';
-
-// The web-session result contract (`WebSessionResult`) is owned by
-// `@oxyhq/contracts` — import it directly from there; `@oxyhq/core` does not
-// re-export contract types.
+} from './boot/coldBootV2';
 
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every

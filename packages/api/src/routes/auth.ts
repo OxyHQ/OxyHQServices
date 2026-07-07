@@ -30,17 +30,10 @@ import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 import socialAuthRouter from './socialAuth';
 import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
-import type { ISession } from '../models/Session';
-import { broadcastDeviceState } from '../utils/socket';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
 import Session from '../models/Session';
-import {
-  issueRefreshToken,
-  revokeFamilyByRawToken,
-} from '../services/refreshToken.service';
-import { resolveLoginDeviceId } from '../services/deviceLogin.service';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
   signupSchema,
@@ -102,7 +95,7 @@ const loginLimiter = rateLimit({
  *     description: >
  *       Create a new local Oxy account from an email + username + password
  *       triple. On success returns the user record plus an `accessToken`,
- *       `refreshToken`, and a `sessionId` for the newly created session.
+ *       `deviceSecret`, `deviceId`, and a `sessionId` for the newly created session.
  *       Username is normalised to lowercase and must match the
  *       `^[a-zA-Z0-9]{3,30}$` shape.
  *     requestBody:
@@ -175,7 +168,7 @@ const loginLimiter = rateLimit({
  *                       last: Example
  *                   sessionId: sess_64f7c2a1b8e9d3f4a1c2b3d4
  *                   accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
- *                   refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
+ *                   deviceSecret: ZGV2aWNlLXNlY3JldC1leGFtcGxl
  *                   expiresIn: 900
  *       400:
  *         description: Validation failed (missing fields, invalid format).
@@ -281,7 +274,7 @@ router.post('/signup', validate({ body: signupSchema }), SessionController.signU
  *                     username: alice
  *                   sessionId: sess_64f7c2a1b8e9d3f4a1c2b3d4
  *                   accessToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
- *                   refreshToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
+ *                   deviceSecret: ZGV2aWNlLXNlY3JldC1leGFtcGxl
  *                   expiresIn: 900
  *               twoFactor:
  *                 summary: 2FA challenge required
@@ -656,62 +649,6 @@ router.get('/validate', asyncHandler(async (req, res) => {
   sendSuccess(res, { valid: true });
 }));
 
-// ============================================
-// First-Party Refresh Cookie (cold-boot session persistence)
-// ============================================
-//
-// Global per-IP rate limit. A per-FAMILY limit is intentionally NOT added: each
-// refresh token is single-use and rotation revokes the whole family on any
-// reuse, so the DB semantics already bound how often a given family can be
-// exercised far more tightly than a counter could. The IP limit blunts blind
-// guessing against the 256-bit token space (computationally infeasible anyway).
-const refreshLimiter = rateLimit({
-  prefix: 'rl:auth:refresh:',
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 200 : 60,
-});
-
-/**
- * @openapi
- * /auth/logout:
- *   post:
- *     tags:
- *       - Authentication
- *     security: []
- *     summary: Revoke the presented rotating refresh family
- *     description: >
- *       Signs the caller out by revoking the rotating refresh-token family behind
- *       the `refreshToken` presented in the body (the persisted-refresh lane used
- *       by web localStorage / native storage). Revocation deactivates the
- *       underlying session and burns the whole family so a stored token can no
- *       longer mint access tokens. Idempotent + best-effort: a missing or unknown
- *       token still returns 200. No `Authorization` header is required — the
- *       refresh token itself is the credential being revoked.
- *     responses:
- *       200:
- *         description: Logged out (idempotent).
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *       429:
- *         description: Too many requests from this IP.
- */
-router.post('/logout', refreshLimiter, requireSameSiteOrigin, asyncHandler(async (req, res) => {
-  // Revoke the rotating refresh family behind the presented token. Idempotent on
-  // unknown/garbage tokens, so logout always returns 200.
-  const bodyRefreshToken = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
-  if (typeof bodyRefreshToken === 'string' && bodyRefreshToken.length > 0) {
-    await revokeFamilyByRawToken(bodyRefreshToken);
-  }
-
-  return res.json({ success: true });
-}));
-
 // Strict rate limit for enumeration-sensitive check endpoints (10/min per IP)
 const checkLimiter = rateLimit({
   prefix: 'rl:auth:lookup:',
@@ -999,12 +936,11 @@ import AuthSession from '../models/AuthSession';
  *         description: Application is not available (suspended/deleted/pending review).
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, clientId, applicationId, deviceToken } = req.body as {
+  const { sessionToken, expiresAt, clientId, applicationId } = req.body as {
     sessionToken: string;
     clientId?: string;
     applicationId?: string;
     expiresAt?: string | number;
-    deviceToken?: string;
   };
 
   if (!sessionToken) {
@@ -1094,12 +1030,6 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const authorizeCode = crypto.randomBytes(16).toString('hex');
   const qrNonce = crypto.randomBytes(8).toString('hex');
 
-  // Device-first attribution: when the QR was started from a device that already
-  // holds a session (oxy_device cookie) or presented an add-only deviceToken,
-  // persist that central deviceId so the authorize paths mint the resulting
-  // session onto the SAME device set instead of sprawling a fresh device.
-  const attributionDeviceId = await resolveLoginDeviceId(req, deviceToken);
-
   // Create new auth session
   const authSession = await AuthSession.create({
     sessionToken,
@@ -1110,7 +1040,6 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
-    ...(attributionDeviceId ? { deviceId: attributionDeviceId } : {}),
   });
 
   // Deep-link / universal-link payload for the QR. Commons parses ONLY `code`
@@ -1487,7 +1416,7 @@ const authSessionClaimLimiter = rateLimit({
  *               properties:
  *                 accessToken:
  *                   type: string
- *                 refreshToken:
+ *                 deviceSecret:
  *                   type: string
  *                 sessionId:
  *                   type: string
@@ -1564,21 +1493,12 @@ router.post(
       throw new UnauthorizedError('invalid_grant');
     }
 
-    // Return a fresh ROTATING refresh-family token (the persisted-refresh lane),
-    // NOT the legacy Session-embedded JWT. The client persists this and rotates
-    // it via `POST /auth/refresh-token`. (The OAuth `/auth/oauth/token` flow is
-    // deliberately untouched.)
-    const refresh = await issueRefreshToken({
-      sessionId: authSession.authorizedSessionId,
-      userId: authSession.authorizedUserId.toString(),
-    });
-
     const userData = formatUserResponse(user);
 
-    // Additive 2c mint: when the claimed session's device carries a
-    // `DeviceSession` doc, hand the client a rotating `deviceSecret` so it can
-    // migrate onto the zero-cookie lane. Best-effort — a mint failure never fails
-    // the claim, and a device with no doc simply omits the secret.
+    // Mint the `deviceSecret` the client persists first-party (with the response's
+    // `deviceId`) to restore the session via `POST /session/device/token`
+    // (zero-cookie transport). Best-effort — a mint failure never fails the claim,
+    // and a device with no doc simply omits the secret.
     let deviceSecret: string | undefined;
     try {
       if (typeof session.deviceId === 'string' && session.deviceId.length > 0) {
@@ -1602,7 +1522,6 @@ router.post(
 
     sendSuccess(res, {
       accessToken: tokenResult.accessToken,
-      refreshToken: refresh.token,
       sessionId: authSession.authorizedSessionId,
       deviceId: session.deviceId,
       expiresAt: tokenResult.expiresAt.toISOString(),
@@ -2473,72 +2392,14 @@ router.post(
 
     const userId = user._id.toString();
 
-    // Device-first attribution for the token grant — the last mint path that
-    // used to orphan a UA/IP-derived deviceId (the cleanest reproduction of
-    // "an RP shows a different account list"). Resolve the central device from
-    // the oxy_device cookie (same-apex authorize→token) or an add-only
-    // deviceToken (a cross-apex RP that persisted one at bootstrap). Absent →
-    // no device attribution (we deliberately do NOT invent one).
-    const oauthDeviceId = await resolveLoginDeviceId(
+    // Third-party OAuth sessions are per-client + per-origin and independent of
+    // the first-party device set (no cross-app device sync) — mint a fresh
+    // session for the grant.
+    const session = await sessionService.createSession(
+      userId,
       req,
-      (req.body as { deviceToken?: unknown }).deviceToken,
+      { deviceName: `${app.name} OAuth` },
     );
-
-    // ONE session per account per device: when the account is ALREADY registered
-    // on the resolved device (added during the first-party authorize step),
-    // REUSE that exact registered session so this RP converges on the SAME
-    // sessionId + deviceId the DeviceSession doc holds (one socket room, shared
-    // cross-domain broadcasts) instead of minting a per-RP session on a fresh
-    // device. resolveRegisteredSession validates the session (managed act_as
-    // re-check) before reuse and never resurrects a dead one.
-    // `deviceSession.service` (and its DeviceSession Mongoose model) is imported
-    // LAZILY — only when a device actually resolved — so merely loading the auth
-    // router never forces the model to evaluate (mirrors deviceLogin.service).
-    let session: ISession | null = null;
-    if (oauthDeviceId) {
-      const { deviceSessionService } = await import('../services/deviceSession.service.js');
-      const registered = await deviceSessionService.resolveRegisteredSession(oauthDeviceId, userId);
-      if (registered) {
-        // Load the registered session for the response tokens; its access token
-        // was just rotated/minted by resolveRegisteredSession and carries the
-        // central deviceId claim. A race (session vanished) falls through to a
-        // fresh mint below.
-        session = await sessionService.getSession(registered.sessionId, false);
-      }
-    }
-
-    if (!session) {
-      // Fresh mint — thread the resolved device so createSession's reuse-by-
-      // (userId, deviceId) converges, or a first mint lands on the central
-      // device. No resolved device ⇒ pre-existing UA/IP attribution (unchanged).
-      session = await sessionService.createSession(
-        userId,
-        req,
-        { deviceName: `${app.name} OAuth`, ...(oauthDeviceId ? { deviceId: oauthDeviceId } : {}) },
-      );
-
-      // Register the freshly-minted session into the device set (add-only, never
-      // steals the active account) so a SUBSEQUENT grant for this account on this
-      // device reuses it via resolveRegisteredSession. Best-effort — a
-      // registration failure must never fail the token grant. The lazy import is
-      // module-cached, so re-importing here is free.
-      if (oauthDeviceId) {
-        try {
-          const { deviceSessionService } = await import('../services/deviceSession.service.js');
-          const { state, changed } = await deviceSessionService.addAccount(
-            session.deviceId,
-            { accountId: userId, sessionId: session.sessionId },
-            { activate: 'if-empty' },
-          );
-          if (changed) broadcastDeviceState(state);
-        } catch (error) {
-          logger.warn('[OAuth] device-set registration failed', {
-            userId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
 
     app.lastUsedAt = new Date();
     await app.save();

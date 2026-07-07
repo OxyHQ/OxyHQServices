@@ -39,14 +39,17 @@ function App() {
         <LocaleProvider>
             <LayoutProvider>
                 <BloomThemeProvider mode="system" colorPreset="oxy">
-                {/* The IdP mounts @oxyhq/services in IdP mode: coldBoot is OFF
-                    (it is the identity provider, never an RP restoring its own
-                    session) but the provider still supplies the OxyAccountDialog
-                    (QR / Commons sign-in) and the OxyConsentScreen context. */}
+                {/* The IdP is a device-first origin like every other Oxy app: it
+                    runs the normal SDK cold boot (restore this origin's device
+                    session from its own persisted `{deviceId, deviceSecret}`),
+                    enumerates device accounts through `useSwitchableAccounts`, and
+                    supplies the OxyAccountDialog + OxyConsentScreen context. It
+                    stays a shell OAuth/authorize/consent surface — NOT a Relying
+                    Party. The former `coldBoot={false}` IdP exception existed for
+                    the SSO bounce the zero-cookie cutover deleted. */}
                 <OxyProvider
                     baseURL={getApiBaseUrl()}
                     clientId={OXY_CLIENT_ID}
-                    coldBoot={false}
                 >
                     <BrowserRouter>
                         <Routes>

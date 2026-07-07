@@ -67,18 +67,13 @@ function close(server: http.Server): Promise<void> {
 }
 
 describe('isIdpServiceToServicePath', () => {
-  it('matches the exact worker READ + device-resolve paths', () => {
+  it('matches the exact worker READ path', () => {
     expect(isIdpServiceToServicePath('/session/validate/sess-abc')).toBe(true);
-    expect(isIdpServiceToServicePath('/auth/device/resolve')).toBe(true);
   });
 
   it('does NOT match browser-reachable neighbours that must stay under the general budget', () => {
     // Bearer-cross-checked, browser-reachable — MUST NOT be exempted.
     expect(isIdpServiceToServicePath('/session/validate-header/sess-abc')).toBe(false);
-    // Other device-auth endpoints are browser-driven (own limiters / general budget).
-    expect(isIdpServiceToServicePath('/auth/device/bootstrap')).toBe(false);
-    expect(isIdpServiceToServicePath('/auth/device/exchange')).toBe(false);
-    expect(isIdpServiceToServicePath('/auth/refresh-token')).toBe(false);
     // Ordinary user/session traffic.
     expect(isIdpServiceToServicePath('/session/user/64f7c2a1b8e9d3f4a1c2b3d4')).toBe(false);
     expect(isIdpServiceToServicePath('/users/me')).toBe(false);
@@ -103,7 +98,6 @@ describe('general limiter (rl:general) exempts IdP service paths', () => {
   it('does not consume / emit the general budget on exempt paths', async () => {
     for (const path of [
       '/session/validate/sess-abc',
-      '/auth/device/resolve',
     ]) {
       const res = await get(server, path);
       expect(res.status).toBe(200);
