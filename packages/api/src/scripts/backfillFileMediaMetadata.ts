@@ -68,7 +68,7 @@ async function main(): Promise<void> {
 
     for (const file of batch) {
       scanned += 1;
-      lastId = file._id as mongoose.Types.ObjectId;
+      lastId = new mongoose.Types.ObjectId(String(file._id));
       const before = resolveFileMediaMetadata(file);
       if (before.width && before.height) {
         skipped += 1;
