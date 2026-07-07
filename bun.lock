@@ -589,9 +589,10 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "19.0.0",
+      "version": "19.0.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
+        "color": "^4.2.3",
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
