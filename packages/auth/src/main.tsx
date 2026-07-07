@@ -1,4 +1,4 @@
-import React, { useEffect } from "react"
+import { useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
@@ -89,9 +89,11 @@ function App() {
 
 const rootEl = document.getElementById("root")
 if (rootEl) {
-    ReactDOM.createRoot(rootEl).render(
-        <React.StrictMode>
-            <App />
-        </React.StrictMode>
-    )
+    // NOTE: Do NOT wrap <App /> in <React.StrictMode>. On web, react-native-web's
+    // Modal (used by Bloom's BottomSheet / bottom-placement Dialog, i.e. the
+    // "Sign in with Oxy" sheet) mounts its ModalPortal host during render and
+    // removes it in an effect cleanup; StrictMode's dev double-invoke never
+    // re-attaches it, so bottom sheets never paint. accounts (Expo) renders
+    // without StrictMode for the same reason.
+    ReactDOM.createRoot(rootEl).render(<App />)
 }
