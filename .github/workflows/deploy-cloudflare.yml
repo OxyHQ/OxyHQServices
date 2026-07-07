@@ -54,38 +54,29 @@ jobs:
       # sync is already gated pre-push (test-build) and in PR CI, so the deploy
       # installs without the buggy frozen flag.
       - run: bun install
-      # Build the Vite SPA into packages/auth/dist. The ONE dynamic route
-      # (/api/device-accounts) is a Pages FUNCTION (`packages/auth/functions/`),
-      # NOT an advanced-mode `_worker.js` — CF Pages was not executing the
-      # single-file worker on the oxy-auth project, so it fell through to the SPA.
+      # Build the Vite SPA into packages/auth/dist. Post-2c the IdP is a
+      # PURE-STATIC SPA: the former `/api/device-accounts` Pages Function was
+      # deleted when the IdP moved to the device-first SDK (zero-cookie chooser
+      # via useSwitchableAccounts), so there is no `functions/` directory left
+      # to compile or deploy.
       - run: bun x turbo run build --filter=auth
-      # Fail fast if the Pages Functions do not COMPILE (a broken function would
-      # otherwise deploy and 500/fall through at runtime). `wrangler pages
-      # functions build` is exactly what CF runs to bundle `functions/` for the
-      # deployment, so a green compile here == the deploy will register the route.
-      - name: Verify Pages Functions compile
-        working-directory: packages/auth
-        run: bunx wrangler@4 pages functions build functions --outfile "$RUNNER_TEMP/functions-worker.js"
-      # Deploy from packages/auth so wrangler picks up the sibling `functions/`
-      # directory (CF Pages compiles `./functions` relative to the CWD) alongside
-      # the `dist` static assets. Invoke `bunx wrangler` DIRECTLY rather than
+      # Deploy the static `dist`. Invoke `bunx wrangler` DIRECTLY rather than
       # cloudflare/wrangler-action: that action's `npx --no-install wrangler`
       # path runs npm's Arborist from packages/auth, which rejects the repo-root
       # `overrides["@oxyhq/bloom"]` against this package's newer direct bloom dep
       # (`npm error code EOVERRIDE`). The whole monorepo installs with bun, and
-      # bun's resolver does not perform that npm-only override validation — the
-      # compile step above already proves `bunx wrangler@4` runs clean here.
+      # bun's resolver does not perform that npm-only override validation.
       - name: Deploy to Cloudflare Pages
         working-directory: packages/auth
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bunx wrangler@4 pages deploy dist --project-name=oxy-auth --branch=main
-      # Post-deploy smoke gate: hit the LIVE host and assert the post-FedCM
+      # Post-deploy smoke gate: hit the LIVE host and assert the device-first IdP
       # contract on PUBLIC, unauthenticated endpoints only (no secrets). A broken
-      # deploy (blank SPA, missing _worker.js / static-only serving SPA HTML for
-      # the /api/device-accounts feed, or a re-added FedCM manifest) turns this
-      # job RED immediately. Retries briefly to let the Pages deploy propagate.
+      # deploy (blank SPA, or a re-added FedCM manifest / oxy_device cookie lane)
+      # turns this job RED immediately. Retries briefly to let the Pages deploy
+      # propagate.
       - name: Post-deploy IdP smoke gate
         working-directory: packages/auth
         env:
