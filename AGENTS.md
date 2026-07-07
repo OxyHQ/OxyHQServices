@@ -815,3 +815,29 @@ Reputation awards are NEVER self-issued. The flow: users generate signed attesta
 - **Scan FAB:** Bloom `Fab` on the ID landing screen opens `app/(scan)/` as a `fullScreenModal` — handles both `oxycommons://attest` (real-life attestation) and `oxycommons://approve` (sign-in handoff).
 - **Reputation screen:** `components/reputation/*` — standing hero, Skia composition donut (shows breakdown arc per category), civic-duty CTA (prompts next action to grow standing), signed activity ledger (reads `GET /reputation/:userId/transactions` + `GET /civic/attest/history`).
 - **QR schemes:** ALL use `oxycommons://` — `oxycommons://card` (share identity card), `oxycommons://attest?payload=<signed>` (real-life attestation), `oxycommons://approve?v=1&code=<authorizeCode>&...` (sign-in handoff). `oxydni://` scheme is removed entirely.
+
+## Cursor Cloud specific instructions
+
+Local dev is a **Bun workspace monorepo** (`bun@1.3.14`, on `PATH` via `/usr/local/bin/bun`). The startup update script runs only `bun install`. Everything below is not auto-run — do it per session as needed. Standard build/dev/test commands live in the root `README.md`, root `package.json` scripts, and the "Commands" section above; only the non-obvious local caveats are captured here.
+
+**Local infra (not auto-started):**
+- **MongoDB (required)** is installed (`mongod` 8.0) but not started automatically. Start it before the API: `mongod --dbpath /var/lib/mongodb --bind_ip 127.0.0.1 --port 27017` (run it in a tmux session so it persists). Verify with `mongosh --quiet --eval 'db.runCommand({ping:1})'`.
+- **Redis is intentionally unset** — the API falls back to in-memory stores (BullMQ queues, distributed rate limiting, and the multi-instance Socket.IO adapter are disabled). This is fine for local dev.
+- **`packages/api/.env`** holds local dev config (local Mongo URI, locally-generated JWT/`DEVICE_ID_SALT` secrets, and placeholder `AWS_*` values). It is gitignored and persists on the VM. `packages/api/src/config/env.ts` hard-requires `MONGODB_URI`, `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET` to boot (values are only validated for presence/shape, not connectivity). The placeholder S3 creds let the API boot; **S3-backed features (avatar / email-attachment uploads) will fail** until real S3 or a local MinIO (`AWS_ENDPOINT_URL`) is configured — auth/signup/login flows do not touch S3.
+
+**Fresh/empty-Mongo gotcha (first boot):** on a brand-new empty database the API crashes on startup with `MongoServerError: ns does not exist: <db>.files` because `ensureFileSha256LiveUniqueIndex()` (`packages/api/src/models/File.ts`) calls `.indexes()` on a not-yet-created GridFS collection and `server.ts` `process.exit(1)`s on it. Fix once per fresh DB by pre-creating the collection: `mongosh --quiet oxy-dev --eval 'db.createCollection("files")'`. Not needed once the DB has data.
+
+**Build shared libs before running apps:** the API and the web apps resolve `@oxyhq/contracts`, `@oxyhq/protocol`, `@oxyhq/core`, and `@oxyhq/services` from their built output (`dist/` / `lib/`), NOT from source. Built output persists in the VM snapshot, but after changing any of those packages' source you must rebuild them (e.g. `bun run core:build`, `bun run services:build`, or `bun run build:all`) or downstream `bun --watch`/Vite dev servers fail to resolve the workspace dep (Vite reports `@oxyhq/services ... could not be resolved`). The API dev server needs contracts+protocol+core built; the web apps additionally need `@oxyhq/services` built.
+
+**Run the stack (dev mode):**
+- API: `bun run api:dev` → Express + Socket.IO on **:3001** (`GET /health` → `{"status":"operational"}`). Hot-reloads via `bun --watch`.
+- Auth IdP web app: `VITE_OXY_API_URL=http://localhost:3001 bun run --filter auth dev` → Vite on **:3002**. Point every web/Expo frontend at the local API via its own env var (`auth`: `VITE_OXY_API_URL`; `console`: `VITE_OXY_URL`; Expo apps: `EXPO_PUBLIC_API_URL`). Loopback origins are trusted on the credentialed CORS lane, so `http://localhost:*` can hit the local API directly.
+
+**Hello-world sanity check (auth end-to-end, no S3/Redis needed):**
+```bash
+curl -s -X POST http://localhost:3001/auth/signup -H 'Content-Type: application/json' \
+  -d '{"email":"devtest@example.com","username":"devtester","password":"HelloWorld123!","name":{"first":"Dev","last":"Tester"}}'
+curl -s -X POST http://localhost:3001/auth/login -H 'Content-Type: application/json' \
+  -d '{"identifier":"devtester","password":"HelloWorld123!"}'
+```
+Signup passwords must include a special character (server-enforced, beyond the Zod `min(8)`). Both return a device-first session (`accessToken` + `deviceSecret`); use the token as `Authorization: Bearer` against `GET /users/me`. The `auth` web app drives the same flow through its multi-step login form.
