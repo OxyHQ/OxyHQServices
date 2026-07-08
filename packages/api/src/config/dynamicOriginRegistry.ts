@@ -296,7 +296,10 @@ export function getCorsDecision(origin: string): CorsDecision {
 
 /** Rebuild the snapshots from the Application registry (background-safe). */
 export function refreshOriginRegistry(): Promise<void> {
-  return registry.refresh();
+  return registry.refresh().then(async () => {
+    const { reconcileOfficialRedirectUris } = await import('./reconcileOfficialRedirectUris.js');
+    await reconcileOfficialRedirectUris();
+  });
 }
 
 /** Stop the background refresh interval (tests / graceful shutdown). */
