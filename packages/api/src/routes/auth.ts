@@ -30,6 +30,7 @@ import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 import socialAuthRouter from './socialAuth';
 import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
+import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
@@ -2401,6 +2402,11 @@ router.post(
       { deviceName: `${app.name} OAuth` },
     );
 
+    const deviceExtras = await finalizeDeviceLogin({
+      session: { sessionId: session.sessionId, deviceId: session.deviceId },
+      userId,
+    });
+
     app.lastUsedAt = new Date();
     await app.save();
 
@@ -2412,6 +2418,8 @@ router.post(
       token_type: 'Bearer',
       expires_in: 15 * 60,
       session_id: session.sessionId,
+      deviceId: session.deviceId,
+      ...(deviceExtras.deviceSecret ? { deviceSecret: deviceExtras.deviceSecret } : {}),
       user: userData,
     });
   })

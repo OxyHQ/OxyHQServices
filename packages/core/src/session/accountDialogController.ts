@@ -31,6 +31,12 @@ import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { User } from '../models/interfaces';
 import { logger } from '../utils/loggerUtils';
 import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
+import {
+  generateOAuthState,
+  generatePkcePair,
+  normalizeOAuthRedirectUri,
+  persistOAuthHandshake,
+} from '../utils/oauthPkce';
 import { SessionClient } from './SessionClient';
 import {
   projectSwitchableAccounts,
@@ -111,6 +117,12 @@ export interface AccountDialogControllerOptions {
   onSignedIn?: (user: MinimalUserData) => void;
   /** Central IdP apex for `openPasswordAtOxyAuth` (defaults to `CENTRAL_IDP_APEX`). */
   idpApex?: string;
+  /**
+   * Registered OAuth redirect URI for this RP (exact match against
+   * `Application.redirectUris`). When set, wins over `returnUrl` /
+   * `location.origin` normalization in {@link openPasswordAtOxyAuth}.
+   */
+  authRedirectUri?: string | null;
   /** QR device-flow poll interval in ms (default 3000). */
   pollIntervalMs?: number;
   /**
@@ -145,6 +157,7 @@ export class AccountDialogController {
   private readonly commitSession?: (session: SessionLoginResponse) => Promise<void>;
   private readonly onSignedIn?: (user: MinimalUserData) => void;
   private readonly idpApex: string;
+  private readonly authRedirectUri: string | null;
   private readonly pollIntervalMs: number;
   private readonly openUrl?: (url: string) => void;
 
@@ -181,6 +194,7 @@ export class AccountDialogController {
     this.commitSession = options.commitSession;
     this.onSignedIn = options.onSignedIn;
     this.idpApex = options.idpApex ?? CENTRAL_IDP_APEX;
+    this.authRedirectUri = options.authRedirectUri ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.openUrl = options.openUrl;
     this.snapshot = this.computeSnapshot();
@@ -548,18 +562,30 @@ export class AccountDialogController {
    * @param params.state - Optional opaque state echoed back on return.
    * @returns The absolute auth.oxy.so sign-in URL.
    */
-  openPasswordAtOxyAuth(params: { returnUrl?: string; state?: string } = {}): string {
+  async openPasswordAtOxyAuth(
+    params: { returnUrl?: string; state?: string; redirectUri?: string } = {},
+  ): Promise<string> {
     const base = `https://auth.${this.idpApex}`;
     const url = new URL('/login', base);
-    const returnUrl = params.returnUrl ?? currentLocationHref();
-    if (returnUrl) {
-      url.searchParams.set('redirect_uri', returnUrl);
+    const rawRedirect =
+      params.redirectUri ??
+      this.authRedirectUri ??
+      params.returnUrl ??
+      currentLocationOrigin();
+    const redirectUri = rawRedirect ? normalizeOAuthRedirectUri(rawRedirect) : '';
+    if (redirectUri) {
+      url.searchParams.set('redirect_uri', redirectUri);
     }
     if (this.clientId) {
       url.searchParams.set('client_id', this.clientId);
     }
-    if (params.state) {
-      url.searchParams.set('state', params.state);
+    const state = params.state ?? (await generateOAuthState());
+    url.searchParams.set('state', state);
+    const { codeChallenge, codeVerifier } = await generatePkcePair();
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+    if (!persistOAuthHandshake(state, codeVerifier)) {
+      throw new Error('Could not persist OAuth handshake for password sign-in');
     }
     const href = url.toString();
     this.openUrl?.(href);
@@ -748,8 +774,8 @@ export function createAccountDialogController(
 // Local helpers
 // ---------------------------------------------------------------------------
 
-/** Current document URL on web; empty string where `location` is absent (native/SSR). */
-function currentLocationHref(): string {
-  const location = (globalThis as { location?: { href?: string } }).location;
-  return typeof location?.href === 'string' ? location.href : '';
+/** Current document origin on web; empty string where `location` is absent (native/SSR). */
+function currentLocationOrigin(): string {
+  const location = (globalThis as { location?: { origin?: string } }).location;
+  return typeof location?.origin === 'string' ? location.origin : '';
 }

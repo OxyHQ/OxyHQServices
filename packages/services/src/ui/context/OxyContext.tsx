@@ -36,6 +36,7 @@ import {
   registerAccountDialogControls,
   notifyAccountDialogVisibility,
 } from '../navigation/accountDialogManager';
+import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -896,6 +897,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       oxyServices,
       sessionClient,
       clientId,
+      authRedirectUri,
       locale: currentLanguage,
       commitSession: (session) => handleWebSessionRef.current(session),
       onSignedIn: () => setAccountDialogOpen(false),
@@ -1010,6 +1012,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const runColdBoot = useCallback(async (): Promise<void> => {
     setTokenReady(false);
     try {
+      if (coldBoot) {
+        const oauthCompleted = await tryCompleteOAuthReturn({
+          oxyServices,
+          clientId: clientIdProp,
+          authRedirectUri,
+          commitSession: (input) =>
+            commitSessionRef.current(input, { activate: true }),
+        });
+        if (oauthCompleted) {
+          setTokenReady(true);
+          markAuthResolvedRef.current();
+          return;
+        }
+      }
+
       await runSessionColdBoot({
         oxy: oxyServices,
         store: authStore,
@@ -1062,7 +1079,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Backstop: resolve on every exit path so the gate can never hang.
       markAuthResolvedRef.current();
     }
-  }, [oxyServices, authStore]);
+  }, [oxyServices, authStore, coldBoot, clientIdProp, authRedirectUri]);
 
   useEffect(() => {
     if (initialized) {

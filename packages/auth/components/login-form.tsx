@@ -71,6 +71,18 @@ export function LoginForm({
     ...props
 }: LoginFormProps) {
     const navigate = useNavigate()
+    const signupPath = (() => {
+        const params = new URLSearchParams()
+        if (sessionToken) params.set("token", sessionToken)
+        if (redirectUri) params.set("redirect_uri", redirectUri)
+        if (state) params.set("state", state)
+        if (clientId) params.set("client_id", clientId)
+        if (codeChallenge) params.set("code_challenge", codeChallenge)
+        if (codeChallengeMethod) params.set("code_challenge_method", codeChallengeMethod)
+        if (scope) params.set("scope", scope)
+        const qs = params.toString()
+        return qs ? `/signup?${qs}` : "/signup"
+    })()
     // The IdP authenticates through the SAME device-first SDK path every Oxy app
     // uses: `signInWithPassword` / `completeTwoFactorSignIn` verify credentials,
     // persist the zero-cookie `{deviceId, deviceSecret}` credential, plant the
@@ -499,7 +511,7 @@ export function LoginForm({
                         </Field>
                         <FieldDescription>
                             Don&apos;t have an account?{" "}
-                            <Link to="/signup">Create account</Link>
+                            <Link to={signupPath}>Create account</Link>
                         </FieldDescription>
                         <Field>
                             <Button type="submit" size="lg" className="w-full" loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>

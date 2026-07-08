@@ -187,3 +187,60 @@ export function buildOAuthAuthorizeUrl(params: BuildOAuthAuthorizeUrlParams): st
 
   return url.toString();
 }
+
+/** `sessionStorage` key for the OAuth CSRF `state` across an authorize redirect. */
+export const OXY_OAUTH_STATE_STORAGE_KEY = 'oxy_oauth_state';
+
+/** `sessionStorage` key for the PKCE `code_verifier` across an authorize redirect. */
+export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
+
+/**
+ * Normalize a redirect URI to its origin. Official Oxy apps register apex
+ * origins (`https://inbox.oxy.so`) — never path-qualified URLs.
+ */
+export function normalizeOAuthRedirectUri(input: string): string {
+  try {
+    return new URL(input).origin;
+  } catch {
+    return input;
+  }
+}
+
+/** Persist the OAuth handshake for a full-page redirect return (web only). */
+export function persistOAuthHandshake(state: string, codeVerifier: string): boolean {
+  const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  try {
+    if (!store) throw new Error('sessionStorage is unavailable');
+    store.setItem(OXY_OAUTH_STATE_STORAGE_KEY, state);
+    store.setItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
+    return true;
+  } catch (error) {
+    logger.warn(
+      'Could not persist OAuth handshake to sessionStorage',
+      { component: 'oauthPkce' },
+      error,
+    );
+    return false;
+  }
+}
+
+/** Read the persisted OAuth handshake, or `null` when absent. */
+export function readOAuthHandshake(): { state: string; codeVerifier: string } | null {
+  const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  if (!store) return null;
+  const state = store.getItem(OXY_OAUTH_STATE_STORAGE_KEY);
+  const codeVerifier = store.getItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY);
+  if (!state || !codeVerifier) return null;
+  return { state, codeVerifier };
+}
+
+/** Drop persisted OAuth handshake keys after a successful or aborted return. */
+export function clearOAuthHandshake(): void {
+  const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  try {
+    store?.removeItem(OXY_OAUTH_STATE_STORAGE_KEY);
+    store?.removeItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY);
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
