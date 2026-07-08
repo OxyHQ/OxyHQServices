@@ -39,6 +39,7 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { useMessageActions } from '@/hooks/useMessageActions';
 import { MessageRow } from '@/components/MessageRow';
 import type { Message } from '@/services/emailApi';
 
@@ -240,6 +241,7 @@ export function ForYouScreen() {
   const inboxId = mailboxes.find((m) => m.specialUse === SPECIAL_USE.INBOX)?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
+  const messageActions = useMessageActions();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
@@ -265,10 +267,10 @@ export function ForYouScreen() {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
-      useEmailStore.setState({ selectedMessageId: messageId });
+      messageActions.prepareOpenMessage(messageId);
       router.push(`/conversation/${messageId}`);
     },
-    [router],
+    [router, messageActions],
   );
 
   const handleStar = useCallback(

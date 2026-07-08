@@ -26,6 +26,7 @@ import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { useMessageActions } from '@/hooks/useMessageActions';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import {
   useNaturalLanguageSearch,
@@ -116,6 +117,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const inputRef = useRef<TextInput>(null);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
   const toggleStar = useToggleStar();
+  const messageActions = useMessageActions();
   const { data: mailboxes = [] } = useMailboxes();
 
   const [query, setQuery] = useState('');
@@ -288,6 +290,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
+      messageActions.prepareOpenMessage(messageId);
       const path = `/search/conversation/${messageId}`;
       if (replaceNavigation) {
         router.replace(path);
@@ -295,7 +298,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         router.push(path);
       }
     },
-    [router, replaceNavigation],
+    [router, replaceNavigation, messageActions],
   );
 
   const handleBack = useCallback(() => {

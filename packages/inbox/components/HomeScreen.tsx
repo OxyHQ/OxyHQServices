@@ -46,6 +46,7 @@ import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { useMessageActions } from '@/hooks/useMessageActions';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
@@ -134,6 +135,7 @@ export function HomeScreen() {
   const inboxId = mailboxes.find((m) => m.specialUse === SPECIAL_USE.INBOX)?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
+  const messageActions = useMessageActions();
 
   const allMessages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
@@ -158,10 +160,10 @@ export function HomeScreen() {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
-      useEmailStore.setState({ selectedMessageId: messageId });
+      messageActions.prepareOpenMessage(messageId);
       router.push(`/conversation/${messageId}`);
     },
-    [router],
+    [router, messageActions],
   );
 
   const handleStar = useCallback(

@@ -10,6 +10,7 @@
 import { useCallback, useMemo } from 'react';
 import { useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
+import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { SPECIAL_USE } from '@/constants/mailbox';
@@ -28,6 +29,7 @@ import {
 export function useMessageActions() {
   const { user } = useOxy();
   const userId = user?.id ?? null;
+  const { prefs } = useInboxPrefs();
   const queryClient = useQueryClient();
   const { data: mailboxes = [] } = useMailboxes();
 
@@ -58,6 +60,17 @@ export function useMessageActions() {
       }
     },
     [queryClient, userId, toggleRead],
+  );
+
+  /** Mark read (when pref is on) and set split-view selection before navigation. */
+  const prepareOpenMessage = useCallback(
+    (messageId: string) => {
+      if (prefs.markReadOnOpen) {
+        markReadIfUnread(messageId);
+      }
+      useEmailStore.setState({ selectedMessageId: messageId });
+    },
+    [prefs.markReadOnOpen, markReadIfUnread],
   );
 
   const star = useCallback(
@@ -106,6 +119,7 @@ export function useMessageActions() {
       markAsRead,
       markAsUnread,
       markReadIfUnread,
+      prepareOpenMessage,
       star,
       pin,
       archive,
@@ -127,6 +141,7 @@ export function useMessageActions() {
       markAsRead,
       markAsUnread,
       markReadIfUnread,
+      prepareOpenMessage,
       star,
       pin,
       archive,

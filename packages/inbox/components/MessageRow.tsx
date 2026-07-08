@@ -39,6 +39,7 @@ import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
 import { DENSITY_STYLES } from '@/constants/densityStyles';
 import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
+import { useEmailStore } from '@/hooks/useEmail';
 import type { Message, Attachment } from '@/services/emailApi';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
@@ -152,6 +153,7 @@ function MessageRowInner({
   const queryClient = useQueryClient();
   const { user } = useOxy();
   const userId = user?.id ?? null;
+  const api = useEmailStore((s) => s._api);
   const prefetchedRef = useRef(false);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
@@ -187,14 +189,15 @@ function MessageRowInner({
 
   // Prefetch message data on hover (web only, once per mount)
   const handleMouseEnter = useCallback(() => {
-    if (!prefetchedRef.current && userId) {
+    if (!prefetchedRef.current && userId && api) {
       prefetchedRef.current = true;
       queryClient.prefetchQuery({
         queryKey: ['message', message._id, userId],
+        queryFn: async () => api.getMessage(message._id),
         staleTime: 60_000,
       });
     }
-  }, [queryClient, message._id, userId]);
+  }, [queryClient, message._id, userId, api]);
 
   const senderName = getSenderName(message);
   const preview = getPreview(message);
@@ -442,6 +445,7 @@ export const MessageRow = React.memo(MessageRowInner, (prev, next) => {
     prev.message.flags.starred === next.message.flags.starred &&
     prev.message.flags.seen === next.message.flags.seen &&
     prev.message.flags.pinned === next.message.flags.pinned &&
+    prev.message.threadCount === next.message.threadCount &&
     prev.message.labels === next.message.labels &&
     prev.isSelected === next.isSelected &&
     prev.isMultiSelected === next.isMultiSelected &&

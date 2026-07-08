@@ -32,6 +32,7 @@ export function usePushRegistration() {
   // The token currently registered with the backend, so cleanup can
   // unregister exactly what was registered even after the pref flips.
   const registeredTokenRef = useRef<string | null>(null);
+  const inFlightTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Web + signed-out + no API + pref off → nothing to register.
@@ -57,9 +58,18 @@ export function usePushRegistration() {
         const token = typeof tokenResult.data === 'string' ? tokenResult.data : String(tokenResult.data);
         if (cancelled || !token) return;
 
+        inFlightTokenRef.current = token;
         await api.registerPushToken(token, Platform.OS as NativePlatform);
+        if (cancelled) {
+          await api.unregisterPushToken(token).catch(() => undefined);
+          inFlightTokenRef.current = null;
+          return;
+        }
+
         registeredTokenRef.current = token;
+        inFlightTokenRef.current = null;
       } catch {
+        inFlightTokenRef.current = null;
         // Permission denial, simulator with no push support, or a transient
         // network error — non-fatal. The pref stays on; registration retries
         // on the next mount / pref toggle.
@@ -68,9 +78,10 @@ export function usePushRegistration() {
 
     return () => {
       cancelled = true;
-      const token = registeredTokenRef.current;
+      const token = registeredTokenRef.current ?? inFlightTokenRef.current;
+      registeredTokenRef.current = null;
+      inFlightTokenRef.current = null;
       if (token && api) {
-        registeredTokenRef.current = null;
         api.unregisterPushToken(token).catch(() => {
           // Best-effort unregister; a stale token is pruned server-side when
           // a push delivery fails.

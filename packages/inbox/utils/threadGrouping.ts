@@ -8,8 +8,9 @@
  *
  * Grouping key precedence:
  *   1. `references[0]`  — the root message id of the reference chain (RFC 5322)
- *   2. normalized subject (Re:/Fwd: prefixes stripped)
- *   3. the message's own id (its own singleton thread)
+ *   2. `inReplyTo`      — direct parent message id
+ *   3. normalized subject (Re:/Fwd: prefixes stripped)
+ *   4. the message's own id (its own singleton thread)
  */
 
 import type { Message } from '@/services/emailApi';
@@ -24,6 +25,7 @@ function normalizeSubject(subject?: string): string {
 function threadKeyOf(message: Message): string {
   const root = message.references?.[0];
   if (root) return `ref:${root}`;
+  if (message.inReplyTo) return `reply:${message.inReplyTo}`;
   const subject = normalizeSubject(message.subject);
   if (subject) return `subj:${subject}`;
   return `id:${message._id}`;
@@ -35,26 +37,33 @@ function threadKeyOf(message: Message): string {
  * the most recent message in the thread, annotated with the total count.
  */
 export function collapseThreads(messages: Message[]): Message[] {
-  const byKey = new Map<string, { rep: Message; count: number }>();
+  const byKey = new Map<string, { rep: Message; count: number; hasUnread: boolean }>();
   const order: string[] = [];
 
   for (const message of messages) {
     const key = threadKeyOf(message);
     const entry = byKey.get(key);
     if (!entry) {
-      byKey.set(key, { rep: message, count: 1 });
+      byKey.set(key, { rep: message, count: 1, hasUnread: !message.flags.seen });
       order.push(key);
       continue;
     }
     entry.count += 1;
+    if (!message.flags.seen) {
+      entry.hasUnread = true;
+    }
     if (new Date(message.date).getTime() > new Date(entry.rep.date).getTime()) {
       entry.rep = message;
     }
   }
 
   return order.map((key) => {
-    const { rep, count } = byKey.get(key)!;
+    const { rep, count, hasUnread } = byKey.get(key)!;
     const threadCount = Math.max(count, rep.threadCount ?? 1);
-    return threadCount === rep.threadCount ? rep : { ...rep, threadCount };
+    let result = threadCount === rep.threadCount ? rep : { ...rep, threadCount };
+    if (hasUnread && result.flags.seen) {
+      result = { ...result, flags: { ...result.flags, seen: false } };
+    }
+    return result;
   });
 }

@@ -387,22 +387,14 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
-      // Single source of truth for marking read: the tap. If the pref is on and
-      // the row is unread, fire the flags mutation (optimistic) before navigating.
-      // MessageDetail no longer marks read on open.
-      if (prefs.markReadOnOpen) {
-        const msg = messages.find((m) => m._id === messageId);
-        if (msg && !msg.flags.seen) {
-          toggleRead.mutate({ messageId, seen: true });
-        }
-      }
+      messageActions.prepareOpenMessage(messageId);
       if (replaceNavigation) {
         router.replace(`/conversation/${messageId}`);
       } else {
         router.push(`/conversation/${messageId}`);
       }
     },
-    [router, replaceNavigation, prefs.markReadOnOpen, messages, toggleRead],
+    [router, replaceNavigation, messageActions],
   );
 
   const handleOpenDrawer = useCallback(() => {

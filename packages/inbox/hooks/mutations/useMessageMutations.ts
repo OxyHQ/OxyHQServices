@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useOxy } from '@oxyhq/services';
@@ -117,14 +118,21 @@ export function useArchiveMessage() {
       await api.moveMessage(messageId, archiveMailboxId);
     },
     onMutate: async ({ messageId }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await cancelMessageQueries(queryClient, messageId);
+      const prevSelectedMessageId = useEmailStore.getState().selectedMessageId;
+      const snapshot = snapshotForRollback(queryClient, messageId, null);
       advanceSelectionPastMessage(queryClient, messageId);
       removeMessageFromList(queryClient, messageId);
+      return { snapshot, prevSelectedMessageId };
     },
     onSuccess: () => {
       toast.success('Conversation archived.');
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context) {
+        restoreSnapshot(queryClient, context.snapshot);
+        useEmailStore.setState({ selectedMessageId: context.prevSelectedMessageId });
+      }
       toast.error('Failed to archive conversation.');
     },
     onSettled: () => {
@@ -159,14 +167,21 @@ export function useDeleteMessage() {
       }
     },
     onMutate: async ({ messageId }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await cancelMessageQueries(queryClient, messageId);
+      const prevSelectedMessageId = useEmailStore.getState().selectedMessageId;
+      const snapshot = snapshotForRollback(queryClient, messageId, null);
       advanceSelectionPastMessage(queryClient, messageId);
       removeMessageFromList(queryClient, messageId);
+      return { snapshot, prevSelectedMessageId };
     },
     onSuccess: (_data, { isInTrash }) => {
       toast.success(isInTrash ? 'Conversation permanently deleted.' : 'Conversation moved to Trash.');
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context) {
+        restoreSnapshot(queryClient, context.snapshot);
+        useEmailStore.setState({ selectedMessageId: context.prevSelectedMessageId });
+      }
       toast.error('Failed to delete conversation.');
     },
     onSettled: () => {
@@ -201,74 +216,72 @@ export function useSendMessage() {
 
 const UNDO_SEND_DELAY_MS = 5000;
 
-interface UndoSendState {
-  pending: boolean;
-  cancelled: boolean;
-}
-
 export function useSendMessageWithUndo() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();
-  const stateRef = { current: { pending: false, cancelled: false } as UndoSendState };
-  const timeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
+  const [isPending, setIsPending] = useState(false);
+  const cancelledRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sendWithUndo = async (
-    params: Parameters<NonNullable<typeof api>['sendMessage']>[0],
-    options?: { onSuccess?: () => void; onError?: (err: unknown) => void },
-  ) => {
-    if (!api) {
-      options?.onError?.(new Error('Email API not initialized'));
-      return;
-    }
-
-    // Reset state
-    stateRef.current = { pending: true, cancelled: false };
-
-    // Clear any existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    // Show toast with undo action
-    toast('Sending message...', {
-      duration: UNDO_SEND_DELAY_MS,
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          stateRef.current.cancelled = true;
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-          }
-          toast('Message cancelled.');
-        },
-      },
-    } as Record<string, unknown>);
-
-    // Set timeout to actually send
-    timeoutRef.current = setTimeout(async () => {
-      if (stateRef.current.cancelled) {
+  const sendWithUndo = useCallback(
+    async (
+      params: Parameters<NonNullable<typeof api>['sendMessage']>[0],
+      options?: { onSuccess?: () => void; onError?: (err: unknown) => void },
+    ) => {
+      if (!api) {
+        options?.onError?.(new Error('Email API not initialized'));
         return;
       }
 
-      try {
-        await api.sendMessage(params);
-        toast.success('Message sent.');
-        queryClient.invalidateQueries({ queryKey: ['messages'] });
-        queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
-        options?.onSuccess?.();
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to send message.';
-        toast.error(message);
-        options?.onError?.(err);
-      } finally {
-        stateRef.current.pending = false;
+      cancelledRef.current = false;
+      setIsPending(true);
+
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
-    }, UNDO_SEND_DELAY_MS);
-  };
+
+      toast('Sending message...', {
+        duration: UNDO_SEND_DELAY_MS,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            cancelledRef.current = true;
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setIsPending(false);
+            toast('Message cancelled.');
+          },
+        },
+      } as Record<string, unknown>);
+
+      timeoutRef.current = setTimeout(async () => {
+        if (cancelledRef.current) {
+          return;
+        }
+
+        try {
+          await api.sendMessage(params);
+          toast.success('Message sent.');
+          queryClient.invalidateQueries({ queryKey: ['messages'] });
+          queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+          options?.onSuccess?.();
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to send message.';
+          toast.error(message);
+          options?.onError?.(err);
+        } finally {
+          setIsPending(false);
+        }
+      }, UNDO_SEND_DELAY_MS);
+    },
+    [api, queryClient],
+  );
 
   return {
     sendWithUndo,
-    isPending: stateRef.current.pending,
+    isPending,
   };
 }
 
@@ -284,7 +297,8 @@ export function useUpdateMessageLabels() {
       return await api.updateLabels(messageId, add, remove);
     },
     onMutate: async ({ messageId, add, remove }) => {
-      await queryClient.cancelQueries({ queryKey: ['message', messageId] });
+      await cancelMessageQueries(queryClient, messageId);
+      const snapshot = snapshotForRollback(queryClient, messageId, userId);
       const applyLabels = (labels: string[]): string[] => [
         ...labels.filter((l) => !remove.includes(l)),
         ...add.filter((l) => !labels.includes(l)),
@@ -293,8 +307,10 @@ export function useUpdateMessageLabels() {
         old ? { ...old, labels: applyLabels(old.labels) } : old,
       );
       patchMessageInList(queryClient, messageId, (m) => ({ ...m, labels: applyLabels(m.labels) }));
+      return { snapshot };
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context) restoreSnapshot(queryClient, context.snapshot);
       toast.error('Failed to update labels.');
     },
     onSettled: (_data, _err, { messageId }) => {
@@ -413,6 +429,23 @@ export function useBulkUpdateFlags() {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
 
       const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+      const prevMailboxes = queryClient.getQueriesData({ queryKey: ['mailboxes'] });
+
+      if (flags.seen !== undefined) {
+        const ids = new Set(messageIds);
+        const unseenDeltas = new Map<string, number>();
+        for (const [, data] of prevMessages) {
+          for (const message of flatMessages(data)) {
+            if (ids.has(message._id) && message.flags.seen !== flags.seen && message.mailboxId) {
+              const delta = flags.seen ? -1 : 1;
+              unseenDeltas.set(message.mailboxId, (unseenDeltas.get(message.mailboxId) ?? 0) + delta);
+            }
+          }
+        }
+        for (const [mailboxId, delta] of unseenDeltas) {
+          patchMailboxUnseen(queryClient, mailboxId, delta);
+        }
+      }
 
       // Optimistically update all affected messages in a single pass
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
@@ -429,11 +462,12 @@ export function useBulkUpdateFlags() {
         };
       });
 
-      return { prevMessages };
+      return { prevMessages, prevMailboxes };
     },
     onError: (_err, _vars, context) => {
       if (context) {
         context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        context.prevMailboxes.forEach(([key, data]) => queryClient.setQueryData(key, data));
       }
       toast.error('Failed to update messages.');
     },
@@ -458,6 +492,8 @@ export function useBulkMoveMessages() {
     onMutate: async ({ messageIds }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
 
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+
       // Optimistically remove all moved messages from current view
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
         if (!old) return old;
@@ -470,8 +506,13 @@ export function useBulkMoveMessages() {
           })),
         };
       });
+
+      return { prevMessages };
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context) {
+        context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
       toast.error('Failed to move messages.');
     },
     onSettled: () => {
