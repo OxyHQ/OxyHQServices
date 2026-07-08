@@ -23,7 +23,6 @@ const REQUIRED_BASE_ENV: Record<string, string> = {
   MONGODB_URI: 'mongodb://localhost:27017/test',
   ACCESS_TOKEN_SECRET: 'a'.repeat(64),
   REFRESH_TOKEN_SECRET: 'b'.repeat(64),
-  FEDCM_TOKEN_SECRET: 'c'.repeat(64),
   AWS_REGION: 'eu-west-1',
   AWS_ACCESS_KEY_ID: 'test-access-key',
   AWS_SECRET_ACCESS_KEY: 'test-secret-key',

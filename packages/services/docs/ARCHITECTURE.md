@@ -56,14 +56,12 @@ Key props (`OxyProviderProps`):
 |------|---------|---------|
 | `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
 | `baseURL` | — | Oxy API origin (`https://api.oxy.so`). |
-| `coldBoot` | `true` | Whether this provider is the device-first **session authority** (see below). |
 | `requireAuth` | `'off'` | Convenience wrapper: `'soft'` / `'hard'` wraps children in `<RequireOxyAuth prompt=…>`. |
 | `storageKeyPrefix`, `queryClient`, `oxyServices`, `onAuthStateChange` | — | Advanced overrides. |
 
-### `coldBoot` — RP mode vs IdP mode
+### Device-first cold boot
 
-- **`coldBoot={true}` (default — every Relying Party app):** on mount the provider runs `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native, re-mint from the shared Commons identity in the app-group keychain). Cold boot **never** auto-redirects to a login page — signed-out apps stay silent until the user opens the account dialog.
-- **`coldBoot={false}` (the IdP host, `auth.oxy.so`):** the IdP is **not** an RP and **not** a session authority. With `coldBoot={false}` the provider skips the cold boot entirely and never opens the signed-out device socket; auth resolves immediately as signed out. Interactive sign-in (password, 2FA, the "Sign in with Oxy" QR device flow) still commits a normal session scoped to that origin — which is all the IdP needs to drive its OAuth authorize/consent flow. Account management is owned solely by `accounts.oxy.so`; the IdP redirects its former `/settings/*` paths there.
+On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native). Cold boot never auto-redirects to a login page; official web apps without a local credential redirect once to `auth.oxy.so/device/join` first.
 
 ## Session model (consumed from `@oxyhq/core`)
 
@@ -76,7 +74,7 @@ The SDK contains no session logic of its own — it binds UI to the shared sessi
 | `accountProjection` | `SwitchableAccount[]` — the ONE account list: device sign-ins ∪ account graph, deduped by account id. |
 | `accountDialogController` | Headless state machine for the account dialog (views, sign-in flow phases). Framework-agnostic; bound via `useSyncExternalStore`. |
 | `authStateStore`, `refresh` | Persisted auth state + the unified token-refresh handler/scheduler. |
-| `boot/coldBootV2` | `runSessionColdBoot` — the ordered, short-circuit cold-boot runner (`device-secret-mint` then `shared-key-signin`). |
+| `boot/sessionColdBoot` | `runSessionColdBoot` — ordered cold-boot runner (`device-secret-mint` then `shared-key-signin`). |
 
 **Server authority:** the `DeviceSession` document (Mongo collection `devicesessions`: `deviceId`, `accounts[{ accountId, sessionId, authuser, operatedByUserId? }]`, `activeAccountId`, `secretHash`, `revision`) behind `/session/device/{token,state,add,switch,signout}`. Every mutation bumps `revision` and broadcasts a token-free `session_state` event to the Socket.IO room `device:<deviceId>`, so all apps on the same device converge instantly. See [device-session.md](../../../docs/auth/device-session.md).
 
@@ -88,9 +86,9 @@ The SDK contains no session logic of its own — it binds UI to the shared sessi
 
 [src/ui/components/OxyAccountDialog.tsx](../src/ui/components/OxyAccountDialog.tsx) — the ONE unified account dialog, mounted automatically by `OxyProvider`. A thin RN binding over core's `AccountDialogController`, presented on Bloom's `<Dialog>` (`@oxyhq/bloom/dialog`) with responsive placement — bottom sheet on narrow viewports, centered card on wide ones (`placement={{ base: 'bottom', md: 'center' }}`). It replaced the five drifting legacy surfaces (profile/account menus, switcher, chooser, standalone sign-in modal).
 
-Views: `accounts` (the `SwitchableAccount[]` switcher + "Add account"), `signin`/`add` (primary "Sign in with Oxy" device flow, QR scan, collapsed password hand-off to `auth.oxy.so` — password/2FA UI is not in the SDK), and `qr` (cross-device QR handoff). Per-account theming uses Bloom `BloomColorScope`; base styling is `useTheme()` + `StyleSheet` so it renders in apps without NativeWind.
+Views: `accounts` (the `SwitchableAccount[]` switcher + "Add account"), `signin`/`add` (primary "Sign in with Oxy" device flow, QR scan, collapsed password), and `qr` (cross-device QR). Per-account theming uses Bloom `BloomColorScope`; base styling is `useTheme()` + `StyleSheet` so it renders in apps without NativeWind.
 
-Entry points: `useOxy().openAccountDialog(view?)` inside React, `ProfileButton` (sidebar trigger), or the imperative `showSignInModal()` / `hideSignInModal()`.
+Entry points: `useOxy().openAccountDialog(view?)` inside React, `ProfileButton` (sidebar trigger), or imperative `openAccountDialog('signin')`.
 
 ### OxySignInButton
 

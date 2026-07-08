@@ -1,9 +1,5 @@
 /**
  * Imperative controls for the unified {@link OxyAccountDialog}.
- *
- * Mirrors `bottomSheetManager` — a module-level indirection so any caller
- * (even outside React) can open the account dialog without a ref. `OxyContext`
- * registers live open/close controls on mount via {@link registerAccountDialogControls}.
  */
 
 import type { AccountDialogView } from '@oxyhq/core';
@@ -17,11 +13,6 @@ export interface AccountDialogControls {
 let controls: AccountDialogControls | null = null;
 const visibilityListeners = new Set<(visible: boolean) => void>();
 
-/**
- * Register the provider's live open/close controls. Returns an unregister
- * function that only clears the slot if it still owns it (guards against a late
- * unmount clobbering a newer provider).
- */
 export function registerAccountDialogControls(next: AccountDialogControls): () => void {
   controls = next;
   return () => {
@@ -48,20 +39,10 @@ export function notifyAccountDialogVisibility(visible: boolean): void {
   }
 }
 
-/** Subscribe to dialog visibility changes. */
-export function subscribeToSignInModal(listener: (visible: boolean) => void): () => void {
+/** Subscribe to account dialog visibility changes. */
+export function subscribeToAccountDialog(listener: (visible: boolean) => void): () => void {
   visibilityListeners.add(listener);
   return () => {
     visibilityListeners.delete(listener);
   };
-}
-
-/** Open the account dialog on its sign-in view. */
-export function showSignInModal(): void {
-  openAccountDialog('signin');
-}
-
-/** Close the account dialog. */
-export function hideSignInModal(): void {
-  closeAccountDialog();
 }

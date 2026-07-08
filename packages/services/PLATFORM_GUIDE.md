@@ -16,7 +16,7 @@ There is exactly one auth provider: `OxyProvider` from `@oxyhq/services`. It run
 |----------|----------|----------|-------|
 | **Expo / React Native** | `@oxyhq/services` + `@oxyhq/core` | `OxyProvider` | Full UI, components, screens |
 | **Web (Vite + React Native Web)** | `@oxyhq/services` + `@oxyhq/core` | `OxyProvider` | Same provider; `packages/console` is the reference setup |
-| **IdP shell (auth.oxy.so)** | `@oxyhq/services` + `@oxyhq/core` | `OxyProvider coldBoot={false}` | Renders sign-in/consent surfaces without acting as session authority |
+| **IdP shell (auth.oxy.so)** | `@oxyhq/services` + `@oxyhq/core` | `OxyProvider` | Same device-first cold boot as every Oxy app; emits OAuth codes after auth |
 | **Node.js / Backend** | `@oxyhq/core` | N/A | API client + `@oxyhq/core/server` middleware, no React |
 
 ## Package Details
@@ -173,7 +173,7 @@ On web, the account dialog offers Commons QR sign-in (scan from the Oxy app on y
 
 ### IdP shell (auth.oxy.so)
 
-The identity provider mounts the same components with `coldBoot={false}` — it renders the sign-in and `OxyConsentScreen` surfaces for the OAuth flow but is **not** an ecosystem session authority and does not run the device cold boot. Regular apps must never set `coldBoot={false}`.
+The identity provider mounts the same `OxyProvider` with the same device-first cold boot as every other Oxy app. It renders sign-in and `OxyConsentScreen` surfaces for the OAuth authorize/consent flow after authenticating on its own origin.
 
 ---
 

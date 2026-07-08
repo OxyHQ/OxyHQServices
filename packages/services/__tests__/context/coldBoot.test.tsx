@@ -1,13 +1,7 @@
 /**
  * @jest-environment-options {"url": "https://app.oxy.so/"}
  *
- * Device-first cold boot in `OxyContext`.
- *
- * The cold-boot SSO ladder (sso-return / silent-iframe / sso-bounce / IdP
- * session-check) is GONE. Cold boot now = `runSessionColdBoot` from
- * `@oxyhq/core` — a zero-cookie ladder (`device-secret-mint` on web+native,
- * `shared-key-signin` on native) that NEVER redirects to a login page. This
- * suite pins the two end-to-end contracts that matter to consumers:
+ * Device-first cold boot in `OxyContext` via `runProviderColdBoot`.
  *
  *   1. A signed-out boot resolves to `isAuthResolved: true` / `isAuthenticated:
  *      false` WITHOUT any navigation — the app renders its own "Sign in with

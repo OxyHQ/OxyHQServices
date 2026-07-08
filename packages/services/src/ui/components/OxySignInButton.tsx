@@ -17,7 +17,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { Button, type ButtonVariant } from '@oxyhq/bloom/button';
 import { useOxy } from '../context/OxyContext';
 import { LogoIcon } from './logo/LogoIcon';
-import { subscribeToSignInModal } from '../navigation/accountDialogManager';
+import { subscribeToAccountDialog } from '../navigation/accountDialogManager';
 import { redirectToAuthorize, openAuthorizeUrlNative } from './oauthNavigation';
 
 /**
@@ -164,7 +164,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     // change regardless of platform or what opened/closed it.
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    useEffect(() => subscribeToSignInModal(setIsModalOpen), []);
+    useEffect(() => subscribeToAccountDialog(setIsModalOpen), []);
 
     // The application's public identity is resolved lazily on first press and its
     // promise cached, so rapid taps share one in-flight resolve. The cache is

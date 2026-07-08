@@ -50,7 +50,7 @@ const hasIdentity = await KeyManager.hasIdentity();
 The session authority is the server-side `DeviceSession` (one document per device: signed-in accounts + active account + revision). `@oxyhq/core` owns the whole client side of that contract:
 
 - **`SessionClient`** (`src/session/`) — reads `GET /session/device/state`, mutates via `POST /session/device/{add,switch,signout}`, and applies `session_state` socket pushes (room `device:<deviceId>`, token-free payload) so every app on the same device stays in sync.
-- **`runSessionColdBoot`** (`src/boot/coldBootV2.ts`) — the ordered, short-circuit cold-boot runner used by `OxyProvider`. It restores silently from device state or resolves to logged-out; it NEVER auto-redirects to a login page.
+- **`runSessionColdBoot`** (`src/boot/sessionColdBoot.ts`) — the ordered, short-circuit cold-boot runner used by `OxyProvider`. It restores silently from device state or resolves to logged-out; it NEVER auto-redirects to a login page.
 - **Zero-cookie transport** — every successful sign-in returns `deviceId` + a 256-bit `deviceSecret`, which the client persists first-party (localStorage per web origin; SecureStore on native). `POST /session/device/token` mints/refreshes a short access token from `{ deviceId, deviceSecret }` (no bearer, no cookies — possession of the secret is the proof) and rotates the secret in-use. There is no cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop. Full contract: [docs/auth/device-session.md](../../docs/auth/device-session.md).
 
 Consumers never build session restore themselves — mount `OxyProvider` from `@oxyhq/services` with a registered `clientId`.

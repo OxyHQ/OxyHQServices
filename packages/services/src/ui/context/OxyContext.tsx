@@ -268,17 +268,6 @@ export interface OxyContextProviderProps {
  */
 const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * How long the cold boot WAITS for the post-boot SessionClient handoff
- * (`addCurrentAccount` + `start` + `syncFromClient`) before it resolves auth and
- * stops blocking. Once a boot step planted a token the user is already
- * authenticated — the handoff only populates the multi-account set and the
- * server-authoritative active account, and those also arrive via the socket
- * subscription. So on a slow backend we stop AWAITING the handoff here (it keeps
- * running in the background and projects when it lands) rather than delaying
- * auth resolution.
- */
-
 /** The internal commit input — a session plus the zero-cookie device credential
  * (`deviceId` + `deviceSecret`) that is not on the public `SessionLoginResponse`.
  * All extras optional so `SessionLoginResponse` is assignable. */
@@ -926,7 +915,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, []);
 
   // Expose the live open/close controls to the imperative manager so
-  // `showSignInModal()` (and any app-level imperative "sign in" handler) works.
+  // Imperative `openAccountDialog('signin')` (and app-level sign-in handlers) works.
   useEffect(
     () => registerAccountDialogControls({ open: openAccountDialog, close: closeAccountDialog }),
     [openAccountDialog, closeAccountDialog],

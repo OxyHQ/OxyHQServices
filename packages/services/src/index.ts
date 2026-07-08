@@ -258,6 +258,9 @@ export type { RouteName } from './ui/navigation/routes';
 // ---------------------------------------------------------------------------
 // Unified account dialog — imperative entry points
 // ---------------------------------------------------------------------------
-// `showSignInModal` / `hideSignInModal` open / close the unified account dialog
-// on its sign-in view. Prefer `useOxy().openAccountDialog(view?)` inside React.
-export { showSignInModal, hideSignInModal } from './ui/navigation/accountDialogManager';
+// Imperative account dialog entry points (outside React).
+export {
+  openAccountDialog,
+  closeAccountDialog,
+  subscribeToAccountDialog,
+} from './ui/navigation/accountDialogManager';

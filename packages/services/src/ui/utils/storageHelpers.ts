@@ -9,17 +9,6 @@ export interface SessionStorageKeys {
   activeSessionId: string;
   sessionIds: string;
   language: string;
-  /**
-   * DURABLE "this device/app has had a signed-in Oxy session before" hint.
-   * Originally read at cold boot to drive the FedCM-era smart `sso-bounce`
-   * gate (a returning visitor still got one establish bounce; a first-time
-   * anonymous visitor was never force-redirected). That gate and
-   * `allowSsoBounce` were deleted in the device-first cutover — this storage
-   * key is currently defined but not read anywhere; kept rather than removed
-   * here since deleting a storage key is a logic change, out of scope for a
-   * comment sweep. Flag for a follow-up dead-field cleanup.
-   */
-  priorSession: string;
 }
 
 /**
@@ -136,7 +125,6 @@ export const getStorageKeys = (prefix: string = STORAGE_KEY_PREFIX): SessionStor
   activeSessionId: `${prefix}_active_session_id`,
   sessionIds: `${prefix}_session_ids`,
   language: `${prefix}_language`,
-  priorSession: `${prefix}_prior_session`,
 });
 
 

@@ -100,7 +100,7 @@ The transport that carries "which device is this?" across reloads is **`deviceId
 
 ## Cold boot
 
-`runSessionColdBoot` (`packages/core/src/boot/coldBootV2.ts`, exported from
+`runSessionColdBoot` (`packages/core/src/boot/sessionColdBoot.ts`, exported from
 `@oxyhq/core`) is a pure ordered short-circuit: the first step that yields a session
 wins. It is invoked by `OxyProvider` on mount — apps never implement restore themselves.
 

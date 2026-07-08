@@ -47,15 +47,6 @@ export type {
 
 export {
     // Schemas
-    fedcmTokenPayloadSchema,
-} from './fedcmToken';
-
-export type {
-    FedcmTokenPayload,
-} from './fedcmToken';
-
-export {
-    // Schemas
     recommendationExcludeTypeSchema,
     recommendationBoostSchema,
     recommendationSignalWeightsSchema,

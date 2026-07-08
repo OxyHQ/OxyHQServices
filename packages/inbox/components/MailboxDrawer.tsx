@@ -18,7 +18,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, OxySignInButton, showSignInModal, ProfileButton } from '@oxyhq/services';
+import { useOxy, OxySignInButton, openAccountDialog, ProfileButton } from '@oxyhq/services';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { Button } from '@oxyhq/bloom/button';
 import { useRouter, usePathname } from 'expo-router';
@@ -189,7 +189,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     // Open the sign-in modal to authenticate a new account. OxyContext picks up
     // the new session and ProfileButton's menu reflects it.
     resetInboxForAccountChange();
-    showSignInModal();
+    openAccountDialog('signin');
   }, [resetInboxForAccountChange]);
 
   const handleNavigateManage = useCallback(() => {

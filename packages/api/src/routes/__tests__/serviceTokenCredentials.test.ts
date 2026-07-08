@@ -146,7 +146,7 @@ jest.mock('../socialAuth', () => ({
   default: express.Router(),
 }));
 
-// auth.ts statically imports the AppGrant + FedCMGrant models (OAuth consent
+// auth.ts statically imports the AppGrant model (OAuth consent
 // grants); mock them so the real Mongoose schema does not run under the global
 // mongoose mock (which lacks Schema.Types).
 jest.mock('../../models/AppGrant', () => ({

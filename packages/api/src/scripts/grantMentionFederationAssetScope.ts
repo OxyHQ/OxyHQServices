@@ -28,10 +28,7 @@
  *   authorises read-only metadata access over assets only.
  *
  * CACHE: service-token scopes are read FRESH from Mongo on every
- * `POST /auth/service-token` mint — there is NO scope cache to bust. The change
- * takes effect on the credential's next token mint. (`approvedClientsCache` is
- * unrelated: it caches approved-client ORIGINS derived from Application
- * `redirectUris`, not service-token scopes.)
+ * `POST /auth/service-token` mint — there is NO scope cache to bust.
  *
  * SAFETY:
  *   - INSPECT by default: logs current + would-add scopes and exits 0 WITHOUT

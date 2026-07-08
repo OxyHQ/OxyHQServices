@@ -52,7 +52,7 @@ jest.mock('zustand/react/shallow', () => ({
 
 jest.mock('../../src/ui/navigation/accountDialogManager', () => ({
   __esModule: true,
-  subscribeToSignInModal: () => () => undefined,
+  subscribeToAccountDialog: () => () => undefined,
 }));
 
 jest.mock('../../src/ui/components/logo/LogoIcon', () => ({ LogoIcon: () => null }));

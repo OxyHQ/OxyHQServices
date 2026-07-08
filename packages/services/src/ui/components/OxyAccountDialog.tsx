@@ -2,12 +2,8 @@
  * OxyAccountDialog — the ONE unified account dialog for `@oxyhq/services`.
  *
  * A thin React Native binding over the headless `AccountDialogController` in
- * `@oxyhq/core` (bound via `useSyncExternalStore`), presented as a bottom-sheet
- * modal. It REPLACES the five drifting device/account surfaces the SDK shipped
- * before (`ProfileMenu`, `AccountMenu`, `AccountSwitcher`, `SignInAccountChooser`,
- * and `SignInModal`) with a single implementation whose data + state machine live
- * in core, so the RN and web (auth-sdk) bindings render the SAME list from the
- * SAME logic and cannot diverge.
+ * `@oxyhq/core` (bound via `useSyncExternalStore`), presented as a Bloom `<Dialog>`.
+ * One surface for account switching and sign-in — data and state machine live in core.
  *
  * Views (from `snapshot.view`):
  *  - `accounts` — the unified `SwitchableAccount[]` list (device sign-ins ∪ graph
@@ -109,7 +105,7 @@ interface OxyAccountDialogHandlers {
 
 /**
  * The unified account dialog. Mounted once by `OxyProvider`; opened imperatively
- * via `useOxy().openAccountDialog(view?)` (or the back-compat `showSignInModal`).
+ * via `useOxy().openAccountDialog(view?)` or imperative `openAccountDialog('signin')`.
  */
 const OxyAccountDialog: React.FC = () => {
   const {

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Linking, ScrollView } from 'react-native';
-import { useOxy, LogoText, showSignInModal } from '@oxyhq/services';
+import { useOxy, LogoText, openAccountDialog } from '@oxyhq/services';
 import { logger } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
@@ -12,8 +12,8 @@ import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
  *
  * Accounts owns no sign-in UI of its own. Authentication is an ecosystem
  * concern, so this screen is a thin branded shell — logo, welcome copy, and a
- * single "Sign in with Oxy" button — that hands off entirely to the SDK's
- * in-app `SignInModal` (mounted globally by `OxyProvider`). That modal owns
+ * single "Sign in with Oxy" button — that hands off to the SDK's in-app
+ * `OxyAccountDialog` (mounted globally by `OxyProvider`).
  * every auth path: the first-party password + optional-2FA flow as the
  * primary action, plus the cross-app device flow (same-device deep-link +
  * "sign in on another device" QR) as a secondary option. There is no
@@ -38,7 +38,7 @@ export default function SignInScreen() {
     // Reveals the SDK's shared sign-in surface: "Continue with Oxy" IdP popup,
     // a same-device deep-link to the Oxy app, and a QR for another device. The
     // modal is mounted by OxyProvider; this just opens it.
-    showSignInModal();
+    openAccountDialog('signin');
   }, []);
 
   const handleGetTheApp = useCallback(() => {
