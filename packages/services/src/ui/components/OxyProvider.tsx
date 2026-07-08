@@ -12,6 +12,13 @@ import { setupFonts } from './FontLoader';
 import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
+import { captureDeviceJoinFragmentFromUrl } from '../utils/deviceJoin';
+
+// Strip `#oxy_device=…&device_secret=…` synchronously on first module load —
+// before React paints — so join credentials never linger in the address bar.
+if (typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined') {
+  captureDeviceJoinFragmentFromUrl();
+}
 
 /**
  * Background color shown for the brief window between mount and the

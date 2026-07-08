@@ -18,6 +18,9 @@ export const OXY_DEVICE_JOIN_ATTEMPTED_KEY = 'oxy.device_join_attempted';
 /** Per-origin marker: this app aligned its device credential via auth.oxy.so/device/join. */
 export const OXY_DEVICE_JOIN_V2_KEY = 'oxy.device_join_v2';
 
+/** sessionStorage bridge between sync URL capture and async auth store persist. */
+export const OXY_DEVICE_JOIN_PENDING_KEY = 'oxy.device_join_pending';
+
 /** Fragment keys returned by auth.oxy.so/device/join. */
 export const DEVICE_JOIN_FRAGMENT_DEVICE_ID = 'oxy_device';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_SECRET = 'device_secret';
@@ -150,12 +153,67 @@ export function stripDeviceJoinFragmentFromUrl(): boolean {
   if (!parsed) {
     return false;
   }
+  const cleanPath = `${location.pathname}${location.search}`;
   if (history?.replaceState) {
-    const url = new URL(location.href);
-    url.hash = '';
-    history.replaceState(history.state, '', `${url.pathname}${url.search}`);
+    history.replaceState(history.state, '', cleanPath);
   }
   return true;
+}
+
+/**
+ * Synchronously capture join credentials from the URL fragment and strip them
+ * BEFORE React paints. Called at module load in `OxyProvider` so secrets never
+ * linger in the address bar or bookmarkable history entry.
+ */
+export function captureDeviceJoinFragmentFromUrl(): DeviceJoinFragment | null {
+  if (typeof globalThis === 'undefined') {
+    return null;
+  }
+  const location = (globalThis as { location?: Location }).location;
+  if (!location?.hash) {
+    return null;
+  }
+  const creds = parseDeviceJoinFragment(location.hash);
+  if (!creds) {
+    return null;
+  }
+  stripDeviceJoinFragmentFromUrl();
+  try {
+    (globalThis as { sessionStorage?: Storage }).sessionStorage?.setItem(
+      OXY_DEVICE_JOIN_PENDING_KEY,
+      JSON.stringify(creds),
+    );
+  } catch {
+    // Async persist will re-parse if hash somehow remains.
+  }
+  return creds;
+}
+
+/** Read + clear credentials staged by {@link captureDeviceJoinFragmentFromUrl}. */
+export function readPendingDeviceJoinCredential(): DeviceJoinFragment | null {
+  try {
+    const raw = (globalThis as { sessionStorage?: Storage }).sessionStorage?.getItem(
+      OXY_DEVICE_JOIN_PENDING_KEY,
+    );
+    if (!raw) {
+      return null;
+    }
+    (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
+      OXY_DEVICE_JOIN_PENDING_KEY,
+    );
+    const parsed = JSON.parse(raw) as DeviceJoinFragment;
+    if (
+      typeof parsed?.deviceId === 'string' &&
+      parsed.deviceId.length > 0 &&
+      typeof parsed?.deviceSecret === 'string' &&
+      parsed.deviceSecret.length > 0
+    ) {
+      return parsed;
+    }
+  } catch {
+    // Best-effort.
+  }
+  return null;
 }
 
 /** Minimal client surface for hub-side join credential resolution. */

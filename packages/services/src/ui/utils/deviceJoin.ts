@@ -2,24 +2,32 @@ import type { AuthStateStore, OxyServices, PersistedAuthState } from '@oxyhq/cor
 import {
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   buildDeviceJoinUrl,
+  captureDeviceJoinFragmentFromUrl,
   isAllowedDeviceJoinOrigin,
   isDeviceJoinV2Complete,
   markDeviceJoinV2Complete,
   parseDeviceJoinFragment,
+  readPendingDeviceJoinCredential,
   resolveHubDeviceCredentialForJoin,
   stripDeviceJoinFragmentFromUrl,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { isIdpHubOrigin } from './idpHubOrigin';
 
+export { captureDeviceJoinFragmentFromUrl } from '@oxyhq/core';
+
 /** Persist device credentials from the join-return fragment. Returns true when applied. */
 export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<boolean> {
   if (!isWebBrowser()) return false;
-  const location = (globalThis as { location?: Location }).location;
-  if (!location?.hash) return false;
 
-  const creds = parseDeviceJoinFragment(location.hash);
-  if (!creds) return false;
+  let creds = readPendingDeviceJoinCredential();
+  if (!creds) {
+    const location = (globalThis as { location?: Location }).location;
+    if (!location?.hash) return false;
+    creds = parseDeviceJoinFragment(location.hash);
+    if (!creds) return false;
+    stripDeviceJoinFragmentFromUrl();
+  }
 
   const existing = await store.load();
   const next: PersistedAuthState = {
@@ -31,7 +39,6 @@ export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<bool
     ...(existing?.expiresAt ? { expiresAt: existing.expiresAt } : {}),
   };
   await store.save(next);
-  stripDeviceJoinFragmentFromUrl();
   markDeviceJoinV2Complete();
 
   try {

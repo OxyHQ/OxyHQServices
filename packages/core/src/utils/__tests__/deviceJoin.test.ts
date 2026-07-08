@@ -7,6 +7,9 @@ import {
   OXY_DEVICE_JOIN_V2_KEY,
   parseDeviceJoinFragment,
   resolveHubDeviceCredentialForJoin,
+  captureDeviceJoinFragmentFromUrl,
+  readPendingDeviceJoinCredential,
+  stripDeviceJoinFragmentFromUrl,
 } from '../deviceJoin';
 import { createMemoryAuthStateStore } from '../../session/authStateStore';
 
@@ -66,6 +69,57 @@ describe('deviceJoin', () => {
     markDeviceJoinV2Complete();
     expect(isDeviceJoinV2Complete()).toBe(true);
     expect(localStorage.getItem(OXY_DEVICE_JOIN_V2_KEY)).toBe('1');
+  });
+
+  describe('captureDeviceJoinFragmentFromUrl', () => {
+    let sessionStorageData: Record<string, string>;
+    const replaceState = jest.fn();
+
+    beforeEach(() => {
+      sessionStorageData = {};
+      replaceState.mockClear();
+      Object.defineProperty(globalThis, 'sessionStorage', {
+        configurable: true,
+        value: {
+          getItem: (key: string) => sessionStorageData[key] ?? null,
+          setItem: (key: string, value: string) => {
+            sessionStorageData[key] = value;
+          },
+          removeItem: (key: string) => {
+            delete sessionStorageData[key];
+          },
+        },
+      });
+      Object.defineProperty(globalThis, 'location', {
+        configurable: true,
+        value: {
+          pathname: '/inbox',
+          search: '',
+          hash: '',
+          href: 'https://inbox.oxy.so/inbox',
+        },
+      });
+      Object.defineProperty(globalThis, 'history', {
+        configurable: true,
+        value: { replaceState },
+      });
+    });
+
+    afterEach(() => {
+      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+      delete (globalThis as { location?: Location }).location;
+      delete (globalThis as { history?: History }).history;
+    });
+
+    it('strips join credentials from the URL and stages them in sessionStorage', () => {
+      const location = (globalThis as { location: { hash: string } }).location;
+      location.hash = '#oxy_device=d1&device_secret=s1';
+
+      const creds = captureDeviceJoinFragmentFromUrl();
+      expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+      expect(replaceState).toHaveBeenCalledWith(undefined, '', '/inbox');
+      expect(readPendingDeviceJoinCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+    });
   });
 
   describe('resolveHubDeviceCredentialForJoin', () => {
