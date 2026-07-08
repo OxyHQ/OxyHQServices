@@ -3,6 +3,8 @@ import {
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   buildDeviceJoinUrl,
   isAllowedDeviceJoinOrigin,
+  isDeviceJoinV2Complete,
+  markDeviceJoinV2Complete,
   parseDeviceJoinFragment,
   stripDeviceJoinFragmentFromUrl,
 } from '@oxyhq/core';
@@ -29,6 +31,7 @@ export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<bool
   };
   await store.save(next);
   stripDeviceJoinFragmentFromUrl();
+  markDeviceJoinV2Complete();
 
   try {
     (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
@@ -64,7 +67,26 @@ function markJoinAttempted(): void {
 }
 
 /**
- * When an official first-party web app has no local device id, redirect ONCE to
+ * Whether an official first-party web app should redirect to auth.oxy.so/device/join.
+ * Redirect when there is no local credential, OR when this origin still holds a
+ * pre-join-era device id that was never aligned through the hub (one-time migration).
+ */
+export async function shouldRedirectForDeviceJoin(store: AuthStateStore): Promise<boolean> {
+  if (!isWebBrowser() || isIdpHubOrigin()) {
+    return false;
+  }
+  const location = (globalThis as { location?: Location }).location;
+  if (!location || !isAllowedDeviceJoinOrigin(location.origin)) {
+    return false;
+  }
+  if (isDeviceJoinV2Complete()) {
+    return !(await hasPersistedDeviceCredential(store));
+  }
+  return true;
+}
+
+/**
+ * When an official first-party web app needs device join, redirect ONCE to
  * auth.oxy.so/device/join. Returns true when navigation was initiated.
  */
 export function maybeRedirectDeviceJoin(): boolean {

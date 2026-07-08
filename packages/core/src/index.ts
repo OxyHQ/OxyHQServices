@@ -536,12 +536,15 @@ export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
     OXY_DEVICE_JOIN_ATTEMPTED_KEY,
+    OXY_DEVICE_JOIN_V2_KEY,
     DEVICE_JOIN_FRAGMENT_DEVICE_ID,
     DEVICE_JOIN_FRAGMENT_DEVICE_SECRET,
     buildIdpHubOrigin,
     buildDeviceJoinUrl,
     buildDeviceJoinReturnUrl,
     isAllowedDeviceJoinOrigin,
+    isDeviceJoinV2Complete,
+    markDeviceJoinV2Complete,
     parseDeviceJoinFragment,
     stripDeviceJoinFragmentFromUrl,
 } from './utils/deviceJoin';

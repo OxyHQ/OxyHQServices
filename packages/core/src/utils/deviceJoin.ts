@@ -13,6 +13,9 @@ import { registrableApex } from './registrableApex';
 /** One join redirect attempt per tab navigation (sessionStorage). */
 export const OXY_DEVICE_JOIN_ATTEMPTED_KEY = 'oxy.device_join_attempted';
 
+/** Per-origin marker: this app aligned its device credential via auth.oxy.so/device/join. */
+export const OXY_DEVICE_JOIN_V2_KEY = 'oxy.device_join_v2';
+
 /** Fragment keys returned by auth.oxy.so/device/join. */
 export const DEVICE_JOIN_FRAGMENT_DEVICE_ID = 'oxy_device';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_SECRET = 'device_secret';
@@ -104,6 +107,31 @@ export function buildDeviceJoinReturnUrl(returnUrl: string, creds: DeviceJoinFra
   params.set(DEVICE_JOIN_FRAGMENT_DEVICE_SECRET, creds.deviceSecret);
   url.hash = params.toString();
   return url.toString();
+}
+
+/** True when this origin completed the v2 device-join migration (localStorage). */
+export function isDeviceJoinV2Complete(): boolean {
+  try {
+    return (
+      (globalThis as { localStorage?: Storage }).localStorage?.getItem(
+        OXY_DEVICE_JOIN_V2_KEY,
+      ) === '1'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Mark this origin as device-join v2 aligned (after a successful join return). */
+export function markDeviceJoinV2Complete(): void {
+  try {
+    (globalThis as { localStorage?: Storage }).localStorage?.setItem(
+      OXY_DEVICE_JOIN_V2_KEY,
+      '1',
+    );
+  } catch {
+    // Best-effort.
+  }
 }
 
 /** Strip join fragment params from the current URL (history.replaceState-safe). */

@@ -43,6 +43,7 @@ import { isIdpHubOrigin } from '../utils/idpHubOrigin';
 import {
   applyDeviceJoinReturn,
   maybeRedirectDeviceJoin,
+  shouldRedirectForDeviceJoin,
   loadPersistedDeviceCredential,
   clearDeviceJoinAttemptFlag,
 } from '../utils/deviceJoin';
@@ -1065,15 +1066,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
 
-      // Official web apps: one redirect to auth.oxy.so/device/join when no local device id.
+      // Official web apps: one redirect to auth.oxy.so/device/join when no local
+      // device id, or once to migrate pre-join-era credentials to the hub canonical id.
       if (coldBoot && isWebBrowser() && clientIdProp && !isIdpHubOrigin()) {
-        const location = (globalThis as { location?: Location }).location;
-        const origin = location?.origin ?? '';
-        if (origin && isAllowedDeviceJoinOrigin(origin)) {
-          const cred = await loadPersistedDeviceCredential(authStore);
-          if (!cred && maybeRedirectDeviceJoin()) {
-            return;
-          }
+        if (await shouldRedirectForDeviceJoin(authStore) && maybeRedirectDeviceJoin()) {
+          return;
         }
       }
 

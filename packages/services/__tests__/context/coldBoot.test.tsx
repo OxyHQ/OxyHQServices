@@ -27,7 +27,7 @@
 import React from 'react';
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AUTH_STATE_STORAGE_KEY, type User } from '@oxyhq/core';
+import { AUTH_STATE_STORAGE_KEY, OXY_DEVICE_JOIN_V2_KEY, type User } from '@oxyhq/core';
 
 const fakeSessionClient = {
   getState: jest.fn(() => null),
@@ -144,6 +144,8 @@ describe('OxyContext cold boot (device-first)', () => {
   });
 
   it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
+    // Post-migration: v2 join completed on this origin.
+    window.localStorage.setItem(OXY_DEVICE_JOIN_V2_KEY, '1');
     // A returning device: a persisted zero-cookie device credential (`deviceId` +
     // `deviceSecret`) → cold boot mints a fresh access token from it.
     window.localStorage.setItem(
@@ -177,5 +179,28 @@ describe('OxyContext cold boot (device-first)', () => {
     await waitFor(() => expect(fakeSessionClient.addCurrentAccount).toHaveBeenCalledTimes(1));
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
     expect(fakeSessionClient.start).toHaveBeenCalled();
+  });
+
+  it('redirects pre-join-era device credentials to join once for migration', async () => {
+    window.localStorage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'sess_old',
+        userId: USER_ID,
+        deviceId: 'dev-legacy',
+        deviceSecret: 'legacy.secret',
+        accessToken: 'legacy.access',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    );
+    const { stub } = buildStub();
+
+    renderProvider(stub);
+
+    await waitFor(() => expect(capturedContext?.isAuthResolved).toBe(true));
+
+    expect(capturedContext?.isAuthenticated).toBe(false);
+    expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBe('1');
   });
 });

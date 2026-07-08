@@ -45,22 +45,6 @@ async function resolveHubDeviceCredential(
   return provisioned;
 }
 
-function safeReturnUrl(raw: string | null): string | null {
-  if (!raw) return null;
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return null;
-    }
-    if (!isAllowedDeviceJoinOrigin(parsed.origin)) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Zero-UI device join hub: read or provision the canonical device credential on
  * auth.oxy.so and redirect back to the caller with `#oxy_device=…` in the fragment.
