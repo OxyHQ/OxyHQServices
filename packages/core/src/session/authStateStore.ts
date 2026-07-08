@@ -106,17 +106,26 @@ function deserialize(raw: string | null): PersistedAuthState | null {
     return null;
   }
   const candidate = parsed as Record<string, unknown>;
-  if (
-    typeof candidate.sessionId !== 'string' ||
-    typeof candidate.userId !== 'string' ||
-    candidate.sessionId.length === 0 ||
-    candidate.userId.length === 0
-  ) {
+  const hasDeviceCredential =
+    typeof candidate.deviceId === 'string' &&
+    candidate.deviceId.length > 0 &&
+    typeof candidate.deviceSecret === 'string' &&
+    candidate.deviceSecret.length > 0;
+
+  const hasSessionIdentity =
+    typeof candidate.sessionId === 'string' &&
+    typeof candidate.userId === 'string' &&
+    candidate.sessionId.length > 0 &&
+    candidate.userId.length > 0;
+
+  // Device-only bootstrap (post join, pre-sign-in): durable credential without session.
+  if (!hasSessionIdentity && !hasDeviceCredential) {
     return null;
   }
+
   const state: PersistedAuthState = {
-    sessionId: candidate.sessionId,
-    userId: candidate.userId,
+    sessionId: hasSessionIdentity ? (candidate.sessionId as string) : '',
+    userId: hasSessionIdentity ? (candidate.userId as string) : '',
   };
   if (typeof candidate.deviceId === 'string' && candidate.deviceId.length > 0) {
     state.deviceId = candidate.deviceId;

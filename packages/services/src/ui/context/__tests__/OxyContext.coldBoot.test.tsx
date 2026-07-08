@@ -11,7 +11,7 @@
 import { render, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { OxyServices, runSessionColdBoot } from '@oxyhq/core';
+import { OxyServices, runSessionColdBoot, AUTH_STATE_STORAGE_KEY } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import type { LoginSessionResult } from '@oxyhq/contracts';
 import { OxyContextProvider, useOxy, type OxyContextState } from '../OxyContext';
@@ -51,7 +51,7 @@ jest.mock('../../session', () => {
         registerAndActivate: jest.fn(() => Promise.resolve()),
         switchAccount: jest.fn(() => Promise.resolve()),
       };
-      const host = { setCurrentAccountId: jest.fn() };
+      const host = { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null };
       return { client, host };
     }),
   };
@@ -153,6 +153,10 @@ describe('OxyContextProvider coldBoot opt-out (IdP mode)', () => {
   });
 
   it('default (coldBoot omitted): runs the device-first cold boot', async () => {
+    window.localStorage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({ sessionId: '', userId: '', deviceId: 'd-test', deviceSecret: 's-test' }),
+    );
     const oxy = new OxyServices({ baseURL: 'https://api.test.local' });
     const { getState } = renderProvider({ oxyServices: oxy });
 

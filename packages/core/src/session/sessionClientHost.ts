@@ -1,5 +1,5 @@
 import type { OxyServices } from '../OxyServices';
-import type { SessionClientHost } from './SessionClient';
+import type { DeviceCredential, SessionClientHost } from './SessionClient';
 
 /**
  * Thin `SessionClientHost` adapter over an `OxyServices` instance.
@@ -15,17 +15,25 @@ import type { SessionClientHost } from './SessionClient';
  */
 export function createSessionClientHost(
   oxyServices: OxyServices,
-): SessionClientHost & { setCurrentAccountId(id: string | null): void } {
+): SessionClientHost & {
+  setCurrentAccountId(id: string | null): void;
+  setDeviceCredential(credential: DeviceCredential | null): void;
+} {
   let currentAccountId: string | null = null;
+  let deviceCredential: DeviceCredential | null = null;
   return {
     makeRequest: (method, url, data, options) => oxyServices.makeRequest(method, url, data, options),
     getBaseURL: () => oxyServices.getBaseURL(),
     getAccessToken: () => oxyServices.getAccessToken(),
+    getDeviceCredential: () => deviceCredential,
     onTokensChanged: (listener) => oxyServices.onTokensChanged(listener),
     setTokens: (accessToken) => oxyServices.setTokens(accessToken),
     getCurrentAccountId: () => currentAccountId,
     setCurrentAccountId: (id) => {
       currentAccountId = id;
+    },
+    setDeviceCredential: (credential) => {
+      deviceCredential = credential;
     },
   };
 }

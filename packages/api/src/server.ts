@@ -230,8 +230,7 @@ interface AuthenticatedSocket extends Socket {
 import { createSocketRateLimiter } from './middleware/socketRateLimit';
 io.use(createSocketRateLimiter(100, 10_000)); // 100 events per 10s
 
-// Socket.IO authentication middleware. Requires an authenticated user (valid
-// bearer access token) — see resolveSocketIdentity.
+// Socket.IO authentication middleware — bearer OR device credential.
 io.use((socket: AuthenticatedSocket, next) => {
   resolveSocketIdentity(socket.handshake)
     .then((identity) => {
@@ -239,7 +238,11 @@ io.use((socket: AuthenticatedSocket, next) => {
         next(new Error('Authentication error'));
         return;
       }
-      socket.user = identity.user;
+      if (identity.kind === 'user') {
+        socket.user = identity.user;
+      } else {
+        socket.deviceId = identity.deviceId;
+      }
       next();
     })
     .catch((error) => {
@@ -248,13 +251,15 @@ io.use((socket: AuthenticatedSocket, next) => {
     });
 });
 
-// Socket connection handling — authenticated users only.
+// Socket connection handling — authenticated users and device-scoped listeners.
 io.on('connection', (socket: AuthenticatedSocket) => {
   logger.debug('Socket connected', { socketId: socket.id });
 
-  // A user socket joins `user:<id>` + `device:<deviceId>` (JWT claim). All ids
-  // are server-resolved — see socketRoomsFor.
-  const rooms = socketRoomsFor({ user: socket.user });
+  const rooms = socket.user
+    ? socketRoomsFor({ user: socket.user })
+    : socket.deviceId
+      ? socketRoomsFor({ deviceId: socket.deviceId })
+      : [];
   for (const room of rooms) {
     socket.join(room);
   }

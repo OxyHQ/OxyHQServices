@@ -35,17 +35,22 @@ export function deviceRoomFor(decoded: { deviceId?: string | null }): string | n
 /**
  * The rooms a connected socket should join, given its resolved identity. An
  * AUTHENTICATED user socket joins BOTH `user:<id>` (notifications) and its
- * `device:<deviceId>` room (JWT claim). The deviceId is always server-resolved
- * from the JWT claim, never client-supplied.
+ * `device:<deviceId>` room (JWT claim). A device-only socket joins ONLY its
+ * `device:<deviceId>` room — ids are always server-resolved, never client-supplied.
  */
 export function socketRoomsFor(identity: {
   user?: { id: string; deviceId?: string | null } | null;
+  deviceId?: string | null;
 }): string[] {
   const rooms: string[] = [];
   if (identity.user?.id) {
     rooms.push(`user:${identity.user.id}`);
   }
-  const deviceRoom = identity.user ? deviceRoomFor(identity.user) : null;
+  const deviceRoom = identity.user
+    ? deviceRoomFor(identity.user)
+    : identity.deviceId
+      ? `device:${identity.deviceId}`
+      : null;
   if (deviceRoom) {
     rooms.push(deviceRoom);
   }

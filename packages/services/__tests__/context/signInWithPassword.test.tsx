@@ -48,7 +48,7 @@ jest.mock('../../src/ui/session', () => {
     ...actual,
     createSessionClient: jest.fn(() => ({
       client: fakeSessionClient,
-      host: { setCurrentAccountId: jest.fn() },
+      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null },
     })),
   };
 });

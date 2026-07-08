@@ -22,6 +22,7 @@ function host(): SessionClientHost {
     makeRequest: jest.fn(),
     getBaseURL: () => 'http://test.invalid',
     getAccessToken: () => 'token',
+    getDeviceCredential: () => null,
     onTokensChanged: () => () => undefined,
     setTokens: jest.fn(),
     getCurrentAccountId: () => null,

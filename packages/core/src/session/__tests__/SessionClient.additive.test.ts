@@ -16,6 +16,7 @@ function makeHost(makeRequest: jest.Mock, currentAccountId: string | null = null
     makeRequest,
     getBaseURL: () => 'http://test.invalid',
     getAccessToken: () => 't',
+    getDeviceCredential: () => null,
     onTokensChanged: () => () => undefined,
     setTokens: jest.fn(),
     getCurrentAccountId: () => currentAccountId,

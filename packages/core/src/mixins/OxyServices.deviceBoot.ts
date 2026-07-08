@@ -57,5 +57,23 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
         throw this.handleError(error);
       }
     }
+
+    /** Mint the initial device secret for a new device (hub join provisioning). */
+    async provisionDevice(deviceId?: string): Promise<{ deviceId: string; deviceSecret: string }> {
+      try {
+        const res = await this.makeRequest<{ deviceId: string; deviceSecret: string }>(
+          'POST',
+          '/session/device/provision',
+          deviceId ? { deviceId } : {},
+          { cache: false, skipAuth: true },
+        );
+        if (!res?.deviceId || !res?.deviceSecret) {
+          throw new Error('session/device/provision returned an unexpected response shape');
+        }
+        return res;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
   };
 }

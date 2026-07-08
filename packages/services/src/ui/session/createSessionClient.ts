@@ -27,8 +27,8 @@ import { createTokenTransport } from './tokenTransport';
  * alongside the client so the caller can call `host.setCurrentAccountId(...)`
  * as the active account changes.
  *
- * The realtime socket is bearer-only: a signed-out tab cannot join any device
- * room, so there is no signed-out socket wiring.
+ * The realtime socket uses bearer when authenticated, or deviceId+deviceSecret
+ * when signed out (after the one-shot join redirect).
  */
 export function createSessionClient(
   oxyServices: OxyServices,

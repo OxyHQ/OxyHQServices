@@ -57,7 +57,7 @@ jest.mock('../../src/ui/session', () => {
         addCurrentAccount: jest.fn(async () => undefined),
         start: jest.fn(async () => undefined),
       },
-      host: { setCurrentAccountId: jest.fn() },
+      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null },
     })),
   };
 });
