@@ -458,9 +458,25 @@ export function AuthorizePage() {
           headers: { Authorization: `Bearer ${accessToken}` },
         }
       );
-      // A non-OK response leaves `body` null → `consentRequiredFromBody`
-      // fails safe to true (consent screen shown).
-      body = response.ok ? await response.json().catch(() => null) : null;
+      if (!response.ok) {
+        // Misconfigured redirect_uri (common prod drift) returns 403 before the
+        // trusted-app auto-approve branch runs. Fail closed with a visible error
+        // instead of falling through to the consent screen — official apps should
+        // never prompt here.
+        if (response.status === 403 || response.status === 400) {
+          const errPayload = await response.json().catch(() => ({}));
+          const message =
+            typeof errPayload?.message === "string"
+              ? errPayload.message
+              : "Authorization failed. Return to the app and try again.";
+          setAutoApproving(false);
+          setData((prev) => ({ ...prev, error: message }));
+          return;
+        }
+        body = null;
+      } else {
+        body = await response.json().catch(() => null);
+      }
     } catch {
       body = null;
     }
