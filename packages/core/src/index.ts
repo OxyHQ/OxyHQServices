@@ -534,6 +534,22 @@ export {
 } from './utils/oauthPkce';
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
+export {
+    OXY_IDP_BRIDGE_ATTEMPTED_KEY,
+    IDP_HANDOFF_BRIDGE_MESSAGE,
+    IDP_HANDOFF_DONE_MESSAGE,
+    buildIdpHubOrigin,
+    buildIdpBridgeUrl,
+    buildIdpHandoffEmbedUrl,
+    isAllowedBridgeParentOrigin,
+    isIdpHubMessageOrigin,
+} from './utils/idpHandoffBridge';
+export type {
+    IdpHandoffBridgeStatus,
+    IdpHandoffBridgeOutboundMessage,
+    IdpHandoffDoneOutboundMessage,
+} from './utils/idpHandoffBridge';
+
 // ---------------------------------------------------------------------------
 // Session sync (device-scoped multi-account session client)
 // ---------------------------------------------------------------------------

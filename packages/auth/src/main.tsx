@@ -16,6 +16,7 @@ import { AuthorizePage } from "@/src/pages/authorize"
 import { RecoverPage } from "@/src/pages/recover"
 import { SocialCallbackPage } from "@/src/pages/social-callback"
 import { HandoffPage } from "@/src/pages/handoff"
+import { BridgePage } from "@/src/pages/bridge"
 import "@/app/globals.css"
 
 function ExternalRedirect({ url }: { url: string }) {
@@ -76,6 +77,7 @@ function App() {
                             {/* Callback routes (no layout) */}
                             <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
                             <Route path="/handoff" element={<HandoffPage />} />
+                            <Route path="/bridge" element={<BridgePage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />
                             <Route path="*" element={<Navigate to="/login" replace />} />

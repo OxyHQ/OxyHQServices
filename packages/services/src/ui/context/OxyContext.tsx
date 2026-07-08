@@ -43,6 +43,7 @@ import {
   maybeRedirectIdpHandoff,
   isIdpHubOrigin,
 } from '../utils/idpHandoffRedirect';
+import { tryInvisibleIdpHandoffRestore } from '../utils/idpHandoffBridge';
 import {
   maybeStartSilentOAuthRestore,
   consumeSilentOAuthError,
@@ -1105,14 +1106,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
       });
 
-      // Web cross-origin restore: silent OAuth against the IdP hub when local
-      // mint found no usable credential (or secret was stale).
+      // Web cross-origin restore: invisible IdP bridge first (no UI), then
+      // silent OAuth as fallback for third-party / iframe-blocked cases.
       if (
         coldBoot &&
         isWebBrowser() &&
         clientIdProp &&
         outcome.kind !== 'session'
       ) {
+        const bridged = await tryInvisibleIdpHandoffRestore({
+          oxyServices,
+          commitSession: (input) =>
+            commitSessionRef.current(input, {
+              activate: true,
+              skipIdpHandoff: true,
+            }),
+        });
+        if (bridged) {
+          setTokenReady(true);
+          markAuthResolvedRef.current();
+          return;
+        }
+
         const redirected = await maybeStartSilentOAuthRestore({
           oxyServices,
           clientId: clientIdProp,

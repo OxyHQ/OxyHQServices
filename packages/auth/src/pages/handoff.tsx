@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import {
+  IDP_HANDOFF_DONE_MESSAGE,
+  isAllowedBridgeParentOrigin,
+} from "@oxyhq/core";
 import { useOxy } from "@oxyhq/services";
 import {
   AuthFormLayout,
@@ -33,6 +37,8 @@ export function HandoffPage() {
 
   const handoffCode = searchParams.get("code");
   const returnUrl = safeReturnUrl(searchParams.get("return"));
+  const embed = searchParams.get("embed") === "1";
+  const parentOrigin = embed ? searchParams.get("origin") : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +59,38 @@ export function HandoffPage() {
           expiresAt: session.expiresAt,
           user: session.user,
         });
+
+        if (
+          embed &&
+          parentOrigin &&
+          isAllowedBridgeParentOrigin(parentOrigin) &&
+          window.parent !== window
+        ) {
+          window.parent.postMessage(
+            { type: IDP_HANDOFF_DONE_MESSAGE, status: "ok" },
+            parentOrigin,
+          );
+          return;
+        }
+
         if (returnUrl) {
           window.location.replace(returnUrl);
           return;
         }
         if (!cancelled) setError(null);
       } catch (err) {
+        if (
+          embed &&
+          parentOrigin &&
+          isAllowedBridgeParentOrigin(parentOrigin) &&
+          window.parent !== window
+        ) {
+          window.parent.postMessage(
+            { type: IDP_HANDOFF_DONE_MESSAGE, status: "error" },
+            parentOrigin,
+          );
+          return;
+        }
         if (!cancelled) {
           setError(
             err instanceof Error ? err.message : "Handoff exchange failed.",
@@ -71,7 +103,11 @@ export function HandoffPage() {
     return () => {
       cancelled = true;
     };
-  }, [handoffCode, returnUrl, oxyServices, handleWebSession]);
+  }, [handoffCode, returnUrl, embed, parentOrigin, oxyServices, handleWebSession]);
+
+  if (embed) {
+    return null;
+  }
 
   if (error) {
     return (
