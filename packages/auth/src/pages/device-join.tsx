@@ -4,26 +4,10 @@ import {
   OxyServices,
   buildDeviceJoinReturnUrl,
   createWebAuthStateStore,
-  isAllowedDeviceJoinOrigin,
+  parseDeviceJoinReturnUrl,
   resolveHubDeviceCredentialForJoin,
 } from "@oxyhq/core";
 import { getApiBaseUrl } from "@/lib/oxy-api-client";
-
-function safeReturnUrl(raw: string | null): string | null {
-  if (!raw) return null;
-  try {
-    const parsed = new URL(raw);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return null;
-    }
-    if (!isAllowedDeviceJoinOrigin(parsed.origin)) {
-      return null;
-    }
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Zero-UI device join hub: sync the canonical device credential on auth.oxy.so
@@ -32,7 +16,7 @@ function safeReturnUrl(raw: string | null): string | null {
 export function DeviceJoinPage() {
   const [searchParams] = useSearchParams();
   const attemptedRef = useRef(false);
-  const returnUrl = safeReturnUrl(searchParams.get("return"));
+  const returnUrl = parseDeviceJoinReturnUrl(searchParams.get("return"));
 
   useEffect(() => {
     if (attemptedRef.current || !returnUrl) return;

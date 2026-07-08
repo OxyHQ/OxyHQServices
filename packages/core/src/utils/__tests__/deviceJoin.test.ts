@@ -2,9 +2,8 @@ import {
   buildDeviceJoinReturnUrl,
   buildDeviceJoinUrl,
   isAllowedDeviceJoinOrigin,
-  isDeviceJoinV2Complete,
-  markDeviceJoinV2Complete,
-  OXY_DEVICE_JOIN_V2_KEY,
+  isIdpHubOrigin,
+  parseDeviceJoinReturnUrl,
   parseDeviceJoinFragment,
   resolveHubDeviceCredentialForJoin,
   captureDeviceJoinFragmentFromUrl,
@@ -66,12 +65,21 @@ describe('deviceJoin', () => {
     expect(back).toBe('https://inbox.oxy.so/app#oxy_device=d1&device_secret=s1');
   });
 
-  it('tracks device join v2 completion in localStorage', () => {
-    localStorage.removeItem(OXY_DEVICE_JOIN_V2_KEY);
-    expect(isDeviceJoinV2Complete()).toBe(false);
-    markDeviceJoinV2Complete();
-    expect(isDeviceJoinV2Complete()).toBe(true);
-    expect(localStorage.getItem(OXY_DEVICE_JOIN_V2_KEY)).toBe('1');
+  it('validates device join return URLs', () => {
+    expect(parseDeviceJoinReturnUrl('https://inbox.oxy.so/inbox')).toBe(
+      'https://inbox.oxy.so/inbox',
+    );
+    expect(parseDeviceJoinReturnUrl('https://evil.example/')).toBeNull();
+    expect(parseDeviceJoinReturnUrl('javascript:alert(1)')).toBeNull();
+  });
+
+  it('detects IdP hub origin', () => {
+    Object.defineProperty(globalThis, 'location', {
+      configurable: true,
+      value: { href: 'https://auth.oxy.so/device/join' },
+    });
+    expect(isIdpHubOrigin()).toBe(true);
+    delete (globalThis as { location?: Location }).location;
   });
 
   describe('captureDeviceJoinFragmentFromUrl', () => {

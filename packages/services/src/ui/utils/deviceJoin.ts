@@ -3,13 +3,12 @@ import {
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   buildDeviceJoinUrl,
   isAllowedDeviceJoinOrigin,
-  markDeviceJoinV2Complete,
+  isIdpHubOrigin,
   parseDeviceJoinFragment,
   readPendingDeviceJoinCredential,
   stripDeviceJoinFragmentFromUrl,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
-import { isIdpHubOrigin } from './idpHubOrigin';
 
 /** Persist device credentials from the join-return fragment. Returns true when applied. */
 export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<boolean> {
@@ -34,7 +33,6 @@ export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<bool
     ...(existing?.expiresAt ? { expiresAt: existing.expiresAt } : {}),
   };
   await store.save(next);
-  markDeviceJoinV2Complete();
 
   try {
     (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
@@ -81,34 +79,21 @@ export function clearDeviceJoinAttemptFlag(): void {
 }
 
 /**
- * Whether an official first-party web app should redirect to auth.oxy.so/device/join.
- * Redirect only when this origin has no persisted device credential yet.
- * A returning user with `deviceId` + `deviceSecret` restores via cold boot directly.
+ * Redirect an official first-party web app to auth.oxy.so/device/join when this
+ * origin has no persisted device credential yet. Returns true when navigation
+ * was initiated.
  */
-export async function shouldRedirectForDeviceJoin(store: AuthStateStore): Promise<boolean> {
+export async function maybeRedirectForDeviceJoin(store: AuthStateStore): Promise<boolean> {
   if (!isWebBrowser() || isIdpHubOrigin()) {
     return false;
   }
+
   const location = (globalThis as { location?: Location }).location;
   if (!location || !isAllowedDeviceJoinOrigin(location.origin)) {
     return false;
   }
-  return !(await hasPersistedDeviceCredential(store));
-}
 
-/**
- * When an official first-party web app needs device join, redirect ONCE to
- * auth.oxy.so/device/join. Returns true when navigation was initiated.
- */
-export function maybeRedirectDeviceJoin(): boolean {
-  if (!isWebBrowser() || isIdpHubOrigin()) {
-    return false;
-  }
-
-  const location = (globalThis as { location?: Location }).location;
-  if (!location) return false;
-
-  if (!isAllowedDeviceJoinOrigin(location.origin)) {
+  if (await hasPersistedDeviceCredential(store)) {
     return false;
   }
 

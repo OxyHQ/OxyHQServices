@@ -9,7 +9,7 @@ import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
 import { isWebBrowser } from '../utils/isWebBrowser';
-import { clearCrossOriginRestoreGuards } from '../utils/crossOriginRestoreGuards';
+import { clearCrossOriginRestoreGuards } from '../utils/crossOriginRestore';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;

@@ -3,6 +3,9 @@ import {
   buildOAuthAuthorizeUrl,
   generateOAuthState,
   generatePkcePair,
+  isAllowedDeviceJoinOrigin,
+  OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
+  OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   persistOAuthHandshake,
   normalizeOAuthRedirectUri,
@@ -10,11 +13,43 @@ import {
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { redirectToAuthorize } from '../components/oauthNavigation';
-import { isAllowedDeviceJoinOrigin } from '@oxyhq/core';
-import {
-  isCrossOriginRestoreBlocked,
-  markCrossOriginRestoreAttempted,
-} from './crossOriginRestoreGuards';
+
+function sessionStore(): Storage | undefined {
+  return (globalThis as { sessionStorage?: Storage }).sessionStorage;
+}
+
+/** True when this tab already attempted cross-origin restore (join or silent OAuth). */
+export function isCrossOriginRestoreBlocked(): boolean {
+  const store = sessionStore();
+  if (!store) return false;
+  return Boolean(
+    store.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY) ||
+      store.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY) ||
+      store.getItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY),
+  );
+}
+
+/** Mark restore as attempted — never auto-retry until sign-out clears guards. */
+export function markCrossOriginRestoreAttempted(): void {
+  const store = sessionStore();
+  if (!store) return;
+  store.setItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY, '1');
+  store.setItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY, '1');
+  store.setItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY, '1');
+}
+
+/** Clear all cross-origin restore loop guards (call on sign-out). */
+export function clearCrossOriginRestoreGuards(): void {
+  const store = sessionStore();
+  if (!store) return;
+  for (const key of [
+    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
+    OXY_SILENT_OAUTH_ATTEMPTED_KEY,
+    OXY_DEVICE_JOIN_ATTEMPTED_KEY,
+  ]) {
+    store.removeItem(key);
+  }
+}
 
 export interface SilentOAuthRestoreOptions {
   oxyServices: OxyServices;
@@ -25,10 +60,7 @@ export interface SilentOAuthRestoreOptions {
 
 /**
  * Top-level redirect to auth.oxy.so/authorize with `prompt=none` for silent
- * cross-origin session restore. At most one attempt per navigation
- * (`sessionStorage.oxy.silent_oauth_attempted`).
- *
- * Returns `true` when a redirect was initiated.
+ * cross-origin session restore on third-party web apps only.
  */
 export async function maybeStartSilentOAuthRestore(
   opts: SilentOAuthRestoreOptions,
@@ -38,8 +70,6 @@ export async function maybeStartSilentOAuthRestore(
   const location = (globalThis as { location?: Location }).location;
   if (!location) return false;
 
-  // Official first-party apps use the one-shot device join redirect — never
-  // top-level silent OAuth (that flashes auth.oxy.so/authorize).
   if (isAllowedDeviceJoinOrigin(location.origin)) {
     return false;
   }
@@ -77,19 +107,8 @@ export async function maybeStartSilentOAuthRestore(
     redirectToAuthorize(authorizeUrl);
     return true;
   } catch (error) {
-    logger.warn('Silent OAuth restore skipped', { component: 'silentOAuthRestore' }, error);
+    logger.warn('Silent OAuth restore skipped', { component: 'crossOriginRestore' }, error);
     return false;
-  }
-}
-
-/** Clear the silent-OAuth loop guard after a successful restore or terminal error. */
-export function clearSilentOAuthAttemptFlag(): void {
-  try {
-    (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
-      OXY_SILENT_OAUTH_ATTEMPTED_KEY,
-    );
-  } catch {
-    // Best-effort only.
   }
 }
 
@@ -109,8 +128,6 @@ export function consumeSilentOAuthError(): 'login_required' | 'consent_required'
     return null;
   }
 
-  // Terminal for this tab — do NOT clear the attempt flag (that caused infinite
-  // authorize ↔ RP redirect loops when login_required bounced back).
   markCrossOriginRestoreAttempted();
 
   if (history?.replaceState) {

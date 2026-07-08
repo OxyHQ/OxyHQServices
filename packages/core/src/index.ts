@@ -536,7 +536,6 @@ export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
     OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-    OXY_DEVICE_JOIN_V2_KEY,
     OXY_DEVICE_JOIN_PENDING_KEY,
     DEVICE_JOIN_FRAGMENT_DEVICE_ID,
     DEVICE_JOIN_FRAGMENT_DEVICE_SECRET,
@@ -544,8 +543,8 @@ export {
     buildDeviceJoinUrl,
     buildDeviceJoinReturnUrl,
     isAllowedDeviceJoinOrigin,
-    isDeviceJoinV2Complete,
-    markDeviceJoinV2Complete,
+    isIdpHubOrigin,
+    parseDeviceJoinReturnUrl,
     resolveHubDeviceCredentialForJoin,
     captureDeviceJoinFragmentFromUrl,
     readPendingDeviceJoinCredential,

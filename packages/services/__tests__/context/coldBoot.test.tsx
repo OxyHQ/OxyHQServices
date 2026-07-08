@@ -27,7 +27,7 @@
 import React from 'react';
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AUTH_STATE_STORAGE_KEY, OXY_DEVICE_JOIN_V2_KEY, type User } from '@oxyhq/core';
+import { AUTH_STATE_STORAGE_KEY, type User } from '@oxyhq/core';
 
 const fakeSessionClient = {
   getState: jest.fn(() => null),
@@ -144,8 +144,6 @@ describe('OxyContext cold boot (device-first)', () => {
   });
 
   it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
-    // Post-migration: v2 join completed on this origin.
-    window.localStorage.setItem(OXY_DEVICE_JOIN_V2_KEY, '1');
     // A returning device: a persisted zero-cookie device credential (`deviceId` +
     // `deviceSecret`) → cold boot mints a fresh access token from it.
     window.localStorage.setItem(

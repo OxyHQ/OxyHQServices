@@ -25,7 +25,6 @@ import type {
 } from '@oxyhq/core';
 import {
   KeyManager,
-  runSessionColdBoot,
   installAuthRefreshHandler,
   startTokenRefreshScheduler,
   createAccountDialogController,
@@ -37,22 +36,10 @@ import {
   registerAccountDialogControls,
   notifyAccountDialogVisibility,
 } from '../navigation/accountDialogManager';
-import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
 import { redirectToAuthorize } from '../components/oauthNavigation';
 import { isWebBrowser } from '../utils/isWebBrowser';
-import { isIdpHubOrigin } from '../utils/idpHubOrigin';
-import {
-  applyDeviceJoinReturn,
-  maybeRedirectDeviceJoin,
-  shouldRedirectForDeviceJoin,
-  loadPersistedDeviceCredential,
-  clearDeviceJoinAttemptFlag,
-} from '../utils/deviceJoin';
-import {
-  maybeStartSilentOAuthRestore,
-  consumeSilentOAuthError,
-} from '../utils/silentOAuthRestore';
-import { isAllowedDeviceJoinOrigin } from '@oxyhq/core';
+import { runProviderColdBoot } from '../boot/runProviderColdBoot';
+import { loadPersistedDeviceCredential } from '../utils/deviceJoin';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -305,7 +292,6 @@ const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
  * running in the background and projects when it lands) rather than delaying
  * auth resolution.
  */
-const SESSION_HANDOFF_DEADLINE = 6000;
 
 /** The internal commit input — a session plus the zero-cookie device credential
  * (`deviceId` + `deviceSecret`) that is not on the public `SessionLoginResponse`.
@@ -1034,135 +1020,29 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   );
 
   // ── Cold boot ────────────────────────────────────────────────────────────
-  // The single device-first session restore. Runs ONCE after storage init.
-  // `runSessionColdBoot` resolves the device's session (bootstrap-return →
-  // stored-tokens → shared-key (native) → bootstrap-hop (web)) WITHOUT ever
-  // redirecting to a login page; an unresolved boot ends signed-out and the app
-  // renders its "Sign in with Oxy" affordance. On a winning boot the token is
-  // already planted + persisted, so `onSession` only hands off to the
-  // SessionClient (membership + active account + realtime socket) and marks
-  // auth resolved. `onSignedOut` marks auth resolved with no session.
+  // Device-first session restore via `runProviderColdBoot` (see boot/runProviderColdBoot.ts).
   const runColdBoot = useCallback(async (): Promise<void> => {
-    setTokenReady(false);
-    try {
-      if (coldBoot && isWebBrowser()) {
-        await applyDeviceJoinReturn(authStore);
-        await syncDeviceCredentialToHost();
-      }
-
-      if (coldBoot) {
-        consumeSilentOAuthError();
-
-        const oauthCompleted = await tryCompleteOAuthReturn({
-          oxyServices,
-          clientId: clientIdProp,
-          authRedirectUri,
-          commitSession: (input) =>
-            commitSessionRef.current(input, {
-              activate: true,
-            }),
-        });
-        if (oauthCompleted) {
-          setTokenReady(true);
-          markAuthResolvedRef.current();
-          return;
-        }
-      }
-
-      // Official web apps: redirect to auth.oxy.so/device/join only when this
-      // origin has no persisted device credential yet.
-      if (coldBoot && isWebBrowser() && clientIdProp && !isIdpHubOrigin()) {
-        if (await shouldRedirectForDeviceJoin(authStore) && maybeRedirectDeviceJoin()) {
-          return;
-        }
-      }
-
-      const outcome = await runSessionColdBoot({
-        oxy: oxyServices,
-        store: authStore,
-        platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
-        onSession: async (session) => {
-          const handoff = commitSessionRef.current(
-            { sessionId: session.sessionId, accessToken: session.accessToken, userId: session.userId },
-            { activate: false },
-          );
-          let handoffDeadlineId: ReturnType<typeof setTimeout> | undefined;
-          await Promise.race([
-            handoff,
-            new Promise<void>((resolve) => {
-              handoffDeadlineId = setTimeout(resolve, SESSION_HANDOFF_DEADLINE);
-            }),
-          ]).finally(() => {
-            if (handoffDeadlineId !== undefined) {
-              clearTimeout(handoffDeadlineId);
-            }
-          });
-          markAuthResolvedRef.current();
-        },
-        onSignedOut: async () => {
-          await syncDeviceCredentialToHost();
-          const cred = await loadPersistedDeviceCredential(authStore);
-          if (!cred) {
-            clearDeviceJoinAttemptFlag();
-          } else {
-            try {
-              await sessionClient.start();
-            } catch (socketError) {
-              if (__DEV__) {
-                loggerUtil.debug(
-                  'Device socket start failed (non-fatal)',
-                  { component: 'OxyContext', method: 'runColdBoot' },
-                  socketError,
-                );
-              }
-            }
-          }
-          markAuthResolvedRef.current();
-        },
-        onStepError: (id, error) => {
-          if (__DEV__) {
-            loggerUtil.debug(
-              `Cold-boot step "${id}" errored (non-fatal, falling through)`,
-              { component: 'OxyContext', method: 'runColdBoot' },
-              error,
-            );
-          }
-        },
-      });
-
-      // Third-party web apps only: silent OAuth when local mint fails (no join redirect).
-      if (
-        coldBoot &&
-        isWebBrowser() &&
-        clientIdProp &&
-        outcome.kind !== 'session'
-      ) {
-        const location = (globalThis as { location?: Location }).location;
-        const origin = location?.origin ?? '';
-        if (origin && !isAllowedDeviceJoinOrigin(origin)) {
-          const redirected = await maybeStartSilentOAuthRestore({
-            oxyServices,
-            clientId: clientIdProp,
-            redirectUri: authRedirectUri,
-          });
-          if (redirected) {
-            return;
-          }
-        }
-      }
-    } catch (error) {
-      if (__DEV__) {
-        loggerUtil.error(
-          'Cold boot error',
-          error instanceof Error ? error : new Error(String(error)),
-          { component: 'OxyContext', method: 'runColdBoot' },
-        );
-      }
-    } finally {
-      // Backstop: resolve on every exit path so the gate can never hang.
-      markAuthResolvedRef.current();
-    }
-  }, [oxyServices, authStore, coldBoot, clientIdProp, authRedirectUri, syncDeviceCredentialToHost]);
+    await runProviderColdBoot({
+      coldBoot,
+      oxyServices,
+      authStore,
+      clientId: clientIdProp,
+      authRedirectUri,
+      sessionClient,
+      syncDeviceCredentialToHost,
+      commitSession: (input, options) => commitSessionRef.current(input, options),
+      markAuthResolved: () => markAuthResolvedRef.current(),
+      setTokenReady,
+    });
+  }, [
+    oxyServices,
+    authStore,
+    coldBoot,
+    clientIdProp,
+    authRedirectUri,
+    syncDeviceCredentialToHost,
+    sessionClient,
+  ]);
 
   useEffect(() => {
     if (initialized) {

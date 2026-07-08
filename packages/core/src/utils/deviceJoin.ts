@@ -15,9 +15,6 @@ import type { AuthStateStore, PersistedAuthState } from '../session/authStateSto
 /** One join redirect attempt per tab navigation (sessionStorage). */
 export const OXY_DEVICE_JOIN_ATTEMPTED_KEY = 'oxy.device_join_attempted';
 
-/** Per-origin marker: this app aligned its device credential via auth.oxy.so/device/join. */
-export const OXY_DEVICE_JOIN_V2_KEY = 'oxy.device_join_v2';
-
 /** sessionStorage bridge between sync URL capture and async auth store persist. */
 export const OXY_DEVICE_JOIN_PENDING_KEY = 'oxy.device_join_pending';
 
@@ -46,6 +43,42 @@ export interface DeviceJoinFragment {
 
 export function buildIdpHubOrigin(): string {
   return `https://auth.${CENTRAL_IDP_APEX}`;
+}
+
+/** Whether the current web origin is the central IdP hub (`auth.oxy.so`). */
+export function isIdpHubOrigin(): boolean {
+  if (typeof globalThis === 'undefined') {
+    return false;
+  }
+  const location = (globalThis as { location?: Location }).location;
+  if (!location) {
+    return false;
+  }
+  try {
+    const { hostname } = new URL(location.href);
+    return hostname === `auth.${CENTRAL_IDP_APEX}`;
+  } catch {
+    return false;
+  }
+}
+
+/** Validate a device-join return URL against allowed first-party origins. */
+export function parseDeviceJoinReturnUrl(raw: string | null): string | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return null;
+    }
+    if (!isAllowedDeviceJoinOrigin(parsed.origin)) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function buildDeviceJoinUrl(returnUrl: string): string {
@@ -112,31 +145,6 @@ export function buildDeviceJoinReturnUrl(returnUrl: string, creds: DeviceJoinFra
   params.set(DEVICE_JOIN_FRAGMENT_DEVICE_SECRET, creds.deviceSecret);
   url.hash = params.toString();
   return url.toString();
-}
-
-/** True when this origin completed the v2 device-join migration (localStorage). */
-export function isDeviceJoinV2Complete(): boolean {
-  try {
-    return (
-      (globalThis as { localStorage?: Storage }).localStorage?.getItem(
-        OXY_DEVICE_JOIN_V2_KEY,
-      ) === '1'
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** Mark this origin as device-join v2 aligned (after a successful join return). */
-export function markDeviceJoinV2Complete(): void {
-  try {
-    (globalThis as { localStorage?: Storage }).localStorage?.setItem(
-      OXY_DEVICE_JOIN_V2_KEY,
-      '1',
-    );
-  } catch {
-    // Best-effort.
-  }
 }
 
 /** Strip join fragment params from the current URL (history.replaceState-safe). */

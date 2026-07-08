@@ -1,0 +1,185 @@
+import {
+  isAllowedDeviceJoinOrigin,
+  isIdpHubOrigin,
+  logger as loggerUtil,
+  runSessionColdBoot,
+  type AuthStateStore,
+  type OxyServices,
+} from '@oxyhq/core';
+import type { SessionClient } from '@oxyhq/core';
+import {
+  applyDeviceJoinReturn,
+  clearDeviceJoinAttemptFlag,
+  loadPersistedDeviceCredential,
+  maybeRedirectForDeviceJoin,
+} from '../utils/deviceJoin';
+import {
+  consumeSilentOAuthError,
+  maybeStartSilentOAuthRestore,
+} from '../utils/crossOriginRestore';
+import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
+import { isWebBrowser } from '../utils/isWebBrowser';
+
+/** How long the cold boot waits for the post-boot SessionClient handoff (ms). */
+export const SESSION_HANDOFF_DEADLINE_MS = 6000;
+
+export interface ColdBootCommitInput {
+  sessionId: string;
+  accessToken: string;
+  userId: string;
+  deviceId?: string;
+  deviceSecret?: string;
+  expiresAt?: string;
+  user?: unknown;
+}
+
+export interface RunProviderColdBootOptions {
+  coldBoot: boolean;
+  oxyServices: OxyServices;
+  authStore: AuthStateStore;
+  clientId?: string;
+  authRedirectUri?: string;
+  sessionClient: SessionClient;
+  syncDeviceCredentialToHost: () => Promise<void>;
+  commitSession: (input: ColdBootCommitInput, options: { activate: boolean }) => Promise<void>;
+  markAuthResolved: () => void;
+  setTokenReady: (ready: boolean) => void;
+}
+
+/**
+ * Device-first cold boot for `@oxyhq/services` providers.
+ *
+ * Ordered pipeline:
+ * 1. Apply device-join return fragment (web)
+ * 2. Complete OAuth authorization-code return (web)
+ * 3. Redirect to auth.oxy.so/device/join when no local credential (official web)
+ * 4. `runSessionColdBoot` — device-secret mint (+ native shared-key)
+ * 5. Silent OAuth for third-party web apps when mint finds no session
+ */
+export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Promise<void> {
+  const {
+    coldBoot,
+    oxyServices,
+    authStore,
+    clientId,
+    authRedirectUri,
+    sessionClient,
+    syncDeviceCredentialToHost,
+    commitSession,
+    markAuthResolved,
+    setTokenReady,
+  } = opts;
+
+  setTokenReady(false);
+
+  try {
+    if (coldBoot && isWebBrowser()) {
+      await applyDeviceJoinReturn(authStore);
+      await syncDeviceCredentialToHost();
+    }
+
+    if (coldBoot) {
+      consumeSilentOAuthError();
+
+      const oauthCompleted = await tryCompleteOAuthReturn({
+        oxyServices,
+        clientId,
+        authRedirectUri,
+        commitSession: (input) => commitSession(input, { activate: true }),
+      });
+      if (oauthCompleted) {
+        setTokenReady(true);
+        markAuthResolved();
+        return;
+      }
+    }
+
+    if (coldBoot && isWebBrowser() && clientId && !isIdpHubOrigin()) {
+      if (await maybeRedirectForDeviceJoin(authStore)) {
+        return;
+      }
+    }
+
+    const outcome = await runSessionColdBoot({
+      oxy: oxyServices,
+      store: authStore,
+      platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
+      onSession: async (session) => {
+        const handoff = commitSession(
+          {
+            sessionId: session.sessionId,
+            accessToken: session.accessToken,
+            userId: session.userId,
+          },
+          { activate: false },
+        );
+        let handoffDeadlineId: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          handoff,
+          new Promise<void>((resolve) => {
+            handoffDeadlineId = setTimeout(resolve, SESSION_HANDOFF_DEADLINE_MS);
+          }),
+        ]).finally(() => {
+          if (handoffDeadlineId !== undefined) {
+            clearTimeout(handoffDeadlineId);
+          }
+        });
+        markAuthResolved();
+      },
+      onSignedOut: async () => {
+        await syncDeviceCredentialToHost();
+        const cred = await loadPersistedDeviceCredential(authStore);
+        if (!cred) {
+          clearDeviceJoinAttemptFlag();
+        } else {
+          try {
+            await sessionClient.start();
+          } catch (socketError) {
+            if (__DEV__) {
+              loggerUtil.debug(
+                'Device socket start failed (non-fatal)',
+                { component: 'runProviderColdBoot' },
+                socketError,
+              );
+            }
+          }
+        }
+        markAuthResolved();
+      },
+      onStepError: (id, error) => {
+        if (__DEV__) {
+          loggerUtil.debug(
+            `Cold-boot step "${id}" errored (non-fatal, falling through)`,
+            { component: 'runProviderColdBoot' },
+            error,
+          );
+        }
+      },
+    });
+
+    if (coldBoot && isWebBrowser() && clientId && outcome.kind !== 'session') {
+      const location = (globalThis as { location?: Location }).location;
+      const origin = location?.origin ?? '';
+      if (origin && !isAllowedDeviceJoinOrigin(origin)) {
+        const redirected = await maybeStartSilentOAuthRestore({
+          oxyServices,
+          clientId,
+          redirectUri: authRedirectUri,
+        });
+        if (redirected) {
+          return;
+        }
+      }
+    }
+  } catch (error) {
+    if (__DEV__) {
+      loggerUtil.error(
+        'Cold boot error',
+        error instanceof Error ? error : new Error(String(error)),
+        { component: 'runProviderColdBoot' },
+      );
+    }
+  } finally {
+    markAuthResolved();
+  }
+}
