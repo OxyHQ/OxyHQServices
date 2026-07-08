@@ -53,7 +53,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
-import { isWebBrowser } from '../utils/isWebBrowser';
 import {
   createSessionClient,
   createPlatformAuthStateStore,
