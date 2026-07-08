@@ -545,10 +545,11 @@ export {
     isAllowedDeviceJoinOrigin,
     isDeviceJoinV2Complete,
     markDeviceJoinV2Complete,
+    resolveHubDeviceCredentialForJoin,
     parseDeviceJoinFragment,
     stripDeviceJoinFragmentFromUrl,
 } from './utils/deviceJoin';
-export type { DeviceJoinFragment } from './utils/deviceJoin';
+export type { DeviceJoinFragment, DeviceJoinHubClient } from './utils/deviceJoin';
 
 // Deprecated bridge exports — kept for backward compatibility during migration.
 export {

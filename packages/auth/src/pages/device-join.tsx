@@ -5,7 +5,7 @@ import {
   buildDeviceJoinReturnUrl,
   createWebAuthStateStore,
   isAllowedDeviceJoinOrigin,
-  type AuthStateStore,
+  resolveHubDeviceCredentialForJoin,
 } from "@oxyhq/core";
 import { getApiBaseUrl } from "@/lib/oxy-api-client";
 
@@ -25,29 +25,9 @@ function safeReturnUrl(raw: string | null): string | null {
   }
 }
 
-async function resolveHubDeviceCredential(
-  oxyServices: OxyServices,
-  store: AuthStateStore,
-): Promise<{ deviceId: string; deviceSecret: string }> {
-  const existing = await store.load();
-  if (existing?.deviceId && existing?.deviceSecret) {
-    return { deviceId: existing.deviceId, deviceSecret: existing.deviceSecret };
-  }
-  const provisioned = await oxyServices.provisionDevice();
-  await store.save({
-    sessionId: existing?.sessionId ?? "",
-    userId: existing?.userId ?? "",
-    deviceId: provisioned.deviceId,
-    deviceSecret: provisioned.deviceSecret,
-    ...(existing?.accessToken ? { accessToken: existing.accessToken } : {}),
-    ...(existing?.expiresAt ? { expiresAt: existing.expiresAt } : {}),
-  });
-  return provisioned;
-}
-
 /**
- * Zero-UI device join hub: read or provision the canonical device credential on
- * auth.oxy.so and redirect back to the caller with `#oxy_device=…` in the fragment.
+ * Zero-UI device join hub: sync the canonical device credential on auth.oxy.so
+ * (mint or re-issue when stale) and redirect back with `#oxy_device=…`.
  */
 export function DeviceJoinPage() {
   const [searchParams] = useSearchParams();
@@ -61,7 +41,7 @@ export function DeviceJoinPage() {
     void (async () => {
       const oxyServices = new OxyServices({ baseURL: getApiBaseUrl() });
       const store = createWebAuthStateStore();
-      const creds = await resolveHubDeviceCredential(oxyServices, store);
+      const creds = await resolveHubDeviceCredentialForJoin(oxyServices, store);
       window.location.replace(buildDeviceJoinReturnUrl(returnUrl, creds));
     })();
   }, [returnUrl]);
