@@ -4,7 +4,7 @@
  * request flows through both (express-rate-limit throws ERR_ERL_DOUBLE_COUNT
  * and the effective per-IP budget is silently halved). This suite captures the
  * prefix each limiter hands to `rate-limit-redis` at construction time and
- * asserts the new `rl:fedcm:service:` limiter is present and distinct from the
+ * asserts the dedicated `rl:idp:service:` limiter is present and distinct from the
  * general/auth/user limiters.
  */
 
@@ -34,14 +34,14 @@ jest.mock('../../config/redis', () => ({
 import '../security';
 
 describe('security.ts limiter prefixes are unique', () => {
-  it('registers the dedicated IdP service limiter with rl:fedcm:service:', () => {
-    expect(capturedPrefixes).toContain('rl:fedcm:service:');
+  it('registers the dedicated IdP service limiter with rl:idp:service:', () => {
+    expect(capturedPrefixes).toContain('rl:idp:service:');
   });
 
   it('keeps every limiter prefix distinct (no ERR_ERL_DOUBLE_COUNT)', () => {
     // The four Redis-backed limiters defined in security.ts. slowDown's
     // bruteForceProtection uses an in-memory store (no prefix), so it is absent.
-    const securityPrefixes = ['rl:general:', 'rl:fedcm:service:', 'rl:auth:', 'rl:user:'];
+    const securityPrefixes = ['rl:general:', 'rl:idp:service:', 'rl:auth:', 'rl:user:'];
 
     for (const prefix of securityPrefixes) {
       // Present, and registered EXACTLY once — a duplicate would double-count.
@@ -50,6 +50,6 @@ describe('security.ts limiter prefixes are unique', () => {
     // The four are mutually distinct.
     expect(new Set(securityPrefixes).size).toBe(securityPrefixes.length);
     // The dedicated service limiter is not the general per-IP browser budget.
-    expect('rl:fedcm:service:').not.toBe('rl:general:');
+    expect('rl:idp:service:').not.toBe('rl:general:');
   });
 });

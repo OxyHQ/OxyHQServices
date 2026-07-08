@@ -73,11 +73,10 @@ const rateLimiter = rateLimit({
 // The ceiling is deliberately high: each hit is the shared Cloudflare Worker
 // egress fanning MANY users' device-first/IdP-chooser calls through one IP,
 // not a single browser — yet it still bounds a runaway or compromised caller.
-// Unique prefix (`rl:fedcm:service:` — name predates the wave-2 FedCM
-// deletion, kept as-is to avoid an unnecessary Redis key migration) keeps its
-// counter distinct from every other limiter (no ERR_ERL_DOUBLE_COUNT).
+// Unique prefix (`rl:idp:service:`) keeps the IdP worker's server-to-server
+// READ budget distinct from every other limiter (no ERR_ERL_DOUBLE_COUNT).
 const idpServiceLimiter = rateLimit({
-  ...makeStore('rl:fedcm:service:'),
+  ...makeStore('rl:idp:service:'),
   windowMs: 15 * 60 * 1000,
   max: isProd ? 20000 : 40000,
   message: "Too many requests, please try again later.",

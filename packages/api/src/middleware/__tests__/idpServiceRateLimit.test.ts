@@ -111,7 +111,7 @@ describe('general limiter (rl:general) exempts IdP service paths', () => {
   });
 });
 
-describe('idpServiceLimiter (rl:fedcm:service) is the dedicated high-cap limiter', () => {
+describe('idpServiceLimiter (rl:idp:service) is the dedicated high-cap limiter', () => {
   let server: http.Server;
 
   beforeAll(async () => {

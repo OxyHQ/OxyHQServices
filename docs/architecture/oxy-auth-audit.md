@@ -1,5 +1,7 @@
 # Oxy Auth Platform — Auditoría Fase 0
 
+> **ARCHIVO HISTÓRICO (snapshot 2026-07-05).** El proyecto auth-platform está **CERRADO** (2026-07-07). Para arquitectura vigente usa [`oxy-auth-platform.md`](./oxy-auth-platform.md), [`SESSION-ARCHITECTURE.md`](../SESSION-ARCHITECTURE.md) y [`AGENTS.md`](../../AGENTS.md). Las tablas §2–§7 abajo describen el punto de partida, no el estado actual.
+
 > **Estado:** COMPLETADA 2026-07-05 · **FASE 7 DONE 2026-07-06** — checklist §11 verificada abajo
 > **Ground truth:** `origin/main` @ `99405224` ("feat(sdk)!: re-land unified OxyAccountDialog #554")
 > **Plan maestro:** [`oxy-auth-platform.md`](./oxy-auth-platform.md) · **Handoff:** [`oxy-auth-agent-handoff.md`](./archive/oxy-auth-agent-handoff.md)
@@ -94,7 +96,9 @@ Rama stale actual (referencia): contracts 107, core 724, api 1311, services 219 
 | `establishDeviceRefreshSlot`, `ssoReturn` | 1/1 c/u | solo spec vieja `docs/superpowers/specs/2026-07-01-cross-domain-session-sync-design.md` (en main; ya borrada en working tree) | Fase 7 |
 | `silentSignInWithFedCM`, `oxy_active_authuser` | **0** | ✅ ya limpio | — |
 
-**Código legacy REAL restante en main (no comentarios):** `packages/core/src/utils/ssoBounce.ts` (+ exports en `index.ts`/`server/index.ts`), `packages/oxy-main-domain/web-identity` (well-known FedCM estático), seeds con redirectUris `__oxy/sso-callback`, `packages/api/openapi.json` sin regenerar, 3 `examples/*.tsx` rotos, cascade `FedCMGrant` en `DELETE /auth/grants/:applicationId` (acoplamiento legacy señalado por subagente), y todo `packages/auth-sdk/`.
+**Código legacy REAL restante en main (snapshot 2026-07-05 — la mayoría ya eliminado en commits posteriores):** ver grep actual en `main` antes de confiar en esta lista. Residuos que **sí** se limpiaron después: `fedcmToken`, `approvedClientsCache`, `migrate-fedcm-grants`, prefijo `rl:fedcm:service:` → `rl:idp:service:`, namespace hash `fedcm` → `idp` en `deriveServiceDeviceId`, `showSignInModal` → `openAccountDialog`.
+
+**Pendiente verificar en main:** `packages/api/openapi.json` regeneración, ejemplos rotos en `examples/`, seeds con `__oxy/sso-callback` si aún existen.
 
 ---
 

@@ -20,7 +20,7 @@ export interface SessionCreateOptions {
    * When set, the session's deviceId is derived deterministically from
    * (userId, stableDeviceKey) via `deriveServiceDeviceId` so one (user, RP)
    * reuses a single session, independent of request IP/UA. Originally added
-   * for IdP/FedCM-issued sessions; no current call site passes this option
+   * for IdP server-minted sessions; no current call site passes this option
    * post-wave-2 (kept for any future server-minted-session caller that needs
    * the same stable-per-RP-session property). Real device logins (no
    * stableDeviceKey) are unaffected.
