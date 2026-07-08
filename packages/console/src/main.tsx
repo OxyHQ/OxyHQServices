@@ -1,10 +1,10 @@
 import ReactDOM from 'react-dom/client';
-import { installDeviceJoinUrlHashGuard } from '@oxyhq/core';
+import { captureDeviceJoinFragmentFromUrl } from '@oxyhq/core';
 import { RouterProvider } from '@tanstack/react-router';
 import { getRouter } from './router';
 import './styles.css';
 
-installDeviceJoinUrlHashGuard();
+captureDeviceJoinFragmentFromUrl();
 
 const router = getRouter();
 

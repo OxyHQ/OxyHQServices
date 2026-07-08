@@ -10,8 +10,9 @@ import {
   captureDeviceJoinFragmentFromUrl,
   readPendingDeviceJoinCredential,
   stripDeviceJoinFragmentFromUrl,
-  installDeviceJoinUrlHashGuard,
-  DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT,
+  OXY_DEVICE_JOIN_PENDING_KEY,
+  DEVICE_JOIN_FRAGMENT_DEVICE_ID,
+  DEVICE_JOIN_FRAGMENT_DEVICE_SECRET,
 } from '../deviceJoin';
 import { createMemoryAuthStateStore } from '../../session/authStateStore';
 
@@ -124,76 +125,17 @@ describe('deviceJoin', () => {
     });
   });
 
-  describe('installDeviceJoinUrlHashGuard', () => {
-    let sessionStorageData: Record<string, string>;
-    const replaceState = jest.fn();
-    const pushState = jest.fn();
-
-    beforeEach(() => {
-      sessionStorageData = {};
-      replaceState.mockClear();
-      pushState.mockClear();
-      delete (globalThis as { __oxyDeviceJoinUrlGuard?: boolean }).__oxyDeviceJoinUrlGuard;
-      Object.defineProperty(globalThis, 'sessionStorage', {
-        configurable: true,
-        value: {
-          getItem: (key: string) => sessionStorageData[key] ?? null,
-          setItem: (key: string, value: string) => {
-            sessionStorageData[key] = value;
-          },
-          removeItem: (key: string) => {
-            delete sessionStorageData[key];
-          },
-        },
-      });
-      Object.defineProperty(globalThis, 'location', {
-        configurable: true,
-        value: {
-          pathname: '/inbox',
-          search: '',
-          hash: '#oxy_device=d1&device_secret=s1',
-          href: 'https://inbox.oxy.so/inbox#oxy_device=d1&device_secret=s1',
-        },
-      });
-      Object.defineProperty(globalThis, 'window', {
-        configurable: true,
-        value: {
-          ...globalThis,
-          addEventListener: jest.fn(),
-          setTimeout: (fn: () => void) => fn(),
-        },
-      });
-      Object.defineProperty(globalThis, 'history', {
-        configurable: true,
-        value: {
-          replaceState,
-          pushState,
-          state: {},
-        },
-      });
-      jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
-      delete (globalThis as { location?: Location }).location;
-      delete (globalThis as { history?: History }).history;
-      delete (globalThis as { window?: Window }).window;
-      delete (globalThis as { __oxyDeviceJoinUrlGuard?: boolean }).__oxyDeviceJoinUrlGuard;
-    });
-
-    it('strips join credentials from patched replaceState URLs (Expo Router path)', () => {
-      installDeviceJoinUrlHashGuard();
-      globalThis.history.replaceState({}, '', '/inbox#oxy_device=d1&device_secret=s1');
-      expect(replaceState).toHaveBeenCalledWith({}, '', '/inbox');
-      expect(readPendingDeviceJoinCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
-    });
-
-    it('DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT uses the same storage key and fragment params', () => {
-      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('oxy.device_join_pending');
-      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('oxy_device');
-      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('device_secret');
+  describe('device-join-strip.js (HTML bootstrap)', () => {
+    it('uses the same sessionStorage key and fragment param names as core', () => {
+      const { readFileSync } = require('node:fs');
+      const { join } = require('node:path');
+      const script = readFileSync(
+        join(__dirname, '../../../../inbox/public/device-join-strip.js'),
+        'utf8',
+      );
+      expect(script).toContain(OXY_DEVICE_JOIN_PENDING_KEY);
+      expect(script).toContain(DEVICE_JOIN_FRAGMENT_DEVICE_ID);
+      expect(script).toContain(DEVICE_JOIN_FRAGMENT_DEVICE_SECRET);
     });
   });
 

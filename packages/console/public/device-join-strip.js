@@ -1,5 +1,4 @@
 // Keep in sync with captureDeviceJoinFragmentFromUrl (packages/core/src/utils/deviceJoin.ts).
-// Loaded from <head> before the app bundle so Expo Router never sees join credentials in location.hash.
 (function () {
   try {
     var l = location;

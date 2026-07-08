@@ -7,16 +7,16 @@ import { OxyContextProvider, type OxyContextProviderProps } from '../context/Oxy
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { BloomDialogProvider } from '@oxyhq/bloom';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
-import { installDeviceJoinUrlHashGuard, logger as loggerUtil } from '@oxyhq/core';
+import { captureDeviceJoinFragmentFromUrl, logger as loggerUtil } from '@oxyhq/core';
 import { setupFonts } from './FontLoader';
 import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
-// Strip `#oxy_device=…&device_secret=…` synchronously on first module load —
-// before React paints — and guard against Expo Router re-appending the hash.
+// Fallback strip when the app bundle loads (official web apps also use
+// `public/device-join-strip.js` + `deviceJoinBootstrap` before Expo Router).
 if (typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined') {
-  installDeviceJoinUrlHashGuard();
+  captureDeviceJoinFragmentFromUrl();
 }
 
 /**
