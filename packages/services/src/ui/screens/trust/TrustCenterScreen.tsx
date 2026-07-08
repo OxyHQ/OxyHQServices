@@ -10,7 +10,7 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
 import { SettingsIcon } from '../../components/SettingsIcon';
-import LoadingState from '../../components/LoadingState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
 import { getTrustTierLabel } from './trustTier';
@@ -80,7 +80,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
             <View className="flex-1 bg-bg">
                 <Header title={title} onBack={goBack || onClose} elevation="subtle" />
                 <View style={styles.center}>
-                    <LoadingState color={primaryColor} />
+                    <Loading size="large" color={primaryColor} />
                 </View>
             </View>
         );

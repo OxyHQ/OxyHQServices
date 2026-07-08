@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Avatar, LogoIcon } from '@oxyhq/services';
+import { LogoIcon } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useOxy } from '@oxyhq/services';
 import { getAccountDisplayName } from '@oxyhq/core';
@@ -213,7 +214,7 @@ export function Header({ }: HeaderProps) {
                             accessibilityHint={t('a11y.avatarHint')}
                         >
                             {isAuthenticated ? (
-                                <Avatar name={displayName} uri={avatarUrl} size={avatarSize} />
+                                <Avatar name={displayName} source={avatarUrl} size={avatarSize} />
                             ) : (
                                 <View style={[styles.userIconContainer, {
                                     backgroundColor: colors.sidebarIconPersonalInfo,

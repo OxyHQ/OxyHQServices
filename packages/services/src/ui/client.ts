@@ -13,12 +13,11 @@ export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';
 export { default as OxyAuthPrompt } from './components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './components/OxyAuthPrompt';
-export { default as OxyLogo } from './components/OxyLogo';
-export { default as Avatar } from './components/Avatar';
+export { LogoIcon } from './components/logo/LogoIcon';
+export { LogoText } from './components/logo/LogoText';
 export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
 export { FontLoader, setupFonts } from './components/FontLoader';
-export { default as OxyIcon } from './components/icon/OxyIcon';
 
 // Context
 export { useOxy } from './context/OxyContext';

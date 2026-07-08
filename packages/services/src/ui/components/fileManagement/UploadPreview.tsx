@@ -44,7 +44,7 @@ const UploadPreviewContent: React.FC<{
     return (
         <View style={[fileManagementStyles.uploadPreviewContainer, { backgroundColor: colors.background }]}>
             <View className="border-b border-border" style={fileManagementStyles.uploadPreviewHeader}>
-                <Text className="text-foreground" style={fileManagementStyles.uploadPreviewTitle}>
+                <Text className="text-text" style={fileManagementStyles.uploadPreviewTitle}>
                     Review Files ({pendingFiles.length})
                 </Text>
                 <TouchableOpacity onPress={onCancel}>
@@ -77,10 +77,10 @@ const UploadPreviewContent: React.FC<{
                                 </View>
                             )}
                             <View style={fileManagementStyles.uploadPreviewInfo}>
-                                <Text className="text-foreground" style={fileManagementStyles.uploadPreviewName} numberOfLines={1}>
+                                <Text className="text-text" style={fileManagementStyles.uploadPreviewName} numberOfLines={1}>
                                     {pendingFile.name}
                                 </Text>
-                                <Text className="text-muted-foreground" style={fileManagementStyles.uploadPreviewMeta}>
+                                <Text className="text-text-secondary" style={fileManagementStyles.uploadPreviewMeta}>
                                     {formatFileSize(pendingFile.size)} • {pendingFile.type}
                                 </Text>
                             </View>
@@ -97,10 +97,10 @@ const UploadPreviewContent: React.FC<{
 
             <View className="border-t border-border" style={fileManagementStyles.uploadPreviewFooter}>
                 <View style={fileManagementStyles.uploadPreviewStats}>
-                    <Text className="text-foreground" style={fileManagementStyles.uploadPreviewStatsText}>
+                    <Text className="text-text" style={fileManagementStyles.uploadPreviewStatsText}>
                         {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}
                     </Text>
-                    <Text className="text-foreground" style={fileManagementStyles.uploadPreviewStatsText}>
+                    <Text className="text-text" style={fileManagementStyles.uploadPreviewStatsText}>
                         {formatFileSize(totalSize)}
                     </Text>
                 </View>
@@ -114,7 +114,7 @@ const UploadPreviewContent: React.FC<{
                             ]}
                             onPress={onCancel}
                         >
-                            <Text className="text-foreground" style={fileManagementStyles.uploadPreviewCancelText}>
+                            <Text className="text-text" style={fileManagementStyles.uploadPreviewCancelText}>
                                 Cancel
                             </Text>
                         </TouchableOpacity>

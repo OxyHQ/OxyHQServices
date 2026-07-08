@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Avatar } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import type { AccountNode, AccountRole, OxyServices } from '@oxyhq/core';
 import { getAccountFallbackHandle, getAccountDisplayName } from '@oxyhq/core';
 import { useColors, type AppColors } from '@/hooks/useColors';
@@ -215,7 +215,7 @@ export function useAccountRowBuilder({
       subtitle: username
         ? `@${username}`
         : (fallbackHandle ?? t('managedAccounts.noUsernameYet')),
-      customIcon: <Avatar name={name} uri={avatarUri} size={40} />,
+      customIcon: <Avatar name={name} source={avatarUri} size={40} />,
       customContent: (
         <AccountRowContent
           node={node}

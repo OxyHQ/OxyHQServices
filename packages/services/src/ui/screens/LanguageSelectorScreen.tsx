@@ -111,7 +111,6 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             <Header
                 title=""
                 subtitle=""
-                theme={normalizedTheme}
                 onBack={onClose || goBack}
                 variant="minimal"
                 elevation="none"

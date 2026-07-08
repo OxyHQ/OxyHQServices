@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { View, Text, Animated, TouchableOpacity, Clipboard, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@oxyhq/bloom/button';
-import TextField from '../TextField';
+import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import FAIRWalletIcon from '../icon/FAIRWalletIcon';
 import { createPaymentStyles } from './paymentStyles';
 import { toast } from '@oxyhq/bloom';
@@ -87,48 +87,58 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                                     <Ionicons name="card-outline" size={24} color={colors.primary} style={styles.cardRowIcon} />
                                     <Text style={styles.cardRowText}>{t('payment.details.acceptedCards')}</Text>
                                 </View>
-                                <TextField
-                                    value={cardDetails.number}
-                                    onChangeText={text => {
-                                        const formatted = text.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
-                                        onCardDetailsChange({ ...cardDetails, number: formatted });
-                                    }}
-                                    placeholder="1234 5678 9012 3456"
-                                    keyboardType="numeric"
-                                    maxLength={19}
-                                    style={styles.cardFieldContainer}
-                                    left={<Ionicons name="card-outline" size={18} color={colors.primary} />}
-                                    accessibilityLabel="Card number"
-                                    accessibilityHint="Enter your 16-digit card number"
-                                />
-                                <View style={styles.cardFieldRow}>
-                                    <TextField
-                                        value={cardDetails.expiry}
+                                <TextField>
+                                    <TextFieldInput
+                                        floatingLabel
+                                        label={t('payment.details.cardNumber') || 'Card number'}
+                                        value={cardDetails.number}
                                         onChangeText={text => {
-                                            const formatted = text.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2');
-                                            onCardDetailsChange({ ...cardDetails, expiry: formatted });
+                                            const formatted = text.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+                                            onCardDetailsChange({ ...cardDetails, number: formatted });
                                         }}
-                                        placeholder="MM/YY"
-                                        maxLength={5}
-                                        style={styles.cardFieldHalfLeft}
-                                        left={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
-                                        accessibilityLabel="Expiry date"
-                                        accessibilityHint="Enter expiry date in MM/YY format"
-                                    />
-                                    <TextField
-                                        value={cardDetails.cvv}
-                                        onChangeText={text => {
-                                            const formatted = text.replace(/\D/g, '');
-                                            onCardDetailsChange({ ...cardDetails, cvv: formatted });
-                                        }}
-                                        placeholder="123"
+                                        placeholder="1234 5678 9012 3456"
                                         keyboardType="numeric"
-                                        maxLength={4}
-                                        style={styles.cardFieldHalfRight}
-                                        left={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
-                                        accessibilityLabel="CVV"
-                                        accessibilityHint="Enter 3 or 4 digit security code"
+                                        maxLength={19}
+                                        accessibilityLabel="Card number"
+                                        accessibilityHint="Enter your 16-digit card number"
                                     />
+                                </TextField>
+                                <View style={styles.cardFieldRow}>
+                                    <View style={styles.cardFieldHalfLeft}>
+                                        <TextField>
+                                            <TextFieldInput
+                                                floatingLabel
+                                                label={t('payment.details.expiry') || 'Expiry'}
+                                                value={cardDetails.expiry}
+                                                onChangeText={text => {
+                                                    const formatted = text.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2');
+                                                    onCardDetailsChange({ ...cardDetails, expiry: formatted });
+                                                }}
+                                                placeholder="MM/YY"
+                                                maxLength={5}
+                                                accessibilityLabel="Expiry date"
+                                                accessibilityHint="Enter expiry date in MM/YY format"
+                                            />
+                                        </TextField>
+                                    </View>
+                                    <View style={styles.cardFieldHalfRight}>
+                                        <TextField>
+                                            <TextFieldInput
+                                                floatingLabel
+                                                label="CVV"
+                                                value={cardDetails.cvv}
+                                                onChangeText={text => {
+                                                    const formatted = text.replace(/\D/g, '');
+                                                    onCardDetailsChange({ ...cardDetails, cvv: formatted });
+                                                }}
+                                                placeholder="123"
+                                                keyboardType="numeric"
+                                                maxLength={4}
+                                                accessibilityLabel="CVV"
+                                                accessibilityHint="Enter 3 or 4 digit security code"
+                                            />
+                                        </TextField>
+                                    </View>
                                 </View>
                             </View>
 

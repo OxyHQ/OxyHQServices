@@ -576,16 +576,15 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             <Header
                 title=""
                 subtitle=""
-                theme={normalizedTheme}
                 onBack={onClose || goBack}
                 variant="minimal"
                 elevation="none"
-                rightAction={{
+                actions={[{
                     text: isSaving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save'),
                     onPress: handleSave,
                     disabled: isSaving,
                     loading: isSaving,
-                }}
+                }]}
             />
 
             <ScrollView

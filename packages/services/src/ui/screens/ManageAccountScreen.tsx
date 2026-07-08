@@ -5,14 +5,13 @@ import {
     ScrollView,
     StyleSheet,
     ActivityIndicator,
-    TouchableOpacity,
     RefreshControl,
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H4, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
     getAccountDisplayName,
@@ -22,7 +21,7 @@ import {
 } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import Avatar from '../components/Avatar';
+import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
 import DeleteAccountModal from '../components/modals/DeleteAccountModal';
 import { useOxy } from '../context/OxyContext';
@@ -340,36 +339,18 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 }
             >
                 {/* Profile card */}
-                <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
-                    <TouchableOpacity
-                        onPress={openAvatarPicker}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('editProfile.changeAvatar') || 'Change avatar'}
-                        style={styles.avatarTouchable}
-                        className="mb-space-12"
-                    >
-                        <Avatar uri={avatarUri} name={displayName} size={AVATAR_SIZE} />
-                        <View
-                            style={styles.avatarBadge}
-                            className="bg-fill-brand border-border-image"
-                        >
-                            <Ionicons name="camera" size={14} color={bloomTheme.colors.primaryForeground} />
-                        </View>
-                    </TouchableOpacity>
-                    <H4 className="text-text" numberOfLines={1}>
-                        {displayName}
-                    </H4>
-                    {handle ? (
-                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user?.username ? `@${handle}` : handle}
-                        </Text>
-                    ) : null}
-                    {user?.email ? (
-                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user.email}
-                        </Text>
-                    ) : null}
-                </View>
+                <ProfileSummaryCard
+                    displayName={displayName}
+                    avatarUri={avatarUri}
+                    avatarSize={AVATAR_SIZE}
+                    onAvatarPress={openAvatarPicker}
+                    showCameraBadge
+                    avatarAccessibilityLabel={t('editProfile.changeAvatar') || 'Change avatar'}
+                    lines={[
+                        handle ? (user?.username ? `@${handle}` : handle) : null,
+                        user?.email || null,
+                    ]}
+                />
 
                 {/* Profile section */}
                 <SettingsListGroup title={t('manageAccount.sections.profile') || 'Profile'}>
@@ -1015,20 +996,6 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    avatarTouchable: {
-        position: 'relative',
-    },
-    avatarBadge: {
-        position: 'absolute',
-        right: 0,
-        bottom: 0,
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
     },
     footerSpacer: {
         height: 24,

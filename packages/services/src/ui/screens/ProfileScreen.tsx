@@ -6,7 +6,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H2, Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import FollowButton from '../components/FollowButton';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
@@ -202,7 +202,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 <View style={styles.avatarRow} className="px-screen-margin">
                     <View style={styles.avatarWrapper} className="border-bg bg-bg rounded-radius-max">
                         <Avatar
-                            uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
+                            source={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
                             name={displayName || username}
                             size={AVATAR_SIZE}
                         />
@@ -306,7 +306,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 {/* All Stats in one row */}
                 <View style={styles.statsRow} className="px-screen-margin">
                     <View style={styles.statItem}>
-                        <Text style={styles.statAmount} className="text-text-inverse">{reputationTotal !== null && reputationTotal !== undefined ? reputationTotal : '--'}</Text>
+                        <Text style={styles.statAmount} className="text-text">{reputationTotal !== null && reputationTotal !== undefined ? reputationTotal : '--'}</Text>
                         <Text style={styles.statLabel} className="text-text-secondary">{t('profile.reputation') || 'Reputation'}</Text>
                     </View>
                     <View style={styles.statItem}>

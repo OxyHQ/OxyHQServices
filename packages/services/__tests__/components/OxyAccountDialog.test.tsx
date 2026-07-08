@@ -80,7 +80,7 @@ jest.mock('react-native-qrcode-svg', () => ({
 }));
 
 jest.mock('@expo/vector-icons', () => ({ __esModule: true, MaterialCommunityIcons: () => null }));
-jest.mock('../../src/ui/components/OxyLogo', () => ({ __esModule: true, default: () => null }));
+jest.mock('../../src/ui/components/logo/LogoIcon', () => ({ LogoIcon: () => null }));
 
 // eslint-disable-next-line import/first
 import OxyAccountDialog from '../../src/ui/components/OxyAccountDialog';

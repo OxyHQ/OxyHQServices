@@ -1,21 +1,50 @@
 import type React from 'react';
+import { useMemo } from 'react';
 import {
     View,
-    Text,
     TouchableOpacity,
     StyleSheet,
     Platform,
-    Animated,
-    Keyboard,
+    ActivityIndicator,
 } from 'react-native';
-import { useMemo } from 'react';
 import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import OxyIcon from './icon/OxyIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { PressableScale } from '@oxyhq/bloom/pressable-scale';
+import { H4, Text } from '@oxyhq/bloom/typography';
 
-// Calculate header height based on platform and variant
+type ThemeColors = ReturnType<typeof useTheme>['colors'];
+
+export interface HeaderAction {
+    /** Ionicons name — rendered as a circular icon button when no `text` is set. */
+    icon?: string;
+    /** Label — rendered as a filled pill button (takes precedence over `icon`). */
+    text?: string;
+    onPress: () => void;
+    loading?: boolean;
+    disabled?: boolean;
+    /** Stable identity for lists; falls back to the array index. */
+    key?: string;
+}
+
+export interface HeaderProps {
+    title: string;
+    subtitle?: string;
+    onBack?: () => void;
+    onClose?: () => void;
+    /** Trailing action buttons, rendered left-to-right before the close button. */
+    actions?: HeaderAction[];
+    showBackButton?: boolean;
+    showCloseButton?: boolean;
+    variant?: 'default' | 'minimal';
+    elevation?: 'none' | 'subtle' | 'prominent';
+    subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
+    titleAlignment?: 'left' | 'center' | 'right';
+    /** Shared scroll offset — enables sticky translate-up behavior on native. */
+    scrollY?: SharedValue<number>;
+}
+
 export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', safeAreaTop = 0): number => {
     const paddingTop = Platform.OS === 'ios' ? Math.max(safeAreaTop, 50) : 16;
     const paddingBottom = 12;
@@ -23,319 +52,122 @@ export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', saf
     return paddingTop + contentHeight + paddingBottom;
 };
 
-export interface HeaderProps {
-    title: string;
-    subtitle?: string;
-    onBack?: () => void;
-    onClose?: () => void;
-    rightAction?: {
-        icon?: string;
-        onPress: () => void;
-        loading?: boolean;
-        disabled?: boolean;
-        text?: string;
-        key?: string;
-    };
-    rightActions?: Array<{
-        icon?: string;
-        onPress: () => void;
-        loading?: boolean;
-        disabled?: boolean;
-        text?: string;
-        key?: string; // optional identifier
-    }>;
-    theme?: 'light' | 'dark';
-    showBackButton?: boolean;
-    showCloseButton?: boolean;
-    showThemeToggle?: boolean;
-    onThemeToggle?: () => void;
-    variant?: 'default' | 'large' | 'minimal' | 'gradient';
-    elevation?: 'none' | 'subtle' | 'prominent';
-    subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
-    titleAlignment?: 'left' | 'center' | 'right';
-    scrollY?: SharedValue<number>; // For sticky behavior on native
-}
+const HeaderActionButton: React.FC<{ action: HeaderAction; colors: ThemeColors }> = ({ action, colors }) => {
+    const isText = !!action.text;
+    return (
+        <PressableScale
+            onPress={action.onPress}
+            disabled={action.disabled || action.loading}
+            style={[
+                styles.actionButton,
+                isText ? styles.textActionButton : styles.iconActionButton,
+                { backgroundColor: isText ? colors.tint : colors.card, opacity: action.disabled ? 0.5 : 1 },
+            ]}
+        >
+            {action.loading ? (
+                <ActivityIndicator size="small" color={isText ? colors.card : colors.tint} />
+            ) : isText ? (
+                <Text style={[styles.actionText, { color: colors.card }]}>{action.text}</Text>
+            ) : (
+                <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={18} color={colors.tint} />
+            )}
+        </PressableScale>
+    );
+};
 
 const Header: React.FC<HeaderProps> = ({
     title,
     subtitle,
     onBack,
     onClose,
-    rightAction,
-    rightActions,
-    theme,
+    actions,
     showBackButton = true,
     showCloseButton = false,
-    showThemeToggle = false,
-    onThemeToggle,
     variant = 'default',
     elevation = 'subtle',
     subtitleVariant = 'default',
     titleAlignment = 'left',
     scrollY,
 }) => {
-    const bloomTheme = useTheme();
-    const colors = bloomTheme.colors;
-    const colorScheme = bloomTheme.mode;
+    const { colors, mode } = useTheme();
     const insets = useSafeAreaInsets();
     const headerHeight = getHeaderHeight(variant, insets.top);
+    const isDark = mode === 'dark';
 
-    // Animated style for sticky behavior on native
-    // Only create animated style if scrollY is provided and we're on native platform
+    // Sticky behavior on native: header translates up as content scrolls, clamped
+    // so it never leaves the viewport. No-op on web (uses CSS `position: sticky`).
     const animatedHeaderStyle = useAnimatedStyle(() => {
-        if (Platform.OS === 'web' || !scrollY) {
-            return {};
-        }
-
-        // Sticky behavior: header scrolls with content initially, then sticks at top
-        // When scrollY = 0, translateY = 0 (header at normal position)
-        // When scrollY > 0, translateY becomes negative to keep header at top
-        // Clamp to prevent header from going above viewport
-        const translateY = interpolate(
-            scrollY.value,
-            [0, headerHeight],
-            [0, -headerHeight],
-            Extrapolation.CLAMP
-        );
-
-        return {
-            transform: [{ translateY }],
-        };
+        if (Platform.OS === 'web' || !scrollY) return {};
+        const translateY = interpolate(scrollY.value, [0, headerHeight], [0, -headerHeight], Extrapolation.CLAMP);
+        return { transform: [{ translateY }] };
     }, [scrollY, headerHeight]);
 
-    const handleBackPress = () => {
-        if (!onBack) return;
-        
-        // Navigate immediately and synchronously - this prioritizes navigation
-        // over keyboard dismiss. The keyboard will close naturally after screen changes.
-        onBack();
-    };
-
-    const renderBackButton = () => {
-        if (!showBackButton || !onBack) return null;
-
-        return (
-            <TouchableOpacity
-                className="bg-card"
-                style={styles.backButton}
-                onPress={handleBackPress}
-                activeOpacity={0.7}
-            >
-                <OxyIcon name="chevron-back" size={18} color={colors.tint} />
-            </TouchableOpacity>
-        );
-    };
-
-    const renderCloseButton = () => {
-        if (!showCloseButton || !onClose) return null;
-
-        return (
-            <TouchableOpacity
-                className="bg-card"
-                style={styles.closeButton}
-                onPress={onClose}
-                activeOpacity={0.7}
-            >
-                <Ionicons name="close" size={18} color={colors.text} />
-            </TouchableOpacity>
-        );
-    };
-
-    const renderRightActionButton = (action: NonNullable<HeaderProps['rightAction']>, idx: number) => {
-        const isTextAction = action.text;
-        return (
-            <TouchableOpacity
-                key={action.key || idx}
-                style={[
-                    styles.rightActionButton,
-                    isTextAction ? styles.textActionButton : styles.iconActionButton,
-                    {
-                        backgroundColor: isTextAction ? colors.tint : colors.card,
-                        opacity: action.disabled ? 0.5 : 1
-                    }
-                ]}
-                onPress={action.onPress}
-                disabled={action.disabled || action.loading}
-                activeOpacity={0.7}
-            >
-                {action.loading ? (
-                    <View style={styles.loadingContainer}>
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
-                    </View>
-                ) : isTextAction ? (
-                    <Text style={[styles.actionText, { color: colors.card }]}>
-                        {action.text}
-                    </Text>
-                ) : (
-                    <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={18} color={colors.tint} />
-                )}
-            </TouchableOpacity>
-        );
-    };
-
-    const renderRightActions = () => {
-        const actions: Array<NonNullable<HeaderProps['rightAction']>> = [];
-
-        // Add existing right actions
-        if (rightActions?.length) {
-            actions.push(...rightActions);
-        } else if (rightAction) {
-            actions.push(rightAction);
-        }
-
-        // Add theme toggle button if enabled
-        if (showThemeToggle && onThemeToggle) {
-            actions.push({
-                icon: colorScheme === 'dark' ? 'sunny' : 'moon',
-                onPress: onThemeToggle,
-                key: 'theme-toggle',
-            });
-        }
-
-        if (actions.length === 0) return null;
-
-        if (actions.length > 1) {
-            return (
-                <View style={styles.rightActionsRow}>
-                    {actions.map((a, i) => renderRightActionButton(a, i))}
-                </View>
-            );
-        }
-        return renderRightActionButton(actions[0], 0);
-    };
-
-    const renderTitle = () => {
-        const titleStyle = variant === 'large' ? styles.titleLarge :
-            variant === 'minimal' ? styles.titleMinimal :
-                styles.titleDefault;
-
-        const subtitleStyle = variant === 'large' ? styles.subtitleLarge :
-            variant === 'minimal' ? styles.subtitleMinimal :
-                subtitleVariant === 'small' ? styles.subtitleSmall :
-                    subtitleVariant === 'large' ? styles.subtitleLarge :
-                        subtitleVariant === 'muted' ? styles.subtitleMuted :
-                            styles.subtitleDefault;
-
-        const getTitleAlignment = () => {
-            switch (titleAlignment) {
-                case 'center':
-                    return styles.titleContainerCenter;
-                case 'right':
-                    return styles.titleContainerRight;
-                default:
-                    return styles.titleContainerLeft;
-            }
-        };
-
-        return (
-            <View style={[
-                styles.titleContainer,
-                getTitleAlignment(),
-                variant === 'minimal' && styles.titleContainerMinimal
-            ]}>
-                <Text className="text-foreground" style={titleStyle}>
-                    {title}
-                </Text>
-                {subtitle ? (
-                    <Text className="text-muted-foreground" style={subtitleStyle}>
-                        {subtitle}
-                    </Text>
-                ) : null}
-            </View>
-        );
-    };
-
-    const getElevationStyle = () => {
-        const isDark = colorScheme === 'dark';
+    const elevationStyle = useMemo(() => {
         switch (elevation) {
-            case 'none':
-                return {};
             case 'subtle':
                 return Platform.select({
-                    web: {
-                        boxShadow: isDark
-                            ? '0 1px 3px rgba(0,0,0,0.3)'
-                            : '0 1px 3px rgba(0,0,0,0.1)',
-                    },
-                    default: {
-                        shadowColor: '#000000',
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: isDark ? 0.3 : 0.1,
-                        shadowRadius: 3,
-                        elevation: 2,
-                    },
+                    web: { boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.1)' },
+                    default: { shadowColor: '#000000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: isDark ? 0.3 : 0.1, shadowRadius: 3, elevation: 2 },
                 });
             case 'prominent':
                 return Platform.select({
-                    web: {
-                        boxShadow: isDark
-                            ? '0 4px 12px rgba(0,0,0,0.4)'
-                            : '0 4px 12px rgba(0,0,0,0.15)',
-                    },
-                    default: {
-                        shadowColor: '#000000',
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: isDark ? 0.4 : 0.15,
-                        shadowRadius: 12,
-                        elevation: 8,
-                    },
+                    web: { boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.4)' : '0 4px 12px rgba(0,0,0,0.15)' },
+                    default: { shadowColor: '#000000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: isDark ? 0.4 : 0.15, shadowRadius: 12, elevation: 8 },
                 });
             default:
                 return {};
         }
-    };
-
-    const getBackgroundStyle = () => {
-        if (variant === 'gradient') {
-            return {
-                // Add gradient overlay effect
-                borderBottomWidth: 1,
-            };
-        }
-
-        return {
-            borderBottomWidth: elevation === 'none' ? 0 : 1,
-        };
-    };
-
-    const backgroundStyle = getBackgroundStyle();
-    const elevationStyle = getElevationStyle();
+    }, [elevation, isDark]);
 
     const containerStyle = useMemo(() => [
         styles.container,
-        {
-            paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 50) : 16,
-        },
-        // When header is inside ScrollView (has scrollY), don't use absolute positioning
-        !scrollY && Platform.OS !== 'web' ? {
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-        } : {},
-        backgroundStyle,
+        { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 50) : 16 },
+        // Header inside a ScrollView (scrollY provided) must not be absolutely positioned.
+        !scrollY && Platform.OS !== 'web' ? styles.absolute : null,
+        { borderBottomWidth: elevation === 'none' ? 0 : 1 },
         elevationStyle,
-    ], [insets.top, backgroundStyle, elevationStyle, scrollY]);
+    ], [insets.top, elevation, elevationStyle, scrollY]);
+
+    const titleAlign = titleAlignment === 'center' ? styles.alignCenter
+        : titleAlignment === 'right' ? styles.alignRight
+            : styles.alignLeft;
 
     const HeaderContainer = Platform.OS === 'web' || !scrollY ? View : AnimatedReanimated.View;
-    // Only apply animated styles when HeaderContainer is an animated component
-    const shouldUseAnimatedStyle = Platform.OS !== 'web' && scrollY !== undefined;
-    const headerStyle = shouldUseAnimatedStyle 
-        ? [containerStyle, animatedHeaderStyle] 
-        : containerStyle;
+    const headerStyle = Platform.OS !== 'web' && scrollY !== undefined ? [containerStyle, animatedHeaderStyle] : containerStyle;
 
     return (
-        <HeaderContainer className="bg-background border-border" style={headerStyle}>
-            <View style={[
-                styles.content,
-                variant === 'minimal' && styles.contentMinimal
-            ]}>
-                {renderBackButton()}
-                {renderTitle()}
-                {renderRightActions()}
-                {renderCloseButton()}
+        <HeaderContainer className="bg-bg border-border" style={headerStyle}>
+            <View style={[styles.content, variant === 'minimal' && styles.contentMinimal]}>
+                {showBackButton && onBack ? (
+                    <TouchableOpacity className="bg-card" style={styles.circleButton} onPress={onBack} activeOpacity={0.7}>
+                        <Ionicons name="chevron-back" size={18} color={colors.tint} />
+                    </TouchableOpacity>
+                ) : null}
+
+                <View style={[styles.titleContainer, titleAlign, variant === 'minimal' && styles.titleContainerMinimal]}>
+                    <H4 className="text-text" style={variant === 'minimal' ? styles.titleMinimal : styles.titleDefault} numberOfLines={1}>
+                        {title}
+                    </H4>
+                    {subtitle ? (
+                        <Text className="text-text-secondary" style={subtitleStyles[subtitleVariant]} numberOfLines={1}>
+                            {subtitle}
+                        </Text>
+                    ) : null}
+                </View>
+
+                {actions?.length ? (
+                    <View style={styles.actionsRow}>
+                        {actions.map((action, idx) => (
+                            <HeaderActionButton key={action.key ?? idx} action={action} colors={colors} />
+                        ))}
+                    </View>
+                ) : null}
+
+                {showCloseButton && onClose ? (
+                    <TouchableOpacity className="bg-card" style={[styles.circleButton, styles.closeButton]} onPress={onClose} activeOpacity={0.7}>
+                        <Ionicons name="close" size={18} color={colors.text} />
+                    </TouchableOpacity>
+                ) : null}
             </View>
         </HeaderContainer>
     );
@@ -346,17 +178,11 @@ const styles = StyleSheet.create({
         paddingBottom: 12,
         zIndex: 1000,
         ...Platform.select({
-            web: {
-                position: 'sticky' as 'relative',
-                top: 0,
-                left: 0,
-                right: 0,
-            },
-            default: {
-                // Position will be set dynamically based on scrollY prop
-            },
+            web: { position: 'sticky' as 'relative', top: 0, left: 0, right: 0 },
+            default: {},
         }),
     },
+    absolute: { position: 'absolute', top: 0, left: 0, right: 0 },
     content: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -364,11 +190,8 @@ const styles = StyleSheet.create({
         position: 'relative',
         minHeight: 40,
     },
-    contentMinimal: {
-        paddingHorizontal: 12,
-        minHeight: 36,
-    },
-    backButton: {
+    contentMinimal: { paddingHorizontal: 12, minHeight: 36 },
+    circleButton: {
         width: 32,
         height: 32,
         borderRadius: 16,
@@ -376,119 +199,26 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginRight: 10,
     },
-    closeButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: 10,
-    },
-    titleContainer: {
-        flex: 1,
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-    },
-    titleContainerLeft: {
-        alignItems: 'flex-start',
-    },
-    titleContainerCenter: {
-        alignItems: 'center',
-    },
-    titleContainerRight: {
-        alignItems: 'flex-end',
-    },
-    titleContainerMinimal: {
-        alignItems: 'center',
-        marginHorizontal: 16,
-    },
-    titleDefault: {
-        fontSize: 18,
-        fontWeight: '700',
-        letterSpacing: -0.5,
-        lineHeight: 22,
-    },
-    titleLarge: {
-        fontSize: 28,
-        fontWeight: '800',
-        letterSpacing: -1,
-        lineHeight: 34,
-        marginBottom: 3,
-    },
-    titleMinimal: {
-        fontSize: 16,
-        fontWeight: '600',
-        letterSpacing: -0.3,
-        lineHeight: 20,
-    },
-    subtitleDefault: {
-        fontSize: 14,
-        fontWeight: '400',
-        lineHeight: 17,
-        marginTop: 1,
-    },
-    subtitleLarge: {
-        fontSize: 16,
-        fontWeight: '400',
-        lineHeight: 19,
-        marginTop: 3,
-    },
-    subtitleMinimal: {
-        fontSize: 13,
-        fontWeight: '400',
-        lineHeight: 15,
-        marginTop: 1,
-    },
-    subtitleSmall: {
-        fontSize: 12,
-        fontWeight: '400',
-        lineHeight: 14,
-        marginTop: 0,
-    },
-    subtitleMuted: {
-        fontSize: 14,
-        fontWeight: '400',
-        lineHeight: 17,
-        marginTop: 1,
-        opacity: 0.7,
-    },
-    rightActionButton: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: 10,
-    },
-    iconActionButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-    },
-    textActionButton: {
-        paddingHorizontal: 14,
-        paddingVertical: 6,
-        borderRadius: 18,
-        minWidth: 56,
-    },
-    actionText: {
-        fontSize: 14,
-        fontWeight: '600',
-        letterSpacing: -0.2,
-    },
-    loadingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 2,
-    },
-    loadingDot: {
-        width: 4,
-        height: 4,
-        borderRadius: 2,
-        opacity: 0.6,
-    },
-    rightActionsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
+    closeButton: { marginRight: 0, marginLeft: 10 },
+    titleContainer: { flex: 1, justifyContent: 'center' },
+    alignLeft: { alignItems: 'flex-start' },
+    alignCenter: { alignItems: 'center' },
+    alignRight: { alignItems: 'flex-end' },
+    titleContainerMinimal: { alignItems: 'center', marginHorizontal: 16 },
+    titleDefault: { fontSize: 18, fontWeight: '700', letterSpacing: -0.5, lineHeight: 22 },
+    titleMinimal: { fontSize: 16, fontWeight: '600', letterSpacing: -0.3, lineHeight: 20 },
+    actionsRow: { flexDirection: 'row', alignItems: 'center' },
+    actionButton: { alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+    iconActionButton: { width: 32, height: 32, borderRadius: 16 },
+    textActionButton: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 18, minWidth: 56 },
+    actionText: { fontSize: 14, fontWeight: '600', letterSpacing: -0.2 },
 });
 
-export default Header; 
+const subtitleStyles = StyleSheet.create({
+    default: { fontSize: 14, fontWeight: '400', lineHeight: 17, marginTop: 1 },
+    small: { fontSize: 12, fontWeight: '400', lineHeight: 14 },
+    large: { fontSize: 16, fontWeight: '400', lineHeight: 19, marginTop: 3 },
+    muted: { fontSize: 14, fontWeight: '400', lineHeight: 17, marginTop: 1, opacity: 0.7 },
+});
+
+export default Header;

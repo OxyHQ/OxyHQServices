@@ -8,7 +8,8 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useOxy, Avatar } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
@@ -200,7 +201,7 @@ export default function AuthorizeScreen() {
           {/* Account summary — who you're authorizing as. */}
           <View style={styles.identityCardContainer}>
             <View style={[styles.accountSummary, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Avatar name={displayName} uri={avatarUrl} size={48} />
+              <Avatar name={displayName} source={avatarUrl} size={48} />
               <View style={styles.accountSummaryText}>
                 <Text style={[styles.accountSummaryName, { color: textColor }]} numberOfLines={1}>
                   {displayName}

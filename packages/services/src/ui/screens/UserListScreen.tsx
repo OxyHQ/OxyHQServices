@@ -13,7 +13,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import Header from '../components/Header';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import FollowButton from '../components/FollowButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
@@ -161,7 +161,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           accessibilityLabel={displayName}
         >
           <Avatar
-            uri={
+            source={
               item.avatar
                 ? oxyServices.getFileDownloadUrl(item.avatar, 'thumb')
                 : undefined

@@ -1,7 +1,7 @@
 import type React from 'react';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import type { ViewStyle } from 'react-native';
-import { useThemeColors } from '../../ui/styles/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 interface OxyLogoProps {
     width?: number;
@@ -17,11 +17,6 @@ interface OxyLogoProps {
      * If not provided, a lighter shade of the fillColor will be used
      */
     secondaryFillColor?: string;
-    /**
-     * Theme to use for the logo colors
-     * @default 'light'
-     */
-    theme?: 'light' | 'dark';
 }
 
 /**
@@ -34,15 +29,13 @@ export const OxyServicesLogo: React.FC<OxyLogoProps> = ({
     style,
     fillColor,
     secondaryFillColor,
-    theme = 'light'
 }) => {
-    // Get colors from theme
-    const themeColors = useThemeColors(theme);
+    const { colors } = useTheme();
 
     // Use theme primary color if no fillColor is provided
-    const primaryColor = fillColor || themeColors.primary;
+    const primaryColor = fillColor || colors.primary;
 
-    const innerFillColor = secondaryFillColor || themeColors.background;
+    const innerFillColor = secondaryFillColor || colors.background;
 
     return (
         <Svg width={width} height={height} viewBox="0 0 500 429.13" style={style}>

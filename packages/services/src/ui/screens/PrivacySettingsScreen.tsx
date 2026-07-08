@@ -7,9 +7,9 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
 import Header from '../components/Header';
-import Avatar from '../components/Avatar';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useSettingToggles } from '../hooks/useSettingToggle';
@@ -212,7 +212,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     variant="minimal"
                     elevation="subtle"
                 />
-                <LoadingState color={bloomTheme.colors.text} />
+                <Loading size="large" color={bloomTheme.colors.text} />
             </View>
         );
     }
@@ -359,12 +359,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     {/* Blocked Users */}
                     <SettingsListGroup title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
                         {isLoadingUsers ? (
-                            <LoadingState color={bloomTheme.colors.text} size="small" />
+                            <Loading size="small" color={bloomTheme.colors.text} />
                         ) : blockedUsers.length === 0 ? (
-                            <EmptyState
-                                message={t('privacySettings.noBlockedUsers') || 'No blocked users'}
-                                textColor={bloomTheme.colors.textSecondary}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('privacySettings.noBlockedUsers') || 'No blocked users'}
+                            </Text>
                         ) : (
                             blockedUsers.map((blocked) => {
                                 const { userId, displayName, avatar } = extractUserInfo(blocked, 'blockedId');
@@ -372,7 +371,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                                 return (
                                     <SettingsListItem
                                         key={userId}
-                                        icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                        icon={<Avatar source={avatarUri} name={displayName} size={20} />}
                                         title={displayName}
                                         rightElement={
                                             <Button
@@ -393,12 +392,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     {/* Restricted Users */}
                     <SettingsListGroup title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'}>
                         {isLoadingUsers ? (
-                            <LoadingState color={bloomTheme.colors.text} size="small" />
+                            <Loading size="small" color={bloomTheme.colors.text} />
                         ) : restrictedUsers.length === 0 ? (
-                            <EmptyState
-                                message={t('privacySettings.noRestrictedUsers') || 'No restricted users'}
-                                textColor={bloomTheme.colors.textSecondary}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('privacySettings.noRestrictedUsers') || 'No restricted users'}
+                            </Text>
                         ) : (
                             restrictedUsers.map((restricted) => {
                                 const { userId, displayName, avatar } = extractUserInfo(restricted, 'restrictedId');
@@ -406,7 +404,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                                 return (
                                     <SettingsListItem
                                         key={userId}
-                                        icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                        icon={<Avatar source={avatarUri} name={displayName} size={20} />}
                                         title={displayName}
                                         description={t('privacySettings.restrictedDescription') || 'Limited interactions'}
                                         rightElement={

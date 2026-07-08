@@ -54,7 +54,7 @@ jest.mock('../../src/ui/navigation/accountDialogManager', () => ({
   subscribeToSignInModal: () => () => undefined,
 }));
 
-jest.mock('../../src/ui/components/OxyLogo', () => ({ __esModule: true, default: () => null }));
+jest.mock('../../src/ui/components/logo/LogoIcon', () => ({ LogoIcon: () => null }));
 
 jest.mock('../../src/ui/components/oauthNavigation', () => ({
   __esModule: true,

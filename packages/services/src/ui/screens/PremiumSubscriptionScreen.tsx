@@ -6,6 +6,8 @@ import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Chip } from '@oxyhq/bloom/chip';
+import { Badge } from '@oxyhq/bloom/badge';
+import { Card, CardBody } from '@oxyhq/bloom/card';
 import { H2, H4, H5, Text } from '@oxyhq/bloom/typography';
 import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
 import {
@@ -568,7 +570,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     {t('premium.current.title') || 'Current Subscription'}
                 </H5>
 
-                <View className="bg-fill border border-border-image rounded-radius-20 p-space-20 shadow-s">
+                <Card variant="outlined">
+                  <CardBody style={{ padding: 20 }}>
                     <View className="flex-row justify-between items-start mb-space-12">
                         <View className="flex-1 pr-space-12">
                             <H4 className="text-text" numberOfLines={1}>{currentPlan.name}</H4>
@@ -576,9 +579,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 {`$${currentPlan.price}/month`}
                             </Text>
                         </View>
-                        <Chip variant="soft" color={statusChipColor} size="small">
-                            {subscription.status.toUpperCase()}
-                        </Chip>
+                        <Badge variant="subtle" color={statusChipColor} size="large" content={subscription.status.toUpperCase()} />
                     </View>
 
                     <Text className="text-text-secondary text-sm mb-space-16">
@@ -624,7 +625,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             {t('premium.actions.manageBilling') || 'Manage Billing'}
                         </Button>
                     </View>
-                </View>
+                  </CardBody>
+                </Card>
             </View>
         );
     };
@@ -689,31 +691,29 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const availability = getAvailabilityStatus();
 
         return (
-            <View
+            <Card
                 key={plan.id}
-                className={`bg-fill border border-border-image rounded-radius-20 p-space-20 mb-space-16 shadow-s ${!availability.available ? 'opacity-60' : ''}`}
-                style={
-                    isSelected || plan.isPopular
-                        ? { borderColor: colors.primary, borderWidth: 2 }
-                        : undefined
-                }
+                variant="outlined"
+                style={[
+                    { marginBottom: 16 },
+                    !availability.available ? { opacity: 0.6 } : null,
+                    (isSelected || plan.isPopular) ? { borderColor: colors.primary, borderWidth: 2 } : null,
+                ]}
             >
+              <CardBody style={{ padding: 20 }}>
                 <View className="flex-row flex-wrap gap-space-8 mb-space-12">
                     {plan.isPopular && (
-                        <Chip variant="solid" color="primary" size="small">
-                            {t('premium.plan.badge.mostPopular') || 'Most Popular'}
-                        </Chip>
+                        <Badge variant="solid" color="primary" size="large" content={t('premium.plan.badge.mostPopular') || 'Most Popular'} />
                     )}
                     {isAppSpecific && (
-                        <Chip
-                            variant="soft"
+                        <Badge
+                            variant="subtle"
                             color={isAvailableForCurrentApp ? 'success' : 'warning'}
-                            size="small"
-                        >
-                            {isAvailableForCurrentApp
+                            size="large"
+                            content={isAvailableForCurrentApp
                                 ? (t('premium.plan.badge.appExclusive') || 'App Exclusive')
                                 : (t('premium.plan.badge.notAvailable') || 'Not Available')}
-                        </Chip>
+                        />
                     )}
                 </View>
 
@@ -780,7 +780,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {t('premium.actions.subscribeTo', { name: plan.name }) || `Subscribe to ${plan.name}`}
                     </Button>
                 )}
-            </View>
+              </CardBody>
+            </Card>
         );
     };
 
@@ -842,17 +843,19 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         };
 
         return (
-            <View
+            <Card
                 key={feature.id}
-                className="bg-fill border border-border-image rounded-radius-12 p-space-16 mb-space-12 shadow-s"
-                style={
+                variant="outlined"
+                style={[
+                    { marginBottom: 12 },
                     isIncludedInCurrentPlan
                         ? { borderColor: colors.primary, borderWidth: 2 }
                         : isSubscribed
                             ? { borderColor: colors.success, borderWidth: 2 }
-                            : undefined
-                }
+                            : null,
+                ]}
             >
+              <CardBody style={{ padding: 16 }}>
                 <View className="flex-row items-start mb-space-12">
                     <View
                         className="bg-fill-secondary rounded-radius-max items-center justify-center mr-space-12"
@@ -868,9 +871,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <View className="flex-row items-center justify-between mb-space-4">
                             <H5 className="text-text flex-1 pr-space-8" numberOfLines={1}>{feature.name}</H5>
                             {isIncludedInCurrentPlan && (
-                                <Chip variant="solid" color="primary" size="small">
-                                    {t('premium.feature.included') || 'Included'}
-                                </Chip>
+                                <Badge variant="solid" color="primary" size="large" content={t('premium.feature.included') || 'Included'} />
                             )}
                         </View>
                         <Text className="text-text-secondary text-sm">
@@ -942,7 +943,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {t('premium.feature.plansOnly') || 'Only available in subscription plans'}
                     </Button>
                 )}
-            </View>
+              </CardBody>
+            </Card>
         );
     };
 

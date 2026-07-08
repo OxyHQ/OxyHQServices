@@ -15,7 +15,7 @@ import { Chip } from '@oxyhq/bloom/chip';
 import { Button } from '@oxyhq/bloom/button';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../../types/navigation';
-import Avatar from '../../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import Header from '../../components/Header';
 import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
@@ -94,7 +94,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate })
                         {item.rank}
                     </Text>
                     <Avatar
-                        uri={item.user.avatar ? oxyServices.getFileDownloadUrl(item.user.avatar, 'thumb') : undefined}
+                        source={item.user.avatar ? oxyServices.getFileDownloadUrl(item.user.avatar, 'thumb') : undefined}
                         name={displayName}
                         size={AVATAR_SIZE}
                     />

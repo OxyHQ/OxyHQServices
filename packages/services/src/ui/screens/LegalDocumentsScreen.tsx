@@ -6,7 +6,7 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import { logger } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 
@@ -114,9 +114,10 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                     variant="minimal"
                     elevation="subtle"
                 />
-                <LoadingState
-                    message={t('legal.opening') || 'Opening document...'}
+                <Loading
+                    size="large"
                     color={bloomTheme.colors.text}
+                    text={t('legal.opening') || 'Opening document...'}
                 />
             </View>
         );

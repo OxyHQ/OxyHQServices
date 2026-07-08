@@ -3,8 +3,8 @@ import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
@@ -110,8 +110,8 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
                         />
                     </SettingsListGroup>
                     <SettingsListGroup title={t('history.recent') || 'Recent History'}>
-                        {isLoading ? <LoadingState message={t('history.loading') || 'Loading history...'} color={bloomTheme.colors.text} />
-                         : history.length === 0 ? <EmptyState message={t('history.empty') || 'No history yet'} textColor={bloomTheme.colors.text} />
+                        {isLoading ? <Loading size="large" color={bloomTheme.colors.text} text={t('history.loading') || 'Loading history...'} />
+                         : history.length === 0 ? <Text className="text-text-secondary text-center p-space-40">{t('history.empty') || 'No history yet'}</Text>
                          : history.map(item => (
                             <SettingsListItem
                                 key={item.id}

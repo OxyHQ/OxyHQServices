@@ -2,12 +2,12 @@ import type React from 'react';
 import { useMemo } from 'react';
 import { View, ScrollView } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H4, Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { getAccountDisplayName } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -63,17 +63,11 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
                 showsVerticalScrollIndicator={false}
             >
                 {/* Profile card */}
-                <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
-                    <Avatar uri={avatarUri} name={displayName} size={72} />
-                    <H4 className="text-text mt-space-12" numberOfLines={1}>
-                        {displayName}
-                    </H4>
-                    {user?.username ? (
-                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            @{user.username}
-                        </Text>
-                    ) : null}
-                </View>
+                <ProfileSummaryCard
+                    displayName={displayName}
+                    avatarUri={avatarUri}
+                    lines={[user?.username ? `@${user.username}` : null]}
+                />
 
                 {/* Profile picture */}
                 <SettingsListGroup title={t('editProfile.sections.profilePicture') || 'Profile Picture'}>
@@ -82,7 +76,7 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
                         title={t('editProfile.changeAvatar') || 'Change avatar'}
                         description={t('editProfile.items.avatar.subtitle') || 'Update your profile photo'}
                         onPress={openAvatarPicker}
-                        rightElement={<Avatar uri={avatarUri} name={displayName} size={32} />}
+                        rightElement={<Avatar source={avatarUri} name={displayName} size={32} />}
                     />
                 </SettingsListGroup>
 

@@ -12,9 +12,7 @@ import {
   type OxyConsentScreenProps,
 } from '../OxyConsentScreen';
 
-// OxyLogo renders through react-native-svg, which is not meaningful (and not
-// resolvable) under the jsdom RN stub — replace it with an inert node.
-jest.mock('../OxyLogo', () => ({ __esModule: true, default: () => null }));
+jest.mock('../logo/LogoIcon', () => ({ LogoIcon: () => null }));
 
 const baseApp: OxyConsentApplication = { name: 'Acme Notes' };
 

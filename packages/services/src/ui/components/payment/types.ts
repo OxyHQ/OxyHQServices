@@ -1,6 +1,7 @@
 import type React from 'react';
 import type { Animated } from 'react-native';
 import type { Ionicons } from '@expo/vector-icons';
+import type { ThemeColors } from '@oxyhq/bloom/theme';
 
 export type PaymentItem = {
     type: 'product' | 'subscription' | 'service' | 'fee' | string;
@@ -37,13 +38,8 @@ export interface PaymentStepAnimations {
     scaleAnim: Animated.Value;
 }
 
-export interface PaymentColors {
-    primary: string;
-    text: string;
-    secondaryText: string;
-    border: string;
-    success?: string;
-    error?: string;
-    background?: string;
-    card?: string;
-}
+/**
+ * Payment wizard steps consume bloom's ThemeColors directly (no adapter).
+ * Screen shells pass `useTheme().colors` straight through.
+ */
+export type PaymentColors = ThemeColors;

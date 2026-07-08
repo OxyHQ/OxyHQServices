@@ -26,7 +26,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
-import OxyLogo from './OxyLogo';
+import { LogoIcon } from './logo/LogoIcon';
 
 /** The requesting application, resolved by the caller (never user-supplied raw). */
 export interface OxyConsentApplication {
@@ -185,7 +185,7 @@ export function OxyConsentScreen({
             <View style={[styles.dot, { backgroundColor: theme.colors.border }]} />
           </View>
           <View style={[styles.logoBadge, { backgroundColor: theme.colors.backgroundSecondary ?? theme.colors.card }]}>
-            <OxyLogo variant="icon" size={30} fillColor={theme.colors.primary} />
+            <LogoIcon height={30} color={theme.colors.primary} />
           </View>
         </View>
         <Text style={[styles.title, { color: theme.colors.text }]}>

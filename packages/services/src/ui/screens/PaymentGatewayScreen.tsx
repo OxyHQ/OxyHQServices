@@ -8,8 +8,6 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles/theme';
-import { normalizeTheme } from '@oxyhq/core';
 import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H4 } from '@oxyhq/bloom/typography';
@@ -45,7 +43,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const {
         navigate,
         goBack,
-        theme,
         onPaymentResult,
         amount,
         currency = 'FAIR',
@@ -76,11 +73,10 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0.2)).current;
 
-    const normalizedTheme = normalizeTheme(theme);
-    // `colors` (PaymentColors) is the contract the wizard step components consume.
-    const colors = useThemeColors(normalizedTheme);
-    // Bloom theme drives screen-shell icon roles (no hardcoded hex).
+    // Bloom theme drives all payment colors — the wizard step components consume
+    // `colors` (PaymentColors === bloom ThemeColors) directly, no mapper.
     const bloomTheme = useTheme();
+    const colors = bloomTheme.colors;
     const { t } = useI18n();
 
     // Determine if the payment is for a recurring item (subscription)

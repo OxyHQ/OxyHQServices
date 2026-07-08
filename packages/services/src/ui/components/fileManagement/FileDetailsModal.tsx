@@ -65,44 +65,44 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
                     />
                 </View>
 
-                <Text className="text-foreground" style={fileManagementStyles.fileDetailName}>
+                <Text className="text-text" style={fileManagementStyles.fileDetailName}>
                     {file.filename}
                 </Text>
 
                 <View style={fileManagementStyles.fileDetailInfo}>
                     <View style={fileManagementStyles.detailRow}>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.detailLabel}>
                             Size:
                         </Text>
-                        <Text className="text-foreground" style={fileManagementStyles.detailValue}>
+                        <Text className="text-text" style={fileManagementStyles.detailValue}>
                             {formatFileSize(file.length)}
                         </Text>
                     </View>
 
                     <View style={fileManagementStyles.detailRow}>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.detailLabel}>
                             Type:
                         </Text>
-                        <Text className="text-foreground" style={fileManagementStyles.detailValue}>
+                        <Text className="text-text" style={fileManagementStyles.detailValue}>
                             {file.contentType}
                         </Text>
                     </View>
 
                     <View style={fileManagementStyles.detailRow}>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.detailLabel}>
                             Uploaded:
                         </Text>
-                        <Text className="text-foreground" style={fileManagementStyles.detailValue}>
+                        <Text className="text-text" style={fileManagementStyles.detailValue}>
                             {new Date(file.uploadDate).toLocaleString()}
                         </Text>
                     </View>
 
                     {file.metadata?.description && (
                         <View style={fileManagementStyles.detailRow}>
-                            <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
+                            <Text className="text-text-secondary" style={fileManagementStyles.detailLabel}>
                                 Description:
                             </Text>
-                            <Text className="text-foreground" style={fileManagementStyles.detailValue}>
+                            <Text className="text-text" style={fileManagementStyles.detailValue}>
                                 {file.metadata.description}
                             </Text>
                         </View>

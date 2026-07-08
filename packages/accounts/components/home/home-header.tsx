@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Avatar } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { ThemedText } from '@/components/themed-text';
 import { useColors } from '@/hooks/useColors';
@@ -83,7 +83,7 @@ export function HomeHeader({
             accessibilityLabel={t('a11y.avatar')}
             accessibilityHint={t('a11y.avatarHint')}
           >
-            <Avatar name={displayName} uri={avatarUrl} size={100} />
+            <Avatar name={displayName} source={avatarUrl} size={100} />
           </TouchableOpacity>
         </View>
         <View style={styles.nameWrapper}>

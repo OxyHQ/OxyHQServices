@@ -570,7 +570,6 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         >
             <Header
                 title={t('feedback.title') || 'Feedback'}
-                theme={normalizedTheme}
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"

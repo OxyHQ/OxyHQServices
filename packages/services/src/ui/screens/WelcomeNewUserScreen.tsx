@@ -3,7 +3,7 @@ import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, Platform, Animated } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../types/navigation';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { useAuthStore } from '../stores/authStore';
@@ -303,15 +303,15 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
-                        <H1 style={styles.title} className="text-foreground">{step.title}</H1>
-                        {step.body && <Text style={styles.body} className="text-muted-foreground">{step.body}</Text>}
+                        <H1 style={styles.title} className="text-text">{step.title}</H1>
+                        {step.body && <Text style={styles.body} className="text-text-secondary">{step.body}</Text>}
                     </View>
                     {Array.isArray(step.bullets) && step.bullets.length > 0 && (
                         <View style={[styles.bulletContainer, styles.sectionSpacing]}>
                             {step.bullets.map(b => (
                                 <View key={b} style={styles.bulletRow}>
                                     <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                    <Text style={styles.bulletText} className="text-muted-foreground">{b}</Text>
+                                    <Text style={styles.bulletText} className="text-text-secondary">{b}</Text>
                                 </View>
                             ))}
                         </View>
@@ -348,9 +348,8 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                             <Avatar
                                 size={120}
                                 name={welcomeName}
-                                uri={avatarUri}
-
-                                backgroundColor={`${colors.primary}20`}
+                                source={avatarUri}
+                                placeholderColor={`${colors.primary}20`}
                                 style={styles.avatar}
                             />
                             <Button variant="primary" size="small" onPress={openAvatarPicker}>

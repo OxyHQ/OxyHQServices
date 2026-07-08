@@ -9,7 +9,7 @@
 
 import React, { memo, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { Avatar } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { useFollow } from '@oxyhq/services';
 import type { User } from '@oxyhq/core';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
@@ -64,7 +64,7 @@ function ContactMatchRowComponent({ match }: { match: ContactMatch }) {
     <View style={[styles.row, { borderBottomColor: colors.border }]}>
       <Avatar
         name={displayName}
-        uri={avatarUrl}
+        source={avatarUrl}
         size={40}
       />
       <View style={styles.identity}>

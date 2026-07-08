@@ -12,7 +12,8 @@ import { AccountCard, EmptyStateCard } from '@/components/ui';
 import { menuItems } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, FollowButton as ImportedFollowButton, Avatar } from '@oxyhq/services';
+import { useOxy, FollowButton as ImportedFollowButton } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { getAccountFallbackHandle, getNormalizedUserHandle } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
@@ -220,7 +221,7 @@ export default function SearchScreen() {
           customIcon: (
             <Avatar
               name={displayName}
-              uri={avatarUrl}
+              source={avatarUrl}
               size={40}
             />
           ),

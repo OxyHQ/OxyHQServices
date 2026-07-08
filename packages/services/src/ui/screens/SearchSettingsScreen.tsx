@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -86,7 +86,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                     variant="minimal"
                     elevation="subtle"
                 />
-                <LoadingState color={bloomTheme.colors.text} />
+                <Loading size="large" color={bloomTheme.colors.text} />
             </View>
         );
     }

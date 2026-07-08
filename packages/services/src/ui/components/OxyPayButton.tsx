@@ -1,9 +1,9 @@
 import type React from 'react';
-import { useState } from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
+import { type ViewStyle, type TextStyle, type StyleProp } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Button } from '@oxyhq/bloom/button';
 import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';
-import OxyLogo from './OxyLogo';
+import { LogoIcon } from './logo/LogoIcon';
 
 export interface OxyPayButtonProps {
     style?: StyleProp<ViewStyle>;
@@ -34,48 +34,28 @@ const OxyPayButton: React.FC<OxyPayButtonProps> = ({
     textStyle,
     text = 'Pay',
     disabled = false,
-    amount,
-    currency = 'FAIR',
-    paymentItems,
-    description,
-    onPaymentResult,
     color,
     variant = 'white',
 }) => {
     const theme = useTheme();
-    const [buttonHeight, setButtonHeight] = useState<number>(52);
     const handlePress = () => {
         console.warn('OxyPayButton: The bottom sheet payment flow has been removed. Provide a custom onPress handler.');
     };
     // Determine background and text color
     const backgroundColor = color || (variant === 'black' ? theme.colors.text : theme.colors.background);
     const textColor = variant === 'black' || (color && isColorDark(color)) ? theme.colors.background : '#1b1f0a';
-    // Responsive sizing
-    const logoWidth = Math.round(buttonHeight * 0.5); // 50% of button height
-    const logoHeight = Math.round(buttonHeight * 0.25); // 25% of button height
-    const fontSize = Math.round(buttonHeight * 0.35); // 35% of button height
-    const handleLayout = (e: LayoutChangeEvent) => {
-        const h = e.nativeEvent.layout.height;
-        if (h && Math.abs(h - buttonHeight) > 1) setButtonHeight(h);
-    };
+
     return (
-        <TouchableOpacity
-            style={[styles.button, { backgroundColor, borderColor: textColor, borderWidth: 1 }, disabled && styles.buttonDisabled, style]}
+        <Button
+            variant="inverse"
             onPress={handlePress}
             disabled={disabled}
-            activeOpacity={0.85}
-            onLayout={handleLayout}
+            style={[{ backgroundColor, borderColor: textColor, borderWidth: 1 }, style]}
+            textStyle={[{ color: textColor, fontWeight: '700' }, textStyle]}
+            icon={<LogoIcon height={16} color={textColor} style={{ marginRight: 6 }} />}
         >
-            <View style={styles.buttonContent}>
-                <OxyLogo
-                    variant="icon"
-                    size={logoHeight}
-                    style={{ marginRight: logoHeight * 0.2, marginTop: (fontSize - logoHeight) / 2 }}
-                    fillColor={textColor}
-                />
-                <Text style={[styles.text, { color: textColor, fontSize }, textStyle]}>{text}</Text>
-            </View>
-        </TouchableOpacity>
+            {text}
+        </Button>
     );
 };
 
@@ -90,34 +70,5 @@ function isColorDark(hex: string) {
     // Perceived luminance
     return (0.299 * r + 0.587 * g + 0.114 * b) < 150;
 }
-
-const styles = StyleSheet.create({
-    button: {
-        padding: 14,
-        borderRadius: 35,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'row',
-        minHeight: 52,
-    },
-    buttonDisabled: {
-        opacity: 0.6,
-    },
-    buttonContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    oxyLogo: {
-        // marginRight is set dynamically
-    },
-    centeredItem: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    text: {
-        fontWeight: '700',
-    },
-});
 
 export default OxyPayButton;

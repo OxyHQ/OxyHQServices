@@ -36,19 +36,31 @@
       },
       "default": "./lib/module/ui/index.js"
     },
-    "./package.json": "./package.json",
-    "./*": {
-      "react-native": "./src/*",
-      "import": "./lib/module/*",
-      "require": "./lib/commonjs/*",
-      "default": "./lib/module/*"
+    "./ui/client": {
+      "react-native": "./src/ui/client.ts",
+      "import": {
+        "types": "./lib/typescript/module/ui/client.d.ts",
+        "default": "./lib/module/ui/client.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/ui/client.d.ts",
+        "default": "./lib/commonjs/ui/client.js"
+      },
+      "default": "./lib/module/ui/client.js"
     },
-    "./*.js": {
-      "react-native": "./src/*.ts",
-      "import": "./lib/module/*.js",
-      "require": "./lib/commonjs/*.js",
-      "default": "./lib/module/*.js"
-    }
+    "./ui/server": {
+      "react-native": "./src/ui/server.ts",
+      "import": {
+        "types": "./lib/typescript/module/ui/server.d.ts",
+        "default": "./lib/module/ui/server.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/ui/server.d.ts",
+        "default": "./lib/commonjs/ui/server.js"
+      },
+      "default": "./lib/module/ui/server.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "src",

@@ -1,0 +1,123 @@
+import type React from 'react';
+import { View, type ViewStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { H4, Text } from '@oxyhq/bloom/typography';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import { Card } from '@oxyhq/bloom/card';
+import { PressableScale } from '@oxyhq/bloom/pressable-scale';
+
+/**
+ * ProfileSummaryCard — the shared "who am I" summary block rendered at the top
+ * of {@link ManageAccountScreen} and {@link EditProfileScreen}.
+ *
+ * A Bloom filled {@link Card} containing a centered {@link Avatar}, the display
+ * name and any number of secondary lines (handle, email, …). When
+ * `onAvatarPress` is supplied the avatar becomes a {@link PressableScale} entry
+ * point (used to open the avatar picker) and can render an optional camera
+ * badge overlay.
+ */
+export interface ProfileSummaryCardProps {
+    /** Primary display name shown under the avatar. */
+    displayName: string;
+    /** Resolved avatar thumbnail URL (undefined → initials fallback). */
+    avatarUri?: string;
+    /** Avatar diameter in px. Defaults to 72. */
+    avatarSize?: number;
+    /**
+     * Secondary lines rendered beneath the name (e.g. `@handle`, email).
+     * Falsy entries are skipped so callers can pass conditional values inline.
+     */
+    lines?: Array<string | null | undefined | false>;
+    /** When provided, the avatar is pressable (e.g. opens the avatar picker). */
+    onAvatarPress?: () => void;
+    /** Render the camera badge overlay. Only meaningful with `onAvatarPress`. */
+    showCameraBadge?: boolean;
+    /** Accessibility label for the pressable avatar. */
+    avatarAccessibilityLabel?: string;
+}
+
+const badgeStyle: ViewStyle = {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+};
+
+const cardStyle: ViewStyle = {
+    borderRadius: 20,
+    marginBottom: 16,
+};
+
+const pressableStyle: ViewStyle = {
+    position: 'relative',
+};
+
+const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
+    displayName,
+    avatarUri,
+    avatarSize = 72,
+    lines,
+    onAvatarPress,
+    showCameraBadge = false,
+    avatarAccessibilityLabel,
+}) => {
+    const bloomTheme = useTheme();
+
+    const avatar = <Avatar source={avatarUri} name={displayName} size={avatarSize} />;
+
+    const avatarNode = onAvatarPress ? (
+        <PressableScale
+            onPress={onAvatarPress}
+            accessibilityRole="button"
+            accessibilityLabel={avatarAccessibilityLabel}
+            style={pressableStyle}
+            className="mb-space-12"
+        >
+            {avatar}
+            {showCameraBadge ? (
+                <View style={badgeStyle} className="bg-fill-brand border-border-image">
+                    <Ionicons
+                        name="camera"
+                        size={14}
+                        color={bloomTheme.colors.primaryForeground}
+                    />
+                </View>
+            ) : null}
+        </PressableScale>
+    ) : (
+        <View className="mb-space-12">{avatar}</View>
+    );
+
+    const subtitleLines = (lines ?? []).filter(
+        (line): line is string => typeof line === 'string' && line.length > 0,
+    );
+
+    return (
+        <Card variant="filled" style={cardStyle}>
+            <View className="items-center px-space-20 py-space-24">
+                {avatarNode}
+                <H4 className="text-text" numberOfLines={1}>
+                    {displayName}
+                </H4>
+                {subtitleLines.map((line, index) => (
+                    <Text
+                        // Subtitle order is stable within a render; index keys are safe here.
+                        key={`${index}-${line}`}
+                        className="text-text-secondary text-sm mt-space-2"
+                        numberOfLines={1}
+                    >
+                        {line}
+                    </Text>
+                ))}
+            </View>
+        </Card>
+    );
+};
+
+export default ProfileSummaryCard;

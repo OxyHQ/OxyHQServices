@@ -28,7 +28,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { Text } from '@oxyhq/bloom/typography';
 import { useOxy } from '../context/OxyContext';
 import { OxySignInButton } from './OxySignInButton';
-import OxyLogo from './OxyLogo';
+import { LogoIcon } from './logo/LogoIcon';
 
 /**
  * How `RequireOxyAuth` treats a signed-out (or still-resolving) session.
@@ -135,7 +135,7 @@ const SoftGate: React.FC<SoftGateProps> = ({ children, pending, message, actionL
     <View style={styles.softRoot}>
       {showBanner ? (
         <View style={[styles.banner, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <OxyLogo variant="icon" size={20} fillColor={theme.colors.primary} />
+          <LogoIcon height={20} color={theme.colors.primary} />
           <Text style={[styles.bannerText, { color: theme.colors.text }]} numberOfLines={2}>
             {message}
           </Text>
@@ -172,7 +172,7 @@ const HardWall: React.FC<{ title: string; subtitle: string }> = ({ title, subtit
   return (
     <View style={[styles.wallRoot, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.logoBadge, { backgroundColor: theme.colors.primarySubtle }]}>
-        <OxyLogo variant="icon" size={44} fillColor={theme.colors.primary} />
+        <LogoIcon height={44} color={theme.colors.primary} />
       </View>
       <Text style={[styles.wallTitle, { color: theme.colors.text }]}>{title}</Text>
       <Text style={[styles.wallSubtitle, { color: theme.colors.textSecondary }]}>{subtitle}</Text>

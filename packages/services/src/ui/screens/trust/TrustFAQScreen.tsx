@@ -2,7 +2,6 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
-import EmptyState from '../../components/EmptyState';
 import { SearchInput } from '@oxyhq/bloom/search-input';
 import {
     Accordion,
@@ -11,7 +10,6 @@ import {
     AccordionContent,
 } from '@oxyhq/bloom/accordion';
 import { Text } from '@oxyhq/bloom/typography';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../../hooks/useI18n';
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
@@ -26,7 +24,6 @@ const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const
  */
 const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { t } = useI18n();
-    const bloomTheme = useTheme();
 
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState<string | undefined>(undefined);
@@ -75,13 +72,10 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
             <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
                 {filteredFaqs.length === 0 ? (
-                    <EmptyState
-                        message={
-                            t('trust.faq.noResults', { query: search }) ||
-                            `No FAQ items found matching "${search}"`
-                        }
-                        textColor={bloomTheme.colors.text}
-                    />
+                    <Text className="text-text-secondary text-center p-space-40">
+                        {t('trust.faq.noResults', { query: search }) ||
+                            `No FAQ items found matching "${search}"`}
+                    </Text>
                 ) : (
                     <Accordion
                         type="single"

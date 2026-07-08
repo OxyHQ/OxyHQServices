@@ -10,8 +10,8 @@ import {
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
@@ -119,16 +119,16 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
             <ScrollView className="flex-1">
                 <View className="px-screen-margin pb-space-24">
                     {isLoading ? (
-                        <LoadingState
-                            message={t('saves.loading') || 'Loading...'}
+                        <Loading
+                            size="large"
                             color={bloomTheme.colors.text}
+                            text={t('saves.loading') || 'Loading...'}
                         />
                     ) : activeTab === 'saves' ? (
                         savedItems.length === 0 ? (
-                            <EmptyState
-                                message={t('saves.empty') || 'No saved items yet'}
-                                textColor={bloomTheme.colors.text}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('saves.empty') || 'No saved items yet'}
+                            </Text>
                         ) : (
                             <SettingsListGroup title={t('saves.savedItems') || 'Saved Items'}>
                                 {savedItems.map((item) => (
@@ -148,10 +148,9 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         )
                     ) : (
                         collections.length === 0 ? (
-                            <EmptyState
-                                message={t('saves.noCollections') || 'No collections yet'}
-                                textColor={bloomTheme.colors.text}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('saves.noCollections') || 'No collections yet'}
+                            </Text>
                         ) : (
                             <SettingsListGroup title={t('saves.collections') || 'Collections'}>
                                 {collections.map((collection) => (

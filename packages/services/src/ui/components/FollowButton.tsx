@@ -1,15 +1,13 @@
 import React, { useEffect, useCallback, useMemo, useState, memo } from 'react';
 import {
-  TouchableOpacity,
-  Text,
   type ViewStyle,
   type TextStyle,
   type StyleProp,
-  Platform,
-  ActivityIndicator
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '@oxyhq/bloom';
+import { Button } from '@oxyhq/bloom/button';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useFollow, useFollowForButton } from '../hooks/useFollow';
 import { useFollowStore } from '../stores/followStore';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -107,34 +105,26 @@ const FollowButtonInner = memo(function FollowButtonInner({
     if (userId) fetchStatus();
   }, [userId, fetchStatus]);
 
-  const baseButtonStyle = getBaseButtonStyle(size, style);
-  const baseTextStyle = getBaseTextStyle(size, textStyle);
+  const showSpinner = showLoadingState && isLoading;
 
   return (
-    <TouchableOpacity
-      className={isFollowing
-        ? 'bg-background border-border'
-        : 'bg-primary border-primary'
-      }
-      style={baseButtonStyle}
-      onPress={handlePress}
+    <Button
+      variant={isFollowing ? 'secondary' : 'primary'}
+      size={size}
+      onPress={() => { void handlePress(); }}
       disabled={disabled || isLoading}
-      activeOpacity={0.8}
-    >
-      {showLoadingState && isLoading ? (
-        <ActivityIndicator
+      style={style}
+      textStyle={textStyle}
+      icon={showSpinner ? (
+        <Loading
+          variant="inline"
           size="small"
           color={isFollowing ? colors.text : colors.primaryForeground}
         />
-      ) : (
-        <Text
-          className={isFollowing ? 'text-foreground' : 'text-primary-foreground'}
-          style={baseTextStyle}
-        >
-          {isFollowing ? 'Following' : 'Follow'}
-        </Text>
-      )}
-    </TouchableOpacity>
+      ) : undefined}
+    >
+      {showSpinner ? undefined : (isFollowing ? 'Following' : 'Follow')}
+    </Button>
   );
 });
 
@@ -246,34 +236,26 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
     }
   }, [disabled, isLoading, allFollowing, followAllUsers, unfollowAllUsers, onFollowChange, onBulkFollow, onBulkUnfollow, preventParentActions]);
 
-  const baseButtonStyle = getBaseButtonStyle(size, style);
-  const baseTextStyle = getBaseTextStyle(size, textStyle);
+  const showSpinner = showLoadingState && isLoading;
 
   return (
-    <TouchableOpacity
-      className={allFollowing
-        ? 'bg-background border-border'
-        : 'bg-primary border-primary'
-      }
-      style={baseButtonStyle}
-      onPress={handlePress}
+    <Button
+      variant={allFollowing ? 'secondary' : 'primary'}
+      size={size}
+      onPress={() => { void handlePress(); }}
       disabled={disabled || isLoading}
-      activeOpacity={0.8}
-    >
-      {showLoadingState && isLoading ? (
-        <ActivityIndicator
+      style={style}
+      textStyle={textStyle}
+      icon={showSpinner ? (
+        <Loading
+          variant="inline"
           size="small"
           color={allFollowing ? colors.text : colors.primaryForeground}
         />
-      ) : (
-        <Text
-          className={allFollowing ? 'text-foreground' : 'text-primary-foreground'}
-          style={baseTextStyle}
-        >
-          {allFollowing ? followedAllLabel : followAllLabel}
-        </Text>
-      )}
-    </TouchableOpacity>
+      ) : undefined}
+    >
+      {showSpinner ? undefined : (allFollowing ? followedAllLabel : followAllLabel)}
+    </Button>
   );
 });
 
@@ -327,53 +309,6 @@ const FollowButton: React.FC<FollowButtonProps> = (props) => {
     />
   );
 };
-
-function getBaseButtonStyle(size: string, style?: StyleProp<ViewStyle>): StyleProp<ViewStyle> {
-  const baseStyle: ViewStyle = {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    ...Platform.select({
-      web: {},
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
-      }
-    }),
-  };
-
-  let sizeStyle: ViewStyle;
-  if (size === 'small') {
-    sizeStyle = { paddingVertical: 6, paddingHorizontal: 12, minWidth: 70, borderRadius: 35 };
-  } else if (size === 'large') {
-    sizeStyle = { paddingVertical: 12, paddingHorizontal: 24, minWidth: 120, borderRadius: 35 };
-  } else {
-    sizeStyle = { paddingVertical: 8, paddingHorizontal: 16, minWidth: 90, borderRadius: 35 };
-  }
-
-  return [baseStyle, sizeStyle, style];
-}
-
-function getBaseTextStyle(size: string, textStyle?: StyleProp<TextStyle>): StyleProp<TextStyle> {
-  const baseTextStyle: TextStyle = {
-    fontWeight: '600',
-  };
-
-  let sizeTextStyle: TextStyle;
-  if (size === 'small') {
-    sizeTextStyle = { fontSize: 13 };
-  } else if (size === 'large') {
-    sizeTextStyle = { fontSize: 16 };
-  } else {
-    sizeTextStyle = { fontSize: 15 };
-  }
-
-  return [baseTextStyle, sizeTextStyle, textStyle];
-}
 
 export { FollowButton };
 export default FollowButton;

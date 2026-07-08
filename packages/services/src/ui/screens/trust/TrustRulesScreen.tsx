@@ -7,7 +7,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import type { ReputationRule, ReputationCategory } from '@oxyhq/core';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
-import LoadingState from '../../components/LoadingState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
 
@@ -69,7 +69,7 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                 elevation="subtle"
             />
             {isLoading ? (
-                <LoadingState color={bloomTheme.colors.primary} />
+                <Loading size="large" color={bloomTheme.colors.primary} />
             ) : error ? (
                 <Text className="text-text-secondary text-base text-center px-screen-margin pt-space-40">
                     {error}

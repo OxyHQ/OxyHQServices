@@ -70,7 +70,7 @@ import type { SwitchableAccount, AccountDialogSnapshot } from '@oxyhq/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
-import OxyLogo from './OxyLogo';
+import { LogoIcon } from './logo/LogoIcon';
 
 /** Diameter of a row avatar. */
 const ROW_AVATAR_SIZE = 40;
@@ -273,7 +273,7 @@ const DialogHeader: React.FC<HeaderProps> = ({ snapshot, theme, t, showBack, onB
         ) : (
           <View style={styles.iconButton} />
         )}
-        <OxyLogo variant="icon" size={34} fillColor={theme.colors.primary} />
+        <LogoIcon height={34} color={theme.colors.primary} />
         <Pressable
           onPress={onClose}
           style={[styles.iconButton, { backgroundColor: theme.colors.backgroundSecondary }]}

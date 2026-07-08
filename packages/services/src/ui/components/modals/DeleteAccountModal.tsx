@@ -1,8 +1,8 @@
 import type React from 'react';
 import { useState, useCallback } from 'react';
 import { View, Text, TextInput } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
-import OxyIcon from '../icon/OxyIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 
 interface DeleteAccountModalProps {
@@ -64,13 +64,13 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
             ]}
         >
             <View className="flex-row items-center mb-4 gap-3">
-                <OxyIcon name="alert" size={32} color={theme.colors.error} />
-                <Text className="text-destructive text-xl font-bold">
+                <Ionicons name="alert-circle" size={32} color={theme.colors.error} />
+                <Text className="text-text text-xl font-bold" style={{ color: theme.colors.error }}>
                     {t('deleteAccount.title') || 'Delete Account'}
                 </Text>
             </View>
 
-            <Text className="text-foreground text-sm leading-5 mb-5">
+            <Text className="text-text text-sm leading-5 mb-5">
                 {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
             </Text>
 
@@ -79,18 +79,18 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     className="p-3 rounded-lg mb-4"
                     style={{ backgroundColor: `${theme.colors.error}20` }}
                 >
-                    <Text className="text-destructive text-sm text-center">
+                    <Text className="text-text text-sm text-center" style={{ color: theme.colors.error }}>
                         {error}
                     </Text>
                 </View>
             )}
 
             <View className="mb-4">
-                <Text className="text-muted-foreground text-[13px] mb-2">
+                <Text className="text-text-secondary text-[13px] mb-2">
                     {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
                 </Text>
                 <TextInput
-                    className="text-foreground bg-background text-base py-3 px-4 border rounded-lg"
+                    className="text-text bg-bg text-base py-3 px-4 border rounded-lg"
                     style={{
                         borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
                     }}

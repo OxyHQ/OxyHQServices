@@ -40,12 +40,13 @@ export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 // ---------------------------------------------------------------------------
 // Font loading
 // ---------------------------------------------------------------------------
-export { FontLoader } from './ui/components/FontLoader';
+export { FontLoader, setupFonts } from './ui/components/FontLoader';
 
 // ---------------------------------------------------------------------------
 // Zustand stores
 // ---------------------------------------------------------------------------
 export { useAuthStore } from './ui/stores/authStore';
+export { useAccountStore } from './ui/stores/accountStore';
 export {
     useAssetStore,
     useAssets as useAssetsStore,
@@ -65,6 +66,8 @@ export {
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 export { useFileDownloadUrl } from './ui/hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './ui/hooks/useFollow';
+export { useStorage } from './ui/hooks/useStorage';
+export type { UseStorageOptions, UseStorageResult } from './ui/hooks/useStorage';
 
 // ---------------------------------------------------------------------------
 // Query hooks (TanStack Query — fetching)
@@ -190,8 +193,6 @@ export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 // ---------------------------------------------------------------------------
 // UI components
 // ---------------------------------------------------------------------------
-export { default as Avatar } from './ui/components/Avatar';
-export type { AvatarProps } from './ui/components/Avatar';
 export {
   OxySignInButton,
   OXY_OAUTH_STATE_STORAGE_KEY,
@@ -200,7 +201,6 @@ export {
 export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
-export { default as OxyLogo } from './ui/components/OxyLogo';
 export { OxyConsentScreen } from './ui/components/OxyConsentScreen';
 export type {
   OxyConsentScreenProps,
@@ -218,6 +218,7 @@ export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './ui/components/
 
 export { default as FollowButton } from './ui/components/FollowButton';
 export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps } from './ui/components/FollowButton';
+export { default as OxyPayButton } from './ui/components/OxyPayButton';
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';
 
@@ -237,6 +238,7 @@ export { useSwitchableAccounts } from './ui/hooks/useSwitchableAccounts';
 export type { UseSwitchableAccountsResult } from './ui/hooks/useSwitchableAccounts';
 
 // Unified "Manage your Oxy Account" screen (the caller's own personal account)
+export { default as ProfileScreen } from './ui/screens/ProfileScreen';
 export { default as ManageAccountScreen } from './ui/screens/ManageAccountScreen';
 export { default as NotificationsScreen } from './ui/screens/NotificationsScreen';
 export { default as PreferencesScreen } from './ui/screens/PreferencesScreen';

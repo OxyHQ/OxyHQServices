@@ -16,13 +16,12 @@ const noopStorageResult = { storage: null, isReady: false };
 // Components (all render null)
 export const OxyProvider = noopComponent;
 export const OxySignInButton = noopComponent;
-export const OxyLogo = noopComponent;
-export const Avatar = noopComponent;
+export const LogoIcon = noopComponent;
+export const LogoText = noopComponent;
 export const FollowButton = noopComponent;
 export const OxyPayButton = noopComponent;
 export const FontLoader = noopComponent;
 export const setupFonts = () => {};
-export const OxyIcon = noopComponent;
 
 // Context
 export const useOxy = noopHook;

@@ -15,8 +15,7 @@ import {
 import { Text } from '@oxyhq/bloom/typography';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 
@@ -150,15 +149,15 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
                 {isLoading ? (
-                    <LoadingState
-                        message={t('faq.loading') || 'Loading FAQs...'}
+                    <Loading
+                        size="large"
                         color={bloomTheme.colors.text}
+                        text={t('faq.loading') || 'Loading FAQs...'}
                     />
                 ) : filteredFaqs.length === 0 ? (
-                    <EmptyState
-                        message={searchQuery ? (t('faq.noResults') || 'No FAQs match your search') : (t('faq.empty') || 'No FAQs available')}
-                        textColor={bloomTheme.colors.text}
-                    />
+                    <Text className="text-text-secondary text-center p-space-40">
+                        {searchQuery ? (t('faq.noResults') || 'No FAQs match your search') : (t('faq.empty') || 'No FAQs available')}
+                    </Text>
                 ) : (
                     <Accordion
                         type="multiple"

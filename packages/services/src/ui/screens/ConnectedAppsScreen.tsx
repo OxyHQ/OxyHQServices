@@ -7,9 +7,9 @@ import type { ConnectedApp } from '@oxyhq/core';
 import { logger as loggerUtil } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
-import Avatar from '../components/Avatar';
-import EmptyState from '../components/EmptyState';
-import LoadingState from '../components/LoadingState';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useConnectedApps } from '../hooks/queries/useAccountQueries';
@@ -99,13 +99,10 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
     const renderEmpty = useCallback(
         () => (
             <View className="flex-1 items-center justify-center py-space-32">
-                <EmptyState
-                    message={
-                        t('connectedApps.empty.subtitle')
-                        || 'Apps you authorize to sign in with your Oxy account will appear here'
-                    }
-                    textColor={bloomTheme.colors.textSecondary}
-                />
+                <Text className="text-text-secondary text-center p-space-40">
+                    {t('connectedApps.empty.subtitle')
+                        || 'Apps you authorize to sign in with your Oxy account will appear here'}
+                </Text>
             </View>
         ),
         [t, bloomTheme.colors.textSecondary],
@@ -153,7 +150,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                 elevation="subtle"
             />
             {isLoading && !apps ? (
-                <LoadingState color={bloomTheme.colors.primary} />
+                <Loading size="large" color={bloomTheme.colors.primary} />
             ) : (
                 <FlatList
                     data={apps ?? []}

@@ -7,7 +7,6 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
-import { Colors } from '../../constants/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 interface FileViewerProps {
@@ -33,8 +32,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     onDelete,
     isOwner,
 }) => {
-    const { colors, isDark } = useTheme();
-    const constantColors = Colors[isDark ? 'dark' : 'light'];
+    const { colors } = useTheme();
     const isImage = file.contentType.startsWith('image/');
     const isText = file.contentType.startsWith('text/') ||
         file.contentType.includes('json') ||
@@ -106,28 +104,28 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             {
                 id: 'filename',
                 iconName: 'file-document',
-                iconColor: constantColors.iconSecurity,
+                iconColor: colors.info,
                 title: 'File Name',
                 description: file.filename,
             },
             {
                 id: 'size',
                 iconName: 'server',
-                iconColor: constantColors.iconStorage,
+                iconColor: colors.warning,
                 title: 'Size',
                 description: formatFileSize(file.length),
             },
             {
                 id: 'type',
                 iconName: 'code-tags',
-                iconColor: constantColors.iconData,
+                iconColor: colors.primary,
                 title: 'Type',
                 description: file.contentType,
             },
             {
                 id: 'uploaded',
                 iconName: 'clock',
-                iconColor: constantColors.iconPersonalInfo,
+                iconColor: colors.success,
                 title: 'Uploaded',
                 description: new Date(file.uploadDate).toLocaleString(),
             },
@@ -137,7 +135,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             items.push({
                 id: 'description',
                 iconName: 'text',
-                iconColor: constantColors.iconData,
+                iconColor: colors.primary,
                 title: 'Description',
                 description: file.metadata.description,
             });
@@ -146,17 +144,17 @@ export const FileViewer: React.FC<FileViewerProps> = ({
         items.push({
             id: 'fileId',
             iconName: 'key',
-            iconColor: constantColors.iconSecurity,
+            iconColor: colors.info,
             title: 'File ID',
             description: file.id,
         });
 
         return items;
-    }, [file, constantColors]);
+    }, [file, colors]);
 
     return (
         <View
-            className={isImage && fileContent ? undefined : 'bg-background'}
+            className={isImage && fileContent ? undefined : 'bg-bg'}
             style={[fileManagementStyles.fileViewerContainer, bgColor ? { backgroundColor: bgColor } : undefined]}
         >
             {/* Blurred Background Image - only for images */}
@@ -200,7 +198,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                 {loadingFileContent ? (
                     <View style={fileManagementStyles.fileViewerLoading}>
                         <ActivityIndicator size="large" color={colors.primary} />
-                        <Text className="text-foreground" style={fileManagementStyles.fileViewerLoadingText}>
+                        <Text className="text-text" style={fileManagementStyles.fileViewerLoadingText}>
                             Loading file content...
                         </Text>
                     </View>
@@ -242,7 +240,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                 ) : isText && fileContent ? (
                     <View className="bg-card" style={fileManagementStyles.textContainer}>
                         <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
-                            <Text className="text-foreground" style={fileManagementStyles.textContent}>
+                            <Text className="text-text" style={fileManagementStyles.textContent}>
                                 {fileContent}
                             </Text>
                         </ScrollView>
@@ -254,10 +252,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text className="text-text" style={fileManagementStyles.unsupportedFileTitle}>
                             PDF Preview Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.unsupportedFileDescription}>
                             PDF files cannot be previewed in this viewer.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -277,10 +275,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text className="text-text" style={fileManagementStyles.unsupportedFileTitle}>
                             Video Playback Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.unsupportedFileDescription}>
                             Video playback is not supported in this viewer.{'\n'}
                             Download the file to view it.
                         </Text>
@@ -300,10 +298,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text className="text-text" style={fileManagementStyles.unsupportedFileTitle}>
                             Audio Playback Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.unsupportedFileDescription}>
                             Audio playback is not supported in this viewer.{'\n'}
                             Download the file to listen to it.
                         </Text>
@@ -323,10 +321,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text className="text-text" style={fileManagementStyles.unsupportedFileTitle}>
                             Preview Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text className="text-text-secondary" style={fileManagementStyles.unsupportedFileDescription}>
                             This file type cannot be previewed.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -345,7 +343,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             {/* File Details Section - at bottom */}
             <View className="bg-card" style={fileManagementStyles.fileDetailsSection}>
                 <View style={fileManagementStyles.fileDetailsSectionHeader}>
-                    <Text className="text-foreground" style={fileManagementStyles.fileDetailsSectionTitle}>
+                    <Text className="text-text" style={fileManagementStyles.fileDetailsSectionTitle}>
                         File Details
                     </Text>
                     <TouchableOpacity
