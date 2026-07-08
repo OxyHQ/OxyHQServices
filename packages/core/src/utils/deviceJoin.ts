@@ -9,6 +9,8 @@
 
 import { CENTRAL_IDP_APEX } from './authWebUrl';
 import { registrableApex } from './registrableApex';
+import { extractErrorStatus } from './errorUtils';
+import type { AuthStateStore, PersistedAuthState } from '../session/authStateStore';
 
 /** One join redirect attempt per tab navigation (sessionStorage). */
 export const OXY_DEVICE_JOIN_ATTEMPTED_KEY = 'oxy.device_join_attempted';
@@ -154,4 +156,93 @@ export function stripDeviceJoinFragmentFromUrl(): boolean {
     history.replaceState(history.state, '', `${url.pathname}${url.search}`);
   }
   return true;
+}
+
+/** Minimal client surface for hub-side join credential resolution. */
+export interface DeviceJoinHubClient {
+  mintFromDeviceSecret(
+    deviceId: string,
+    deviceSecret: string,
+  ): Promise<{
+    accessToken: string;
+    expiresAt: string;
+    nextDeviceSecret: string;
+    state: {
+      deviceId: string;
+      activeAccountId?: string | null;
+      accounts: Array<{ accountId: string; sessionId: string }>;
+    };
+  }>;
+  provisionDevice(deviceId?: string): Promise<{ deviceId: string; deviceSecret: string }>;
+}
+
+function isMintNoActiveSession(error: unknown): boolean {
+  if (extractErrorStatus(error) !== 401) return false;
+  const message = (error as { message?: unknown })?.message;
+  return typeof message === 'string' && message.includes('no_active_session');
+}
+
+function isMintInvalidDeviceSecret(error: unknown): boolean {
+  if (extractErrorStatus(error) !== 401) return false;
+  const message = (error as { message?: unknown })?.message;
+  return typeof message === 'string' && message.includes('invalid_device_secret');
+}
+
+async function persistHubCredential(
+  store: AuthStateStore,
+  prior: PersistedAuthState | null,
+  creds: DeviceJoinFragment,
+  extras?: Partial<Pick<PersistedAuthState, 'accessToken' | 'expiresAt' | 'sessionId' | 'userId'>>,
+): Promise<void> {
+  await store.save({
+    sessionId: extras?.sessionId ?? prior?.sessionId ?? '',
+    userId: extras?.userId ?? prior?.userId ?? '',
+    deviceId: creds.deviceId,
+    deviceSecret: creds.deviceSecret,
+    ...(extras?.accessToken ? { accessToken: extras.accessToken } : {}),
+    ...(extras?.expiresAt ? { expiresAt: extras.expiresAt } : {}),
+  });
+}
+
+/**
+ * Resolve the canonical device credential on auth.oxy.so before redirecting back.
+ *
+ * The hub MUST NOT return a cached secret blindly: another origin (e.g.
+ * accounts.oxy.so) may have rotated it via `POST /session/device/token`.
+ * Attempt a mint first to sync rotation; when the cache is stale, re-issue via
+ * provision on the same deviceId (rotation-in-use grace keeps other tabs alive).
+ */
+export async function resolveHubDeviceCredentialForJoin(
+  oxy: DeviceJoinHubClient,
+  store: AuthStateStore,
+): Promise<DeviceJoinFragment> {
+  const existing = await store.load();
+
+  if (!existing?.deviceId || !existing?.deviceSecret) {
+    const provisioned = await oxy.provisionDevice();
+    await persistHubCredential(store, existing, provisioned);
+    return provisioned;
+  }
+
+  try {
+    const mint = await oxy.mintFromDeviceSecret(existing.deviceId, existing.deviceSecret);
+    const creds = { deviceId: existing.deviceId, deviceSecret: mint.nextDeviceSecret };
+    const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
+    await persistHubCredential(store, existing, creds, {
+      accessToken: mint.accessToken,
+      expiresAt: mint.expiresAt,
+      ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
+    });
+    return creds;
+  } catch (error) {
+    if (isMintNoActiveSession(error)) {
+      return { deviceId: existing.deviceId, deviceSecret: existing.deviceSecret };
+    }
+    if (isMintInvalidDeviceSecret(error)) {
+      const refreshed = await oxy.provisionDevice(existing.deviceId);
+      await persistHubCredential(store, existing, refreshed);
+      return refreshed;
+    }
+    throw error;
+  }
 }

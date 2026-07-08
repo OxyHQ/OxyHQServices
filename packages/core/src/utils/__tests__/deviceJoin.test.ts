@@ -6,7 +6,9 @@ import {
   markDeviceJoinV2Complete,
   OXY_DEVICE_JOIN_V2_KEY,
   parseDeviceJoinFragment,
+  resolveHubDeviceCredentialForJoin,
 } from '../deviceJoin';
+import { createMemoryAuthStateStore } from '../../session/authStateStore';
 
 describe('deviceJoin', () => {
   let storage: Record<string, string>;
@@ -64,5 +66,81 @@ describe('deviceJoin', () => {
     markDeviceJoinV2Complete();
     expect(isDeviceJoinV2Complete()).toBe(true);
     expect(localStorage.getItem(OXY_DEVICE_JOIN_V2_KEY)).toBe('1');
+  });
+
+  describe('resolveHubDeviceCredentialForJoin', () => {
+    it('provisions when the hub store is empty', async () => {
+      const store = createMemoryAuthStateStore();
+      const oxy = {
+        mintFromDeviceSecret: jest.fn(),
+        provisionDevice: jest.fn(async () => ({ deviceId: 'd-new', deviceSecret: 's-new' })),
+      };
+      const creds = await resolveHubDeviceCredentialForJoin(oxy, store);
+      expect(creds).toEqual({ deviceId: 'd-new', deviceSecret: 's-new' });
+      expect(oxy.provisionDevice).toHaveBeenCalledWith();
+    });
+
+    it('returns rotated secret after a successful mint', async () => {
+      const store = createMemoryAuthStateStore();
+      await store.save({
+        sessionId: '',
+        userId: '',
+        deviceId: 'd1',
+        deviceSecret: 's-old',
+      });
+      const oxy = {
+        mintFromDeviceSecret: jest.fn(async () => ({
+          accessToken: 'tok',
+          expiresAt: new Date().toISOString(),
+          nextDeviceSecret: 's-next',
+          state: {
+            deviceId: 'd1',
+            activeAccountId: 'u1',
+            accounts: [{ accountId: 'u1', sessionId: 'sess1' }],
+          },
+        })),
+        provisionDevice: jest.fn(),
+      };
+      const creds = await resolveHubDeviceCredentialForJoin(oxy, store);
+      expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's-next' });
+      expect(oxy.provisionDevice).not.toHaveBeenCalled();
+    });
+
+    it('keeps the cached secret on no_active_session', async () => {
+      const store = createMemoryAuthStateStore();
+      await store.save({
+        sessionId: '',
+        userId: '',
+        deviceId: 'd1',
+        deviceSecret: 's-valid',
+      });
+      const oxy = {
+        mintFromDeviceSecret: jest.fn(async () => {
+          throw Object.assign(new Error('no_active_session'), { status: 401 });
+        }),
+        provisionDevice: jest.fn(),
+      };
+      const creds = await resolveHubDeviceCredentialForJoin(oxy, store);
+      expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's-valid' });
+    });
+
+    it('re-issues via provision when the cached secret is stale', async () => {
+      const store = createMemoryAuthStateStore();
+      await store.save({
+        sessionId: '',
+        userId: '',
+        deviceId: 'd1',
+        deviceSecret: 's-stale',
+      });
+      const oxy = {
+        mintFromDeviceSecret: jest.fn(async () => {
+          throw Object.assign(new Error('invalid_device_secret'), { status: 401 });
+        }),
+        provisionDevice: jest.fn(async () => ({ deviceId: 'd1', deviceSecret: 's-fresh' })),
+      };
+      const creds = await resolveHubDeviceCredentialForJoin(oxy, store);
+      expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's-fresh' });
+      expect(oxy.provisionDevice).toHaveBeenCalledWith('d1');
+    });
   });
 });

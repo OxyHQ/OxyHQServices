@@ -6,6 +6,7 @@ import {
   isDeviceJoinV2Complete,
   markDeviceJoinV2Complete,
   parseDeviceJoinFragment,
+  resolveHubDeviceCredentialForJoin,
   stripDeviceJoinFragmentFromUrl,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
@@ -148,19 +149,5 @@ export async function resolveHubDeviceCredential(
   oxyServices: OxyServices,
   store: AuthStateStore,
 ): Promise<{ deviceId: string; deviceSecret: string }> {
-  const existing = await loadPersistedDeviceCredential(store);
-  if (existing) {
-    return existing;
-  }
-  const provisioned = await oxyServices.provisionDevice();
-  const prior = await store.load();
-  await store.save({
-    sessionId: prior?.sessionId ?? '',
-    userId: prior?.userId ?? '',
-    deviceId: provisioned.deviceId,
-    deviceSecret: provisioned.deviceSecret,
-    ...(prior?.accessToken ? { accessToken: prior.accessToken } : {}),
-    ...(prior?.expiresAt ? { expiresAt: prior.expiresAt } : {}),
-  });
-  return provisioned;
+  return resolveHubDeviceCredentialForJoin(oxyServices, store);
 }
