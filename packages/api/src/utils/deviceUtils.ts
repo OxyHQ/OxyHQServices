@@ -118,21 +118,19 @@ export function deriveStableDeviceId(
  * Derive a stable, non-PII deviceId for a session minted server-to-server on
  * behalf of a caller with no stable client identity of its own, keyed by
  * `(userId, key)` instead of the request's UA/IP. The output is the first 32
- * hex chars of `sha256("${salt}|${userId}|fedcm|${key}")`. The `fedcm` hash
- * segment is FIXED cryptographic derivation material — do NOT rename it,
- * changing it would change every derived deviceId.
+ * hex chars of `sha256("${salt}|${userId}|idp|${key}")`. The `idp` hash
+ * segment is FIXED cryptographic derivation material for server-minted sessions.
  *
  * **Why a separate helper?** A server-to-server mint has no meaningful
  * User-Agent (`'unknown'`) and a per-call egress IP. Feeding those into
  * `deriveStableDeviceId` would yield a fresh random id every call → a
  * brand-new session row each time. Keying off a stable per-caller key (`key`)
  * instead makes one `(user, RP)` reuse a single session that simply refreshes
- * its tokens/expiry. Currently has no caller — kept for any server-minted
- * session flow that needs the same stable-per-RP-session property.
+ * its tokens/expiry.
  *
- * **Why the `'fedcm'` namespace segment?** It guarantees the output can never
+ * **Why the `'idp'` namespace segment?** It guarantees the output can never
  * collide with an IP/UA-derived id from `deriveStableDeviceId` (whose hash
- * input never contains the literal `fedcm` in that position), so the two
+ * input never contains the literal `idp` in that position), so the two
  * device-id spaces stay disjoint.
  *
  * **Per-user scoping is MANDATORY (security review H1):** `userId` is mixed
@@ -160,7 +158,7 @@ export function deriveServiceDeviceId(userId: string, key: string): string {
   }
   return crypto
     .createHash('sha256')
-    .update(`${salt}|${userId}|fedcm|${key}`)
+    .update(`${salt}|${userId}|idp|${key}`)
     .digest('hex')
     .slice(0, 32);
 }

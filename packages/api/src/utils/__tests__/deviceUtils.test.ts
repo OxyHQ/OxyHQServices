@@ -177,7 +177,7 @@ describe('deriveServiceDeviceId', () => {
     expect(withSaltA).not.toBe(withSaltB);
   });
 
-  it('can never collide with a UA/IP-derived id (distinct "fedcm" namespace)', () => {
+  it('can never collide with a UA/IP-derived id (distinct "idp" namespace)', () => {
     const serviceId = deriveServiceDeviceId('user-1', RP_A);
     const stableId = deriveStableDeviceId(UA, IP, LANG, 'user-1');
     expect(serviceId).not.toBe(stableId);

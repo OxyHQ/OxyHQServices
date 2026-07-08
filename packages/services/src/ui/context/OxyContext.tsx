@@ -7,17 +7,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { Linking } from 'react-native';
 import { OxyServices, oxyClient } from '@oxyhq/core';
 import type {
   User,
-  ApiError,
   SessionLoginResponse,
-  AccountNode,
-  CreateAccountInput,
-  ClientSession,
   AuthStateStore,
   PersistedAuthState,
   AccountDialogController,
@@ -42,7 +37,6 @@ import { runProviderColdBoot } from '../boot/runProviderColdBoot';
 import { loadPersistedDeviceCredential } from '../utils/deviceJoin';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
-import type { UseFollowHook } from '../hooks/useFollow.types';
 import { useLanguageManagement } from '../hooks/useLanguageManagement';
 import { useSessionManagement } from '../hooks/useSessionManagement';
 import { useAuthOperations, clearPersistedAuthSafe } from './hooks/useAuthOperations';
@@ -62,283 +56,18 @@ import {
   activeUserOf,
   accountIdsOf,
 } from '../session';
+import {
+  type OxyContextState,
+  type PasswordSignInResult,
+  type OxyContextProviderProps,
+  type CommitInput,
+} from './oxyContextTypes';
+import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
+import { useOxyAccountGraph } from './useOxyAccountGraph';
 
-export interface OxyContextState {
-  user: User | null;
-  sessions: ClientSession[];
-  activeSessionId: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  isTokenReady: boolean;
-  hasAccessToken: boolean;
-  canUsePrivateApi: boolean;
-  isPrivateApiPending: boolean;
-  /**
-   * Whether the initial auth determination has concluded.
-   *
-   * `false` from mount until the FIRST device-first cold boot resolves —
-   * during that window `isAuthenticated: false` is UNDETERMINED, not a
-   * definitive "logged out". Flips to `true` exactly once the boot concludes
-   * (a session was committed OR none exists) and never reverts. Consumers should
-   * defer their first auth-dependent fetch until this is `true` so a cold-boot
-   * web reload with an existing session does not fetch anonymous data.
-   */
-  isAuthResolved: boolean;
-  isStorageReady: boolean;
-  error: string | null;
-  currentLanguage: string;
-  currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
-  currentLanguageName: string;
-  currentNativeLanguageName: string;
-
-  // Identity (cryptographic key pair)
-  hasIdentity: () => Promise<boolean>;
-  getPublicKey: () => Promise<string | null>;
-
-  // Authentication
-  signIn: (publicKey: string, deviceName?: string) => Promise<User>;
-
-  /**
-   * Sign in with a username/email + password.
-   *
-   * Commits a successful session into context state through the SAME path the
-   * QR device-flow and cold boot use (so `isAuthenticated` / `user` update and
-   * the zero-cookie device credential is persisted). Returns a discriminated result
-   * so the caller can branch on the two-factor-required case — which creates NO
-   * session; the caller completes the 2FA challenge with the returned
-   * `loginToken` via {@link OxyContextState.completeTwoFactorSignIn}.
-   */
-  signInWithPassword: (
-    identifier: string,
-    password: string,
-    opts?: { deviceName?: string; deviceFingerprint?: string },
-  ) => Promise<PasswordSignInResult>;
-
-  /**
-   * Complete a 2FA-gated password sign-in started by {@link signInWithPassword}.
-   * Presents the short-lived `loginToken` with a TOTP `token` or a `backupCode`;
-   * on success the session is committed exactly like a one-step sign-in. Returns
-   * any `securityAlert` the server attached so the caller can show the same
-   * "New sign-in detected" acknowledgement as the one-step path.
-   */
-  completeTwoFactorSignIn: (params: {
-    loginToken: string;
-    token?: string;
-    backupCode?: string;
-    deviceName?: string;
-  }) => Promise<{ securityAlert?: SecurityAlert }>;
-
-  /**
-   * Repudiate the sign-in that just committed — the "That wasn't me" response to
-   * a server-flagged {@link SecurityAlert}. Revokes the current device session
-   * server-side (via the same device-first `POST /session/device/signout` path
-   * {@link logout} uses) and, when no other account remains on this device,
-   * clears the persisted zero-cookie `{deviceId, deviceSecret}` credential and
-   * local session state so the next cold boot finds nothing to restore. Any
-   * sibling accounts already signed in on the device are preserved. There is NO
-   * dedicated "report suspicious" API endpoint — repudiation IS device-session
-   * revocation, so a compromised new sign-in cannot be restored.
-   */
-  revokeSuspiciousSignIn: () => Promise<void>;
-
-  /**
-   * Commit a session obtained out-of-band (the "Sign in with Oxy" QR device
-   * flow). Plants tokens, persists the zero-cookie device credential, registers
-   * the account into the device set, and hydrates the full user profile.
-   */
-  handleWebSession: (session: SessionLoginResponse) => Promise<void>;
-
-  // Session management
-  logout: (targetSessionId?: string) => Promise<void>;
-  logoutAll: () => Promise<void>;
-  switchSession: (sessionId: string) => Promise<User>;
-  removeSession: (sessionId: string) => Promise<void>;
-  refreshSessions: () => Promise<void>;
-  setLanguage: (languageId: string) => Promise<void>;
-  getDeviceSessions: () => Promise<
-    Array<{
-      sessionId: string;
-      deviceId: string;
-      deviceName?: string;
-      lastActive?: string;
-      expiresAt?: string;
-    }>
-  >;
-  logoutAllDeviceSessions: () => Promise<void>;
-  updateDeviceName: (deviceName: string) => Promise<void>;
-  clearSessionState: () => Promise<void>;
-  clearAllAccountData: () => Promise<void>;
-  storageKeyPrefix: string;
-  /**
-   * The app's Oxy OAuth client id / ApplicationCredential publicKey, as
-   * supplied via the `clientId` prop. Required for the cross-app device
-   * sign-in flow: the sign-in components send it to
-   * `POST /auth/session/create` so the API can identify the requesting app by
-   * its real registered client id. `null` when the consuming app did not
-   * configure a client id — the device sign-in flow surfaces a configuration
-   * error in that case.
-   */
-  clientId: string | null;
-  oxyServices: OxyServices;
-  useFollow?: UseFollowHook;
-  showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
-  openAvatarPicker: () => void;
-
-  // Unified account dialog (the single switcher + sign-in surface). The headless
-  // state machine lives in `@oxyhq/core`; `OxyAccountDialog` (mounted by
-  // `OxyProvider`) binds to it. `null` in the no-provider loading state.
-  /** The headless controller driving {@link openAccountDialog}. `null` before mount. */
-  accountDialogController: AccountDialogController | null;
-  /** Whether the unified account dialog is currently presented. */
-  isAccountDialogOpen: boolean;
-  /**
-   * Open the unified account dialog. `accounts` (default) shows the switcher;
-   * `signin` / `add` open the sign-in entry. Replaces every prior device/account
-   * surface and the standalone sign-in modal.
-   */
-  openAccountDialog: (view?: AccountDialogView) => void;
-  /** Dismiss the unified account dialog and cancel any in-flight sign-in flow. */
-  closeAccountDialog: () => void;
-
-  // Unified account graph (self, owned orgs/projects/bots, accounts shared with
-  // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
-  //
-  // UX concept: the user picks an account and the WHOLE app becomes that account
-  // — a genuine, REAL-SESSION switch (`switchToAccount`), identical to switching
-  // between device sign-ins. There is NO separate "active account" concept:
-  // `user` IS the active account after a switch.
-  /** Every account the caller can access — own personal root, owned, and shared — from `listAccounts()`. */
-  accounts: AccountNode[];
-  /**
-   * Switch the active session INTO an account from the {@link accounts} graph.
-   *
-   * Uniform with every other account switch: if the account is already on this
-   * device's multi-account set, switches straight through the same
-   * server-authoritative `SessionClient.switchAccount()` path {@link switchSession}
-   * uses. Only the FIRST switch into an account mints+plants a real session via
-   * `oxyServices.switchToAccount` and registers it into the device set, so it
-   * survives reload and appears in the device account list exactly like a device
-   * sign-in from then on. Either way, afterwards `user` IS the target account.
-   */
-  switchToAccount: (accountId: string) => Promise<void>;
-  refreshAccounts: () => Promise<void>;
-  createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
-}
+export type { OxyContextState, PasswordSignInResult, OxyContextProviderProps } from './oxyContextTypes';
 
 const OxyContext = createContext<OxyContextState | null>(null);
-
-/**
- * Result of {@link OxyContextState.signInWithPassword}.
- *
- * `'ok'` — the password was accepted and the session committed (so
- * `isAuthenticated` / `user` are updated and the device credential persisted).
- * `securityAlert` is present when the server flagged this sign-in as anomalous
- * (new device / location) — the caller shows a "New sign-in detected"
- * acknowledgement before proceeding; the session is already committed.
- *
- * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
- * created. Complete the challenge with the returned short-lived `loginToken`
- * via {@link OxyContextState.completeTwoFactorSignIn}.
- */
-export type PasswordSignInResult =
-  | { status: 'ok'; securityAlert?: SecurityAlert }
-  | { status: '2fa_required'; loginToken: string };
-
-export interface OxyContextProviderProps {
-  children: ReactNode;
-  oxyServices?: OxyServices;
-  baseURL?: string;
-  authWebUrl?: string;
-  authRedirectUri?: string;
-  storageKeyPrefix?: string;
-  /**
-   * The app's Oxy OAuth client id / ApplicationCredential publicKey; required
-   * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
-   */
-  clientId?: string;
-  onAuthStateChange?: (user: User | null) => void;
-  onError?: (error: ApiError) => void;
-}
-
-/**
- * Fallback client-session validity window (ms) — 7 days — applied when a
- * committed session does not carry an explicit `expiresAt`. This is only a
- * local display hint for the multi-session store; the server remains the source
- * of truth for actual session expiry.
- */
-const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** The internal commit input — a session plus the zero-cookie device credential
- * (`deviceId` + `deviceSecret`) that is not on the public `SessionLoginResponse`.
- * All extras optional so `SessionLoginResponse` is assignable. */
-interface CommitInput {
-  sessionId: string;
-  accessToken?: string;
-  deviceId?: string;
-  /** Rotating device secret (zero-cookie transport); persisted with `deviceId`
-   * so the cold boot can mint via `POST /session/device/token`. */
-  deviceSecret?: string;
-  expiresAt?: string;
-  userId?: string;
-  /** Minimal user carried by the sign-in response; a best-effort fallback used
-   * only when the full-profile fetch fails. Both `SessionLoginResponse.user`
-   * (structured `name`) and the login-result user (`{id, username?, avatar?}`)
-   * are assignable. */
-  user?: { id: string; username?: string; avatar?: string };
-}
-
-function getHttpStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') {
-    return undefined;
-  }
-  if ('status' in error) {
-    const status = (error as { status?: unknown }).status;
-    if (typeof status === 'number') {
-      return status;
-    }
-  }
-  if ('response' in error) {
-    const response = (error as { response?: unknown }).response;
-    if (response && typeof response === 'object' && 'status' in response) {
-      const status = (response as { status?: unknown }).status;
-      if (typeof status === 'number') {
-        return status;
-      }
-    }
-  }
-  return undefined;
-}
-
-function isUnauthorizedStatus(error: unknown): boolean {
-  return getHttpStatus(error) === 401;
-}
-
-let cachedUseFollowHook: UseFollowHook | null = null;
-
-const loadUseFollowHook = (): UseFollowHook => {
-  if (cachedUseFollowHook) {
-    return cachedUseFollowHook;
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { useFollow } = require('../hooks/useFollow');
-    cachedUseFollowHook = useFollow as UseFollowHook;
-    return cachedUseFollowHook;
-  } catch (error) {
-    if (__DEV__) {
-      loggerUtil.warn(
-        'useFollow hook is not available. Please import useFollow from @oxyhq/services directly.',
-        { component: 'OxyContext', method: 'loadUseFollowHook' },
-        error,
-      );
-    }
-    const fallback: UseFollowHook = () => {
-      throw new Error('useFollow hook is only available in the UI bundle. Import it from @oxyhq/services.');
-    };
-    cachedUseFollowHook = fallback;
-    return cachedUseFollowHook;
-  }
-};
 
 export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
@@ -1100,87 +829,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
   });
 
-  // ── Account graph ──────────────────────────────────────────────────────────
-  const [accounts, setAccounts] = useState<AccountNode[]>([]);
-
-  const refreshAccounts = useCallback(async (): Promise<void> => {
-    if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
-      setAccounts([]);
-      return;
-    }
-    try {
-      const list = await oxyServices.listAccounts();
-      setAccounts(list);
-    } catch (err) {
-      if (isUnauthorizedStatus(err)) {
-        setAccounts([]);
-        await clearSessionStateRef.current();
-        return;
-      }
-      if (__DEV__) {
-        loggerUtil.debug('Failed to load accounts', { component: 'OxyContext' }, err as unknown);
-      }
-    }
-  }, [isAuthenticated, oxyServices, tokenReady]);
-
-  useEffect(() => {
-    if (isAuthenticated && initialized && tokenReady) {
-      refreshAccounts();
-      // Reload the dialog's own account graph too, so a session restored OUTSIDE
-      // the dialog (cold boot / password sign-in) surfaces its graph accounts.
-      void accountDialogControllerRef.current?.refresh();
-    }
-  }, [isAuthenticated, initialized, tokenReady, refreshAccounts]);
-
-  const runPostAccountSwitchSideEffects = useCallback(async (): Promise<void> => {
-    await refreshAccounts();
-    queryClient.invalidateQueries();
-  }, [refreshAccounts, queryClient]);
-
-  // Switch the active session INTO an account from the unified graph. In the
-  // real-session model this is identical to switching device sign-ins.
-  const switchToAccount = useCallback(
-    async (accountId: string): Promise<void> => {
-      const deviceState = sessionClient.getState();
-      if (deviceState?.accounts.some((account) => account.accountId === accountId)) {
-        await sessionClient.switchAccount(accountId);
-        await syncFromClient();
-        await runPostAccountSwitchSideEffects();
-        return;
-      }
-
-      const result = await oxyServices.switchToAccount(accountId);
-      if (!result?.user || !result?.sessionId) {
-        throw new Error('Account switch did not return a valid session');
-      }
-      // `oxyServices.switchToAccount` already planted the access token; commit
-      // the minted session through the shared funnel (persist + register +
-      // hydrate) as a deliberate activation.
-      await commitSession(
-        {
-          sessionId: result.sessionId,
-          accessToken: result.accessToken,
-          deviceSecret: (result as { deviceSecret?: string }).deviceSecret,
-          deviceId: result.deviceId,
-          expiresAt: result.expiresAt,
-          userId: result.user.id,
-          user: result.user,
-        },
-        { activate: true },
-      );
-      await runPostAccountSwitchSideEffects();
-    },
-    [oxyServices, sessionClient, syncFromClient, commitSession, runPostAccountSwitchSideEffects],
-  );
-
-  const createAccountFn = useCallback(
-    async (data: CreateAccountInput): Promise<AccountNode> => {
-      const account = await oxyServices.createAccount(data);
-      await refreshAccounts();
-      return account;
-    },
-    [oxyServices, refreshAccounts],
-  );
+  const { accounts, refreshAccounts, switchToAccount, createAccount: createAccountFn } = useOxyAccountGraph({
+    isAuthenticated,
+    tokenReady,
+    initialized,
+    oxyServices,
+    sessionClient,
+    syncFromClient,
+    commitSession,
+    queryClient,
+    accountDialogControllerRef,
+    clearSessionStateRef,
+  });
 
   const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
   const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
@@ -1350,7 +1010,7 @@ const LOADING_STATE: OxyContextState = {
   accounts: [],
   switchToAccount: () => rejectMissingProvider<void>(),
   refreshAccounts: () => rejectMissingProvider<void>(),
-  createAccount: () => rejectMissingProvider<AccountNode>(),
+  createAccount: () => rejectMissingProvider<import('@oxyhq/core').AccountNode>(),
 };
 
 export const useOxy = (): OxyContextState => {

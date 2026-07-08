@@ -431,6 +431,7 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 
 **Prefixes in use:**
 - `rl:general:` — global limiter (1000 / 15min)
+- `rl:idp:service:` — IdP worker server-to-server READ budget (`/session/validate/*`, 20000 / 15min prod)
 - `rl:auth:` — broad auth routes (`authRateLimiter`, 300 / 15min)
 - `rl:user:` — user routes (`userRateLimiter`, 200 / 15min)
 - `rl:auth:challenge:`, `rl:auth:verify:`, `rl:auth:refresh:`, `rl:auth:lookup:`, `rl:auth:session-claim:`, `rl:auth:oauth-authorize:`, `rl:auth:oauth-consent:`, `rl:auth:oauth-token:`, `rl:auth:service-token:`, `rl:auth:login:`, `rl:auth:client-lookup:`
