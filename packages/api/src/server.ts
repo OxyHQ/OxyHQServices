@@ -69,6 +69,7 @@ import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { refreshOriginRegistry } from './config/dynamicOriginRegistry';
+import { reconcileOfficialRedirectUris } from './config/reconcileOfficialRedirectUris';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
 import { initializeIO, socketRoomsFor } from './utils/socket';
@@ -714,6 +715,7 @@ if (require.main === module) {
       // safe; this adds the registered first-party/third-party app origins.
       // Background-safe (fail-soft) — never blocks startup.
       await refreshOriginRegistry();
+      await reconcileOfficialRedirectUris();
 
       // Seed platform-default reputation rules (idempotent) — currently the
       // cross-app `endorsement_received` rule awarded by /app-signals/ingest.

@@ -523,6 +523,12 @@ export {
     generatePkcePair,
     DEFAULT_OAUTH_SCOPE,
     OXY_AUTHORIZE_URL,
+    OXY_OAUTH_STATE_STORAGE_KEY,
+    OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
+    normalizeOAuthRedirectUri,
+    persistOAuthHandshake,
+    readOAuthHandshake,
+    clearOAuthHandshake,
 } from './utils/oauthPkce';
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 

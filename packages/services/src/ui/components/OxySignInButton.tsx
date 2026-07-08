@@ -6,6 +6,9 @@ import {
     generatePkcePair,
     generateOAuthState,
     buildOAuthAuthorizeUrl,
+    OXY_OAUTH_STATE_STORAGE_KEY,
+    OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
+    persistOAuthHandshake,
     type PublicApplication,
 } from '@oxyhq/core';
 import { useAuthStore } from '../stores/authStore';
@@ -18,18 +21,10 @@ import { subscribeToSignInModal } from '../navigation/accountDialogManager';
 import { redirectToAuthorize, openAuthorizeUrlNative } from './oauthNavigation';
 
 /**
- * `sessionStorage` keys under which a third-party "Sign in with Oxy" OAuth flow
- * persists its CSRF `state` and PKCE `code_verifier` across the authorize
- * redirect. The Relying Party's redirect-URI callback reads them back to
- * validate the returned `state` and replay the verifier on the token exchange.
- *
- * Web only: a browser RP navigates away to `auth.oxy.so` and back, so the
- * handshake must survive a full-page redirect. Native completes the flow inside
- * a single `WebBrowser` auth session and surfaces the handshake via
- * {@link OxySignInButtonProps.onOAuthResult} instead.
+ * Re-exported from `@oxyhq/core` for backward compatibility.
+ * @deprecated Import from `@oxyhq/core` instead.
  */
-export const OXY_OAUTH_STATE_STORAGE_KEY = 'oxy_oauth_state';
-export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
+export { OXY_OAUTH_STATE_STORAGE_KEY, OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY };
 
 /**
  * The OAuth handshake surfaced to a NATIVE third-party RP via
@@ -53,21 +48,8 @@ export interface OxyOAuthResult {
  * `QuotaExceededError`, e.g. Safari private mode) — so the caller aborts the
  * flow cleanly rather than redirect to a callback that cannot validate `state`.
  */
-function persistOAuthHandshake(state: string, codeVerifier: string): boolean {
-    const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
-    try {
-        if (!store) throw new Error('sessionStorage is unavailable');
-        store.setItem(OXY_OAUTH_STATE_STORAGE_KEY, state);
-        store.setItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY, codeVerifier);
-        return true;
-    } catch (error) {
-        logger.warn(
-            'OxySignInButton: could not persist the OAuth handshake to sessionStorage; aborting third-party sign-in',
-            { component: 'OxySignInButton' },
-            error,
-        );
-        return false;
-    }
+function persistOAuthHandshakeForButton(state: string, codeVerifier: string): boolean {
+    return persistOAuthHandshake(state, codeVerifier);
 }
 
 export interface OxySignInButtonProps {
@@ -257,7 +239,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                 // Persist the handshake for the RP callback, then hand the
                 // top-level document to the IdP. Without storage the callback
                 // cannot validate `state`, so abort cleanly rather than redirect.
-                if (!persistOAuthHandshake(state, pkce.codeVerifier)) {
+                if (!persistOAuthHandshakeForButton(state, pkce.codeVerifier)) {
                     return;
                 }
                 redirectToAuthorize(authorizeUrl);

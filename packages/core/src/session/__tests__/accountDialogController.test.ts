@@ -533,7 +533,23 @@ describe('AccountDialogController — sign in with Oxy', () => {
 });
 
 describe('AccountDialogController — openPasswordAtOxyAuth', () => {
-  it('builds the IdP sign-in URL with redirect_uri + client_id and invokes openUrl', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>();
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          store.set(key, value);
+        },
+        removeItem: (key: string) => {
+          store.delete(key);
+        },
+      },
+      configurable: true,
+    });
+  });
+
+  it('builds the IdP sign-in URL with redirect_uri + client_id and invokes openUrl', async () => {
     const oxy = makeOxy();
     const sc = new TestSessionClient(host());
     const openUrl = jest.fn();
@@ -544,17 +560,32 @@ describe('AccountDialogController — openPasswordAtOxyAuth', () => {
       openUrl,
     });
 
-    const url = controller.openPasswordAtOxyAuth({ returnUrl: 'https://mention.earth/', state: 'xyz' });
+    const url = await controller.openPasswordAtOxyAuth({ returnUrl: 'https://mention.earth/dashboard' });
     const parsed = new URL(url);
     expect(parsed.origin).toBe('https://auth.oxy.so');
     expect(parsed.pathname).toBe('/login');
-    expect(parsed.searchParams.get('redirect_uri')).toBe('https://mention.earth/');
+    expect(parsed.searchParams.get('redirect_uri')).toBe('https://mention.earth');
     expect(parsed.searchParams.get('client_id')).toBe('oxy_dk_test');
-    expect(parsed.searchParams.get('state')).toBe('xyz');
+    expect(parsed.searchParams.get('state')).toBeTruthy();
+    expect(parsed.searchParams.get('code_challenge')).toBeTruthy();
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
     expect(openUrl).toHaveBeenCalledWith(url);
   });
 
-  it('honors an idpApex override', () => {
+  it('honors authRedirectUri over returnUrl', async () => {
+    const oxy = makeOxy();
+    const sc = new TestSessionClient(host());
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: sc,
+      authRedirectUri: 'https://inbox.oxy.so',
+    });
+
+    const url = await controller.openPasswordAtOxyAuth({ returnUrl: 'https://inbox.oxy.so/mail' });
+    expect(new URL(url).searchParams.get('redirect_uri')).toBe('https://inbox.oxy.so');
+  });
+
+  it('honors an idpApex override', async () => {
     const oxy = makeOxy();
     const sc = new TestSessionClient(host());
     const controller = new AccountDialogController({
@@ -562,7 +593,7 @@ describe('AccountDialogController — openPasswordAtOxyAuth', () => {
       sessionClient: sc,
       idpApex: 'alia.onl',
     });
-    const url = controller.openPasswordAtOxyAuth({ returnUrl: 'https://alia.onl/' });
+    const url = await controller.openPasswordAtOxyAuth({ returnUrl: 'https://alia.onl/' });
     expect(new URL(url).origin).toBe('https://auth.alia.onl');
   });
 });

@@ -1190,5 +1190,71 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         throw this.handleError(error);
       }
     }
+
+    /**
+     * Exchange an OAuth authorization code (returned to the RP redirect URI
+     * after password sign-in at auth.oxy.so) for a device-first session.
+     * Public first-party clients use PKCE (`codeVerifier`); the access token is
+     * planted immediately on success.
+     */
+    async exchangeOAuthCode(params: {
+      code: string;
+      clientId: string;
+      redirectUri: string;
+      codeVerifier: string;
+    }): Promise<LoginSessionResult> {
+      try {
+        const res = await this.makeRequest<unknown>('POST', '/auth/oauth/token', {
+          code: params.code,
+          clientId: params.clientId,
+          redirectUri: params.redirectUri,
+          codeVerifier: params.codeVerifier,
+        }, { cache: false });
+        const payload =
+          (res as { data?: Record<string, unknown> }).data ??
+          (res as Record<string, unknown>);
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('auth/oauth/token returned an unexpected response shape');
+        }
+        const record = payload as Record<string, unknown>;
+        const accessToken = (record.access_token ?? record.accessToken) as string | undefined;
+        const sessionId = (record.session_id ?? record.sessionId) as string | undefined;
+        const deviceId = (record.deviceId ?? record.device_id) as string | undefined;
+        const deviceSecret = (record.deviceSecret ?? record.device_secret) as string | undefined;
+        const userRaw = record.user;
+        if (!sessionId || !deviceId || !userRaw || typeof userRaw !== 'object') {
+          throw new Error('auth/oauth/token returned an incomplete session payload');
+        }
+        const userObj = userRaw as Record<string, unknown>;
+        const userId = userObj.id as string | undefined;
+        if (!userId) {
+          throw new Error('auth/oauth/token returned a session without user.id');
+        }
+        const expiresInSec =
+          typeof record.expires_in === 'number'
+            ? record.expires_in
+            : typeof record.expiresIn === 'number'
+              ? record.expiresIn
+              : 15 * 60;
+        const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
+        if (accessToken) {
+          this.setTokens(accessToken);
+        }
+        return {
+          sessionId,
+          deviceId,
+          expiresAt,
+          accessToken,
+          deviceSecret,
+          user: {
+            id: userId,
+            username: typeof userObj.username === 'string' ? userObj.username : undefined,
+            avatar: typeof userObj.avatar === 'string' ? userObj.avatar : undefined,
+          },
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
   };
 }

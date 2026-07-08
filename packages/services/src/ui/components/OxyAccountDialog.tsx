@@ -238,11 +238,7 @@ const OxyAccountDialog: React.FC = () => {
             handlers={handlers}
             onSignInWithOxy={() => void controller.signInWithOxy()}
             onScanQr={() => void controller.showQr()}
-            onUsePassword={() =>
-              controller.openPasswordAtOxyAuth({
-                returnUrl: isWeb ? currentHref() : undefined,
-              })
-            }
+            onUsePassword={() => void controller.openPasswordAtOxyAuth()}
           />
         )}
       </ScrollView>
