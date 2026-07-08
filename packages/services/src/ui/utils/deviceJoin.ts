@@ -69,6 +69,17 @@ function markJoinAttempted(): void {
   }
 }
 
+/** Clear the join redirect guard so a failed/cancelled join can retry on next boot. */
+export function clearDeviceJoinAttemptFlag(): void {
+  try {
+    (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
+      OXY_DEVICE_JOIN_ATTEMPTED_KEY,
+    );
+  } catch {
+    // Best-effort.
+  }
+}
+
 /**
  * Whether an official first-party web app should redirect to auth.oxy.so/device/join.
  * Redirect only when this origin has no persisted device credential yet.

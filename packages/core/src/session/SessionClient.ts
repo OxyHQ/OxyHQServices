@@ -330,9 +330,11 @@ export class SessionClient {
       const applied = this.applyState(payload);
       if (!applied) return;
       // A push changed the active account on another device/tab — re-fetch state
-      // to plant the access token for the newly-active account.
+      // to plant the access token for the newly-active account. When this tab is
+      // still signed out, applyState mints via ensureActiveToken first; bootstrap
+      // requires a bearer and must not run until then.
       const active = this.state?.activeAccountId ?? null;
-      if (active && active !== this.host.getCurrentAccountId()) {
+      if (active && active !== this.host.getCurrentAccountId() && this.host.getAccessToken()) {
         void this.bootstrap().catch((error) => {
           logger.warn('[SessionClient] post-push token fetch failed', { component: 'SessionClient' }, error);
         });

@@ -29,6 +29,7 @@ import {
   installAuthRefreshHandler,
   startTokenRefreshScheduler,
   createAccountDialogController,
+  refreshPersistedSession,
   logger as loggerUtil,
 } from '@oxyhq/core';
 import type { SecurityAlert } from '@oxyhq/contracts';
@@ -45,6 +46,7 @@ import {
   maybeRedirectDeviceJoin,
   shouldRedirectForDeviceJoin,
   loadPersistedDeviceCredential,
+  clearDeviceJoinAttemptFlag,
 } from '../utils/deviceJoin';
 import {
   maybeStartSilentOAuthRestore,
@@ -1067,8 +1069,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
 
-      // Official web apps: one redirect to auth.oxy.so/device/join when no local
-      // device id, or once to migrate pre-join-era credentials to the hub canonical id.
+      // Official web apps: redirect to auth.oxy.so/device/join only when this
+      // origin has no persisted device credential yet.
       if (coldBoot && isWebBrowser() && clientIdProp && !isIdpHubOrigin()) {
         if (await shouldRedirectForDeviceJoin(authStore) && maybeRedirectDeviceJoin()) {
           return;
@@ -1100,7 +1102,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onSignedOut: async () => {
           await syncDeviceCredentialToHost();
           const cred = await loadPersistedDeviceCredential(authStore);
-          if (cred) {
+          if (!cred) {
+            clearDeviceJoinAttemptFlag();
+          } else {
             try {
               await sessionClient.start();
             } catch (socketError) {
@@ -1190,14 +1194,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!isWebBrowser()) return;
     const onVisibility = (): void => {
       if (document.visibilityState !== 'visible') return;
-      const hasToken = Boolean(oxyServices.getAccessToken());
-      const hasDeviceCred = Boolean(sessionClientHost.getDeviceCredential());
-      if (!hasToken && !hasDeviceCred) return;
-      void sessionClient.bootstrap().then(() => syncFromClient()).catch(() => undefined);
+      const reconcile = async (): Promise<void> => {
+        if (!oxyServices.getAccessToken() && sessionClientHost.getDeviceCredential()) {
+          await refreshPersistedSession({ oxy: oxyServices, store: authStore });
+        }
+        if (!oxyServices.getAccessToken() && !sessionClientHost.getDeviceCredential()) {
+          return;
+        }
+        await sessionClient.bootstrap();
+        await syncFromClient();
+      };
+      void reconcile().catch(() => undefined);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
+  }, [oxyServices, sessionClient, sessionClientHost, authStore, syncFromClient]);
 
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.
