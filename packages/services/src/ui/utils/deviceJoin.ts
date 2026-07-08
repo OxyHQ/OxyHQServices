@@ -3,7 +3,6 @@ import {
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   buildDeviceJoinUrl,
   isAllowedDeviceJoinOrigin,
-  isDeviceJoinV2Complete,
   markDeviceJoinV2Complete,
   parseDeviceJoinFragment,
   readPendingDeviceJoinCredential,
@@ -72,8 +71,8 @@ function markJoinAttempted(): void {
 
 /**
  * Whether an official first-party web app should redirect to auth.oxy.so/device/join.
- * Redirect when there is no local credential, OR when this origin still holds a
- * pre-join-era device id that was never aligned through the hub (one-time migration).
+ * Redirect only when this origin has no persisted device credential yet.
+ * A returning user with `deviceId` + `deviceSecret` restores via cold boot directly.
  */
 export async function shouldRedirectForDeviceJoin(store: AuthStateStore): Promise<boolean> {
   if (!isWebBrowser() || isIdpHubOrigin()) {
@@ -83,10 +82,7 @@ export async function shouldRedirectForDeviceJoin(store: AuthStateStore): Promis
   if (!location || !isAllowedDeviceJoinOrigin(location.origin)) {
     return false;
   }
-  if (isDeviceJoinV2Complete()) {
-    return !(await hasPersistedDeviceCredential(store));
-  }
-  return true;
+  return !(await hasPersistedDeviceCredential(store));
 }
 
 /**

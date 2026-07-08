@@ -130,20 +130,33 @@ export class SessionClient {
       return false;
     }
     this.state = next;
-    this.notify();
-    if (this.options.transport) {
-      void this.options.transport.ensureActiveToken(next).catch((error) => {
-        logger.warn('[SessionClient] ensureActiveToken failed', { component: 'SessionClient' }, error);
-      });
-    }
-    // A device signout-all leaves zero accounts — tell the provider to clear
-    // the persisted store so a reload does not try to restore a dead session.
-    if (next.accounts.length === 0 && this.options.onUnauthenticated) {
-      try {
-        this.options.onUnauthenticated();
-      } catch (error) {
-        logger.error('[SessionClient] onUnauthenticated threw', error);
+    const transport = this.options.transport;
+    const needsMintBeforeNotify =
+      transport != null && next.accounts.length > 0 && !this.host.getAccessToken();
+
+    const finishApply = (): void => {
+      this.notify();
+      if (next.accounts.length === 0 && this.options.onUnauthenticated) {
+        try {
+          this.options.onUnauthenticated();
+        } catch (error) {
+          logger.error('[SessionClient] onUnauthenticated threw', error);
+        }
       }
+    };
+
+    if (needsMintBeforeNotify) {
+      void transport.ensureActiveToken(next).then(finishApply).catch((error) => {
+        logger.warn('[SessionClient] ensureActiveToken failed', { component: 'SessionClient' }, error);
+        finishApply();
+      });
+    } else {
+      if (transport) {
+        void transport.ensureActiveToken(next).catch((error) => {
+          logger.warn('[SessionClient] ensureActiveToken failed', { component: 'SessionClient' }, error);
+        });
+      }
+      finishApply();
     }
     return true;
   }

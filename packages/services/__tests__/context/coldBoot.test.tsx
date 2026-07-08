@@ -181,7 +181,7 @@ describe('OxyContext cold boot (device-first)', () => {
     expect(fakeSessionClient.start).toHaveBeenCalled();
   });
 
-  it('redirects pre-join-era device credentials to join once for migration', async () => {
+  it('restores a session when credentials exist without the v2 join marker', async () => {
     window.localStorage.setItem(
       AUTH_STATE_STORAGE_KEY,
       JSON.stringify({
@@ -197,10 +197,9 @@ describe('OxyContext cold boot (device-first)', () => {
 
     renderProvider(stub);
 
-    await waitFor(() => expect(capturedContext?.isAuthResolved).toBe(true));
+    await waitFor(() => expect(capturedContext?.isAuthenticated).toBe(true));
 
-    expect(capturedContext?.isAuthenticated).toBe(false);
-    expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
-    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBe('1');
+    expect(stub.mintFromDeviceSecret).toHaveBeenCalledWith('dev-legacy', 'legacy.secret');
+    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBeNull();
   });
 });

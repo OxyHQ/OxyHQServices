@@ -731,6 +731,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       setHasAccessToken(Boolean(accessToken));
       if (accessToken) {
         setTokenReady(true);
+        if (sessionClient.getState()?.accounts.length) {
+          void syncFromClientRef.current();
+        }
         return;
       }
       if (userRef.current || isAuthenticatedRef.current) {
@@ -1187,12 +1190,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!isWebBrowser()) return;
     const onVisibility = (): void => {
       if (document.visibilityState !== 'visible') return;
-      if (!oxyServices.getAccessToken()) return;
+      const hasToken = Boolean(oxyServices.getAccessToken());
+      const hasDeviceCred = Boolean(sessionClientHost.getDeviceCredential());
+      if (!hasToken && !hasDeviceCred) return;
       void sessionClient.bootstrap().then(() => syncFromClient()).catch(() => undefined);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [oxyServices, sessionClient, syncFromClient]);
+  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
 
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.
