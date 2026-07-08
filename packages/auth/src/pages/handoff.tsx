@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { OXY_IDP_HANDOFF_ATTEMPTED_KEY } from "@oxyhq/core";
 import { useOxy } from "@oxyhq/services";
 import {
   AuthFormLayout,
@@ -8,14 +7,6 @@ import {
   LoadingSpinner,
 } from "@/components/auth-form-layout";
 import { useTranslation } from "@/lib/i18n/use-translation";
-
-function clearIdpHandoffAttemptFlag(): void {
-  try {
-    sessionStorage.removeItem(OXY_IDP_HANDOFF_ATTEMPTED_KEY);
-  } catch {
-    // Best-effort only.
-  }
-}
 
 function safeReturnUrl(raw: string | null): string | null {
   if (!raw) return null;
@@ -62,7 +53,6 @@ export function HandoffPage() {
           expiresAt: session.expiresAt,
           user: session.user,
         });
-        clearIdpHandoffAttemptFlag();
         if (returnUrl) {
           window.location.replace(returnUrl);
           return;

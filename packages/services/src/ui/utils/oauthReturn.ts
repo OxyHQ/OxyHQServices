@@ -69,6 +69,10 @@ export async function tryCompleteOAuthReturn(opts: {
       redirectUri,
       codeVerifier: handshake.codeVerifier,
     });
+    // Strip OAuth params before commit so a concurrent IdP-handoff return URL
+    // cannot capture a stale `?code=` and re-enter the exchange loop.
+    clearOAuthHandshake();
+    stripOAuthParamsFromUrl();
     await opts.commitSession({
       sessionId: result.sessionId,
       accessToken: result.accessToken,
@@ -78,8 +82,6 @@ export async function tryCompleteOAuthReturn(opts: {
       expiresAt: result.expiresAt,
       user: result.user,
     });
-    clearOAuthHandshake();
-    stripOAuthParamsFromUrl();
     return true;
   } catch (error) {
     logger.warn('OAuth return exchange failed', { component: 'oauthReturn' }, error);

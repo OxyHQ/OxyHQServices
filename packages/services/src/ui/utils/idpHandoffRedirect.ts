@@ -24,6 +24,18 @@ function buildIdpHandoffUrl(handoffCode: string, returnUrl: string): string {
   return url.toString();
 }
 
+function cleanReturnUrl(href: string): string {
+  try {
+    const url = new URL(href);
+    for (const key of ['code', 'state', 'error', 'error_description']) {
+      url.searchParams.delete(key);
+    }
+    return url.toString();
+  } catch {
+    return href;
+  }
+}
+
 /**
  * After a first-party sign-in on a non-IdP origin, redirect once to auth.oxy.so
  * so the hub plants the same `{ deviceId, deviceSecret }` locally (zero cookies).
@@ -49,7 +61,7 @@ export async function maybeRedirectIdpHandoff(opts: {
   try {
     const { handoffCode } = await opts.oxyServices.createIdpHandoff();
     sessionStore?.setItem(OXY_IDP_HANDOFF_ATTEMPTED_KEY, '1');
-    location.href = buildIdpHandoffUrl(handoffCode, location.href);
+    location.href = buildIdpHandoffUrl(handoffCode, cleanReturnUrl(location.href));
     return true;
   } catch (error) {
     logger.warn('IdP handoff redirect skipped', { component: 'idpHandoffRedirect' }, error);

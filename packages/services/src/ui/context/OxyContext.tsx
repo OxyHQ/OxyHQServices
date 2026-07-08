@@ -46,7 +46,6 @@ import {
 import {
   maybeStartSilentOAuthRestore,
   consumeSilentOAuthError,
-  clearSilentOAuthAttemptFlag,
 } from '../utils/silentOAuthRestore';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -775,7 +774,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Used by the QR device flow (`handleWebSession`), password sign-in, 2FA
   // completion, and the cold boot.
   const commitSession = useCallback(
-    async (input: CommitInput, options: { activate: boolean }): Promise<void> => {
+    async (
+      input: CommitInput,
+      options: { activate: boolean; skipIdpHandoff?: boolean },
+    ): Promise<void> => {
       if (input.accessToken) {
         oxyServices.setTokens(input.accessToken);
       }
@@ -862,9 +864,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
       markAuthResolvedRef.current();
 
-      // Propagate credentials to auth.oxy.so (IdP hub) after deliberate sign-in.
-      if (options.activate && isWebBrowser() && !isIdpHubOrigin()) {
-        void maybeRedirectIdpHandoff({ oxyServices }).catch(() => undefined);
+      // Propagate credentials to auth.oxy.so (IdP hub) after interactive sign-in
+      // only — never after silent OAuth return, cold boot, account switch, or
+      // handoff exchange (those paths already converged via IdP or local mint).
+      if (
+        options.activate &&
+        !options.skipIdpHandoff &&
+        isWebBrowser() &&
+        !isIdpHubOrigin()
+      ) {
+        await maybeRedirectIdpHandoff({ oxyServices }).catch(() => false);
       }
     },
     [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, syncFromClient, loginSuccess, logger],
@@ -1043,10 +1052,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           clientId: clientIdProp,
           authRedirectUri,
           commitSession: (input) =>
-            commitSessionRef.current(input, { activate: true }),
+            commitSessionRef.current(input, {
+              activate: true,
+              skipIdpHandoff: true,
+            }),
         });
         if (oauthCompleted) {
-          clearSilentOAuthAttemptFlag();
           setTokenReady(true);
           markAuthResolvedRef.current();
           return;
@@ -1275,7 +1286,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           userId: result.user.id,
           user: result.user,
         },
-        { activate: true },
+        { activate: true, skipIdpHandoff: true },
       );
       await runPostAccountSwitchSideEffects();
     },

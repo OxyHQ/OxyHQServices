@@ -191,8 +191,9 @@ export function AuthorizePage() {
 
   // Silent restore: when prompt=none and the IdP has no session, bounce
   // `login_required` immediately (OAuth standard) instead of the login page.
+  // Wait until device-first cold boot finishes so we don't race a slow mint.
   useEffect(() => {
-    if (prompt !== "none" || !isAuthResolved) return;
+    if (prompt !== "none" || !isAuthResolved || deviceAccountsLoading) return;
     if (isAuthenticated || currentSessionId || deviceAccounts.length > 0) return;
     redirectOAuthError("login_required");
   }, [
@@ -201,6 +202,7 @@ export function AuthorizePage() {
     isAuthenticated,
     currentSessionId,
     deviceAccounts.length,
+    deviceAccountsLoading,
   ]);
 
   // Silent restore with an IdP session: probe consent and auto-approve without UI.
@@ -208,6 +210,7 @@ export function AuthorizePage() {
     if (
       prompt !== "none" ||
       !isAuthResolved ||
+      deviceAccountsLoading ||
       !isAuthenticated ||
       !clientId ||
       autoApproveAttemptedRef.current
@@ -262,6 +265,7 @@ export function AuthorizePage() {
     scope,
     state,
     oxyServices,
+    deviceAccountsLoading,
   ]);
 
   useEffect(() => {
