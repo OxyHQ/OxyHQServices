@@ -22,6 +22,7 @@ import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useInboxSocket } from '@/hooks/useInboxSocket';
+import { usePushRegistration } from '@/hooks/usePushRegistration';
 import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
@@ -175,6 +176,10 @@ function RootEffects() {
   // and tears the socket down on sign-out or user switch; cache/state
   // invalidation above prevents cross-user inbox data reuse.
   useInboxSocket({ baseURL: API_URL });
+
+  // Register the device push token with the backend when the user has push
+  // notifications enabled (native only). No-op on web / signed-out.
+  usePushRegistration();
 
   // Register service worker on web
   useEffect(() => {

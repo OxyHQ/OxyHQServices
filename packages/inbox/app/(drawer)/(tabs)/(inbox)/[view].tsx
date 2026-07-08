@@ -63,8 +63,11 @@ export default function MailboxViewRoute() {
     const viewLower = view.toLowerCase();
     const labelKey = VIEW_TO_LABEL_KEY[viewLower];
     if (labelKey) return t(labelKey);
+    // Custom folder: the view segment is the mailbox id, so surface its name.
+    const customMailbox = mailboxes.find((m) => m._id === view);
+    if (customMailbox) return customMailbox.name;
     return view.charAt(0).toUpperCase() + view.slice(1);
-  }, [view, t]);
+  }, [view, t, mailboxes]);
 
   const unreadCount = useMemo(() => {
     const messages = messagesData?.pages.flatMap((p) => p.data) ?? [];
@@ -94,6 +97,13 @@ export default function MailboxViewRoute() {
       if (mailbox) {
         selectMailbox(mailbox);
       }
+      return;
+    }
+
+    // Custom folder: the view segment is the mailbox id itself.
+    const customMailbox = mailboxes.find((m) => m._id === view);
+    if (customMailbox) {
+      selectMailbox(customMailbox);
     }
   }, [view, mailboxes, selectMailbox, selectStarred]);
 

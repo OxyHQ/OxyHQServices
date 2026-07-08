@@ -6,7 +6,7 @@
  * - embedded: inline panel without back button (desktop split-view)
  */
 
-import React, { useEffect, useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -157,13 +157,9 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const { user, oxyServices } = useOxy();
   const userEmail = user?.email;
 
-  // Auto-mark message as read when opened
-  const toggleReadMutate = toggleRead.mutate;
-  useEffect(() => {
-    if (currentMessage && !currentMessage.flags.seen) {
-      toggleReadMutate({ messageId, seen: true });
-    }
-  }, [messageId, currentMessage?.flags.seen, toggleReadMutate]);
+  // Marking read is handled by the list tap (see InboxList.handleMessagePress),
+  // driven by the markReadOnOpen preference. The detail view intentionally does
+  // not mark read on open — a single, predictable path avoids double writes.
 
   const handleBack = useCallback(() => {
     router.back();

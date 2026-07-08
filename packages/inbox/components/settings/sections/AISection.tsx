@@ -1,9 +1,11 @@
 /**
  * AI features subscreen — opt-in toggles for AI conveniences.
  *
- * Persists via `useInboxPrefs` (local-device). The feature surfaces in
- * the inbox (DailyBrief card, SmartReply suggestions, auto-categorization)
- * read these flags at render time and skip their work when disabled.
+ * Persists via `useInboxPrefs` (local-device). The features that surface these
+ * flags consume them directly and skip their work when disabled: `HomeScreen`
+ * gates the daily brief (and disables `useDailyBrief`), `SmartReplyChips`
+ * renders nothing when Smart Reply is off, and `ImportanceBadge` hides itself
+ * when categorization is off.
  */
 
 import React from 'react';
@@ -57,8 +59,8 @@ export function AISection() {
         <SectionHeader icon={Sparkle_Stroke2_Corner0_Rounded} title="Daily Brief" />
         <View style={styles.toggleGroup}>
           <InlineToggle
-            title="Morning recap"
-            description="A short summary of overnight messages, surfaced on Home."
+            title="Inbox recap"
+            description="A short summary generated from your inbox counts (unread, starred, attachments). It doesn't read message contents."
             value={prefs.aiBrief}
             onChange={(v) => setPref('aiBrief', v)}
           />
@@ -70,7 +72,7 @@ export function AISection() {
         <View style={styles.toggleGroup}>
           <InlineToggle
             title="One-tap suggestions"
-            description="Three context-aware reply chips above the message."
+            description="Three context-aware reply chips above the message, drafted by Alia."
             value={prefs.aiSmartReply}
             onChange={(v) => setPref('aiSmartReply', v)}
           />
@@ -78,11 +80,11 @@ export function AISection() {
       </View>
 
       <View style={styles.subsection}>
-        <SectionHeader icon={Bot_Stroke} title="Categorization" />
+        <SectionHeader icon={Bot_Stroke} title="Priority flags" />
         <View style={styles.toggleGroup}>
           <InlineToggle
-            title="Auto-bucket messages"
-            description="Sort incoming mail into Travel, Purchases, Bills, and more."
+            title="Highlight likely-urgent mail"
+            description="Flag messages as Urgent, Action needed, or Important using on-device keyword heuristics — not a full AI model."
             value={prefs.aiCategorization}
             onChange={(v) => setPref('aiCategorization', v)}
           />
@@ -90,7 +92,7 @@ export function AISection() {
       </View>
 
       <Admonition type="tip">
-        Turning a feature off stops new processing. Existing AI annotations stay until you delete them.
+        Priority flags run on-device from keyword heuristics. The Daily Brief and Smart Reply use Alia and only receive what is shown here — not your full mailbox.
       </Admonition>
     </View>
   );

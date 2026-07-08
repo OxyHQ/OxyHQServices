@@ -1,6 +1,28 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEmailStore } from '@/hooks/useEmail';
 import { toast } from '@oxyhq/bloom';
+import { useEmailStore } from '@/hooks/useEmail';
+import type { Contact } from '@/services/emailApi';
+
+/**
+ * Apply an optimistic updater across every cached `['contacts', …]` variant
+ * (the list is keyed by search query) and return the snapshot for rollback.
+ */
+async function optimisticContacts(
+  queryClient: ReturnType<typeof useQueryClient>,
+  updater: (prev: Contact[]) => Contact[],
+): Promise<{ prev: [readonly unknown[], Contact[] | undefined][] }> {
+  await queryClient.cancelQueries({ queryKey: ['contacts'] });
+  const prev = queryClient.getQueriesData<Contact[]>({ queryKey: ['contacts'] });
+  queryClient.setQueriesData<Contact[]>({ queryKey: ['contacts'] }, (old) => updater(old ?? []));
+  return { prev };
+}
+
+function restoreContacts(
+  queryClient: ReturnType<typeof useQueryClient>,
+  prev: [readonly unknown[], Contact[] | undefined][],
+) {
+  prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+}
 
 export function useCreateContact() {
   const api = useEmailStore((s) => s._api);
@@ -17,11 +39,29 @@ export function useCreateContact() {
       if (!api) throw new Error('Email API not initialized');
       return api.createContact(data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    onMutate: async (data) => {
+      const now = new Date().toISOString();
+      const optimistic: Contact = {
+        _id: `optimistic:${Date.now()}`,
+        userId: '',
+        name: data.name,
+        email: data.email,
+        company: data.company,
+        notes: data.notes,
+        starred: data.starred ?? false,
+        autoCollected: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const { prev } = await optimisticContacts(queryClient, (contacts) => [optimistic, ...contacts]);
+      return { prev };
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _vars, context) => {
+      if (context?.prev) restoreContacts(queryClient, context.prev);
       toast.error(err.message || 'Failed to create contact');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
     },
   });
 }
@@ -45,11 +85,18 @@ export function useUpdateContact() {
       if (!api) throw new Error('Email API not initialized');
       return api.updateContact(contactId, updates);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    onMutate: async ({ contactId, ...updates }) => {
+      const { prev } = await optimisticContacts(queryClient, (contacts) =>
+        contacts.map((c) => (c._id === contactId ? { ...c, ...updates } : c)),
+      );
+      return { prev };
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _vars, context) => {
+      if (context?.prev) restoreContacts(queryClient, context.prev);
       toast.error(err.message || 'Failed to update contact');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
     },
   });
 }
@@ -63,11 +110,18 @@ export function useDeleteContact() {
       if (!api) throw new Error('Email API not initialized');
       return api.deleteContact(contactId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    onMutate: async (contactId) => {
+      const { prev } = await optimisticContacts(queryClient, (contacts) =>
+        contacts.filter((c) => c._id !== contactId),
+      );
+      return { prev };
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context?.prev) restoreContacts(queryClient, context.prev);
       toast.error('Failed to delete contact');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
     },
   });
 }

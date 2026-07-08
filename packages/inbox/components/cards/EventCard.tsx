@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-nat
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
 import { Text } from '@oxyhq/bloom/typography';
+import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/constants/theme';
 import type { CardData } from '@/services/emailApi';
 
@@ -128,9 +129,14 @@ export function EventCard({ data }: EventCardProps) {
             mimeType: 'text/calendar',
             dialogTitle: 'Add to Calendar',
           });
+        } else {
+          // Sharing not available on this device — fall back to the Google
+          // Calendar web URL so the action never silently does nothing.
+          toast.error('Sharing is unavailable. Try "Google Calendar" instead.');
         }
-      } catch {
-        // expo-file-system or expo-sharing not available — ignore gracefully
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Could not open the calendar file.';
+        toast.error(message);
       }
     }
   }, [data]);

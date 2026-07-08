@@ -13,6 +13,17 @@
 
 import { Platform } from 'react-native';
 
+/**
+ * Whether the offline mutation queue is supported on the current platform.
+ *
+ * The queue is built on IndexedDB + the `online`/`offline` window events and
+ * Background Sync, all of which are web-only. On native this is `false` and
+ * every queue operation is a documented no-op — callers should gate offline
+ * affordances (and any "works offline" UX copy) on this flag rather than
+ * relying on a silent native fallthrough.
+ */
+export const isOfflineQueueSupported = Platform.OS === 'web';
+
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface OfflineMutation {

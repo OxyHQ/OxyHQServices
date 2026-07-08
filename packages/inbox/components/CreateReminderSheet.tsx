@@ -24,6 +24,12 @@ interface CreateReminderSheetProps {
   onClose: () => void;
   onCreate: (text: string, remindAt: Date) => void;
   relatedMessageId?: string;
+  /**
+   * When provided, the sheet operates in edit mode: fields are prefilled and
+   * submission calls `onUpdate` instead of `onCreate`.
+   */
+  editReminder?: { _id: string; text: string; remindAt: string } | null;
+  onUpdate?: (text: string, remindAt: Date) => void;
 }
 
 function getPresetTimes(): Array<{ label: string; date: Date; icon: MaterialCommunityIconName }> {
@@ -60,8 +66,15 @@ function getPresetTimes(): Array<{ label: string; date: Date; icon: MaterialComm
   return presets;
 }
 
-export function CreateReminderSheet({ visible, onClose, onCreate }: CreateReminderSheetProps) {
+export function CreateReminderSheet({
+  visible,
+  onClose,
+  onCreate,
+  editReminder,
+  onUpdate,
+}: CreateReminderSheetProps) {
   const colors = useColors();
+  const isEdit = !!editReminder;
   const [text, setText] = useState('');
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const sheetRef = useRef<BottomSheetRef>(null);
@@ -70,18 +83,29 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
 
   useEffect(() => {
     if (visible) {
+      // Prefill from the reminder being edited (if any) whenever the sheet opens.
+      if (editReminder) {
+        setText(editReminder.text);
+        setSelectedTime(new Date(editReminder.remindAt));
+      }
       sheetRef.current?.present();
     } else {
       sheetRef.current?.dismiss();
     }
+    // Only re-run when visibility toggles; editReminder is captured on open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  const handleCreate = useCallback(() => {
+  const handleSubmit = useCallback(() => {
     if (!text.trim() || !selectedTime) return;
-    onCreate(text.trim(), selectedTime);
+    if (isEdit) {
+      onUpdate?.(text.trim(), selectedTime);
+    } else {
+      onCreate(text.trim(), selectedTime);
+    }
     setText('');
     setSelectedTime(null);
-  }, [text, selectedTime, onCreate]);
+  }, [text, selectedTime, isEdit, onUpdate, onCreate]);
 
   const handleClose = useCallback(() => {
     setText('');
@@ -95,8 +119,14 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
     <BottomSheet ref={sheetRef} onDismiss={handleClose} detached>
       <View style={styles.content}>
         <View style={styles.header}>
-          <MaterialCommunityIcons name="bell-plus-outline" size={20} color={colors.primary} />
-          <Text style={[styles.title, { color: colors.text }]}>Create reminder</Text>
+          <MaterialCommunityIcons
+            name={isEdit ? 'bell-outline' : 'bell-plus-outline'}
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.title, { color: colors.text }]}>
+            {isEdit ? 'Edit reminder' : 'Create reminder'}
+          </Text>
           <TouchableOpacity onPress={handleClose} hitSlop={8}>
             <MaterialCommunityIcons name="close" size={20} color={colors.secondaryText} />
           </TouchableOpacity>
@@ -159,12 +189,12 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
             styles.createButton,
             { backgroundColor: canSubmit ? colors.primary : colors.border },
           ]}
-          onPress={handleCreate}
+          onPress={handleSubmit}
           disabled={!canSubmit}
           activeOpacity={0.8}
         >
           <Text style={[styles.createButtonText, { color: canSubmit ? '#fff' : colors.secondaryText }]}>
-            Create reminder
+            {isEdit ? 'Save changes' : 'Create reminder'}
           </Text>
         </TouchableOpacity>
       </View>

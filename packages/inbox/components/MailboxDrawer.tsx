@@ -6,11 +6,12 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import { useMemo, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -18,6 +19,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, OxySignInButton, showSignInModal, ProfileButton } from '@oxyhq/services';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Button } from '@oxyhq/bloom/button';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -41,6 +44,7 @@ import {
   ArrowUp01Icon,
   Mail01Icon,
   Clock01Icon,
+  Add01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
@@ -48,6 +52,7 @@ import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
+import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
 import type { Mailbox } from '@/services/emailApi';
 import { LogoIcon } from '@/assets/logo';
 
@@ -107,6 +112,7 @@ function NavItem({
   bold,
   colorDot,
   onPress,
+  onLongPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   hugeIcon: IconSvgElement;
@@ -118,6 +124,7 @@ function NavItem({
   bold?: boolean;
   colorDot?: string;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
   const accessibilityLabel = badge != null && badge > 0 ? `${label}, ${badge} unread` : label;
@@ -132,6 +139,7 @@ function NavItem({
         collapsed && styles.itemCollapsed,
       ]}
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.7}
     >
       {colorDot ? (
@@ -218,7 +226,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const activeLabelName = isLabelRoute ? pathSegments[1]?.toLowerCase() ?? null : null;
   const currentView = isLabelRoute ? 'label' : pathSegments[0]?.toLowerCase() || 'inbox';
 
-  const { primaryMailboxes, snoozedMailbox, secondaryMailboxes } = useMemo(() => {
+  const { primaryMailboxes, snoozedMailbox, secondaryMailboxes, customFolders } = useMemo(() => {
     const order: Record<string, number> = {
       [SPECIAL_USE.INBOX]: 0, [SPECIAL_USE.SENT]: 1, [SPECIAL_USE.DRAFTS]: 2,
       [SPECIAL_USE.SNOOZED]: 3, [SPECIAL_USE.SPAM]: 4, [SPECIAL_USE.TRASH]: 5, [SPECIAL_USE.ARCHIVE]: 6,
@@ -233,14 +241,51 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       secondaryMailboxes: sorted.filter(
         (m) => !PRIMARY_SPECIAL_USE.has(m.specialUse) && m.specialUse !== SPECIAL_USE.SNOOZED,
       ),
+      // User-created folders have no specialUse. They are addressable via the
+      // `[view]` route using the mailbox id as the segment.
+      customFolders: mailboxes
+        .filter((m) => !m.specialUse)
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [mailboxes]);
 
-  // Custom (non-system) folders are not addressable yet. Today we expose
-  // system mailboxes via the `[view]` route (inbox/sent/drafts/trash/spam/
-  // archive/snoozed/starred) and labels via the `label/[name]` subroute. We
-  // hide custom mailboxes and the "Create folder" affordance until a
-  // `folder/[id]` route exists.
+  // Custom-folder create / delete flows.
+  const createMailbox = useCreateMailbox();
+  const deleteMailbox = useDeleteMailbox();
+  const createFolderControl = useDialogControl();
+  const deleteFolderControl = useDialogControl();
+  const [newFolderName, setNewFolderName] = useState('');
+  const [folderPendingDelete, setFolderPendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const handleCustomFolderSelect = useCallback(
+    (mailbox: Mailbox) => {
+      router.push({ pathname: '/(drawer)/(tabs)/(inbox)/[view]', params: { view: mailbox._id } });
+      onClose?.();
+    },
+    [router, onClose],
+  );
+
+  const handleCreateFolder = useCallback(() => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    createMailbox.mutate(
+      { name },
+      {
+        onSuccess: () => {
+          setNewFolderName('');
+          createFolderControl.close();
+        },
+      },
+    );
+  }, [newFolderName, createMailbox, createFolderControl]);
+
+  const handleConfirmDeleteFolder = useCallback(() => {
+    if (!folderPendingDelete) return;
+    deleteMailbox.mutate(
+      { mailboxId: folderPendingDelete.id },
+      { onSettled: () => setFolderPendingDelete(null) },
+    );
+  }, [folderPendingDelete, deleteMailbox]);
 
   const handleSelect = useCallback(
     (mailbox: Mailbox & { specialUse: string }) => {
@@ -548,14 +593,49 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           )}
           {/* Labels hidden when collapsed for cleaner UI */}
 
-          {/*
-            Custom folders are intentionally hidden. The dynamic [view] route
-            only handles inbox/sent/drafts/trash/spam/archive/snoozed/starred
-            and labels live at /label/<name>. There's no /folder/<id> handler
-            yet, so exposing "Create folder" or rendering user-created
-            mailboxes here would ship a navigation dead-end. Re-enable once
-            a folder route exists.
-          */}
+          {/* Custom folders — addressable via the [view] route (view = mailbox id) */}
+          {!collapsed && (
+            <>
+              <Divider />
+              <View style={styles.foldersHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
+                <TouchableOpacity
+                  accessibilityLabel="Create folder"
+                  accessibilityRole="button"
+                  onPress={() => createFolderControl.open()}
+                  style={styles.folderAddButton}
+                  activeOpacity={0.7}
+                >
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Add01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="plus" size={16} color={colors.icon} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {customFolders.map((folder) => (
+                <NavItem
+                  key={folder._id}
+                  icon="folder-outline"
+                  hugeIcon={Folder01Icon as unknown as IconSvgElement}
+                  label={folder.name}
+                  isActive={currentView === folder._id.toLowerCase()}
+                  colors={colors}
+                  badge={folder.unseenMessages}
+                  onPress={() => handleCustomFolderSelect(folder)}
+                  onLongPress={() => {
+                    setFolderPendingDelete({ id: folder._id, name: folder.name });
+                    deleteFolderControl.open();
+                  }}
+                />
+              ))}
+              {customFolders.length === 0 && (
+                <Text style={[styles.foldersHint, { color: colors.secondaryText }]}>
+                  Tap + to create a folder. Long-press a folder to delete it.
+                </Text>
+              )}
+            </>
+          )}
         </ScrollView>
       ) : (
         <View style={[styles.list, collapsed && styles.listCollapsed, styles.signedOutBody]}>
@@ -634,6 +714,43 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           />
         </View>
       )}
+
+      {/* Create folder */}
+      <Dialog control={createFolderControl} title="New folder" label="New folder">
+        <View style={styles.folderDialogBody}>
+          <TextInput
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            placeholder="Folder name"
+            placeholderTextColor={colors.secondaryText}
+            autoFocus
+            onSubmitEditing={handleCreateFolder}
+            returnKeyType="done"
+            style={[styles.folderDialogInput, { color: colors.text, borderColor: colors.border }]}
+          />
+          <Button
+            onPress={handleCreateFolder}
+            disabled={!newFolderName.trim() || createMailbox.isPending}
+          >
+            {createMailbox.isPending ? 'Creating…' : 'Create folder'}
+          </Button>
+        </View>
+      </Dialog>
+
+      {/* Delete folder confirmation */}
+      <Dialog
+        control={deleteFolderControl}
+        title="Delete folder?"
+        description={
+          folderPendingDelete
+            ? `"${folderPendingDelete.name}" and its organization will be removed. Messages inside are not deleted.`
+            : ''
+        }
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleConfirmDeleteFolder },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
+      />
     </View>
   );
 }
@@ -782,6 +899,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     letterSpacing: 0.5,
+  },
+  foldersHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 8,
+  },
+  folderAddButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  foldersHint: {
+    fontSize: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    lineHeight: 16,
+  },
+  folderDialogBody: {
+    gap: 12,
+    paddingTop: 8,
+    minWidth: 260,
+  },
+  folderDialogInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
   },
   signedOutBody: {
     paddingHorizontal: 16,

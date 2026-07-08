@@ -25,14 +25,16 @@ import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useInboxPrefs, type SwipeAction } from '@/contexts/inbox-prefs-context';
+import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
+import { useMessageActions } from '@/hooks/useMessageActions';
+import { collapseThreads } from '@/utils/threadGrouping';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import {
   useToggleStar,
   useToggleRead,
-  useArchiveMessage,
-  useDeleteMessage,
   useTogglePin,
   useSnoozeMessage,
   useBulkUpdateFlags,
@@ -101,6 +103,9 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const colors = useColors();
   const aliaChatRef = useRef<AliaChatSheetRef>(null);
   const { isAuthenticated } = useOxy();
+  const { prefs } = useInboxPrefs();
+  const { conversationView } = useInboxDisplayPrefs();
+  const messageActions = useMessageActions();
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
   const viewMode = useEmailStore((s) => s.viewMode);
@@ -148,14 +153,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const toggleRead = useToggleRead();
   const togglePin = useTogglePin();
   const snoozeMutation = useSnoozeMessage();
-  const archiveMutation = useArchiveMessage();
-  const deleteMutation = useDeleteMessage();
   const bulkFlags = useBulkUpdateFlags();
   const bulkMove = useBulkMoveMessages();
   const { data: bundles = [] } = useBundles();
 
   const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
   const [createReminderVisible, setCreateReminderVisible] = useState(false);
+  const [editReminderTarget, setEditReminderTarget] = useState<Reminder | null>(null);
 
   const { data: remindersResult } = useReminders();
   const reminders = useMemo(() => remindersResult?.data ?? [], [remindersResult]);
@@ -165,15 +169,22 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
+  // Thread grouping is a post-process over the fetched list (single query, no
+  // duplicate list): collapse to one row per conversation when the pref is on.
+  const displayMessages = useMemo(
+    () => (conversationView ? collapseThreads(messages) : messages),
+    [messages, conversationView],
+  );
+
   // Batch sentiment analysis — computed once for all messages, passed as props to rows
-  const sentimentMap = useBatchSentimentAnalysis(messages);
+  const sentimentMap = useBatchSentimentAnalysis(displayMessages);
 
   const isInboxView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.INBOX;
   const isSnoozedView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.SNOOZED;
   const showBundles = bundleView && isInboxView && bundles.length > 0;
 
   const listItems = useMemo<ListItem[]>(() => {
-    if (messages.length === 0 && reminders.length === 0) return [];
+    if (displayMessages.length === 0 && reminders.length === 0) return [];
     const items: ListItem[] = [];
 
     // Due/active reminders at the top (only in inbox view)
@@ -202,8 +213,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     }
 
     // Partition pinned messages to top (only in mailbox views, not snoozed)
-    const pinned = !isSnoozedView ? messages.filter((m) => m.flags.pinned) : [];
-    const unpinned = !isSnoozedView ? messages.filter((m) => !m.flags.pinned) : messages;
+    const pinned = !isSnoozedView ? displayMessages.filter((m) => m.flags.pinned) : [];
+    const unpinned = !isSnoozedView ? displayMessages.filter((m) => !m.flags.pinned) : displayMessages;
 
     if (pinned.length > 0) {
       items.push({ type: 'header', title: 'Pinned', key: 'header-Pinned' });
@@ -277,7 +288,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     }
 
     return items;
-  }, [messages, isSnoozedView, isInboxView, showBundles, bundles, expandedBundles, reminders]);
+  }, [displayMessages, isSnoozedView, isInboxView, showBundles, bundles, expandedBundles, reminders]);
 
   // Clear selection when view changes
   useEffect(() => {
@@ -342,15 +353,56 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     [deleteReminderMutation],
   );
 
+  const handleReminderPress = useCallback(
+    (reminderId: string) => {
+      const reminder = reminders.find((r) => r._id === reminderId);
+      if (!reminder) return;
+      // Reminders created from an email open that conversation; standalone
+      // reminders open the edit sheet to reschedule / edit text.
+      if (reminder.relatedMessageId) {
+        if (replaceNavigation) {
+          router.replace(`/conversation/${reminder.relatedMessageId}`);
+        } else {
+          router.push(`/conversation/${reminder.relatedMessageId}`);
+        }
+        return;
+      }
+      setEditReminderTarget(reminder);
+    },
+    [reminders, router, replaceNavigation],
+  );
+
+  const handleUpdateReminder = useCallback(
+    (text: string, remindAt: Date) => {
+      if (!editReminderTarget) return;
+      updateReminderMutation.mutate({
+        reminderId: editReminderTarget._id,
+        text,
+        remindAt: remindAt.toISOString(),
+      });
+      setEditReminderTarget(null);
+    },
+    [editReminderTarget, updateReminderMutation],
+  );
+
   const handleMessagePress = useCallback(
     (messageId: string) => {
+      // Single source of truth for marking read: the tap. If the pref is on and
+      // the row is unread, fire the flags mutation (optimistic) before navigating.
+      // MessageDetail no longer marks read on open.
+      if (prefs.markReadOnOpen) {
+        const msg = messages.find((m) => m._id === messageId);
+        if (msg && !msg.flags.seen) {
+          toggleRead.mutate({ messageId, seen: true });
+        }
+      }
       if (replaceNavigation) {
         router.replace(`/conversation/${messageId}`);
       } else {
         router.push(`/conversation/${messageId}`);
       }
     },
-    [router, replaceNavigation],
+    [router, replaceNavigation, prefs.markReadOnOpen, messages, toggleRead],
   );
 
   const handleOpenDrawer = useCallback(() => {
@@ -425,25 +477,28 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     return currentMailbox?.name || 'Inbox';
   }, [viewMode, currentMailbox]);
 
-  const handleSwipeArchive = useCallback(
-    (messageId: string) => {
-      const archiveBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.ARCHIVE);
-      if (!archiveBox) {
-        toast.error('Archive folder not available.');
-        return;
+  // Single entry point for swipe actions. `SwipeableRow` only knows which
+  // action the user configured; the behaviour lives here via `useMessageActions`.
+  const handleSwipeAction = useCallback(
+    (action: SwipeAction, messageId: string) => {
+      switch (action) {
+        case 'archive':
+          messageActions.archive(messageId);
+          break;
+        case 'delete':
+          messageActions.deleteMessage(messageId);
+          break;
+        case 'mark-read':
+          messageActions.markAsRead(messageId);
+          break;
+        case 'snooze':
+          setSnoozeTargetId(messageId);
+          break;
+        case 'none':
+          break;
       }
-      archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
     },
-    [mailboxes, archiveMutation],
-  );
-
-  const handleSwipeDelete = useCallback(
-    (messageId: string) => {
-      const trashBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.TRASH);
-      const isInTrash = currentMailbox?.specialUse === SPECIAL_USE.TRASH;
-      deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
-    },
-    [mailboxes, currentMailbox, deleteMutation],
+    [messageActions],
   );
 
   const renderItem = useCallback(
@@ -473,7 +528,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           <ReminderRow
             reminder={item.data}
             onToggleComplete={handleToggleReminderComplete}
-            onPress={() => {}}
+            onPress={handleReminderPress}
             onDelete={handleDeleteReminder}
           />
         );
@@ -481,8 +536,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       const msg = item.data;
       return (
         <SwipeableRow
-          onArchive={() => handleSwipeArchive(msg._id)}
-          onDelete={() => handleSwipeDelete(msg._id)}
+          messageId={msg._id}
+          leftAction={prefs.leftSwipeAction}
+          rightAction={prefs.rightSwipeAction}
+          onAction={handleSwipeAction}
         >
           <MessageRow
             message={msg}
@@ -503,7 +560,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </SwipeableRow>
       );
     },
-    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, handleToggleReminderComplete, handleDeleteReminder, colors.border, colors.secondaryText, sentimentMap],
+    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeAction, prefs.leftSwipeAction, prefs.rightSwipeAction, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, handleToggleReminderComplete, handleDeleteReminder, handleReminderPress, colors.border, colors.secondaryText, sentimentMap],
   );
 
   const getItemType = useCallback((item: ListItem) => item.type, []);
@@ -729,6 +786,15 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         visible={createReminderVisible}
         onClose={() => setCreateReminderVisible(false)}
         onCreate={handleCreateReminder}
+      />
+
+      {/* Edit reminder sheet (opened by tapping a standalone reminder) */}
+      <CreateReminderSheet
+        visible={editReminderTarget !== null}
+        editReminder={editReminderTarget}
+        onClose={() => setEditReminderTarget(null)}
+        onCreate={handleCreateReminder}
+        onUpdate={handleUpdateReminder}
       />
     </View>
   );

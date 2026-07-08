@@ -1,18 +1,36 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { Label } from '@/services/emailApi';
+
+const LABELS_KEY = ['labels'] as const;
 
 export function useLabels() {
   const api = useEmailStore((s) => s._api);
 
   return useQuery<Label[]>({
-    queryKey: ['labels'],
+    queryKey: LABELS_KEY,
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return await api.listLabels();
     },
     enabled: !!api,
   });
+}
+
+/**
+ * Snapshot the labels cache, apply an optimistic updater, and return the
+ * previous value for rollback. Centralises the create/update/delete
+ * optimistic pattern so the label picker reacts instantly.
+ */
+async function optimisticLabels(
+  queryClient: ReturnType<typeof useQueryClient>,
+  updater: (prev: Label[]) => Label[],
+): Promise<{ prev: Label[] | undefined }> {
+  await queryClient.cancelQueries({ queryKey: LABELS_KEY });
+  const prev = queryClient.getQueryData<Label[]>(LABELS_KEY);
+  queryClient.setQueryData<Label[]>(LABELS_KEY, (old) => updater(old ?? []));
+  return { prev };
 }
 
 export function useCreateLabel() {
@@ -24,8 +42,24 @@ export function useCreateLabel() {
       if (!api) throw new Error('Email API not initialized');
       return await api.createLabel(name, color);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    onMutate: async ({ name, color }) => {
+      const tempId = `optimistic:${Date.now()}`;
+      const optimistic: Label = {
+        _id: tempId,
+        userId: '',
+        name,
+        color,
+        order: Number.MAX_SAFE_INTEGER,
+      };
+      const { prev } = await optimisticLabels(queryClient, (labels) => [...labels, optimistic]);
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(LABELS_KEY, context.prev);
+      toast.error('Failed to create label.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: LABELS_KEY });
     },
   });
 }
@@ -39,8 +73,18 @@ export function useUpdateLabel() {
       if (!api) throw new Error('Email API not initialized');
       return await api.updateLabel(labelId, updates);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    onMutate: async ({ labelId, updates }) => {
+      const { prev } = await optimisticLabels(queryClient, (labels) =>
+        labels.map((l) => (l._id === labelId ? { ...l, ...updates } : l)),
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(LABELS_KEY, context.prev);
+      toast.error('Failed to update label.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: LABELS_KEY });
     },
   });
 }
@@ -54,8 +98,18 @@ export function useDeleteLabel() {
       if (!api) throw new Error('Email API not initialized');
       await api.deleteLabel(labelId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['labels'] });
+    onMutate: async (labelId) => {
+      const { prev } = await optimisticLabels(queryClient, (labels) =>
+        labels.filter((l) => l._id !== labelId),
+      );
+      return { prev };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.prev) queryClient.setQueryData(LABELS_KEY, context.prev);
+      toast.error('Failed to delete label.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: LABELS_KEY });
     },
   });
 }

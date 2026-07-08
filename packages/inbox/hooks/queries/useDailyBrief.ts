@@ -34,7 +34,13 @@ function getBriefCacheKey(): string[] {
   return ['alia', 'daily-brief', today];
 }
 
-export function useDailyBrief(messages: Message[]) {
+interface UseDailyBriefOptions {
+  /** When false, the hook does no work — used to honor the `aiBrief` pref. */
+  enabled?: boolean;
+}
+
+export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions = {}) {
+  const { enabled = true } = options;
   const queryClient = useQueryClient();
   const { oxyServices, user } = useOxy();
   const cacheKey = getBriefCacheKey();
@@ -44,15 +50,17 @@ export function useDailyBrief(messages: Message[]) {
   const [error, setError] = useState<Error | null>(null);
   const abortRef = useRef(false);
 
-  // Check cache on mount
+  // Check cache on mount (skip when the feature is disabled).
   useEffect(() => {
+    if (!enabled) return;
     const cached = queryClient.getQueryData<string>(cacheKey);
     if (cached) {
       setBriefText(cached);
     }
-  }, []);
+  }, [enabled]);
 
   const generate = useCallback(async () => {
+    if (!enabled) return;
     if (messages.length === 0) return;
 
     // Check cache
@@ -104,7 +112,7 @@ export function useDailyBrief(messages: Message[]) {
         setIsStreaming(false);
       }
     }
-  }, [messages, queryClient, cacheKey, oxyServices, user]);
+  }, [enabled, messages, queryClient, cacheKey, oxyServices, user]);
 
   // Cleanup on unmount
   useEffect(() => {

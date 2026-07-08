@@ -3,7 +3,10 @@
  *
  * Layout follows the Alia subsection pattern (small eyebrow header + visual
  * content block) rather than the iOS row-spam look. Toggles persist via
- * `useInboxPrefs` (local device); the list view reads them at render time.
+ * `useInboxPrefs` (local device) and are consumed live: `MessageRow` reads
+ * density/avatars/previews through `useInboxDisplayPrefs`, `InboxList` reads
+ * `conversationView` (thread grouping) and `markReadOnOpen`, and `SwipeableRow`
+ * reads the left/right swipe bindings.
  */
 
 import React, { useCallback } from 'react';

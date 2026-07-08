@@ -8,7 +8,7 @@ import fs from 'fs';
 import os from 'os';
 import { execSync, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
-import { applyCanonicalMediaMetadata } from '../utils/fileMediaMetadata';
+import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 
 // FFprobe metadata interfaces for type safety
 interface FFprobeStream {
@@ -318,6 +318,70 @@ export class VariantService {
       logger.error('Error generating variants:', error);
       throw error;
     }
+  }
+
+  /**
+   * Fast metadata-only backfill: persist canonical `metadata.media` when the
+   * intrinsic dimensions can already be resolved (from type-specific subdocs or
+   * existing variants) WITHOUT regenerating variants. For videos, backfills the
+   * duration via a single ffprobe against the S3 object when it's missing.
+   *
+   * Returns:
+   *  - `'needs_variants'` — dimensions cannot be resolved; caller should run
+   *    full `generateVariants()`.
+   *  - `'skipped'` — canonical `metadata.media` is already complete.
+   *  - `'persisted'` — canonical `metadata.media` was written.
+   */
+  async enrichCanonicalMetadataOnly(
+    fileId: string,
+  ): Promise<'needs_variants' | 'skipped' | 'persisted'> {
+    const file = await File.findById(fileId);
+    if (!file) {
+      throw new Error('File not found');
+    }
+
+    const isVideo = file.mime.startsWith('video/');
+    const resolved = resolveFileMediaMetadata(file);
+    if (!resolved.width || !resolved.height) {
+      return 'needs_variants';
+    }
+
+    const media = (file.metadata?.media ?? {}) as {
+      width?: number;
+      height?: number;
+      durationSec?: number;
+    };
+    const mediaComplete =
+      !!media.width &&
+      !!media.height &&
+      (!isVideo || typeof media.durationSec === 'number');
+    if (mediaComplete) {
+      return 'skipped';
+    }
+
+    let durationSec = resolved.durationSec;
+    if (isVideo && durationSec === undefined && file.storageKey) {
+      try {
+        const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+        const probed = await this.extractVideoMetadataFromUrl(videoUrl);
+        if (typeof probed.duration === 'number' && probed.duration > 0) {
+          durationSec = probed.duration;
+        }
+      } catch (error) {
+        logger.warn('enrichCanonicalMetadataOnly: ffprobe duration lookup failed', {
+          fileId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    applyCanonicalMediaMetadata(file, {
+      width: resolved.width,
+      height: resolved.height,
+      durationSec,
+    });
+    await file.save();
+    return 'persisted';
   }
 
   /**

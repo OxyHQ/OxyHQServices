@@ -52,6 +52,7 @@ import { LogoIcon } from '@/assets/logo';
 import { useDailyBrief } from '@/hooks/queries/useDailyBrief';
 import { useNeedsResponse } from '@/hooks/queries/useNeedsResponse';
 import { useFollowUp } from '@/hooks/queries/useFollowUp';
+import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
@@ -98,6 +99,7 @@ export function HomeScreen() {
   const isDark = mode === 'dark';
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { user, isAuthenticated } = useOxy();
+  const { prefs } = useInboxPrefs();
 
   // `realToday` is intentionally a piece of state — it's refreshed on focus
   // (see `useFocusEffect` below) so the home screen self-heals after the date
@@ -175,8 +177,10 @@ export function HomeScreen() {
   // contract). Empty string when signed-out / not yet loaded.
   const greetingName = user?.name.displayName ?? '';
 
-  // AI daily brief — uses messages from selected date
-  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages);
+  // AI daily brief — uses messages from selected date. Disabled entirely when
+  // the `aiBrief` pref is off so the hook does no work.
+  const aiBriefEnabled = prefs.aiBrief;
+  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, { enabled: aiBriefEnabled });
 
   // AI-powered sections: emails needing response and follow-up
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
@@ -420,36 +424,40 @@ export function HomeScreen() {
                     </View>
                   </View>
 
-                  {briefLoading ? (
-                    <View style={styles.briefLoadingRow}>
-                      <Loading variant="inline" size="small" />
-                      <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                        Alia is summarizing aggregate inbox counts...
-                      </Text>
-                    </View>
-                  ) : briefError && !briefText ? (
-                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                      Unable to generate brief right now.
-                    </Text>
-                  ) : briefText ? (
-                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                      {briefText}
-                      {briefStreaming && <Text style={styles.summaryBriefCursor}>|</Text>}
-                    </Text>
-                  ) : (
-                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                      Tap refresh to generate a brief from aggregate inbox counts.
-                    </Text>
+                  {aiBriefEnabled && (
+                    <>
+                      {briefLoading ? (
+                        <View style={styles.briefLoadingRow}>
+                          <Loading variant="inline" size="small" />
+                          <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                            Alia is summarizing aggregate inbox counts...
+                          </Text>
+                        </View>
+                      ) : briefError && !briefText ? (
+                        <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                          Unable to generate brief right now.
+                        </Text>
+                      ) : briefText ? (
+                        <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                          {briefText}
+                          {briefStreaming && <Text style={styles.summaryBriefCursor}>|</Text>}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                          Tap refresh to generate a brief from aggregate inbox counts.
+                        </Text>
+                      )}
+                      <TouchableOpacity
+                        onPress={regenerate}
+                        style={styles.refreshButton}
+                        activeOpacity={0.7}
+                        accessibilityLabel={briefText ? 'Regenerate brief' : 'Generate brief'}
+                        accessibilityRole="button"
+                      >
+                        <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
+                      </TouchableOpacity>
+                    </>
                   )}
-                  <TouchableOpacity
-                    onPress={regenerate}
-                    style={styles.refreshButton}
-                    activeOpacity={0.7}
-                    accessibilityLabel={briefText ? 'Regenerate brief' : 'Generate brief'}
-                    accessibilityRole="button"
-                  >
-                    <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
-                  </TouchableOpacity>
                 </View>
 
                 {/* Needs Response — card-styled sub-content panel. */}

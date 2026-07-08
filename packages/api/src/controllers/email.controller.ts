@@ -192,12 +192,8 @@ export async function getMessage(req: AuthRequest, res: Response): Promise<void>
   const message = await emailService.getMessage(userId, messageId);
   if (!message) throw new NotFoundError('Message not found');
 
-  // Auto-mark as seen when fetched
-  if (!message.flags.seen) {
-    await emailService.updateMessageFlags(userId, messageId, { seen: true });
-    message.flags.seen = true;
-  }
-
+  // GET is read-only: marking a message as seen is an explicit client action
+  // performed via PUT /messages/:id/flags. No side effects here.
   res.json({ data: message });
 }
 

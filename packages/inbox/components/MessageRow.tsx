@@ -37,6 +37,8 @@ import { SentimentIndicator } from './SentimentIndicator';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
+import { DENSITY_STYLES } from '@/constants/densityStyles';
+import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import type { Message, Attachment } from '@/services/emailApi';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
@@ -143,6 +145,8 @@ function MessageRowInner({
   sentiment,
 }: MessageRowProps) {
   const colors = useColors();
+  const { density, showAvatars, showPreviews } = useInboxDisplayPrefs();
+  const densityStyle = DENSITY_STYLES[density];
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
   const queryClient = useQueryClient();
@@ -209,7 +213,7 @@ function MessageRowInner({
     <Pressable
       style={({ pressed }) => [
         styles.container,
-        { backgroundColor: rowBg },
+        { backgroundColor: rowBg, paddingVertical: densityStyle.rowPaddingVertical, gap: densityStyle.rowGap },
         isMultiSelected && { borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 13 },
         pressed && { opacity: 0.7 },
       ]}
@@ -218,24 +222,26 @@ function MessageRowInner({
       delayLongPress={500}
       {...(Platform.OS === 'web' ? ({ onMouseEnter: handleMouseEnter } as { onMouseEnter?: () => void }) : {})}
     >
-      <Pressable
-        onPress={showCheckbox ? handleAvatarPress : undefined}
-        hitSlop={4}
-        {...(Platform.OS === 'web' ? ({
-          onMouseEnter: () => setAvatarHovered(true),
-          onMouseLeave: () => setAvatarHovered(false),
-        } as { onMouseEnter?: () => void; onMouseLeave?: () => void }) : {})}
-      >
-        <Avatar
-          name={senderName}
-          size={40}
-          showCheckbox={showCheckbox}
-          isChecked={isMultiSelected}
-          avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
-        />
-      </Pressable>
+      {(showAvatars || showCheckbox) && (
+        <Pressable
+          onPress={showCheckbox ? handleAvatarPress : undefined}
+          hitSlop={4}
+          {...(Platform.OS === 'web' ? ({
+            onMouseEnter: () => setAvatarHovered(true),
+            onMouseLeave: () => setAvatarHovered(false),
+          } as { onMouseEnter?: () => void; onMouseLeave?: () => void }) : {})}
+        >
+          <Avatar
+            name={senderName}
+            size={densityStyle.avatarSize}
+            showCheckbox={showCheckbox}
+            isChecked={isMultiSelected}
+            avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
+          />
+        </Pressable>
+      )}
 
-      <View style={styles.content}>
+      <View style={[styles.content, { gap: densityStyle.contentGap }]}>
         <View style={styles.topRow}>
           <Text
             style={[
@@ -357,11 +363,13 @@ function MessageRowInner({
           </View>
         )}
 
-        <View style={styles.bottomRow}>
-          <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
-            {preview}
-          </Text>
-        </View>
+        {showPreviews && (
+          <View style={styles.bottomRow}>
+            <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
+              {preview}
+            </Text>
+          </View>
+        )}
 
         {/* Card preview */}
         {message.card && (
