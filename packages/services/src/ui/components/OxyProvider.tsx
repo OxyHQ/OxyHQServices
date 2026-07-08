@@ -7,17 +7,11 @@ import { OxyContextProvider, type OxyContextProviderProps } from '../context/Oxy
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { BloomDialogProvider } from '@oxyhq/bloom';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
-import { captureDeviceJoinFragmentFromUrl, logger as loggerUtil } from '@oxyhq/core';
-import { setupFonts } from './FontLoader';
+import { logger as loggerUtil } from '@oxyhq/core';
 import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
-
-// Fallback strip when the app bundle loads (official web apps also use
-// `public/device-join-strip.js` + `deviceJoinBootstrap` before Expo Router).
-if (typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined') {
-  captureDeviceJoinFragmentFromUrl();
-}
+import { setupFonts } from './FontLoader';
 
 /**
  * Background color shown for the brief window between mount and the

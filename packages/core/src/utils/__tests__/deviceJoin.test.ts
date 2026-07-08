@@ -130,7 +130,7 @@ describe('deviceJoin', () => {
       const { readFileSync } = require('node:fs');
       const { join } = require('node:path');
       const script = readFileSync(
-        join(__dirname, '../../../../inbox/public/device-join-strip.js'),
+        join(__dirname, '../../../scripts/device-join-strip.js'),
         'utf8',
       );
       expect(script).toContain(OXY_DEVICE_JOIN_PENDING_KEY);

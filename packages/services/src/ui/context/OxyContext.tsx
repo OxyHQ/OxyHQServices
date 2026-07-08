@@ -45,7 +45,6 @@ import {
   maybeRedirectDeviceJoin,
   shouldRedirectForDeviceJoin,
   loadPersistedDeviceCredential,
-  clearDeviceJoinAttemptFlag,
 } from '../utils/deviceJoin';
 import {
   maybeStartSilentOAuthRestore,
@@ -783,7 +782,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const commitSession = useCallback(
     async (
       input: CommitInput,
-      options: { activate: boolean; skipIdpHandoff?: boolean },
+      options: { activate: boolean },
     ): Promise<void> => {
       if (input.accessToken) {
         oxyServices.setTokens(input.accessToken);
@@ -1056,7 +1055,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           commitSession: (input) =>
             commitSessionRef.current(input, {
               activate: true,
-              skipIdpHandoff: true,
             }),
         });
         if (oauthCompleted) {
@@ -1309,7 +1307,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           userId: result.user.id,
           user: result.user,
         },
-        { activate: true, skipIdpHandoff: true },
+        { activate: true },
       );
       await runPostAccountSwitchSideEffects();
     },

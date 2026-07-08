@@ -1,5 +1,0 @@
-/bridge
-  Content-Security-Policy: frame-ancestors 'self' https://*.oxy.so https://oxy.so https://mention.earth https://*.mention.earth https://homiio.com https://*.homiio.com https://alia.onl https://*.alia.onl https://fairco.in https://syra.fm https://allo.you https://tnp.network https://moovo.now https://*.moovo.now https://mercaria.co https://*.mercaria.co http://localhost:* http://127.0.0.1:*
-
-/handoff
-  Content-Security-Policy: frame-ancestors 'self' https://*.oxy.so https://oxy.so https://mention.earth https://*.mention.earth https://homiio.com https://*.homiio.com https://alia.onl https://*.alia.onl https://fairco.in https://syra.fm https://allo.you https://tnp.network https://moovo.now https://*.moovo.now https://mercaria.co https://*.mercaria.co http://localhost:* http://127.0.0.1:*

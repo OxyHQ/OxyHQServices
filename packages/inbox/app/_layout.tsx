@@ -1,4 +1,3 @@
-import '@/lib/deviceJoinBootstrap';
 import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';

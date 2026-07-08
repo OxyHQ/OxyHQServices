@@ -15,7 +15,6 @@ import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
 import { RecoverPage } from "@/src/pages/recover"
 import { SocialCallbackPage } from "@/src/pages/social-callback"
-import { HandoffPage } from "@/src/pages/handoff"
 import { DeviceJoinPage } from "@/src/pages/device-join"
 import "@/app/globals.css"
 
@@ -76,7 +75,6 @@ function App() {
 
                             {/* Callback routes (no layout) */}
                             <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
-                            <Route path="/handoff" element={<HandoffPage />} />
                             <Route path="/device/join" element={<DeviceJoinPage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />

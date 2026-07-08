@@ -1,20 +1,16 @@
-import type { AuthStateStore, OxyServices, PersistedAuthState } from '@oxyhq/core';
+import type { AuthStateStore, PersistedAuthState } from '@oxyhq/core';
 import {
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   buildDeviceJoinUrl,
-  captureDeviceJoinFragmentFromUrl,
   isAllowedDeviceJoinOrigin,
   isDeviceJoinV2Complete,
   markDeviceJoinV2Complete,
   parseDeviceJoinFragment,
   readPendingDeviceJoinCredential,
-  resolveHubDeviceCredentialForJoin,
   stripDeviceJoinFragmentFromUrl,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { isIdpHubOrigin } from './idpHubOrigin';
-
-export { captureDeviceJoinFragmentFromUrl } from '@oxyhq/core';
 
 /** Persist device credentials from the join-return fragment. Returns true when applied. */
 export async function applyDeviceJoinReturn(store: AuthStateStore): Promise<boolean> {
@@ -124,17 +120,6 @@ export function maybeRedirectDeviceJoin(): boolean {
   return true;
 }
 
-/** Clear the join guard (e.g. on sign-out). */
-export function clearDeviceJoinAttemptFlag(): void {
-  try {
-    (globalThis as { sessionStorage?: Storage }).sessionStorage?.removeItem(
-      OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-    );
-  } catch {
-    // Best-effort.
-  }
-}
-
 /** True when the persisted store holds a device credential (post-join). */
 export async function hasPersistedDeviceCredential(store: AuthStateStore): Promise<boolean> {
   const persisted = await store.load();
@@ -149,12 +134,4 @@ export async function loadPersistedDeviceCredential(
     return null;
   }
   return { deviceId: persisted.deviceId, deviceSecret: persisted.deviceSecret };
-}
-
-/** Hub-side: read or provision the canonical device credential. */
-export async function resolveHubDeviceCredential(
-  oxyServices: OxyServices,
-  store: AuthStateStore,
-): Promise<{ deviceId: string; deviceSecret: string }> {
-  return resolveHubDeviceCredentialForJoin(oxyServices, store);
 }

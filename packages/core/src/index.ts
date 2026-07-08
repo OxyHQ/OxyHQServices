@@ -526,7 +526,7 @@ export {
     OXY_OAUTH_STATE_STORAGE_KEY,
     OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
     OXY_SILENT_OAUTH_ATTEMPTED_KEY,
-    OXY_IDP_HANDOFF_ATTEMPTED_KEY,
+    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     normalizeOAuthRedirectUri,
     persistOAuthHandshake,
     readOAuthHandshake,
@@ -553,23 +553,6 @@ export {
     stripDeviceJoinFragmentFromUrl,
 } from './utils/deviceJoin';
 export type { DeviceJoinFragment, DeviceJoinHubClient } from './utils/deviceJoin';
-
-// Deprecated bridge exports — kept for backward compatibility during migration.
-export {
-    OXY_IDP_BRIDGE_ATTEMPTED_KEY,
-    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
-    IDP_HANDOFF_BRIDGE_MESSAGE,
-    IDP_HANDOFF_DONE_MESSAGE,
-    buildIdpBridgeUrl,
-    buildIdpHandoffEmbedUrl,
-    isAllowedBridgeParentOrigin,
-    isIdpHubMessageOrigin,
-} from './utils/idpHandoffBridge';
-export type {
-    IdpHandoffBridgeStatus,
-    IdpHandoffBridgeOutboundMessage,
-    IdpHandoffDoneOutboundMessage,
-} from './utils/idpHandoffBridge';
 
 // ---------------------------------------------------------------------------
 // Session sync (device-scoped multi-account session client)

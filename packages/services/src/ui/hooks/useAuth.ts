@@ -18,7 +18,7 @@
  * ```
  *
  * Cross-domain session (zero cookies):
- * - Web: IdP hub handoff to auth.oxy.so + silent OAuth (`prompt=none`) on cold boot
+ * - Web: device join redirect to auth.oxy.so + silent OAuth (`prompt=none`) on cold boot
  * - Native: shared Keychain / app-group identity (Commons)
  * - Realtime sync: Socket.IO `session_state` on `device:<deviceId>` once authenticated
  * - Manual sign-in: signIn() opens the in-app account dialog (web + native)

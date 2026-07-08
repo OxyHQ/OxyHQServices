@@ -1,9 +1,7 @@
 import {
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
   OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-  OXY_IDP_BRIDGE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
-  OXY_IDP_HANDOFF_ATTEMPTED_KEY,
 } from '@oxyhq/core';
 
 function sessionStore(): Storage | undefined {
@@ -17,8 +15,7 @@ export function isCrossOriginRestoreBlocked(): boolean {
   return Boolean(
     store.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY) ||
       store.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY) ||
-      store.getItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY) ||
-      store.getItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY),
+      store.getItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY),
   );
 }
 
@@ -29,7 +26,6 @@ export function markCrossOriginRestoreAttempted(): void {
   store.setItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY, '1');
   store.setItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY, '1');
   store.setItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY, '1');
-  store.setItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY, '1');
 }
 
 /** Clear all cross-origin restore loop guards (call on sign-out). */
@@ -40,8 +36,6 @@ export function clearCrossOriginRestoreGuards(): void {
     OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     OXY_SILENT_OAUTH_ATTEMPTED_KEY,
     OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-    OXY_IDP_BRIDGE_ATTEMPTED_KEY,
-    OXY_IDP_HANDOFF_ATTEMPTED_KEY,
   ]) {
     store.removeItem(key);
   }

@@ -230,11 +230,3 @@ export const oauthConsentQuerySchema = z.object({
 export const grantApplicationIdParams = z.object({
   applicationId: z.string().trim().min(1),
 });
-
-// POST /auth/idp-handoff/create — bearer; mints a one-shot code for auth.oxy.so.
-export const idpHandoffCreateSchema = z.object({});
-
-// POST /auth/idp-handoff/exchange — public; redeems handoff code on IdP origin.
-export const idpHandoffExchangeSchema = z.object({
-  handoffCode: z.string().trim().min(1),
-});

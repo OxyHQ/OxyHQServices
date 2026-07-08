@@ -61,10 +61,7 @@ import {
   oauthClientParams,
   oauthConsentQuerySchema,
   grantApplicationIdParams,
-  idpHandoffCreateSchema,
-  idpHandoffExchangeSchema,
 } from '../schemas/auth.schemas';
-import { createIdpHandoffCode, exchangeIdpHandoffCode } from '../services/idpHandoff.service';
 import { AppGrant } from '../models/AppGrant';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { serializePublicApplication } from '../utils/serializeApplication';
@@ -1887,133 +1884,6 @@ const grantsRevokeLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
 });
-
-const idpHandoffCreateLimiter = rateLimit({
-  prefix: 'rl:auth:idp-handoff-create:',
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 100 : 30,
-});
-
-const idpHandoffExchangeLimiter = rateLimit({
-  prefix: 'rl:auth:idp-handoff-exchange:',
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 100 : 30,
-});
-
-/**
- * @openapi
- * /auth/idp-handoff/create:
- *   post:
- *     tags:
- *       - Authentication
- *     summary: Mint a one-shot IdP session handoff code
- *     description: >
- *       Authenticated apps call this after sign-in to propagate the same
- *       DeviceSession credentials to auth.oxy.so (cross-origin hub, zero cookies).
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Handoff code issued.
- *       401:
- *         description: Missing bearer or device claim.
- */
-router.post(
-  '/idp-handoff/create',
-  authMiddleware,
-  idpHandoffCreateLimiter,
-  validate({ body: idpHandoffCreateSchema }),
-  asyncHandler(async (req: AuthRequest, res) => {
-    const user = req.user;
-    if (!user?._id) {
-      throw new UnauthorizedError('Authentication required');
-    }
-
-    const bearerToken = extractTokenFromRequest(req);
-    const decoded = bearerToken ? decodeToken(bearerToken) : null;
-    if (!decoded?.deviceId || !decoded?.sessionId) {
-      throw new UnauthorizedError('Device session required');
-    }
-
-    const { handoffCode, expiresAt } = await createIdpHandoffCode({
-      deviceId: decoded.deviceId,
-      sessionId: decoded.sessionId,
-      userId: user._id.toString(),
-    });
-
-    sendSuccess(res, {
-      handoffCode,
-      expiresIn: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)),
-    });
-  }),
-);
-
-/**
- * @openapi
- * /auth/idp-handoff/exchange:
- *   post:
- *     tags:
- *       - Authentication
- *     security: []
- *     summary: Exchange an IdP handoff code for device credentials
- *     description: >
- *       Called from auth.oxy.so to plant the shared DeviceSession locally.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [handoffCode]
- *             properties:
- *               handoffCode:
- *                 type: string
- *     responses:
- *       200:
- *         description: Device credentials for the IdP origin.
- *       401:
- *         description: Invalid or expired handoff code.
- */
-router.post(
-  '/idp-handoff/exchange',
-  idpHandoffExchangeLimiter,
-  validate({ body: idpHandoffExchangeSchema }),
-  asyncHandler(async (req, res) => {
-    const { handoffCode } = req.body as { handoffCode: string };
-    const exchange = await exchangeIdpHandoffCode(handoffCode);
-    if (!exchange.ok) {
-      throw new UnauthorizedError('invalid_handoff');
-    }
-
-    const { deviceId, sessionId, userId } = exchange.record;
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new UnauthorizedError('invalid_handoff');
-    }
-
-    const { deviceSessionService } = await import('../services/deviceSession.service.js');
-    const state = await deviceSessionService.getState(deviceId);
-    const activeToken = await deviceSessionService.resolveActiveToken(state);
-    if (!activeToken) {
-      throw new UnauthorizedError('no_active_session');
-    }
-
-    const deviceSecret = await deviceSessionService.issueDeviceSecret(deviceId);
-    if (!deviceSecret) {
-      throw new UnauthorizedError('invalid_handoff');
-    }
-
-    sendSuccess(res, {
-      deviceId,
-      deviceSecret,
-      sessionId,
-      userId: userId.toString(),
-      accessToken: activeToken.accessToken,
-      expiresAt: activeToken.expiresAt,
-      user: formatUserResponse(user),
-    });
-  }),
-);
 
 /**
  * @openapi

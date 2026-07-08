@@ -205,8 +205,8 @@ export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
 /** `sessionStorage` key — at most one silent OAuth attempt per navigation. */
 export const OXY_SILENT_OAUTH_ATTEMPTED_KEY = 'oxy.silent_oauth_attempted';
 
-/** `sessionStorage` key — suppress IdP handoff redirect loops after login. */
-export const OXY_IDP_HANDOFF_ATTEMPTED_KEY = 'oxy.idp_handoff_attempted';
+/** `sessionStorage` key — blocks further cross-origin auto-restore in this tab. */
+export const OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY = 'oxy.cross_origin_restore_attempted';
 
 /**
  * Normalize a redirect URI to its origin. Official Oxy apps register apex

@@ -1,3 +1,4 @@
+// Canonical pre-bundle strip for device-join return URLs.
 // Keep in sync with captureDeviceJoinFragmentFromUrl (packages/core/src/utils/deviceJoin.ts).
 (function () {
   try {
