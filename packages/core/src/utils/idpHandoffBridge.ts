@@ -18,6 +18,9 @@ export const IDP_HANDOFF_DONE_MESSAGE = 'oxy:idp-handoff-done' as const;
 /** One invisible bridge attempt per tab navigation (sessionStorage). */
 export const OXY_IDP_BRIDGE_ATTEMPTED_KEY = 'oxy.idp_bridge_attempted';
 
+/** Blocks any further cross-origin auto-restore in this tab (bridge + silent OAuth). */
+export const OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY = 'oxy.cross_origin_restore_attempted';
+
 /** Official first-party registrable apexes (mirrors API BOOTSTRAP_CORE_ORIGINS). */
 const BRIDGE_OFFICIAL_APEXES = new Set([
   'oxy.so',

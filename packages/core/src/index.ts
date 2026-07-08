@@ -536,6 +536,7 @@ export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
     OXY_IDP_BRIDGE_ATTEMPTED_KEY,
+    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     IDP_HANDOFF_BRIDGE_MESSAGE,
     IDP_HANDOFF_DONE_MESSAGE,
     buildIdpHubOrigin,

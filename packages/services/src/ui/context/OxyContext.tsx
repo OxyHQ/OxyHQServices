@@ -48,6 +48,8 @@ import {
   maybeStartSilentOAuthRestore,
   consumeSilentOAuthError,
 } from '../utils/silentOAuthRestore';
+import { isAllowedBridgeParentOrigin } from '@oxyhq/core';
+import { markCrossOriginRestoreAttempted } from '../utils/crossOriginRestoreGuards';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -1126,6 +1128,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           setTokenReady(true);
           markAuthResolvedRef.current();
           return;
+        }
+
+        // Official apps: iframe bridge only — never fall back to silent OAuth
+        // (that full-page redirects through auth.oxy.so/authorize).
+        if (isWebBrowser()) {
+          const origin = (globalThis as { location?: Location }).location?.origin ?? '';
+          if (origin && isAllowedBridgeParentOrigin(origin)) {
+            markCrossOriginRestoreAttempted();
+            return;
+          }
         }
 
         const redirected = await maybeStartSilentOAuthRestore({

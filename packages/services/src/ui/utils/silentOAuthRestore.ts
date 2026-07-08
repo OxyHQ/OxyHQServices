@@ -10,6 +10,11 @@ import {
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { redirectToAuthorize } from '../components/oauthNavigation';
+import { isAllowedBridgeParentOrigin } from '@oxyhq/core';
+import {
+  isCrossOriginRestoreBlocked,
+  markCrossOriginRestoreAttempted,
+} from './crossOriginRestoreGuards';
 
 export interface SilentOAuthRestoreOptions {
   oxyServices: OxyServices;
@@ -30,13 +35,18 @@ export async function maybeStartSilentOAuthRestore(
 ): Promise<boolean> {
   if (!isWebBrowser()) return false;
 
-  const sessionStore = (globalThis as { sessionStorage?: Storage }).sessionStorage;
-  if (sessionStore?.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY)) {
+  const location = (globalThis as { location?: Location }).location;
+  if (!location) return false;
+
+  // Official first-party apps use the invisible iframe bridge only — never
+  // top-level silent OAuth (that flashes auth.oxy.so/authorize).
+  if (isAllowedBridgeParentOrigin(location.origin)) {
     return false;
   }
 
-  const location = (globalThis as { location?: Location }).location;
-  if (!location) return false;
+  if (isCrossOriginRestoreBlocked()) {
+    return false;
+  }
 
   const params = new URLSearchParams(location.search);
   if (params.has('code') || params.has('error')) {
@@ -63,7 +73,7 @@ export async function maybeStartSilentOAuthRestore(
       prompt: 'none',
     });
 
-    sessionStore?.setItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY, '1');
+    markCrossOriginRestoreAttempted();
     redirectToAuthorize(authorizeUrl);
     return true;
   } catch (error) {
@@ -99,7 +109,10 @@ export function consumeSilentOAuthError(): 'login_required' | 'consent_required'
     return null;
   }
 
-  clearSilentOAuthAttemptFlag();
+  // Terminal for this tab — do NOT clear the attempt flag (that caused infinite
+  // authorize ↔ RP redirect loops when login_required bounced back).
+  markCrossOriginRestoreAttempted();
+
   if (history?.replaceState) {
     const url = new URL(location.href);
     url.searchParams.delete('error');

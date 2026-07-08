@@ -23,8 +23,12 @@ function postToParent(
  */
 export function BridgePage() {
   const [searchParams] = useSearchParams();
-  const { oxyServices, isAuthResolved, isAuthenticated, isPrivateApiPending } =
-    useOxy();
+  const {
+    oxyServices,
+    isAuthResolved,
+    canUsePrivateApi,
+    isPrivateApiPending,
+  } = useOxy();
   const attemptedRef = useRef(false);
 
   const parentOrigin = searchParams.get("origin");
@@ -36,7 +40,7 @@ export function BridgePage() {
 
     attemptedRef.current = true;
 
-    if (!isAuthenticated || !oxyServices.getAccessToken()) {
+    if (!canUsePrivateApi || !oxyServices.getAccessToken()) {
       postToParent(parentOrigin, {
         type: IDP_HANDOFF_BRIDGE_MESSAGE,
         status: "no_session",
@@ -62,7 +66,7 @@ export function BridgePage() {
   }, [
     parentOrigin,
     isAuthResolved,
-    isAuthenticated,
+    canUsePrivateApi,
     isPrivateApiPending,
     oxyServices,
   ]);

@@ -6,13 +6,16 @@ import {
   IDP_HANDOFF_DONE_MESSAGE,
   isAllowedBridgeParentOrigin,
   isIdpHubMessageOrigin,
-  OXY_IDP_BRIDGE_ATTEMPTED_KEY,
   type IdpHandoffBridgeOutboundMessage,
   type IdpHandoffDoneOutboundMessage,
   logger,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { isIdpHubOrigin } from './idpHubOrigin';
+import {
+  isCrossOriginRestoreBlocked,
+  markCrossOriginRestoreAttempted,
+} from './crossOriginRestoreGuards';
 
 const BRIDGE_TIMEOUT_MS = 12_000;
 
@@ -26,16 +29,12 @@ export interface IdpHandoffBridgeCommitInput {
   user?: { id: string; username?: string; avatar?: string };
 }
 
-function readSessionStore(): Storage | undefined {
-  return (globalThis as { sessionStorage?: Storage }).sessionStorage;
-}
-
 function bridgeAlreadyAttempted(): boolean {
-  return Boolean(readSessionStore()?.getItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY));
+  return isCrossOriginRestoreBlocked();
 }
 
 function markBridgeAttempted(): void {
-  readSessionStore()?.setItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY, '1');
+  markCrossOriginRestoreAttempted();
 }
 
 function loadHiddenIframe(src: string): HTMLIFrameElement {
