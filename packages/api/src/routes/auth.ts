@@ -32,7 +32,7 @@ import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
-import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
+import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS, canonicalizeOAuthRedirectUri } from '../services/oauthCode.service';
 import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
 import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
@@ -1753,13 +1753,16 @@ router.post(
  * source of countless open-redirect vulnerabilities — we never normalise
  * away path or query for the comparison. Constant-time equality keeps the
  * comparison from leaking the allowlist contents via timing.
+ *
+ * Origin-only https URLs are canonicalized so `https://app.example` and
+ * `https://app.example/` match the same registered apex origin.
  */
 function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: string): boolean {
   const allowlist = app.redirectUris ?? [];
   if (allowlist.length === 0) return false;
-  const provided = Buffer.from(redirectUri);
+  const provided = Buffer.from(canonicalizeOAuthRedirectUri(redirectUri));
   for (const allowed of allowlist) {
-    const allowedBuf = Buffer.from(allowed);
+    const allowedBuf = Buffer.from(canonicalizeOAuthRedirectUri(allowed));
     if (allowedBuf.length === provided.length && crypto.timingSafeEqual(allowedBuf, provided)) {
       return true;
     }

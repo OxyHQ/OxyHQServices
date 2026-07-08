@@ -39,6 +39,22 @@ export function timingSafeStringEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
+/** Collapse `https://app.example/` → `https://app.example` for OAuth binding. */
+export function canonicalizeOAuthRedirectUri(redirectUri: string): string {
+  try {
+    const parsed = new URL(redirectUri);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return redirectUri;
+    }
+    if (parsed.pathname === '/' && !parsed.search && !parsed.hash) {
+      return parsed.origin;
+    }
+    return redirectUri;
+  } catch {
+    return redirectUri;
+  }
+}
+
 export interface IssueCodeOptions {
   userId: Types.ObjectId | string;
   appId: string;
@@ -64,7 +80,7 @@ export async function issueAuthCode(options: IssueCodeOptions): Promise<IssueCod
     codeHash,
     userId: options.userId,
     appId: options.appId,
-    redirectUri: options.redirectUri,
+    redirectUri: canonicalizeOAuthRedirectUri(options.redirectUri),
     codeChallenge: options.codeChallenge ?? null,
     codeChallengeMethod: options.codeChallenge ? 'S256' : null,
     scopes: options.scopes ?? [],
@@ -122,7 +138,12 @@ export async function exchangeAuthCode(options: ExchangeCodeOptions): Promise<Ex
     return { ok: false, reason: 'invalid_grant' };
   }
 
-  if (!timingSafeStringEqual(stored.redirectUri, options.redirectUri)) {
+  if (
+    !timingSafeStringEqual(
+      canonicalizeOAuthRedirectUri(stored.redirectUri),
+      canonicalizeOAuthRedirectUri(options.redirectUri),
+    )
+  ) {
     return { ok: false, reason: 'invalid_grant' };
   }
 

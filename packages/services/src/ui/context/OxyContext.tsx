@@ -37,6 +37,8 @@ import {
   notifyAccountDialogVisibility,
 } from '../navigation/accountDialogManager';
 import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
+import { redirectToAuthorize } from '../components/oauthNavigation';
+import { isWebBrowser } from '../utils/isWebBrowser';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -902,6 +904,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       commitSession: (session) => handleWebSessionRef.current(session),
       onSignedIn: () => setAccountDialogOpen(false),
       openUrl: (url) => {
+        if (isWebBrowser()) {
+          redirectToAuthorize(url);
+          return;
+        }
         void Linking.openURL(url);
       },
     });

@@ -25,7 +25,7 @@ import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
-import { OXY_CLIENT_ID } from '@/constants/oxy';
+import { OXY_CLIENT_ID, OXY_AUTH_REDIRECT_URI } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Hide the native splash immediately on import. `BloomThemeProvider` configures
@@ -83,7 +83,7 @@ function RootLayoutContent() {
           user's `language` preference via `useOxy()` and seed the initial
           locale accordingly. Persisted overrides flow through AsyncStorage.
         */}
-        <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
+        <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI}>
           <BloomImageResolver>
             <LocaleProvider>
               <SafeAreaProvider>

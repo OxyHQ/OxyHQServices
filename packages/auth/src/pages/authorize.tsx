@@ -80,6 +80,11 @@ function safeRedirectUrl(value?: string | null): string | null {
       // Block raw IP addresses for web redirects
       if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname))
         return null;
+      // Apex origins only — never propagate the spurious trailing slash from
+      // `URL.toString()` or `redirect_uri=https://app.example/`.
+      if (parsed.pathname === "/" && !parsed.search && !parsed.hash) {
+        return parsed.origin;
+      }
       return parsed.toString();
     }
     // Allow registered native app schemes (no IP check needed)

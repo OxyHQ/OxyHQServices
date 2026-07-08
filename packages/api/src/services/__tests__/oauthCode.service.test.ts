@@ -216,6 +216,22 @@ describe('exchangeAuthCode (H6 — single-use, binding checks)', () => {
     if (!res.ok) expect(res.reason).toBe('invalid_grant');
   });
 
+  it('accepts apex origin with or without a trailing slash', async () => {
+    const { code } = await issueAuthCode({
+      userId: USER_ID,
+      appId: APP_ID,
+      redirectUri: 'https://inbox.oxy.so/',
+    });
+
+    const res = await exchangeAuthCode({
+      rawCode: code,
+      appId: APP_ID,
+      redirectUri: 'https://inbox.oxy.so',
+      clientSecretProvided: true,
+    });
+    expect(res.ok).toBe(true);
+  });
+
   it('rejects when the appId does not match', async () => {
     const { code } = await issueAuthCode({
       userId: USER_ID,
