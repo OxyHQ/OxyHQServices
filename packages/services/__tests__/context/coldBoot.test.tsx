@@ -27,7 +27,7 @@
 import React from 'react';
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AUTH_STATE_STORAGE_KEY, type User } from '@oxyhq/core';
+import { AUTH_STATE_STORAGE_KEY, OXY_DEVICE_JOIN_V2_KEY, type User } from '@oxyhq/core';
 
 const fakeSessionClient = {
   getState: jest.fn(() => null),
@@ -45,7 +45,7 @@ jest.mock('../../src/ui/session', () => {
     ...actual,
     createSessionClient: jest.fn(() => ({
       client: fakeSessionClient,
-      host: { setCurrentAccountId: jest.fn() },
+      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null },
     })),
   };
 });
@@ -115,7 +115,7 @@ function renderProvider(oxyServices: unknown): RenderResult {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OxyContextProvider oxyServices={oxyServices as never} baseURL={API_BASE_URL}>
+      <OxyContextProvider oxyServices={oxyServices as never} baseURL={API_BASE_URL} clientId="oxy_test_client">
         <Capture />
       </OxyContextProvider>
     </QueryClientProvider>,
@@ -125,31 +125,27 @@ function renderProvider(oxyServices: unknown): RenderResult {
 describe('OxyContext cold boot (device-first)', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
     capturedContext = null;
     useAuthStore.getState().logout();
     Object.values(fakeSessionClient).forEach((fn) => (fn as jest.Mock).mockClear());
   });
 
-  it('a signed-out boot resolves auth WITHOUT navigating to any login page', async () => {
+  it('a signed-out boot on an official app without a device id redirects to join once', async () => {
     const { stub } = buildStub();
 
     renderProvider(stub);
 
     await waitFor(() => expect(capturedContext?.isAuthResolved).toBe(true));
 
-    // Signed out, but auth is RESOLVED (a definitive "logged out", not undetermined).
     expect(capturedContext?.isAuthenticated).toBe(false);
-    expect(capturedContext?.user).toBeNull();
-    // No device credential is persisted, so the zero-cookie mint never runs.
-    // The critical device-first contract: coldBootV2 has no bounce/navigation step
-    // at all — it can only ever resolve signed out INLINE.
     expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
-    // The commit funnel never ran, so the device set was never touched.
-    expect(fakeSessionClient.addCurrentAccount).not.toHaveBeenCalled();
-    expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBe('1');
   });
 
   it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
+    // Post-migration: v2 join completed on this origin.
+    window.localStorage.setItem(OXY_DEVICE_JOIN_V2_KEY, '1');
     // A returning device: a persisted zero-cookie device credential (`deviceId` +
     // `deviceSecret`) → cold boot mints a fresh access token from it.
     window.localStorage.setItem(
@@ -183,5 +179,28 @@ describe('OxyContext cold boot (device-first)', () => {
     await waitFor(() => expect(fakeSessionClient.addCurrentAccount).toHaveBeenCalledTimes(1));
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
     expect(fakeSessionClient.start).toHaveBeenCalled();
+  });
+
+  it('redirects pre-join-era device credentials to join once for migration', async () => {
+    window.localStorage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'sess_old',
+        userId: USER_ID,
+        deviceId: 'dev-legacy',
+        deviceSecret: 'legacy.secret',
+        accessToken: 'legacy.access',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    );
+    const { stub } = buildStub();
+
+    renderProvider(stub);
+
+    await waitFor(() => expect(capturedContext?.isAuthResolved).toBe(true));
+
+    expect(capturedContext?.isAuthenticated).toBe(false);
+    expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBe('1');
   });
 });

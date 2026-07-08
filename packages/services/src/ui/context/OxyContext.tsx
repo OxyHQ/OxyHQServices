@@ -39,17 +39,19 @@ import {
 import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
 import { redirectToAuthorize } from '../components/oauthNavigation';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import { isIdpHubOrigin } from '../utils/idpHubOrigin';
 import {
-  maybeRedirectIdpHandoff,
-  isIdpHubOrigin,
-} from '../utils/idpHandoffRedirect';
-import { tryInvisibleIdpHandoffRestore } from '../utils/idpHandoffBridge';
+  applyDeviceJoinReturn,
+  maybeRedirectDeviceJoin,
+  shouldRedirectForDeviceJoin,
+  loadPersistedDeviceCredential,
+  clearDeviceJoinAttemptFlag,
+} from '../utils/deviceJoin';
 import {
   maybeStartSilentOAuthRestore,
   consumeSilentOAuthError,
 } from '../utils/silentOAuthRestore';
-import { isAllowedBridgeParentOrigin } from '@oxyhq/core';
-import { markCrossOriginRestoreAttempted } from '../utils/crossOriginRestoreGuards';
+import { isAllowedDeviceJoinOrigin } from '@oxyhq/core';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -580,12 +582,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   markAuthResolvedRef.current = markAuthResolved;
 
   // Server-authoritative device session client. Built ONCE per `oxyServices`
-  // instance. `onUnauthenticated` (a device signout-all pushed over the
-  // bearer-authenticated socket, or bootstrapped as zero-account) clears the
-  // persisted store + local state so a reload does not try to restore a session
-  // the device no longer has. The realtime socket is bearer-only now: a
-  // signed-out tab cannot join any device room, so there is no signed-out sync
-  // wiring here.
+  // instance. Device-scoped sockets connect with deviceId+deviceSecret when no
+  // bearer is planted yet, so cross-origin apps sync via `session_state` after
+  // the one-shot join redirect.
   const sessionClientPairRef = useRef<ReturnType<typeof createSessionClient> | null>(null);
   if (!sessionClientPairRef.current) {
     sessionClientPairRef.current = createSessionClient(
@@ -651,6 +650,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   ]);
   const syncFromClientRef = useRef(syncFromClient);
   syncFromClientRef.current = syncFromClient;
+
+  const syncDeviceCredentialToHost = useCallback(async (): Promise<void> => {
+    const cred = await loadPersistedDeviceCredential(authStore);
+    sessionClientHost.setDeviceCredential(cred);
+  }, [authStore, sessionClientHost]);
 
   useEffect(() => {
     return sessionClient.subscribe(() => {
@@ -785,21 +789,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         oxyServices.setTokens(input.accessToken);
       }
 
-      // Persist the durable blob when the zero-cookie device credential
-      // (`deviceId` + `deviceSecret`) is present. The cold boot has usually
-      // persisted already; this is idempotent. Without the credential there is
-      // nothing durable to persist and the session lives only for this runtime.
-      if (input.deviceId && input.deviceSecret && input.userId) {
+      // Persist the durable blob when the zero-cookie device credential is present.
+      if (input.deviceId && input.deviceSecret) {
         try {
+          const prior = await authStore.load();
           const next: PersistedAuthState = {
-            sessionId: input.sessionId,
-            userId: input.userId,
+            sessionId: input.sessionId || prior?.sessionId || '',
+            userId: input.userId || prior?.userId || '',
             deviceId: input.deviceId,
             deviceSecret: input.deviceSecret,
             ...(input.accessToken ? { accessToken: input.accessToken } : {}),
             ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
           };
           await authStore.save(next);
+          sessionClientHost.setDeviceCredential({
+            deviceId: input.deviceId,
+            deviceSecret: input.deviceSecret,
+          });
         } catch (persistError) {
           logger('Failed to persist auth state on commit', persistError);
         }
@@ -866,20 +872,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onAuthStateChangeRef.current?.(fullUser);
       }
       markAuthResolvedRef.current();
-
-      // Propagate credentials to auth.oxy.so (IdP hub) after interactive sign-in
-      // only — never after silent OAuth return, cold boot, account switch, or
-      // handoff exchange (those paths already converged via IdP or local mint).
-      if (
-        options.activate &&
-        !options.skipIdpHandoff &&
-        isWebBrowser() &&
-        !isIdpHubOrigin()
-      ) {
-        await maybeRedirectIdpHandoff({ oxyServices }).catch(() => false);
-      }
     },
-    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, syncFromClient, loginSuccess, logger],
+    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger],
   );
   const commitSessionRef = useRef(commitSession);
   commitSessionRef.current = commitSession;
@@ -1047,6 +1041,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const runColdBoot = useCallback(async (): Promise<void> => {
     setTokenReady(false);
     try {
+      if (coldBoot && isWebBrowser()) {
+        await applyDeviceJoinReturn(authStore);
+        await syncDeviceCredentialToHost();
+      }
+
       if (coldBoot) {
         consumeSilentOAuthError();
 
@@ -1067,14 +1066,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
 
+      // Official web apps: one redirect to auth.oxy.so/device/join when no local
+      // device id, or once to migrate pre-join-era credentials to the hub canonical id.
+      if (coldBoot && isWebBrowser() && clientIdProp && !isIdpHubOrigin()) {
+        if (await shouldRedirectForDeviceJoin(authStore) && maybeRedirectDeviceJoin()) {
+          return;
+        }
+      }
+
       const outcome = await runSessionColdBoot({
         oxy: oxyServices,
         store: authStore,
         platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
         onSession: async (session) => {
-          // Bound how long auth resolution waits for the handoff — the token is
-          // already planted, so on a slow backend we proceed and let the handoff
-          // land asynchronously (the socket subscription re-projects when it does).
           const handoff = commitSessionRef.current(
             { sessionId: session.sessionId, accessToken: session.accessToken, userId: session.userId },
             { activate: false },
@@ -1092,9 +1096,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           });
           markAuthResolvedRef.current();
         },
-        onSignedOut: () => {
-          // The realtime socket is bearer-only: a signed-out tab cannot join any
-          // device room, so there is no signed-out socket to start here.
+        onSignedOut: async () => {
+          await syncDeviceCredentialToHost();
+          const cred = await loadPersistedDeviceCredential(authStore);
+          if (cred) {
+            try {
+              await sessionClient.start();
+            } catch (socketError) {
+              if (__DEV__) {
+                loggerUtil.debug(
+                  'Device socket start failed (non-fatal)',
+                  { component: 'OxyContext', method: 'runColdBoot' },
+                  socketError,
+                );
+              }
+            }
+          }
           markAuthResolvedRef.current();
         },
         onStepError: (id, error) => {
@@ -1108,45 +1125,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
       });
 
-      // Web cross-origin restore: invisible IdP bridge first (no UI), then
-      // silent OAuth as fallback for third-party / iframe-blocked cases.
+      // Third-party web apps only: silent OAuth when local mint fails (no join redirect).
       if (
         coldBoot &&
         isWebBrowser() &&
         clientIdProp &&
         outcome.kind !== 'session'
       ) {
-        const bridged = await tryInvisibleIdpHandoffRestore({
-          oxyServices,
-          commitSession: (input) =>
-            commitSessionRef.current(input, {
-              activate: true,
-              skipIdpHandoff: true,
-            }),
-        });
-        if (bridged) {
-          setTokenReady(true);
-          markAuthResolvedRef.current();
-          return;
-        }
-
-        // Official apps: iframe bridge only — never fall back to silent OAuth
-        // (that full-page redirects through auth.oxy.so/authorize).
-        if (isWebBrowser()) {
-          const origin = (globalThis as { location?: Location }).location?.origin ?? '';
-          if (origin && isAllowedBridgeParentOrigin(origin)) {
-            markCrossOriginRestoreAttempted();
+        const location = (globalThis as { location?: Location }).location;
+        const origin = location?.origin ?? '';
+        if (origin && !isAllowedDeviceJoinOrigin(origin)) {
+          const redirected = await maybeStartSilentOAuthRestore({
+            oxyServices,
+            clientId: clientIdProp,
+            redirectUri: authRedirectUri,
+          });
+          if (redirected) {
             return;
           }
-        }
-
-        const redirected = await maybeStartSilentOAuthRestore({
-          oxyServices,
-          clientId: clientIdProp,
-          redirectUri: authRedirectUri,
-        });
-        if (redirected) {
-          return;
         }
       }
     } catch (error) {
@@ -1161,7 +1157,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Backstop: resolve on every exit path so the gate can never hang.
       markAuthResolvedRef.current();
     }
-  }, [oxyServices, authStore, coldBoot, clientIdProp, authRedirectUri]);
+  }, [oxyServices, authStore, coldBoot, clientIdProp, authRedirectUri, syncDeviceCredentialToHost]);
 
   useEffect(() => {
     if (initialized) {

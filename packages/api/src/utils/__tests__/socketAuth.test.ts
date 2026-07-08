@@ -1,25 +1,24 @@
 /**
  * socketAuth unit tests — the single authority for who a Socket.IO connection is
  * allowed to be.
- *
- * Covers:
- *  - a valid bearer → an AUTHENTICATED user identity (user + device rooms);
- *  - an INVALID bearer → reject;
- *  - no bearer → reject (a signed-out device needs no real-time sync);
- *  - socketRoomsFor: a user socket joins BOTH its user + device rooms (device
- *    from the JWT claim).
  */
 import jwt from 'jsonwebtoken';
 
-// `jsonwebtoken` is globally mocked in jest.setup.cjs (verify never throws). Drive
-// `verify` per-test so we can exercise both the valid-bearer and invalid-bearer
-// (throwing) branches.
-const mockVerify = jwt.verify as unknown as jest.Mock;
+const mockGetStateBySecret = jest.fn();
+
+jest.mock('../../services/deviceSession.service', () => ({
+  __esModule: true,
+  default: {
+    getStateBySecret: (...args: unknown[]) => mockGetStateBySecret(...args),
+  },
+}));
 
 jest.mock('../logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
 import { resolveSocketIdentity, type SocketHandshakeAuthInput } from '../socketAuth';
 import { socketRoomsFor } from '../socket';
+
+const mockVerify = jwt.verify as unknown as jest.Mock;
 
 const SECRET = 'test-access-secret';
 
@@ -32,6 +31,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   mockVerify.mockReset().mockReturnValue({ userId: 'u1', deviceId: 'd1', sessionId: 's1' });
+  mockGetStateBySecret.mockReset();
 });
 
 describe('resolveSocketIdentity', () => {
@@ -41,13 +41,28 @@ describe('resolveSocketIdentity', () => {
     expect(mockVerify).toHaveBeenCalledWith('valid.jwt.here', SECRET);
   });
 
+  it('resolves a device-only identity from deviceId + deviceSecret', async () => {
+    mockGetStateBySecret.mockResolvedValue({
+      deviceId: 'd-hub',
+      accounts: [],
+      activeAccountId: null,
+      revision: 0,
+      updatedAt: Date.now(),
+    });
+    const id = await resolveSocketIdentity(
+      handshake({ auth: { deviceId: 'd-hub', deviceSecret: 'sec' } }),
+    );
+    expect(id).toEqual({ kind: 'device', deviceId: 'd-hub' });
+    expect(mockGetStateBySecret).toHaveBeenCalledWith('d-hub', 'sec');
+  });
+
   it('rejects (null) when the bearer is present but invalid', async () => {
     mockVerify.mockImplementation(() => { throw new Error('invalid signature'); });
     const id = await resolveSocketIdentity(handshake({ auth: { token: 'not-a-jwt' } }));
     expect(id).toBeNull();
   });
 
-  it('rejects (null) when there is no bearer', async () => {
+  it('rejects (null) when there is no bearer or device credential', async () => {
     const id = await resolveSocketIdentity(handshake());
     expect(id).toBeNull();
   });
@@ -57,11 +72,23 @@ describe('resolveSocketIdentity', () => {
     const id = await resolveSocketIdentity(handshake({ auth: { token: 'valid.jwt.here' } }));
     expect(id).toBeNull();
   });
+
+  it('rejects (null) when device credentials do not match', async () => {
+    mockGetStateBySecret.mockResolvedValue(null);
+    const id = await resolveSocketIdentity(
+      handshake({ auth: { deviceId: 'd1', deviceSecret: 'bad' } }),
+    );
+    expect(id).toBeNull();
+  });
 });
 
 describe('socketRoomsFor', () => {
   it('an authenticated user joins BOTH the user and device rooms', () => {
     expect(socketRoomsFor({ user: { id: 'u1', deviceId: 'd1' } })).toEqual(['user:u1', 'device:d1']);
+  });
+
+  it('a device-only socket joins only the device room', () => {
+    expect(socketRoomsFor({ deviceId: 'd1' })).toEqual(['device:d1']);
   });
 
   it('an authenticated user without a device claim joins only the user room', () => {

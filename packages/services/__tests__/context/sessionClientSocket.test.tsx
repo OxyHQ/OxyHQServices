@@ -261,7 +261,7 @@ async function bootWithDeviceState(deviceState: DeviceSessionState) {
   const fake = buildFakeClient(deviceState);
   mockedCreateSessionClient.mockReturnValue({
     client: fake.fakeClient as never,
-    host: { setCurrentAccountId: jest.fn() } as never,
+    host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null } as never,
   });
 
   const baseURL = nextBaseURL();

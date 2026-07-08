@@ -148,7 +148,7 @@ describe('SessionClient projection into OxyContext (Task 1 — additive, inert u
     const setCurrentAccountId = jest.fn();
     mockedCreateSessionClient.mockReturnValue({
       client: fake.fakeClient as never,
-      host: { setCurrentAccountId } as never,
+      host: { setCurrentAccountId, setDeviceCredential: jest.fn(), getDeviceCredential: () => null } as never,
     });
 
     const sink = makeSink();
@@ -176,7 +176,7 @@ describe('SessionClient projection into OxyContext (Task 1 — additive, inert u
     const fake = buildFakeClient(null);
     mockedCreateSessionClient.mockReturnValue({
       client: fake.fakeClient as never,
-      host: { setCurrentAccountId: jest.fn() } as never,
+      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null } as never,
     });
 
     const sink = makeSink();

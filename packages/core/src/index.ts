@@ -535,11 +535,27 @@ export {
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
+    OXY_DEVICE_JOIN_ATTEMPTED_KEY,
+    OXY_DEVICE_JOIN_V2_KEY,
+    DEVICE_JOIN_FRAGMENT_DEVICE_ID,
+    DEVICE_JOIN_FRAGMENT_DEVICE_SECRET,
+    buildIdpHubOrigin,
+    buildDeviceJoinUrl,
+    buildDeviceJoinReturnUrl,
+    isAllowedDeviceJoinOrigin,
+    isDeviceJoinV2Complete,
+    markDeviceJoinV2Complete,
+    parseDeviceJoinFragment,
+    stripDeviceJoinFragmentFromUrl,
+} from './utils/deviceJoin';
+export type { DeviceJoinFragment } from './utils/deviceJoin';
+
+// Deprecated bridge exports — kept for backward compatibility during migration.
+export {
     OXY_IDP_BRIDGE_ATTEMPTED_KEY,
     OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     IDP_HANDOFF_BRIDGE_MESSAGE,
     IDP_HANDOFF_DONE_MESSAGE,
-    buildIdpHubOrigin,
     buildIdpBridgeUrl,
     buildIdpHandoffEmbedUrl,
     isAllowedBridgeParentOrigin,
@@ -555,7 +571,7 @@ export type {
 // Session sync (device-scoped multi-account session client)
 // ---------------------------------------------------------------------------
 export { SessionClient } from './session/SessionClient';
-export type { TokenTransport, SessionClientHost, SessionClientOptions } from './session/SessionClient';
+export type { TokenTransport, SessionClientHost, SessionClientOptions, DeviceCredential } from './session/SessionClient';
 // The injectable socket factory type: consumers that bundle socket.io-client
 // (services/auth-sdk) pass its `io` export as `socketFactory` so realtime sync
 // never relies on core's lazy dynamic import of a bare specifier.

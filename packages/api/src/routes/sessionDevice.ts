@@ -23,6 +23,41 @@ const deviceTokenLimiter = rateLimit({
   max: 30,
 });
 
+const deviceProvisionLimiter = rateLimit({
+  prefix: 'rl:session:device-provision:',
+  windowMs: 60_000,
+  max: 20,
+});
+
+/**
+ * POST /session/device/provision — mint the initial device secret for a new device.
+ *
+ * PUBLIC: called from auth.oxy.so/device/join when the hub has no local
+ * credential yet. Creates the DeviceSession doc if absent and returns a fresh
+ * `deviceSecret` exactly once (same rotation primitive as sign-in).
+ */
+router.post(
+  '/provision',
+  deviceProvisionLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const body = req.body as { deviceId?: unknown };
+    let deviceId = typeof body.deviceId === 'string' && body.deviceId.length > 0
+      ? body.deviceId
+      : undefined;
+    if (!deviceId) {
+      const { generateDeviceId } = await import('../utils/deviceUtils.js');
+      deviceId = generateDeviceId();
+    }
+    await deviceSessionService.getState(deviceId);
+    const deviceSecret = await deviceSessionService.issueDeviceSecret(deviceId);
+    if (!deviceSecret) {
+      res.status(500).json({ error: 'provision_failed' });
+      return;
+    }
+    res.json({ data: { deviceId, deviceSecret } });
+  }),
+);
+
 /**
  * POST /session/device/token — the phase-2c zero-cookie mint.
  *

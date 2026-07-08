@@ -10,7 +10,7 @@ import {
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
 import { redirectToAuthorize } from '../components/oauthNavigation';
-import { isAllowedBridgeParentOrigin } from '@oxyhq/core';
+import { isAllowedDeviceJoinOrigin } from '@oxyhq/core';
 import {
   isCrossOriginRestoreBlocked,
   markCrossOriginRestoreAttempted,
@@ -38,9 +38,9 @@ export async function maybeStartSilentOAuthRestore(
   const location = (globalThis as { location?: Location }).location;
   if (!location) return false;
 
-  // Official first-party apps use the invisible iframe bridge only — never
+  // Official first-party apps use the one-shot device join redirect — never
   // top-level silent OAuth (that flashes auth.oxy.so/authorize).
-  if (isAllowedBridgeParentOrigin(location.origin)) {
+  if (isAllowedDeviceJoinOrigin(location.origin)) {
     return false;
   }
 

@@ -44,6 +44,13 @@ describe('createSessionClientHost', () => {
     expect(host.getCurrentAccountId()).toBe('u1');
   });
 
+  test('setDeviceCredential reflects on getDeviceCredential', () => {
+    const host = createSessionClientHost(fakeOxy() as never);
+    expect(host.getDeviceCredential()).toBeNull();
+    host.setDeviceCredential({ deviceId: 'd1', deviceSecret: 's1' });
+    expect(host.getDeviceCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+  });
+
   test('onTokensChanged forwards to oxyServices and unsubscribes', () => {
     const oxy = fakeOxy();
     const host = createSessionClientHost(oxy as never);

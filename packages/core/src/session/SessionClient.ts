@@ -13,10 +13,17 @@ export interface TokenTransport {
   ensureActiveToken(state: DeviceSessionState): Promise<void>;
 }
 
+export interface DeviceCredential {
+  deviceId: string;
+  deviceSecret: string;
+}
+
 export interface SessionClientHost {
   makeRequest<T>(method: 'GET' | 'POST', url: string, data?: unknown, options?: { cache?: boolean }): Promise<T>;
   getBaseURL(): string;
   getAccessToken(): string | null;
+  /** Zero-cookie device credential for socket handshake when no bearer is planted yet. */
+  getDeviceCredential(): DeviceCredential | null;
   onTokensChanged(listener: (token: string | null) => void): () => void;
   setTokens(accessToken: string): void;
   getCurrentAccountId(): string | null;
@@ -222,18 +229,23 @@ export class SessionClient {
     this.started = true;
     this.tokenUnsub = this.host.onTokensChanged((token) => {
       // A rotated/fresh bearer landed — reconnect a dropped socket so its
-      // handshake re-runs with the current token. Sign-out (null token) is
-      // handled by the consumer calling `stop()`.
-      if (!token || !this.socket) return;
-      if (!this.socket.connected) {
+      // handshake re-runs with the current token. Sign-out (null token) keeps
+      // the device-scoped socket when a device credential is available.
+      if (!this.socket) return;
+      if (token) {
+        if (!this.socket.connected) {
+          this.socket.connect();
+        }
+        return;
+      }
+      const cred = this.host.getDeviceCredential();
+      if (cred && !this.socket.connected) {
         this.socket.connect();
       }
     });
     this.openBroadcastChannel();
-    // `bootstrap` (`GET /session/device/state`) is bearer-authenticated. A
-    // signed-out client opens no socket and runs no bootstrap; a bootstrap
-    // failure is non-fatal — the socket still connects so realtime sync
-    // survives a transient state-fetch error.
+    // Device-scoped socket: bearer when authenticated, else deviceId+deviceSecret so
+    // signed-out tabs still receive `session_state` and can mint on change.
     if (this.host.getAccessToken()) {
       try {
         await this.bootstrap();
@@ -275,9 +287,10 @@ export class SessionClient {
       return;
     }
     if (!this.started) return; // stopped while the dynamic import was in flight
-    // Sockets are BEARER-ONLY: the server rejects any handshake without a valid
-    // bearer, so a signed-out client never opens a socket.
-    if (!this.host.getAccessToken()) return;
+
+    const token = this.host.getAccessToken();
+    const deviceCredential = this.host.getDeviceCredential();
+    if (!token && !deviceCredential) return;
 
     const socket = io(this.host.getBaseURL(), {
       transports: ['websocket'],
@@ -286,8 +299,18 @@ export class SessionClient {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
-      auth: (cb: (data: { token: string }) => void) => {
-        cb({ token: this.host.getAccessToken() ?? '' });
+      auth: (cb: (data: Record<string, string>) => void) => {
+        const bearer = this.host.getAccessToken();
+        if (bearer) {
+          cb({ token: bearer });
+          return;
+        }
+        const cred = this.host.getDeviceCredential();
+        if (cred) {
+          cb({ deviceId: cred.deviceId, deviceSecret: cred.deviceSecret });
+          return;
+        }
+        cb({ token: '' });
       },
     });
     socket.on('session_state', (payload: unknown) => {

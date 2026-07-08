@@ -32,6 +32,7 @@ function makeHost(over: Partial<SessionClientHost> = {}): SessionClientHost {
     makeRequest: jest.fn().mockResolvedValue(SYNC(1)),
     getBaseURL: () => 'http://test.invalid',
     getAccessToken: () => 'tok',
+    getDeviceCredential: () => null,
     onTokensChanged: () => () => undefined,
     setTokens: jest.fn(),
     getCurrentAccountId: () => 'a1',

@@ -1,5 +1,6 @@
 import {
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
+  OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   OXY_IDP_BRIDGE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   OXY_IDP_HANDOFF_ATTEMPTED_KEY,
@@ -9,13 +10,14 @@ function sessionStore(): Storage | undefined {
   return (globalThis as { sessionStorage?: Storage }).sessionStorage;
 }
 
-/** True when this tab already attempted cross-origin restore (bridge or silent OAuth). */
+/** True when this tab already attempted cross-origin restore (join or silent OAuth). */
 export function isCrossOriginRestoreBlocked(): boolean {
   const store = sessionStore();
   if (!store) return false;
   return Boolean(
     store.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY) ||
       store.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY) ||
+      store.getItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY) ||
       store.getItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY),
   );
 }
@@ -26,6 +28,7 @@ export function markCrossOriginRestoreAttempted(): void {
   if (!store) return;
   store.setItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY, '1');
   store.setItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY, '1');
+  store.setItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY, '1');
   store.setItem(OXY_IDP_BRIDGE_ATTEMPTED_KEY, '1');
 }
 
@@ -36,6 +39,7 @@ export function clearCrossOriginRestoreGuards(): void {
   for (const key of [
     OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     OXY_SILENT_OAUTH_ATTEMPTED_KEY,
+    OXY_DEVICE_JOIN_ATTEMPTED_KEY,
     OXY_IDP_BRIDGE_ATTEMPTED_KEY,
     OXY_IDP_HANDOFF_ATTEMPTED_KEY,
   ]) {
