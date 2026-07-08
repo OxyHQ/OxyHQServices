@@ -120,11 +120,14 @@ jest.mock('../../services/session.service', () => ({
   default: { createSession: jest.fn() },
 }));
 
-jest.mock('../../services/oauthCode.service', () => ({
-  issueAuthCode: jest.fn(),
-  exchangeAuthCode: jest.fn(),
-  AUTH_CODE_TTL_MS: 60_000,
-}));
+jest.mock('../../services/oauthCode.service', () => {
+  const actual = jest.requireActual('../../services/oauthCode.service') as typeof import('../../services/oauthCode.service');
+  return {
+    ...actual,
+    issueAuthCode: jest.fn(),
+    exchangeAuthCode: jest.fn(),
+  };
+});
 
 jest.mock('../../services/signature.service', () => ({
   __esModule: true,
