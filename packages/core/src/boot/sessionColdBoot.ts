@@ -1,5 +1,5 @@
 /**
- * coldBootV2 — one device-first cold boot for every consumer.
+ * Device-first session cold boot for every consumer.
  *
  * On a fresh page load / app launch this resolves the device's session in a
  * deterministic order, built on the pure `runColdBoot` primitive. It NEVER
@@ -139,7 +139,7 @@ export async function runSessionColdBoot(
         // Transient (network / 5xx): keep the secret; a later attempt can succeed.
         logger.debug(
           'device-secret mint failed (transient) — keeping secret',
-          { component: 'coldBootV2', method: 'device-secret-mint' },
+          { component: 'sessionColdBoot', method: 'device-secret-mint' },
           error,
         );
         return { kind: 'skip' };

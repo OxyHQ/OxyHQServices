@@ -179,7 +179,7 @@ describe('OxyContext cold boot (device-first)', () => {
     expect(fakeSessionClient.start).toHaveBeenCalled();
   });
 
-  it('restores a session when credentials exist without the v2 join marker', async () => {
+  it('restores a session when persisted device credentials exist', async () => {
     window.localStorage.setItem(
       AUTH_STATE_STORAGE_KEY,
       JSON.stringify({

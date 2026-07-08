@@ -5,7 +5,7 @@
  * a reload restores the session locally without a redirect: `deviceId` +
  * `deviceSecret` mint a fresh access token via `POST /session/device/token`.
  * This module is the storage seam: a tiny `load / save / clear` interface plus
- * platform factories, so the cold boot (`coldBootV2`) and the unified re-mint
+ * platform factories, so the cold boot (`sessionColdBoot`) and the unified re-mint
  * handler (`refresh.ts`) never touch a platform storage API directly.
  *
  * Platform-agnostic — the native factory takes an INJECTED key/value store

@@ -208,29 +208,18 @@ export const attachQueryPersistence = (
   return { unsubscribe, restored };
 };
 
-// Legacy cache keys — kept so we can opportunistically purge stale blobs
-// written by older builds. v2 may contain persisted payments data, so the
-// active key is bumped to v3 and old blobs are only removed during explicit clears.
-const LEGACY_QUERY_CACHE_KEYS: ReadonlyArray<string> = ['oxy_query_cache_v2', 'oxy_query_cache'];
-
 /**
- * Remove the persisted query+mutation cache (used on full sign-out / data
- * reset). Safe to call even if persistence was never attached. Also clears
- * legacy cache keys from older builds.
+ * Remove the persisted query+mutation cache (used on full sign-out / data reset).
+ * Safe to call even if persistence was never attached.
  */
 export const clearQueryCache = async (storage: StorageInterface): Promise<void> => {
-  const keys = [QUERY_CACHE_KEY, ...LEGACY_QUERY_CACHE_KEYS];
-  await Promise.all(
-    keys.map(async (key) => {
-      try {
-        await storage.removeItem(key);
-      } catch (error) {
-        if (isDev()) {
-          console.warn(`[QueryClient] Failed to clear persisted query cache (${key})`, error);
-        }
-      }
-    }),
-  );
+  try {
+    await storage.removeItem(QUERY_CACHE_KEY);
+  } catch (error) {
+    if (isDev()) {
+      console.warn('[QueryClient] Failed to clear persisted query cache', error);
+    }
+  }
 };
 
 /**

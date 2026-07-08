@@ -194,10 +194,10 @@ export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 // UI components
 // ---------------------------------------------------------------------------
 export {
-  OxySignInButton,
   OXY_OAUTH_STATE_STORAGE_KEY,
   OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
-} from './ui/components/OxySignInButton';
+} from '@oxyhq/core';
+export { default as OxySignInButton } from './ui/components/OxySignInButton';
 export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
@@ -259,6 +259,5 @@ export type { RouteName } from './ui/navigation/routes';
 // Unified account dialog — imperative entry points
 // ---------------------------------------------------------------------------
 // `showSignInModal` / `hideSignInModal` open / close the unified account dialog
-// on its sign-in view; retained under their historical names so existing
-// consumers keep working. Prefer `useOxy().openAccountDialog(view?)` inside React.
+// on its sign-in view. Prefer `useOxy().openAccountDialog(view?)` inside React.
 export { showSignInModal, hideSignInModal } from './ui/navigation/accountDialogManager';

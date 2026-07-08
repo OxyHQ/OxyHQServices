@@ -2,7 +2,7 @@
  * Device-first token mint mixin.
  *
  * The client half of the zero-cookie device transport: the single network call
- * the cold boot (`coldBootV2`) and the unified re-mint handler (`refresh.ts`)
+ * the cold boot (`sessionColdBoot`) and the unified re-mint handler (`refresh.ts`)
  * make to turn a first-party `deviceId` + `deviceSecret` into a fresh access
  * token. The response is validated against the `@oxyhq/contracts`
  * `deviceTokenMintResponseSchema`, so producer (oxy-api) and consumer cannot

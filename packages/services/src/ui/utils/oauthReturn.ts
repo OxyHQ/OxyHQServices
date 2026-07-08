@@ -69,8 +69,7 @@ export async function tryCompleteOAuthReturn(opts: {
       redirectUri,
       codeVerifier: handshake.codeVerifier,
     });
-    // Strip OAuth params before commit so a concurrent IdP-handoff return URL
-    // cannot capture a stale `?code=` and re-enter the exchange loop.
+    // Strip OAuth params before commit so a stale `?code=` cannot re-enter the exchange loop.
     clearOAuthHandshake();
     stripOAuthParamsFromUrl();
     await opts.commitSession({

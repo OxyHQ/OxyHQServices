@@ -6,7 +6,6 @@ import {
   parseDeviceJoinReturnUrl,
   parseDeviceJoinFragment,
   resolveHubDeviceCredentialForJoin,
-  captureDeviceJoinFragmentFromUrl,
   readPendingDeviceJoinCredential,
   stripDeviceJoinFragmentFromUrl,
   OXY_DEVICE_JOIN_PENDING_KEY,
@@ -82,13 +81,11 @@ describe('deviceJoin', () => {
     delete (globalThis as { location?: Location }).location;
   });
 
-  describe('captureDeviceJoinFragmentFromUrl', () => {
+  describe('readPendingDeviceJoinCredential', () => {
     let sessionStorageData: Record<string, string>;
-    const replaceState = jest.fn();
 
     beforeEach(() => {
       sessionStorageData = {};
-      replaceState.mockClear();
       Object.defineProperty(globalThis, 'sessionStorage', {
         configurable: true,
         value: {
@@ -101,13 +98,34 @@ describe('deviceJoin', () => {
           },
         },
       });
+    });
+
+    afterEach(() => {
+      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+    });
+
+    it('reads and clears credentials staged by device-join-strip.js', () => {
+      sessionStorageData[OXY_DEVICE_JOIN_PENDING_KEY] = JSON.stringify({
+        deviceId: 'd1',
+        deviceSecret: 's1',
+      });
+      expect(readPendingDeviceJoinCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+      expect(sessionStorageData[OXY_DEVICE_JOIN_PENDING_KEY]).toBeUndefined();
+    });
+  });
+
+  describe('stripDeviceJoinFragmentFromUrl', () => {
+    const replaceState = jest.fn();
+
+    beforeEach(() => {
+      replaceState.mockClear();
       Object.defineProperty(globalThis, 'location', {
         configurable: true,
         value: {
           pathname: '/inbox',
           search: '',
-          hash: '',
-          href: 'https://inbox.oxy.so/inbox',
+          hash: '#oxy_device=d1&device_secret=s1',
+          href: 'https://inbox.oxy.so/inbox#oxy_device=d1&device_secret=s1',
         },
       });
       Object.defineProperty(globalThis, 'history', {
@@ -117,19 +135,13 @@ describe('deviceJoin', () => {
     });
 
     afterEach(() => {
-      delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
       delete (globalThis as { location?: Location }).location;
       delete (globalThis as { history?: History }).history;
     });
 
-    it('strips join credentials from the URL and stages them in sessionStorage', () => {
-      const location = (globalThis as { location: { hash: string } }).location;
-      location.hash = '#oxy_device=d1&device_secret=s1';
-
-      const creds = captureDeviceJoinFragmentFromUrl();
-      expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+    it('strips join credentials from the URL hash', () => {
+      expect(stripDeviceJoinFragmentFromUrl()).toBe(true);
       expect(replaceState).toHaveBeenCalledWith(undefined, '', '/inbox');
-      expect(readPendingDeviceJoinCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
     });
   });
 

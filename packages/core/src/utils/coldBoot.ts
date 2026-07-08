@@ -16,7 +16,7 @@
  *     web bundle — the reason any run-once guard for a step must live in the
  *     calling consumer, never in a core module-level singleton).
  *   - Architecture-agnostic: it knows nothing about HOW a step resolves a
- *     session; `runSessionColdBoot` (`boot/coldBootV2.ts`) is the current
+ *     session; `runSessionColdBoot` (`boot/sessionColdBoot.ts`) is the current
  *     device-first consumer.
  *
  * A step is skipped (without running) when its `enabled` predicate returns
@@ -106,7 +106,7 @@ export interface RunColdBootOptions<S> {
    * fails to settle before the deadline, the runner abandons the await for that
    * step (reporting it via `onStepDeadline`) and CONTINUES to the next step,
    * each now racing against an already-expired deadline. This is deliberate:
-   * the runner keeps iterating so the TERMINAL step (e.g. `coldBootV2`'s
+   * the runner keeps iterating so the TERMINAL step (e.g. `sessionColdBoot`'s
    * `bootstrap-hop`, whose `run()` performs its navigation side effect
    * synchronously before its first `await`) still gets to fire. A step that
    * has nothing to contribute after the deadline simply doesn't settle and is

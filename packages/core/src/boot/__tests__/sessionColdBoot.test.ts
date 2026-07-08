@@ -9,7 +9,7 @@
 import type { OxyServices } from '../../OxyServices';
 import type { DeviceTokenMintResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../../models/session';
-import { runSessionColdBoot } from '../coldBootV2';
+import { runSessionColdBoot } from '../sessionColdBoot';
 import { createMemoryAuthStateStore, type PersistedAuthState } from '../../session/authStateStore';
 
 interface OxyOverrides {

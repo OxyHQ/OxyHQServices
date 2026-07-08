@@ -72,22 +72,4 @@ export interface OxyProviderProps {
      * @default 'off'
      */
     requireAuth?: 'off' | 'soft' | 'hard';
-    /**
-     * Whether this provider acts as the ecosystem's device-first **session
-     * authority**. `true` (default) runs the full device-first cold boot on
-     * mount (bootstrap-return → stored tokens → shared key / bootstrap hop) and
-     * opens the signed-out device-state socket so an idle tab self-acquires when
-     * a sibling signs in — the correct behavior for every Relying Party app.
-     *
-     * Set `false` for the **IdP host** (`auth.oxy.so`): the IdP is NOT a session
-     * authority (see the handoff "IdP vs RP" section). With `coldBoot={false}`
-     * the provider skips `runSessionColdBoot` entirely and never opens the
-     * signed-out device socket — auth resolves immediately as signed out (no
-     * boot spinner). Interactive sign-in is unaffected: a user who signs in
-     * through this provider (password, 2FA, or the "Sign in with Oxy" QR device
-     * flow) still commits a normal session scoped to this origin, which is all
-     * the IdP needs to drive its OAuth authorize/consent flow.
-     * @default true
-     */
-    coldBoot?: boolean;
 }

@@ -14,10 +14,11 @@ import { Platform } from 'react-native';
 import { logger } from '@oxyhq/core';
 import type { PublicApplication } from '@oxyhq/core';
 import { redirectToAuthorize, openAuthorizeUrlNative } from '../../src/ui/components/oauthNavigation';
-import OxySignInButton, {
+import {
   OXY_OAUTH_STATE_STORAGE_KEY,
   OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
-} from '../../src/ui/components/OxySignInButton';
+} from '@oxyhq/core';
+import OxySignInButton from '../../src/ui/components/OxySignInButton';
 
 const makeApp = (over: Partial<PublicApplication>): PublicApplication => ({
   id: 'app-1',

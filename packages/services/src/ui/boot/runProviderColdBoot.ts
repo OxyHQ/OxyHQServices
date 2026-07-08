@@ -34,7 +34,6 @@ export interface ColdBootCommitInput {
 }
 
 export interface RunProviderColdBootOptions {
-  coldBoot: boolean;
   oxyServices: OxyServices;
   authStore: AuthStateStore;
   clientId?: string;
@@ -58,7 +57,6 @@ export interface RunProviderColdBootOptions {
  */
 export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Promise<void> {
   const {
-    coldBoot,
     oxyServices,
     authStore,
     clientId,
@@ -73,28 +71,26 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
   setTokenReady(false);
 
   try {
-    if (coldBoot && isWebBrowser()) {
+    if (isWebBrowser()) {
       await applyDeviceJoinReturn(authStore);
       await syncDeviceCredentialToHost();
     }
 
-    if (coldBoot) {
-      consumeSilentOAuthError();
+    consumeSilentOAuthError();
 
-      const oauthCompleted = await tryCompleteOAuthReturn({
-        oxyServices,
-        clientId,
-        authRedirectUri,
-        commitSession: (input) => commitSession(input, { activate: true }),
-      });
-      if (oauthCompleted) {
-        setTokenReady(true);
-        markAuthResolved();
-        return;
-      }
+    const oauthCompleted = await tryCompleteOAuthReturn({
+      oxyServices,
+      clientId,
+      authRedirectUri,
+      commitSession: (input) => commitSession(input, { activate: true }),
+    });
+    if (oauthCompleted) {
+      setTokenReady(true);
+      markAuthResolved();
+      return;
     }
 
-    if (coldBoot && isWebBrowser() && clientId && !isIdpHubOrigin()) {
+    if (isWebBrowser() && clientId && !isIdpHubOrigin()) {
       if (await maybeRedirectForDeviceJoin(authStore)) {
         return;
       }
@@ -157,7 +153,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       },
     });
 
-    if (coldBoot && isWebBrowser() && clientId && outcome.kind !== 'session') {
+    if (isWebBrowser() && clientId && outcome.kind !== 'session') {
       const location = (globalThis as { location?: Location }).location;
       const origin = location?.origin ?? '';
       if (origin && !isAllowedDeviceJoinOrigin(origin)) {

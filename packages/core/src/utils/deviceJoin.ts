@@ -168,36 +168,7 @@ export function stripDeviceJoinFragmentFromUrl(): boolean {
   return true;
 }
 
-/**
- * Synchronously capture join credentials from the URL fragment and strip them
- * BEFORE React paints. Called at module load in `OxyProvider` so secrets never
- * linger in the address bar or bookmarkable history entry.
- */
-export function captureDeviceJoinFragmentFromUrl(): DeviceJoinFragment | null {
-  if (typeof globalThis === 'undefined') {
-    return null;
-  }
-  const location = (globalThis as { location?: Location }).location;
-  if (!location?.hash) {
-    return null;
-  }
-  const creds = parseDeviceJoinFragment(location.hash);
-  if (!creds) {
-    return null;
-  }
-  stripDeviceJoinFragmentFromUrl();
-  try {
-    (globalThis as { sessionStorage?: Storage }).sessionStorage?.setItem(
-      OXY_DEVICE_JOIN_PENDING_KEY,
-      JSON.stringify(creds),
-    );
-  } catch {
-    // Async persist will re-parse if hash somehow remains.
-  }
-  return creds;
-}
-
-/** Read + clear credentials staged by {@link captureDeviceJoinFragmentFromUrl}. */
+/** Read + clear credentials staged by `device-join-strip.js` in the HTML `<head>`. */
 export function readPendingDeviceJoinCredential(): DeviceJoinFragment | null {
   try {
     const raw = (globalThis as { sessionStorage?: Storage }).sessionStorage?.getItem(

@@ -21,12 +21,6 @@ import { subscribeToSignInModal } from '../navigation/accountDialogManager';
 import { redirectToAuthorize, openAuthorizeUrlNative } from './oauthNavigation';
 
 /**
- * Re-exported from `@oxyhq/core` for backward compatibility.
- * @deprecated Import from `@oxyhq/core` instead.
- */
-export { OXY_OAUTH_STATE_STORAGE_KEY, OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY };
-
-/**
  * The OAuth handshake surfaced to a NATIVE third-party RP via
  * {@link OxySignInButtonProps.onOAuthResult} so it can finish the code exchange
  * (`POST /auth/oauth/token`). Web RPs read the same `state` / `code_verifier`

@@ -546,7 +546,6 @@ export {
     isIdpHubOrigin,
     parseDeviceJoinReturnUrl,
     resolveHubDeviceCredentialForJoin,
-    captureDeviceJoinFragmentFromUrl,
     readPendingDeviceJoinCredential,
     parseDeviceJoinFragment,
     stripDeviceJoinFragmentFromUrl,
@@ -636,12 +635,12 @@ export {
 } from './session/refresh';
 export type { RefreshDeps, TokenRefreshSchedulerHandle } from './session/refresh';
 
-export { runSessionColdBoot } from './boot/coldBootV2';
+export { runSessionColdBoot } from './boot/sessionColdBoot';
 export type {
     RunSessionColdBootOptions,
     SignedOutReason,
     DeviceBootSession,
-} from './boot/coldBootV2';
+} from './boot/sessionColdBoot';
 
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every
