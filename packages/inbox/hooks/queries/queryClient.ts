@@ -44,6 +44,11 @@ export const queryClient = new QueryClient({
       // Offline-first: serve cached data immediately, refetch in the background.
       networkMode: 'offlineFirst',
     },
+    mutations: {
+      // Offline-first: pause and queue mutations when offline (see useMessageMutations).
+      networkMode: 'offlineFirst',
+      retry: 1,
+    },
   },
 });
 
@@ -97,8 +102,15 @@ function createInboxPersister(): Persister | null {
 
 const persister = createInboxPersister();
 
+/**
+ * Resolves once the persisted query+mutation blob has been hydrated (or when
+ * persistence is unavailable). `app/_layout` awaits this before rendering mail
+ * UI so the first paint serves cached data instead of an empty cache.
+ */
+export let restoredInboxCache: Promise<void> = Promise.resolve();
+
 if (persister) {
-  persistQueryClient({
+  const [, restored] = persistQueryClient({
     queryClient,
     persister,
     maxAge: CACHE_MAX_AGE,
@@ -106,6 +118,10 @@ if (persister) {
       shouldDehydrateQuery,
       shouldDehydrateMutation,
     },
+  });
+  restoredInboxCache = restored;
+  restored.catch(() => {
+    // Non-fatal: a failed restore only means a cold start without offline cache.
   });
 }
 

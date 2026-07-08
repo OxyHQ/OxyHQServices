@@ -504,7 +504,7 @@ export function useBulkMoveMessages() {
     onMutate: async ({ messageIds }) => {
       await queryClient.cancelQueries({ queryKey: emailKeys.messages.root });
 
-      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root });
 
       // Optimistically remove all moved messages from current view
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) => {

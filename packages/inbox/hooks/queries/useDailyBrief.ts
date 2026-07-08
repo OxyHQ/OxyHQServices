@@ -49,14 +49,14 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
   const [briefText, setBriefText] = useState('');
   const abortRef = useRef(false);
 
-  // Check cache on mount (skip when the feature is disabled).
+  // Check cache on mount / day rollover (skip when the feature is disabled).
   useEffect(() => {
     if (!enabled) return;
     const cached = queryClient.getQueryData<string>(cacheKey);
     if (cached) {
       setBriefText(cached);
     }
-  }, [enabled]);
+  }, [enabled, cacheKey, queryClient]);
 
   // The generation is a mutation (a one-shot side-effecting stream) rather than
   // a query: it writes its result into the query cache keyed by day so it isn't

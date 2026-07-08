@@ -2,9 +2,9 @@ import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, useOxy, RequireOxyAuth } from '@oxyhq/services';
@@ -16,7 +16,7 @@ import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
-import { queryClient, clearPersistedInboxCache } from '@/hooks/queries/queryClient';
+import { queryClient, clearPersistedInboxCache, restoredInboxCache } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/theme-context';
 import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
@@ -90,13 +90,14 @@ function RootLayoutContent() {
         in `RootEffects` actually clears the data the UI reads.
       */}
       <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI} queryClient={queryClient}>
-        <BloomImageResolver>
-          <LocaleProvider>
-            <SafeAreaProvider>
-              <PortalProvider>
-                <ThemeProvider value={navTheme}>
-                  <RootEffects />
-                  {/*
+        <InboxCacheRestoreGate>
+          <BloomImageResolver>
+            <LocaleProvider>
+              <SafeAreaProvider>
+                <PortalProvider>
+                  <ThemeProvider value={navTheme}>
+                    <RootEffects />
+                    {/*
                     The whole app is gated behind the shared SDK signed-out wall
                     (`RequireOxyAuth prompt="hard"`). It replaces the former
                     hand-rolled sign-in gate: it blocks the navigator until the
@@ -105,14 +106,15 @@ function RootLayoutContent() {
                     primary CTA opens the ONE shared account dialog. See
                     `GatedNavigator` for the localized copy.
                   */}
-                  <GatedNavigator />
-                  <StatusBar style="auto" />
-                </ThemeProvider>
-                <PortalOutlet />
-              </PortalProvider>
-            </SafeAreaProvider>
-          </LocaleProvider>
-        </BloomImageResolver>
+                    <GatedNavigator />
+                    <StatusBar style="auto" />
+                  </ThemeProvider>
+                  <PortalOutlet />
+                </PortalProvider>
+              </SafeAreaProvider>
+            </LocaleProvider>
+          </BloomImageResolver>
+        </InboxCacheRestoreGate>
       </OxyProvider>
     </KeyboardProvider>
   );
@@ -135,6 +137,31 @@ function GatedNavigator() {
       </Stack>
     </RequireOxyAuth>
   );
+}
+
+/**
+ * Block the mail UI until the persisted TanStack Query cache has been hydrated.
+ * OxyProvider skips persistence restore when a host `queryClient` is supplied,
+ * so Inbox owns that lifecycle here.
+ */
+function InboxCacheRestoreGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void restoredInboxCache.then(() => {
+      if (mounted) setReady(true);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: '#ffffff' }} />;
+  }
+
+  return children;
 }
 
 /**

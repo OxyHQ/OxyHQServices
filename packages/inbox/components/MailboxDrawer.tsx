@@ -50,6 +50,8 @@ import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
+import { clearPersistedInboxCache } from '@/hooks/queries/queryClient';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
@@ -179,10 +181,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const resetInboxForAccountChange = useCallback(() => {
     useEmailStore.getState().resetAccountScopedState();
-    queryClient.removeQueries({ queryKey: ['mailboxes'] });
-    queryClient.removeQueries({ queryKey: ['labels'] });
-    queryClient.removeQueries({ queryKey: ['messages'] });
-    queryClient.removeQueries({ queryKey: ['message'] });
+    queryClient.clear();
+    void clearPersistedInboxCache();
+    queryClient.removeQueries({ queryKey: emailKeys.mailboxes.root });
+    queryClient.removeQueries({ queryKey: emailKeys.labels });
+    queryClient.removeQueries({ queryKey: emailKeys.messages.root });
+    queryClient.removeQueries({ queryKey: emailKeys.message.root });
   }, [queryClient]);
 
   const handleAddAccount = useCallback(() => {

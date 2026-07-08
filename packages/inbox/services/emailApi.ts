@@ -132,7 +132,7 @@ export function createEmailApi(http: HttpService) {
 
     async getThread(messageId: string): Promise<Message[]> {
       const res = await http.get(`/email/messages/${messageId}/thread`);
-      return z.array(MessageSchema).parse(res);
+      return parseMessages(res);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {

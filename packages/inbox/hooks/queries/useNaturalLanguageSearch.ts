@@ -32,7 +32,7 @@ export interface NaturalLanguageSearchResult {
   interpretation: string;
 }
 
-const SEARCH_PARSE_PROMPT = `You are an email search assistant. Parse the user's natural language query into structured search parameters.
+const SEARCH_PARSE_PROMPT_PREFIX = `You are an email search assistant. Parse the user's natural language query into structured search parameters.
 
 Output a JSON object with these optional fields:
 - q: General search text (keywords, phrases)
@@ -48,7 +48,6 @@ Output a JSON object with these optional fields:
 - interpretation: A brief human-readable interpretation of the query
 
 For relative dates like "last week", "yesterday", "this month", calculate the actual date from today's date.
-Today's date is: ${new Date().toISOString().split('T')[0]}
 
 Examples:
 "emails from Sarah last week" → {"from":"sarah","after":"2025-01-27","interpretation":"Emails from Sarah in the last 7 days"}
@@ -56,6 +55,11 @@ Examples:
 "attachments I received yesterday" → {"hasAttachment":true,"after":"2025-02-03","before":"2025-02-04","interpretation":"Emails with attachments from yesterday"}
 
 Respond with ONLY the JSON object, nothing else.`;
+
+function buildSearchParsePrompt(): string {
+  const today = new Date().toISOString().split('T')[0];
+  return `${SEARCH_PARSE_PROMPT_PREFIX}\nToday's date is: ${today}`;
+}
 
 export function useNaturalLanguageSearch() {
   const { oxyServices } = useOxy();
@@ -77,7 +81,7 @@ export function useNaturalLanguageSearch() {
       const response = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
-          { role: 'system', content: SEARCH_PARSE_PROMPT },
+          { role: 'system', content: buildSearchParsePrompt() },
           { role: 'user', content: naturalLanguage },
         ],
         maxTokens: 200,
