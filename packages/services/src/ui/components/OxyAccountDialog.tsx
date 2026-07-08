@@ -198,7 +198,17 @@ const OxyAccountDialog: React.FC = () => {
     <Dialog
       open={isAccountDialogOpen}
       onClose={closeAccountDialog}
-      placement={{ base: 'bottom', md: 'center' }}
+      // On web ALWAYS use the centered placement. Bloom's `bottom` placement
+      // routes through its `BottomSheet`, which on web is built on
+      // react-native-web's `Modal`. That `Modal` creates its `ModalPortal` host
+      // node as a side effect during render and removes it in an effect cleanup;
+      // under React 19 concurrent rendering (and StrictMode's dev double-invoke)
+      // the host is orphaned and never re-attached, so the sheet never paints on
+      // narrow web viewports (reproduced on console.oxy.so / auth.oxy.so, Pixel-7
+      // width). The `center` placement uses Bloom's react-dom Portal (no RN
+      // Modal) and paints reliably at every width. Native keeps the real bottom
+      // sheet on narrow screens.
+      placement={isWeb ? 'center' : { base: 'bottom', md: 'center' }}
       dismissOnBackdrop={false}
       maxWidth={420}
       label={headerCopy(view, snapshot.accounts.length, t).title}
