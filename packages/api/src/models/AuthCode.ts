@@ -37,6 +37,11 @@ export interface IAuthCode extends Document {
   codeChallengeMethod?: 'S256';
   /** Optional OAuth scope list bound at issue time. */
   scopes: string[];
+  /**
+   * DeviceSession id from the authorizing bearer — threads cross-app OAuth
+   * token exchange onto the same device doc instead of minting an isolated one.
+   */
+  deviceId?: string;
   /** Set when the code is exchanged. Single-use enforcement. */
   usedAt?: Date;
   expiresAt: Date;
@@ -79,6 +84,10 @@ const AuthCodeSchema: Schema = new Schema(
     scopes: {
       type: [String],
       default: [],
+    },
+    deviceId: {
+      type: String,
+      default: null,
     },
     usedAt: {
       type: Date,

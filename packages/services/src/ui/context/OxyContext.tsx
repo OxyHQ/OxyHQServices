@@ -39,6 +39,15 @@ import {
 import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
 import { redirectToAuthorize } from '../components/oauthNavigation';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import {
+  maybeRedirectIdpHandoff,
+  isIdpHubOrigin,
+} from '../utils/idpHandoffRedirect';
+import {
+  maybeStartSilentOAuthRestore,
+  consumeSilentOAuthError,
+  clearSilentOAuthAttemptFlag,
+} from '../utils/silentOAuthRestore';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { UseFollowHook } from '../hooks/useFollow.types';
@@ -852,6 +861,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onAuthStateChangeRef.current?.(fullUser);
       }
       markAuthResolvedRef.current();
+
+      // Propagate credentials to auth.oxy.so (IdP hub) after deliberate sign-in.
+      if (options.activate && isWebBrowser() && !isIdpHubOrigin()) {
+        void maybeRedirectIdpHandoff({ oxyServices }).catch(() => undefined);
+      }
     },
     [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, syncFromClient, loginSuccess, logger],
   );
@@ -950,9 +964,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       password: string,
       opts?: { deviceName?: string; deviceFingerprint?: string },
     ): Promise<PasswordSignInResult> => {
+      const persisted = await authStore.load();
       const result = await oxyServices.passwordSignIn(identifier, password, {
         deviceName: opts?.deviceName,
         deviceFingerprint: opts?.deviceFingerprint,
+        deviceId: persisted?.deviceId,
       });
       if ('twoFactorRequired' in result) {
         return { status: '2fa_required', loginToken: result.loginToken };
@@ -982,11 +998,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       backupCode?: string;
       deviceName?: string;
     }): Promise<{ securityAlert?: SecurityAlert }> => {
+      const persisted = await authStore.load();
       const result = await oxyServices.completeTwoFactorSignIn({
         loginToken: params.loginToken,
         token: params.token,
         backupCode: params.backupCode,
         deviceName: params.deviceName,
+        deviceId: persisted?.deviceId,
       });
       await commitSession(
         {
@@ -1018,6 +1036,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setTokenReady(false);
     try {
       if (coldBoot) {
+        consumeSilentOAuthError();
+
         const oauthCompleted = await tryCompleteOAuthReturn({
           oxyServices,
           clientId: clientIdProp,
@@ -1026,13 +1046,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             commitSessionRef.current(input, { activate: true }),
         });
         if (oauthCompleted) {
+          clearSilentOAuthAttemptFlag();
           setTokenReady(true);
           markAuthResolvedRef.current();
           return;
         }
       }
 
-      await runSessionColdBoot({
+      const outcome = await runSessionColdBoot({
         oxy: oxyServices,
         store: authStore,
         platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
@@ -1072,6 +1093,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           }
         },
       });
+
+      // Web cross-origin restore: silent OAuth against the IdP hub when local
+      // mint found no usable credential (or secret was stale).
+      if (
+        coldBoot &&
+        isWebBrowser() &&
+        clientIdProp &&
+        outcome.kind !== 'session'
+      ) {
+        const redirected = await maybeStartSilentOAuthRestore({
+          oxyServices,
+          clientId: clientIdProp,
+          redirectUri: authRedirectUri,
+        });
+        if (redirected) {
+          return;
+        }
+      }
     } catch (error) {
       if (__DEV__) {
         loggerUtil.error(
@@ -1109,6 +1148,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     });
   }, [coldBoot, runColdBoot, storage, initialized, logger, markAuthResolved]);
+
+  // Reconcile device state when the tab returns to foreground (background tabs may
+  // miss socket pushes or have stale bearer tokens).
+  useEffect(() => {
+    if (!isWebBrowser()) return;
+    const onVisibility = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      if (!oxyServices.getAccessToken()) return;
+      void sessionClient.bootstrap().then(() => syncFromClient()).catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [oxyServices, sessionClient, syncFromClient]);
 
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.

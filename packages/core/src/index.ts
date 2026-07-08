@@ -525,6 +525,8 @@ export {
     OXY_AUTHORIZE_URL,
     OXY_OAUTH_STATE_STORAGE_KEY,
     OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
+    OXY_SILENT_OAUTH_ATTEMPTED_KEY,
+    OXY_IDP_HANDOFF_ATTEMPTED_KEY,
     normalizeOAuthRedirectUri,
     persistOAuthHandshake,
     readOAuthHandshake,

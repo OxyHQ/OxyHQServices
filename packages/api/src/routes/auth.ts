@@ -61,7 +61,10 @@ import {
   oauthClientParams,
   oauthConsentQuerySchema,
   grantApplicationIdParams,
+  idpHandoffCreateSchema,
+  idpHandoffExchangeSchema,
 } from '../schemas/auth.schemas';
+import { createIdpHandoffCode, exchangeIdpHandoffCode } from '../services/idpHandoff.service';
 import { AppGrant } from '../models/AppGrant';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { serializePublicApplication } from '../utils/serializeApplication';
@@ -937,11 +940,12 @@ import AuthSession from '../models/AuthSession';
  *         description: Application is not available (suspended/deleted/pending review).
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, clientId, applicationId } = req.body as {
+  const { sessionToken, expiresAt, clientId, applicationId, deviceId } = req.body as {
     sessionToken: string;
     clientId?: string;
     applicationId?: string;
     expiresAt?: string | number;
+    deviceId?: string;
   };
 
   if (!sessionToken) {
@@ -1041,6 +1045,7 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
+    ...(typeof deviceId === 'string' && deviceId.trim() ? { deviceId: deviceId.trim() } : {}),
   });
 
   // Deep-link / universal-link payload for the QR. Commons parses ONLY `code`
@@ -1883,6 +1888,133 @@ const grantsRevokeLimiter = rateLimit({
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
 });
 
+const idpHandoffCreateLimiter = rateLimit({
+  prefix: 'rl:auth:idp-handoff-create:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+const idpHandoffExchangeLimiter = rateLimit({
+  prefix: 'rl:auth:idp-handoff-exchange:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * @openapi
+ * /auth/idp-handoff/create:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Mint a one-shot IdP session handoff code
+ *     description: >
+ *       Authenticated apps call this after sign-in to propagate the same
+ *       DeviceSession credentials to auth.oxy.so (cross-origin hub, zero cookies).
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Handoff code issued.
+ *       401:
+ *         description: Missing bearer or device claim.
+ */
+router.post(
+  '/idp-handoff/create',
+  authMiddleware,
+  idpHandoffCreateLimiter,
+  validate({ body: idpHandoffCreateSchema }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const user = req.user;
+    if (!user?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const bearerToken = extractTokenFromRequest(req);
+    const decoded = bearerToken ? decodeToken(bearerToken) : null;
+    if (!decoded?.deviceId || !decoded?.sessionId) {
+      throw new UnauthorizedError('Device session required');
+    }
+
+    const { handoffCode, expiresAt } = await createIdpHandoffCode({
+      deviceId: decoded.deviceId,
+      sessionId: decoded.sessionId,
+      userId: user._id.toString(),
+    });
+
+    sendSuccess(res, {
+      handoffCode,
+      expiresIn: Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000)),
+    });
+  }),
+);
+
+/**
+ * @openapi
+ * /auth/idp-handoff/exchange:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Exchange an IdP handoff code for device credentials
+ *     description: >
+ *       Called from auth.oxy.so to plant the shared DeviceSession locally.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [handoffCode]
+ *             properties:
+ *               handoffCode:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Device credentials for the IdP origin.
+ *       401:
+ *         description: Invalid or expired handoff code.
+ */
+router.post(
+  '/idp-handoff/exchange',
+  idpHandoffExchangeLimiter,
+  validate({ body: idpHandoffExchangeSchema }),
+  asyncHandler(async (req, res) => {
+    const { handoffCode } = req.body as { handoffCode: string };
+    const exchange = await exchangeIdpHandoffCode(handoffCode);
+    if (!exchange.ok) {
+      throw new UnauthorizedError('invalid_handoff');
+    }
+
+    const { deviceId, sessionId, userId } = exchange.record;
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new UnauthorizedError('invalid_handoff');
+    }
+
+    const { default: deviceSessionService } = await import('../services/deviceSession.service.js');
+    const state = await deviceSessionService.getState(deviceId);
+    const activeToken = await deviceSessionService.resolveActiveToken(state);
+    if (!activeToken) {
+      throw new UnauthorizedError('no_active_session');
+    }
+
+    const deviceSecret = await deviceSessionService.issueDeviceSecret(deviceId);
+    if (!deviceSecret) {
+      throw new UnauthorizedError('invalid_handoff');
+    }
+
+    sendSuccess(res, {
+      deviceId,
+      deviceSecret,
+      sessionId,
+      userId: userId.toString(),
+      accessToken: activeToken.accessToken,
+      expiresAt: activeToken.expiresAt,
+      user: formatUserResponse(user),
+    });
+  }),
+);
+
 /**
  * @openapi
  * /auth/oauth/authorize:
@@ -1992,6 +2124,11 @@ router.post(
 
     const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
 
+    const bearerToken = extractTokenFromRequest(req);
+    const bearerDecoded = bearerToken ? decodeToken(bearerToken) : null;
+    const oauthDeviceId =
+      typeof bearerDecoded?.deviceId === 'string' ? bearerDecoded.deviceId : undefined;
+
     // Mint a single-use opaque code. The service persists a hash, never
     // the raw value, so leakage of the AuthCode collection would not
     // allow an attacker to redeem outstanding codes.
@@ -2002,6 +2139,7 @@ router.post(
       codeChallenge,
       codeChallengeMethod: codeChallenge ? 'S256' : undefined,
       scopes: requestedScopes,
+      deviceId: oauthDeviceId,
     });
 
     // Record (or refresh) the user's consent so a returning user skips the
@@ -2396,13 +2534,18 @@ router.post(
 
     const userId = user._id.toString();
 
-    // Third-party OAuth sessions are per-client + per-origin and independent of
-    // the first-party device set (no cross-app device sync) — mint a fresh
-    // session for the grant.
+    const sharedDeviceId =
+      typeof exchange.code.deviceId === 'string' && exchange.code.deviceId.trim()
+        ? exchange.code.deviceId.trim()
+        : undefined;
+
     const session = await sessionService.createSession(
       userId,
       req,
-      { deviceName: `${app.name} OAuth` },
+      {
+        deviceName: `${app.name} OAuth`,
+        ...(sharedDeviceId ? { deviceId: sharedDeviceId } : {}),
+      },
     );
 
     const deviceExtras = await finalizeDeviceLogin({

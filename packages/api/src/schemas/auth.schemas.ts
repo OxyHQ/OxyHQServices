@@ -3,6 +3,8 @@ import { isValidDisplayName } from '../utils/displayNameSanitize';
 
 const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
 
+const deviceIdField = z.string().trim().min(1).max(128).optional();
+
 // POST /auth/signup
 export const signupSchema = z.object({
   email: z.string().trim().email(),
@@ -14,6 +16,7 @@ export const signupSchema = z.object({
   }).optional(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+  deviceId: deviceIdField,
 }).superRefine((data, ctx) => {
   // Native users must supply a clean display name (letters/spaces/apostrophe
   // only). Federated names are stripped silently elsewhere; native names are
@@ -42,6 +45,7 @@ export const loginSchema = z.object({
   password: z.string().min(1),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+  deviceId: deviceIdField,
 });
 
 // POST /auth/register (public key)
@@ -66,6 +70,7 @@ export const verifyChallengeSchema = z.object({
   timestamp: z.number(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+  deviceId: deviceIdField,
 });
 
 // POST /auth/recover/request
@@ -120,6 +125,8 @@ export const authSessionCreateSchema = z.object({
   clientId: z.string().trim().min(1).optional(),
   applicationId: z.string().trim().min(1).optional(),
   expiresAt: z.union([z.string(), z.number()]).optional(),
+  /** Originating RP device id — converges QR sign-in onto the same DeviceSession. */
+  deviceId: deviceIdField,
 }).refine(
   (data) => Boolean(data.clientId) || Boolean(data.applicationId),
   { message: 'Either clientId or applicationId is required' }
@@ -222,4 +229,12 @@ export const oauthConsentQuerySchema = z.object({
 // Revoke the user's OAuth grant for a connected third-party application.
 export const grantApplicationIdParams = z.object({
   applicationId: z.string().trim().min(1),
+});
+
+// POST /auth/idp-handoff/create — bearer; mints a one-shot code for auth.oxy.so.
+export const idpHandoffCreateSchema = z.object({});
+
+// POST /auth/idp-handoff/exchange — public; redeems handoff code on IdP origin.
+export const idpHandoffExchangeSchema = z.object({
+  handoffCode: z.string().trim().min(1),
 });

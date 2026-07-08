@@ -282,6 +282,10 @@ export class SessionClient {
     const socket = io(this.host.getBaseURL(), {
       transports: ['websocket'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000,
       auth: (cb: (data: { token: string }) => void) => {
         cb({ token: this.host.getAccessToken() ?? '' });
       },

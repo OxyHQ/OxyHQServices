@@ -35,5 +35,6 @@ export const verify2FALoginSchema = z.object({
   backupCode: z.string().trim().optional(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+  deviceId: z.string().trim().min(1).max(128).optional(),
   deviceToken: z.string().trim().max(512).optional(),
 });

@@ -124,6 +124,7 @@ export function AuthorizePage() {
   const codeChallenge = searchParams.get("code_challenge");
   const codeChallengeMethod = searchParams.get("code_challenge_method");
   const scope = searchParams.get("scope");
+  const prompt = searchParams.get("prompt");
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
 
@@ -173,6 +174,95 @@ export function AuthorizePage() {
   >(null);
   // The auto-approve probe runs at most once per mount for the active account.
   const autoApproveAttemptedRef = useRef(false);
+
+  // OAuth `prompt=none`: silent cross-origin restore — never show login UI.
+  // Fail with standard OAuth errors back to the RP redirect_uri.
+  function redirectOAuthError(errorCode: string): void {
+    const safeRedirect = safeRedirectUrl(redirectUri);
+    if (!safeRedirect) {
+      setData((prev) => ({ ...prev, error: errorCode }));
+      return;
+    }
+    const url = new URL(safeRedirect);
+    url.searchParams.set("error", errorCode);
+    if (state) url.searchParams.set("state", state);
+    window.location.href = url.toString();
+  }
+
+  // Silent restore: when prompt=none and the IdP has no session, bounce
+  // `login_required` immediately (OAuth standard) instead of the login page.
+  useEffect(() => {
+    if (prompt !== "none" || !isAuthResolved) return;
+    if (isAuthenticated || currentSessionId || deviceAccounts.length > 0) return;
+    redirectOAuthError("login_required");
+  }, [
+    prompt,
+    isAuthResolved,
+    isAuthenticated,
+    currentSessionId,
+    deviceAccounts.length,
+  ]);
+
+  // Silent restore with an IdP session: probe consent and auto-approve without UI.
+  useEffect(() => {
+    if (
+      prompt !== "none" ||
+      !isAuthResolved ||
+      !isAuthenticated ||
+      !clientId ||
+      autoApproveAttemptedRef.current
+    ) {
+      return;
+    }
+    autoApproveAttemptedRef.current = true;
+    void (async () => {
+      const token = oxyServices.getAccessToken();
+      if (!token) {
+        redirectOAuthError("login_required");
+        return;
+      }
+      const safeRedirect = safeRedirectUrl(redirectUri);
+      if (!safeRedirect) return;
+
+      setAutoApproving(true);
+      let body: unknown = null;
+      try {
+        const params = new URLSearchParams();
+        params.set("clientId", clientId);
+        params.set("redirectUri", safeRedirect);
+        if (scope) params.set("scope", scope);
+        const response = await fetch(
+          buildApiUrl(`/auth/oauth/consent?${params.toString()}`),
+          {
+            credentials: "include",
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (response.ok) {
+          body = await response.json().catch(() => null);
+        }
+      } catch {
+        body = null;
+      }
+
+      if (consentRequiredFromBody(body)) {
+        setAutoApproving(false);
+        redirectOAuthError("consent_required");
+        return;
+      }
+
+      await runOAuthAuthorize(token, safeRedirect);
+    })();
+  }, [
+    prompt,
+    isAuthResolved,
+    isAuthenticated,
+    clientId,
+    redirectUri,
+    scope,
+    state,
+    oxyServices,
+  ]);
 
   useEffect(() => {
     async function loadData() {
@@ -654,8 +744,14 @@ export function AuthorizePage() {
   }
 
   // No session on this device (cold boot has resolved and found none) — redirect
-  // to login carrying the full request context.
-  if (isAuthResolved && !isAuthenticated && !currentSessionId && deviceAccounts.length === 0) {
+  // to login carrying the full request context. Skip for `prompt=none` (handled above).
+  if (
+    prompt !== "none" &&
+    isAuthResolved &&
+    !isAuthenticated &&
+    !currentSessionId &&
+    deviceAccounts.length === 0
+  ) {
     return (
       <Navigate
         to={buildRelativeUrl("/login", {

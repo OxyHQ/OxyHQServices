@@ -23,6 +23,22 @@ import { recordFailure, clearFailures } from '../services/loginLockout.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import type { AuthRequest } from '../middleware/auth';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
+import type { SessionCreateOptions } from '../types/session.types';
+
+export function sessionCreateOptionsFromBody(body: {
+  deviceName?: string;
+  deviceFingerprint?: string;
+  deviceId?: string;
+}): SessionCreateOptions {
+  const opts: SessionCreateOptions = {
+    deviceName: body.deviceName,
+    deviceFingerprint: body.deviceFingerprint,
+  };
+  if (typeof body.deviceId === 'string' && body.deviceId.trim()) {
+    opts.deviceId = body.deviceId.trim();
+  }
+  return opts;
+}
 
 /**
  * Constant-time dummy Argon2 hash used to keep login response timing
@@ -326,7 +342,7 @@ export class SessionController {
    */
   static async signUp(req: Request, res: Response) {
     try {
-      const { email, username, password, name, deviceName, deviceFingerprint } = req.body;
+      const { email, username, password, name, deviceName, deviceFingerprint, deviceId } = req.body;
 
       if (
         !email ||
@@ -410,7 +426,7 @@ export class SessionController {
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        sessionCreateOptionsFromBody({ deviceName, deviceFingerprint, deviceId }),
       );
 
       const baseSignupResponse = buildSessionAuthResponse(session, user);
@@ -510,7 +526,7 @@ export class SessionController {
    */
   static async verifyChallenge(req: Request, res: Response) {
     try {
-      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint } = req.body;
+      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint, deviceId } = req.body;
 
       if (!publicKey || !challenge || !signature || !timestamp) {
         return res.status(400).json({
@@ -561,7 +577,7 @@ export class SessionController {
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        sessionCreateOptionsFromBody({ deviceName, deviceFingerprint, deviceId }),
       );
       const sessionAfterCreate = Date.now();
 
@@ -654,7 +670,7 @@ export class SessionController {
    */
   static async signIn(req: Request, res: Response) {
     try {
-      const { identifier, email, username, password, deviceName, deviceFingerprint } = req.body;
+      const { identifier, email, username, password, deviceName, deviceFingerprint, deviceId } = req.body;
       const loginIdentifier = identifier || email || username;
 
       if (!loginIdentifier || !password || typeof password !== 'string') {
@@ -738,7 +754,7 @@ export class SessionController {
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
-        { deviceName, deviceFingerprint }
+        sessionCreateOptionsFromBody({ deviceName, deviceFingerprint, deviceId }),
       );
 
       const baseResponse = buildSessionAuthResponse(session, user);

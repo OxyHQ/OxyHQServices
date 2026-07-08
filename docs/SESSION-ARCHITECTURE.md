@@ -86,10 +86,17 @@ The transport that carries "which device is this?" across reloads is **`deviceId
 3. **Revocation** — sign-out-all (`POST /session/device/signout { all: true }`) clears
    `secretHash` so a retained secret can never mint again. A theft divergence is detected
    at the next mint (the loser's secret no longer matches → `invalid_device_secret`).
-4. **No cross-origin implicit sync.** A `deviceId` is per origin (web) / per app-group
-   (native). Each new web origin does its own first sign-in; there is no shared device
-   cookie tying `*.oxy.so` subdomains together and no cross-app device token on native.
-   This is the deliberate trade for zero cookies.
+4. **Cross-origin sync via IdP hub (zero cookies).** Each web origin still persists
+   its own `{ deviceId, deviceSecret }` copy in `localStorage`, but all official apps
+   (including custom domains like `mention.earth`) and third-party RPs converge on the
+   **same** server-side `DeviceSession` through two mechanisms:
+   - **IdP handoff** — after a first-party sign-in, the SDK redirects once to
+     `auth.oxy.so/handoff` to plant the shared credentials on the IdP hub origin.
+   - **Silent OAuth (`prompt=none`)** — on cold boot, when local mint fails, the SDK
+     redirects to `auth.oxy.so/authorize?prompt=none` + PKCE; the IdP auto-approves when
+     it already has a session + grant, exchanges the code for tokens on the **same**
+     `deviceId`, and persists locally. Realtime changes propagate over Socket.IO
+     `session_state` on `device:<deviceId>` once each app holds a bearer.
 
 ## Cold boot
 
@@ -101,8 +108,14 @@ wins. It is invoked by `OxyProvider` on mount — apps never implement restore t
    `deviceSecret`, mint a short access token with a single bearer-less POST to
    `/session/device/token`, persist the rotated secret, plant the token. A
    `no_active_session` 401 is an authoritative signed-out; an `invalid_device_secret` 401
-   drops the (diverged) secret.
-2. **`shared-key-signin`** (native) — re-mint from the shared Commons identity in the
+   drops the (diverged) secret and falls through to silent OAuth on web.
+2. **`silent-oauth-restore`** (web only, in `@oxyhq/services`) — when local mint finds no
+   credential (or the secret was stale), redirect to `auth.oxy.so/authorize?prompt=none`
+   + PKCE. The IdP hub auto-approves when it has a session + grant; the RP exchanges the
+   returned code for tokens on the **same** `deviceId`. One attempt per navigation
+   (`sessionStorage.oxy.silent_oauth_attempted`); `error=login_required` ends signed-out
+   silently.
+3. **`shared-key-signin`** (native) — re-mint from the shared Commons identity in the
    app-group keychain.
 
 If nothing yields a session, the app is silently signed out — no redirect, no dialog.

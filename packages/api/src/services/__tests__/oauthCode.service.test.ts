@@ -24,6 +24,7 @@ interface StoredCode {
   codeChallenge: string | null;
   codeChallengeMethod: string | null;
   scopes: string[];
+  deviceId: string | null;
   usedAt: Date | null;
   expiresAt: Date;
 }
@@ -46,6 +47,7 @@ jest.mock('../../models/AuthCode', () => ({
         codeChallenge: data.codeChallenge ?? null,
         codeChallengeMethod: data.codeChallengeMethod ?? null,
         scopes: data.scopes ?? [],
+        deviceId: data.deviceId ?? null,
         usedAt: data.usedAt ?? null,
         expiresAt: data.expiresAt ?? new Date(Date.now() + 60_000),
       };
@@ -108,6 +110,17 @@ describe('issueAuthCode', () => {
     const stored = Array.from(store.values())[0];
     expect(stored.codeHash).toMatch(/^[0-9a-f]{64}$/);
     expect(stored.codeHash).not.toBe(code); // raw code never persisted
+  });
+
+  it('persists deviceId when provided at issue time', async () => {
+    await issueAuthCode({
+      userId: USER_ID,
+      appId: APP_ID,
+      redirectUri: REDIRECT_URI,
+      deviceId: 'shared-device-1',
+    });
+    const stored = Array.from(store.values())[0];
+    expect(stored.deviceId).toBe('shared-device-1');
   });
 });
 

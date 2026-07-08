@@ -1136,7 +1136,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     async passwordSignIn(
       identifier: string,
       password: string,
-      options: { deviceName?: string; deviceFingerprint?: string } = {},
+      options: { deviceName?: string; deviceFingerprint?: string; deviceId?: string } = {},
     ): Promise<LoginResult> {
       try {
         const res = await this.makeRequest<unknown>('POST', '/auth/login', {
@@ -1144,6 +1144,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           password,
           deviceName: options.deviceName,
           deviceFingerprint: options.deviceFingerprint,
+          ...(options.deviceId ? { deviceId: options.deviceId } : {}),
         }, { cache: false });
         const parsed = safeParseContract(loginResultSchema, res);
         if (!parsed) {
@@ -1170,6 +1171,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       token?: string;
       backupCode?: string;
       deviceName?: string;
+      deviceId?: string;
     }): Promise<LoginSessionResult> {
       try {
         const res = await this.makeRequest<unknown>('POST', '/security/2fa/verify-login', {
@@ -1177,6 +1179,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           token: params.token,
           backupCode: params.backupCode,
           deviceName: params.deviceName,
+          ...(params.deviceId ? { deviceId: params.deviceId } : {}),
         }, { cache: false });
         const parsed = safeParseContract(loginResultSchema, res);
         if (!parsed || 'twoFactorRequired' in parsed) {
@@ -1186,6 +1189,87 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           this.setTokens(parsed.accessToken);
         }
         return parsed;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Mint a one-shot handoff code so auth.oxy.so can plant the same
+     * DeviceSession credentials (cross-origin hub, zero cookies).
+     */
+    async createIdpHandoff(): Promise<{ handoffCode: string; expiresIn: number }> {
+      try {
+        const res = await this.makeRequest<{ handoffCode: string; expiresIn: number }>(
+          'POST',
+          '/auth/idp-handoff/create',
+          {},
+          { cache: false },
+        );
+        const payload = (res as { data?: { handoffCode: string; expiresIn: number } }).data ?? res;
+        if (!payload?.handoffCode) {
+          throw new Error('idp-handoff/create returned an unexpected response shape');
+        }
+        return {
+          handoffCode: payload.handoffCode,
+          expiresIn: payload.expiresIn ?? 30,
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Exchange a one-shot IdP handoff code for device credentials (called from
+     * auth.oxy.so only).
+     */
+    async exchangeIdpHandoff(handoffCode: string): Promise<LoginSessionResult> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/auth/idp-handoff/exchange',
+          { handoffCode },
+          { cache: false },
+        );
+        const payload =
+          (res as { data?: Record<string, unknown> }).data ??
+          (res as Record<string, unknown>);
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('idp-handoff/exchange returned an unexpected response shape');
+        }
+        const record = payload as Record<string, unknown>;
+        const accessToken = record.accessToken as string | undefined;
+        const sessionId = record.sessionId as string | undefined;
+        const deviceId = record.deviceId as string | undefined;
+        const deviceSecret = record.deviceSecret as string | undefined;
+        const userRaw = record.user;
+        if (!sessionId || !deviceId || !deviceSecret || !userRaw || typeof userRaw !== 'object') {
+          throw new Error('idp-handoff/exchange returned an incomplete session payload');
+        }
+        const userObj = userRaw as Record<string, unknown>;
+        const userId = userObj.id as string | undefined;
+        if (!userId) {
+          throw new Error('idp-handoff/exchange returned a session without user.id');
+        }
+        const expiresAt =
+          typeof record.expiresAt === 'string'
+            ? record.expiresAt
+            : new Date(Date.now() + 15 * 60 * 1000).toISOString();
+        if (accessToken) {
+          this.setTokens(accessToken);
+        }
+        return {
+          sessionId,
+          deviceId,
+          deviceSecret,
+          expiresAt,
+          accessToken,
+          user: {
+            id: userId,
+            username: typeof userObj.username === 'string' ? userObj.username : undefined,
+            avatar: typeof userObj.avatar === 'string' ? userObj.avatar : undefined,
+          },
+        };
       } catch (error) {
         throw this.handleError(error);
       }

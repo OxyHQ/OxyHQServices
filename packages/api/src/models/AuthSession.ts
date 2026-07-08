@@ -125,6 +125,10 @@ const AuthSessionSchema: Schema = new Schema(
       type: String,
       default: null,
     },
+    deviceId: {
+      type: String,
+      default: null,
+    },
     consumedAt: {
       type: Date,
       default: null,

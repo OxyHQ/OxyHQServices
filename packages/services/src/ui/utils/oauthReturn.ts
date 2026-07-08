@@ -33,6 +33,11 @@ export async function tryCompleteOAuthReturn(opts: {
 
   const params = new URLSearchParams(location.search);
   const code = params.get('code');
+  const oauthError = params.get('error');
+  if (oauthError) {
+    stripOAuthParamsFromUrl();
+    return false;
+  }
   if (!code) return false;
 
   const clientId = opts.clientId;

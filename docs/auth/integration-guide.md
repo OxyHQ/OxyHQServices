@@ -308,9 +308,9 @@ Design your app so a revoked grant simply means the user is signed out of it unt
 
 Third-party integration is **standard OAuth only**. Do not expect — or try to rebuild — any of the following:
 
-1. **No silent cross-domain session sharing.** A user signed in on `mention.earth` is not automatically signed in on `merchant.example`. Instant cross-app session sync (the device-session model — see [`device-session.md`](./device-session.md)) is exclusive to official Oxy apps on the same device; it is not part of the third-party contract.
-2. **No Oxy session cookies on your domain.** Oxy's own session transport (a first-party device cookie on `oxy.so` origins plus a rotating refresh-token family) never extends to third-party domains. Never read, set, or depend on Oxy cookies; never send `credentials: 'include'` to Oxy APIs expecting a session to appear.
-3. **No browser federated-identity or iframe tricks.** FedCM, hidden-iframe session probes, and top-level "bounce" flows were removed from the platform entirely. There is nothing to call; the only cross-origin hop is your top-level authorize redirect.
+1. **Silent restore after first consent (Google-style).** After the user approves once, Oxy persists an `AppGrant`. On subsequent visits the SDK cold-boots with `prompt=none` against `auth.oxy.so` — no consent screen, no re-login — as long as the grant remains and scopes are unchanged. Revoke the grant in Connected apps (`DELETE /auth/grants/:applicationId`) to force re-consent. First visit still requires the full interactive authorize + consent flow.
+2. **No Oxy session cookies on your domain.** Oxy's device transport (`deviceId` + `deviceSecret` in your origin's `localStorage`) never uses cookies. Never read, set, or depend on Oxy cookies; never send `credentials: 'include'` to Oxy APIs expecting a session to appear.
+3. **No browser federated-identity or hidden iframe tricks.** FedCM and iframe session probes were removed. The only cross-origin hops are top-level redirects: interactive authorize (first visit) and silent authorize (`prompt=none`, reloads).
 4. **No Oxy-internal callback routes.** Your callback is the plain OAuth `redirectUri` you registered in Console. Do not register Oxy-internal callback paths in your app or expect an injected bootstrap script to consume the redirect — those mechanisms no longer exist.
 5. **No client secret in a browser or app bundle.** SPAs and native apps use `public` credentials + PKCE. Only a server may hold a `confidential` secret.
 6. **No skipping `state` validation.** Always generate `state` with `generateOAuthState()` and reject any callback whose `state` doesn't match — this is your CSRF defense across the redirect.
@@ -325,7 +325,7 @@ Third-party integration is **standard OAuth only**. Do not expect — or try to 
 
 | Method | Endpoint | Auth | Purpose |
 |--------|----------|------|---------|
-| GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256` |
+| GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `prompt=none` for silent restore |
 | GET | `api.oxy.so/auth/oauth/client/:clientId` | none | Public, sanitized application metadata (name, icon, type, scopes, legal URLs). Generic 404 for unknown/revoked clients |
 | POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, refresh_token, token_type, expires_in, session_id, user } }` |
 | GET | `api.oxy.so/auth/grants` | Bearer | User's connected apps |

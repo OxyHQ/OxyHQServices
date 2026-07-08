@@ -62,6 +62,8 @@ export interface IssueCodeOptions {
   codeChallenge?: string;
   codeChallengeMethod?: 'S256';
   scopes?: string[];
+  /** DeviceSession id from the authorizing bearer JWT. */
+  deviceId?: string;
   ttlMs?: number;
 }
 
@@ -84,6 +86,7 @@ export async function issueAuthCode(options: IssueCodeOptions): Promise<IssueCod
     codeChallenge: options.codeChallenge ?? null,
     codeChallengeMethod: options.codeChallenge ? 'S256' : null,
     scopes: options.scopes ?? [],
+    deviceId: options.deviceId ?? null,
     expiresAt,
   });
 

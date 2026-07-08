@@ -63,6 +63,8 @@ Present when the entry is a **managed account** (org / project / bot) the operat
 
 The device set stores exactly **one `sessionId` per account**. Every surface that authenticates the same account on the same device converges on that session (`resolveRegisteredSession`) instead of minting per-origin sessions — this is what makes all apps on a device join the same socket room and see each other's changes. Re-adding the same account with a *different* sessionId (a deliberate re-auth) replaces the entry and deactivates the displaced session.
 
+OAuth token exchange, password login, QR handoff, and IdP handoff all thread the same `deviceId` so cross-origin web apps (official domains like `mention.earth` and third-party RPs) share one `DeviceSession` document server-side. Each origin still persists its own `{ deviceId, deviceSecret }` copy in `localStorage` (zero cookies); convergence happens via IdP hub handoff + silent OAuth (`prompt=none`) documented in [`SESSION-ARCHITECTURE.md`](../SESSION-ARCHITECTURE.md).
+
 ### Self-healing
 
 Dead entries never sit in the set silently:

@@ -7,6 +7,7 @@ import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
 import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
+import { sessionCreateOptionsFromBody } from './session.controller';
 import { buildSessionAuthResponse } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
@@ -296,7 +297,7 @@ export async function verify2FAToken(req: Request, res: Response) {
  */
 export async function verify2FALogin(req: Request, res: Response) {
   try {
-    const { loginToken, token, backupCode, deviceName, deviceFingerprint } = req.body;
+    const { loginToken, token, backupCode, deviceName, deviceFingerprint, deviceId } = req.body;
 
     if (!loginToken) {
       return res.status(400).json({ message: 'Login token is required' });
@@ -409,7 +410,7 @@ export async function verify2FALogin(req: Request, res: Response) {
     const session = await sessionService.createSession(
       user._id.toString(),
       req,
-      { deviceName, deviceFingerprint }
+      sessionCreateOptionsFromBody({ deviceName, deviceFingerprint, deviceId }),
     );
 
     const baseTwoFactorResponse = buildSessionAuthResponse(session, user);

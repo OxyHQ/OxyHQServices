@@ -61,6 +61,11 @@ export interface BuildOAuthAuthorizeUrlParams {
   state: string;
   /** The PKCE `codeChallenge` from {@link generatePkcePair}. */
   codeChallenge: string;
+  /**
+   * OAuth `prompt` parameter. Use `none` for silent cross-origin session restore
+   * (no UI when the IdP hub already has a session + grant).
+   */
+  prompt?: 'none' | 'login' | 'consent';
 }
 
 /**
@@ -184,6 +189,9 @@ export function buildOAuthAuthorizeUrl(params: BuildOAuthAuthorizeUrlParams): st
   url.searchParams.set('scope', scope);
   url.searchParams.set('code_challenge', codeChallenge);
   url.searchParams.set('code_challenge_method', 'S256');
+  if (params.prompt) {
+    url.searchParams.set('prompt', params.prompt);
+  }
 
   return url.toString();
 }
@@ -193,6 +201,12 @@ export const OXY_OAUTH_STATE_STORAGE_KEY = 'oxy_oauth_state';
 
 /** `sessionStorage` key for the PKCE `code_verifier` across an authorize redirect. */
 export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
+
+/** `sessionStorage` key — at most one silent OAuth attempt per navigation. */
+export const OXY_SILENT_OAUTH_ATTEMPTED_KEY = 'oxy.silent_oauth_attempted';
+
+/** `sessionStorage` key — suppress IdP handoff redirect loops after login. */
+export const OXY_IDP_HANDOFF_ATTEMPTED_KEY = 'oxy.idp_handoff_attempted';
 
 /**
  * Normalize a redirect URI to its origin. Official Oxy apps register apex

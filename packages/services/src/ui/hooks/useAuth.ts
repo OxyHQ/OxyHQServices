@@ -17,10 +17,11 @@
  * }
  * ```
  *
- * Cross-domain SSO:
- * - Web: Automatic via the per-apex `/auth/silent` iframe + terminal `/sso` bounce (SDK cold boot)
- * - Native: Automatic via shared Keychain/Account Manager
- * - Manual sign-in: signIn() redirects to the IdP (web) or opens the auth sheet (native)
+ * Cross-domain session (zero cookies):
+ * - Web: IdP hub handoff to auth.oxy.so + silent OAuth (`prompt=none`) on cold boot
+ * - Native: shared Keychain / app-group identity (Commons)
+ * - Realtime sync: Socket.IO `session_state` on `device:<deviceId>` once authenticated
+ * - Manual sign-in: signIn() opens the in-app account dialog (web + native)
  */
 
 import { useCallback } from 'react';
@@ -114,7 +115,8 @@ export interface UseAuthReturn extends AuthState, AuthActions {
  * Features:
  * - Zero config: Just wrap with OxyProvider and use
  * - Cross-platform: Same API on native and web
- * - Auto SSO: Web apps automatically check for cross-domain sessions
+ * - Auto session restore: Web apps silently restore via device-secret mint, then
+ *   silent OAuth against the IdP hub; native apps use the shared keychain
  * - Type-safe: Full TypeScript support
  */
 export function useAuth(): UseAuthReturn {
