@@ -1,14 +1,29 @@
 /**
- * Self-heal official Application redirect URIs when `redirectUris` is empty.
+ * Self-heal official Application redirect URIs when missing or drifted.
  *
- * Production drift (empty allowlist) blocks `POST /auth/oauth/authorize` with
+ * Production drift blocks `POST /auth/oauth/authorize` with
  * "redirect_uri is not registered for this client", breaking password sign-in
- * hand-offs from every first-party app. Official apps always declare a
- * `websiteUrl`; its origin is the canonical OAuth redirect surface.
+ * hand-offs from every first-party app. Official apps declare a `websiteUrl`
+ * whose origin is the canonical OAuth redirect surface.
  */
 
 import mongoose from 'mongoose';
 import { logger } from '../utils/logger';
+import { isTrustedApplication } from '../utils/trustedApplication';
+
+function originOfWebsiteUrl(websiteUrl: string): string | null {
+  try {
+    return new URL(websiteUrl.trim()).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Exact-match helper — redirect URIs are compared literally, not by prefix. */
+function includesRedirectUri(allowlist: string[] | undefined, origin: string): boolean {
+  if (!allowlist?.length) return false;
+  return allowlist.some((entry) => entry === origin);
+}
 
 export async function reconcileOfficialRedirectUris(): Promise<number> {
   if (mongoose.connection.readyState !== 1) {
@@ -16,27 +31,27 @@ export async function reconcileOfficialRedirectUris(): Promise<number> {
   }
 
   const { Application } = await import('../models/Application.js');
-  const candidates = await Application.find({
-    status: 'active',
-    isOfficial: true,
-    websiteUrl: { $exists: true, $ne: '' },
-    $or: [{ redirectUris: { $exists: false } }, { redirectUris: { $size: 0 } }],
-  }).select('name websiteUrl redirectUris');
+  const apps = await Application.find({ status: 'active' })
+    .select('name type isOfficial isInternal websiteUrl redirectUris');
 
   let repaired = 0;
-  for (const app of candidates) {
+  for (const app of apps) {
+    if (!isTrustedApplication(app)) continue;
+
     const websiteUrl = app.websiteUrl?.trim();
     if (!websiteUrl) continue;
-    let origin: string;
-    try {
-      origin = new URL(websiteUrl).origin;
-    } catch {
+
+    const origin = originOfWebsiteUrl(websiteUrl);
+    if (!origin) {
       logger.warn('[reconcileOfficialRedirectUris] invalid websiteUrl', {
         name: app.name,
         websiteUrl,
       });
       continue;
     }
+
+    if (includesRedirectUri(app.redirectUris, origin)) continue;
+
     app.redirectUris = [origin];
     await app.save();
     repaired += 1;
