@@ -31,7 +31,7 @@ import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
-import { OXY_CLIENT_ID } from '@/constants/oxy';
+import { OXY_CLIENT_ID, OXY_AUTH_REDIRECT_URI } from '@/constants/oxy';
 import {
   preventNativeSplashAutoHide,
   useHideNativeSplashWhenReady,
@@ -147,7 +147,7 @@ function RootLayoutInner() {
             (this app) owns the BloomThemeProvider and feeds it the resolved
             theme mode from ThemeModeProvider. */}
         <BloomThemeProvider mode={themeMode}>
-          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
+          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI}>
             <AppImageResolver>
               <LocaleProvider>
                 <AppHead />
