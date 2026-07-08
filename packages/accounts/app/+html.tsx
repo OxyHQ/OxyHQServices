@@ -1,4 +1,5 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
+import { DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT } from '@oxyhq/core';
 import type { PropsWithChildren } from 'react';
 
 const DEFAULT_TITLE = 'Accounts by Oxy';
@@ -28,6 +29,9 @@ export default function Root({ children }: PropsWithChildren) {
         <meta property="og:site_name" content="Accounts by Oxy" />
         <meta property="og:title" content={DEFAULT_TITLE} />
         <meta property="og:description" content={DEFAULT_DESCRIPTION} />
+
+        {/* Strip device-join credentials from the URL before the JS bundle loads. */}
+        <script dangerouslySetInnerHTML={{ __html: DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT }} />
 
         <ScrollViewStyleReset />
       </head>

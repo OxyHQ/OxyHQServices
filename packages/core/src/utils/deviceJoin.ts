@@ -25,6 +25,13 @@ export const OXY_DEVICE_JOIN_PENDING_KEY = 'oxy.device_join_pending';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_ID = 'oxy_device';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_SECRET = 'device_secret';
 
+/**
+ * Inline `<head>` bootstrap — strips join credentials before the app bundle loads.
+ * Mirrors {@link captureDeviceJoinFragmentFromUrl} so Expo/Vite chunks cannot delay
+ * the strip until after first paint.
+ */
+export const DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT = `(function(){try{var l=location;if(!l.hash)return;var p=new URLSearchParams(l.hash.charAt(0)==="#"?l.hash.slice(1):l.hash);var d=p.get("${DEVICE_JOIN_FRAGMENT_DEVICE_ID}");var s=p.get("${DEVICE_JOIN_FRAGMENT_DEVICE_SECRET}");if(!d||!s)return;sessionStorage.setItem("${OXY_DEVICE_JOIN_PENDING_KEY}",JSON.stringify({deviceId:d,deviceSecret:s}));history.replaceState(history.state,"",l.pathname+l.search)}catch(e){}})();`;
+
 /** Official first-party registrable apexes (mirrors API trusted origins). */
 const JOIN_OFFICIAL_APEXES = new Set([
   'oxy.so',

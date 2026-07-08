@@ -9,6 +9,7 @@
  */
 
 import { ScrollViewStyleReset } from 'expo-router/html';
+import { DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT } from '@oxyhq/core';
 import { type PropsWithChildren } from 'react';
 
 const DEFAULT_TITLE = 'Inbox by Oxy';
@@ -65,6 +66,9 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+        {/* Strip device-join credentials from the URL before the JS bundle loads. */}
+        <script dangerouslySetInnerHTML={{ __html: DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT }} />
 
         <ScrollViewStyleReset />
       </head>

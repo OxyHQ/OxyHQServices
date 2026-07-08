@@ -10,6 +10,7 @@ import {
   captureDeviceJoinFragmentFromUrl,
   readPendingDeviceJoinCredential,
   stripDeviceJoinFragmentFromUrl,
+  DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT,
 } from '../deviceJoin';
 import { createMemoryAuthStateStore } from '../../session/authStateStore';
 
@@ -119,6 +120,12 @@ describe('deviceJoin', () => {
       expect(creds).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
       expect(replaceState).toHaveBeenCalledWith(undefined, '', '/inbox');
       expect(readPendingDeviceJoinCredential()).toEqual({ deviceId: 'd1', deviceSecret: 's1' });
+    });
+
+    it('DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT uses the same storage key and fragment params', () => {
+      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('oxy.device_join_pending');
+      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('oxy_device');
+      expect(DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT).toContain('device_secret');
     });
   });
 

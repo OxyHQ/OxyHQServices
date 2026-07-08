@@ -551,6 +551,7 @@ export {
     readPendingDeviceJoinCredential,
     parseDeviceJoinFragment,
     stripDeviceJoinFragmentFromUrl,
+    DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT,
 } from './utils/deviceJoin';
 export type { DeviceJoinFragment, DeviceJoinHubClient } from './utils/deviceJoin';
 
