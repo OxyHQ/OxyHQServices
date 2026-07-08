@@ -33,7 +33,7 @@ There is no separate web-only auth SDK package — web apps consume `@oxyhq/serv
 @oxyhq/api            dep: @oxyhq/contracts + @oxyhq/core (server middleware) + @oxyhq/protocol
 @oxyhq/node           dep: @oxyhq/contracts + @oxyhq/core + @oxyhq/protocol
 accounts / commons / inbox / console  dep: @oxyhq/services + @oxyhq/core
-auth (IdP)            dep: @oxyhq/services (mounted in IdP mode, coldBoot off)
+auth (IdP)            dep: @oxyhq/services (device-first cold boot — same as every Oxy app)
 ```
 
 ## Package Boundaries (strict)
@@ -81,7 +81,10 @@ Rules:
 | `packages/core/src/session/` | `SessionClient` + device-session projection/state |
 | `packages/core/src/server/index.ts` | `@oxyhq/core/server` Express helpers |
 | `packages/services/src/index.ts` | All public services exports |
-| `packages/services/src/ui/context/OxyContext.tsx` | Auth context (all platforms) |
+| `packages/services/src/ui/context/OxyContext.tsx` | Auth provider + `useOxy()` (web + native) |
+| `packages/services/src/ui/context/oxyContextTypes.ts` | `OxyContextState`, `PasswordSignInResult`, provider props |
+| `packages/services/src/ui/context/useOxyAccountGraph.ts` | Account graph hook (`accounts`, `switchToAccount`, …) |
+| `packages/services/src/ui/navigation/accountDialogManager.ts` | Imperative `openAccountDialog` / `closeAccountDialog` |
 | `packages/services/src/ui/components/OxyProvider.tsx` | Provider component (all platforms) |
 
 ## Import Conventions

@@ -226,7 +226,14 @@ membership. See [device-session.md](./auth/device-session.md) for the full API d
 
 ## SDK surface
 
-`@oxyhq/services` is the single UI SDK for Expo, React Native, and React Native Web:
+`@oxyhq/services` is the single UI SDK for Expo, React Native, and React Native Web. Auth state is implemented in a split context layer under `packages/services/src/ui/context/`:
+
+| Module | Role |
+|--------|------|
+| `OxyContext.tsx` | `OxyProvider` / `useOxy()` — session commit, cold boot, token side-effects |
+| `oxyContextTypes.ts` | `OxyContextState`, `PasswordSignInResult` |
+| `useOxyAccountGraph.ts` | `accounts`, `switchToAccount`, `createAccount` |
+| `navigation/accountDialogManager.ts` | Imperative `openAccountDialog('signin')` |
 
 ```tsx
 import { OxyProvider, useAuth, OxySignInButton } from '@oxyhq/services';

@@ -14,7 +14,7 @@ It does **not** own account management: every `/settings/*` path permanently red
 |---|---|
 | **Is** | The OAuth authorize/consent screen for `type: 'third_party'` Applications registered in Console |
 | **Is** | A login/signup/recover UI that authenticates against `api.oxy.so` |
-| **Is not** | A Relying Party — it never runs the RP cold boot or restores its own session |
+| **Is not** | A third-party Relying Party — it authenticates device-first on its own origin, then emits OAuth codes for RPs |
 | **Is not** | The session authority — that is `api.oxy.so` (`DeviceSession`, see below) |
 | **Is not** | An account-management surface — `/settings/*` redirects to accounts.oxy.so |
 

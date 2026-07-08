@@ -71,7 +71,7 @@ All methods return typed promises; errors throw `ApiError` subclasses you can na
 The server-side `DeviceSession` is the single session authority: one document per device holding the signed-in accounts, the active account, and a revision counter. Core owns the client half of that contract:
 
 - **`SessionClient`** (`src/session/`) — fetches `GET /session/device/state`, mutates via `POST /session/device/{add,switch,signout}`, and applies `session_state` socket pushes (room `device:<deviceId>`, token-free payload) so every Oxy app on the same device syncs instantly.
-- **`runSessionColdBoot`** (`src/boot/coldBootV2.ts`) — deterministic, short-circuit cold boot. Restores silently when device state exists; otherwise resolves logged-out. It never redirects to a login page.
+- **`runSessionColdBoot`** (`src/boot/sessionColdBoot.ts`) — deterministic, short-circuit cold boot. Restores silently when device state exists; otherwise resolves logged-out. It never redirects to a login page.
 - **Zero-cookie transport** — every successful sign-in returns `deviceId` + a 256-bit `deviceSecret`, persisted first-party (localStorage per web origin; SecureStore on native). `mintFromDeviceSecret` (`OxyServices.deviceBoot.ts`) POSTs `{ deviceId, deviceSecret }` to `POST /session/device/token` (no bearer, no cookies) to mint/refresh a short access token and rotate the secret in-use. There is no cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop. Full API and socket contract: [device sessions](../../../docs/auth/device-session.md).
 
 React apps do not use `SessionClient` directly — `OxyProvider` from `@oxyhq/services` wires it up.

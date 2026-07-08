@@ -618,6 +618,10 @@ Entregables Fase 7:
 > **Fuente de verdad única para auth:** este documento + `oxy-auth-audit.md` tras Fase 0.  
 > **Ignorar** secciones FedCM/SSO/cookies de AGENTS.md hasta que Fase 7 las reemplace.
 
+## Inventario de borrados (Fase 7) — ✅ COMPLETADO
+
+> **Estado 2026-07:** los borrados listados abajo ya se ejecutaron en main (wave 2 + limpieza auth 2026-07). Esta sección queda como registro de lo que se eliminó — no como trabajo pendiente.
+
 ### Paquetes / workspaces enteros
 
 | Qué | Acción |
@@ -661,7 +665,7 @@ Entregables Fase 7:
 | Modelos | `FedCMGrant`, `FedCMNonce` — eliminar colecciones vía script ops (no migración app-level) |
 | `POST /auth/refresh-all` | Eliminar (IdP ya no es session authority por cookies) |
 | Cookie refresh slots | `oxy_rt_*`, `fedcm_session`, `establishDeviceRefreshSlot` en auth routes |
-| Rate limits | Prefijos `rl:fedcm:*`, handlers SSO — eliminar |
+| Rate limits | Prefijos `rl:fedcm:*`, handlers SSO — ✅ eliminados; IdP worker usa `rl:idp:service:` |
 | OpenAPI / scripts | Quitar FedCM/SSO de `generate-openapi.ts`; seeds que registran `__oxy/sso-callback` → actualizar a redirect URIs OAuth normales |
 
 ### `packages/auth` (auth.oxy.so IdP)

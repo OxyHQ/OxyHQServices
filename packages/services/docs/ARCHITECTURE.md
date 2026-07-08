@@ -23,7 +23,15 @@ Related docs:
 
 `OxyProvider` ([src/ui/components/OxyProvider.tsx](../src/ui/components/OxyProvider.tsx)) is the app root. It mounts:
 
-- `OxyContextProvider` — auth/session state machine ([src/ui/context/OxyContext.tsx](../src/ui/context/OxyContext.tsx))
+`OxyContextProvider` — auth/session state machine. Implementation split across:
+
+| Module | Role |
+|--------|------|
+| [OxyContext.tsx](../src/ui/context/OxyContext.tsx) | Provider, session commit funnel, cold boot wiring |
+| [oxyContextTypes.ts](../src/ui/context/oxyContextTypes.ts) | `OxyContextState`, `PasswordSignInResult`, props |
+| [oxyContextHelpers.ts](../src/ui/context/oxyContextHelpers.ts) | Shared helpers (`loadUseFollowHook`, HTTP status) |
+| [useOxyAccountGraph.ts](../src/ui/context/useOxyAccountGraph.ts) | Account graph (`accounts`, `switchToAccount`, `createAccount`) |
+| [accountDialogManager.ts](../src/ui/navigation/accountDialogManager.ts) | Imperative `openAccountDialog` / `closeAccountDialog` |
 - TanStack `QueryClientProvider` with offline persistence (first paint serves cached data)
 - Bloom dialog + toast outlets, `SafeAreaProvider`, `GestureHandlerRootView`
 - Lazy overlays: `BottomSheetRouter` and the unified `OxyAccountDialog`
@@ -110,7 +118,7 @@ See the [integration guide](../../../docs/auth/integration-guide.md) for the ful
 ## Hooks: `useAuth` vs `useOxy`
 
 - **`useAuth()`** ([src/ui/hooks/useAuth.ts](../src/ui/hooks/useAuth.ts)) — the small standard surface: `user`, `isAuthenticated`, `isLoading`, `isReady`, `hasAccessToken`, `canUsePrivateApi`, `isPrivateApiPending`, plus `signIn`, `signOut`, `signOutAll`, `refresh`. Recommended for most app code.
-- **`useOxy()`** ([src/ui/context/OxyContext.tsx](../src/ui/context/OxyContext.tsx)) — the full `OxyContextState`: multi-session state (`sessions`, `activeSessionId`, `switchSession`), the account graph (`accounts`, `switchToAccount`, `createAccount`), the account dialog (`openAccountDialog`, `closeAccountDialog`, `isAccountDialogOpen`), password sign-in (`signInWithPassword` → `PasswordSignInResult`, `completeTwoFactorSignIn`), the device-flow commit (`handleWebSession`), language state, and the raw `oxyServices` instance.
+- **`useOxy()`** ([src/ui/context/OxyContext.tsx](../src/ui/context/OxyContext.tsx) + [oxyContextTypes.ts](../src/ui/context/oxyContextTypes.ts)) — the full `OxyContextState`: multi-session state (`sessions`, `activeSessionId`, `switchSession`), the account graph (`accounts`, `switchToAccount`, `createAccount` via [useOxyAccountGraph.ts](../src/ui/context/useOxyAccountGraph.ts)), the account dialog (`openAccountDialog`, `closeAccountDialog`, `isAccountDialogOpen`), password sign-in (`signInWithPassword` → `PasswordSignInResult`, `completeTwoFactorSignIn`), the device-flow commit (`handleWebSession`), language state, and the raw `oxyServices` instance.
 
 **Readiness rule:** private API calls wait for `canUsePrivateApi` (or hold on `isPrivateApiPending`). `isAuthResolved` marks the first cold-boot conclusion — before it, `isAuthenticated: false` is undetermined, not a definitive signed-out.
 
