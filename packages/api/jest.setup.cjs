@@ -7,6 +7,15 @@ dotenv.config({ path: '.env.test' });
 // validation (`Types.ObjectId.isValid`) stays byte-identical to production while
 // loading none of mongoose's connection machinery.
 const { ObjectId } = jest.requireActual('bson');
+const schemaInstance = {
+  pre: jest.fn(),
+  post: jest.fn(),
+  virtual: jest.fn(() => ({ get: jest.fn() })),
+  index: jest.fn(),
+};
+const Schema = jest.fn(() => schemaInstance);
+Schema.Types = { ObjectId };
+
 jest.mock('mongoose', () => ({
   Types: { ObjectId },
   connect: jest.fn(() => Promise.resolve()),
@@ -14,11 +23,7 @@ jest.mock('mongoose', () => ({
     on: jest.fn(),
     once: jest.fn(),
   },
-  Schema: jest.fn(() => ({
-    pre: jest.fn(),
-    post: jest.fn(),
-    virtual: jest.fn(() => ({ get: jest.fn() })),
-  })),
+  Schema,
   model: jest.fn(() => ({
     find: jest.fn(() => ({ populate: jest.fn(() => Promise.resolve([])) })),
     findOne: jest.fn(() => ({ populate: jest.fn(() => Promise.resolve(null)) })),

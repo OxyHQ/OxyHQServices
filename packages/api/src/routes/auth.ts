@@ -1991,7 +1991,7 @@ router.post(
       throw new UnauthorizedError('invalid_handoff');
     }
 
-    const { default: deviceSessionService } = await import('../services/deviceSession.service.js');
+    const { deviceSessionService } = await import('../services/deviceSession.service.js');
     const state = await deviceSessionService.getState(deviceId);
     const activeToken = await deviceSessionService.resolveActiveToken(state);
     if (!activeToken) {
@@ -2124,10 +2124,18 @@ router.post(
 
     const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
 
+    let oauthDeviceId: string | undefined;
     const bearerToken = extractTokenFromRequest(req);
-    const bearerDecoded = bearerToken ? decodeToken(bearerToken) : null;
-    const oauthDeviceId =
-      typeof bearerDecoded?.deviceId === 'string' ? bearerDecoded.deviceId : undefined;
+    if (bearerToken) {
+      try {
+        const bearerDecoded = decodeToken(bearerToken);
+        if (typeof bearerDecoded?.deviceId === 'string') {
+          oauthDeviceId = bearerDecoded.deviceId;
+        }
+      } catch {
+        // Optional device threading — authMiddleware already validated the bearer.
+      }
+    }
 
     // Mint a single-use opaque code. The service persists a hash, never
     // the raw value, so leakage of the AuthCode collection would not

@@ -50,7 +50,19 @@ interface AppRow {
 }
 
 function findResult(apps: AppRow[]) {
-  return { select: () => ({ lean: () => Promise.resolve(apps) }) };
+  const docs = apps.map((app) => ({
+    ...app,
+    save: jest.fn().mockResolvedValue(undefined),
+  }));
+  return {
+    select: () => ({
+      lean: () => Promise.resolve(apps),
+      then: (
+        onFulfilled?: (value: typeof docs) => unknown,
+        onRejected?: (reason: unknown) => unknown,
+      ) => Promise.resolve(docs).then(onFulfilled, onRejected),
+    }),
+  };
 }
 
 const ORIGINAL_EXTRA = process.env.OXY_EXTRA_ALLOWED_ORIGINS;
@@ -89,7 +101,7 @@ describe('boot seed (no refresh)', () => {
 
 describe('refresh() — trusted vs third-party routing', () => {
   it('routes trusted apps to the credentialed lane and third-party apps to the bearer lane', async () => {
-    mockFind.mockReturnValueOnce(
+    mockFind.mockImplementation(() =>
       findResult([
         { type: 'third_party', redirectUris: ['https://third.example.com/cb'] },
         { isOfficial: true, redirectUris: ['https://official.example.com/cb'] },
@@ -124,7 +136,7 @@ describe('refresh() — trusted vs third-party routing', () => {
   });
 
   it('normalises redirectUris to origins (drops path/query, lowercases host)', async () => {
-    mockFind.mockReturnValueOnce(
+    mockFind.mockImplementation(() =>
       findResult([{ type: 'third_party', redirectUris: ['https://App.Example.com:8443/cb?x=1'] }])
     );
 
@@ -137,7 +149,7 @@ describe('refresh() — trusted vs third-party routing', () => {
   });
 
   it('lets trusted win when a third-party app registers a trusted/bootstrap origin', async () => {
-    mockFind.mockReturnValueOnce(
+    mockFind.mockImplementation(() =>
       findResult([
         // A third-party app maliciously/accidentally registers a bootstrap origin.
         { type: 'third_party', redirectUris: ['https://oxy.so/cb'] },
@@ -159,7 +171,7 @@ describe('refresh() — trusted vs third-party routing', () => {
   });
 
   it('skips malformed redirectUris without throwing', async () => {
-    mockFind.mockReturnValueOnce(
+    mockFind.mockImplementation(() =>
       findResult([{ type: 'third_party', redirectUris: ['not a url', '', 'https://ok.example.com/cb'] }])
     );
 
@@ -171,7 +183,7 @@ describe('refresh() — trusted vs third-party routing', () => {
 
 describe('refresh() — fail-soft', () => {
   it('keeps the previous snapshot and logs when the Mongo read throws', async () => {
-    mockFind.mockReturnValueOnce(
+    mockFind.mockImplementation(() =>
       findResult([{ isOfficial: true, redirectUris: ['https://keep.example.com/cb'] }])
     );
     await refreshOriginRegistry();
@@ -200,7 +212,7 @@ describe('OXY_EXTRA_ALLOWED_ORIGINS', () => {
 
   it('unions validated extra origins into the trusted snapshot on refresh', async () => {
     process.env.OXY_EXTRA_ALLOWED_ORIGINS = 'https://extra.example.com';
-    mockFind.mockReturnValueOnce(findResult([]));
+    mockFind.mockImplementation(() => findResult([]));
     await refreshOriginRegistry();
     expect(getCorsDecision('https://extra.example.com')).toEqual({
       allow: true,

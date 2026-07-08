@@ -60,6 +60,17 @@ jest.mock('../../services/deviceLogin.service', () => ({
 jest.mock('../session.controller', () => ({
   __esModule: true,
   buildSessionAuthResponse: (...a: unknown[]) => mockBuildSessionAuthResponse(...a),
+  sessionCreateOptionsFromBody: (body: {
+    deviceName?: string;
+    deviceFingerprint?: string;
+    deviceId?: string;
+  }) => ({
+    deviceName: body.deviceName,
+    deviceFingerprint: body.deviceFingerprint,
+    ...(typeof body.deviceId === 'string' && body.deviceId.trim()
+      ? { deviceId: body.deviceId.trim() }
+      : {}),
+  }),
 }));
 
 jest.mock('../../services/securityActivityService', () => ({
