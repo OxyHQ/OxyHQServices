@@ -5,7 +5,7 @@
  * These are direct exports without runtime detection overhead.
  *
  * @example
- * import { OxyProvider, useOxy, Avatar } from '@oxyhq/services/ui/client';
+ * import { OxyProvider, useOxy, LogoIcon } from '@oxyhq/services/ui/client';
  */
 
 // Components

@@ -123,15 +123,70 @@ export const useTheme = (): { isDark: boolean; colors: Record<string, string> } 
     primaryForeground: '#ffffff',
     secondary: '#eeeeee',
     background: '#ffffff',
+    backgroundSecondary: '#f5f5f5',
     text: '#000000',
     textSecondary: '#666666',
     card: '#ffffff',
     border: '#e0e0e0',
+    icon: '#666666',
     success: '#22c55e',
     error: '#ef4444',
     warning: '#f59e0b',
     info: '#3b82f6',
   },
 });
+
+/** Generic passthrough for Bloom layout primitives not asserted in unit tests. */
+const passthrough =
+  (tag: string) =>
+  ({ children, testID }: { children?: ReactNode; testID?: string } & Record<string, unknown>) =>
+    createElement(tag, { 'data-testid': testID }, children);
+
+export const BloomDialogProvider = ({ children }: { children?: ReactNode }) =>
+  createElement(Fragment, null, children);
+
+export const ToastOutlet = () => null;
+
+export const PressableScale = passthrough('div');
+
+export const SettingsListGroup = passthrough('div');
+export const SettingsListItem = passthrough('div');
+
+export const Switch = ({
+  value,
+  onValueChange,
+  testID,
+}: {
+  value?: boolean;
+  onValueChange?: (next: boolean) => void;
+  testID?: string;
+} & Record<string, unknown>) =>
+  createElement('input', {
+    type: 'checkbox',
+    role: 'switch',
+    checked: value,
+    onChange: () => onValueChange?.(!value),
+    'data-testid': testID,
+  });
+
+export const TextField = passthrough('div');
+export const TextFieldInput = passthrough('input');
+
+export const H1 = Text;
+export const H4 = Text;
+export const H5 = Text;
+export const H6 = Text;
+
+export const Chip = passthrough('span');
+export const SearchInput = passthrough('input');
+export const IconCircle = passthrough('span');
+export const BenefitList = passthrough('div');
+export const BenefitRow = passthrough('div');
+export const Accordion = passthrough('div');
+export const AccordionItem = passthrough('div');
+export const AccordionTrigger = passthrough('button');
+export const AccordionContent = passthrough('div');
+export const SegmentedControl = passthrough('div');
+export const SegmentedControlItem = passthrough('button');
 
 export default toast;

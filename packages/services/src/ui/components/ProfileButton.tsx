@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
     View,
     Pressable,
@@ -111,7 +111,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         isPrivateApiPending,
         signIn,
     } = useAuth();
-    const { openAccountDialog } = useOxy();
+    const { openAccountDialog, oxyServices } = useOxy();
     const { colors } = useTheme();
     const { t, locale } = useI18n();
 
@@ -125,6 +125,11 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     const openDialog = useCallback(() => {
         openAccountDialog('accounts');
     }, [openAccountDialog]);
+
+    const avatarUrl = useMemo(
+        () => (user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined),
+        [user?.avatar, oxyServices],
+    );
 
     // ── Undetermined: skeleton circle, no interaction. ──────────────────────
     if (!isAuthResolved || isPrivateApiPending) {
@@ -195,7 +200,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
 
     const avatarNode = (
         <Avatar
-            source={user.avatar ?? undefined}
+            source={avatarUrl}
             variant="thumb"
             name={displayName}
             size={resolvedAvatarSize}

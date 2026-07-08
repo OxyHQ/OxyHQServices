@@ -387,7 +387,7 @@ const AccountRow: React.FC<AccountRowProps> = ({ account, theme, switching, disa
       >
         <View style={[styles.avatarRing, { borderColor: account.isCurrent ? accent : 'transparent' }]}>
           <Avatar
-            source={account.user.avatar ?? undefined}
+            source={account.avatarUrl ?? undefined}
             variant="thumb"
             name={account.displayName}
             size={ROW_AVATAR_SIZE}
