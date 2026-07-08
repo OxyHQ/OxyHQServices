@@ -29,6 +29,8 @@ export default function Root({ children }: PropsWithChildren) {
         <meta property="og:title" content={DEFAULT_TITLE} />
         <meta property="og:description" content={DEFAULT_DESCRIPTION} />
 
+        <script src="/device-join-strip.js" />
+
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>

@@ -7,17 +7,16 @@ import { OxyContextProvider, type OxyContextProviderProps } from '../context/Oxy
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { BloomDialogProvider } from '@oxyhq/bloom';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
-import { logger as loggerUtil } from '@oxyhq/core';
+import { installDeviceJoinUrlHashGuard, logger as loggerUtil } from '@oxyhq/core';
 import { setupFonts } from './FontLoader';
 import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
-import { captureDeviceJoinFragmentFromUrl } from '../utils/deviceJoin';
 
 // Strip `#oxy_device=…&device_secret=…` synchronously on first module load —
-// before React paints — so join credentials never linger in the address bar.
+// before React paints — and guard against Expo Router re-appending the hash.
 if (typeof globalThis !== 'undefined' && typeof globalThis.window !== 'undefined') {
-  captureDeviceJoinFragmentFromUrl();
+  installDeviceJoinUrlHashGuard();
 }
 
 /**

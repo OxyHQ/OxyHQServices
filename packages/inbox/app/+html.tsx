@@ -66,6 +66,9 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+        {/* Strip device-join credentials before any JS bundle (Expo Router re-appends hash otherwise). */}
+        <script src="/device-join-strip.js" />
+
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>

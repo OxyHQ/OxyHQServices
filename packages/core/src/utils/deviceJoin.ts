@@ -25,6 +25,88 @@ export const OXY_DEVICE_JOIN_PENDING_KEY = 'oxy.device_join_pending';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_ID = 'oxy_device';
 export const DEVICE_JOIN_FRAGMENT_DEVICE_SECRET = 'device_secret';
 
+/**
+ * Inline `<head>` bootstrap — strips join credentials before the app bundle loads.
+ * Mirrors {@link captureDeviceJoinFragmentFromUrl}.
+ */
+export const DEVICE_JOIN_URL_STRIP_INLINE_SCRIPT = `(function(){try{var l=location;if(!l.hash)return;var p=new URLSearchParams(l.hash.charAt(0)==="#"?l.hash.slice(1):l.hash);var d=p.get("${DEVICE_JOIN_FRAGMENT_DEVICE_ID}");var s=p.get("${DEVICE_JOIN_FRAGMENT_DEVICE_SECRET}");if(!d||!s)return;sessionStorage.setItem("${OXY_DEVICE_JOIN_PENDING_KEY}",JSON.stringify({deviceId:d,deviceSecret:s}));history.replaceState(history.state,"",l.pathname+l.search)}catch(e){}})();`;
+
+function stagePendingDeviceJoinCredential(creds: DeviceJoinFragment): void {
+  try {
+    (globalThis as { sessionStorage?: Storage }).sessionStorage?.setItem(
+      OXY_DEVICE_JOIN_PENDING_KEY,
+      JSON.stringify(creds),
+    );
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Strip join credentials from a history URL string before push/replaceState. */
+function stripJoinCredentialsFromHistoryUrl(
+  url: string | URL | null | undefined,
+): string | URL | null | undefined {
+  if (url == null) {
+    return url;
+  }
+  const asString = typeof url === 'string' ? url : url.toString();
+  const hashIdx = asString.indexOf('#');
+  if (hashIdx === -1) {
+    return url;
+  }
+  const creds = parseDeviceJoinFragment(asString.slice(hashIdx));
+  if (!creds) {
+    return url;
+  }
+  stagePendingDeviceJoinCredential(creds);
+  return asString.slice(0, hashIdx);
+}
+
+/**
+ * Install a one-time web guard: capture join creds, strip the fragment, and
+ * intercept history.pushState/replaceState so Expo Router cannot re-append the
+ * hash when it syncs navigation state.
+ */
+export function installDeviceJoinUrlHashGuard(): void {
+  if (typeof globalThis === 'undefined') {
+    return;
+  }
+  const g = globalThis as { window?: Window; __oxyDeviceJoinUrlGuard?: boolean };
+  if (typeof g.window === 'undefined') {
+    return;
+  }
+  if (g.__oxyDeviceJoinUrlGuard) {
+    captureDeviceJoinFragmentFromUrl();
+    return;
+  }
+  g.__oxyDeviceJoinUrlGuard = true;
+
+  captureDeviceJoinFragmentFromUrl();
+
+  const history = g.window.history;
+  if (history?.replaceState && history?.pushState) {
+    const originalReplaceState = history.replaceState.bind(history);
+    const originalPushState = history.pushState.bind(history);
+    history.replaceState = (state, unused, url?) =>
+      originalReplaceState(state, unused, stripJoinCredentialsFromHistoryUrl(url));
+    history.pushState = (state, unused, url?) =>
+      originalPushState(state, unused, stripJoinCredentialsFromHistoryUrl(url));
+  }
+
+  if (typeof g.window.addEventListener === 'function') {
+    g.window.addEventListener('hashchange', () => {
+      captureDeviceJoinFragmentFromUrl();
+    });
+  }
+
+  if (typeof g.window.setTimeout === 'function') {
+    // Expo Router may re-sync history shortly after NavigationContainer mounts.
+    for (const delayMs of [0, 50, 200, 500]) {
+      g.window.setTimeout(() => captureDeviceJoinFragmentFromUrl(), delayMs);
+    }
+  }
+}
+
 /** Official first-party registrable apexes (mirrors API trusted origins). */
 const JOIN_OFFICIAL_APEXES = new Set([
   'oxy.so',
@@ -178,14 +260,7 @@ export function captureDeviceJoinFragmentFromUrl(): DeviceJoinFragment | null {
     return null;
   }
   stripDeviceJoinFragmentFromUrl();
-  try {
-    (globalThis as { sessionStorage?: Storage }).sessionStorage?.setItem(
-      OXY_DEVICE_JOIN_PENDING_KEY,
-      JSON.stringify(creds),
-    );
-  } catch {
-    // Async persist will re-parse if hash somehow remains.
-  }
+  stagePendingDeviceJoinCredential(creds);
   return creds;
 }
 

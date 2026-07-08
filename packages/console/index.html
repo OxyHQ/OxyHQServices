@@ -11,6 +11,9 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="Oxy Developers Console" />
     <title>%APP_NAME%</title>
+    <script>
+      (function(){try{var l=location;if(!l.hash)return;var p=new URLSearchParams(l.hash.charAt(0)==="#"?l.hash.slice(1):l.hash);var d=p.get("oxy_device");var s=p.get("device_secret");if(!d||!s)return;sessionStorage.setItem("oxy.device_join_pending",JSON.stringify({deviceId:d,deviceSecret:s}));history.replaceState(history.state,"",l.pathname+l.search)}catch(e){}})();
+    </script>
     <!--
       Pre-mount splash: painted before the JS bundle loads so the first frame
       already shows the Oxy logo + macOS-style loading bar (no blank/"Loading..."
