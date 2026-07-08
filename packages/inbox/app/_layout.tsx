@@ -11,12 +11,12 @@ import { OxyProvider, useOxy, RequireOxyAuth } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 import type { ImageResolver } from '@oxyhq/bloom/image-resolver';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
-import { queryClient } from '@/hooks/queries/queryClient';
+import { queryClient, clearPersistedInboxCache } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/theme-context';
 import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
@@ -77,40 +77,44 @@ function RootLayoutContent() {
   const navTheme = useNavigationTheme();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <KeyboardProvider>
-        {/*
-          LocaleProvider sits INSIDE OxyProvider so it can read the signed-in
-          user's `language` preference via `useOxy()` and seed the initial
-          locale accordingly. Persisted overrides flow through AsyncStorage.
-        */}
-        <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI}>
-          <BloomImageResolver>
-            <LocaleProvider>
-              <SafeAreaProvider>
-                <PortalProvider>
-                  <ThemeProvider value={navTheme}>
-                    <RootEffects />
-                    {/*
-                      The whole app is gated behind the shared SDK signed-out wall
-                      (`RequireOxyAuth prompt="hard"`). It replaces the former
-                      hand-rolled sign-in gate: it blocks the navigator until the
-                      device-first cold boot resolves a session, shows a neutral
-                      loading state while pending (never flashes the wall), and its
-                      primary CTA opens the ONE shared account dialog. See
-                      `GatedNavigator` for the localized copy.
-                    */}
-                    <GatedNavigator />
-                    <StatusBar style="auto" />
-                  </ThemeProvider>
-                  <PortalOutlet />
-                </PortalProvider>
-              </SafeAreaProvider>
-            </LocaleProvider>
-          </BloomImageResolver>
-        </OxyProvider>
-      </KeyboardProvider>
-    </QueryClientProvider>
+    <KeyboardProvider>
+      {/*
+        LocaleProvider sits INSIDE OxyProvider so it can read the signed-in
+        user's `language` preference via `useOxy()` and seed the initial
+        locale accordingly. Persisted overrides flow through AsyncStorage.
+
+        The app's `queryClient` is handed to `OxyProvider`, which owns the
+        single `QueryClientProvider` for the tree. Passing it here (rather than
+        wrapping OxyProvider in an outer provider) guarantees the SDK's account
+        hooks and the app's email hooks share ONE cache, so a render-time reset
+        in `RootEffects` actually clears the data the UI reads.
+      */}
+      <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI} queryClient={queryClient}>
+        <BloomImageResolver>
+          <LocaleProvider>
+            <SafeAreaProvider>
+              <PortalProvider>
+                <ThemeProvider value={navTheme}>
+                  <RootEffects />
+                  {/*
+                    The whole app is gated behind the shared SDK signed-out wall
+                    (`RequireOxyAuth prompt="hard"`). It replaces the former
+                    hand-rolled sign-in gate: it blocks the navigator until the
+                    device-first cold boot resolves a session, shows a neutral
+                    loading state while pending (never flashes the wall), and its
+                    primary CTA opens the ONE shared account dialog. See
+                    `GatedNavigator` for the localized copy.
+                  */}
+                  <GatedNavigator />
+                  <StatusBar style="auto" />
+                </ThemeProvider>
+                <PortalOutlet />
+              </PortalProvider>
+            </SafeAreaProvider>
+          </LocaleProvider>
+        </BloomImageResolver>
+      </OxyProvider>
+    </KeyboardProvider>
   );
 }
 
@@ -156,21 +160,26 @@ function BloomImageResolver({ children }: { children: ReactNode }) {
  */
 function RootEffects() {
   const { t } = useTranslation();
-  const { user } = useOxy();
-  const userId = user?.id ?? null;
-  const previousUserIdRef = useRef<string | null>(null);
+  const { user, activeSessionId } = useOxy();
+  const queryClient = useQueryClient();
 
-  // Private email query data is scoped by user id, and cache/UI state is also
-  // cleared whenever the authenticated Oxy identity changes so a shared app
-  // instance cannot show the prior user's cached mail during account switches.
-  useEffect(() => {
-    const previousUserId = previousUserIdRef.current;
-    if (previousUserId !== userId) {
-      queryClient.clear();
-      useEmailStore.getState().resetAccountScopedState();
-      previousUserIdRef.current = userId;
-    }
-  }, [userId]);
+  // Reset account-scoped cache/UI state DURING render (not in an effect) the
+  // instant the active Oxy session changes. `activeSessionId` covers switching
+  // between distinct accounts AND between sessions of the same user. Doing this
+  // as a render-time adjustment — the React-blessed pattern for syncing derived
+  // state to an external identity — avoids the intermediate frame where the UI
+  // would still show the previous account's cached mail. See
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const accountKey = activeSessionId ?? user?.id ?? null;
+  const prevAccountKeyRef = useRef(accountKey);
+  if (prevAccountKeyRef.current !== accountKey) {
+    prevAccountKeyRef.current = accountKey;
+    queryClient.clear();
+    // Drop the persisted blob too so the next cold start can't restore the
+    // previous account's mail after an account switch / sign-out.
+    void clearPersistedInboxCache();
+    useEmailStore.getState().resetAccountScopedState();
+  }
 
   // Real-time inbox updates. The hook is a no-op until a user is signed in
   // and tears the socket down on sign-out or user switch; cache/state

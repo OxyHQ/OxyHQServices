@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { EmailFilter, EmailFilterCondition, EmailFilterAction } from '@/services/emailApi';
 
-const FILTERS_KEY = ['filters'] as const;
+const FILTERS_KEY = emailKeys.filters;
 
 /**
  * Snapshot the filters cache, apply an optimistic updater, and return the

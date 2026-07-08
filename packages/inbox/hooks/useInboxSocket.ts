@@ -18,6 +18,7 @@ import { toast } from '@oxyhq/bloom';
 import { useOxy } from '@oxyhq/services';
 
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import { useTranslation } from '@/lib/i18n';
 import type { Mailbox, Message, Pagination } from '@/services/emailApi';
 
@@ -144,7 +145,7 @@ function updateMailboxUnread(
   mailboxId: string,
   unread: number,
 ) {
-  queryClient.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
+  queryClient.setQueryData<Mailbox[] | undefined>(emailKeys.mailboxes.list(userId), (old) => {
     if (!old) return old;
     let mutated = false;
     const next = old.map((mb) => {
@@ -251,7 +252,7 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
           // 2. Bump the unread badge optimistically by 1; the authoritative
           //    `email:unread_count` event (emitted alongside by the server)
           //    will reconcile the exact number.
-          queryClientRef.current.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
+          queryClientRef.current.setQueryData<Mailbox[] | undefined>(emailKeys.mailboxes.list(userId), (old) => {
             if (!old) return old;
             let mutated = false;
             const next = old.map((mb) => {

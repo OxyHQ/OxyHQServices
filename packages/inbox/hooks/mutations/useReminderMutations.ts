@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import { toast } from '@oxyhq/bloom';
 
 export function useCreateReminder() {
@@ -12,7 +13,7 @@ export function useCreateReminder() {
       return api.createReminder(data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.reminders.root });
     },
     onError: () => {
       toast.error('Failed to create reminder');
@@ -40,7 +41,7 @@ export function useUpdateReminder() {
       return api.updateReminder(reminderId, updates);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.reminders.root });
     },
     onError: () => {
       toast.error('Failed to update reminder');
@@ -58,7 +59,7 @@ export function useDeleteReminder() {
       return api.deleteReminder(reminderId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.reminders.root });
     },
     onError: () => {
       toast.error('Failed to delete reminder');

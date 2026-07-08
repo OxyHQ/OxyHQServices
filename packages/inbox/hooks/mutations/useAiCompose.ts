@@ -9,9 +9,11 @@
  * - Generate subject line suggestions
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion, streamAliaChatCompletion } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
 
 export type ComposeTone = 'professional' | 'casual' | 'friendly' | 'formal';
 
@@ -19,6 +21,19 @@ export interface AiComposeResult {
   text: string;
   subject?: string;
 }
+
+/**
+ * Discriminated union of every AI compose operation. All operations share a
+ * single `useMutation` so they get one uniform `isLoading` / `error` state —
+ * this replaces the former ad-hoc `useState` bookkeeping.
+ */
+type ComposeOperation =
+  | { kind: 'draft'; prompt: string; tone: ComposeTone }
+  | { kind: 'streamDraft'; prompt: string; tone: ComposeTone; onChunk?: (text: string) => void }
+  | { kind: 'polish'; text: string }
+  | { kind: 'changeTone'; text: string; tone: ComposeTone }
+  | { kind: 'adjustLength'; text: string; direction: 'shorter' | 'longer' }
+  | { kind: 'suggestSubject'; body: string };
 
 const DRAFT_SYSTEM_PROMPT = `You are an AI email assistant. Write a complete, well-structured email based on the user's prompt or bullet points.
 
@@ -93,157 +108,129 @@ interface UseAiComposeReturn {
 
 export function useAiCompose(): UseAiComposeReturn {
   const { oxyServices } = useOxy();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
 
-  const draft = useCallback(async (prompt: string, tone: ComposeTone = 'professional'): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await aliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: DRAFT_SYSTEM_PROMPT },
-          { role: 'user', content: `Tone: ${tone}\n\nWrite an email based on this:\n${prompt}` },
-        ],
-        maxTokens: 800,
-        temperature: 0.7,
-      });
-      return result.trim();
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to draft email');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
-
-  const streamDraft = useCallback(async (
-    prompt: string,
-    tone: ComposeTone = 'professional',
-    onChunk?: (chunk: string) => void
-  ): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      let fullText = '';
-      const generator = streamAliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: DRAFT_SYSTEM_PROMPT },
-          { role: 'user', content: `Tone: ${tone}\n\nWrite an email based on this:\n${prompt}` },
-        ],
-        maxTokens: 800,
-        temperature: 0.7,
-      });
-
-      for await (const chunk of generator) {
-        fullText += chunk;
-        onChunk?.(fullText);
+  const mutation = useMutation<string, Error, ComposeOperation>({
+    mutationKey: aiKeys.compose,
+    mutationFn: async (op) => {
+      const http = oxyServices.httpService;
+      switch (op.kind) {
+        case 'draft': {
+          const result = await aliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: DRAFT_SYSTEM_PROMPT },
+              { role: 'user', content: `Tone: ${op.tone}\n\nWrite an email based on this:\n${op.prompt}` },
+            ],
+            maxTokens: 800,
+            temperature: 0.7,
+          });
+          return result.trim();
+        }
+        case 'streamDraft': {
+          // Streaming lives inside the mutation: chunks are delivered via the
+          // `onChunk` callback while the mutation stays `pending`, and the full
+          // text is returned once the stream completes.
+          let fullText = '';
+          for await (const chunk of streamAliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: DRAFT_SYSTEM_PROMPT },
+              { role: 'user', content: `Tone: ${op.tone}\n\nWrite an email based on this:\n${op.prompt}` },
+            ],
+            maxTokens: 800,
+            temperature: 0.7,
+          })) {
+            fullText += chunk;
+            op.onChunk?.(fullText);
+          }
+          return fullText.trim();
+        }
+        case 'polish': {
+          const result = await aliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: POLISH_SYSTEM_PROMPT },
+              { role: 'user', content: op.text },
+            ],
+            maxTokens: 1000,
+            temperature: 0.5,
+          });
+          return result.trim();
+        }
+        case 'changeTone': {
+          const result = await aliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: TONE_SYSTEM_PROMPT },
+              { role: 'user', content: `Rewrite this email in a ${op.tone} tone:\n\n${op.text}` },
+            ],
+            maxTokens: 1000,
+            temperature: 0.6,
+          });
+          return result.trim();
+        }
+        case 'adjustLength': {
+          const result = await aliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: LENGTH_SYSTEM_PROMPT },
+              { role: 'user', content: `Make this email ${op.direction}:\n\n${op.text}` },
+            ],
+            maxTokens: op.direction === 'longer' ? 1500 : 500,
+            temperature: 0.5,
+          });
+          return result.trim();
+        }
+        case 'suggestSubject': {
+          const result = await aliaChatCompletion(http, {
+            model: 'alia-lite',
+            messages: [
+              { role: 'system', content: SUBJECT_SYSTEM_PROMPT },
+              { role: 'user', content: op.body },
+            ],
+            maxTokens: 60,
+            temperature: 0.6,
+          });
+          return result.trim().replace(/^["']|["']$/g, '');
+        }
       }
+    },
+  });
 
-      return fullText.trim();
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to draft email');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const { mutateAsync } = mutation;
 
-  const polish = useCallback(async (text: string): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await aliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: POLISH_SYSTEM_PROMPT },
-          { role: 'user', content: text },
-        ],
-        maxTokens: 1000,
-        temperature: 0.5,
-      });
-      return result.trim();
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to polish email');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const draft = useCallback(
+    (prompt: string, tone: ComposeTone = 'professional') =>
+      mutateAsync({ kind: 'draft', prompt, tone }),
+    [mutateAsync],
+  );
 
-  const changeTone = useCallback(async (text: string, tone: ComposeTone): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await aliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: TONE_SYSTEM_PROMPT },
-          { role: 'user', content: `Rewrite this email in a ${tone} tone:\n\n${text}` },
-        ],
-        maxTokens: 1000,
-        temperature: 0.6,
-      });
-      return result.trim();
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to change tone');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const streamDraft = useCallback(
+    (prompt: string, tone: ComposeTone = 'professional', onChunk?: (chunk: string) => void) =>
+      mutateAsync({ kind: 'streamDraft', prompt, tone, onChunk }),
+    [mutateAsync],
+  );
 
-  const adjustLength = useCallback(async (text: string, direction: 'shorter' | 'longer'): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await aliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: LENGTH_SYSTEM_PROMPT },
-          { role: 'user', content: `Make this email ${direction}:\n\n${text}` },
-        ],
-        maxTokens: direction === 'longer' ? 1500 : 500,
-        temperature: 0.5,
-      });
-      return result.trim();
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to adjust length');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const polish = useCallback(
+    (text: string) => mutateAsync({ kind: 'polish', text }),
+    [mutateAsync],
+  );
 
-  const suggestSubject = useCallback(async (body: string): Promise<string> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await aliaChatCompletion(oxyServices.httpService, {
-        model: 'alia-lite',
-        messages: [
-          { role: 'system', content: SUBJECT_SYSTEM_PROMPT },
-          { role: 'user', content: body },
-        ],
-        maxTokens: 60,
-        temperature: 0.6,
-      });
-      return result.trim().replace(/^["']|["']$/g, '');
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to suggest subject');
-      setError(e);
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const changeTone = useCallback(
+    (text: string, tone: ComposeTone) => mutateAsync({ kind: 'changeTone', text, tone }),
+    [mutateAsync],
+  );
+
+  const adjustLength = useCallback(
+    (text: string, direction: 'shorter' | 'longer') =>
+      mutateAsync({ kind: 'adjustLength', text, direction }),
+    [mutateAsync],
+  );
+
+  const suggestSubject = useCallback(
+    (body: string) => mutateAsync({ kind: 'suggestSubject', body }),
+    [mutateAsync],
+  );
 
   return {
     draft,
@@ -252,7 +239,7 @@ export function useAiCompose(): UseAiComposeReturn {
     changeTone,
     adjustLength,
     suggestSubject,
-    isLoading,
-    error,
+    isLoading: mutation.isPending,
+    error: mutation.error,
   };
 }

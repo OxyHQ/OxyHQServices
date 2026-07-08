@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { EmailTemplate } from '@/services/emailApi';
 
-const TEMPLATES_KEY = ['templates'] as const;
+const TEMPLATES_KEY = emailKeys.templates;
 
 async function optimisticTemplates(
   queryClient: ReturnType<typeof useQueryClient>,

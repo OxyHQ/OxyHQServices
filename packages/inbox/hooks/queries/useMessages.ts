@@ -1,6 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message, Pagination } from '@/services/emailApi';
 
 const PAGE_SIZE = 50;
@@ -25,7 +26,7 @@ export function useMessages(options: UseMessagesOptions = {}) {
   const hasFilter = !!mailboxId || !!starred || !!label;
 
   return useInfiniteQuery<MessagesPage>({
-    queryKey: ['messages', mailboxId ?? null, starred ?? false, label ?? null, userId],
+    queryKey: emailKeys.messages.list({ mailboxId, starred, label, userId }),
     queryFn: async ({ pageParam = 0 }) => {
       if (!api) throw new Error('Email API not initialized');
       return await api.listMessages({

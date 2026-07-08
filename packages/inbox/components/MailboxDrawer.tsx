@@ -6,8 +6,7 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +17,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useOxy, OxySignInButton, openAccountDialog, ProfileButton } from '@oxyhq/services';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { Button } from '@oxyhq/bloom/button';

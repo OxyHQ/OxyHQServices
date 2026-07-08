@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 
 /**
  * Resolves a download/preview URL for an attachment, which is a file in the
@@ -11,7 +12,7 @@ export function useAttachmentUrl(fileId: string, enabled = true, variant?: strin
   const { oxyServices } = useOxy();
 
   const { data: url = null, isLoading } = useQuery({
-    queryKey: ['attachment-url', fileId, variant ?? null],
+    queryKey: emailKeys.attachmentUrl(fileId, variant),
     queryFn: () => oxyServices.getFileDownloadUrlAsync(fileId, variant),
     enabled: enabled && !!fileId,
     staleTime: 45 * 60 * 1000,

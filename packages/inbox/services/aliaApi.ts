@@ -9,6 +9,7 @@
  */
 
 import type { OxyServices } from '@oxyhq/core';
+import { AliaChatResponseSchema } from '@/schemas/aiSchemas';
 
 type HttpService = OxyServices['httpService'];
 
@@ -31,14 +32,6 @@ export interface AliaRequestOptions {
   temperature?: number;
 }
 
-/** OpenAI-compatible chat-completion response shape returned by the proxy. */
-interface AliaChatResponse {
-  choices?: Array<{
-    message?: { content?: string };
-    delta?: { content?: string };
-  }>;
-}
-
 function buildRequestBody(options: AliaRequestOptions, stream: boolean) {
   return {
     model: options.model ?? 'alia-lite',
@@ -59,11 +52,15 @@ export async function aliaChatCompletion(
   http: HttpService,
   options: AliaRequestOptions,
 ): Promise<string> {
-  const response = await http.post<AliaChatResponse>(
+  const response = await http.post<unknown>(
     ALIA_COMPLETIONS_PATH,
     buildRequestBody(options, false),
   );
-  return response.choices?.[0]?.message?.content ?? '';
+  // Validate the transport envelope; a malformed response yields empty text
+  // rather than throwing on an unexpected shape.
+  const parsed = AliaChatResponseSchema.safeParse(response);
+  if (!parsed.success) return '';
+  return parsed.data.choices?.[0]?.message?.content ?? '';
 }
 
 /**
@@ -101,8 +98,8 @@ export async function* streamAliaChatCompletion(
 
   // Fall back to non-streaming if ReadableStream is unavailable
   if (!response.body || typeof response.body.getReader !== 'function') {
-    const json = (await response.json()) as AliaChatResponse;
-    const content = json.choices?.[0]?.message?.content ?? '';
+    const json = AliaChatResponseSchema.safeParse(await response.json());
+    const content = json.success ? json.data.choices?.[0]?.message?.content ?? '' : '';
     if (content) yield content;
     return;
   }
@@ -127,8 +124,8 @@ export async function* streamAliaChatCompletion(
         if (data === '[DONE]') return;
 
         try {
-          const parsed = JSON.parse(data) as AliaChatResponse;
-          const delta = parsed.choices?.[0]?.delta?.content;
+          const parsed = AliaChatResponseSchema.safeParse(JSON.parse(data));
+          const delta = parsed.success ? parsed.data.choices?.[0]?.delta?.content : undefined;
           if (delta) yield delta;
         } catch {
           // skip malformed chunks

@@ -13,6 +13,7 @@
  */
 
 import type { InfiniteData, QueryClient, QueryKey } from '@tanstack/react-query';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Mailbox, Message, Pagination } from '@/services/emailApi';
 
 interface MessagesPage {
@@ -86,11 +87,11 @@ export function findCachedMessage(
   messageId: string,
   userId: string | null,
 ): Message | undefined {
-  for (const [, data] of queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] })) {
+  for (const [, data] of queryClient.getQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root })) {
     const found = flatMessages(data).find((m) => m._id === messageId);
     if (found) return found;
   }
-  return queryClient.getQueryData<Message | null>(['message', messageId, userId]) ?? undefined;
+  return queryClient.getQueryData<Message | null>(emailKeys.message.detail(messageId, userId)) ?? undefined;
 }
 
 // ─── Optimistic patches ──────────────────────────────────────────────
@@ -105,13 +106,13 @@ export function patchMessageFlags(
   userId: string | null,
   flags: Partial<Message['flags']>,
 ): void {
-  queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+  queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) =>
     updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, ...flags } })),
   );
-  queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
+  queryClient.setQueryData<Message | null>(emailKeys.message.detail(messageId, userId), (old) =>
     old ? { ...old, flags: { ...old.flags, ...flags } } : old,
   );
-  queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+  queryClient.setQueriesData<Message[]>({ queryKey: emailKeys.thread.root }, (old) =>
     old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, ...flags } } : m)),
   );
 }
@@ -122,14 +123,14 @@ export function patchMessageInList(
   messageId: string,
   updater: (msg: Message) => Message,
 ): void {
-  queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+  queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) =>
     updateMessageInPages(old, messageId, updater),
   );
 }
 
 /** Remove a message from every list cache (archive, delete, snooze). */
 export function removeMessageFromList(queryClient: QueryClient, messageId: string): void {
-  queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+  queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) =>
     removeMessageFromPages(old, messageId),
   );
 }
@@ -144,7 +145,7 @@ export function patchMailboxUnseen(
   delta: number,
 ): void {
   if (!mailboxId || delta === 0) return;
-  queryClient.setQueriesData<Mailbox[]>({ queryKey: ['mailboxes'] }, (old) =>
+  queryClient.setQueriesData<Mailbox[]>({ queryKey: emailKeys.mailboxes.root }, (old) =>
     old?.map((mb) =>
       mb._id === mailboxId
         ? { ...mb, unseenMessages: Math.max(0, mb.unseenMessages + delta) }
@@ -164,15 +165,15 @@ export function mergeServerMessage(
   updated: Message,
   options: { skipList?: boolean } = {},
 ): void {
-  queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
+  queryClient.setQueryData<Message | null>(emailKeys.message.detail(messageId, userId), (old) =>
     mergeMessageUpdate(old, updated),
   );
   if (!options.skipList) {
-    queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+    queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) =>
       updateMessageInPages(old, messageId, (message) => mergeMessageUpdate(message, updated)),
     );
   }
-  queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+  queryClient.setQueriesData<Message[]>({ queryKey: emailKeys.thread.root }, (old) =>
     old?.map((m) => (m._id === messageId ? mergeMessageUpdate(m, updated) : m)),
   );
 }
@@ -200,17 +201,17 @@ export function snapshotForRollback(
   return {
     messageId,
     userId,
-    prevMessages: queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] }),
-    prevMessage: queryClient.getQueryData<Message | null>(['message', messageId, userId]),
-    prevThreads: queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] }),
-    prevMailboxes: queryClient.getQueriesData<Mailbox[]>({ queryKey: ['mailboxes'] }),
+    prevMessages: queryClient.getQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }),
+    prevMessage: queryClient.getQueryData<Message | null>(emailKeys.message.detail(messageId, userId)),
+    prevThreads: queryClient.getQueriesData<Message[]>({ queryKey: emailKeys.thread.root }),
+    prevMailboxes: queryClient.getQueriesData<Mailbox[]>({ queryKey: emailKeys.mailboxes.root }),
   };
 }
 
 /** Restore all caches captured by `snapshotForRollback`. */
 export function restoreSnapshot(queryClient: QueryClient, snapshot: MessageSnapshot): void {
   snapshot.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
-  queryClient.setQueryData(['message', snapshot.messageId, snapshot.userId], snapshot.prevMessage);
+  queryClient.setQueryData(emailKeys.message.detail(snapshot.messageId, snapshot.userId), snapshot.prevMessage);
   snapshot.prevThreads.forEach(([key, data]) => queryClient.setQueryData(key, data));
   snapshot.prevMailboxes.forEach(([key, data]) => queryClient.setQueryData(key, data));
 }
@@ -221,10 +222,10 @@ export async function cancelMessageQueries(
   messageId?: string,
 ): Promise<void> {
   await Promise.all([
-    queryClient.cancelQueries({ queryKey: ['messages'] }),
+    queryClient.cancelQueries({ queryKey: emailKeys.messages.root }),
     messageId
-      ? queryClient.cancelQueries({ queryKey: ['message', messageId] })
+      ? queryClient.cancelQueries({ queryKey: emailKeys.message.byId(messageId) })
       : Promise.resolve(),
-    queryClient.cancelQueries({ queryKey: ['thread'] }),
+    queryClient.cancelQueries({ queryKey: emailKeys.thread.root }),
   ]);
 }

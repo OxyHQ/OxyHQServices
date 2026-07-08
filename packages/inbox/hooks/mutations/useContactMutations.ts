@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Contact } from '@/services/emailApi';
 
 /**
@@ -11,9 +12,9 @@ async function optimisticContacts(
   queryClient: ReturnType<typeof useQueryClient>,
   updater: (prev: Contact[]) => Contact[],
 ): Promise<{ prev: [readonly unknown[], Contact[] | undefined][] }> {
-  await queryClient.cancelQueries({ queryKey: ['contacts'] });
-  const prev = queryClient.getQueriesData<Contact[]>({ queryKey: ['contacts'] });
-  queryClient.setQueriesData<Contact[]>({ queryKey: ['contacts'] }, (old) => updater(old ?? []));
+  await queryClient.cancelQueries({ queryKey: emailKeys.contacts.root });
+  const prev = queryClient.getQueriesData<Contact[]>({ queryKey: emailKeys.contacts.root });
+  queryClient.setQueriesData<Contact[]>({ queryKey: emailKeys.contacts.root }, (old) => updater(old ?? []));
   return { prev };
 }
 
@@ -61,7 +62,7 @@ export function useCreateContact() {
       toast.error(err.message || 'Failed to create contact');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.contacts.root });
     },
   });
 }
@@ -96,7 +97,7 @@ export function useUpdateContact() {
       toast.error(err.message || 'Failed to update contact');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.contacts.root });
     },
   });
 }
@@ -121,7 +122,7 @@ export function useDeleteContact() {
       toast.error('Failed to delete contact');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.contacts.root });
     },
   });
 }

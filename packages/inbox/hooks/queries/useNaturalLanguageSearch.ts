@@ -8,9 +8,11 @@
  * - "attachments from John" → { from: "john", hasAttachment: true }
  */
 
-import { useState, useCallback } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
+import { parseLlmJson, NaturalLanguageSearchSchema } from '@/schemas/aiSchemas';
 
 export interface ParsedSearchQuery {
   q?: string;
@@ -28,8 +30,6 @@ export interface ParsedSearchQuery {
 export interface NaturalLanguageSearchResult {
   query: ParsedSearchQuery;
   interpretation: string;
-  isLoading: boolean;
-  error: Error | null;
 }
 
 const SEARCH_PARSE_PROMPT = `You are an email search assistant. Parse the user's natural language query into structured search parameters.
@@ -59,32 +59,21 @@ Respond with ONLY the JSON object, nothing else.`;
 
 export function useNaturalLanguageSearch() {
   const { oxyServices } = useOxy();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [lastResult, setLastResult] = useState<{
-    query: ParsedSearchQuery;
-    interpretation: string;
-  } | null>(null);
 
-  const parseQuery = useCallback(async (naturalLanguage: string): Promise<{
-    query: ParsedSearchQuery;
-    interpretation: string;
-  }> => {
-    if (!naturalLanguage.trim()) {
-      return { query: {}, interpretation: '' };
-    }
+  const mutation = useMutation<NaturalLanguageSearchResult, Error, string>({
+    mutationKey: aiKeys.naturalLanguageSearch,
+    mutationFn: async (naturalLanguage: string) => {
+      if (!naturalLanguage.trim()) {
+        return { query: {}, interpretation: '' };
+      }
 
-    // Quick check: if it looks like a standard Gmail-style operator, skip AI parsing
-    const hasOperators = /(from:|to:|subject:|in:|is:|has:|label:)/i.test(naturalLanguage);
-    if (hasOperators) {
-      // Let the existing parser handle it
-      return { query: { q: naturalLanguage }, interpretation: 'Using search operators' };
-    }
+      // Quick check: if it looks like a standard Gmail-style operator, skip AI parsing
+      const hasOperators = /(from:|to:|subject:|in:|is:|has:|label:)/i.test(naturalLanguage);
+      if (hasOperators) {
+        // Let the existing operator parser handle it downstream.
+        return { query: { q: naturalLanguage }, interpretation: 'Using search operators' };
+      }
 
-    setIsLoading(true);
-    setError(null);
-
-    try {
       const response = await aliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
         messages: [
@@ -95,33 +84,31 @@ export function useNaturalLanguageSearch() {
         temperature: 0.3,
       });
 
-      const trimmed = response.trim();
-      const jsonStr = trimmed.startsWith('```')
-        ? trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-        : trimmed;
+      // Validate the model's JSON. On any failure, fall back to a plain text
+      // search so the user still gets results.
+      const parsed = parseLlmJson(response, NaturalLanguageSearchSchema);
+      if (!parsed) {
+        return {
+          query: { q: naturalLanguage },
+          interpretation: `Searching for "${naturalLanguage}"`,
+        };
+      }
 
-      const parsed = JSON.parse(jsonStr);
-      const interpretation = parsed.interpretation || 'Searching...';
-      delete parsed.interpretation;
+      const { interpretation, ...query } = parsed;
+      return {
+        query: query as ParsedSearchQuery,
+        interpretation: interpretation || 'Searching...',
+      };
+    },
+  });
 
-      const result = { query: parsed as ParsedSearchQuery, interpretation };
-      setLastResult(result);
-      return result;
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to parse search');
-      setError(e);
-      // Fallback: treat as simple text search
-      return { query: { q: naturalLanguage }, interpretation: `Searching for "${naturalLanguage}"` };
-    } finally {
-      setIsLoading(false);
-    }
-  }, [oxyServices]);
+  const { mutateAsync } = mutation;
 
   return {
-    parseQuery,
-    lastResult,
-    isLoading,
-    error,
+    parseQuery: mutateAsync,
+    lastResult: mutation.data ?? null,
+    isLoading: mutation.isPending,
+    error: mutation.error,
   };
 }
 

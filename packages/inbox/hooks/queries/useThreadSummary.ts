@@ -11,6 +11,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import type { OxyServices } from '@oxyhq/core';
 import { aliaChatCompletion } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
+import { parseLlmJson, ThreadSummarySchema } from '@/schemas/aiSchemas';
 import type { Message } from '@/services/emailApi';
 
 type HttpService = OxyServices['httpService'];
@@ -25,20 +27,6 @@ export interface ActionItem {
   text: string;
   owner?: string;
   deadline?: string;
-}
-
-/** Raw shape of the JSON the model is prompted to emit. Every field is
- *  untrusted (the model can omit or null any of them), so all are optional. */
-interface ParsedThreadSummary {
-  summary?: string;
-  keyPoints?: string[];
-  actionItems?: ParsedActionItem[];
-}
-
-interface ParsedActionItem {
-  text?: string;
-  owner?: string | null;
-  deadline?: string | null;
 }
 
 const THREAD_SUMMARY_SYSTEM_PROMPT = `You are an AI email assistant. Analyze this email thread and provide a structured summary.
@@ -107,24 +95,21 @@ async function fetchThreadSummary(messages: Message[], http: HttpService): Promi
       temperature: 0.5,
     });
 
-    // Parse JSON from response
-    const trimmed = response.trim();
-    const jsonStr = trimmed.startsWith('```')
-      ? trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-      : trimmed;
-
-    const parsed = JSON.parse(jsonStr) as ParsedThreadSummary;
+    // Validate the model's JSON; a malformed response degrades to an empty
+    // summary rather than throwing.
+    const parsed = parseLlmJson(response, ThreadSummarySchema);
+    if (!parsed) {
+      return { summary: '', keyPoints: [], actionItems: [] };
+    }
 
     return {
       summary: parsed.summary || '',
-      keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
-      actionItems: Array.isArray(parsed.actionItems)
-        ? parsed.actionItems.map((item: ParsedActionItem) => ({
-            text: item.text || '',
-            owner: item.owner || undefined,
-            deadline: item.deadline || undefined,
-          }))
-        : [],
+      keyPoints: parsed.keyPoints ?? [],
+      actionItems: (parsed.actionItems ?? []).map((item) => ({
+        text: item.text || '',
+        owner: item.owner || undefined,
+        deadline: item.deadline || undefined,
+      })),
     };
   } catch {
     return {
@@ -149,7 +134,7 @@ export function useThreadSummary(
   const shouldFetch = enabled && !!user && !!messages && messages.length >= minMessages;
 
   const query = useQuery({
-    queryKey: ['threadSummary', messages?.map((m) => m._id).join(',')],
+    queryKey: aiKeys.threadSummary(messages?.map((m) => m._id).join(',')),
     queryFn: () => fetchThreadSummary(messages!, oxyServices.httpService),
     enabled: shouldFetch,
     staleTime: 10 * 60 * 1000, // Cache for 10 minutes

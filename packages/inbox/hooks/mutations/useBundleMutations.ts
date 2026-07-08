@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Bundle } from '@/services/emailApi';
 
-const BUNDLES_KEY = ['bundles'] as const;
+const BUNDLES_KEY = emailKeys.bundles;
 
 async function optimisticBundles(
   queryClient: ReturnType<typeof useQueryClient>,

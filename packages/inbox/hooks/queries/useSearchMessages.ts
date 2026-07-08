@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message, Pagination } from '@/services/emailApi';
 
 interface SearchOptions {
@@ -40,7 +41,7 @@ export function useSearchMessages(options: SearchOptions) {
   );
 
   return useQuery<SearchResult>({
-    queryKey: ['search', options, userId],
+    queryKey: emailKeys.search(options, userId),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return await api.search(options);

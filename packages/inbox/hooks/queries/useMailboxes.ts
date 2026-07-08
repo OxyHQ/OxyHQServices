@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Mailbox } from '@/services/emailApi';
 
 export function useMailboxes() {
@@ -9,7 +10,7 @@ export function useMailboxes() {
   const userId = user?.id ?? null;
 
   return useQuery<Mailbox[]>({
-    queryKey: ['mailboxes', userId],
+    queryKey: emailKeys.mailboxes.list(userId),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return await api.listMailboxes();

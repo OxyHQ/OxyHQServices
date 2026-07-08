@@ -6,9 +6,10 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { streamAliaChatCompletion, type AliaMessage } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
 import type { Message } from '@/services/emailApi';
 
 const BRIEF_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -29,9 +30,9 @@ function buildPrompt(messages: Message[]): AliaMessage[] {
   ];
 }
 
-function getBriefCacheKey(): string[] {
+function getBriefCacheKey() {
   const today = new Date().toISOString().slice(0, 10);
-  return ['alia', 'daily-brief', today];
+  return aiKeys.dailyBrief(today);
 }
 
 interface UseDailyBriefOptions {
@@ -46,8 +47,6 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
   const cacheKey = getBriefCacheKey();
 
   const [briefText, setBriefText] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
   const abortRef = useRef(false);
 
   // Check cache on mount (skip when the feature is disabled).
@@ -59,27 +58,16 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
     }
   }, [enabled]);
 
-  const generate = useCallback(async () => {
-    if (!enabled) return;
-    if (messages.length === 0) return;
-
-    // Check cache
-    const cached = queryClient.getQueryData<string>(cacheKey);
-    if (cached) {
-      setBriefText(cached);
-      return;
-    }
-
-    if (!user) return;
-
-    setIsStreaming(true);
-    setBriefText('');
-    setError(null);
-    abortRef.current = false;
-
-    try {
+  // The generation is a mutation (a one-shot side-effecting stream) rather than
+  // a query: it writes its result into the query cache keyed by day so it isn't
+  // regenerated on every screen visit, while streaming chunks into local state
+  // for the typewriter effect.
+  const generateMutation = useMutation<string, Error, void>({
+    mutationKey: cacheKey,
+    mutationFn: async () => {
       const prompt = buildPrompt(messages);
       let accumulated = '';
+      abortRef.current = false;
 
       for await (const delta of streamAliaChatCompletion(oxyServices.httpService, {
         model: 'alia-lite',
@@ -93,28 +81,34 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
       }
 
       if (!abortRef.current) {
-        // Cache with TTL
-        queryClient.setQueryData(cacheKey, accumulated, {
-          updatedAt: Date.now(),
-        });
-        // Set staleTime by setting defaults for this key
+        queryClient.setQueryData(cacheKey, accumulated, { updatedAt: Date.now() });
         queryClient.setQueryDefaults(cacheKey, {
           staleTime: BRIEF_CACHE_TTL,
           gcTime: BRIEF_CACHE_TTL,
         });
       }
-    } catch (err) {
-      if (!abortRef.current) {
-        setError(err instanceof Error ? err : new Error('Brief generation failed'));
-      }
-    } finally {
-      if (!abortRef.current) {
-        setIsStreaming(false);
-      }
-    }
-  }, [enabled, messages, queryClient, cacheKey, oxyServices, user]);
 
-  // Cleanup on unmount
+      return accumulated;
+    },
+  });
+
+  const { mutate: runGenerate } = generateMutation;
+
+  const generate = useCallback(() => {
+    if (!enabled || messages.length === 0 || !user) return;
+
+    // Serve from cache if present — avoids a redundant AI round-trip.
+    const cached = queryClient.getQueryData<string>(cacheKey);
+    if (cached) {
+      setBriefText(cached);
+      return;
+    }
+
+    setBriefText('');
+    runGenerate();
+  }, [enabled, messages.length, user, queryClient, cacheKey, runGenerate]);
+
+  // Cleanup on unmount — stop streaming into unmounted state.
   useEffect(() => {
     return () => {
       abortRef.current = true;
@@ -123,14 +117,16 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
 
   const regenerate = useCallback(() => {
     queryClient.removeQueries({ queryKey: cacheKey });
+    setBriefText('');
     generate();
   }, [generate, queryClient, cacheKey]);
 
   return {
     briefText,
-    isStreaming,
-    isLoading: isStreaming && briefText.length === 0,
-    error,
+    isStreaming: generateMutation.isPending,
+    isLoading: generateMutation.isPending && briefText.length === 0,
+    error: generateMutation.error,
+    generate,
     regenerate,
   };
 }

@@ -9,6 +9,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import type { OxyServices } from '@oxyhq/core';
 import { aliaChatCompletion } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
+import { parseLlmJson, SmartRepliesSchema } from '@/schemas/aiSchemas';
 import type { Message } from '@/services/emailApi';
 
 type HttpService = OxyServices['httpService'];
@@ -130,24 +132,17 @@ async function fetchSmartReplies(message: Message, http: HttpService): Promise<s
       temperature: 0.7,
     });
 
-    // Parse JSON array from response
-    const trimmed = response.trim();
-    // Handle potential markdown code blocks
-    const jsonStr = trimmed.startsWith('```')
-      ? trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-      : trimmed;
-
-    const parsed = JSON.parse(jsonStr);
-
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+    // Validate the model's JSON array; a malformed response yields no replies.
+    const parsed = parseLlmJson(response, SmartRepliesSchema);
+    if (!parsed || parsed.length === 0) {
       return [];
     }
 
-    // Filter and clean replies
+    // Clean replies: trim, drop empties, cap at 3 and 80 chars.
     return parsed
       .slice(0, 3)
-      .map((r: unknown) => (typeof r === 'string' ? r.trim() : ''))
-      .filter((r: string) => r.length > 0 && r.length <= 80);
+      .map((r) => r.trim())
+      .filter((r) => r.length > 0 && r.length <= 80);
   } catch {
     return [];
   }
@@ -157,7 +152,7 @@ export function useSmartReplies(message: Message | null | undefined): SmartRepli
   const { oxyServices } = useOxy();
 
   const query = useQuery({
-    queryKey: ['smartReplies', message?._id],
+    queryKey: aiKeys.smartReplies(message?._id),
     queryFn: () => fetchSmartReplies(message!, oxyServices.httpService),
     enabled: false,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message } from '@/services/emailApi';
 import {
   cancelMessageQueries,
@@ -25,6 +26,11 @@ export function useToggleStar() {
   const userId = user?.id ?? null;
 
   return useMutation({
+    // Offline-first: when the device is offline this mutation is queued
+    // (status "paused") and auto-resumes when connectivity returns. The
+    // mutationFn re-runs through the SDK `httpService`, so auth + CSRF are
+    // preserved on replay (see utils/offlineQueue.ts for the full rationale).
+    networkMode: 'offlineFirst',
     mutationFn: async ({ messageId, starred }: { messageId: string; starred: boolean }) => {
       if (!api) throw new Error('Email API not initialized');
       return await api.updateFlags(messageId, { starred });
@@ -59,8 +65,8 @@ export function useToggleStar() {
     },
     onSettled: () => {
       // Reconcile filtered caches (e.g. Starred) with the server.
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -72,6 +78,8 @@ export function useToggleRead() {
   const userId = user?.id ?? null;
 
   return useMutation({
+    // Offline-first — see useToggleStar for the queue/replay rationale.
+    networkMode: 'offlineFirst',
     mutationFn: async ({ messageId, seen }: { messageId: string; seen: boolean }) => {
       if (!api) throw new Error('Email API not initialized');
       return await api.updateFlags(messageId, { seen });
@@ -103,7 +111,7 @@ export function useToggleRead() {
     onSettled: () => {
       // Reconcile unseen counts with the server. Message/thread caches are
       // already synced from the server response in onSuccess.
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -113,6 +121,8 @@ export function useArchiveMessage() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Offline-first — see useToggleStar for the queue/replay rationale.
+    networkMode: 'offlineFirst',
     mutationFn: async ({ messageId, archiveMailboxId }: { messageId: string; archiveMailboxId: string }) => {
       if (!api) throw new Error('Email API not initialized');
       await api.moveMessage(messageId, archiveMailboxId);
@@ -137,8 +147,8 @@ export function useArchiveMessage() {
     },
     onSettled: () => {
       // Mark stale but don't trigger immediate refetch — optimistic update is already applied
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -148,6 +158,8 @@ export function useDeleteMessage() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Offline-first — see useToggleStar for the queue/replay rationale.
+    networkMode: 'offlineFirst',
     mutationFn: async ({
       messageId,
       trashMailboxId,
@@ -186,8 +198,8 @@ export function useDeleteMessage() {
     },
     onSettled: () => {
       // Mark stale but don't trigger immediate refetch — optimistic update is already applied
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -208,8 +220,8 @@ export function useSendMessage() {
       toast.error('Failed to send message.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -264,8 +276,8 @@ export function useSendMessageWithUndo() {
         try {
           await api.sendMessage(params);
           toast.success('Message sent.');
-          queryClient.invalidateQueries({ queryKey: ['messages'] });
-          queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+          queryClient.invalidateQueries({ queryKey: emailKeys.messages.root });
+          queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
           options?.onSuccess?.();
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : 'Failed to send message.';
@@ -303,7 +315,7 @@ export function useUpdateMessageLabels() {
         ...labels.filter((l) => !remove.includes(l)),
         ...add.filter((l) => !labels.includes(l)),
       ];
-      queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
+      queryClient.setQueryData<Message | null>(emailKeys.message.detail(messageId, userId), (old) =>
         old ? { ...old, labels: applyLabels(old.labels) } : old,
       );
       patchMessageInList(queryClient, messageId, (m) => ({ ...m, labels: applyLabels(m.labels) }));
@@ -315,7 +327,7 @@ export function useUpdateMessageLabels() {
     },
     onSettled: (_data, _err, { messageId }) => {
       // Only invalidate single message cache — list is already updated optimistically
-      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.message.byId(messageId) });
     },
   });
 }
@@ -343,7 +355,7 @@ export function useTogglePin() {
     },
     onSettled: () => {
       // Only invalidate mailboxes — pin flag is already synced optimistically
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -374,8 +386,8 @@ export function useSnoozeMessage() {
     },
     onSettled: () => {
       // Mark stale but don't trigger immediate refetch — optimistic update is already applied
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -408,8 +420,8 @@ export function useUnsnoozeMessage() {
     },
     onSettled: () => {
       // Mark stale but don't trigger immediate refetch — optimistic update is already applied
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -426,10 +438,10 @@ export function useBulkUpdateFlags() {
       return api.bulkUpdateFlags(messageIds, flags);
     },
     onMutate: async ({ messageIds, flags }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await queryClient.cancelQueries({ queryKey: emailKeys.messages.root });
 
-      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
-      const prevMailboxes = queryClient.getQueriesData({ queryKey: ['mailboxes'] });
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root });
+      const prevMailboxes = queryClient.getQueriesData({ queryKey: emailKeys.mailboxes.root });
 
       if (flags.seen !== undefined) {
         const ids = new Set(messageIds);
@@ -448,7 +460,7 @@ export function useBulkUpdateFlags() {
       }
 
       // Optimistically update all affected messages in a single pass
-      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) => {
         if (!old) return old;
         const ids = new Set(messageIds);
         return {
@@ -475,7 +487,7 @@ export function useBulkUpdateFlags() {
       toast.success('Messages updated.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -490,12 +502,12 @@ export function useBulkMoveMessages() {
       return api.bulkMoveMessages(messageIds, mailboxId);
     },
     onMutate: async ({ messageIds }) => {
-      await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await queryClient.cancelQueries({ queryKey: emailKeys.messages.root });
 
       const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
 
       // Optimistically remove all moved messages from current view
-      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: emailKeys.messages.root }, (old) => {
         if (!old) return old;
         const ids = new Set(messageIds);
         return {
@@ -516,8 +528,8 @@ export function useBulkMoveMessages() {
       toast.error('Failed to move messages.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root, refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -537,8 +549,8 @@ export function useSaveDraft() {
     onSettled: () => {
       // Refetch the Drafts list (the saved draft appears) and mailbox badges
       // (the Drafts unseen count) so the sidebar reflects the new draft.
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
   });
 }
@@ -561,7 +573,7 @@ function advanceSelectionPastMessage(
   // match by the mailbox prefix and take the first populated variant.
   const data = queryClient
     .getQueriesData<MessagesInfinite>({
-      queryKey: ['messages', useEmailStore.getState().currentMailbox?._id],
+      queryKey: emailKeys.messages.mailboxScope(useEmailStore.getState().currentMailbox?._id),
     })
     .find(([, cached]) => !!cached)?.[1];
   const messages = flatMessages(data);

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { QuotaUsage } from '@/services/emailApi';
 
 export function useQuota() {
@@ -9,7 +10,7 @@ export function useQuota() {
   const userId = user?.id ?? null;
 
   return useQuery<QuotaUsage>({
-    queryKey: ['quota', userId],
+    queryKey: emailKeys.quota(userId),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return api.getQuota();

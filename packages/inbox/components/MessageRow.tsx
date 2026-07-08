@@ -40,6 +40,7 @@ import { useColors } from '@/constants/theme';
 import { DENSITY_STYLES } from '@/constants/densityStyles';
 import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message, Attachment } from '@/services/emailApi';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
@@ -192,7 +193,7 @@ function MessageRowInner({
     if (!prefetchedRef.current && userId && api) {
       prefetchedRef.current = true;
       queryClient.prefetchQuery({
-        queryKey: ['message', message._id, userId],
+        queryKey: emailKeys.message.detail(message._id, userId),
         queryFn: async () => api.getMessage(message._id),
         staleTime: 60_000,
       });

@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Subscription, Pagination } from '@/services/emailApi';
 
 const PAGE_SIZE = 30;
@@ -13,7 +14,7 @@ export function useSubscriptions() {
   const api = useEmailStore((s) => s._api);
 
   return useInfiniteQuery<SubscriptionsPage>({
-    queryKey: ['subscriptions'],
+    queryKey: emailKeys.subscriptions,
     queryFn: async ({ pageParam = 0 }) => {
       if (!api) throw new Error('Email API not initialized');
       return await api.listSubscriptions({

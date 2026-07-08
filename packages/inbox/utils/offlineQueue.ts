@@ -1,14 +1,37 @@
 /**
- * Offline mutation queue.
+ * Offline strategy — what IS supported, and why raw fetch replay was rejected.
  *
- * When the app is offline, mutations (star, archive, delete, mark-read) are
- * queued in IndexedDB. When back online, the queue is flushed — either via
- * Background Sync (if supported) or via an online event listener.
+ * ── PRIMARY (supported) ──────────────────────────────────────────────
+ * Offline writes are handled by TanStack Query's paused-mutation mechanism,
+ * NOT by the raw-fetch queue below. The critical message mutations (toggleRead,
+ * toggleStar, archive, delete) set `networkMode: 'offlineFirst'`, so when the
+ * device is offline they enter status "paused" and auto-resume when the network
+ * returns (see `hooks/queries/queryClient.ts` for the resume + persistence
+ * wiring). Because replay re-runs the mutation's `mutationFn`, every retried
+ * request goes back through the SDK `httpService` and therefore keeps auth,
+ * CSRF, and token-refresh intact.
  *
- * Integrates with React Query's optimistic update pattern:
- * - onMutate: apply optimistically + enqueue if offline
- * - onError: rollback + keep in queue
- * - onSettled: flush queue if online
+ * ── REJECTED: raw fetch replay ───────────────────────────────────────
+ * The IndexedDB/localStorage queue in this file records `{ url, method, headers,
+ * body }` and replays them with a bare `fetch`. That was deliberately NOT wired
+ * into the app's mutations because a replayed raw request:
+ *   - bypasses the SDK `httpService` (no automatic bearer-token refresh, so a
+ *     token that expired while offline replays with a stale/absent Authorization
+ *     header and 401s), and
+ *   - carries no CSRF token, which the API requires for state-changing calls.
+ * Persisting captured auth/CSRF headers to disk would also be a security
+ * regression. The functions below are retained only as a platform-capability
+ * probe (`isOfflineQueueSupported`) and connectivity helpers; `enqueue` /
+ * `flushQueue` have no producers in the app.
+ *
+ * ── TODO (cross-restart replay) ──────────────────────────────────────
+ * Paused mutations are persisted (so they survive a cold restart), but full
+ * cross-restart replay additionally needs `queryClient.setMutationDefaults(key,
+ * { mutationFn })` for each mutation key so the dehydrated mutation can be
+ * rehydrated with a live `mutationFn`. Within a single session the closure is
+ * alive and replay works today. Adding `setMutationDefaults` keyed on the SDK
+ * `api` instance is the clean upstream-friendly next step; it is intentionally
+ * NOT hacked in here with a raw-fetch fallback.
  */
 
 import { Platform } from 'react-native';

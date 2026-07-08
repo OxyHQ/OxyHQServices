@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import { toast } from '@oxyhq/bloom';
 
 export function useCreateMailbox() {
@@ -13,7 +14,7 @@ export function useCreateMailbox() {
     },
     onSuccess: () => {
       toast.success('Folder created.');
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
     onError: () => {
       toast.error('Failed to create folder.');
@@ -32,7 +33,7 @@ export function useDeleteMailbox() {
     },
     onSuccess: () => {
       toast.success('Folder deleted.');
-      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.mailboxes.root });
     },
     onError: () => {
       toast.error('Failed to delete folder.');

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Contact } from '@/services/emailApi';
 
 const CONTACTS_LIMIT = 200;
@@ -14,7 +15,7 @@ export function useContacts(query?: string) {
   const q = query?.trim() || undefined;
 
   return useQuery<Contact[]>({
-    queryKey: ['contacts', q ?? null],
+    queryKey: emailKeys.contacts.list(q),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       const res = await api.listContacts({ q, limit: CONTACTS_LIMIT });
