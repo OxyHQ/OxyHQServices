@@ -360,7 +360,7 @@
     },
     "packages/contracts": {
       "name": "@oxyhq/contracts",
-      "version": "0.13.0",
+      "version": "0.13.1",
       "dependencies": {
         "zod": "^3.25.64",
       },
@@ -373,7 +373,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "9.1.0",
+      "version": "9.2.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
@@ -589,7 +589,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "19.0.1",
+      "version": "19.1.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "color": "^4.2.3",
@@ -639,7 +639,7 @@
       "peerDependencies": {
         "@expo/vector-icons": "^15.0.3",
         "@oxyhq/bloom": ">=0.16.0",
-        "@oxyhq/core": "^9.0.0",
+        "@oxyhq/core": "^9.2.0",
         "@react-native-async-storage/async-storage": "^2.0.0",
         "@react-native-community/netinfo": "^11.4.1",
         "@tanstack/query-async-storage-persister": "^5.101",
