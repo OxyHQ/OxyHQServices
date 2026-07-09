@@ -156,6 +156,19 @@ export async function runSessionColdBoot(
       if (!session?.accessToken) {
         return { kind: 'skip' };
       }
+      // `verifyChallenge` mints a rotating deviceSecret; persist it so the next
+      // boot can use the faster device-secret-mint lane (sockets + tab-focus
+      // re-mint depend on the credential being in the store).
+      if (session.deviceId && session.deviceSecret) {
+        await store.save({
+          sessionId: session.sessionId,
+          userId: session.user.id,
+          deviceId: session.deviceId,
+          deviceSecret: session.deviceSecret,
+          accessToken: session.accessToken,
+          expiresAt: session.expiresAt,
+        });
+      }
       return {
         kind: 'session',
         session: {

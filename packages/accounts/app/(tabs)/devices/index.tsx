@@ -77,7 +77,7 @@ export default function DevicesScreen() {
         },
       ]
     );
-  }, [oxyServices, alert, refetch, t]);
+  }, [oxyServices, refetch, t]);
 
   // Transform devices for UI
   const deviceItems = useMemo(() => {

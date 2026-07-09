@@ -589,7 +589,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "19.1.0",
+      "version": "19.1.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "color": "^4.2.3",

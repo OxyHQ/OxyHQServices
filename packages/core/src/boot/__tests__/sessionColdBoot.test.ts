@@ -258,6 +258,26 @@ describe('runSessionColdBoot — shared-key-signin (native)', () => {
     );
   });
 
+  it('persists deviceSecret from shared-key verifyChallenge for the next mint lane', async () => {
+    const store = createMemoryAuthStateStore();
+    const signInWithSharedIdentity = jest.fn(async () => ({
+      ...sharedSession,
+      deviceSecret: 'shared-mint-secret',
+    }));
+    const { oxy } = makeOxy({ signInWithSharedIdentity });
+
+    await runSessionColdBoot({ oxy, store, platform: NATIVE });
+
+    const persisted = await store.load();
+    expect(persisted).toMatchObject({
+      sessionId: 'sess-shared',
+      userId: 'user-shared',
+      deviceId: 'dev-1',
+      deviceSecret: 'shared-mint-secret',
+      accessToken: 'access-shared',
+    });
+  });
+
   it('does NOT run the shared-key lane on web', async () => {
     const store = createMemoryAuthStateStore();
     const signInWithSharedIdentity = jest.fn(async () => sharedSession);
