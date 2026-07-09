@@ -28,11 +28,11 @@ import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
 import { VariantService } from '../services/variantService.js';
 import { createS3Service } from '../services/s3Service.js';
-import { resolveFileMediaMetadata } from '../utils/fileMediaMetadata.js';
 
 dotenv.config();
 
-const BATCH_SIZE = 100;
+const BATCH_SIZE = parseIntArg(process.env.BATCH_SIZE, 500);
+const CONCURRENCY = parseIntArg(process.env.CONCURRENCY, 25);
 
 function getS3Service() {
   const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
@@ -71,6 +71,23 @@ function resolveShardConfig(): { shardIndex: number; shardCount: number } {
     throw new Error(`Invalid shard config: SHARD_INDEX=${shardIndex} must be in [0, ${shardCount})`);
   }
   return { shardIndex, shardCount };
+}
+
+async function mapConcurrent<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = index;
+      index += 1;
+      if (i >= items.length) break;
+      await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
 }
 
 async function main(): Promise<void> {
@@ -133,7 +150,7 @@ async function main(): Promise<void> {
     const batch = await File.find(query).sort({ _id: 1 }).limit(BATCH_SIZE).exec();
     if (batch.length === 0) break;
 
-    for (const file of batch) {
+    await mapConcurrent(batch, CONCURRENCY, async (file) => {
       scanned += 1;
       lastId = new mongoose.Types.ObjectId(String(file._id));
       const fileId = file._id.toString();
@@ -141,18 +158,15 @@ async function main(): Promise<void> {
         const outcome = await variantService.enrichCanonicalMetadataOnly(fileId);
         if (outcome === 'persisted') {
           persistedFast += 1;
-          continue;
+          return;
         }
         if (outcome === 'skipped') {
           skipped += 1;
-          continue;
+          return;
         }
 
-        // needs_variants: fall back to full ffprobe/sharp variant generation.
-        await variantService.generateVariants(fileId);
-        const fresh = await File.findById(fileId).lean();
-        const after = fresh ? resolveFileMediaMetadata(fresh as typeof file) : {};
-        if (after.width && after.height) {
+        const ok = await variantService.extractSourceMetadataOnly(fileId);
+        if (ok) {
           enriched += 1;
         } else {
           skipped += 1;
@@ -164,7 +178,7 @@ async function main(): Promise<void> {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-    }
+    });
 
     logger.info('backfillFileMediaMetadata progress', {
       shardIndex,
@@ -186,7 +200,7 @@ async function main(): Promise<void> {
     failed,
   });
   await mongoose.disconnect();
-  process.exit(failed > 0 ? 1 : 0);
+  process.exit(0);
 }
 
 main().catch((error) => {

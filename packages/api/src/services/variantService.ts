@@ -385,6 +385,51 @@ export class VariantService {
   }
 
   /**
+   * Metadata-only backfill: ffprobe/sharp against the canonical S3 object, persist
+   * `metadata.media`, skip variant generation. Used by one-shot corpus backfills.
+   */
+  async extractSourceMetadataOnly(fileId: string): Promise<boolean> {
+    const file = await File.findById(fileId);
+    if (!file?.storageKey) {
+      return false;
+    }
+
+    if (file.mime.startsWith('video/')) {
+      const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+      const probed = await this.extractVideoMetadataFromUrl(videoUrl);
+      const width = typeof probed.width === 'number' && probed.width > 0 ? probed.width : undefined;
+      const height = typeof probed.height === 'number' && probed.height > 0 ? probed.height : undefined;
+      if (!width || !height) {
+        return false;
+      }
+      const durationSec =
+        typeof probed.duration === 'number' && probed.duration > 0 ? probed.duration : undefined;
+      applyCanonicalMediaMetadata(file, { width, height, durationSec });
+      await file.save();
+      return true;
+    }
+
+    if (file.mime.startsWith('image/')) {
+      const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
+      const meta = await sharp(originalBuffer, { failOn: 'none' }).metadata();
+      const width = typeof meta.width === 'number' && meta.width > 0 ? meta.width : undefined;
+      const height = typeof meta.height === 'number' && meta.height > 0 ? meta.height : undefined;
+      if (!width || !height) {
+        return false;
+      }
+      file.metadata = {
+        ...(file.metadata ?? {}),
+        image: { width, height },
+      };
+      applyCanonicalMediaMetadata(file, { width, height });
+      await file.save();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Generate all standard image variants using Sharp.
    */
   private async generateImageVariants(file: IFile): Promise<void> {
