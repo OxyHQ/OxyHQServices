@@ -164,7 +164,6 @@ const ApplicationSchema = new Schema<IApplication>(
 
 ApplicationSchema.index({ createdByUserId: 1, status: 1 });
 ApplicationSchema.index({ ownerAccountId: 1, status: 1 });
-ApplicationSchema.index({ status: 1 });
 ApplicationSchema.index({ createdAt: -1 });
 
 export const Application = mongoose.model<IApplication>('Application', ApplicationSchema);

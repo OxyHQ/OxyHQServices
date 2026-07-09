@@ -12,19 +12,10 @@ import {
 } from '../utils/crossOriginRestore';
 import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import type { CommitInput } from '../context/oxyContextTypes';
 
 /** How long the cold boot waits for the post-boot SessionClient handoff (ms). */
 export const SESSION_HANDOFF_DEADLINE_MS = 6000;
-
-export interface ColdBootCommitInput {
-  sessionId: string;
-  accessToken: string;
-  userId: string;
-  deviceId?: string;
-  deviceSecret?: string;
-  expiresAt?: string;
-  user?: unknown;
-}
 
 export interface RunProviderColdBootOptions {
   oxyServices: OxyServices;
@@ -33,7 +24,10 @@ export interface RunProviderColdBootOptions {
   authRedirectUri?: string;
   sessionClient: SessionClient;
   syncDeviceCredentialToHost: () => Promise<void>;
-  commitSession: (input: ColdBootCommitInput, options: { activate: boolean }) => Promise<void>;
+  commitSession: (
+    input: CommitInput,
+    options: { activate: boolean; hubSync?: boolean },
+  ) => Promise<void>;
   markAuthResolved: () => void;
   setTokenReady: (ready: boolean) => void;
 }
