@@ -62,3 +62,35 @@ export const deviceTokenMintResponseSchema = z.object({
 
 export type DeviceTokenMintRequest = z.infer<typeof deviceTokenMintRequestSchema>;
 export type DeviceTokenMintResponse = z.infer<typeof deviceTokenMintResponseSchema>;
+
+/* -------------------------------------------------------------------------- */
+/*  Hub ticket — server-side cross-origin device credential sync               */
+/* -------------------------------------------------------------------------- */
+
+/** Request body for `POST /session/device/hub-ticket`. */
+export const deviceHubTicketIssueRequestSchema = z.object({
+  returnOrigin: z.string().min(1),
+});
+
+/** Response from `POST /session/device/hub-ticket`. */
+export const deviceHubTicketIssueResponseSchema = z.object({
+  ticket: z.string().min(1),
+  expiresIn: z.number().int().positive(),
+});
+
+/** Request body for `POST /session/device/redeem-ticket`. */
+export const deviceHubTicketRedeemRequestSchema = z.object({
+  ticket: z.string().min(1),
+  returnOrigin: z.string().min(1),
+});
+
+/** Response from `POST /session/device/redeem-ticket`. */
+export const deviceHubTicketRedeemResponseSchema = z.object({
+  deviceId: z.string().min(1),
+  deviceSecret: z.string().min(1),
+});
+
+export type DeviceHubTicketIssueRequest = z.infer<typeof deviceHubTicketIssueRequestSchema>;
+export type DeviceHubTicketIssueResponse = z.infer<typeof deviceHubTicketIssueResponseSchema>;
+export type DeviceHubTicketRedeemRequest = z.infer<typeof deviceHubTicketRedeemRequestSchema>;
+export type DeviceHubTicketRedeemResponse = z.infer<typeof deviceHubTicketRedeemResponseSchema>;

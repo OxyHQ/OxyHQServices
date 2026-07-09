@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import { deviceTokenMintRequestSchema } from '@oxyhq/contracts';
+import {
+  deviceTokenMintRequestSchema,
+  deviceHubTicketIssueRequestSchema,
+  deviceHubTicketRedeemRequestSchema,
+} from '@oxyhq/contracts';
+import { isOfficialWebOrigin, normalizeOfficialReturnOrigin } from '@oxyhq/core/server';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
@@ -23,40 +28,17 @@ const deviceTokenLimiter = rateLimit({
   max: 30,
 });
 
-const deviceProvisionLimiter = rateLimit({
-  prefix: 'rl:session:device-provision:',
+const hubTicketIssueLimiter = rateLimit({
+  prefix: 'rl:session:hub-ticket:',
   windowMs: 60_000,
-  max: 20,
+  max: 30,
 });
 
-/**
- * POST /session/device/provision — mint the initial device secret for a new device.
- *
- * PUBLIC: called from auth.oxy.so/device/join when the hub has no local
- * credential yet. Creates the DeviceSession doc if absent and returns a fresh
- * `deviceSecret` exactly once (same rotation primitive as sign-in).
- */
-router.post(
-  '/provision',
-  deviceProvisionLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const body = req.body as { deviceId?: unknown };
-    let deviceId = typeof body.deviceId === 'string' && body.deviceId.length > 0
-      ? body.deviceId
-      : undefined;
-    if (!deviceId) {
-      const { generateDeviceId } = await import('../utils/deviceUtils.js');
-      deviceId = generateDeviceId();
-    }
-    await deviceSessionService.getState(deviceId);
-    const deviceSecret = await deviceSessionService.issueDeviceSecret(deviceId);
-    if (!deviceSecret) {
-      res.status(500).json({ error: 'provision_failed' });
-      return;
-    }
-    res.json({ data: { deviceId, deviceSecret } });
-  }),
-);
+const hubTicketRedeemLimiter = rateLimit({
+  prefix: 'rl:session:redeem-ticket:',
+  windowMs: 60_000,
+  max: 30,
+});
 
 /**
  * POST /session/device/token — the phase-2c zero-cookie mint.
@@ -129,6 +111,77 @@ router.post(
         expiresAt: activeToken.expiresAt,
         nextDeviceSecret,
         state,
+      },
+    });
+  }),
+);
+
+/**
+ * POST /session/device/hub-ticket — mint a one-time ticket to sync device
+ * credentials onto another official origin (typically auth.oxy.so).
+ *
+ * Bearer required; `deviceId` comes from the validated JWT claim.
+ */
+router.post(
+  '/hub-ticket',
+  hubTicketIssueLimiter,
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const parsed = deviceHubTicketIssueRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'returnOrigin is required' });
+      return;
+    }
+
+    const returnOrigin = normalizeOfficialReturnOrigin(parsed.data.returnOrigin);
+    if (!returnOrigin || !isOfficialWebOrigin(returnOrigin)) {
+      res.status(400).json({ error: 'invalid_return_origin' });
+      return;
+    }
+
+    const deviceId = resolveCallerDeviceId(req);
+    if (!deviceId) {
+      res.status(401).json({ error: 'No device' });
+      return;
+    }
+
+    const { issueHubTicket } = await import('../services/deviceHubTicket.service.js');
+    const issued = await issueHubTicket({ deviceId, returnOrigin });
+    res.json({ data: issued });
+  }),
+);
+
+/**
+ * POST /session/device/redeem-ticket — exchange a one-time hub ticket for a
+ * fresh device secret. PUBLIC: ticket possession is the proof.
+ */
+router.post(
+  '/redeem-ticket',
+  hubTicketRedeemLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = deviceHubTicketRedeemRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'ticket and returnOrigin are required' });
+      return;
+    }
+
+    const returnOrigin = normalizeOfficialReturnOrigin(parsed.data.returnOrigin);
+    if (!returnOrigin || !isOfficialWebOrigin(returnOrigin)) {
+      res.status(400).json({ error: 'invalid_return_origin' });
+      return;
+    }
+
+    const { redeemHubTicket } = await import('../services/deviceHubTicket.service.js');
+    const outcome = await redeemHubTicket(parsed.data.ticket, returnOrigin);
+    if (!outcome.ok) {
+      res.status(401).json({ error: 'invalid_ticket' });
+      return;
+    }
+
+    res.json({
+      data: {
+        deviceId: outcome.deviceId,
+        deviceSecret: outcome.deviceSecret,
       },
     });
   }),

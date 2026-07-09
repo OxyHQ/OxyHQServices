@@ -63,7 +63,7 @@ Present when the entry is a **managed account** (org / project / bot) the operat
 
 The device set stores exactly **one `sessionId` per account**. Every surface that authenticates the same account on the same device converges on that session (`resolveRegisteredSession`) instead of minting per-origin sessions — this is what makes all apps on a device join the same socket room and see each other's changes. Re-adding the same account with a *different* sessionId (a deliberate re-auth) replaces the entry and deactivates the displaced session.
 
-OAuth token exchange, password login, QR handoff, and IdP handoff all thread the same `deviceId` so cross-origin web apps (official domains like `mention.earth` and third-party RPs) share one `DeviceSession` document server-side. Each origin still persists its own `{ deviceId, deviceSecret }` copy in `localStorage` (zero cookies); convergence happens via IdP hub handoff + silent OAuth (`prompt=none`) documented in [`SESSION-ARCHITECTURE.md`](../SESSION-ARCHITECTURE.md).
+OAuth token exchange, password login, QR handoff, and hub-ticket sync all thread the same `deviceId` so cross-origin web apps (official domains like `mention.earth` and third-party RPs) share one `DeviceSession` document server-side. Each origin still persists its own `{ deviceId, deviceSecret }` copy in `localStorage` (zero cookies); convergence happens via hub-ticket sync + silent OAuth (`prompt=none`) documented in [`SESSION-ARCHITECTURE.md`](../SESSION-ARCHITECTURE.md).
 
 ### Self-healing
 
@@ -113,8 +113,10 @@ Router: `packages/api/src/routes/sessionDevice.ts`, mounted at `/session/device`
 | POST | `/session/device/add` | — | Registers the **caller's own bearer session** (account id from `req.user`, session id from the JWT) into the device set. Idempotent: re-registering the same account+session (the reload handoff) is a pure no-op — no active flip, no revision bump, no broadcast. A different sessionId for an existing account replaces the entry and deactivates the displaced session. `401` when the session record is expired/revoked. |
 | POST | `/session/device/switch` | `{ accountId }` | Sets `activeAccountId` after re-validating the target session. `404` when the account is not on this device; `403` (plus a broadcast of the healed state) when the target session was revoked. |
 | POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes the account (or all). Cascades: removes operated accounts of the signed-out operator, deactivates each removed session, and — on `all` only — clears the device's `secretHash`. Elects the next remaining account as active (or `null`). |
+| POST | `/session/device/hub-ticket` | `{ returnOrigin }` | **Bearer required.** Mints a one-time ticket (~60s TTL) so an official satellite app can redirect to `auth.oxy.so/sync` and plant the same `{ deviceId, deviceSecret }` on the IdP hub origin. `deviceId` comes from the JWT claim. Rate limit: `rl:session:hub-ticket:`. |
+| POST | `/session/device/redeem-ticket` | `{ ticket, returnOrigin }` | **Public.** Single-use redeem → `{ deviceId, deviceSecret }` via `issueDeviceSecret`. Validates `returnOrigin` against the official allowlist. Rate limit: `rl:session:redeem-ticket:`. |
 
-**Response shape (all routes):** `{ data: DeviceSessionSync }` — i.e. `{ data: { state, activeToken } }` validating `deviceSessionSyncSchema`. `activeToken` is minted per response after re-validating the active account's session; it is `null` rather than stale when the session cannot mint.
+**Response shape (all routes):** `{ data: DeviceSessionSync }` — i.e. `{ data: { state, activeToken } }` validating `deviceSessionSyncSchema`. `activeToken` is minted per response after re-validating the active account's session; it is `null` rather than stale when the session cannot mint. Hub-ticket routes return `{ data: { ticket, expiresIn } }` or `{ data: { deviceId, deviceSecret } }` instead.
 
 **Broadcast discipline:** every route broadcasts `session_state` to the device room after a *real* change (`changed === true`); idempotent no-ops stay silent so reload storms do not fan out.
 

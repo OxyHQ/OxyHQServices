@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3000",
-    "build": "node ../core/scripts/sync-device-join-strip.mjs . && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint",

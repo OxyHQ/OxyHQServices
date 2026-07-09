@@ -9,16 +9,11 @@
  * See: https://github.com/expo/expo/issues/27938
  */
 
-const { spawn, execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 const path = require('path');
 
 const EXPORT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard limit (DO build instances are slow)
 const projectRoot = path.resolve(__dirname, '..');
-
-execFileSync(process.execPath, [
-  path.join(__dirname, '../../core/scripts/sync-device-join-strip.mjs'),
-  projectRoot,
-], { stdio: 'inherit' });
 
 const child = spawn('bun', ['x', 'expo', 'export', '--platform', 'web'], {
   cwd: projectRoot,

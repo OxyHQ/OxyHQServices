@@ -62,14 +62,16 @@ Key props (`OxyProviderProps`):
 
 | Prop | Default | Purpose |
 |------|---------|---------|
-| `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
+| `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for silent OAuth restore and the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
+| `authRedirectUri` | origin | OAuth redirect URI for silent restore and third-party sign-in. Defaults to the current web origin (origin-only, e.g. `https://mention.earth`). Optional `/oauth/callback` path for new apps — mount `OxyOAuthCallback` on that route. |
+| `hubSync` | `true` | After interactive sign-in on an official web app, redirect once to `auth.oxy.so/sync` to plant credentials on the IdP hub. Set `false` on the IdP itself (`auth.oxy.so`). |
 | `baseURL` | — | Oxy API origin (`https://api.oxy.so`). |
 | `requireAuth` | `'off'` | Convenience wrapper: `'soft'` / `'hard'` wraps children in `<RequireOxyAuth prompt=…>`. |
 | `storageKeyPrefix`, `queryClient`, `oxyServices`, `onAuthStateChange` | — | Advanced overrides. |
 
 ### Device-first cold boot
 
-On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native). Cold boot never auto-redirects to a login page; official web apps without a local credential redirect once to `auth.oxy.so/device/join` first.
+On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native). Cold boot never auto-redirects to a login page; web apps without a local credential attempt **silent OAuth** (`auth.oxy.so/authorize?prompt=none` + PKCE) once per navigation. After interactive sign-in on an official app, `syncHubAfterSignIn` redirects to `auth.oxy.so/sync` so the IdP hub holds the same credentials.
 
 ## Session model (consumed from `@oxyhq/core`)
 

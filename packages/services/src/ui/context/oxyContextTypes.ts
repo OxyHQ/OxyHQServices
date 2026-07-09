@@ -106,6 +106,8 @@ export interface OxyContextProviderProps {
   authRedirectUri?: string;
   storageKeyPrefix?: string;
   clientId?: string;
+  /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
+  hubSync?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }

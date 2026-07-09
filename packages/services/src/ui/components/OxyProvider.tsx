@@ -116,6 +116,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authRedirectUri,
     queryClient: providedQueryClient,
     requireAuth = 'off',
+    hubSync = true,
 }) => {
 
     // Dynamic KeyboardProvider for native. Uses variable indirection
@@ -310,6 +311,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     authRedirectUri={authRedirectUri}
                     storageKeyPrefix={storageKeyPrefix}
                     clientId={clientId}
+                    hubSync={hubSync}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
                     {requireAuth === 'off' ? (

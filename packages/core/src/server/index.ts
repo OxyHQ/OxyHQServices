@@ -69,3 +69,11 @@ export { verifySecret } from './verifySecret';
 // Pure host handling (no browser deps), so it is safe on the server subpath and
 // lets `@oxyhq/api` derive `auth.<apex>` without duplicating PSL logic.
 export { registrableApex } from '../utils/registrableApex';
+export {
+  buildIdpHubOrigin,
+  buildHubSyncUrl,
+  isIdpHubOrigin,
+  isOfficialWebOrigin,
+  normalizeOfficialReturnOrigin,
+  parseHubSyncReturnUrl,
+} from '../utils/officialOrigins';

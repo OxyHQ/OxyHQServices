@@ -15,8 +15,12 @@
  */
 import {
   deviceTokenMintResponseSchema,
+  deviceHubTicketIssueResponseSchema,
+  deviceHubTicketRedeemResponseSchema,
   safeParseContract,
   type DeviceTokenMintResponse,
+  type DeviceHubTicketIssueResponse,
+  type DeviceHubTicketRedeemResponse,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 
@@ -58,19 +62,42 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
       }
     }
 
-    /** Mint the initial device secret for a new device (hub join provisioning). */
-    async provisionDevice(deviceId?: string): Promise<{ deviceId: string; deviceSecret: string }> {
+    /** Mint a one-time hub sync ticket (bearer required). */
+    async issueHubTicket(returnOrigin: string): Promise<DeviceHubTicketIssueResponse> {
       try {
-        const res = await this.makeRequest<{ deviceId: string; deviceSecret: string }>(
+        const res = await this.makeRequest<unknown>(
           'POST',
-          '/session/device/provision',
-          deviceId ? { deviceId } : {},
+          '/session/device/hub-ticket',
+          { returnOrigin },
+          { cache: false },
+        );
+        const parsed = safeParseContract(deviceHubTicketIssueResponseSchema, res);
+        if (!parsed) {
+          throw new Error('session/device/hub-ticket returned an unexpected response shape');
+        }
+        return parsed;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /** Redeem a hub sync ticket for a fresh device secret (public). */
+    async redeemHubTicket(
+      ticket: string,
+      returnOrigin: string,
+    ): Promise<DeviceHubTicketRedeemResponse> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/session/device/redeem-ticket',
+          { ticket, returnOrigin },
           { cache: false, skipAuth: true },
         );
-        if (!res?.deviceId || !res?.deviceSecret) {
-          throw new Error('session/device/provision returned an unexpected response shape');
+        const parsed = safeParseContract(deviceHubTicketRedeemResponseSchema, res);
+        if (!parsed) {
+          throw new Error('session/device/redeem-ticket returned an unexpected response shape');
         }
-        return res;
+        return parsed;
       } catch (error) {
         throw this.handleError(error);
       }

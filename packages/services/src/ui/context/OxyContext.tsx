@@ -25,6 +25,7 @@ import {
   createAccountDialogController,
   refreshPersistedSession,
   logger as loggerUtil,
+  syncHubAfterSignIn,
 } from '@oxyhq/core';
 import type { SecurityAlert } from '@oxyhq/contracts';
 import {
@@ -34,7 +35,7 @@ import {
 import { redirectToAuthorize } from '../components/oauthNavigation';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { runProviderColdBoot } from '../boot/runProviderColdBoot';
-import { loadPersistedDeviceCredential } from '../utils/deviceJoin';
+import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useLanguageManagement } from '../hooks/useLanguageManagement';
@@ -77,6 +78,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
+  hubSync = true,
   onAuthStateChange,
   onError,
 }) => {
@@ -476,7 +478,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const commitSession = useCallback(
     async (
       input: CommitInput,
-      options: { activate: boolean },
+      options: { activate: boolean; hubSync?: boolean },
     ): Promise<void> => {
       if (input.accessToken) {
         oxyServices.setTokens(input.accessToken);
@@ -565,8 +567,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onAuthStateChangeRef.current?.(fullUser);
       }
       markAuthResolvedRef.current();
+
+      if (options.activate && options.hubSync && hubSync && isWebBrowser()) {
+        try {
+          await syncHubAfterSignIn(oxyServices, { enabled: hubSync });
+        } catch (hubError) {
+          if (__DEV__) {
+            loggerUtil.debug(
+              'Hub sync after sign-in failed (non-fatal)',
+              { component: 'OxyContext', method: 'commitSession' },
+              hubError as unknown,
+            );
+          }
+        }
+      }
     },
-    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger],
+    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger, hubSync],
   );
   const commitSessionRef = useRef(commitSession);
   commitSessionRef.current = commitSession;
@@ -590,7 +606,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           userId: session.user.id,
           user: session.user,
         },
-        { activate: true },
+        { activate: true, hubSync: true },
       );
     },
     [commitSession],
@@ -683,7 +699,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           userId: result.user.id,
           user: result.user,
         },
-        { activate: true },
+        { activate: true, hubSync: true },
       );
       return { status: 'ok', ...(result.securityAlert ? { securityAlert: result.securityAlert } : {}) };
     },
@@ -715,7 +731,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           userId: result.user.id,
           user: result.user,
         },
-        { activate: true },
+        { activate: true, hubSync: true },
       );
       return { securityAlert: result.securityAlert };
     },

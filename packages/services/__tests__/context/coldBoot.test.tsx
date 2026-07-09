@@ -21,7 +21,17 @@
 import React from 'react';
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AUTH_STATE_STORAGE_KEY, type User } from '@oxyhq/core';
+import {
+  AUTH_STATE_STORAGE_KEY,
+  OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
+  OXY_SILENT_OAUTH_ATTEMPTED_KEY,
+  type User,
+} from '@oxyhq/core';
+
+const redirectToAuthorize = jest.fn();
+jest.mock('../../src/ui/components/oauthNavigation', () => ({
+  redirectToAuthorize: (...args: unknown[]) => redirectToAuthorize(...args),
+}));
 
 const fakeSessionClient = {
   getState: jest.fn(() => null),
@@ -121,11 +131,12 @@ describe('OxyContext cold boot (device-first)', () => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     capturedContext = null;
+    redirectToAuthorize.mockClear();
     useAuthStore.getState().logout();
     Object.values(fakeSessionClient).forEach((fn) => (fn as jest.Mock).mockClear());
   });
 
-  it('a signed-out boot on an official app without a device id redirects to join once', async () => {
+  it('a signed-out boot on an official app without a device id starts silent OAuth once', async () => {
     const { stub } = buildStub();
 
     renderProvider(stub);
@@ -134,7 +145,10 @@ describe('OxyContext cold boot (device-first)', () => {
 
     expect(capturedContext?.isAuthenticated).toBe(false);
     expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
-    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBe('1');
+    expect(redirectToAuthorize).toHaveBeenCalledTimes(1);
+    expect(redirectToAuthorize.mock.calls[0]?.[0]).toContain('prompt=none');
+    expect(window.sessionStorage.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY)).toBe('1');
+    expect(window.sessionStorage.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY)).toBe('1');
   });
 
   it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
@@ -171,6 +185,7 @@ describe('OxyContext cold boot (device-first)', () => {
     await waitFor(() => expect(fakeSessionClient.addCurrentAccount).toHaveBeenCalledTimes(1));
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
     expect(fakeSessionClient.start).toHaveBeenCalled();
+    expect(redirectToAuthorize).not.toHaveBeenCalled();
   });
 
   it('restores a session when persisted device credentials exist', async () => {
@@ -192,6 +207,7 @@ describe('OxyContext cold boot (device-first)', () => {
     await waitFor(() => expect(capturedContext?.isAuthenticated).toBe(true));
 
     expect(stub.mintFromDeviceSecret).toHaveBeenCalledWith('dev-legacy', 'legacy.secret');
-    expect(window.sessionStorage.getItem('oxy.device_join_attempted')).toBeNull();
+    expect(window.sessionStorage.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY)).toBeNull();
+    expect(redirectToAuthorize).not.toHaveBeenCalled();
   });
 });

@@ -202,6 +202,10 @@ export {
     deviceSessionSyncSchema,
     deviceTokenMintRequestSchema,
     deviceTokenMintResponseSchema,
+    deviceHubTicketIssueRequestSchema,
+    deviceHubTicketIssueResponseSchema,
+    deviceHubTicketRedeemRequestSchema,
+    deviceHubTicketRedeemResponseSchema,
 } from './deviceSession';
 
 export type {
@@ -211,6 +215,10 @@ export type {
     DeviceSessionSync,
     DeviceTokenMintRequest,
     DeviceTokenMintResponse,
+    DeviceHubTicketIssueRequest,
+    DeviceHubTicketIssueResponse,
+    DeviceHubTicketRedeemRequest,
+    DeviceHubTicketRedeemResponse,
 } from './deviceSession';
 
 export {

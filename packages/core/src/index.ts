@@ -535,22 +535,20 @@ export {
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
-    OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-    OXY_DEVICE_JOIN_PENDING_KEY,
-    DEVICE_JOIN_FRAGMENT_DEVICE_ID,
-    DEVICE_JOIN_FRAGMENT_DEVICE_SECRET,
     buildIdpHubOrigin,
-    buildDeviceJoinUrl,
-    buildDeviceJoinReturnUrl,
-    isAllowedDeviceJoinOrigin,
+    buildHubSyncUrl,
     isIdpHubOrigin,
-    parseDeviceJoinReturnUrl,
-    resolveHubDeviceCredentialForJoin,
-    readPendingDeviceJoinCredential,
-    parseDeviceJoinFragment,
-    stripDeviceJoinFragmentFromUrl,
-} from './utils/deviceJoin';
-export type { DeviceJoinFragment, DeviceJoinHubClient } from './utils/deviceJoin';
+    isOfficialWebOrigin,
+    isAllowedDeviceJoinOrigin,
+    normalizeOfficialReturnOrigin,
+    parseHubSyncReturnUrl,
+} from './utils/officialOrigins';
+
+export {
+    syncHubAfterSignIn,
+    redeemHubTicketOnHub,
+} from './session/hubSync';
+export type { SyncHubAfterSignInOptions } from './session/hubSync';
 
 // ---------------------------------------------------------------------------
 // Session sync (device-scoped multi-account session client)

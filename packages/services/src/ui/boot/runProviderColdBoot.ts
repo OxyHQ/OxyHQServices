@@ -1,18 +1,11 @@
 import {
-  isAllowedDeviceJoinOrigin,
-  isIdpHubOrigin,
   logger as loggerUtil,
   runSessionColdBoot,
   type AuthStateStore,
   type OxyServices,
 } from '@oxyhq/core';
 import type { SessionClient } from '@oxyhq/core';
-import {
-  applyDeviceJoinReturn,
-  clearDeviceJoinAttemptFlag,
-  loadPersistedDeviceCredential,
-  maybeRedirectForDeviceJoin,
-} from '../utils/deviceJoin';
+import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
 import {
   consumeSilentOAuthError,
   maybeStartSilentOAuthRestore,
@@ -49,11 +42,9 @@ export interface RunProviderColdBootOptions {
  * Device-first cold boot for `@oxyhq/services` providers.
  *
  * Ordered pipeline:
- * 1. Apply device-join return fragment (web)
- * 2. Complete OAuth authorization-code return (web)
- * 3. Redirect to auth.oxy.so/device/join when no local credential (official web)
- * 4. `runSessionColdBoot` — device-secret mint (+ native shared-key)
- * 5. Silent OAuth for third-party web apps when mint finds no session
+ * 1. Complete OAuth authorization-code return (web)
+ * 2. `runSessionColdBoot` — device-secret mint (+ native shared-key)
+ * 3. Silent OAuth for all web apps when mint finds no session
  */
 export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Promise<void> {
   const {
@@ -71,29 +62,18 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
   setTokenReady(false);
 
   try {
-    if (isWebBrowser()) {
-      await applyDeviceJoinReturn(authStore);
-      await syncDeviceCredentialToHost();
-    }
-
     consumeSilentOAuthError();
 
     const oauthCompleted = await tryCompleteOAuthReturn({
       oxyServices,
       clientId,
       authRedirectUri,
-      commitSession: (input) => commitSession(input, { activate: true }),
+      commitSession: (input) => commitSession(input, { activate: true, hubSync: false }),
     });
     if (oauthCompleted) {
       setTokenReady(true);
       markAuthResolved();
       return;
-    }
-
-    if (isWebBrowser() && clientId && !isIdpHubOrigin()) {
-      if (await maybeRedirectForDeviceJoin(authStore)) {
-        return;
-      }
     }
 
     const outcome = await runSessionColdBoot({
@@ -125,9 +105,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       onSignedOut: async () => {
         await syncDeviceCredentialToHost();
         const cred = await loadPersistedDeviceCredential(authStore);
-        if (!cred) {
-          clearDeviceJoinAttemptFlag();
-        } else {
+        if (cred) {
           try {
             await sessionClient.start();
           } catch (socketError) {
@@ -154,17 +132,13 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     });
 
     if (isWebBrowser() && clientId && outcome.kind !== 'session') {
-      const location = (globalThis as { location?: Location }).location;
-      const origin = location?.origin ?? '';
-      if (origin && !isAllowedDeviceJoinOrigin(origin)) {
-        const redirected = await maybeStartSilentOAuthRestore({
-          oxyServices,
-          clientId,
-          redirectUri: authRedirectUri,
-        });
-        if (redirected) {
-          return;
-        }
+      const redirected = await maybeStartSilentOAuthRestore({
+        oxyServices,
+        clientId,
+        redirectUri: authRedirectUri,
+      });
+      if (redirected) {
+        return;
       }
     }
   } catch (error) {
@@ -179,3 +153,4 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     markAuthResolved();
   }
 }
+

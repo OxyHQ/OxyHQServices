@@ -3,9 +3,7 @@ import {
   buildOAuthAuthorizeUrl,
   generateOAuthState,
   generatePkcePair,
-  isAllowedDeviceJoinOrigin,
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
-  OXY_DEVICE_JOIN_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   persistOAuthHandshake,
   normalizeOAuthRedirectUri,
@@ -18,14 +16,13 @@ function sessionStore(): Storage | undefined {
   return (globalThis as { sessionStorage?: Storage }).sessionStorage;
 }
 
-/** True when this tab already attempted cross-origin restore (join or silent OAuth). */
+/** True when this tab already attempted cross-origin silent OAuth restore. */
 export function isCrossOriginRestoreBlocked(): boolean {
   const store = sessionStore();
   if (!store) return false;
   return Boolean(
     store.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY) ||
-      store.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY) ||
-      store.getItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY),
+      store.getItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY),
   );
 }
 
@@ -35,18 +32,13 @@ export function markCrossOriginRestoreAttempted(): void {
   if (!store) return;
   store.setItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY, '1');
   store.setItem(OXY_SILENT_OAUTH_ATTEMPTED_KEY, '1');
-  store.setItem(OXY_DEVICE_JOIN_ATTEMPTED_KEY, '1');
 }
 
 /** Clear all cross-origin restore loop guards (call on sign-out). */
 export function clearCrossOriginRestoreGuards(): void {
   const store = sessionStore();
   if (!store) return;
-  for (const key of [
-    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
-    OXY_SILENT_OAUTH_ATTEMPTED_KEY,
-    OXY_DEVICE_JOIN_ATTEMPTED_KEY,
-  ]) {
+  for (const key of [OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY, OXY_SILENT_OAUTH_ATTEMPTED_KEY]) {
     store.removeItem(key);
   }
 }
@@ -60,7 +52,7 @@ export interface SilentOAuthRestoreOptions {
 
 /**
  * Top-level redirect to auth.oxy.so/authorize with `prompt=none` for silent
- * cross-origin session restore on third-party web apps only.
+ * cross-origin session restore on all web apps (official + third-party).
  */
 export async function maybeStartSilentOAuthRestore(
   opts: SilentOAuthRestoreOptions,
@@ -69,10 +61,6 @@ export async function maybeStartSilentOAuthRestore(
 
   const location = (globalThis as { location?: Location }).location;
   if (!location) return false;
-
-  if (isAllowedDeviceJoinOrigin(location.origin)) {
-    return false;
-  }
 
   if (isCrossOriginRestoreBlocked()) {
     return false;

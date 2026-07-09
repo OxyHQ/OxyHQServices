@@ -15,7 +15,7 @@ import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
 import { RecoverPage } from "@/src/pages/recover"
 import { SocialCallbackPage } from "@/src/pages/social-callback"
-import { DeviceJoinPage } from "@/src/pages/device-join"
+import { HubSyncPage } from "@/src/pages/hub-sync"
 import "@/app/globals.css"
 
 function ExternalRedirect({ url }: { url: string }) {
@@ -51,6 +51,7 @@ function App() {
                 <OxyProvider
                     baseURL={getApiBaseUrl()}
                     clientId={OXY_CLIENT_ID}
+                    hubSync={false}
                 >
                     <BrowserRouter>
                         <Routes>
@@ -75,7 +76,7 @@ function App() {
 
                             {/* Callback routes (no layout) */}
                             <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
-                            <Route path="/device/join" element={<DeviceJoinPage />} />
+                            <Route path="/sync" element={<HubSyncPage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />
                             <Route path="*" element={<Navigate to="/login" replace />} />

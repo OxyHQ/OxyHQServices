@@ -201,6 +201,8 @@ export { default as OxySignInButton } from './ui/components/OxySignInButton';
 export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
+export { OxyOAuthCallback } from './ui/components/OxyOAuthCallback';
+export type { OxyOAuthCallbackProps } from './ui/components/OxyOAuthCallback';
 export { OxyConsentScreen } from './ui/components/OxyConsentScreen';
 export type {
   OxyConsentScreenProps,

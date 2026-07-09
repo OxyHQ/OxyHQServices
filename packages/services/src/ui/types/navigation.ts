@@ -63,6 +63,8 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     queryClient?: QueryClient;
+    /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
+    hubSync?: boolean;
     /**
      * Convenience: wrap the whole app subtree in `<RequireOxyAuth prompt=...>`.
      * `off` (default) renders children unconditionally; `soft` adds a dismissible

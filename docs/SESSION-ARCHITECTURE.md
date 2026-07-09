@@ -90,8 +90,10 @@ The transport that carries "which device is this?" across reloads is **`deviceId
    its own `{ deviceId, deviceSecret }` copy in `localStorage`, but all official apps
    (including custom domains like `mention.earth`) and third-party RPs converge on the
    **same** server-side `DeviceSession` through two mechanisms:
-   - **IdP handoff** — after a first-party sign-in, the SDK redirects once to
-     `auth.oxy.so/handoff` to plant the shared credentials on the IdP hub origin.
+   - **Hub ticket sync** — after an interactive sign-in on an official satellite app,
+     the SDK POSTs `POST /session/device/hub-ticket` (bearer) and redirects once to
+     `auth.oxy.so/sync?ticket=…` so the IdP hub origin persists the same credentials
+     (no secrets in URL fragments).
    - **Silent OAuth (`prompt=none`)** — on cold boot, when local mint fails, the SDK
      redirects to `auth.oxy.so/authorize?prompt=none` + PKCE; the IdP auto-approves when
      it already has a session + grant, exchanges the code for tokens on the **same**
