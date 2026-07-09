@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { ComponentProps } from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +21,9 @@ interface PaymentSummaryStepProps {
     onNext: () => void;
 }
 
-const getItemTypeIcon = (type: string): string => {
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+const getItemTypeIcon = (type: string): IoniconName => {
     switch (type) {
         case 'product': return 'cart-outline';
         case 'subscription': return 'repeat-outline';
