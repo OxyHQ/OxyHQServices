@@ -598,9 +598,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         {
           sessionId: session.sessionId,
           accessToken: session.accessToken,
-          // deviceFlow threads the rotating deviceSecret on the runtime object
-          // even though `SessionLoginResponse` does not type it.
-          deviceSecret: (session as { deviceSecret?: string }).deviceSecret,
+          deviceSecret: session.deviceSecret,
           deviceId: session.deviceId,
           expiresAt: session.expiresAt,
           userId: session.user.id,

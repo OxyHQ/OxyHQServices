@@ -664,6 +664,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceId: string;
       expiresAt: string;
       user: User;
+      deviceSecret?: string;
     }> {
       try {
         const res = await this.makeRequest<{
@@ -672,6 +673,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           deviceId: string;
           expiresAt: string;
           user: User;
+          deviceSecret?: string;
         }>(
           'POST',
           '/auth/session/claim',

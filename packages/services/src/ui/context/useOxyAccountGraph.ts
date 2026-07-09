@@ -83,7 +83,7 @@ export function useOxyAccountGraph({
         {
           sessionId: result.sessionId,
           accessToken: result.accessToken,
-          deviceSecret: (result as { deviceSecret?: string }).deviceSecret,
+          deviceSecret: result.deviceSecret,
           deviceId: result.deviceId,
           expiresAt: result.expiresAt,
           userId: result.user.id,

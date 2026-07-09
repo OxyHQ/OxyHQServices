@@ -638,7 +638,14 @@ export class AccountDialogController {
 
   private async claimAndComplete(sessionId: string, sessionToken: string): Promise<void> {
     this.setSignIn({ ...this.signIn, phase: 'authorized' });
-    let claimed: { accessToken: string; sessionId: string; deviceId: string; expiresAt: string; user: User };
+    let claimed: {
+      accessToken: string;
+      sessionId: string;
+      deviceId: string;
+      expiresAt: string;
+      user: User;
+      deviceSecret?: string;
+    };
     try {
       claimed = await this.oxyServices.claimSessionByToken(sessionToken);
     } catch (error) {
@@ -666,6 +673,7 @@ export class AccountDialogController {
           expiresAt: claimed.expiresAt ?? '',
           user: minimalUser,
           accessToken: claimed.accessToken,
+          ...(claimed.deviceSecret ? { deviceSecret: claimed.deviceSecret } : {}),
         },
         minimalUser,
       );

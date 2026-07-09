@@ -75,6 +75,9 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       store: authStore,
       platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
       onSession: async (session) => {
+        // Mint already persisted `{deviceId, deviceSecret}` to the store; sync the
+        // in-memory SessionClient host so sockets + tab-focus re-mint can use it.
+        await syncDeviceCredentialToHost();
         const handoff = commitSession(
           {
             sessionId: session.sessionId,

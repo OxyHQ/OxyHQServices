@@ -461,6 +461,7 @@ describe('AccountDialogController — sign in with Oxy', () => {
         accessToken: 'access-1',
         sessionId: 'sess-1',
         deviceId: 'device-1',
+        deviceSecret: 'claimed-secret',
         expiresAt: '2030-01-01T00:00:00Z',
         user: user('a1'),
       });
@@ -473,7 +474,13 @@ describe('AccountDialogController — sign in with Oxy', () => {
 
       await jest.advanceTimersByTimeAsync(1000); // second poll → authorized → claim
       expect(oxy.claimSessionByToken).toHaveBeenCalledWith('secret-tok');
-      expect(commitSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-1', accessToken: 'access-1' }));
+      expect(commitSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'sess-1',
+          accessToken: 'access-1',
+          deviceSecret: 'claimed-secret',
+        }),
+      );
       expect(onSignedIn).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1' }));
       expect(controller.getSnapshot().view).toBe('accounts');
     } finally {

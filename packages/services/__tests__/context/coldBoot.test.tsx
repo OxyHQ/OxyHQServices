@@ -33,6 +33,11 @@ jest.mock('../../src/ui/components/oauthNavigation', () => ({
   redirectToAuthorize: (...args: unknown[]) => redirectToAuthorize(...args),
 }));
 
+const fakeSessionClientHost = {
+  setCurrentAccountId: jest.fn(),
+  setDeviceCredential: jest.fn(),
+  getDeviceCredential: () => null,
+};
 const fakeSessionClient = {
   getState: jest.fn(() => null),
   subscribe: jest.fn(() => () => undefined),
@@ -49,7 +54,7 @@ jest.mock('../../src/ui/session', () => {
     ...actual,
     createSessionClient: jest.fn(() => ({
       client: fakeSessionClient,
-      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null },
+      host: fakeSessionClientHost,
     })),
   };
 });
@@ -134,6 +139,8 @@ describe('OxyContext cold boot (device-first)', () => {
     redirectToAuthorize.mockClear();
     useAuthStore.getState().logout();
     Object.values(fakeSessionClient).forEach((fn) => (fn as jest.Mock).mockClear());
+    fakeSessionClientHost.setDeviceCredential.mockClear();
+    fakeSessionClientHost.setCurrentAccountId.mockClear();
   });
 
   it('a signed-out boot on an official app without a device id starts silent OAuth once', async () => {
@@ -185,6 +192,11 @@ describe('OxyContext cold boot (device-first)', () => {
     await waitFor(() => expect(fakeSessionClient.addCurrentAccount).toHaveBeenCalledTimes(1));
     expect(fakeSessionClient.registerAndActivate).not.toHaveBeenCalled();
     expect(fakeSessionClient.start).toHaveBeenCalled();
+    // Rotated device credential from mint must reach the SessionClient host.
+    expect(fakeSessionClientHost.setDeviceCredential).toHaveBeenCalledWith({
+      deviceId: 'dev-cb',
+      deviceSecret: 'cb.next.secret',
+    });
     expect(redirectToAuthorize).not.toHaveBeenCalled();
   });
 

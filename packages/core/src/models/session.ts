@@ -35,4 +35,10 @@ export interface SessionLoginResponse {
   user: MinimalUserData;
   /** JWT access token for API authentication */
   accessToken?: string;
+  /**
+   * Rotating zero-cookie device credential minted on sign-in / claim. Persisted
+   * first-party alongside `deviceId` so cold boot can re-mint via
+   * `POST /session/device/token`.
+   */
+  deviceSecret?: string;
 }

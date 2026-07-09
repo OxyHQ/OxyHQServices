@@ -140,9 +140,8 @@ export const useAuthOperations = ({
       // internally; when the response also carries the zero-cookie device
       // credential (`deviceId` + `deviceSecret`), persist the durable blob so the
       // next cold boot re-mints an access token from it. Best-effort — a failed
-      // persist never fails the sign-in. `SessionLoginResponse` does not type
-      // `deviceSecret`; read it defensively from the runtime payload.
-      const deviceSecret = (sessionResponse as { deviceSecret?: string }).deviceSecret;
+      // persist never fails the sign-in.
+      const deviceSecret = sessionResponse.deviceSecret;
       if (sessionResponse.deviceId && deviceSecret) {
         try {
           await store.save({
