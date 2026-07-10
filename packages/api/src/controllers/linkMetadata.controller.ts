@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import axios from 'axios';
-import * as cheerio from 'cheerio';
 import { logger } from '../utils/logger';
+import { linkPreviewService } from '../services/linkPreview/linkPreviewService';
 
 interface LinkMetadata {
     url: string;
@@ -13,67 +12,34 @@ interface LinkMetadata {
 export const fetchLinkMetadata = async (req: Request, res: Response) => {
     const { url } = req.body;
 
-    if (!url) {
+    if (!url || typeof url !== 'string') {
         return res.status(400).json({ error: 'URL is required' });
     }
 
-    // Normalize URL
-    let normalizedUrl = url;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        normalizedUrl = 'https://' + url;
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+        return res.status(400).json({ error: 'URL is required' });
     }
 
     try {
-        // Fetch the webpage content
-        const response = await axios.get(normalizedUrl, {
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; OxyHQ/1.0)'
-            }
-        });
-
-        const html = response.data;
-        const $ = cheerio.load(html);
-
-        // Extract metadata
-        const title = $('meta[property="og:title"]').attr('content') ||
-                     $('title').text() ||
-                     url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-
-        const description = $('meta[property="og:description"]').attr('content') ||
-                           $('meta[name="description"]').attr('content') ||
-                           `Link to ${url}`;
-
-        const image = $('meta[property="og:image"]').attr('content') ||
-                     $('meta[name="twitter:image"]').attr('content') ||
-                     $('link[rel="icon"]').attr('href') ||
-                     $('link[rel="shortcut icon"]').attr('href');
-
-        // Resolve relative image URLs
-        let resolvedImage = image;
-        if (image && !image.startsWith('http')) {
-            const urlObj = new URL(normalizedUrl);
-            resolvedImage = new URL(image, urlObj.origin).href;
-        }
-
+        const preview = await linkPreviewService.get(trimmedUrl, { wait: true });
         const metadata: LinkMetadata = {
-            url: normalizedUrl,
-            title: title?.trim() || url,
-            description: description?.trim() || 'Link',
-            image: resolvedImage
+            url: preview.url,
+            title: preview.title?.trim() || preview.url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+            description: preview.description?.trim() || 'Link',
+            image: preview.image,
         };
 
         res.json(metadata);
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Error fetching link metadata', error instanceof Error ? error : new Error(String(error)));
-        
-        // Return fallback metadata
-        const fallbackUrl = normalizedUrl.startsWith('http') ? normalizedUrl : 'https://' + normalizedUrl;
+
+        const fallbackUrl = trimmedUrl.startsWith('http') ? trimmedUrl : `https://${trimmedUrl}`;
         res.json({
             url: fallbackUrl,
-            title: normalizedUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+            title: fallbackUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''),
             description: 'Link',
-            image: undefined
+            image: undefined,
         });
     }
-}; 
+};

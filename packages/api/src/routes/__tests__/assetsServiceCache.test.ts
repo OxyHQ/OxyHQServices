@@ -483,6 +483,81 @@ describe('POST /assets/service/user-media', () => {
     expect(res.status).toBe(403);
     expect(mockUploadUserMediaStream).not.toHaveBeenCalled();
   });
+
+  it('requires the files:write service scope', async () => {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['federation:write'],
+        };
+        next();
+      }
+    );
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/user-media',
+      { 'content-type': 'image/png', 'content-length': '4', 'x-owner-user-id': LOCAL_OWNER_ID },
+      Buffer.from('PNG!')
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockUploadUserMediaStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects an SVG upload with 415 (stored-XSS vector) and never touches S3', async () => {
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/user-media',
+      {
+        'content-type': 'image/svg+xml',
+        'content-length': '14',
+        'x-owner-user-id': LOCAL_OWNER_ID,
+      },
+      Buffer.from('<svg></svg>...')
+    );
+
+    expect(res.status).toBe(415);
+    expect(mockUploadUserMediaStream).not.toHaveBeenCalled();
+  });
+
+  it('streams a >1 MiB body intact through the real parser chain to the service', async () => {
+    let bytesReceived = 0;
+    mockUploadUserMediaStream.mockImplementationOnce(async (source: Readable) => {
+      for await (const chunk of source) {
+        bytesReceived += (chunk as Buffer).length;
+      }
+      return { _id: USER_FILE_ID, size: bytesReceived };
+    });
+    mockUserFindOne.mockReturnValueOnce({
+      select: () => ({
+        lean: () => Promise.resolve({ _id: LOCAL_OWNER_ID, type: 'local' }),
+      }),
+    });
+
+    const payload = Buffer.alloc(LARGE_BODY_BYTES, 0x61);
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/user-media',
+      {
+        'content-type': 'video/mp4',
+        'content-length': String(LARGE_BODY_BYTES),
+        'x-owner-user-id': LOCAL_OWNER_ID,
+      },
+      payload
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data?.file?.id).toBe(USER_FILE_ID);
+    expect(mockUploadUserMediaStream).toHaveBeenCalledTimes(1);
+    expect(bytesReceived).toBe(LARGE_BODY_BYTES);
+  });
 });
 
 describe('DELETE /assets/service/cache/:id', () => {

@@ -438,6 +438,63 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     source.destroy();
   });
 
+  it('rejects durable user-media dedupe against another user file without mutating it', async () => {
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+    let capturedTempKey: string | undefined;
+
+    const uploadStream = jest.fn(
+      (key: string, _body: Readable): Promise<FileInfo> => {
+        capturedTempKey = key;
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ uploadStream, deleteFile });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000bad' },
+      sha256: 'private-sha',
+      storageKey: 'content/2026/06/pr/private-sha.png',
+      status: 'active',
+      ownerUserId: 'victim-user-id',
+      purpose: 'user',
+      visibility: 'private',
+      metadata: { ownerOnly: true },
+      save: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadUserMediaStream(
+      source,
+      'image/png',
+      'mention-post.png',
+      CACHE_MAX_BYTES,
+      'requesting-user-id',
+      { source: 'mention-service' }
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    resolveUpload?.({ key: capturedTempKey || 'user/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(existingFile.ownerUserId).toBe('victim-user-id');
+    expect(existingFile.purpose).toBe('user');
+    expect(existingFile.visibility).toBe('private');
+    expect(existingFile.metadata).toEqual({ ownerOnly: true });
+    expect(existingFile.save).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+
+    source.destroy();
+  });
+
   it('promotes a deduped federation cache record for durable federated media', async () => {
     let resolveUpload: ((info: FileInfo) => void) | undefined;
     let capturedTempKey: string | undefined;

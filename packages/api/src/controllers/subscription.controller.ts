@@ -4,6 +4,7 @@ import Subscription from "../models/Subscription";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
+import { userCache } from '../utils/userCache';
 
 function assertOwnership(req: AuthRequest, userId: string): void {
   if (!req.user) {
@@ -91,6 +92,7 @@ export const updateSubscription = async (req: AuthRequest, res: Response) => {
         }
       }
     );
+    userCache.invalidate(userId);
 
     res.json(subscription);
   } catch (error) {

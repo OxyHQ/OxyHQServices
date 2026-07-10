@@ -5,9 +5,11 @@
  * and Express.js authentication middleware
  */
 import { jwtDecode } from 'jwt-decode';
+import type { LinkPreview } from '@oxyhq/contracts';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { loadNodeCrypto } from '@oxyhq/protocol';
+import { buildUrl } from '../utils/apiUtils';
 import { logger } from '../utils/loggerUtils';
 import { CACHE_TIMES } from './mixinHelpers';
 
@@ -217,15 +219,14 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
       image?: string;
     }> {
       try {
-        return await this.makeRequest<{
-          url: string;
-          title: string;
-          description: string;
-          image?: string;
-        }>('GET', '/link-metadata', { url }, {
-          cache: true,
-          cacheTTL: CACHE_TIMES.EXTRA_LONG,
-        });
+        const path = buildUrl('/links/preview', { url, wait: 1 });
+        const preview = await this.makeRequest<LinkPreview>('GET', path, undefined, { cache: false });
+        return {
+          url: preview.url,
+          title: preview.title?.trim() || preview.url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+          description: preview.description?.trim() || 'Link',
+          image: preview.image,
+        };
       } catch (error) {
         throw this.handleError(error);
       }

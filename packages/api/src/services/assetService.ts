@@ -54,7 +54,7 @@ interface StreamedMediaOptions {
   metadata: Record<string, any>;
   tempPrefix: string;
   logLabel: string;
-  dedupeScope?: 'any' | 'federation-cache';
+  dedupeScope?: 'any' | 'federation-cache' | 'owner';
 }
 
 const FEDERATION_AVATAR_OWNER_ID = '__federation__';
@@ -379,15 +379,25 @@ export class AssetService {
   }
 
   private assertStreamedDedupeAllowed(file: IFile, options: StreamedMediaOptions): void {
-    if (options.dedupeScope !== 'federation-cache') {
-      return;
+    if (options.dedupeScope === 'federation-cache') {
+      if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+        return;
+      }
+
+      throw new ConflictError('Federated media content already exists outside the federation cache');
     }
 
-    if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+    if (options.dedupeScope === 'owner') {
+      if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+        return;
+      }
+
+      if (file.ownerUserId !== options.ownerUserId) {
+        throw new ConflictError('Media content already exists for another user');
+      }
+
       return;
     }
-
-    throw new ConflictError('Federated media content already exists outside the federation cache');
   }
 
   private async prepareExistingStreamedMediaFile(file: IFile, options: StreamedMediaOptions): Promise<IFile> {
@@ -789,6 +799,7 @@ export class AssetService {
       },
       tempPrefix: 'user/incoming',
       logLabel: 'User media',
+      dedupeScope: 'owner',
     });
   }
 
