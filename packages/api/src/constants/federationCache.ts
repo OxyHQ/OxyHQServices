@@ -36,6 +36,13 @@ export const FEDERATION_MEDIA_CACHE_PURPOSE = 'federation-media-cache';
 export const FEDERATION_CACHE_MAX_BYTES = 256 * 1024 * 1024;
 
 /**
+ * Maximum size (bytes) for service-token user-media uploads (MCP / compose
+ * intent-media). Tighter than the federation cache cap because Mention buffers
+ * the body in memory before streaming to Oxy.
+ */
+export const USER_MEDIA_MAX_BYTES = 40 * 1024 * 1024;
+
+/**
  * Content-type prefixes the cache endpoint will accept. Federated media is
  * always image / video / audio; anything else (documents, archives,
  * executables) is rejected to keep the cache a pure media surface.

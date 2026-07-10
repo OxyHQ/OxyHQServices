@@ -117,6 +117,8 @@ const CACHE_UPLOAD_PATH = '/assets/service/cache';
 const CACHE_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/cache';
 const FEDERATION_UPLOAD_PATH = '/assets/service/federation';
 const FEDERATION_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/federation';
+const USER_MEDIA_UPLOAD_PATH = '/assets/service/user-media';
+const USER_MEDIA_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/user-media';
 const EMAIL_INBOUND_PATH = '/email/inbound';
 const EMAIL_INBOUND_PATH_API_PREFIXED = '/api/email/inbound';
 
@@ -131,7 +133,9 @@ function isCacheUploadRequest(req: express.Request): boolean {
       req.path === CACHE_UPLOAD_PATH ||
       req.path === CACHE_UPLOAD_PATH_API_PREFIXED ||
       req.path === FEDERATION_UPLOAD_PATH ||
-      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED
+      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED ||
+      req.path === USER_MEDIA_UPLOAD_PATH ||
+      req.path === USER_MEDIA_UPLOAD_PATH_API_PREFIXED
     )
   );
 }

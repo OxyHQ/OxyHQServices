@@ -22,7 +22,7 @@ import {
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
-import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
+import { FEDERATION_CACHE_MAX_BYTES, USER_MEDIA_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 import User from '../models/User';
 import { isValidObjectId } from '../utils/validation';
 import { serviceAssetMetadataFields } from '../utils/fileMediaMetadata';
@@ -725,6 +725,104 @@ router.post(
     } catch (error) {
       if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
         throw new ApiError(413, 'Federated media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * @route POST /api/assets/service/user-media
+ * @desc Stream-upload durable media into a normal public file owned by an
+ *       existing local Oxy user. Used by Mention MCP intent-media when the
+ *       caller authenticates with an MCP JWT (no Oxy session bearer).
+ * @access Service token only (requires files:write)
+ */
+router.post(
+  '/service/user-media',
+  serviceAuthMiddleware,
+  cacheUploadLimiter,
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:write');
+
+    const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
+    if (!ownerUserId || !isValidObjectId(ownerUserId)) {
+      throw new BadRequestError('x-owner-user-id must be a valid user id');
+    }
+
+    const owner = await User.findOne({ _id: ownerUserId, type: 'local' })
+      .select('_id type')
+      .lean();
+    if (!owner) {
+      throw new ForbiddenError('User media owner must be an existing local user');
+    }
+
+    const mime = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!mime) {
+      throw new BadRequestError('Content-Type header is required');
+    }
+    if (!mime.startsWith('image/') && !mime.startsWith('video/')) {
+      throw new ApiError(415, 'Unsupported media type for user upload', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+    if (!isAllowedCacheMime(mime)) {
+      throw new ApiError(415, 'Unsupported media type for user upload', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > USER_MEDIA_MAX_BYTES) {
+      throw new ApiError(413, 'User media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+    }
+
+    const originalNameHeader = getSingleHeader(req, 'x-original-name');
+    const originalName = originalNameHeader && originalNameHeader.trim().length > 0
+      ? originalNameHeader.trim().slice(0, 255)
+      : 'user-media';
+
+    const metadataHeader = getSingleHeader(req, 'x-media-metadata');
+    let metadata: Record<string, unknown> | undefined;
+    if (metadataHeader) {
+      try {
+        metadata = JSON.parse(metadataHeader) as Record<string, unknown>;
+      } catch {
+        throw new BadRequestError('x-media-metadata must be valid JSON');
+      }
+    }
+
+    try {
+      const file = await assetService.uploadUserMediaStream(
+        req,
+        mime,
+        originalName,
+        USER_MEDIA_MAX_BYTES,
+        ownerUserId,
+        {
+          ...(metadata || {}),
+          serviceAppId: req.serviceApp?.appId,
+          serviceAppName: req.serviceApp?.appName,
+        }
+      );
+
+      logger.info('User media persisted', {
+        appId: req.serviceApp?.appId,
+        appName: req.serviceApp?.appName,
+        ownerUserId,
+        fileId: file._id,
+        mime,
+        size: file.size,
+      });
+
+      sendSuccess(res, {
+        file: {
+          id: file._id.toString(),
+          sha256: file.sha256,
+          size: file.size,
+          mime: file.mime,
+          visibility: file.visibility,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
+        throw new ApiError(413, 'User media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
       }
       throw error;
     }

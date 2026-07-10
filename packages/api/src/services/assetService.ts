@@ -767,6 +767,32 @@ export class AssetService {
   }
 
   /**
+   * Stream-upload durable media owned by a local Oxy user. Used when a backend
+   * service (e.g. Mention MCP intent-media) holds a service token but must
+   * attribute the asset to the requesting user.
+   */
+  async uploadUserMediaStream(
+    source: AbortableReadable,
+    mimeType: string,
+    originalName: string,
+    maxBytes: number,
+    ownerUserId: string,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
+      ownerUserId,
+      purpose: 'user',
+      visibility: 'public',
+      metadata: {
+        source: 'mention-service',
+        ...(metadata || {}),
+      },
+      tempPrefix: 'user/incoming',
+      logLabel: 'User media',
+    });
+  }
+
+  /**
    * Stream a remote OG / oEmbed image into PUBLIC, CDN-served asset storage for
    * the link-preview service, in its own reserved namespace
    * ({@link LINK_PREVIEW_OWNER_ID} + `purpose: 'link-preview'`) so these assets

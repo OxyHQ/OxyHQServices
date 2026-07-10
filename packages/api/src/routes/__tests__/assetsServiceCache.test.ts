@@ -27,6 +27,7 @@ import { AddressInfo } from 'net';
 const CACHE_FILE_ID = '64c0000000000000000000ff';
 const USER_FILE_ID = '64c0000000000000000000aa';
 const FEDERATED_OWNER_ID = '64d0000000000000000000bb';
+const LOCAL_OWNER_ID = '64e0000000000000000000cc';
 
 // A body larger than the global 1 MiB JSON/urlencoded parser limit. If C1's
 // guard failed to bypass those parsers, the stream would be truncated/rejected.
@@ -38,6 +39,7 @@ const mockOptionalAuthMiddleware = jest.fn();
 
 const mockUploadCachedMediaStream = jest.fn();
 const mockUploadFederatedMediaStream = jest.fn();
+const mockUploadUserMediaStream = jest.fn();
 const mockDeleteCachedMedia = jest.fn();
 const mockUploadFileDirect = jest.fn();
 const mockGetDeletionSummary = jest.fn();
@@ -82,6 +84,7 @@ jest.mock('../../services/assetServiceSingleton', () => ({
   assetService: {
     uploadCachedMediaStream: (...args: unknown[]) => mockUploadCachedMediaStream(...args),
     uploadFederatedMediaStream: (...args: unknown[]) => mockUploadFederatedMediaStream(...args),
+    uploadUserMediaStream: (...args: unknown[]) => mockUploadUserMediaStream(...args),
     deleteCachedMedia: (...args: unknown[]) => mockDeleteCachedMedia(...args),
     uploadFileDirect: (...args: unknown[]) => mockUploadFileDirect(...args),
     getDeletionSummary: (...args: unknown[]) => mockGetDeletionSummary(...args),
@@ -172,6 +175,8 @@ const CACHE_UPLOAD_PATH = '/assets/service/cache';
 const CACHE_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/cache';
 const FEDERATION_UPLOAD_PATH = '/assets/service/federation';
 const FEDERATION_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/federation';
+const USER_MEDIA_UPLOAD_PATH = '/assets/service/user-media';
+const USER_MEDIA_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/user-media';
 function isCacheUploadRequest(req: express.Request): boolean {
   return (
     req.method === 'POST' &&
@@ -179,7 +184,9 @@ function isCacheUploadRequest(req: express.Request): boolean {
       req.path === CACHE_UPLOAD_PATH ||
       req.path === CACHE_UPLOAD_PATH_API_PREFIXED ||
       req.path === FEDERATION_UPLOAD_PATH ||
-      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED
+      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED ||
+      req.path === USER_MEDIA_UPLOAD_PATH ||
+      req.path === USER_MEDIA_UPLOAD_PATH_API_PREFIXED
     )
   );
 }
@@ -420,6 +427,61 @@ describe('POST /assets/service/federation', () => {
 
     expect(res.status).toBe(403);
     expect(mockUploadFederatedMediaStream).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /assets/service/user-media', () => {
+  it('streams durable media owned by an existing local user', async () => {
+    mockUploadUserMediaStream.mockResolvedValueOnce({
+      _id: USER_FILE_ID,
+      sha256: 'b'.repeat(64),
+      size: 4,
+      mime: 'image/jpeg',
+      visibility: 'public',
+    });
+    mockUserFindOne.mockReturnValueOnce({
+      select: () => ({
+        lean: () => Promise.resolve({ _id: LOCAL_OWNER_ID, type: 'local' }),
+      }),
+    });
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/user-media',
+      {
+        'content-type': 'image/jpeg',
+        'content-length': '4',
+        'x-owner-user-id': LOCAL_OWNER_ID,
+        'x-original-name': 'photo.jpg',
+      },
+      Buffer.from('JPEG')
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data?.file?.id).toBe(USER_FILE_ID);
+    expect(mockUserFindOne).toHaveBeenCalledWith({ _id: LOCAL_OWNER_ID, type: 'local' });
+    expect(mockUploadUserMediaStream).toHaveBeenCalledTimes(1);
+    expect(mockUploadUserMediaStream.mock.calls[0][4]).toBe(LOCAL_OWNER_ID);
+  });
+
+  it('rejects owners that are not existing local users', async () => {
+    mockUserFindOne.mockReturnValueOnce({
+      select: () => ({
+        lean: () => Promise.resolve(null),
+      }),
+    });
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/user-media',
+      { 'content-type': 'image/png', 'content-length': '4', 'x-owner-user-id': LOCAL_OWNER_ID },
+      Buffer.from('PNG!')
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockUploadUserMediaStream).not.toHaveBeenCalled();
   });
 });
 
