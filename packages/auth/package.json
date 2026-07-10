@@ -12,7 +12,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@oxyhq/bloom": "^0.29.2",
+    "@oxyhq/bloom": "^0.29.3",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
     "@oxyhq/services": "workspace:*",
