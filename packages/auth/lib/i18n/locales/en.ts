@@ -104,6 +104,9 @@ const en: LocaleDict = {
       'By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings.',
     expiresAt: 'Request expires at {{time}}.',
     signingIn: 'Signing you in…',
+    silentFailedTitle: 'Sign-in could not be completed',
+    silentFailedDesc:
+      'Return to the app and sign in there. If this keeps happening, try signing out and back in.',
     requestTitle: 'Authorization request',
     requestUnavailable: "We couldn't load the details of this request.",
     completeTitle: 'Authorization complete',

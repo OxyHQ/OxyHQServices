@@ -24,6 +24,7 @@ import {
   buildApiUrl,
   getAvatarUrl,
 } from "@/lib/oxy-api-client";
+import { safeRedirectUrl } from "@/lib/oauth-redirect";
 
 /**
  * The requesting-application + auth-request resolution state. The signed-in
@@ -60,36 +61,6 @@ async function resolvePublicApplication(
     const application = (result?.data ?? result)?.application;
     if (application && typeof application.id === "string") {
       return application as PublicApplication;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// Native app schemes that are allowed as redirect targets.
-// These correspond to registered Oxy client applications (e.g. Astro browser).
-const ALLOWED_NATIVE_SCHEMES = ["astro:"];
-
-function safeRedirectUrl(value?: string | null): string | null {
-  if (!value) return null;
-  try {
-    const parsed = new URL(value);
-    // Allow standard web protocols
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
-      // Block raw IP addresses for web redirects
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname))
-        return null;
-      // Apex origins only — never propagate the spurious trailing slash from
-      // `URL.toString()` or `redirect_uri=https://app.example/`.
-      if (parsed.pathname === "/" && !parsed.search && !parsed.hash) {
-        return parsed.origin;
-      }
-      return parsed.toString();
-    }
-    // Allow registered native app schemes (no IP check needed)
-    if (ALLOWED_NATIVE_SCHEMES.includes(parsed.protocol)) {
-      return parsed.toString();
     }
     return null;
   } catch {
@@ -175,9 +146,12 @@ export function AuthorizePage() {
   // The auto-approve probe runs at most once per mount for the active account.
   const autoApproveAttemptedRef = useRef(false);
 
+  const isSilentPrompt = prompt === "none";
+
   // OAuth `prompt=none`: silent cross-origin restore — never show login UI.
   // Fail with standard OAuth errors back to the RP redirect_uri.
   function redirectOAuthError(errorCode: string): void {
+    setAutoApproving(false);
     const safeRedirect = safeRedirectUrl(redirectUri);
     if (!safeRedirect) {
       setData((prev) => ({ ...prev, error: errorCode }));
@@ -193,26 +167,52 @@ export function AuthorizePage() {
   // `login_required` immediately (OAuth standard) instead of the login page.
   // Wait until device-first cold boot finishes so we don't race a slow mint.
   useEffect(() => {
-    if (prompt !== "none" || !isAuthResolved || deviceAccountsLoading) return;
+    if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
     if (isAuthenticated || currentSessionId || deviceAccounts.length > 0) return;
     redirectOAuthError("login_required");
   }, [
-    prompt,
+    isSilentPrompt,
     isAuthResolved,
     isAuthenticated,
     currentSessionId,
     deviceAccounts.length,
     deviceAccountsLoading,
+    redirectUri,
+    state,
+  ]);
+
+  // Silent restore: invalid/missing OAuth params must fail closed — never spin forever.
+  useEffect(() => {
+    if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
+    if (!isAuthenticated && !currentSessionId && deviceAccounts.length === 0) return;
+    if (!clientId) {
+      redirectOAuthError("invalid_request");
+      return;
+    }
+    if (!safeRedirectUrl(redirectUri)) {
+      redirectOAuthError("invalid_request");
+    }
+  }, [
+    isSilentPrompt,
+    isAuthResolved,
+    deviceAccountsLoading,
+    isAuthenticated,
+    currentSessionId,
+    deviceAccounts.length,
+    clientId,
+    redirectUri,
+    state,
   ]);
 
   // Silent restore with an IdP session: probe consent and auto-approve without UI.
   useEffect(() => {
     if (
-      prompt !== "none" ||
+      !isSilentPrompt ||
       !isAuthResolved ||
       deviceAccountsLoading ||
       !isAuthenticated ||
       !clientId ||
+      !safeRedirectUrl(redirectUri) ||
       autoApproveAttemptedRef.current
     ) {
       return;
@@ -225,7 +225,10 @@ export function AuthorizePage() {
         return;
       }
       const safeRedirect = safeRedirectUrl(redirectUri);
-      if (!safeRedirect) return;
+      if (!safeRedirect) {
+        redirectOAuthError("invalid_request");
+        return;
+      }
 
       setAutoApproving(true);
       let body: unknown = null;
@@ -241,11 +244,20 @@ export function AuthorizePage() {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        if (response.ok) {
-          body = await response.json().catch(() => null);
+        if (!response.ok) {
+          setAutoApproving(false);
+          if (response.status === 403 || response.status === 400) {
+            redirectOAuthError("invalid_request");
+          } else {
+            redirectOAuthError("server_error");
+          }
+          return;
         }
+        body = await response.json().catch(() => null);
       } catch {
-        body = null;
+        setAutoApproving(false);
+        redirectOAuthError("server_error");
+        return;
       }
 
       if (consentRequiredFromBody(body)) {
@@ -257,7 +269,7 @@ export function AuthorizePage() {
       await runOAuthAuthorize(token, safeRedirect);
     })();
   }, [
-    prompt,
+    isSilentPrompt,
     isAuthResolved,
     isAuthenticated,
     clientId,
@@ -491,6 +503,10 @@ export function AuthorizePage() {
     });
 
     if (codeResponse.status === 401) {
+      if (isSilentPrompt) {
+        redirectOAuthError("login_required");
+        return;
+      }
       navigate(
         buildRelativeUrl("/login", {
           token: token || undefined,
@@ -507,6 +523,14 @@ export function AuthorizePage() {
     }
 
     if (!codeResponse.ok) {
+      if (isSilentPrompt) {
+        const oauthError =
+          codeResponse.status === 403 || codeResponse.status === 400
+            ? "invalid_request"
+            : "server_error";
+        redirectOAuthError(oauthError);
+        return;
+      }
       const errPayload = await codeResponse.json().catch(() => ({}));
       const message =
         typeof errPayload?.message === "string"
@@ -722,11 +746,31 @@ export function AuthorizePage() {
     return <LoadingSpinner />;
   }
 
-  if (prompt === "none") {
+  if (isSilentPrompt) {
+    if (data.error) {
+      return (
+        <AuthFormLayout>
+          <AuthFormHeader
+            title={t("authorize.silentFailedTitle")}
+            description={t("authorize.silentFailedDesc")}
+          />
+        </AuthFormLayout>
+      );
+    }
+    if (loading || deviceAccountsLoading || !isAuthResolved || autoApproving) {
+      return (
+        <AuthFormLayout>
+          <AuthFormHeader title={t("authorize.signingIn")} />
+          <LoadingSpinner />
+        </AuthFormLayout>
+      );
+    }
     return (
       <AuthFormLayout>
-        <AuthFormHeader title={t("authorize.signingIn")} />
-        <LoadingSpinner />
+        <AuthFormHeader
+          title={t("authorize.silentFailedTitle")}
+          description={t("authorize.silentFailedDesc")}
+        />
       </AuthFormLayout>
     );
   }
@@ -759,7 +803,7 @@ export function AuthorizePage() {
   // No session on this device (cold boot has resolved and found none) — redirect
   // to login carrying the full request context. Skip for `prompt=none` (handled above).
   if (
-    prompt !== "none" &&
+    !isSilentPrompt &&
     isAuthResolved &&
     !isAuthenticated &&
     !currentSessionId &&

@@ -97,5 +97,7 @@ function stripOAuthParamsFromUrl(): void {
   const url = new URL(location.href);
   url.searchParams.delete('code');
   url.searchParams.delete('state');
+  url.searchParams.delete('error');
+  url.searchParams.delete('error_description');
   history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
 }
