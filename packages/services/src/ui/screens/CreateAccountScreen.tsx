@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { AccountKind, CreateAccountInput } from '@oxyhq/core';
+import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
+import { ORGANIZATION_CATEGORIES } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
@@ -72,6 +73,24 @@ const kindDescription = (
   }
 };
 
+const organizationCategoryLabel = (
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  category: OrganizationCategory,
+): string => {
+  switch (category) {
+    case 'agency':
+      return t('accounts.organizationCategory.agency') || 'Real estate agency';
+    case 'cooperative':
+      return t('accounts.organizationCategory.cooperative') || 'Housing cooperative';
+    case 'landlord':
+      return t('accounts.organizationCategory.landlord') || 'Landlord / property manager';
+    default:
+      return t('accounts.organizationCategory.other') || 'Other organization';
+  }
+};
+
+const ORGANIZATION_CATEGORY_OPTIONS: OrganizationCategory[] = [...ORGANIZATION_CATEGORIES];
+
 /**
  * Create a new account in the unified account graph (an organization, project,
  * or bot). The caller becomes its owner. Optionally nested under a parent
@@ -90,6 +109,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const parentId = typeof parentAccountId === 'string' ? parentAccountId : undefined;
 
   const [kind, setKind] = useState<CreatableAccountKind>('project');
+  const [organizationCategory, setOrganizationCategory] = useState<OrganizationCategory>('agency');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -175,6 +195,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
         username,
         name: { first: firstName, last: lastName },
         bio: bio.trim() || undefined,
+        ...(kind === 'organization' ? { organizationCategory } : null),
         ...(parentId ? { parentAccountId: parentId } : null),
       };
       const account = await createAccount(input);
@@ -197,7 +218,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     } finally {
       setIsCreating(false);
     }
-  }, [canCreate, kind, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
+  }, [canCreate, kind, organizationCategory, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
 
   // Status icon + color shown alongside the username field message
   const usernameIsInvalid = usernameStatus === 'taken' || usernameStatus === 'invalid';
@@ -284,6 +305,42 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
               );
             })}
           </View>
+
+          {kind === 'organization' ? (
+            <View className="gap-space-8">
+              <Text className="text-body font-bodyBold text-text">
+                {t('accounts.create.organizationCategory.label') || 'Organization type'}
+              </Text>
+              <View className="flex-row flex-wrap gap-space-8">
+                {ORGANIZATION_CATEGORY_OPTIONS.map((option) => {
+                  const selected = option === organizationCategory;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={organizationCategoryLabel(t, option)}
+                      onPress={() => setOrganizationCategory(option)}
+                      activeOpacity={0.7}
+                      className="px-space-12 py-space-8 rounded-radius-full"
+                      style={{
+                        backgroundColor: selected ? bloomTheme.colors.primarySubtle : bloomTheme.colors.card,
+                        borderWidth: 1,
+                        borderColor: selected ? bloomTheme.colors.primary : bloomTheme.colors.border,
+                      }}
+                    >
+                      <Text
+                        className="text-caption font-captionBold"
+                        style={{ color: selected ? bloomTheme.colors.primary : bloomTheme.colors.text }}
+                      >
+                        {organizationCategoryLabel(t, option)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
 
           {/* Form Content */}
           <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
