@@ -1,4 +1,4 @@
-import type { UserNameResponse } from '@oxyhq/contracts';
+import type { OrganizationCategory, UserNameResponse } from '@oxyhq/contracts';
 
 export interface OxyConfig {
   baseURL: string;
@@ -142,6 +142,8 @@ export interface User {
   // Managed account fields
   isManagedAccount?: boolean;
   managedBy?: string;
+  /** Real-estate taxonomy when this user is a `kind: 'organization'` account. */
+  organizationCategory?: OrganizationCategory;
   // User-controlled notification preferences. All channels default to on; users
   // opt out per-channel. Updated via `PUT /users/me`.
   notificationPreferences?: NotificationPreferences;

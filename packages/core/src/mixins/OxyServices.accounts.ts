@@ -33,6 +33,7 @@
  * registers the switched session into the operator's device-set directly).
  */
 import type { User } from '../models/interfaces';
+import type { OrganizationCategory } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
@@ -49,6 +50,10 @@ import { CACHE_TIMES } from './mixinHelpers';
  * and have no direct login.
  */
 export type AccountKind = 'personal' | 'organization' | 'project' | 'bot';
+
+/** Real-estate / team taxonomy for `kind: 'organization'` accounts. */
+export type { OrganizationCategory } from '@oxyhq/contracts';
+export { ORGANIZATION_CATEGORIES } from '@oxyhq/contracts';
 
 /**
  * The calling user's relationship to an account node, as resolved by the API:
@@ -155,6 +160,8 @@ export interface CreateAccountInput {
   name?: { first?: string; last?: string };
   bio?: string;
   avatar?: string;
+  /** Meaningful only when `kind` is `organization`. */
+  organizationCategory?: OrganizationCategory;
 }
 
 /** Input accepted by `updateAccount`. Tree placement changes go through `/move`. */
@@ -163,6 +170,8 @@ export interface UpdateAccountInput {
   name?: { first?: string; last?: string };
   bio?: string | null;
   avatar?: string | null;
+  /** Clears the category when `null`; only valid on `kind: 'organization'`. */
+  organizationCategory?: OrganizationCategory | null;
 }
 
 /** Input accepted by `inviteAccountMember`. The owner role cannot be invited. */

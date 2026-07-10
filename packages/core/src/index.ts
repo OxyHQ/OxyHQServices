@@ -86,6 +86,7 @@ export type {
 // ---------------------------------------------------------------------------
 export type {
     AccountKind,
+    OrganizationCategory,
     AccountRelationship,
     AccountRole,
     AccountMemberStatus,
@@ -126,6 +127,8 @@ export type {
     ApplicationUsageByEndpoint,
     ApplicationUsageStats,
 } from './mixins/OxyServices.accounts';
+
+export { ORGANIZATION_CATEGORIES } from './mixins/OxyServices.accounts';
 
 // ---------------------------------------------------------------------------
 // Reputation (Oxy Trust: ledger, balances, disputes, rules, influence)
