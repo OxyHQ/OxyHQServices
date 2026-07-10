@@ -10,7 +10,7 @@ import {
   consumeSilentOAuthError,
   maybeStartSilentOAuthRestore,
 } from '../utils/crossOriginRestore';
-import { tryCompleteOAuthReturn } from '../utils/oauthReturn';
+import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../utils/oauthReturn';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import type { CommitInput } from '../context/oxyContextTypes';
 
@@ -57,6 +57,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
 
   try {
     consumeSilentOAuthError();
+    consumeHubSyncFailure();
 
     const oauthCompleted = await tryCompleteOAuthReturn({
       oxyServices,

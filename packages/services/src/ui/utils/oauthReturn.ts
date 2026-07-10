@@ -99,5 +99,32 @@ function stripOAuthParamsFromUrl(): void {
   url.searchParams.delete('state');
   url.searchParams.delete('error');
   url.searchParams.delete('error_description');
+  url.searchParams.delete('hub_sync');
   history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+/**
+ * When auth.oxy.so hub-sync redeem fails, the IdP redirects back with
+ * `?hub_sync=failed`. Strip the param and log so cold boot can continue
+ * without leaving a stale query string.
+ */
+export function consumeHubSyncFailure(): boolean {
+  if (!isWebBrowser()) return false;
+  const location = (globalThis as { location?: Location; history?: History }).location;
+  const history = (globalThis as { history?: History }).history;
+  if (!location) return false;
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('hub_sync') !== 'failed') return false;
+
+  logger.warn('Hub sync failed — IdP device session may be out of sync', {
+    component: 'hubSync',
+  });
+
+  if (history?.replaceState) {
+    const url = new URL(location.href);
+    url.searchParams.delete('hub_sync');
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+  return true;
 }

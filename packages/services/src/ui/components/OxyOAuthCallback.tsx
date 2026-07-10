@@ -14,7 +14,7 @@ export interface OxyOAuthCallbackProps {
  * callback path for a Clerk-style loading shell while auth resolves.
  */
 export function OxyOAuthCallback({ redirectTo = '/' }: OxyOAuthCallbackProps) {
-  const { isAuthResolved, isAuthenticated } = useAuth();
+  const { isAuthResolved } = useAuth();
 
   useEffect(() => {
     if (!isAuthResolved) return;
@@ -24,11 +24,11 @@ export function OxyOAuthCallback({ redirectTo = '/' }: OxyOAuthCallbackProps) {
     const params = new URLSearchParams(location.search);
     if (!params.has('code') && !params.has('error')) return;
 
-    const target = isAuthenticated ? redirectTo : redirectTo;
+    const target = redirectTo;
     if (location.pathname + location.search !== target) {
       window.location.replace(target);
     }
-  }, [isAuthResolved, isAuthenticated, redirectTo]);
+  }, [isAuthResolved, redirectTo]);
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
