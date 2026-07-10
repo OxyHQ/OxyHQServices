@@ -64,6 +64,7 @@ import {
 } from '../utils/reputationDerive';
 import { BadRequestError, ConflictError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
+import userCache from '../utils/userCache';
 
 /** Input for `award`. `userId` is the subject whose reputation changes. */
 export interface AwardInput {
@@ -567,6 +568,7 @@ class ReputationService {
       },
       session ? { session } : {}
     );
+    userCache.invalidate(subjectId.toString());
 
     return balance;
   }
