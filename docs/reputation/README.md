@@ -97,6 +97,26 @@ only, sweep the `GET:/reputation/` cache): `awardReputation`,
 LOW). The high-friction actions (real-life attestation) carry the most weight;
 the low-friction ones (vouches) carry the least and are slashable.
 
+### Homiio RE lifecycle (app-given, `reputation:write`)
+
+Homiio's backend awards these via `POST /reputation/award` using its service
+credential. The Homiio Application carries the privileged `reputation:write`
+scope (staff-granted on official first-party apps — see
+`scripts/seed-oxy-applications.ts`). Awards are idempotent on
+`(applicationId, sourceActionId)` — Homiio should pass a stable lease-event id
+(e.g. `lease:<leaseId>:signed`).
+
+| Action | Points | Category | When |
+|---|---:|---|---|
+| `lease_signed` | +10 | trust | landlord + tenant fully signed a lease |
+| `lease_completed` | +15 | trust | lease ran to completion without early exit |
+| `clean_moveout` | +8 | trust | tenant move-out with no damage / arrears |
+| `lease_default` | -12 | penalty | lease ended in default (unpaid, abandoned, breach) |
+
+Homiio backend calls `awardReputation` on the relevant `oxyUserId` (the active
+account after `switchToAccount` — org or personal) at each lifecycle transition.
+No local trust ledger in Homiio — Oxy Trust is the single authority.
+
 ---
 
 ## 4. F2 — Anti-gaming: real-life attestation + validator jury

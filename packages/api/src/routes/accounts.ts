@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Request } from 'express';
 import mongoose from 'mongoose';
+import type { OrganizationCategory } from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
@@ -430,6 +431,7 @@ router.post(
       bio?: string;
       avatar?: string;
       description?: string;
+      organizationCategory?: OrganizationCategory;
     };
 
     const parentAccountId = body.parentAccountId ?? userId;
@@ -453,6 +455,7 @@ router.post(
       bio: body.bio,
       avatar: body.avatar ? stripSensitiveUrlQueryParams(body.avatar) : body.avatar,
       description: body.description,
+      organizationCategory: body.organizationCategory,
     });
 
     const node: AccountNode = {
@@ -506,6 +509,7 @@ router.patch(
       description?: string;
       color?: string;
       links?: string[];
+      organizationCategory?: OrganizationCategory | null;
     };
 
     const updated = await accountService.updateAccount(account._id.toString(), {

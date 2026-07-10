@@ -45,6 +45,14 @@ import {
   PERSONHOOD_VOUCHED_POINTS,
   VOUCH_SLASHED_ACTION,
   VOUCH_SLASHED_POINTS,
+  LEASE_SIGNED_ACTION,
+  LEASE_SIGNED_POINTS,
+  LEASE_COMPLETED_ACTION,
+  LEASE_COMPLETED_POINTS,
+  CLEAN_MOVEOUT_ACTION,
+  CLEAN_MOVEOUT_POINTS,
+  LEASE_DEFAULT_ACTION,
+  LEASE_DEFAULT_POINTS,
   type ReputationCategory,
   type ReputationTargetEntityType,
 } from '../utils/reputation.constants';
@@ -814,6 +822,40 @@ class ReputationService {
       points: VOUCH_SLASHED_POINTS,
       category: 'penalty',
       description: 'Vouched for a person found to be fake (staking slash)',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+
+    // Homiio RE lifecycle — awarded by the Homiio service credential (`reputation:write`).
+    await this.upsertRule({
+      actionType: LEASE_SIGNED_ACTION,
+      points: LEASE_SIGNED_POINTS,
+      category: 'trust',
+      description: 'Lease fully signed by landlord and tenant (Homiio)',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: LEASE_COMPLETED_ACTION,
+      points: LEASE_COMPLETED_POINTS,
+      category: 'trust',
+      description: 'Lease completed without early termination (Homiio)',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: CLEAN_MOVEOUT_ACTION,
+      points: CLEAN_MOVEOUT_POINTS,
+      category: 'trust',
+      description: 'Clean move-out with no damage or outstanding obligations (Homiio)',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+    await this.upsertRule({
+      actionType: LEASE_DEFAULT_ACTION,
+      points: LEASE_DEFAULT_POINTS,
+      category: 'penalty',
+      description: 'Lease ended in default — unpaid rent, abandonment, or breach (Homiio)',
       cooldownInMinutes: 0,
       isEnabled: true,
     });

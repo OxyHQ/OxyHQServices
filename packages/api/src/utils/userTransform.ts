@@ -15,6 +15,7 @@ export type UserLike = {
   avatar?: string | null;
   color?: string | null;
   name?: NameParts;
+  organizationCategory?: string;
   privacySettings?: unknown;
   verified?: boolean;
   language?: string;
@@ -126,6 +127,7 @@ export function formatUserResponse(user: unknown) {
     links: Array.isArray(user.links) ? user.links.filter((link): link is string => typeof link === 'string') : undefined,
     linksMetadata: Array.isArray(user.linksMetadata) ? user.linksMetadata : undefined,
     verifiedDomains: toVerifiedDomains(user.verifiedDomains),
+    organizationCategory: stringValue(user.organizationCategory),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

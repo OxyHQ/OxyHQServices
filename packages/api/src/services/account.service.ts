@@ -18,7 +18,7 @@
  */
 
 import mongoose, { ClientSession } from 'mongoose';
-import User, { IUser, MAX_ACCOUNT_DEPTH, type AccountKind } from '../models/User';
+import User, { IUser, MAX_ACCOUNT_DEPTH, type AccountKind, type OrganizationCategory } from '../models/User';
 import AccountMember, { IAccountMember } from '../models/AccountMember';
 import AccountCredential, { IAccountCredential } from '../models/AccountCredential';
 import {
@@ -97,6 +97,8 @@ export interface CreateChildAccountInput {
   bio?: string;
   avatar?: string;
   description?: string;
+  /** Meaningful only when `kind` is `organization`. */
+  organizationCategory?: OrganizationCategory;
 }
 
 // ===========================================================================
@@ -234,6 +236,9 @@ export class AccountService {
         `A child account kind must be one of: ${CHILD_ACCOUNT_KINDS.join(', ')}`
       );
     }
+    if (input.organizationCategory !== undefined && input.kind !== 'organization') {
+      throw new BadRequestError('organizationCategory applies only to organization accounts');
+    }
 
     const parent = await User.findById(parentAccountId);
     if (!parent) {
@@ -262,6 +267,8 @@ export class AccountService {
       verified: true,
       type: 'local',
       kind: input.kind,
+      organizationCategory:
+        input.kind === 'organization' ? input.organizationCategory : undefined,
       parentAccountId: parent._id,
       ancestors,
       rootAccountId,
@@ -389,11 +396,20 @@ export class AccountService {
       description?: string;
       color?: string;
       links?: string[];
+      organizationCategory?: OrganizationCategory | null;
     }
   ): Promise<IUser> {
     const account = await User.findById(accountId);
     if (!account) {
       throw new NotFoundError('Account not found');
+    }
+
+    if (input.organizationCategory !== undefined) {
+      if (account.kind !== 'organization') {
+        throw new BadRequestError('organizationCategory applies only to organization accounts');
+      }
+      account.organizationCategory =
+        input.organizationCategory === null ? undefined : input.organizationCategory;
     }
 
     if (input.username !== undefined) {

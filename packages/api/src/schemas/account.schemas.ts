@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  createAccountRequestSchema,
+  organizationCategorySchema,
+} from '@oxyhq/contracts';
 import { ACCOUNT_ROLES } from '../utils/accountRoles';
 import { ACCOUNT_CREDENTIAL_ENVIRONMENTS } from '../models/AccountCredential';
 import { APPLICATION_SCOPES } from '../utils/applicationScopes';
@@ -40,15 +44,7 @@ const nameSchema = z
  * caller owns. `kind` must be a non-personal kind (personal accounts are roots
  * minted at signup, not here).
  */
-export const createAccountSchema = z.object({
-  parentAccountId: z.string().trim().min(1).optional(),
-  kind: z.enum(['organization', 'project', 'bot']),
-  username: z.string().trim().min(1).max(100),
-  name: nameSchema,
-  bio: z.string().trim().max(500).optional(),
-  avatar: z.string().optional(),
-  description: z.string().trim().max(1000).optional(),
-});
+export const createAccountSchema = createAccountRequestSchema;
 
 /** PATCH /accounts/:id — partial profile update. */
 export const updateAccountSchema = z
@@ -60,6 +56,7 @@ export const updateAccountSchema = z
     description: z.string().trim().max(1000).optional(),
     color: z.string().trim().max(32).optional(),
     links: z.array(z.string()).optional(),
+    organizationCategory: organizationCategorySchema.nullable().optional(),
   })
   .strict();
 

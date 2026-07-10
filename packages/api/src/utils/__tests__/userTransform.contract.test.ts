@@ -37,6 +37,7 @@ interface LeanUserDoc {
   avatar?: string | null;
   color?: string | null;
   name?: { first?: string; last?: string; full?: string };
+  organizationCategory?: string;
 }
 
 function leanDoc(id: string, overrides: Partial<Omit<LeanUserDoc, '_id'>> = {}): LeanUserDoc {
@@ -68,6 +69,20 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(parsed?.name?.full).toBe('Jane Doe');
     expect(parsed?.name?.displayName).toBe('Jane Doe');
     expect(parsed && resolveUserId(parsed)).toBe('507f1f77bcf86cd799439011');
+  });
+
+  it('forwards organizationCategory when present and parses against the contract', () => {
+    const formatted = formatUserResponse(
+      leanDoc('507f1f77bcf86cd799439013', {
+        username: 'acme',
+        name: { first: 'Acme', last: 'Realty' },
+        organizationCategory: 'agency',
+      })
+    );
+
+    expect(formatted?.organizationCategory).toBe('agency');
+    const parsed = safeParseContract(userResponseSchema, formatted);
+    expect(parsed?.organizationCategory).toBe('agency');
   });
 
   it('composes name.full from a FIRST-ONLY name (no requirement of both)', () => {

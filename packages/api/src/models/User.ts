@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { ORGANIZATION_CATEGORIES, type OrganizationCategory } from "@oxyhq/contracts";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 import { composeDisplayName } from "../utils/displayName";
 import { buildUserDid } from "../services/did.service";
@@ -95,6 +96,9 @@ export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['met
 export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
 
+/** Re-export — single source of truth is `@oxyhq/contracts`. */
+export { ORGANIZATION_CATEGORIES, type OrganizationCategory };
+
 /** Account-graph lifecycle state (additive — non-personal accounts only). */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
@@ -152,6 +156,12 @@ export interface IUser extends Document {
    * {@link AccountMember} rows.
    */
   kind?: AccountKind;
+  /**
+   * Real-estate / team taxonomy for `kind: 'organization'` accounts only
+   * (agency, cooperative, landlord, other). Orthogonal to `kind` — never use
+   * `kind` for Homiio-specific profile types.
+   */
+  organizationCategory?: OrganizationCategory;
   /** Adjacency edge: the immediate parent account in the tree (null for roots). */
   parentAccountId?: mongoose.Types.ObjectId | null;
   /** Materialised path of ancestor account ids, ordered root → immediate parent. */
@@ -678,6 +688,11 @@ const UserSchema: Schema = new Schema(
       enum: ACCOUNT_KINDS,
       default: 'personal',
       index: true,
+    },
+    organizationCategory: {
+      type: String,
+      enum: ORGANIZATION_CATEGORIES,
+      required: false,
     },
     parentAccountId: {
       type: Schema.Types.ObjectId,

@@ -278,6 +278,26 @@ export function weightClassForAction(actionType: string): WeightClass {
 }
 
 // =============================================================================
+// HOMIIO RE LIFECYCLE (awarded by Homiio `reputation:write` service credential)
+// =============================================================================
+
+/** A lease was fully signed by landlord and tenant. */
+export const LEASE_SIGNED_ACTION = 'lease_signed';
+export const LEASE_SIGNED_POINTS = 10;
+
+/** A lease ran to completion without early termination. */
+export const LEASE_COMPLETED_ACTION = 'lease_completed';
+export const LEASE_COMPLETED_POINTS = 15;
+
+/** Tenant completed move-out with no damage or outstanding obligations. */
+export const CLEAN_MOVEOUT_ACTION = 'clean_moveout';
+export const CLEAN_MOVEOUT_POINTS = 8;
+
+/** Lease ended in default (unpaid rent, abandonment, breach). */
+export const LEASE_DEFAULT_ACTION = 'lease_default';
+export const LEASE_DEFAULT_POINTS = -12;
+
+// =============================================================================
 // PAGINATION
 // =============================================================================
 

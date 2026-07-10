@@ -398,6 +398,29 @@ describe('createChildAccount', () => {
     ).rejects.toThrow(/child account kind/i);
   });
 
+  test('persists organizationCategory on organization accounts', async () => {
+    const root = seedAccount({ kind: 'personal' });
+
+    const { account } = await accountService.createChildAccount(
+      root._id.toString(),
+      root._id.toString(),
+      { kind: 'organization', username: 'acme', organizationCategory: 'agency' }
+    );
+
+    expect(account.organizationCategory).toBe('agency');
+  });
+
+  test('rejects organizationCategory on non-organization kinds', async () => {
+    const root = seedAccount({ kind: 'personal' });
+    await expect(
+      accountService.createChildAccount(root._id.toString(), root._id.toString(), {
+        kind: 'project',
+        username: 'proj',
+        organizationCategory: 'landlord',
+      })
+    ).rejects.toThrow(/organizationCategory/i);
+  });
+
   test('suffixes the username on collision', async () => {
     const root = seedAccount({ kind: 'personal' });
     seedAccount({ kind: 'organization', username: 'oxy' });
