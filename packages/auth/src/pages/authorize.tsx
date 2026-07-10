@@ -722,6 +722,15 @@ export function AuthorizePage() {
     return <LoadingSpinner />;
   }
 
+  if (prompt === "none") {
+    return (
+      <AuthFormLayout>
+        <AuthFormHeader title={t("authorize.signingIn")} />
+        <LoadingSpinner />
+      </AuthFormLayout>
+    );
+  }
+
   // Trusted / already-granted OAuth request: authorizing + redirecting without
   // ever showing the consent screen. Neutral backdrop while that completes.
   if (autoApproving) {
