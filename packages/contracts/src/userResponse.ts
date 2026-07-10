@@ -31,6 +31,7 @@
 
 import { z } from 'zod';
 import { verifiedDomainSchema } from './identity';
+import { organizationCategorySchema } from './accountGraph';
 
 /**
  * Structured human name subdocument. Mirrors `User.name` (`NameSchema`).
@@ -120,6 +121,11 @@ export const userResponseSchema = z
          * entry; present only when the account has verified at least one domain.
          */
         verifiedDomains: z.array(verifiedDomainSchema).optional(),
+        /**
+         * Real-estate / team taxonomy for `kind: 'organization'` accounts.
+         * Absent on personal, project, and bot accounts.
+         */
+        organizationCategory: organizationCategorySchema.optional(),
     })
     .passthrough();
 

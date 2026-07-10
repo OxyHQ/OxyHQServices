@@ -11,6 +11,17 @@
  */
 
 export {
+    ORGANIZATION_CATEGORIES,
+    organizationCategorySchema,
+    createAccountRequestSchema,
+} from './accountGraph';
+
+export type {
+    OrganizationCategory,
+    CreateAccountRequest,
+} from './accountGraph';
+
+export {
     // Schemas
     userNameSchema,
     userResponseSchema,
