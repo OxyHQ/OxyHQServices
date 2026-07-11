@@ -1,7 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import {
+  Easing,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useOxy, useCurrentUser } from '@oxyhq/services';
 import { buildUserDid } from '@oxyhq/core';
 import { Fab } from '@oxyhq/bloom/fab';
@@ -15,6 +24,9 @@ import { IdQrBack } from '@/components/civic/IdQrBack';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
+import { useAttestQr } from '@/hooks/useAttestQr';
+import { useNfcAttestEmitter } from '@/hooks/nfc/useNfcAttestEmitter';
+import { useAttestedEvent } from '@/hooks/civic/useAttestedEvent';
 import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 
@@ -96,6 +108,74 @@ export default function IdScreen() {
     }
   }, [oxyServices, userId]);
 
+  // ---- NFC attest emission + card feedback -------------------------------
+  const scanPulse = useSharedValue(0);
+  const attestGlow = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
+
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
+
+  // Same payload the attest-me QR uses; one interaction id per screen session.
+  const attestContext = useMemo(() => `irl-nfc-${Date.now().toString(36)}`, []);
+  const { payload: attestPayload, exp: attestExp, regenerate: regenerateAttest } = useAttestQr(attestContext);
+
+  // Single-use nonce: re-mint when it expires while we are emitting.
+  useEffect(() => {
+    if (!focused || !attestExp) return;
+    const ms = attestExp - Date.now();
+    if (ms <= 0) {
+      regenerateAttest();
+      return;
+    }
+    const id = setTimeout(regenerateAttest, ms);
+    return () => clearTimeout(id);
+  }, [focused, attestExp, regenerateAttest]);
+
+  const triggerScanPulse = useCallback(() => {
+    void Haptics.selectionAsync();
+    if (reducedMotion) return;
+    scanPulse.value = 0;
+    scanPulse.value = withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }, (finished) => {
+      if (finished) scanPulse.value = 0;
+    });
+  }, [scanPulse, reducedMotion]);
+
+  const [attestedVisible, setAttestedVisible] = useState(false);
+  const attestedBadgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (attestedBadgeTimeoutRef.current) clearTimeout(attestedBadgeTimeoutRef.current);
+    };
+  }, []);
+  const triggerAttestGlow = useCallback(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setAttestedVisible(true);
+    if (attestedBadgeTimeoutRef.current) clearTimeout(attestedBadgeTimeoutRef.current);
+    attestedBadgeTimeoutRef.current = setTimeout(() => setAttestedVisible(false), 2500);
+    if (reducedMotion) return;
+    attestGlow.value = withSequence(
+      withTiming(1, { duration: 400 }),
+      withDelay(1000, withTiming(0, { duration: 1400 })),
+    );
+  }, [attestGlow, reducedMotion]);
+
+  const { state: nfcState } = useNfcAttestEmitter({
+    payload: attestPayload,
+    enabled: focused,
+    onRead: () => {
+      triggerScanPulse();
+      regenerateAttest();
+    },
+  });
+
+  useAttestedEvent(triggerAttestGlow);
+
   const publicKeyShort = useMemo(() => {
     if (!publicKey) return undefined;
     if (publicKey.length <= 16) return publicKey;
@@ -123,6 +203,8 @@ export default function IdScreen() {
           <OxyID
             width={CARD_WIDTH}
             height={CARD_HEIGHT}
+            scanPulse={scanPulse}
+            attestGlow={attestGlow}
             frontSide={
               <FrontSide
                 displayName={displayName}
@@ -149,8 +231,14 @@ export default function IdScreen() {
               )
             }
           />
+          {attestedVisible && (
+            <View style={[styles.attestedBadge, { backgroundColor: colors.card }]}>
+              <MaterialCommunityIcons name="check-decagram" size={18} color={colors.success} />
+              <ThemedText style={styles.attestedBadgeText}>{t('civic.attest.confirmed')}</ThemedText>
+            </View>
+          )}
           <ThemedText style={[styles.flipHint, { color: colors.textSecondary }]}>
-            {t('civic.id.flipHint')}
+            {nfcState === 'emitting' ? t('civic.nfc.active') : t('civic.id.flipHint')}
           </ThemedText>
         </View>
 
@@ -239,6 +327,19 @@ const styles = StyleSheet.create({
   flipHint: {
     fontSize: 13,
     textAlign: 'center',
+  },
+  attestedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+  },
+  attestedBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   didValue: {
     fontSize: 13,
