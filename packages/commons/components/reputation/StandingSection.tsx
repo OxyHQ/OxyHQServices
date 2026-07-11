@@ -18,7 +18,7 @@ import { mixColors } from '@/utils/color';
 import type { ReputationBalance, TrustTier } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 
-interface StandingCardProps {
+interface StandingSectionProps {
   balance: ReputationBalance;
   sources: ReputationSource[];
   /** Whether the surface is rendering cached data while offline. */
@@ -60,15 +60,16 @@ function tierColor(tier: TrustTier, colors: AppColors): string {
 }
 
 /**
- * The main "Standing" card — the fintech dashboard centerpiece. A header row
- * pairs the "Standing" label with the big lifetime total; a soft tier chip and
- * the next-tier progress line sit beneath it; the interactive DISTRIBUTION BAR
- * shows where reputation comes from (segments in a related green→blue tonal ramp,
+ * The "Standing" section — flat, no enclosing card. A header row pairs the
+ * "Standing" label with the big lifetime total; a soft tier chip and the
+ * next-tier progress line sit beneath it; the interactive DISTRIBUTION BAR shows
+ * where reputation comes from (segments in a related green→blue tonal ramp,
  * proportional to each category's share); category rows break the bar down and
  * highlight in sync with the selected segment; and a hairline-split Influence /
- * Reliability pair closes the card. One rounded `card` surface, no heavy borders.
+ * Reliability pair closes the block. Content sits directly on the page
+ * background — structure comes from spacing, typography, and thin separators.
  */
-export function StandingCard({ balance, sources, isOffline }: StandingCardProps) {
+export function StandingSection({ balance, sources, isOffline }: StandingSectionProps) {
   const colors = useColors();
   const { t } = useTranslation();
 
@@ -140,7 +141,7 @@ export function StandingCard({ balance, sources, isOffline }: StandingCardProps)
   })();
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card }]}>
+    <View style={styles.section}>
       <View style={styles.headerRow}>
         <ThemedText style={[styles.heading, { color: colors.text }]}>
           {t('civic.reputation.standingTitle')}
@@ -217,10 +218,7 @@ export function StandingCard({ balance, sources, isOffline }: StandingCardProps)
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 28,
-    borderCurve: 'continuous',
-    padding: 20,
+  section: {
     gap: 16,
   },
   headerRow: {
@@ -235,7 +233,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   total: {
-    fontSize: 30,
+    fontSize: 34,
     fontWeight: '800',
     letterSpacing: -1,
     fontVariant: ['tabular-nums'],

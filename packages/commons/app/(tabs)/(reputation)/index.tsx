@@ -8,7 +8,7 @@ import { Screen, CenteredState, PrimaryButton } from '@/components/ui';
 import { ReputationHeader } from '@/components/reputation/ReputationHeader';
 import { GetStartedCarousel, type CtaItem } from '@/components/reputation/GetStartedCarousel';
 import { SegmentedTabs, type SegmentedTabItem } from '@/components/reputation/SegmentedTabs';
-import { StandingCard } from '@/components/reputation/StandingCard';
+import { StandingSection } from '@/components/reputation/StandingSection';
 import { ActivityList } from '@/components/reputation/ActivityList';
 import { useCivicReputation, useReputationSources } from '@/hooks/useCivicReputation';
 import { useReputationActivity } from '@/hooks/useReputationActivity';
@@ -159,7 +159,7 @@ export default function ReputationScreen() {
 
       {tab === 'overview' ? (
         <View style={styles.overview}>
-          <StandingCard balance={balance} sources={sources} isOffline={!isOnline} />
+          <StandingSection balance={balance} sources={sources} isOffline={!isOnline} />
           <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
             {t('civic.reputation.footnote')}
           </ThemedText>

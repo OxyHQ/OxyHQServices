@@ -20,13 +20,13 @@ interface CompositionBarProps {
   onSelect: (key: string) => void;
 }
 
-const BAR_HEIGHT = 22;
+const BAR_HEIGHT = 44;
 /** Fully-rounded capsule ends. */
 const RADIUS_FULL = BAR_HEIGHT / 2;
 /** Slight inner-corner rounding so segments read as one bar, not buttons. */
-const RADIUS_INNER = 4;
+const RADIUS_INNER = 8;
 /** Floor so a tiny category stays tappable/visible; flexbox renormalizes the rest. */
-const MIN_SEGMENT_WIDTH = 12;
+const MIN_SEGMENT_WIDTH = 18;
 
 /**
  * The distribution bar — the signature composition visual. A single thick
