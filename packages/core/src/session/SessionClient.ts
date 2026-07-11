@@ -82,6 +82,10 @@ export class SessionClient {
   private started = false;
   /** Same-origin cross-tab state-propagation channel; null on platforms without BroadcastChannel. */
   private channel: SessionBroadcastChannel | null = null;
+  /** App-facing subscriptions to named server-pushed socket events. */
+  private readonly serverEvents = new Map<string, Set<(payload: unknown) => void>>();
+  /** Event names already bound on the CURRENT socket instance. */
+  private readonly boundServerEvents = new Set<string>();
 
   constructor(
     protected readonly host: SessionClientHost,
@@ -97,6 +101,40 @@ export class SessionClient {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Subscribe to a named server-pushed Socket.IO event (e.g. `civic:attested`).
+   * Listeners survive reconnects and socket re-creation; the returned function
+   * unsubscribes. Payloads are delivered as-is — callers validate shape.
+   */
+  onServerEvent(event: string, listener: (payload: unknown) => void): () => void {
+    let listeners = this.serverEvents.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.serverEvents.set(event, listeners);
+    }
+    listeners.add(listener);
+    this.bindServerEvent(event);
+    return () => {
+      listeners.delete(listener);
+    };
+  }
+
+  private bindServerEvent(event: string): void {
+    if (!this.socket || this.boundServerEvents.has(event)) return;
+    this.boundServerEvents.add(event);
+    this.socket.on(event, (payload: unknown) => {
+      const listeners = this.serverEvents.get(event);
+      if (!listeners) return;
+      for (const listener of [...listeners]) {
+        try {
+          listener(payload);
+        } catch (error) {
+          logger.warn('[SessionClient] server-event listener threw', { component: 'SessionClient' }, error);
+        }
+      }
+    });
   }
 
   protected notify(): void {
@@ -287,6 +325,7 @@ export class SessionClient {
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
+      this.boundServerEvents.clear();
     }
   }
 
@@ -341,6 +380,11 @@ export class SessionClient {
       }
     });
     this.socket = socket;
+    // (Re)bind app-facing server-event subscriptions on the fresh socket.
+    this.boundServerEvents.clear();
+    for (const event of this.serverEvents.keys()) {
+      this.bindServerEvent(event);
+    }
   }
 
   /**
