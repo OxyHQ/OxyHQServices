@@ -74,7 +74,7 @@ const buildGuilloche = (width: number, height: number) => {
 };
 
 export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => {
-    const { nx, ny, mag, isPressed } = useTilt();
+    const { nx, ny, mag, isPressed, scanPulse, attestGlow } = useTilt();
 
     const guilloche = useMemo(() => buildGuilloche(width, height), [width, height]);
 
@@ -87,9 +87,10 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
         vec(width * (1.3 + nx.value * 0.6), height * (1.3 + ny.value * 0.6)),
     );
 
-    // Subtle at rest → flares as you tilt (the reflejo).
+    // Subtle at rest → flares as you tilt (the reflejo); attestGlow boosts it
+    // further on server-confirmed attestation (level-2 feedback).
     const irisOpacity = useDerivedValue(() =>
-        Math.min(0.85, 0.32 + mag.value * 0.45 + isPressed.value * 0.16),
+        Math.min(1, 0.32 + mag.value * 0.45 + isPressed.value * 0.16 + attestGlow.value * 0.5),
     );
 
     // Glossy laminate sheen — a bright diagonal glare streak that sweeps across
@@ -110,6 +111,23 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
     const glossOpacity = useDerivedValue(() =>
         Math.min(0.7, 0.28 + mag.value * 0.4 + isPressed.value * 0.22),
     );
+
+    // NFC-read shine: a narrow diagonal band that sweeps corner-to-corner as
+    // scanPulse runs 0→1, fading in/out with sin(π·t) so it never pops.
+    const scanBandStart = useDerivedValue(() => {
+        const p = scanPulse.value * 2 - 1;
+        return vec(width * (p - 0.6), height * (p - 0.6));
+    });
+    const scanBandEnd = useDerivedValue(() => {
+        const p = scanPulse.value * 2 - 1;
+        return vec(width * (p + 0.6), height * (p + 0.6));
+    });
+    const scanBandOpacity = useDerivedValue(() =>
+        Math.sin(Math.min(1, Math.max(0, scanPulse.value)) * Math.PI) * 0.9,
+    );
+
+    // Attestation-confirmed edge glow.
+    const attestEdgeOpacity = useDerivedValue(() => attestGlow.value * 0.9);
 
     return (
         <Canvas style={{ width, height, backgroundColor: 'transparent' }}>
@@ -152,6 +170,38 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
                             ]}
                             positions={[0, 0.4, 0.47, 0.5, 0.53, 0.6, 1]}
                         />
+                    </RoundedRect>
+                </Group>
+
+                {/* NFC-read shine sweep (scanPulse-driven; invisible at rest). */}
+                <Group opacity={scanBandOpacity}>
+                    <RoundedRect x={0} y={0} width={width} height={height} r={24}>
+                        <LinearGradient
+                            start={scanBandStart}
+                            end={scanBandEnd}
+                            colors={[
+                                'rgba(255,255,255,0)',
+                                'rgba(255,255,255,0)',
+                                'rgba(255,255,255,0.9)',
+                                'rgba(255,255,255,0)',
+                                'rgba(255,255,255,0)',
+                            ]}
+                            positions={[0, 0.42, 0.5, 0.58, 1]}
+                        />
+                    </RoundedRect>
+                </Group>
+
+                {/* Attestation-confirmed iridescent edge glow (attestGlow-driven). */}
+                <Group opacity={attestEdgeOpacity}>
+                    <RoundedRect
+                        x={1.5}
+                        y={1.5}
+                        width={width - 3}
+                        height={height - 3}
+                        r={23}
+                        style="stroke"
+                        strokeWidth={3}>
+                        <LinearGradient start={vec(0, 0)} end={vec(width, height)} colors={IRIDESCENT} />
                     </RoundedRect>
                 </Group>
 

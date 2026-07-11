@@ -41,6 +41,10 @@ export interface TiltContextValue {
     pressRotateX: SharedValue<number>;
     isPressed: SharedValue<number>;
     rotation: SharedValue<number>;
+    /** 0→1 once per NFC read — shine sweep + pitch nudge (level-1 feedback). */
+    scanPulse: SharedValue<number>;
+    /** 0→1→0 on server-confirmed attestation — full shimmer (level-2 feedback). */
+    attestGlow: SharedValue<number>;
     isFront: DerivedValue<boolean>;
     motionEnabled: boolean;
 }

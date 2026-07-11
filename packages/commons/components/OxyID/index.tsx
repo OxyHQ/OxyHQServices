@@ -21,6 +21,7 @@ import { type FC, memo, type ReactNode, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+    type SharedValue,
     useAnimatedStyle,
     useDerivedValue,
     useSharedValue,
@@ -51,15 +52,33 @@ type TicketProps = {
     backSide?: ReactNode;
     /** Optional QR face, revealed by a long-press (tap only flips front↔back). */
     qrSide?: ReactNode;
+    /** Level-1 NFC-read feedback value (0→1 per read). Internal default: inert. */
+    scanPulse?: SharedValue<number>;
+    /** Level-2 attestation-confirmed feedback value (0→1→0). Internal default: inert. */
+    attestGlow?: SharedValue<number>;
 };
 
-export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSide, qrSide }) => {
+export const Ticket: FC<TicketProps> = memo(({
+    width,
+    height,
+    frontSide,
+    backSide,
+    qrSide,
+    scanPulse: scanPulseProp,
+    attestGlow: attestGlowProp,
+}) => {
     // Drift-free device attitude driving the 3D turn.
     const tilt = useDeviceTilt();
     const { pitchDeg, yawDeg } = tilt;
 
     // Flip (0 = front, 180 = back).
     const rotation = useSharedValue(0);
+
+    // Effect channels — inert local values unless the screen supplies live ones.
+    const internalScanPulse = useSharedValue(0);
+    const internalAttestGlow = useSharedValue(0);
+    const scanPulse = scanPulseProp ?? internalScanPulse;
+    const attestGlow = attestGlowProp ?? internalAttestGlow;
 
     // The back shows the public-key face by default; a long-press swaps it to the
     // QR. Tap always returns to the public-key back.
@@ -86,10 +105,12 @@ export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSid
             pressRotateX,
             isPressed,
             rotation,
+            scanPulse,
+            attestGlow,
             isFront,
             motionEnabled: tilt.motionEnabled,
         }),
-        [tilt, pressRotateX, isPressed, rotation, isFront],
+        [tilt, pressRotateX, isPressed, rotation, scanPulse, attestGlow, isFront],
     );
 
     // Press tilt (Pan with minDistance 0 catches any touch).
@@ -152,7 +173,15 @@ export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSid
             { perspective: 900 },
             { translateY: pressTranslateY.value },
             { rotateY: `${rotation.value + yawDeg.value}deg` }, // flip composed with tilt-yaw
-            { rotateX: `${pitchDeg.value + pressRotateX.value}deg` },
+            // Pitch composes the device tilt, the press-tilt nudge, and a −3° scan-pulse
+            // nudge shaped by sin(π·t) so it eases in/out and settles back to rest.
+            {
+                rotateX: `${
+                    pitchDeg.value +
+                    pressRotateX.value -
+                    3 * Math.sin(Math.min(1, Math.max(0, scanPulse.value)) * Math.PI)
+                }deg`,
+            },
             { rotateZ: `${yawDeg.value * 0.15}deg` }, // subtle micro-roll
         ],
     }));
