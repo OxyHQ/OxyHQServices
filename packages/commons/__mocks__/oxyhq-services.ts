@@ -7,7 +7,7 @@
  * via `__setOnlineStatus(...)`.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 interface MockOxyServices {
   updateProfile?: jest.Mock;
@@ -73,6 +73,7 @@ export function __setOxyState(next: Partial<MockOxyState>): void {
 export function __resetOxyState(): void {
   state = makeDefaultState();
   emit();
+  oxyEventHandlers.clear();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -115,3 +116,29 @@ export const useOnlineStatus = (): boolean =>
     () => online,
     () => online,
   );
+
+/* -------------------------------------------------------------------------- */
+/*  Server-pushed events (useOxyEvent)                                       */
+/* -------------------------------------------------------------------------- */
+
+type OxyEventHandler = (payload: unknown) => void;
+const oxyEventHandlers = new Map<string, Set<OxyEventHandler>>();
+
+export function useOxyEvent(event: string, handler: OxyEventHandler): void {
+  useEffect(() => {
+    let set = oxyEventHandlers.get(event);
+    if (!set) {
+      set = new Set();
+      oxyEventHandlers.set(event, set);
+    }
+    set.add(handler);
+    return () => {
+      set.delete(handler);
+    };
+  }, [event, handler]);
+}
+
+/** Test helper: fire a fake server-pushed event at all registered handlers. */
+export function __emitOxyEvent(event: string, payload: unknown): void {
+  for (const handler of [...(oxyEventHandlers.get(event) ?? [])]) handler(payload);
+}
