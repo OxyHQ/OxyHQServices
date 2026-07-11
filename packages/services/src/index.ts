@@ -172,6 +172,7 @@ export {
 export { useMutationStatus } from './ui/hooks/useMutationStatus';
 export type { MutationStatus } from './ui/hooks/useMutationStatus';
 export { useOnlineStatus } from './ui/hooks/useOnlineStatus';
+export { useOxyEvent } from './ui/hooks/useOxyEvent';
 
 // ---------------------------------------------------------------------------
 // Error handlers

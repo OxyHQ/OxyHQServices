@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccountInput, ClientSession, AccountDialogController, AccountDialogView, ApiError } from '@oxyhq/core';
+import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccountInput, ClientSession, AccountDialogController, AccountDialogView, ApiError, SessionClient } from '@oxyhq/core';
 import type { SecurityAlert } from '@oxyhq/contracts';
 import type { UseFollowHook } from '../hooks/useFollow.types';
 import type { useLanguageManagement } from '../hooks/useLanguageManagement';
@@ -76,6 +76,8 @@ export interface OxyContextState {
   storageKeyPrefix: string;
   clientId: string | null;
   oxyServices: OxyServices;
+  /** Server-authoritative device session client. `null` before an `OxyProvider` is mounted. */
+  sessionClient: SessionClient | null;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
   openAvatarPicker: () => void;
