@@ -1319,6 +1319,9 @@
       },
       "activity": {
         "title": "Actividad reciente",
+        "heatmapTitle": "Actividad",
+        "months": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
+        "weekdays": ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"],
         "loading": "Cargando actividad…",
         "error": "No se pudo cargar la actividad reciente.",
         "empty": "Aún no hay actividad de reputación: tus acciones verificadas aparecerán aquí.",

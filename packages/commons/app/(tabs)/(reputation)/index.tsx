@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
+import { ActivityHeatmap } from '@oxyhq/bloom/activity-heatmap';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Screen, CenteredState, PrimaryButton } from '@/components/ui';
@@ -12,6 +13,7 @@ import { StandingSection } from '@/components/reputation/StandingSection';
 import { ActivityList } from '@/components/reputation/ActivityList';
 import { useCivicReputation, useReputationSources } from '@/hooks/useCivicReputation';
 import { useReputationActivity } from '@/hooks/useReputationActivity';
+import { useReputationHeatmap } from '@/hooks/useReputationHeatmap';
 import { useValidatorInbox } from '@/hooks/useValidatorInbox';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import { useTranslation } from '@/lib/i18n';
@@ -48,8 +50,21 @@ export default function ReputationScreen() {
   const sources = useReputationSources(balance);
 
   const activityQuery = useReputationActivity(userId);
+  const heatmapQuery = useReputationHeatmap(userId);
   const inboxQuery = useValidatorInbox();
   const pendingValidations = inboxQuery.data?.length ?? 0;
+
+  // Anchor the heatmap grid to "today". The Bloom component never reads the
+  // system clock, so the screen supplies the endpoint as a `YYYY-MM-DD` string.
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const monthLabels = useMemo(
+    () => Array.from({ length: 12 }, (_, month) => t(`civic.reputation.activity.months.${month}`)),
+    [t],
+  );
+  const weekdayLabels = useMemo(
+    () => Array.from({ length: 7 }, (_, day) => t(`civic.reputation.activity.weekdays.${day}`)),
+    [t],
+  );
 
   const handleOpenInbox = useCallback(() => {
     router.push('/(tabs)/(reputation)/validate');
@@ -160,6 +175,25 @@ export default function ReputationScreen() {
       {tab === 'overview' ? (
         <View style={styles.overview}>
           <StandingSection balance={balance} sources={sources} isOffline={!isOnline} />
+
+          <View style={styles.heatmapSection}>
+            <ThemedText style={[styles.heatmapTitle, { color: colors.text }]}>
+              {t('civic.reputation.activity.heatmapTitle')}
+            </ThemedText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.heatmapScroll}
+            >
+              <ActivityHeatmap
+                data={heatmapQuery.data ?? []}
+                endDate={today}
+                monthLabels={monthLabels}
+                weekdayLabels={weekdayLabels}
+              />
+            </ScrollView>
+          </View>
+
           <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
             {t('civic.reputation.footnote')}
           </ThemedText>
@@ -178,6 +212,17 @@ export default function ReputationScreen() {
 const styles = StyleSheet.create({
   overview: {
     gap: 20,
+  },
+  heatmapSection: {
+    gap: 12,
+  },
+  heatmapTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  heatmapScroll: {
+    paddingBottom: 4,
   },
   footnote: {
     fontSize: 12,

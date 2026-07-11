@@ -6,7 +6,7 @@
       "name": "@oxyhq/sdk",
       "dependencies": {
         "@expo/metro-runtime": "~57.0.3",
-        "@oxyhq/bloom": "^0.29.3",
+        "@oxyhq/bloom": "^0.30.0",
         "expo-contacts": "~57.0.0",
         "expo-splash-screen": "~57.0.2",
         "is-arrayish": "^0.3.2",
@@ -235,7 +235,7 @@
       "dependencies": {
         "@expo/vector-icons": "^15.1.1",
         "@lottiefiles/dotlottie-react": "^0.19.5",
-        "@oxyhq/bloom": "^0.29.3",
+        "@oxyhq/bloom": "^0.30.0",
         "@oxyhq/core": "*",
         "@oxyhq/expo-splash": "workspace:*",
         "@oxyhq/services": "*",
@@ -694,7 +694,7 @@
         "@expo/vector-icons": "^15.1.1",
         "@gorhom/bottom-sheet": "^5.2.14",
         "@lottiefiles/dotlottie-react": "^0.19.5",
-        "@oxyhq/bloom": "^0.29.3",
+        "@oxyhq/bloom": "^0.30.0",
         "@oxyhq/services": "*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native/virtualized-lists": "0.86.0",
@@ -753,7 +753,7 @@
     "@shopify/react-native-skia",
   ],
   "overrides": {
-    "@oxyhq/bloom": "^0.29.3",
+    "@oxyhq/bloom": "^0.30.0",
     "@radix-ui/react-slot": "1.2.3",
     "ioredis": "5.11.1",
     "markdown-it": "12.3.2",
@@ -1614,7 +1614,7 @@
 
     "@oxyhq/api": ["@oxyhq/api@workspace:packages/api"],
 
-    "@oxyhq/bloom": ["@oxyhq/bloom@0.29.3", "", { "dependencies": { "@tanstack/react-virtual": "^3.14.3", "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "expo-haptics": "*", "expo-router": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-haptics", "expo-router", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-QN9ugEFk/apvCZSiGdY+vasZLWBOOOZ19DTxRF5zpL9abBmkl5Z61D516LPuhSfD45FMCjioopd/EtB8KrZizA=="],
+    "@oxyhq/bloom": ["@oxyhq/bloom@0.30.0", "", { "dependencies": { "@tanstack/react-virtual": "^3.14.3", "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "expo-haptics": "*", "expo-router": ">=3.0.0", "nativewind": ">=5.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-haptics", "expo-router", "nativewind", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-KIlYiDD57YkXUxLVkkhETnfdiec3hlY2ho8iRlU2EpIfGWt/yGUvThMD2nQGFjcb9JjHEd2qH0vfU+c0ZuKllA=="],
 
     "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 

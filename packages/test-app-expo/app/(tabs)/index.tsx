@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { Alert, Pressable, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 import { OxySignInButton, useOxy } from '@oxyhq/services';
@@ -15,6 +16,7 @@ import { Colors } from '@/constants/theme';
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
 
   const {
     isAuthenticated,
@@ -155,6 +157,23 @@ export default function HomeScreen() {
             </ThemedText>
           </Pressable>
         </ThemedView>
+
+        {/* Bloom Widgets showcase — available regardless of auth state */}
+        <Section title="Bloom Widgets">
+          <GroupedSection
+            items={[
+              {
+                id: 'bloom-widgets',
+                icon: 'view-dashboard',
+                iconColor: colors.iconData,
+                title: 'Widgets showcase',
+                subtitle: 'ProfileCard, StatBar, heatmap & more',
+                onPress: () => router.push('/widgets'),
+                showChevron: true,
+              },
+            ]}
+          />
+        </Section>
 
         {/* Authentication Screens — available regardless of auth state for testing */}
         <Section title="Authentication">

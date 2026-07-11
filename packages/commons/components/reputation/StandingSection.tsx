@@ -4,7 +4,7 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { StatColumns, type StatColumn } from '@/components/ui';
-import { CompositionBar, type CompositionCategory } from '@/components/reputation/CompositionBar';
+import { CompositionBar, type CompositionCategory } from '@oxyhq/bloom/composition-bar';
 import { CategoryRow } from '@/components/reputation/CategoryRow';
 import {
   getTierProgress,
@@ -182,7 +182,15 @@ export function StandingSection({ balance, sources, isOffline }: StandingSection
         </ThemedText>
       ) : (
         <>
-          <CompositionBar categories={barCategories} selectedKey={selectedKey} onSelect={toggleSelect} />
+          <CompositionBar
+            categories={barCategories}
+            selectedKey={selectedKey}
+            onSelect={toggleSelect}
+            hintLabel={t('civic.reputation.composition.hint')}
+            formatReadout={(points, percent) =>
+              t('civic.reputation.composition.readout', { points, percent })
+            }
+          />
           <View style={styles.categories}>
             {categories.map((category) => (
               <CategoryRow
