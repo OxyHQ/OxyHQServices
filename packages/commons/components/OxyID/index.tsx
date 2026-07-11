@@ -95,9 +95,7 @@ export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSid
     // Press tilt (Pan with minDistance 0 catches any touch).
     const pressGesture = Gesture.Pan()
         .minDistance(0)
-        .maxPointers(1)
-        .hitSlop({ top: 50, bottom: 50, left: 50, right: 50 })
-        .onBegin((event) => {
+        .maxPointers(1)        .onBegin((event) => {
             'worklet';
             isPressed.value = 1;
             const normalizedY = (event.y - height / 2) / (height / 2);
@@ -125,9 +123,7 @@ export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSid
         });
 
     // Tap flips between front and the public-key back (never the QR).
-    const tapGesture = Gesture.Tap()
-        .hitSlop({ top: 50, bottom: 50, left: 50, right: 50 })
-        .onEnd(() => {
+    const tapGesture = Gesture.Tap()        .onEnd(() => {
             scheduleOnRN(Haptics.selectionAsync);
             scheduleOnRN(setShowQr, false);
             rotation.value = withSpring(rotation.value === 0 ? 180 : 0, {
@@ -139,9 +135,7 @@ export const Ticket: FC<TicketProps> = memo(({ width, height, frontSide, backSid
     // Long-press (>2s) reveals the QR on the back face.
     const longPressGesture = Gesture.LongPress()
         .minDuration(QR_REVEAL_MS)
-        .maxDistance(40)
-        .hitSlop({ top: 50, bottom: 50, left: 50, right: 50 })
-        .onStart(() => {
+        .maxDistance(40)        .onStart(() => {
             scheduleOnRN(Haptics.selectionAsync);
             scheduleOnRN(setShowQr, true);
             rotation.value = withSpring(180, { dampingRatio: 1.5, duration: 500 });
