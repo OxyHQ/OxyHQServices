@@ -66,6 +66,13 @@ module.exports = {
           cameraPermission: 'Allow $(PRODUCT_NAME) to scan sign-in QR codes.',
         },
       ],
+      [
+        'react-native-nfc-manager',
+        {
+          nfcPermission: 'Allow $(PRODUCT_NAME) to read attestation cards from nearby phones.',
+        },
+      ],
+      './plugins/with-hce',
       'expo-secure-store',
       'expo-font',
       'expo-image',
