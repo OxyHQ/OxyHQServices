@@ -14,7 +14,10 @@ import { AddressInfo } from 'net';
 const B = 'b'.repeat(24);
 
 const mockSubmit = jest.fn();
+const mockEmit = jest.fn();
+const mockTo = jest.fn(() => ({ emit: mockEmit }));
 
+jest.mock('../../utils/socket', () => ({ getIO: () => ({ to: mockTo }) }));
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (req: { user?: unknown }, _res: unknown, next: () => void) => {
     req.user = { _id: B, id: B };
@@ -88,7 +91,11 @@ beforeAll((done) => {
   server = app.listen(0, '127.0.0.1', done);
 });
 afterAll((done) => { server.close(done); });
-beforeEach(() => { jest.clearAllMocks(); });
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockEmit.mockClear();
+  mockTo.mockClear();
+});
 
 describe('POST /civic/attestations', () => {
   it('returns 201 with the attestation result on success', async () => {
@@ -126,5 +133,29 @@ describe('POST /civic/attestations', () => {
     mockSubmit.mockResolvedValueOnce({ ok: false, reason: 'invalid_record' });
     const res = await post(server, '/civic/attestations', {});
     expect(res.status).toBe(400);
+  });
+
+  it('emits civic:attested to the subject user room on success', async () => {
+    mockSubmit.mockResolvedValueOnce({
+      ok: true, recordId: 'rec-1', subjectUserId: 'a'.repeat(24), attestorUserId: B, points: 25,
+    });
+
+    const res = await post(server, '/civic/attestations', { type: 'real_life_attestation' });
+
+    expect(res.status).toBe(201);
+    expect(mockTo).toHaveBeenCalledWith(`user:${'a'.repeat(24)}`);
+    expect(mockEmit).toHaveBeenCalledWith('civic:attested', expect.objectContaining({
+      byUserId: B,
+      recordId: 'rec-1',
+      points: 25,
+      at: expect.any(String),
+    }));
+  });
+
+  it('does NOT emit civic:attested when the attestation is rejected', async () => {
+    mockSubmit.mockResolvedValueOnce({ ok: false, reason: 'nonce_used' });
+    const res = await post(server, '/civic/attestations', {});
+    expect(res.status).toBe(409);
+    expect(mockEmit).not.toHaveBeenCalled();
   });
 });

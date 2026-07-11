@@ -19,6 +19,7 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { isValidObjectId } from '../utils/validation';
+import { getIO } from '../utils/socket';
 import {
   signedRecordEnvelopeSchema,
   validationOpenRequestSchema,
@@ -296,6 +297,18 @@ router.post(
     const result = await submitRealLifeAttestation(req.body as SignedRecordEnvelope, attestorUserId);
     if (!result.ok) {
       throwForRealLifeReason(result.reason);
+    }
+
+    // Level-2 card feedback: tell the subject (A) their attestation landed.
+    // Best-effort — a missing io (tests, boot) must never fail the request.
+    const io = getIO();
+    if (io) {
+      io.to(`user:${result.subjectUserId}`).emit('civic:attested', {
+        byUserId: result.attestorUserId,
+        recordId: result.recordId,
+        points: result.points,
+        at: new Date().toISOString(),
+      });
     }
 
     res.status(201).json({
