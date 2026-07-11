@@ -41,28 +41,43 @@ export default function AttestConfirmScreen() {
     ctx?: string;
   }>();
 
+  // Is this landing a system NDEF-tap deep link (vs a scanner handoff)? The
+  // deep link carries the raw URI's own keys (`subject`/`ctx`); the scanner
+  // paths pass `subjectDid`/`context` instead. `nonce`/`exp` exist on BOTH, so
+  // they only mark a deep link when the scanner's `subjectDid` is absent —
+  // that way a truncated tag that lost its `subject` still lands on the
+  // deep-link branch (and its warn) instead of silently falling through.
+  const isDeepLink =
+    raw.subject !== undefined ||
+    raw.ctx !== undefined ||
+    (raw.subjectDid === undefined && (raw.nonce !== undefined || raw.exp !== undefined));
+
   // System NFC tap (Android, app possibly closed) deep-links the tag's raw
   // `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI; expo-router hands
-  // back that URI's literal query keys. Reconstruct it and re-run it through
-  // the shared, already-tested parser so this path can never drift from the
-  // scanner's validation (`parseAttestPayload` never throws — it returns
-  // `null` for anything unparseable).
+  // back that URI's literal query keys. Reconstruct it — with `''` for any
+  // missing field, so partial/truncated tags still reach the parser — and
+  // re-run it through the shared, already-tested parser so this path can never
+  // drift from the scanner's validation (`parseAttestPayload` never throws —
+  // it returns `null` for anything unparseable, warn-logged here).
   const fromDeepLink = useMemo(() => {
-    if (!raw.subject || !raw.nonce || !raw.exp) return null;
+    if (!isDeepLink) return null;
     const reconstructed =
-      `oxycommons://attest?subject=${encodeURIComponent(raw.subject)}` +
+      `oxycommons://attest?subject=${encodeURIComponent(raw.subject ?? '')}` +
       `&ctx=${encodeURIComponent(raw.ctx ?? '')}` +
-      `&nonce=${encodeURIComponent(raw.nonce)}` +
-      `&exp=${encodeURIComponent(raw.exp)}`;
+      `&nonce=${encodeURIComponent(raw.nonce ?? '')}` +
+      `&exp=${encodeURIComponent(raw.exp ?? '')}`;
     const parsed = parseAttestPayload(reconstructed);
     if (!parsed) {
       console.warn('[AttestScreen] invalid NFC attest deep link', { subject: raw.subject });
     }
     return parsed;
-  }, [raw.subject, raw.ctx, raw.nonce, raw.exp]);
+  }, [isDeepLink, raw.subject, raw.ctx, raw.nonce, raw.exp]);
 
   const params = useMemo<RealLifeAttestParams | null>(() => {
-    if (fromDeepLink) {
+    if (isDeepLink) {
+      // A malformed deep link never falls back to the scanner fields — it
+      // resolves to null and follows the screen's existing invalid state.
+      if (!fromDeepLink) return null;
       return {
         subjectDid: fromDeepLink.subjectDid,
         context: fromDeepLink.context,
@@ -73,7 +88,7 @@ export default function AttestConfirmScreen() {
     const exp = Number(raw.exp);
     if (!raw.subjectDid || !raw.nonce || !Number.isFinite(exp)) return null;
     return { subjectDid: raw.subjectDid, context: raw.context ?? '', nonce: raw.nonce, exp };
-  }, [fromDeepLink, raw.subjectDid, raw.context, raw.nonce, raw.exp]);
+  }, [isDeepLink, fromDeepLink, raw.subjectDid, raw.context, raw.nonce, raw.exp]);
 
   const { state, subject, biometricFailed, errorCode, result, confirm, reload } = useRealLifeAttest(
     params,

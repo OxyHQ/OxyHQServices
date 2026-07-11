@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -36,6 +37,7 @@ export default function ScanSignInScreen() {
   const [flashOn, setFlashOn] = useState(false);
   const [scanError, setScanError] = useState<'invalid' | 'expired' | null>(null);
   const { available: nfcAvailable, readOnce } = useNfcReader();
+  const [nfcReading, setNfcReading] = useState(false);
 
   // Shared routing for anything `parseScan` can resolve, regardless of
   // whether the raw string came from the camera or an NFC read.
@@ -62,6 +64,10 @@ export default function ScanSignInScreen() {
         });
         return;
       }
+      // Freeze the camera behind the error overlay for BOTH entry paths (the
+      // barcode handler already set `scanned`; an NFC-triggered invalid parse
+      // hasn't) so "Scan Again" resets the same state either way.
+      setScanned(true);
       setScanError(parsed.reason);
     },
     [router],
@@ -76,11 +82,20 @@ export default function ScanSignInScreen() {
     [scanned, routeParsed],
   );
 
+  // `useNfcReader` already no-ops concurrent calls (module-level busy guard →
+  // `{ok:false, reason:'cancelled'}`); `nfcReading` is caller-side defense in
+  // depth plus the pending visual on the button.
   const handleNfcRead = useCallback(async () => {
-    const read = await readOnce();
-    if (!read.ok) return; // cancelled/empty — stay on the scanner
-    routeParsed(parseScan(read.uri));
-  }, [readOnce, routeParsed]);
+    if (nfcReading) return;
+    setNfcReading(true);
+    try {
+      const read = await readOnce();
+      if (!read.ok) return; // cancelled/empty — stay on the scanner
+      routeParsed(parseScan(read.uri));
+    } finally {
+      setNfcReading(false);
+    }
+  }, [nfcReading, readOnce, routeParsed]);
 
   const handleScanAgain = useCallback(() => {
     setScanError(null);
@@ -216,10 +231,16 @@ export default function ScanSignInScreen() {
                     <TouchableOpacity
                       style={styles.controlButton}
                       onPress={handleNfcRead}
+                      disabled={nfcReading}
                       accessibilityRole="button"
                       accessibilityLabel={t('civic.nfc.read')}
+                      accessibilityState={{ disabled: nfcReading, busy: nfcReading }}
                     >
-                      <MaterialCommunityIcons name="nfc" size={28} color="#fff" />
+                      {nfcReading ? (
+                        <ActivityIndicator size="small" color="#fff" style={styles.controlSpinner} />
+                      ) : (
+                        <MaterialCommunityIcons name="nfc" size={28} color="#fff" />
+                      )}
                       <Text style={styles.controlText}>{t('civic.nfc.read')}</Text>
                     </TouchableOpacity>
                   )}
@@ -307,6 +328,10 @@ const styles = StyleSheet.create({
   controlsRow: {
     flexDirection: 'row',
     gap: 32,
+  },
+  controlSpinner: {
+    // Matches the 28dp icon slot so the pending swap doesn't shift layout.
+    height: 28,
   },
   controlButton: {
     alignItems: 'center',
