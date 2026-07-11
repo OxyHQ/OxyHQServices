@@ -145,6 +145,7 @@ describe('POST /civic/attestations', () => {
     expect(res.status).toBe(201);
     expect(mockTo).toHaveBeenCalledWith(`user:${'a'.repeat(24)}`);
     expect(mockEmit).toHaveBeenCalledWith('civic:attested', expect.objectContaining({
+      subjectUserId: 'a'.repeat(24),
       byUserId: B,
       recordId: 'rec-1',
       points: 25,

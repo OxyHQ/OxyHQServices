@@ -304,6 +304,7 @@ router.post(
     const io = getIO();
     if (io) {
       io.to(`user:${result.subjectUserId}`).emit('civic:attested', {
+        subjectUserId: result.subjectUserId,
         byUserId: result.attestorUserId,
         recordId: result.recordId,
         points: result.points,
