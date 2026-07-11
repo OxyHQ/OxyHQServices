@@ -7,9 +7,21 @@ describe('useAttestedEvent', () => {
     const onAttested = jest.fn();
     renderHook(() => useAttestedEvent(onAttested));
     act(() => {
-      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1', points: 25, at: '2026-07-11T00:00:00.000Z' });
+      __emitOxyEvent('civic:attested', {
+        subjectUserId: 'u1',
+        byUserId: 'u2',
+        recordId: 'r1',
+        points: 25,
+        at: '2026-07-11T00:00:00.000Z',
+      });
     });
-    expect(onAttested).toHaveBeenCalledWith({ byUserId: 'u2', recordId: 'r1', points: 25, at: '2026-07-11T00:00:00.000Z' });
+    expect(onAttested).toHaveBeenCalledWith({
+      subjectUserId: 'u1',
+      byUserId: 'u2',
+      recordId: 'r1',
+      points: 25,
+      at: '2026-07-11T00:00:00.000Z',
+    });
   });
 
   it('ignores malformed payloads (strict whitelist)', () => {
@@ -27,8 +39,30 @@ describe('useAttestedEvent', () => {
     const onAttested = jest.fn();
     renderHook(() => useAttestedEvent(onAttested));
     act(() => {
-      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1' });
-      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1', points: '25', at: 42 });
+      __emitOxyEvent('civic:attested', { subjectUserId: 'u1', byUserId: 'u2', recordId: 'r1' });
+      __emitOxyEvent('civic:attested', {
+        subjectUserId: 'u1',
+        byUserId: 'u2',
+        recordId: 'r1',
+        points: '25',
+        at: 42,
+      });
+    });
+    expect(onAttested).not.toHaveBeenCalled();
+  });
+
+  it('drops payloads missing subjectUserId', () => {
+    const onAttested = jest.fn();
+    renderHook(() => useAttestedEvent(onAttested));
+    act(() => {
+      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1', points: 25, at: '2026-07-11T00:00:00.000Z' });
+      __emitOxyEvent('civic:attested', {
+        subjectUserId: 42,
+        byUserId: 'u2',
+        recordId: 'r1',
+        points: 25,
+        at: '2026-07-11T00:00:00.000Z',
+      });
     });
     expect(onAttested).not.toHaveBeenCalled();
   });

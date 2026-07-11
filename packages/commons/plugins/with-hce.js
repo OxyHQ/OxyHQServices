@@ -15,7 +15,7 @@ const path = require('path');
 const AID_LIST_XML = `<?xml version="1.0" encoding="utf-8"?>
 <host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/app_name"
-    android:requireDeviceUnlock="false">
+    android:requireDeviceUnlock="true">
     <aid-group android:category="other" android:description="@string/app_name">
         <aid-filter android:name="D2760000850101" />
     </aid-group>
@@ -88,6 +88,8 @@ function withHce(config) {
           data: [{ $: { 'android:scheme': 'oxycommons', 'android:host': 'attest' } }],
         });
       }
+    } else {
+      console.warn('with-hce: .MainActivity not found — NDEF tap-to-open intent filter NOT added');
     }
 
     return modConfig;

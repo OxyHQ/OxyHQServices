@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, AppState, AccessibilityInfo } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -26,7 +26,7 @@ import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import { useAttestQr } from '@/hooks/useAttestQr';
 import { useNfcAttestEmitter } from '@/hooks/nfc/useNfcAttestEmitter';
-import { useAttestedEvent } from '@/hooks/civic/useAttestedEvent';
+import { useAttestedEvent, type AttestedEventPayload } from '@/hooks/civic/useAttestedEvent';
 import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 
@@ -121,13 +121,26 @@ export default function IdScreen() {
     }, []),
   );
 
+  // NFC emission must stop the moment the app leaves the foreground (locked,
+  // backgrounded, task-switched) — a stale HCE session would keep answering
+  // APDU reads with the attestation payload while the device is out of the
+  // user's hands. The emitter's own blur/unmount disarm logic handles the
+  // `focused`/`enabled` transition; this only tracks OS-level foreground state.
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      setAppActive(nextState === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+
   // Same payload the attest-me QR uses; one interaction id per screen session.
   const attestContext = useMemo(() => `irl-nfc-${Date.now().toString(36)}`, []);
   const { payload: attestPayload, exp: attestExp, regenerate: regenerateAttest } = useAttestQr(attestContext);
 
   // Single-use nonce: re-mint when it expires while we are emitting.
   useEffect(() => {
-    if (!focused || !attestExp) return;
+    if (!focused || !appActive || !attestExp) return;
     const ms = attestExp - Date.now();
     if (ms <= 0) {
       regenerateAttest();
@@ -135,7 +148,7 @@ export default function IdScreen() {
     }
     const id = setTimeout(regenerateAttest, ms);
     return () => clearTimeout(id);
-  }, [focused, attestExp, regenerateAttest]);
+  }, [focused, appActive, attestExp, regenerateAttest]);
 
   const triggerScanPulse = useCallback(() => {
     void Haptics.selectionAsync();
@@ -156,6 +169,7 @@ export default function IdScreen() {
   const triggerAttestGlow = useCallback(() => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setAttestedVisible(true);
+    AccessibilityInfo.announceForAccessibility(t('civic.attest.confirmed'));
     if (attestedBadgeTimeoutRef.current) clearTimeout(attestedBadgeTimeoutRef.current);
     attestedBadgeTimeoutRef.current = setTimeout(() => setAttestedVisible(false), 2500);
     if (reducedMotion) return;
@@ -163,18 +177,28 @@ export default function IdScreen() {
       withTiming(1, { duration: 400 }),
       withDelay(1000, withTiming(0, { duration: 1400 })),
     );
-  }, [attestGlow, reducedMotion]);
+  }, [attestGlow, reducedMotion, t]);
 
   const { state: nfcState } = useNfcAttestEmitter({
     payload: attestPayload,
-    enabled: focused,
+    enabled: focused && appActive,
     onRead: () => {
       triggerScanPulse();
       regenerateAttest();
     },
   });
 
-  useAttestedEvent(triggerAttestGlow);
+  const handleAttestedEvent = useCallback(
+    (payload: AttestedEventPayload) => {
+      // A confirmation is only ever displayed for the identity currently on
+      // screen — ignore events for another account signed in on this device.
+      if (!userId || payload.subjectUserId !== userId) return;
+      triggerAttestGlow();
+    },
+    [userId, triggerAttestGlow],
+  );
+
+  useAttestedEvent(handleAttestedEvent);
 
   const publicKeyShort = useMemo(() => {
     if (!publicKey) return undefined;
