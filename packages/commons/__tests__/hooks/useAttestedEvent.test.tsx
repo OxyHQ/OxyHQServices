@@ -23,6 +23,16 @@ describe('useAttestedEvent', () => {
     expect(onAttested).not.toHaveBeenCalled();
   });
 
+  it('drops payloads missing points/at instead of synthesizing defaults', () => {
+    const onAttested = jest.fn();
+    renderHook(() => useAttestedEvent(onAttested));
+    act(() => {
+      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1' });
+      __emitOxyEvent('civic:attested', { byUserId: 'u2', recordId: 'r1', points: '25', at: 42 });
+    });
+    expect(onAttested).not.toHaveBeenCalled();
+  });
+
   it('never reacts to other event names', () => {
     const onAttested = jest.fn();
     renderHook(() => useAttestedEvent(onAttested));

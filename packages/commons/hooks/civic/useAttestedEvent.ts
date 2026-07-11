@@ -16,12 +16,14 @@ export function useAttestedEvent(onAttested: (payload: AttestedEventPayload) => 
   useOxyEvent('civic:attested', (payload) => {
     if (payload === null || typeof payload !== 'object') return;
     const p = payload as Record<string, unknown>;
-    if (typeof p.byUserId !== 'string' || typeof p.recordId !== 'string') return;
-    onAttested({
-      byUserId: p.byUserId,
-      recordId: p.recordId,
-      points: typeof p.points === 'number' ? p.points : 0,
-      at: typeof p.at === 'string' ? p.at : '',
-    });
+    if (
+      typeof p.byUserId !== 'string' ||
+      typeof p.recordId !== 'string' ||
+      typeof p.points !== 'number' ||
+      typeof p.at !== 'string'
+    ) {
+      return;
+    }
+    onAttested({ byUserId: p.byUserId, recordId: p.recordId, points: p.points, at: p.at });
   });
 }
