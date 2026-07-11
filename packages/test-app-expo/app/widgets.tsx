@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -56,15 +56,18 @@ export default function WidgetsScreen() {
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string | null>('trust');
 
-  // The four ProfileCard variants. Each entry is rendered twice below — once as a
+  // The ProfileCard variants. Each entry is rendered twice below — once as a
   // compact `widget` card and once as a full-width `wide` card — so both layouts
-  // are exercised for every variant and every metric kind.
+  // are exercised for every variant and every metric kind. Colors are vivid,
+  // per-card accents (the widget surface is a committed near-black), mirroring
+  // the Apple-Watch reference.
   const cards = useMemo<{ key: string; props: Omit<ProfileCardProps, 'layout'> }[]>(() => {
-    // A small filled badge circle pinned to a ProfileCard avatar. The card centers
-    // this inside an ~18px slot; the card-colored border punches it off the avatar.
-    const chainBadge = (color: string) => (
-      <View style={[styles.badge, { backgroundColor: color, borderColor: colors.card }]}>
-        <MaterialCommunityIcons name="check-bold" size={9} color="#ffffff" />
+    // A coin-style badge pinned to a ProfileCard avatar. ProfileCard already
+    // haloes it with the card surface, so the badge itself is a plain filled disc;
+    // the glyph cuts out to the card background color. Colors are theme tokens.
+    const coinBadge = (color: string, glyph: React.ComponentProps<typeof MaterialCommunityIcons>['name']) => (
+      <View className="h-4 w-4 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
+        <MaterialCommunityIcons name={glyph} size={10} color={colors.background} />
       </View>
     );
     return [
@@ -72,30 +75,20 @@ export default function WidgetsScreen() {
         key: 'wallet-dots',
         props: {
           variant: 'wallet',
-          avatar: {
-            name: 'Main Wallet',
-            ring: { colors: colors.success, width: 2 },
-            badge: chainBadge('#F7931A'),
-          },
+          avatar: { name: 'Main Wallet', ring: { colors: colors.success }, badge: coinBadge(colors.warning, 'bitcoin') },
           value: '$167,395',
           subtitle: '*5bF5',
-          headlineIcon: <MaterialCommunityIcons name="wallet" size={18} color={colors.textTertiary} />,
-          metric: { kind: 'dots', label: 'Token diversity', filled: 8, total: 20, filledColor: colors.success },
-          footer: { label: 'Top tokens', items: TOKEN_AVATARS, max: 4 },
+          metric: { kind: 'dots', label: 'Token diversity', filled: 6, total: 14, filledColor: colors.success },
+          footer: { label: 'Top tokens', items: TOKEN_AVATARS.slice(0, 4), max: 4 },
         },
       },
       {
         key: 'wallet-progress',
         props: {
           variant: 'wallet',
-          avatar: {
-            name: 'Trading Wallet',
-            ring: { colors: colors.primary, width: 2 },
-            badge: chainBadge('#627EEA'),
-          },
+          avatar: { name: 'Trading Wallet', ring: { colors: colors.warning }, badge: coinBadge(colors.info, 'ethereum') },
           value: '$64,395',
           subtitle: '*8Sf4',
-          headlineIcon: <MaterialCommunityIcons name="swap-horizontal" size={18} color={colors.textTertiary} />,
           metric: {
             kind: 'progress',
             label: 'TX count 24h',
@@ -103,59 +96,48 @@ export default function WidgetsScreen() {
             max: 350,
             minLabel: '32',
             maxLabel: '350',
-            icon: <MaterialCommunityIcons name="trophy" size={14} color={colors.warning} />,
+            fillColor: colors.warning,
+            icon: <MaterialCommunityIcons name="trophy" size={14} color={colors.textSecondary} />,
           },
+          footer: { label: 'Top tokens', items: TOKEN_AVATARS.slice(1, 5), max: 4 },
         },
       },
       {
         key: 'wallet-split',
         props: {
           variant: 'wallet',
-          avatar: {
-            name: 'Savings Wallet',
-            ring: { colors: [colors.success, colors.primary], width: 2 },
-            badge: chainBadge('#26A17B'),
-          },
+          avatar: { name: 'Savings Wallet', ring: { colors: colors.primary }, badge: coinBadge(colors.success, 'currency-usd') },
           value: '$96,395',
           subtitle: '*2Ac9',
-          headlineIcon: <MaterialCommunityIcons name="bank" size={18} color={colors.textTertiary} />,
           metric: {
             kind: 'split',
             label: 'Net flow 24h',
             percent: 38,
             leftValue: '$16,495',
             rightValue: '$6,305',
+            fillColor: colors.primary,
           },
+          footer: { label: 'Top tokens', items: TOKEN_AVATARS.slice(2, 6), max: 4 },
         },
       },
       {
         key: 'social',
         props: {
           variant: 'social',
-          avatar: {
-            name: 'Ada Lovelace',
-            ring: { colors: colors.primary, width: 2 },
-            badge: chainBadge(colors.info),
-          },
+          avatar: { name: 'Ada Lovelace', ring: { colors: colors.info }, badge: coinBadge(colors.info, 'check-bold') },
           value: 'Ada Lovelace',
           subtitle: '@ada',
-          headlineIcon: <MaterialCommunityIcons name="account-heart" size={18} color={colors.textTertiary} />,
-          metric: { kind: 'dots', label: 'Weekly activity', filled: 12, total: 14, filledColor: colors.primary },
-          footer: { label: 'Followed by', items: FOLLOWER_AVATARS, max: 4 },
+          metric: { kind: 'dots', label: 'Weekly activity', filled: 12, total: 14, filledColor: colors.info },
+          footer: { label: 'Followed by', items: FOLLOWER_AVATARS.slice(0, 4), max: 4 },
         },
       },
       {
         key: 'shopping',
         props: {
           variant: 'shopping',
-          avatar: {
-            name: 'Aurora Headphones',
-            ring: { colors: colors.warning, width: 2 },
-            badge: chainBadge(colors.warning),
-          },
+          avatar: { name: 'Aurora Headphones', ring: { colors: colors.warning }, badge: coinBadge(colors.warning, 'star') },
           value: '$249.00',
           subtitle: 'Aurora Studio · Audio',
-          headlineIcon: <MaterialCommunityIcons name="cart" size={18} color={colors.textTertiary} />,
           metric: {
             kind: 'progress',
             label: 'In stock',
@@ -163,21 +145,18 @@ export default function WidgetsScreen() {
             max: 50,
             minLabel: '18 left',
             maxLabel: '50',
-            icon: <MaterialCommunityIcons name="star" size={14} color={colors.warning} />,
+            fillColor: colors.warning,
           },
+          footer: { label: 'Recent buyers', items: FOLLOWER_AVATARS.slice(1, 5), max: 4 },
         },
       },
       {
         key: 'stat',
         props: {
           variant: 'stat',
-          avatar: {
-            name: 'Trust Score',
-            ring: { colors: colors.info, width: 2 },
-          },
+          avatar: { name: 'Trust Score', ring: { colors: colors.info } },
           value: '742',
           subtitle: 'Trust standing',
-          headlineIcon: <MaterialCommunityIcons name="shield-check" size={18} color={colors.textTertiary} />,
           metric: {
             kind: 'progress',
             label: 'To next tier',
@@ -185,7 +164,7 @@ export default function WidgetsScreen() {
             max: 1000,
             minLabel: 'Trusted',
             maxLabel: 'High trust',
-            icon: <MaterialCommunityIcons name="chevron-double-up" size={14} color={colors.info} />,
+            fillColor: colors.info,
           },
         },
       },
@@ -210,45 +189,46 @@ export default function WidgetsScreen() {
 
   return (
     <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 48 }]}
+      className="bg-background"
+      contentContainerClassName="px-4 pt-4 gap-3"
+      contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
     >
-      <View style={styles.intro}>
-        <Text style={[styles.h1, { color: colors.text }]}>Bloom Widgets</Text>
-        <Text style={[styles.lede, { color: colors.textSecondary }]}>
+      <View className="mb-1 gap-1.5">
+        <Text className="text-[30px] font-extrabold tracking-[-0.5px] text-foreground">Bloom Widgets</Text>
+        <Text className="text-[15px] leading-[21px] text-muted-foreground">
           @oxyhq/bloom@0.30.0 — Apple-Watch-style ProfileCard stat cards and their metric primitives.
         </Text>
       </View>
 
       {/* ── ProfileCard gallery ─────────────────────────────────────────── */}
-      <SectionHeader title="ProfileCard" subtitle="Widget carousel (240dp) + full-width wide cards" colors={colors} />
+      <SectionHeader title="ProfileCard" subtitle="Widget carousel (240dp) + full-width wide cards" />
 
-      <Text style={[styles.groupLabel, { color: colors.textTertiary }]}>Widget layout</Text>
+      <Text className="mt-2 text-[12px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">Widget layout</Text>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.carousel}
+        contentContainerClassName="gap-3 py-1 pr-1"
       >
         {cards.map(({ key, props }) => (
           <ProfileCard key={key} layout="widget" {...props} />
         ))}
       </ScrollView>
 
-      <Text style={[styles.groupLabel, { color: colors.textTertiary }]}>Wide layout</Text>
-      <View style={styles.stack}>
+      <Text className="mt-2 text-[12px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">Wide layout</Text>
+      <View className="gap-3">
         {cards.map(({ key, props }) => (
           <ProfileCard key={key} layout="wide" {...props} />
         ))}
       </View>
 
       {/* ── Metric primitives ───────────────────────────────────────────── */}
-      <SectionHeader title="Primitives" subtitle="The building blocks used inside ProfileCard" colors={colors} />
+      <SectionHeader title="Primitives" subtitle="The building blocks used inside ProfileCard" />
 
-      <Card colors={colors} label="DotGridMeter">
+      <Card label="DotGridMeter">
         <DotGridMeter filled={13} total={30} columns={10} filledColor={colors.success} />
       </Card>
 
-      <Card colors={colors} label="StatBar · progress">
+      <Card label="StatBar · progress">
         <StatBar
           variant="progress"
           label="TX count 24h"
@@ -261,7 +241,7 @@ export default function WidgetsScreen() {
         />
       </Card>
 
-      <Card colors={colors} label="StatBar · split">
+      <Card label="StatBar · split">
         <StatBar
           variant="split"
           label="Net flow 24h"
@@ -272,11 +252,11 @@ export default function WidgetsScreen() {
         />
       </Card>
 
-      <Card colors={colors} label="ActivityHeatmap">
+      <Card label="ActivityHeatmap">
         <ActivityHeatmap data={heatmapData} endDate={today} numDays={119} />
       </Card>
 
-      <Card colors={colors} label="CompositionBar">
+      <Card label="CompositionBar">
         <CompositionBar
           categories={COMPOSITION}
           selectedKey={selectedCategory}
@@ -285,117 +265,32 @@ export default function WidgetsScreen() {
         />
       </Card>
 
-      <Card colors={colors} label={'AvatarGroup · layout="row"'}>
+      <Card label={'AvatarGroup · layout="row"'}>
         <AvatarGroup items={TOKEN_AVATARS} layout="row" size={36} spacing={8} max={6} />
       </Card>
 
-      <Card colors={colors} label={'AvatarGroup · layout="stack"'}>
+      <Card label={'AvatarGroup · layout="stack"'}>
         <AvatarGroup items={FOLLOWER_AVATARS} layout="stack" size={36} max={4} total={128} />
       </Card>
     </ScrollView>
   );
 }
 
-function SectionHeader({
-  title,
-  subtitle,
-  colors,
-}: {
-  title: string;
-  subtitle: string;
-  colors: ReturnType<typeof useTheme>['colors'];
-}) {
+function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <View style={styles.sectionHeader}>
-      <Text style={[styles.h2, { color: colors.text }]}>{title}</Text>
-      <Text style={[styles.h2sub, { color: colors.textSecondary }]}>{subtitle}</Text>
+    <View className="mb-1 mt-5 gap-0.5">
+      <Text className="text-[22px] font-bold tracking-[-0.3px] text-foreground">{title}</Text>
+      <Text className="text-[13px] leading-[18px] text-muted-foreground">{subtitle}</Text>
     </View>
   );
 }
 
-function Card({
-  label,
-  colors,
-  children,
-}: {
-  label: string;
-  colors: ReturnType<typeof useTheme>['colors'];
-  children: React.ReactNode;
-}) {
+function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <View style={[styles.demoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.demoLabel, { color: colors.textTertiary }]}>{label}</Text>
+    <View className="gap-3 rounded-2xl border border-border bg-background p-4">
+      <Text className="text-[12px] font-semibold uppercase tracking-[0.5px] text-muted-foreground">{label}</Text>
       {children}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 12,
-  },
-  intro: {
-    gap: 6,
-    marginBottom: 4,
-  },
-  h1: {
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  lede: {
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  sectionHeader: {
-    marginTop: 20,
-    marginBottom: 4,
-    gap: 2,
-  },
-  h2: {
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  h2sub: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  groupLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 8,
-  },
-  carousel: {
-    gap: 12,
-    paddingVertical: 4,
-    paddingRight: 4,
-  },
-  stack: {
-    gap: 12,
-  },
-  demoCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  demoLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  badge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
