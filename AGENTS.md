@@ -99,9 +99,9 @@ bun install                      # Install all workspace deps
 
 **Test runners — per-package split (CRITICAL):**
 - `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
-- `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test server/__tests__ lib/__tests__ components/__tests__`.
+- `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test lib/__tests__ components/__tests__` (the earlier `server/__tests__` suite no longer exists — do not reference it).
 - THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing dozens of false failures in core and api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
-- Per-package baselines (when run under the correct runner): contracts **150**, core **740**, api **≥1363**, services **194**, auth IdP **63**.
+- Per-package baselines (when run under the correct runner): contracts **130**, core **722**, api **1322**, services **195**, auth IdP **45**.
 
 ## Architecture
 
@@ -136,6 +136,8 @@ console               dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite)
 auth (IdP)            dep: @oxyhq/core + @oxyhq/services  (RN Web via Vite, device-first cold boot)
 test-app-expo         dep: @oxyhq/services
 ```
+
+**Expo native-module version alignment (accounts, commons, inbox, test-app-expo):** when `@oxyhq/services`' pinned version of a native module (e.g. `react-native-svg`, `react-native-safe-area-context`, `react-native-keyboard-controller`) diverges from the version the current Expo SDK bundles, align the whole monorepo UP to the higher version and add that package to `expo.install.exclude` in the app's `package.json` — this stops `expo install --fix` / expo-doctor from downgrading it back to the SDK-bundled version. Never let two versions of the same native module coexist across the workspace. `react-native-svg` + `react-native-safe-area-context` are excluded in all four apps; `react-native-keyboard-controller` is additionally excluded in accounts, commons, and inbox (test-app-expo doesn't depend on it).
 
 ## Package Boundaries (strict)
 
@@ -514,7 +516,7 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 - **Bundle**: `so.oxy.commons`, scheme `commons`/`oxycommons`, package name `commons`
 - **Purpose**: Hello Human onboarding, create/import identity, recovery phrase, encrypted backup, key display, biometric sign-in, QR scanner + approval screens for "Sign in with Oxy"
 - **Metro config** (MANDATORY): mirrors `packages/accounts/metro.config.js` exactly — the Bloom single-instance `resolveRequest` rewrite is required to prevent duplicate React context crashes
-- **Pinned native deps** (match accounts): `react-native-reanimated 4.3.1`, `react-native-worklets 0.8.3`, `@shopify/react-native-skia 2.6.2`, `react 19.2.3`; honor root `overrides`
+- **Pinned native deps**: match accounts / whatever the current Expo SDK bundles — `package.json` is the source of truth, do not hardcode versions here; honor root `overrides`
 - **Routing**: bidirectional Stack guard; `useOnboardingStatus` with `hasIdentity` gate is correct here (Commons legitimately owns the identity gate). Native-only: Hello Human → welcome → create/import → vault group `(vault)`. No web entry variants or web blockers.
 - **For account management**: Commons deep-links to `accounts://` (Accounts). Accounts deep-links to `commons://` for key/backup/recovery/delete.
 - **Delete account flow**: `commons://delete-account` — key-signed deletion via `KeyManager.getPublicKey()` → sign `delete:${publicKey}:${ts}` → `DELETE /users/me`. Strict order: `deleteAccount` → `purgeIdentity` (primary AND backup, success-only) → `signOutAll`; local-purge failure is non-fatal.
