@@ -11,9 +11,4 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# JNA library pulls in java.awt classes that don't exist on Android.
-# These warnings are safe to suppress; AWT code paths never execute on Android.
--dontwarn java.awt.**
--dontwarn java.beans.**
-
 # Add any project specific keep options here:

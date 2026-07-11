@@ -9,7 +9,6 @@ module.exports = {
     icon: './assets/images/icon.png',
     scheme: 'accounts',
     userInterfaceStyle: 'automatic',
-    newArchEnabled: true,
     android: {
       adaptiveIcon: {
         backgroundColor: '#E6F4FE',

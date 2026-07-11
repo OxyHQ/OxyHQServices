@@ -9,11 +9,10 @@ module.exports = {
     icon: './assets/images/icon.png',
     scheme: ['commons', 'oxycommons'],
     userInterfaceStyle: 'automatic',
-    newArchEnabled: true,
     platforms: ['ios', 'android'],
     android: {
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
+        backgroundColor: '#000000',
         foregroundImage: './assets/images/android-icon-foreground.png',
         backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
