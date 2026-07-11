@@ -10,18 +10,16 @@ import { ThemedText } from '@/components/themed-text';
 import { Screen, Section, GroupedList, ListRow, Callout } from '@/components/ui';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
+import { BackSide } from '@/components/OxyID/back-side';
 import { IdQrBack } from '@/components/civic/IdQrBack';
-import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
-import { useCivicCard } from '@/hooks/useCivicCard';
-import { getTrustTierMeta } from '@/lib/civic/card-presentation';
 import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 
-const CARD_WIDTH = 340;
-const CARD_HEIGHT = 214;
+const CARD_WIDTH = 240;
+const CARD_HEIGHT = 380;
 
 /**
  * The Oxy ID screen — the landing/home surface of Commons.
@@ -98,10 +96,6 @@ export default function IdScreen() {
     }
   }, [oxyServices, userId]);
 
-  // Live trust tier from the signed public card (cache-first).
-  const cardQuery = useCivicCard(userId);
-  const trustTier = cardQuery.data?.card.trustTier;
-
   const publicKeyShort = useMemo(() => {
     if (!publicKey) return undefined;
     if (publicKey.length <= 16) return publicKey;
@@ -130,26 +124,22 @@ export default function IdScreen() {
             width={CARD_WIDTH}
             height={CARD_HEIGHT}
             frontSide={
-              <View style={StyleSheet.absoluteFill}>
-                <FrontSide
-                  displayName={displayName}
-                  username={user?.username}
-                  avatarUrl={avatarUrl}
-                  accountCreated={user?.createdAt}
-                  publicKeyShort={publicKeyShort}
-                />
-                {trustTier && (
-                  <View style={styles.cardBadgeOverlay} pointerEvents="none">
-                    <CivicBadge
-                      tone={getTrustTierMeta(trustTier).tone}
-                      icon="shield-check"
-                      label={t(`civic.trustTier.${trustTier}`)}
-                    />
-                  </View>
-                )}
-              </View>
+              <FrontSide
+                displayName={displayName}
+                username={user?.username}
+                avatarUrl={avatarUrl}
+                accountCreated={user?.createdAt}
+                publicKeyShort={publicKeyShort}
+              />
             }
             backSide={
+              <BackSide
+                publicKey={publicKey ?? undefined}
+                displayName={displayName}
+                accountCreated={user?.createdAt}
+              />
+            }
+            qrSide={
               qrPayload ? (
                 <IdQrBack payload={qrPayload} caption={t('civic.id.qrCaption')} />
               ) : (
@@ -234,11 +224,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     paddingTop: 8,
-  },
-  cardBadgeOverlay: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
   },
   qrPlaceholder: {
     flex: 1,

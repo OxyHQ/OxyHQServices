@@ -1,11 +1,17 @@
 /**
- * Front side of the ID card component displaying user identity.
- * Government ID style layout with avatar mask and formal typography.
+ * Front face of the Oxy ID card — laid out like a real vertical ID / passport
+ * data page: an issuer header, a framed portrait beside the primary name, a
+ * column of labelled fields, and a machine-readable zone (MRZ) at the bottom.
+ * The content is printed FLAT on the card (no parallax float) so it reads as an
+ * engraved document over the hologram, not UI floating on top.
  */
 
+import { useMemo } from 'react';
 import { StyleSheet, Text, View, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { LogoIcon } from '@oxyhq/services';
 import { Fonts } from '@/constants/theme';
+import { AVATAR_ELEVATION, ParallaxLayer, TEXT_ELEVATION } from './tilt-context';
 
 interface FrontSideProps {
     displayName?: string;
@@ -15,301 +21,223 @@ interface FrontSideProps {
     publicKeyShort?: string;
 }
 
+// Reduce a value to the MRZ alphabet (A–Z, 0–9, filler '<'), collapse runs of
+// filler, and pad/truncate to a fixed width — passport-style.
+const sanitizeMrz = (value: string | undefined, length: number) =>
+    (value ?? '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '<')
+        .replace(/<{2,}/g, '<')
+        .padEnd(length, '<')
+        .slice(0, length);
+
+const MRZ_WIDTH = 26;
+
 export const FrontSide: React.FC<FrontSideProps> = ({
     displayName,
     username,
     avatarUrl,
     accountCreated,
-    publicKeyShort
+    publicKeyShort,
 }) => {
+    const mrzLines = useMemo(() => {
+        const name = sanitizeMrz(username ?? displayName, MRZ_WIDTH - 5);
+        const line1 = `IDOXY${name}`.padEnd(MRZ_WIDTH, '<').slice(0, MRZ_WIDTH);
+        const line2 = sanitizeMrz(publicKeyShort, MRZ_WIDTH);
+        return [line1, line2];
+    }, [username, displayName, publicKeyShort]);
+
+    const issued = useMemo(() => {
+        if (!accountCreated) return undefined;
+        const d = new Date(accountCreated);
+        if (Number.isNaN(d.getTime())) return undefined;
+        const yy = String(d.getFullYear()).slice(2);
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${dd}.${mm}.${yy}`;
+    }, [accountCreated]);
+
     return (
         <View style={styles.container}>
-            {/* Main content area */}
-            <View style={styles.content}>
-                {/* Avatar section with government ID style fade mask */}
-                <View style={styles.avatarSection}>
-                    <View style={styles.avatarContainer}>
-                        {avatarUrl ? (
-                            <Image
-                                source={{ uri: avatarUrl }}
-                                style={styles.avatar}
-                                resizeMode="cover"
-                            />
-                        ) : (
-                            <View style={styles.avatarPlaceholder}>
-                                <Text style={styles.avatarPlaceholderText}>
-                                    {displayName?.charAt(0)?.toUpperCase() || '?'}
-                                </Text>
-                            </View>
-                        )}
-                        {/* Oval fade mask - transparent to show hologram through edges */}
-                        {/* Top fade - creates oval top edge */}
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
-                            locations={[0, 0.4, 1]}
-                            start={{ x: 0.5, y: 0 }}
-                            end={{ x: 0.5, y: 1 }}
-                            style={styles.fadeOvalTop}
-                        />
-                        {/* Bottom fade - creates oval bottom edge */}
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
-                            locations={[0, 0.4, 1]}
-                            start={{ x: 0.5, y: 1 }}
-                            end={{ x: 0.5, y: 0 }}
-                            style={styles.fadeOvalBottom}
-                        />
-                        {/* Left fade - creates oval left edge */}
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
-                            locations={[0, 0.4, 1]}
-                            start={{ x: 0, y: 0.5 }}
-                            end={{ x: 1, y: 0.5 }}
-                            style={styles.fadeOvalLeft}
-                        />
-                        {/* Right fade - creates oval right edge */}
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
-                            locations={[0, 0.4, 1]}
-                            start={{ x: 1, y: 0.5 }}
-                            end={{ x: 0, y: 0.5 }}
-                            style={styles.fadeOvalRight}
-                        />
-                        {/* Corner overlays for smoother oval shape - smaller to not affect center */}
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.fadeOvalCornerTL}
-                        />
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
-                            start={{ x: 1, y: 0 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.fadeOvalCornerTR}
-                        />
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
-                            start={{ x: 0, y: 1 }}
-                            end={{ x: 1, y: 0 }}
-                            style={styles.fadeOvalCornerBL}
-                        />
-                        <LinearGradient
-                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
-                            start={{ x: 1, y: 1 }}
-                            end={{ x: 0, y: 0 }}
-                            style={styles.fadeOvalCornerBR}
-                        />
-                    </View>
-                </View>
+            {/* Issuer header */}
+            <View style={styles.header}>
+                <LogoIcon height={22} />
+                <Text style={styles.docType}>IDENTITY CARD</Text>
+            </View>
 
-                {/* User info section */}
-                <View style={styles.infoSection}>
-                    <View style={styles.field}>
-                        <Text style={styles.fieldLabel}>FULL NAME</Text>
-                        <Text style={styles.fieldValue} numberOfLines={2}>
-                            {/* The caller (`IdentityCard`) computes a friendly */}
-                            {/* fallback via core's `getAccountDisplayName`, so */}
-                            {/* this defensive fallback only fires for genuinely */}
-                            {/* blank cards. */}
-                            {displayName || publicKeyShort || '—'}
-                        </Text>
-                    </View>
-
-                    {username && (
-                        <View style={styles.field}>
-                            <Text style={styles.fieldLabel}>USERNAME</Text>
-                            <Text style={styles.fieldValueSmall} numberOfLines={1}>
-                                {username}
+            {/* Portrait + primary name */}
+            <ParallaxLayer elevation={AVATAR_ELEVATION} style={styles.identityRow}>
+                <View style={styles.avatarContainer}>
+                    {avatarUrl ? (
+                        <Image source={{ uri: avatarUrl }} style={styles.avatar} resizeMode="cover" />
+                    ) : (
+                        <View style={styles.avatarPlaceholder}>
+                            <Text style={styles.avatarPlaceholderText}>
+                                {displayName?.charAt(0)?.toUpperCase() || '?'}
                             </Text>
                         </View>
                     )}
+                    {avatarUrl && (
+                        <>
+                            <LinearGradient
+                                colors={['rgba(0,0,0,0.18)', 'rgba(0,0,0,0)']}
+                                start={{ x: 0.5, y: 1 }}
+                                end={{ x: 0.5, y: 0.4 }}
+                                style={styles.avatarShade}
+                            />
+                        </>
+                    )}
+                </View>
+                <View style={styles.primaryCol}>
+                    <Text style={styles.fieldLabel}>NAME</Text>
+                    <Text style={styles.primaryValue} numberOfLines={2}>
+                        {displayName || publicKeyShort || '—'}
+                    </Text>
+                    <Text style={styles.fieldLabel}>TYPE</Text>
+                    <Text style={styles.fieldValueSmall}>SELF-CUSTODY</Text>
+                </View>
+            </ParallaxLayer>
 
+            {/* Labelled fields */}
+            <ParallaxLayer elevation={TEXT_ELEVATION} style={styles.fields}>
+                {username && (
                     <View style={styles.field}>
-                        <Text style={styles.fieldLabel}>ID NUMBER</Text>
-                        <Text style={styles.idNumber} numberOfLines={1}>
-                            {publicKeyShort || 'N/A'}
+                        <Text style={styles.fieldLabel}>USERNAME</Text>
+                        <Text style={styles.fieldValueSmall} numberOfLines={1}>
+                            {username}
                         </Text>
                     </View>
+                )}
+                <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>ID NUMBER</Text>
+                    <Text style={styles.idNumber} numberOfLines={1}>
+                        {publicKeyShort || 'N/A'}
+                    </Text>
                 </View>
-            </View>
+                {issued && (
+                    <View style={styles.field}>
+                        <Text style={styles.fieldLabel}>ISSUED</Text>
+                        <Text style={styles.fieldValueSmall}>{issued}</Text>
+                    </View>
+                )}
+            </ParallaxLayer>
 
-            {/* Footer */}
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>SELF-CUSTODY IDENTITY</Text>
-            </View>
+            {/* Machine-readable zone */}
+            <ParallaxLayer elevation={TEXT_ELEVATION} style={styles.mrz}>
+                <Text style={styles.mrzLine} numberOfLines={1}>
+                    {mrzLines[0]}
+                </Text>
+                <Text style={styles.mrzLine} numberOfLines={1}>
+                    {mrzLines[1]}
+                </Text>
+            </ParallaxLayer>
         </View>
     );
 };
 
-/**
- * Styles for the FrontSide component - Government ID style layout
- */
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 20,
+        padding: 18,
         justifyContent: 'space-between',
     },
-    content: {
+    header: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(0,0,0,0.18)',
+        paddingBottom: 6,
+    },
+    docType: {
+        fontSize: 9,
+        fontWeight: '600',
+        letterSpacing: 1.2,
+        color: '#6E6E73',
+    },
+    identityRow: {
         flexDirection: 'row',
         alignItems: 'flex-start',
-        flex: 1,
-    },
-    avatarSection: {
-        marginRight: 16,
-        justifyContent: 'flex-start',
-        alignItems: 'center',
-        position: 'relative',
-        alignSelf: 'stretch', // Allow section to stretch to full height
+        gap: 12,
     },
     avatarContainer: {
-        width: 100, // Wider than tall (government ID style)
-        flex: 1, // Use full available height
-        minHeight: 120, // Minimum height for portrait aspect ratio
-        borderRadius: 8, // Rounded rectangle
+        width: 84,
+        height: 104,
+        borderRadius: 6,
         overflow: 'hidden',
-        backgroundColor: 'transparent', // Transparent to show hologram through
-        position: 'relative',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(0,0,0,0.2)',
+        backgroundColor: 'rgba(255,255,255,0.35)',
     },
     avatar: {
         width: '100%',
         height: '100%',
-        backgroundColor: 'transparent', // Ensure no black background
     },
-    fadeOvalTop: {
+    avatarShade: {
         position: 'absolute',
-        top: 0,
         left: 0,
         right: 0,
-        height: '35%', // Reduced from 45% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalBottom: {
-        position: 'absolute',
         bottom: 0,
-        left: 0,
-        right: 0,
-        height: '35%', // Reduced from 45% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalLeft: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        width: '30%', // Reduced from 40% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalRight: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: '30%', // Reduced from 40% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalCornerTL: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '28%', // Reduced from 35% to keep center clear
-        height: '28%', // Reduced from 35% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalCornerTR: {
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        width: '28%', // Reduced from 35% to keep center clear
-        height: '28%', // Reduced from 35% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalCornerBL: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '28%', // Reduced from 35% to keep center clear
-        height: '28%', // Reduced from 35% to keep center clear
-        pointerEvents: 'none',
-    },
-    fadeOvalCornerBR: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: '28%', // Reduced from 35% to keep center clear
-        height: '28%', // Reduced from 35% to keep center clear
-        pointerEvents: 'none',
+        height: '45%',
     },
     avatarPlaceholder: {
         width: '100%',
         height: '100%',
-        backgroundColor: '#E0E0E0',
         justifyContent: 'center',
         alignItems: 'center',
     },
     avatarPlaceholderText: {
-        fontSize: 42,
+        fontSize: 40,
         fontWeight: '600',
-        color: '#8E8E93',
+        color: 'rgba(28,28,30,0.5)',
     },
-    infoSection: {
+    primaryCol: {
         flex: 1,
         justifyContent: 'flex-start',
     },
+    fields: {
+        gap: 8,
+    },
     field: {
-        marginBottom: 10,
-    },
-    fieldRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 4,
-    },
-    fieldHalf: {
-        flex: 1,
-        marginRight: 12,
+        gap: 1,
     },
     fieldLabel: {
         color: '#6E6E73',
-        fontSize: 9,
-        letterSpacing: 0.6,
+        fontSize: 8.5,
+        letterSpacing: 0.7,
         textTransform: 'uppercase',
-        marginBottom: 2,
-        fontWeight: '500',
-    },
-    fieldValue: {
-        color: '#1C1C1E',
-        fontSize: 18,
         fontWeight: '600',
+        marginTop: 4,
+    },
+    primaryValue: {
+        color: '#1C1C1E',
+        fontSize: 17,
+        fontWeight: '700',
         letterSpacing: -0.2,
-        lineHeight: 22,
+        lineHeight: 20,
     },
     fieldValueSmall: {
         color: '#1C1C1E',
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '500',
-        letterSpacing: -0.1,
     },
     idNumber: {
         color: '#1C1C1E',
-        // Platform monospace stack (`Geist Mono` was never bundled).
         fontFamily: Fonts?.mono,
         fontSize: 12,
         fontWeight: '600',
-        letterSpacing: 0.8,
+        letterSpacing: 0.6,
     },
-    footer: {
-        marginTop: 12,
+    mrz: {
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: 'rgba(0,0,0,0.18)',
         paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: '#E5E5EA',
-        alignItems: 'center',
+        gap: 2,
     },
-    footerText: {
-        color: '#8E8E93',
-        fontSize: 8,
-        fontWeight: '400',
-        letterSpacing: 0.5,
-        textTransform: 'uppercase',
+    mrzLine: {
+        fontFamily: Fonts?.mono,
+        fontSize: 9.5,
+        letterSpacing: 1,
+        color: '#2B2B2E',
     },
 });
