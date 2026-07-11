@@ -46,7 +46,7 @@ const IRIDESCENT = [
 // sinusoid) with alternating phase, so the rings interleave into the classic
 // engine-turned weave. Smooth curves — no straight-chord mesh.
 const buildGuilloche = (width: number, height: number) => {
-    const path = Skia.Path.Make();
+    const builder = Skia.PathBuilder.Make();
     const cx = width / 2;
     const cy = height / 2;
     const aspect = width / height;
@@ -64,13 +64,13 @@ const buildGuilloche = (width: number, height: number) => {
             const x = cx + r * Math.cos(t) * aspect;
             const y = cy + r * Math.sin(t);
             if (i === 0) {
-                path.moveTo(x, y);
+                builder.moveTo(x, y);
             } else {
-                path.lineTo(x, y);
+                builder.lineTo(x, y);
             }
         }
     }
-    return path;
+    return builder.detach();
 };
 
 export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => {
@@ -113,21 +113,28 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
     );
 
     // NFC-read shine: a narrow diagonal band that sweeps corner-to-corner as
-    // scanPulse runs 0→1, fading in/out with sin(π·t) so it never pops.
+    // scanPulse runs 0→1, fading in/out with sin(π·t) so it never pops. The band
+    // centre travels −0.3 → 1.3, so the stripe sits just off-canvas at both ends
+    // and crosses mid-canvas exactly when the opacity envelope peaks (t = 0.5).
     const scanBandStart = useDerivedValue(() => {
-        const p = scanPulse.value * 2 - 1;
-        return vec(width * (p - 0.6), height * (p - 0.6));
+        const t = Math.min(1, Math.max(0, scanPulse.value));
+        const c = -0.3 + 1.6 * t;
+        return vec(width * (c - 0.6), height * (c - 0.6));
     });
     const scanBandEnd = useDerivedValue(() => {
-        const p = scanPulse.value * 2 - 1;
-        return vec(width * (p + 0.6), height * (p + 0.6));
+        const t = Math.min(1, Math.max(0, scanPulse.value));
+        const c = -0.3 + 1.6 * t;
+        return vec(width * (c + 0.6), height * (c + 0.6));
     });
     const scanBandOpacity = useDerivedValue(() =>
         Math.sin(Math.min(1, Math.max(0, scanPulse.value)) * Math.PI) * 0.9,
     );
 
-    // Attestation-confirmed edge glow.
-    const attestEdgeOpacity = useDerivedValue(() => attestGlow.value * 0.9);
+    // Attestation-confirmed edge glow (clamped so a spring overshoot past 1
+    // can't push the opacity out of range).
+    const attestEdgeOpacity = useDerivedValue(
+        () => Math.min(1, Math.max(0, attestGlow.value)) * 0.9,
+    );
 
     return (
         <Canvas style={{ width, height, backgroundColor: 'transparent' }}>
