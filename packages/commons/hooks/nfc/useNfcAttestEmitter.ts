@@ -38,6 +38,11 @@ export function useNfcAttestEmitter({ payload, enabled, onRead }: UseNfcAttestEm
     let removeListener: (() => void) | null = null;
     let armedSession: { setEnabled: (value: boolean) => Promise<unknown> } | null = null;
 
+    const disarmQuietly = (target: { setEnabled: (value: boolean) => Promise<unknown> }) =>
+      target.setEnabled(false).catch((error: unknown) => {
+        console.warn('[useNfcAttestEmitter] failed to disarm HCE session', error);
+      });
+
     (async () => {
       try {
         const NfcManager = (await import('react-native-nfc-manager')).default;
@@ -60,12 +65,24 @@ export function useNfcAttestEmitter({ payload, enabled, onRead }: UseNfcAttestEm
           writable: false,
         });
         const session = await HCESession.getInstance();
-        // Register the disarm target BEFORE enabling — if the effect is
+        // Nothing armed yet — a cancellation that landed while getInstance was
+        // in flight can bail here without touching the radio.
+        if (cancelled) return;
+        // Register the disarm target BEFORE the arm awaits — if the effect is
         // cancelled mid-arm, cleanup must still switch the service off.
         armedSession = session;
         await session.setApplication(tag);
+        if (cancelled) {
+          // Cleanup's disarm may have raced ahead of this resumption —
+          // converge the radio to OFF ourselves.
+          await disarmQuietly(session);
+          return;
+        }
         await session.setEnabled(true);
-        if (cancelled) return;
+        if (cancelled) {
+          await disarmQuietly(session);
+          return;
+        }
         removeListener = session.on(HCESession.Events.HCE_STATE_READ, () => {
           onReadRef.current();
         });
@@ -80,9 +97,7 @@ export function useNfcAttestEmitter({ payload, enabled, onRead }: UseNfcAttestEm
       cancelled = true;
       removeListener?.();
       if (armedSession) {
-        armedSession.setEnabled(false).catch((error) => {
-          console.warn('[useNfcAttestEmitter] failed to disarm HCE session', error);
-        });
+        disarmQuietly(armedSession);
       }
     };
   }, [payload, enabled]);

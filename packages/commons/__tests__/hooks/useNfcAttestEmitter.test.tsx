@@ -20,10 +20,12 @@ const mockSession = {
     return mockRemoveListener;
   }),
 };
+type MockHceSession = typeof mockSession;
+const mockGetInstance = jest.fn(async (): Promise<MockHceSession> => mockSession);
 jest.mock('react-native-hce', () => ({
   __esModule: true,
   HCESession: {
-    getInstance: jest.fn(async () => mockSession),
+    getInstance: () => mockGetInstance(),
     Events: { HCE_STATE_READ: 'hceStateRead' },
   },
   NFCTagType4: jest.fn(function (this: Record<string, unknown>, props: unknown) { this.props = props; }),
@@ -81,6 +83,46 @@ describe('useNfcAttestEmitter', () => {
     await waitFor(() => expect(result.current.state).toBe('emitting'));
     unmount();
     expect(mockRemoveListener).toHaveBeenCalled();
+    expect(mockSetEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it('never arms when unmounted while getInstance is in flight', async () => {
+    let resolveGetInstance: ((session: MockHceSession) => void) | null = null;
+    mockGetInstance.mockImplementationOnce(
+      () => new Promise<MockHceSession>((resolve) => { resolveGetInstance = resolve; }),
+    );
+    const { unmount } = renderHook(() =>
+      useNfcAttestEmitter({ payload: PAYLOAD, enabled: true, onRead: jest.fn() }),
+    );
+    await waitFor(() => expect(mockGetInstance).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => {
+      resolveGetInstance?.(mockSession);
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(mockSetApplication).not.toHaveBeenCalled();
+    expect(mockSetEnabled).not.toHaveBeenCalled();
+  });
+
+  it('converges the radio off when unmounted while setEnabled(true) is pending', async () => {
+    let resolveEnable: (() => void) | null = null;
+    mockSetEnabled.mockImplementationOnce(
+      () => new Promise<undefined>((resolve) => { resolveEnable = () => resolve(undefined); }),
+    );
+    const { unmount } = renderHook(() =>
+      useNfcAttestEmitter({ payload: PAYLOAD, enabled: true, onRead: jest.fn() }),
+    );
+    await waitFor(() => expect(mockSetEnabled).toHaveBeenCalledWith(true));
+    unmount();
+    const callsBeforeResolve = mockSetEnabled.mock.calls.length;
+    await act(async () => {
+      resolveEnable?.();
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    // The late-resuming arm must issue its OWN disarm — cleanup's disarm
+    // already landed before our enable resolved, so without the converge
+    // call the radio would be left on.
+    expect(mockSetEnabled.mock.calls.length).toBeGreaterThan(callsBeforeResolve);
     expect(mockSetEnabled).toHaveBeenLastCalledWith(false);
   });
 });
