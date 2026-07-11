@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, StyleSheet } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { ThemedText } from '@/components/themed-text';
+import { CenteredState } from '@/components/ui';
 import { ActivityRow } from '@/components/reputation/ActivityRow';
 import type { ReputationTransaction } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
@@ -14,96 +13,47 @@ interface ActivityListProps {
 }
 
 /**
- * The recent reputation activity feed. Renders the most recent ledger entries
- * with loading, error, and empty states. The list never owns its own scroller —
- * it sits inside the screen's single vertical scroll.
+ * The recent reputation activity feed — the "Activity" tab body. Renders the
+ * most recent ledger entries as clean, borderless rows (separated by a hairline
+ * inset that clears the leading icon badge), with shared loading, error, and
+ * empty states. It never owns its own scroller: it sits inside the screen's
+ * single vertical scroll.
  */
 export function ActivityList({ transactions, isLoading, isError }: ActivityListProps) {
   const colors = useColors();
   const { t } = useTranslation();
 
-  const renderInner = () => {
-    if (isLoading && !transactions) {
-      return (
-        <View style={styles.stateBox}>
-          <ActivityIndicator color={colors.tint} />
-          <ThemedText style={[styles.stateText, { color: colors.textSecondary }]}>
-            {t('civic.reputation.activity.loading')}
-          </ThemedText>
-        </View>
-      );
-    }
+  if (isLoading && !transactions) {
+    return <CenteredState loading body={t('civic.reputation.activity.loading')} />;
+  }
 
-    if (isError && !transactions) {
-      return (
-        <View style={styles.stateBox}>
-          <MaterialCommunityIcons name="cloud-alert" size={28} color={colors.textSecondary} />
-          <ThemedText style={[styles.stateText, { color: colors.textSecondary }]}>
-            {t('civic.reputation.activity.error')}
-          </ThemedText>
-        </View>
-      );
-    }
-
-    if (!transactions || transactions.length === 0) {
-      return (
-        <View style={styles.stateBox}>
-          <MaterialCommunityIcons name="history" size={28} color={colors.textSecondary} />
-          <ThemedText style={[styles.stateText, styles.centerText, { color: colors.textSecondary }]}>
-            {t('civic.reputation.activity.empty')}
-          </ThemedText>
-        </View>
-      );
-    }
-
+  if (isError && !transactions) {
     return (
-      <View>
-        {transactions.map((transaction, index) => (
-          <View
-            key={transaction.id}
-            style={index > 0 ? [styles.divider, { borderTopColor: colors.border }] : undefined}
-          >
-            <ActivityRow transaction={transaction} />
-          </View>
-        ))}
-      </View>
+      <CenteredState icon="cloud-alert" body={t('civic.reputation.activity.error')} />
     );
-  };
+  }
+
+  if (!transactions || transactions.length === 0) {
+    return <CenteredState icon="history" body={t('civic.reputation.activity.empty')} />;
+  }
 
   return (
-    <View style={styles.section}>
-      <ThemedText style={[styles.title, { color: colors.text }]}>
-        {t('civic.reputation.activity.title')}
-      </ThemedText>
-      {renderInner()}
+    <View>
+      {transactions.map((transaction, index) => (
+        <View
+          key={transaction.id}
+          style={index > 0 ? [styles.divider, { borderTopColor: colors.border }] : undefined}
+        >
+          <ActivityRow transaction={transaction} />
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  section: {
-    gap: 4,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
   divider: {
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  stateBox: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 36,
-    gap: 12,
-  },
-  stateText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  centerText: {
-    textAlign: 'center',
+    marginLeft: 50,
   },
 });

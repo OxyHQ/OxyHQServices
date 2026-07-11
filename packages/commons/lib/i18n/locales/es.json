@@ -1238,6 +1238,29 @@
     "reputation": {
       "title": "Reputación",
       "subtitle": "La confianza que has ganado, ponderada por lo real que es.",
+      "standingTitle": "Nivel",
+      "getStarted": {
+        "title": "Empezar",
+        "dismiss": "Descartar empezar"
+      },
+      "tabs": {
+        "overview": "Resumen",
+        "activity": "Actividad"
+      },
+      "cta": {
+        "attest": {
+          "title": "Verifícate en persona",
+          "desc": "Reúnete con alguien en persona y que firme por tu Oxy ID."
+        },
+        "validate": {
+          "title": "Valida a otros",
+          "desc": "Revisa solicitudes de validación como jurado de confianza."
+        },
+        "personhood": {
+          "title": "Prueba tu personalidad",
+          "desc": "Acumula señales de que eres una persona real y única."
+        }
+      },
       "loading": "Cargando reputación…",
       "total": "Reputación total",
       "bySource": "Por origen",
@@ -1287,7 +1310,9 @@
       },
       "composition": {
         "earned": "Ganado",
-        "empty": "Aún no has ganado reputación: tus acciones verificadas la construirán."
+        "empty": "Aún no has ganado reputación: tus acciones verificadas la construirán.",
+        "readout": "{{points}} pts · {{percent}} %",
+        "hint": "Toca un segmento para ver su parte"
       },
       "duty": {
         "secondary": "Valida solicitudes · Avala a personas"

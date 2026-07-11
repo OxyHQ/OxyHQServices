@@ -3,6 +3,8 @@ import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
+import { CircleIconBadge } from '@/components/ui';
+import { withAlpha } from '@/utils/color';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { describeReputationAction, formatPointsDelta } from '@/lib/civic/reputation-activity';
 import type { ReputationTransaction } from '@oxyhq/core';
@@ -13,10 +15,10 @@ interface ActivityRowProps {
 }
 
 /**
- * One reputation ledger entry rendered as a human row: a category icon, a
- * readable action label, the relative time, an Oxy-signed/verifiable indicator
- * for crypto-attested actions, and the signed point delta (green award / red
- * penalty).
+ * One reputation ledger entry as a clean, borderless row: a soft circular icon
+ * badge tinted by the award/penalty sign, a readable action label with an
+ * Oxy-signed indicator for crypto-attested actions, the relative time, and the
+ * signed point delta (green award / red penalty).
  */
 export function ActivityRow({ transaction }: ActivityRowProps) {
   const colors = useColors();
@@ -24,11 +26,13 @@ export function ActivityRow({ transaction }: ActivityRowProps) {
   const relativeTime = useRelativeTime();
 
   const meta = describeReputationAction(transaction);
-  const deltaColor = meta.positive ? colors.success : colors.error;
+  const accent = meta.positive ? colors.success : colors.error;
 
   return (
     <View style={styles.row}>
-      <MaterialCommunityIcons name={meta.icon} size={20} color={colors.textTertiary} />
+      <CircleIconBadge backgroundColor={withAlpha(accent, 0.12)}>
+        <MaterialCommunityIcons name={meta.icon} size={18} color={accent} />
+      </CircleIconBadge>
 
       <View style={styles.text}>
         <View style={styles.labelRow}>
@@ -49,7 +53,7 @@ export function ActivityRow({ transaction }: ActivityRowProps) {
         </ThemedText>
       </View>
 
-      <ThemedText style={[styles.delta, { color: deltaColor }]}>
+      <ThemedText style={[styles.delta, { color: accent }]}>
         {formatPointsDelta(transaction.points)}
       </ThemedText>
     </View>
@@ -61,7 +65,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingVertical: 16,
+    paddingVertical: 14,
   },
   text: {
     flex: 1,
@@ -74,15 +78,16 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
     flexShrink: 1,
+    letterSpacing: -0.2,
   },
   time: {
     fontSize: 13,
   },
   delta: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     minWidth: 44,
     textAlign: 'right',
     fontVariant: ['tabular-nums'],

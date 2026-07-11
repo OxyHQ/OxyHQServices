@@ -1238,6 +1238,29 @@
     "reputation": {
       "title": "Reputation",
       "subtitle": "Trust you've earned — weighted by how real it is.",
+      "standingTitle": "Standing",
+      "getStarted": {
+        "title": "Get started",
+        "dismiss": "Dismiss get started"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "activity": "Activity"
+      },
+      "cta": {
+        "attest": {
+          "title": "Get attested in real life",
+          "desc": "Meet someone in person and have them sign for your Oxy ID."
+        },
+        "validate": {
+          "title": "Validate others",
+          "desc": "Review validation requests as a trusted juror."
+        },
+        "personhood": {
+          "title": "Prove your personhood",
+          "desc": "Stack signals that you're a real, unique person."
+        }
+      },
       "loading": "Loading reputation…",
       "total": "Total reputation",
       "bySource": "By source",
@@ -1287,7 +1310,9 @@
       },
       "composition": {
         "earned": "Earned",
-        "empty": "No reputation earned yet — your verified actions will build it."
+        "empty": "No reputation earned yet — your verified actions will build it.",
+        "readout": "{{points}} pts · {{percent}}%",
+        "hint": "Tap a segment to see its share"
       },
       "duty": {
         "secondary": "Validate requests · Vouch for people"
