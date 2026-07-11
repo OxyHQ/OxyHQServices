@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { parseAttestPayload } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Screen, StackHeader, CenteredState, PrimaryButton, SecondaryButton } from '@/components/ui';
@@ -10,7 +11,18 @@ import { useTranslation } from '@/lib/i18n';
 /**
  * Confirm-someone screen (the scanner's / B's side of a real-life attestation).
  *
- * Reached from the QR scanner after it parses an `oxycommons://attest?…` payload.
+ * Reached from the QR scanner / in-app NFC read after `parseScan` resolves an
+ * `oxycommons://attest?…` payload (those paths pre-parse it and hand over
+ * `subjectDid`/`context`/`nonce`/`exp`), OR reached directly by a system NDEF
+ * tap on Android (app possibly closed): the OS launches straight to this route
+ * from the tag's raw `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI
+ * (the same bytes `OxyServices.civic.buildAttestQrPayload` puts on the QR — see
+ * `useNfcAttestEmitter`), so expo-router hands back that URI's own query keys
+ * (`subject`/`ctx`) instead of the scanner's camelCase fields. Both are
+ * normalized into the same shape below (mirrors
+ * `lib/commons-signin/parse-scan.ts`'s `parseAttestPayload` → `ScanResult`
+ * mapping) before reaching `useRealLifeAttest`.
+ *
  * Resolves the subject (A) server-side from the DID, gates the signed
  * attestation behind the device biometric, then submits it. The subject identity
  * shown comes ONLY from the resolved card — never from the scanned QR.
@@ -19,13 +31,49 @@ export default function AttestConfirmScreen() {
   const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
-  const raw = useLocalSearchParams<{ subjectDid?: string; context?: string; nonce?: string; exp?: string }>();
+  const raw = useLocalSearchParams<{
+    subjectDid?: string;
+    context?: string;
+    nonce?: string;
+    exp?: string;
+    // Raw system-NDEF-tap fields — see the module doc comment above.
+    subject?: string;
+    ctx?: string;
+  }>();
+
+  // System NFC tap (Android, app possibly closed) deep-links the tag's raw
+  // `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI; expo-router hands
+  // back that URI's literal query keys. Reconstruct it and re-run it through
+  // the shared, already-tested parser so this path can never drift from the
+  // scanner's validation (`parseAttestPayload` never throws — it returns
+  // `null` for anything unparseable).
+  const fromDeepLink = useMemo(() => {
+    if (!raw.subject || !raw.nonce || !raw.exp) return null;
+    const reconstructed =
+      `oxycommons://attest?subject=${encodeURIComponent(raw.subject)}` +
+      `&ctx=${encodeURIComponent(raw.ctx ?? '')}` +
+      `&nonce=${encodeURIComponent(raw.nonce)}` +
+      `&exp=${encodeURIComponent(raw.exp)}`;
+    const parsed = parseAttestPayload(reconstructed);
+    if (!parsed) {
+      console.warn('[AttestScreen] invalid NFC attest deep link', { subject: raw.subject });
+    }
+    return parsed;
+  }, [raw.subject, raw.ctx, raw.nonce, raw.exp]);
 
   const params = useMemo<RealLifeAttestParams | null>(() => {
+    if (fromDeepLink) {
+      return {
+        subjectDid: fromDeepLink.subjectDid,
+        context: fromDeepLink.context,
+        nonce: fromDeepLink.nonce,
+        exp: fromDeepLink.exp,
+      };
+    }
     const exp = Number(raw.exp);
     if (!raw.subjectDid || !raw.nonce || !Number.isFinite(exp)) return null;
     return { subjectDid: raw.subjectDid, context: raw.context ?? '', nonce: raw.nonce, exp };
-  }, [raw.subjectDid, raw.context, raw.nonce, raw.exp]);
+  }, [fromDeepLink, raw.subjectDid, raw.context, raw.nonce, raw.exp]);
 
   const { state, subject, biometricFailed, errorCode, result, confirm, reload } = useRealLifeAttest(
     params,

@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
-import { parseScan } from '@/lib/commons-signin/parse-scan';
+import { parseScan, type ScanResult } from '@/lib/commons-signin/parse-scan';
+import { useNfcReader } from '@/hooks/nfc/useNfcReader';
 
 /**
  * QR scanner for the Commons handoffs (approver / verifier side).
@@ -34,13 +35,12 @@ export default function ScanSignInScreen() {
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
   const [scanError, setScanError] = useState<'invalid' | 'expired' | null>(null);
+  const { available: nfcAvailable, readOnce } = useNfcReader();
 
-  const handleBarcodeScanned = useCallback(
-    ({ data }: BarcodeScanningResult) => {
-      if (scanned) return;
-      setScanned(true);
-
-      const parsed = parseScan(data);
+  // Shared routing for anything `parseScan` can resolve, regardless of
+  // whether the raw string came from the camera or an NFC read.
+  const routeParsed = useCallback(
+    (parsed: ScanResult) => {
       // `replace` so the hardware back button doesn't return to the camera.
       if (parsed.kind === 'approval') {
         router.replace({ pathname: '/(scan)/approve', params: { code: parsed.code } });
@@ -64,8 +64,23 @@ export default function ScanSignInScreen() {
       }
       setScanError(parsed.reason);
     },
-    [scanned, router],
+    [router],
   );
+
+  const handleBarcodeScanned = useCallback(
+    ({ data }: BarcodeScanningResult) => {
+      if (scanned) return;
+      setScanned(true);
+      routeParsed(parseScan(data));
+    },
+    [scanned, routeParsed],
+  );
+
+  const handleNfcRead = useCallback(async () => {
+    const read = await readOnce();
+    if (!read.ok) return; // cancelled/empty — stay on the scanner
+    routeParsed(parseScan(read.uri));
+  }, [readOnce, routeParsed]);
 
   const handleScanAgain = useCallback(() => {
     setScanError(null);
@@ -182,20 +197,33 @@ export default function ScanSignInScreen() {
             ) : (
               <>
                 <Text style={styles.instructionText}>{t('signInApproval.scan.instructions')}</Text>
-                <TouchableOpacity
-                  style={styles.controlButton}
-                  onPress={toggleFlash}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    flashOn ? t('signInApproval.scan.a11y.flashOff') : t('signInApproval.scan.a11y.flashOn')
-                  }
-                  accessibilityState={{ selected: flashOn }}
-                >
-                  <MaterialCommunityIcons name={flashOn ? 'flash' : 'flash-off'} size={28} color="#fff" />
-                  <Text style={styles.controlText}>
-                    {flashOn ? t('signInApproval.scan.flashOn') : t('signInApproval.scan.flashOff')}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.controlsRow}>
+                  <TouchableOpacity
+                    style={styles.controlButton}
+                    onPress={toggleFlash}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      flashOn ? t('signInApproval.scan.a11y.flashOff') : t('signInApproval.scan.a11y.flashOn')
+                    }
+                    accessibilityState={{ selected: flashOn }}
+                  >
+                    <MaterialCommunityIcons name={flashOn ? 'flash' : 'flash-off'} size={28} color="#fff" />
+                    <Text style={styles.controlText}>
+                      {flashOn ? t('signInApproval.scan.flashOn') : t('signInApproval.scan.flashOff')}
+                    </Text>
+                  </TouchableOpacity>
+                  {nfcAvailable && (
+                    <TouchableOpacity
+                      style={styles.controlButton}
+                      onPress={handleNfcRead}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('civic.nfc.read')}
+                    >
+                      <MaterialCommunityIcons name="nfc" size={28} color="#fff" />
+                      <Text style={styles.controlText}>{t('civic.nfc.read')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </>
             )}
           </View>
@@ -275,6 +303,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
     marginBottom: 24,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    gap: 32,
   },
   controlButton: {
     alignItems: 'center',
