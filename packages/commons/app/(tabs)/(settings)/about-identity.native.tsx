@@ -36,6 +36,17 @@ export default function AboutIdentityScreen() {
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const avatarUrl = useAvatarUrl(user);
 
+  // DID-only QR payload, revealed by a long-press on the card.
+  const qrPayload = useMemo(() => {
+    if (!oxyServices) return undefined;
+    try {
+      return oxyServices.getMyIdPayload();
+    } catch (error) {
+      console.error('[AboutIdentity] Failed to build ID payload', error);
+      return undefined;
+    }
+  }, [oxyServices, user?.id]);
+
   const handleEditName = useCallback(() => {
     showBottomSheet?.({
       screen: 'EditProfileField',
@@ -418,6 +429,8 @@ export default function AboutIdentityScreen() {
                 avatarUrl={avatarUrl}
                 accountCreated={user?.createdAt}
                 publicKey={publicKey || undefined}
+                qrPayload={qrPayload}
+                qrCaption={t('civic.id.qrCaption')}
               />
             </View>
             {publicKey && (
