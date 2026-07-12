@@ -1366,7 +1366,6 @@
         "regenerate": "Generar un código nuevo"
       },
       "confirm": {
-        "title": "Confirmar en persona",
         "loading": "Resolviendo identidad…",
         "submitting": "Confirmando que conociste a {{name}}…",
         "error": {

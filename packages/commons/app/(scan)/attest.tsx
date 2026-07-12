@@ -2,40 +2,39 @@ import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { parseAttestPayload } from '@oxyhq/core';
+import { useOxy } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Screen, StackHeader, CenteredState, PrimaryButton } from '@/components/ui';
 import { useAttestFlow } from '@/hooks/civic/useAttestFlow';
+import { useAttestAutoDispatch } from '@/hooks/civic/useAttestAutoDispatch';
+import type { AttestSubmitParams } from '@/hooks/civic/attestStore';
 import { userIdFromDid } from '@/lib/civic/did';
 import { useTranslation } from '@/lib/i18n';
 
 /**
- * COLD-DEEP-LINK entry for a real-life attestation (the scanner's / B's side).
+ * OS/system NFC deep-link entry for a real-life attestation (the scanner's /
+ * B's side). Reached by Android NFC foreground dispatch (this screen open) OR a
+ * cold launch (app closed) straight into `oxycommons://attest?subject=…&ctx=…&
+ * nonce=…&exp=…` (the same bytes `OxyServices.civic.buildAttestQrPayload` puts
+ * on the QR — see `useNfcAttestEmitter` and the `plugins/with-hce.js` intent
+ * filter, which targets this route; do NOT delete it). The in-app camera / NFC
+ * READ paths never navigate here — they auto-submit inline on the scanner
+ * (`app/(scan)/index.tsx`).
  *
- * The in-app paths (camera QR scan, in-app NFC read) no longer navigate here —
- * they auto-submit inline on the scanner (`app/(scan)/index.tsx`). This route
- * exists solely for the system NDEF tap on Android (app possibly closed): the
- * OS launches straight here from the tag's raw
- * `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI (the same bytes
- * `OxyServices.civic.buildAttestQrPayload` puts on the QR — see
- * `useNfcAttestEmitter` and the `plugins/with-hce.js` intent filter, which
- * targets this route; do NOT delete it). expo-router hands back that URI's own
- * query keys (`subject`/`ctx`), reconstructed and re-run through the shared
- * Zod-backed `parseAttestPayload` so this path can never drift from the
- * scanner's validation.
- *
- * NOTE — no auto-trigger on this path yet (owner decision pending): the attest
- * flow is event-driven with zero `useEffect`, and this cold OS launch provides
- * no in-app event to hook the automatic submit onto (the app has no OS-URL
- * subscription / `+native-intent` infrastructure, and a cold-start submit would
- * also race the SDK's session cold boot). Until that is decided, this screen
- * renders A's server-resolved card plus whatever the flow store holds for this
- * subject (submitting/done/error render identically to the scanner's overlay).
+ * FLUID AUTO-CONFIRM: exactly like the in-app scanner, this submits
+ * AUTOMATICALLY — no "Confirm in person" heading, no button, no biometric. On
+ * arrival it shows A's server-resolved identity + "Confirming you met {name}…",
+ * then the ✓ done (points) / classified-error result. The single auto-dispatch
+ * lives in `useAttestAutoDispatch` (the one sanctioned effect in the flow); it
+ * is gated on `canUsePrivateApi` so a cold launch never races the SDK session
+ * cold boot. A's identity comes ONLY from the resolved card — never the tag.
  */
 export default function AttestDeepLinkScreen() {
   const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
+  const { canUsePrivateApi } = useOxy();
   const raw = useLocalSearchParams<{ subject?: string; ctx?: string; nonce?: string; exp?: string }>();
 
   // Reconstruct the tag URI — with `''` for any missing field, so partial or
@@ -53,6 +52,14 @@ export default function AttestDeepLinkScreen() {
     [raw.subject, raw.ctx, raw.nonce, raw.exp],
   );
 
+  const params = useMemo<AttestSubmitParams | null>(
+    () =>
+      parsed
+        ? { subjectDid: parsed.subjectDid, context: parsed.context, nonce: parsed.nonce, exp: parsed.exp }
+        : null,
+    [parsed],
+  );
+
   const subjectUserId = parsed ? userIdFromDid(parsed.subjectDid) : null;
   const flow = useAttestFlow(subjectUserId);
 
@@ -60,6 +67,12 @@ export default function AttestDeepLinkScreen() {
   // flow from an earlier scanner session must not leak into a fresh deep link.
   const flowMatches = parsed !== null && flow.subjectDid === parsed.subjectDid;
   const status = flowMatches ? flow.status : 'idle';
+
+  // Ready to auto-confirm once the subject's card has resolved AND the SDK can
+  // make private calls (session cold boot has settled). The one-shot dispatch
+  // is guarded per subject inside the hook.
+  const ready = canUsePrivateApi && subjectUserId !== null && flow.subject !== null;
+  useAttestAutoDispatch(ready, params, flow.submit);
 
   const handleClose = useCallback(() => {
     flow.reset();
@@ -122,8 +135,9 @@ export default function AttestDeepLinkScreen() {
       return <CenteredState loading body={t('civic.attest.confirm.loading')} />;
     }
 
-    // idle / submitting — A's identity comes ONLY from the resolved card,
-    // never from the tag.
+    // idle (awaiting the one-shot auto-dispatch) / submitting — both read as
+    // "Confirming…" so the screen feels instant and fluid. A's identity comes
+    // ONLY from the resolved card.
     return (
       <View style={styles.body}>
         <View style={styles.identity}>
@@ -146,14 +160,12 @@ export default function AttestDeepLinkScreen() {
           )}
         </View>
 
-        {status === 'submitting' && (
-          <View style={styles.submitting}>
-            <ActivityIndicator color={colors.tint} />
-            <ThemedText style={[styles.submittingText, { color: colors.textSecondary }]}>
-              {t('civic.attest.confirm.submitting', { name })}
-            </ThemedText>
-          </View>
-        )}
+        <View style={styles.submitting}>
+          <ActivityIndicator color={colors.tint} />
+          <ThemedText style={[styles.submittingText, { color: colors.textSecondary }]}>
+            {t('civic.attest.confirm.submitting', { name })}
+          </ThemedText>
+        </View>
       </View>
     );
   };
@@ -161,7 +173,7 @@ export default function AttestDeepLinkScreen() {
   return (
     <Screen gap={24}>
       <StackHeader
-        title={t('civic.attest.confirm.title')}
+        title={t('civic.attest.section.title')}
         onClose={handleClose}
         closeAccessibilityLabel={t('common.close')}
       />
