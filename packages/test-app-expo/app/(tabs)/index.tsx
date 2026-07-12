@@ -158,17 +158,17 @@ export default function HomeScreen() {
           </Pressable>
         </ThemedView>
 
-        {/* Bloom Widgets showcase — available regardless of auth state */}
-        <Section title="Bloom Widgets">
+        {/* Profile preview cards showcase — available regardless of auth state */}
+        <Section title="Profile preview cards">
           <GroupedSection
             items={[
               {
-                id: 'bloom-widgets',
-                icon: 'view-dashboard',
+                id: 'profile-cards',
+                icon: 'id-card-outline',
                 iconColor: colors.iconData,
-                title: 'Widgets showcase',
+                title: 'Profile preview cards',
                 subtitle: 'ProfileCard, StatBar, heatmap & more',
-                onPress: () => router.push('/widgets'),
+                onPress: () => router.push('/profile-cards'),
                 showChevron: true,
               },
             ]}

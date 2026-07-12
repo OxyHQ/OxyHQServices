@@ -48,7 +48,7 @@ function RootNavigator() {
     <ThemeProvider value={navTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="widgets" options={{ title: 'Bloom Widgets' }} />
+        <Stack.Screen name="profile-cards" options={{ title: 'Profile preview cards' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />

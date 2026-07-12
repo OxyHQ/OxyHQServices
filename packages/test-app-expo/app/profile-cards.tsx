@@ -15,11 +15,11 @@ import { CompositionBar } from '@oxyhq/bloom/composition-bar';
 import type { CompositionCategory } from '@oxyhq/bloom/composition-bar';
 
 /**
- * Bloom Widgets showcase — an Apple-Watch-style gallery of the @oxyhq/bloom
- * @0.30.0 widget components (ProfileCard + its metric primitives). Everything on
- * this screen is mock data; it exists to exercise every new component in both
- * light and dark theme. Colors come from Bloom's useTheme() so the gallery
- * tracks the active color preset like the rest of the app chrome.
+ * Profile preview cards showcase — an Apple-Watch-style gallery of the
+ * @oxyhq/bloom ProfileCard and its metric primitives. Everything on this screen
+ * is mock data; it exists to exercise every new component in both light and dark
+ * theme. Colors come from Bloom's useTheme() so the gallery tracks the active
+ * color preset like the rest of the app chrome.
  */
 
 // Facepile members for the ProfileCard footers. `name` drives Avatar's colored
@@ -51,7 +51,7 @@ const COMPOSITION: CompositionCategory[] = [
   { key: 'moderation', name: 'Moderation', amount: 60, color: '#3B82F6' },
 ];
 
-export default function WidgetsScreen() {
+export default function ProfileCardsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string | null>('trust');
@@ -194,9 +194,9 @@ export default function WidgetsScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
     >
       <View className="mb-1 gap-1.5">
-        <Text className="text-[30px] font-extrabold tracking-[-0.5px] text-foreground">Bloom Widgets</Text>
+        <Text className="text-[30px] font-extrabold tracking-[-0.5px] text-foreground">Profile preview cards</Text>
         <Text className="text-[15px] leading-[21px] text-muted-foreground">
-          @oxyhq/bloom@0.30.0 — Apple-Watch-style ProfileCard stat cards and their metric primitives.
+          @oxyhq/bloom ProfileCard — Apple-Watch-style preview cards and their metric primitives.
         </Text>
       </View>
 
