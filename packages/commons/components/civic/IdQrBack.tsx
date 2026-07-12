@@ -3,8 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Canvas, Group, LinearGradient, RoundedRect, vec } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
-import { LogoIcon } from '@oxyhq/services';
 
+import { HolographicLogo } from '@/components/OxyID/holographic-logo';
 import { useTilt } from '@/components/OxyID/tilt-context';
 
 interface IdQrBackProps {
@@ -50,7 +50,7 @@ export function IdQrBack({ payload, caption }: IdQrBackProps) {
     <View style={styles.container}>
       {/* Header — mirrors the front. */}
       <View style={styles.header}>
-        <LogoIcon height={20} />
+        <HolographicLogo size={20} />
         <Text style={styles.docType}>VERIFY</Text>
       </View>
 
