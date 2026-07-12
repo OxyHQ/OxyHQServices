@@ -138,6 +138,9 @@ export function useRealLifeAttest(
       setResult(res);
       setState('done');
     } catch (error: unknown) {
+      // Log the raw rejection so an unmodelled reason (surfacing as `generic`)
+      // is diagnosable from the device logs, not just the friendly copy.
+      console.error('[useRealLifeAttest] attestation submit failed', error);
       setErrorCode(attestErrorCode(error));
       setState('error');
     }
