@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { parseAttestPayload } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
@@ -144,9 +144,9 @@ export default function AttestConfirmScreen() {
       );
     }
 
-    // ready / confirming — the tap is the intent, so the biometric gate runs
-    // automatically; there is no confirm button. Only a biometric FAILURE
-    // surfaces a manual retry.
+    // ready / confirming — B taps one button (biometric → sign → submit); a
+    // biometric failure just relabels it to a retry. The submit runs only on
+    // that press, so it never races an unready bearer.
     return (
       <View style={styles.confirmBody}>
         <View style={styles.identity}>
@@ -169,28 +169,29 @@ export default function AttestConfirmScreen() {
           )}
         </View>
 
-        {biometricFailed ? (
-          <>
-            <ThemedText style={[styles.inlineWarn, { color: colors.warning }]}>
-              {t('civic.attest.confirm.biometricFailed', { name })}
-            </ThemedText>
-            <View style={styles.actions}>
-              <PrimaryButton
-                tone="success"
-                label={t('civic.attest.confirm.biometricRetry')}
-                onPress={confirm}
-              />
-              <SecondaryButton label={t('common.cancel')} onPress={handleClose} />
-            </View>
-          </>
-        ) : (
-          <View style={styles.statusRow}>
-            <ActivityIndicator color={colors.textSecondary} />
-            <ThemedText style={[styles.status, { color: colors.textSecondary }]}>
-              {t(state === 'confirming' ? 'civic.attest.confirm.recording' : 'civic.attest.confirm.verifying')}
-            </ThemedText>
-          </View>
+        <ThemedText style={[styles.prompt, { color: colors.text }]}>
+          {t('civic.attest.confirm.prompt', { name })}
+        </ThemedText>
+
+        {biometricFailed && (
+          <ThemedText style={[styles.inlineWarn, { color: colors.warning }]}>
+            {t('civic.attest.confirm.biometricFailed', { name })}
+          </ThemedText>
         )}
+
+        <View style={styles.actions}>
+          <PrimaryButton
+            tone="success"
+            label={t(biometricFailed ? 'civic.attest.confirm.biometricRetry' : 'civic.attest.confirm.cta')}
+            loading={state === 'confirming'}
+            onPress={confirm}
+          />
+          <SecondaryButton
+            label={t('common.cancel')}
+            onPress={handleClose}
+            disabled={state === 'confirming'}
+          />
+        </View>
       </View>
     );
   };
@@ -248,14 +249,11 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 15,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 4,
-  },
-  status: {
-    fontSize: 15,
+  prompt: {
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 24,
+    textAlign: 'center',
   },
   inlineWarn: {
     fontSize: 13,
