@@ -1,8 +1,16 @@
 const { oxySplashScreenPlugin } = require('@oxyhq/expo-splash/config');
 
+// App variant — lets a development build sit next to the production app on the
+// SAME device by giving it a distinct applicationId/bundleId + name. Build the
+// dev variant with `APP_VARIANT=development` (e.g.
+// `APP_VARIANT=development npx expo run:android`); production is the default.
+const IS_DEV_VARIANT = process.env.APP_VARIANT === 'development';
+const APP_ID = IS_DEV_VARIANT ? 'so.oxy.accounts.dev' : 'so.oxy.accounts';
+const APP_NAME = IS_DEV_VARIANT ? 'Accounts (Dev)' : 'Accounts by Oxy';
+
 module.exports = {
   expo: {
-    name: 'Accounts by Oxy',
+    name: APP_NAME,
     slug: 'Oxy',
     version: '1.0.0',
     orientation: 'portrait',
@@ -22,10 +30,11 @@ module.exports = {
         'android.permission.USE_BIOMETRIC',
         'android.permission.USE_FINGERPRINT',
       ],
-      package: 'so.oxy.accounts',
+      package: APP_ID,
     },
     ios: {
       supportsTablet: true,
+      bundleIdentifier: APP_ID,
     },
     web: {
       output: 'static',
@@ -68,6 +77,10 @@ module.exports = {
       'expo-sharing',
       'expo-status-bar',
       'expo-web-browser',
+      // Adds android:sharedUserId="so.oxy.shared" so this app shares the same
+      // Android keychain namespace as every other Oxy app signed with the
+      // shared ecosystem cert — enables sign-in-once-use-everywhere.
+      './plugins/withSharedUserId',
     ],
     experiments: {
       typedRoutes: true,
