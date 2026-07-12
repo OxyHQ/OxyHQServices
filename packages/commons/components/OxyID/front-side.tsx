@@ -10,6 +10,7 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, View, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { LogoIcon } from '@oxyhq/services';
+import { CommonsLogo } from '@/components/commons-logo';
 import { Fonts } from '@/constants/theme';
 import { AVATAR_ELEVATION, ParallaxLayer, TEXT_ELEVATION } from './tilt-context';
 
@@ -59,6 +60,10 @@ export const FrontSide: React.FC<FrontSideProps> = ({
 
     return (
         <View style={styles.container}>
+            {/* Commons issuer emblem — a faint corner watermark sitting over the
+                hologram, rendered behind the printed content. */}
+            <CommonsLogo size={26} color="rgba(92,94,112,0.28)" style={styles.commonsMark} />
+
             {/* Issuer header */}
             <View style={styles.header}>
                 <LogoIcon height={22} />
@@ -140,6 +145,11 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 18,
         justifyContent: 'space-between',
+    },
+    commonsMark: {
+        position: 'absolute',
+        right: 14,
+        bottom: 14,
     },
     header: {
         flexDirection: 'row',
