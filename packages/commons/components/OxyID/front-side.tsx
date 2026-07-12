@@ -9,8 +9,8 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { LogoIcon } from '@oxyhq/services';
 import { Fonts } from '@/constants/theme';
+import { HolographicLogo } from './holographic-logo';
 import { AVATAR_ELEVATION, ParallaxLayer, TEXT_ELEVATION } from './tilt-context';
 
 interface FrontSideProps {
@@ -63,7 +63,7 @@ export const FrontSide: React.FC<FrontSideProps> = ({
         <View style={styles.container}>
             {/* Issuer header */}
             <View style={styles.header}>
-                <LogoIcon height={22} />
+                <HolographicLogo size={22} />
                 <Text style={styles.docType}>IDENTITY CARD</Text>
             </View>
 
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     },
     header: {
         flexDirection: 'row',
-        alignItems: 'baseline',
+        alignItems: 'center',
         justifyContent: 'space-between',
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: 'rgba(0,0,0,0.18)',

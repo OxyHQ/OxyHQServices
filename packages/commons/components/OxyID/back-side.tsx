@@ -5,8 +5,8 @@
  */
 
 import { StyleSheet, Text, View } from 'react-native';
-import { LogoIcon } from '@oxyhq/services';
 import { Fonts } from '@/constants/theme';
+import { HolographicLogo } from './holographic-logo';
 
 interface BackSideProps {
     publicKey?: string;
@@ -35,7 +35,7 @@ export const BackSide: React.FC<BackSideProps> = ({ publicKey, displayName, acco
         <View style={styles.container}>
             {/* Header — mirrors the front. */}
             <View style={styles.header}>
-                <LogoIcon height={20} />
+                <HolographicLogo size={20} />
                 <Text style={styles.docType}>PUBLIC KEY</Text>
             </View>
 
