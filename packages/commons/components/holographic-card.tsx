@@ -42,6 +42,16 @@ const IRIDESCENT = [
     '#ff6bd6',
 ];
 
+// Commons emblem (three interlocking lenses) engraved into the hologram as a
+// corner watermark. Path mirrors `assets/images/commons-logo.svg` (viewBox
+// "0 -960 960 960"); it's transformed into card space + filled with the same
+// tilt-driven iridescence as the guilloché so it shimmers as part of the texture.
+const COMMONS_LOGO_PATH =
+    'M640-162q-18.09 0-34.9-1.57-16.8-1.57-34.1-5.43 72-63 113.5-143.5Q726-393.01 726-480q0-88-41.5-168T571-791q16.89-3.62 34.1-5.31Q622.3-798 640-798q132.45 0 225.22 92.89Q958-612.22 958-479.61T865.22-254.5Q772.45-162 640-162Zm-160-43q-71-42-114.5-114.5T322-480q0-88 43.5-160.5T480-755q71 42 114.5 114.5T638-480q0 88-43.5 160.5T480-205Zm-160 43q-132.45 0-225.22-92.89Q2-347.78 2-480.39T94.78-705.5Q187.55-798 320-798q18.09 0 34.9 1.57 16.8 1.57 34.1 5.43-72 63-113.5 143.16Q234-567.67 234-480.29 234-385 274.5-304 315-223 382-167q-14.47 2.63-30.22 3.82Q336.03-162 320-162Z';
+
+const EMBLEM_SIZE = 30;
+const EMBLEM_PAD = 16;
+
 // Guilloché rosette: a set of nested flower curves (radius modulated by a
 // sinusoid) with alternating phase, so the rings interleave into the classic
 // engine-turned weave. Smooth curves — no straight-chord mesh.
@@ -77,6 +87,18 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
     const { nx, ny, mag, isPressed, scanPulse, attestGlow } = useTilt();
 
     const guilloche = useMemo(() => buildGuilloche(width, height), [width, height]);
+
+    // Commons emblem scaled from its 960-unit viewBox and pinned to the
+    // bottom-right corner (affine: scale s, translate to the corner).
+    const emblem = useMemo(() => {
+        const path = Skia.Path.MakeFromSVGString(COMMONS_LOGO_PATH);
+        if (!path) return null;
+        const s = EMBLEM_SIZE / 960;
+        const ex = width - EMBLEM_PAD - EMBLEM_SIZE;
+        const ey = height - EMBLEM_PAD;
+        path.transform(Skia.Matrix([s, 0, ex, 0, s, ey, 0, 0, 1]));
+        return path;
+    }, [width, height]);
 
     // Diagonal iridescence band (NO centre pivot). Its endpoints shift with tilt,
     // so the rainbow slides along the guilloché lines as the phone turns.
@@ -158,6 +180,25 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
                         <LinearGradient start={irisStart} end={irisEnd} colors={IRIDESCENT} />
                     </Path>
                 </Group>
+
+                {/* Commons issuer emblem, engraved into the hologram: a faint base
+                    glyph plus the SAME tilt-driven iridescence as the guilloché, so
+                    it shimmers as part of the security texture. */}
+                {emblem && (
+                    <>
+                        <Path
+                            path={emblem}
+                            style="stroke"
+                            strokeWidth={0.9}
+                            color="rgba(120,120,140,0.22)"
+                        />
+                        <Group opacity={irisOpacity}>
+                            <Path path={emblem} style="stroke" strokeWidth={1.1}>
+                                <LinearGradient start={irisStart} end={irisEnd} colors={IRIDESCENT} />
+                            </Path>
+                        </Group>
+                    </>
+                )}
 
                 {/* Glossy laminate sheen — the bright diagonal glare that sweeps
                     across the surface, giving the physical-card feel. */}
