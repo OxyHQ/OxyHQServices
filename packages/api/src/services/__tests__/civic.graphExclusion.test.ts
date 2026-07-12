@@ -14,6 +14,9 @@ interface GraphEntry {
   blocks: string[];
   blockedBy: string[];
   devices: string[];
+  /** Coarse client-supplied `deviceInfo.fingerprint` values (environment hash,
+   * NOT device-unique — must never produce a `shared_device` verdict). */
+  fingerprints: string[];
   ips: string[];
 }
 
@@ -27,6 +30,7 @@ function entry(id: string): GraphEntry {
     blocks: e.blocks ?? [],
     blockedBy: e.blockedBy ?? [],
     devices: e.devices ?? [],
+    fingerprints: e.fingerprints ?? [],
     ips: e.ips ?? [],
   };
 }
@@ -64,7 +68,8 @@ jest.mock('../../models/Session', () => ({
     find: (q: Record<string, unknown>) => {
       const e = entry(String(q.userId));
       const rows = [
-        ...e.devices.map((d) => ({ deviceId: d, deviceInfo: {} })),
+        ...e.devices.map((d, i) => ({ deviceId: d, deviceInfo: { fingerprint: e.fingerprints[i] } })),
+        ...e.fingerprints.slice(e.devices.length).map((fp) => ({ deviceInfo: { fingerprint: fp } })),
         ...e.ips.map((ip) => ({ deviceInfo: { ipAddress: ip } })),
       ];
       return chain(rows);
@@ -99,7 +104,7 @@ describe('isSockPuppetRelation', () => {
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'graph_neighbor' });
   });
 
-  it('excludes a shared device fingerprint', async () => {
+  it('excludes a shared deviceId (true multi-account on one install)', async () => {
     graph[A] = { devices: ['dev-1'] };
     graph[B] = { devices: ['dev-1'] };
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_device' });
@@ -109,6 +114,23 @@ describe('isSockPuppetRelation', () => {
     graph[A] = { ips: ['1.2.3.4'] };
     graph[B] = { ips: ['1.2.3.4'] };
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_ip' });
+  });
+
+  it('does NOT exclude two distinct installs that share only the coarse environment fingerprint', async () => {
+    // Regression (prod incident): two DISTINCT physical phones — separate
+    // per-install deviceIds, separate IPs — produced the IDENTICAL client
+    // `deviceInfo.fingerprint` (environment hash of ua/platform/language/
+    // timezone: no device-unique input on React Native). The fingerprint must
+    // NOT yield a `shared_device` verdict.
+    graph[A] = { devices: ['dev-a'], fingerprints: ['same-env-fp'], ips: ['9.9.9.9'] };
+    graph[B] = { devices: ['dev-b'], fingerprints: ['same-env-fp'], ips: ['8.8.8.8'] };
+    expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: false });
+  });
+
+  it('still excludes a shared deviceId even when fingerprints differ', async () => {
+    graph[A] = { devices: ['dev-1'], fingerprints: ['fp-a'] };
+    graph[B] = { devices: ['dev-1'], fingerprints: ['fp-b'] };
+    expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_device' });
   });
 
   it('does NOT exclude unrelated users', async () => {

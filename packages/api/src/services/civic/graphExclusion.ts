@@ -12,8 +12,9 @@
  *     neighbour; 2 = shares a common neighbour). Two-hop is computed as the
  *     intersection of the two users' direct-neighbour sets (bounded, no BFS
  *     blow-up).
- *  2. SHARED DEVICE / IP — an overlap in the `deviceId` / device fingerprint /
- *     IP of the two users' active sessions (a classic multi-account signal).
+ *  2. SHARED DEVICE / IP — an overlap in the `deviceId` / IP of the two users'
+ *     active sessions (a classic multi-account signal). `deviceInfo.fingerprint`
+ *     is deliberately NOT a device signal here — see `sessionFingerprints`.
  *
  * `Contact` is intentionally NOT used: it keys on email, not a resolved Oxy
  * user id, so it does not yield a user↔user edge without a privacy-sensitive
@@ -78,27 +79,40 @@ export async function areGraphRelated(a: string, b: string, hops = 1): Promise<b
   return false;
 }
 
-/** Collect a user's active-session device + IP fingerprints. Exported so the
- * Fase 3 sybil heuristics can cluster accounts by shared fingerprints without
- * re-implementing the (deviceId / fingerprint / IP) extraction. */
+/** Collect a user's active-session device ids + IPs. Exported so the Fase 3
+ * sybil heuristics can cluster accounts by shared identifiers without
+ * re-implementing the (deviceId / IP) extraction.
+ *
+ * `deviceInfo.fingerprint` is deliberately EXCLUDED from the device set: it is
+ * the sha256 of a client-supplied environment blob ({userAgent, platform,
+ * language, timezone, screen}), which on React Native carries ZERO
+ * device-unique inputs (no `screen` global, mostly-undefined navigator
+ * fields) — two DISTINCT physical phones with the same locale/timezone
+ * deterministically produce the SAME fingerprint. Treating it as device
+ * identity falsely excluded two separate devices as one
+ * (`excluded_shared_device`). `deviceId` is the high-confidence per-install
+ * identifier: device-first installs persist a random 256-bit id that is
+ * shared across accounts on the SAME install (the SDK threads it into every
+ * additional sign-in), while the server-derived fallback is salted +
+ * user-scoped and can never collide across users — so a genuine
+ * multi-account-on-one-device pair still overlaps on `deviceId`. */
 export async function sessionFingerprints(
   userId: string,
 ): Promise<{ devices: Set<string>; ips: Set<string> }> {
   const sessions = await Session.find({ userId, isActive: true })
-    .select('deviceId deviceInfo.ipAddress deviceInfo.fingerprint')
+    .select('deviceId deviceInfo.ipAddress')
     .lean();
   const devices = new Set<string>();
   const ips = new Set<string>();
   for (const session of sessions) {
-    const record = session as { deviceId?: string; deviceInfo?: { ipAddress?: string; fingerprint?: string } };
+    const record = session as { deviceId?: string; deviceInfo?: { ipAddress?: string } };
     if (record.deviceId) devices.add(record.deviceId);
-    if (record.deviceInfo?.fingerprint) devices.add(record.deviceInfo.fingerprint);
     if (record.deviceInfo?.ipAddress) ips.add(record.deviceInfo.ipAddress);
   }
   return { devices, ips };
 }
 
-/** True (with kind) when `a` and `b` share an active device fingerprint or IP. */
+/** True (with kind) when `a` and `b` share an active-session deviceId or IP. */
 export async function shareDeviceOrIp(
   a: string,
   b: string,

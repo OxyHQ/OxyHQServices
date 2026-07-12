@@ -11,9 +11,11 @@
  * return contract):
  *
  *  1. SHARED DEVICE / IP CLUSTER — the fraction of a subject's active vouchers
- *     that share an active-session device fingerprint or IP with the subject or
- *     with one another. Real vouchers are independent people on independent
- *     devices; a multi-account farm shows a dense fingerprint overlap.
+ *     that share an active-session device id or IP with the subject or with one
+ *     another. Real vouchers are independent people on independent devices; a
+ *     multi-account farm shows a dense identifier overlap. (The coarse
+ *     `deviceInfo.fingerprint` is NOT part of the print set — see
+ *     `sessionFingerprints`.)
  *
  *  2. VOUCH-RING DENSITY — reciprocal (A↔B) and short-cycle (A→B→C→A) vouch
  *     edges around the subject. An organic web-of-trust is broadly acyclic
