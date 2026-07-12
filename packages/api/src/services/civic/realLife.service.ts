@@ -13,7 +13,11 @@
  *    references B's envelope as provenance.)
  *  - Replay is blocked by a single-use `CivicNonce` (the QR's nonce) + `exp`.
  *  - Sybil farming is blocked by the shared graph-exclusion test (B must not be
- *    A's puppet: no graph edge, no shared device/IP) + a per-pair cooldown.
+ *    A's puppet: no graph edge, no shared deviceId).
+ *  - Re-confirming the SAME person is IDEMPOTENT: the (attestor→subject) pair
+ *    earns the HIGH-weight award at most once. A repeat (with a fresh QR/nonce)
+ *    is a clean no-op that returns the original award, never a second +25 — so
+ *    `realLifeCount`/personhood counts DISTINCT counterparties, not re-scans.
  *  - B is recorded as the attestor (`createdByUserId`) so B can be SLASHED in
  *    Part B if A's attested action is later found fraudulent.
  *
@@ -36,7 +40,6 @@ import { reputationService } from '../reputation.service';
 import { REAL_LIFE_ATTESTED_ACTION } from '../../utils/reputation.constants';
 import {
   REAL_LIFE_NONCE_MAX_AGE_MS,
-  REAL_LIFE_PAIR_COOLDOWN_MS,
   REAL_LIFE_EXCLUSION_HOPS,
 } from '../../utils/civic.constants';
 import { logger } from '../../utils/logger';
@@ -53,7 +56,6 @@ export type RealLifeRejectionReason =
   | 'subject_not_found'
   | 'expired'
   | 'nonce_used'
-  | 'pair_cooldown'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
   | 'excluded_shared_ip'
@@ -177,16 +179,32 @@ export async function submitRealLifeAttestation(
     return { ok: false, reason: exclusionReason(relation.reason) };
   }
 
-  // Per-pair cooldown: B may attest A at most once per window.
-  const since = new Date(now - REAL_LIFE_PAIR_COOLDOWN_MS);
-  const recentPair = await ReputationTransaction.findOne({
+  // Idempotent re-affirmation: the (attestor→subject) pair earns the
+  // HIGH-weight award at most ONCE. If B has already attested A, a repeat is a
+  // clean no-op that returns the ORIGINAL award's points — never a second +25.
+  // Keyed on the pair with NO time window (the simplest guarantee against a
+  // double-award), which also keeps `realLifeCount`/personhood a count of
+  // DISTINCT counterparties. Short-circuiting BEFORE the nonce claim means a
+  // no-op repeat never burns the subject's fresh QR. A same-QR double-tap race
+  // is still serialised by the single-use nonce below (one caller wins the
+  // insert; the other gets `nonce_used`), so only one award is ever created.
+  const existingPairAward = await ReputationTransaction.findOne({
     userId: subjectUserId,
     createdByUserId: attestorUserId,
     actionType: REAL_LIFE_ATTESTED_ACTION,
-    createdAt: { $gt: since },
-  }).lean();
-  if (recentPair) {
-    return { ok: false, reason: 'pair_cooldown' };
+    status: 'active',
+  })
+    .select('points sourceActionId')
+    .lean();
+  if (existingPairAward) {
+    return {
+      ok: true,
+      recordId:
+        typeof existingPairAward.sourceActionId === 'string' ? existingPairAward.sourceActionId : '',
+      subjectUserId,
+      attestorUserId,
+      points: existingPairAward.points,
+    };
   }
 
   // Burn the single-use nonce (replay guard) only after the eligibility gates,

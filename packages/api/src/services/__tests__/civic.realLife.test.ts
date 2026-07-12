@@ -5,9 +5,10 @@
  * verify + chain store, graph exclusion, nonce, reputation award, models) so the
  * eligibility gates are exercised in isolation: a clean attestation awards the
  * subject the HIGH-weight points (recording the attestor + emitting the Oxy
- * provenance attestation), and each gate (self, expired, nonce reuse, graph
- * neighbour, shared device, pair cooldown, bad signature) rejects with its
- * stable reason. `did.service` (buildUserDid/parseUserDid) runs for real.
+ * provenance attestation), a REPEAT of the same pair is an idempotent no-op
+ * (no second award), and each gate (self, expired, nonce reuse, graph
+ * neighbour, shared device, bad signature) rejects with its stable reason.
+ * `did.service` (buildUserDid/parseUserDid) runs for real.
  */
 
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
@@ -92,7 +93,7 @@ beforeEach(() => {
   mockAward.mockResolvedValue({ points: 25 });
   mockUserExists.mockResolvedValue({ _id: A });
   mockUserFindById.mockReturnValue({ select: () => ({ lean: async () => ({ publicKey: 'pk-b', authMethods: [] }) }) });
-  mockTxnFindOne.mockReturnValue({ lean: async () => null });
+  mockTxnFindOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
 });
 
 describe('submitRealLifeAttestation', () => {
@@ -161,10 +162,28 @@ describe('submitRealLifeAttestation', () => {
     expect(mockIsSockPuppet).toHaveBeenCalledWith(A, B, expect.objectContaining({ ignoreSharedIp: true }));
   });
 
-  it('rejects a per-pair cooldown hit (no award)', async () => {
-    mockTxnFindOne.mockReturnValue({ lean: async () => ({ _id: 'old' }) });
-    expect(await submitRealLifeAttestation(envelope(), B)).toEqual({ ok: false, reason: 'pair_cooldown' });
+  it('is idempotent for a repeat of the same pair: returns the original award, no second +25', async () => {
+    // B already has an active real_life_attested award for A. A repeat (fresh
+    // nonce) must no-op: ok:true with the ORIGINAL points, no new award, and no
+    // fresh nonce burned.
+    mockTxnFindOne.mockReturnValue({
+      select: () => ({ lean: async () => ({ points: 25, sourceActionId: 'rec-first' }) }),
+    });
+
+    const result = await submitRealLifeAttestation(envelope(), B);
+
+    expect(result).toEqual({ ok: true, recordId: 'rec-first', subjectUserId: A, attestorUserId: B, points: 25 });
     expect(mockAward).not.toHaveBeenCalled();
+    expect(mockNonceCreate).not.toHaveBeenCalled();
+    expect(mockVerifyAndStore).not.toHaveBeenCalled();
+  });
+
+  it('awards independently for a DISTINCT pair (no existing pair award)', async () => {
+    // No prior award for this pair → the normal award path runs once.
+    const result = await submitRealLifeAttestation(envelope(), B);
+
+    expect(result).toEqual({ ok: true, recordId: 'rec-1', subjectUserId: A, attestorUserId: B, points: 25 });
+    expect(mockAward).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a reused nonce (single-use E11000)', async () => {

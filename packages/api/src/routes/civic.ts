@@ -208,7 +208,6 @@ function throwForRealLifeReason(reason: RealLifeRejectionReason): never {
     case 'subject_not_found':
       throw new NotFoundError('Attestation subject not found');
     case 'nonce_used':
-    case 'pair_cooldown':
     case 'chain_conflict':
     case 'bad_seq':
     case 'chain_fork':

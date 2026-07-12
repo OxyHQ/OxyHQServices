@@ -120,7 +120,7 @@ describe('submitRealLifeAttestation under DID_WEB_DOMAIN=api.oxy.so (prod anchor
     mockVerifyAndStore.mockResolvedValue({ ok: true, record: { recordId: 'rec-1' } });
     mockAward.mockResolvedValue({ points: 25 });
     mockUserExists.mockResolvedValue({ _id: A });
-    mockTxnFindOne.mockReturnValue({ lean: async () => null });
+    mockTxnFindOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
   });
 
   it('accepts an SDK-spelled (did:web:oxy.so) self-issued envelope for the caller account', async () => {

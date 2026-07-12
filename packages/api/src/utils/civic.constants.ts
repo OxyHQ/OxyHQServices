@@ -21,13 +21,6 @@ import type { TrustTier } from './reputation.constants';
 export const REAL_LIFE_NONCE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
- * Per-pair cooldown: a given counterparty (B) may attest the same subject (A) at
- * most once per this window, even with a fresh QR — defence against a colluding
- * pair farming HIGH-weight points.
- */
-export const REAL_LIFE_PAIR_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-/**
  * Graph-exclusion hop radius for the real-life flow: the counterparty must not
  * be within this many social-graph hops of the subject (1 = direct neighbour).
  */
