@@ -68,6 +68,10 @@ module.exports = {
             enableProguardInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             useLegacyPackaging: true,
+            // expo-contacts is referenced by the autolinked ExpoModulesPackageList
+            // but is not a dependency here; suppress R8's missing-class error for
+            // that dead optional reference (it is never loaded at runtime).
+            extraProguardRules: '-dontwarn expo.modules.contacts.**',
           },
         },
       ],
@@ -84,6 +88,11 @@ module.exports = {
         },
       ],
       './plugins/with-hce',
+      // Android sharedUserId 'so.oxy.shared' — Commons is the identity vault; it
+      // must be in the same shared-keychain UID as the other Oxy apps so
+      // "Sign in with Oxy" shares the session across apps (requires all Oxy apps
+      // to be signed with the same key — the oxy-ecosystem release keystore).
+      './plugins/withSharedUserId',
       'expo-secure-store',
       'expo-font',
       'expo-image',
