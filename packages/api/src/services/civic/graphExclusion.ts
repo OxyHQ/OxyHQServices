@@ -24,6 +24,7 @@
 import Follow, { FollowType } from '../../models/Follow';
 import Block from '../../models/Block';
 import Session from '../../models/Session';
+import { logger } from '../../utils/logger';
 
 /** Why two users were judged related (for audit + a machine-readable reason). */
 export type ExclusionReason = 'self' | 'graph_neighbor' | 'shared_device' | 'shared_ip';
@@ -135,11 +136,21 @@ export async function shareDeviceOrIp(
  * The shared sock-puppet test: `a` and `b` are excluded from attesting/judging
  * each other when they are the same account, within `hops` graph hops, or share
  * an active device/IP. Returns the FIRST matching reason.
+ *
+ * `ignoreSharedIp` DOWNGRADES the IP overlap from a hard exclusion to a SOFT
+ * (logged-only) signal for the caller. The real-life attestation flow sets it:
+ * people who genuinely meet in person almost always share a network (home /
+ * café / CGNAT), so a shared IP contradicts — rather than confirms — sock-puppet
+ * suspicion there. `deviceId` (per-install), the social graph, and the jury
+ * carry the anti-sybil weight for attestation. A shared `deviceId` still
+ * hard-excludes regardless of this flag (it wins over IP inside
+ * `shareDeviceOrIp`). Jury selection does NOT pass the flag and keeps IP as a
+ * hard exclusion.
  */
 export async function isSockPuppetRelation(
   a: string,
   b: string,
-  opts: { hops?: number } = {},
+  opts: { hops?: number; ignoreSharedIp?: boolean } = {},
 ): Promise<ExclusionResult> {
   if (a === b) {
     return { excluded: true, reason: 'self' };
@@ -149,6 +160,15 @@ export async function isSockPuppetRelation(
   }
   const device = await shareDeviceOrIp(a, b);
   if (device.shared) {
+    if (device.kind === 'ip' && opts.ignoreSharedIp) {
+      // Soft signal: record the shared-IP overlap for telemetry but do NOT
+      // exclude — no shared deviceId was found (that check wins above), so the
+      // pair is treated as unrelated for this caller.
+      logger.info('civic.sockpuppet shared IP downgraded to soft signal', {
+        component: 'civic.graphExclusion',
+      });
+      return { excluded: false };
+    }
     return { excluded: true, reason: device.kind === 'ip' ? 'shared_ip' : 'shared_device' };
   }
   return { excluded: false };

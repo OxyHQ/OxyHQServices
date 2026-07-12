@@ -110,10 +110,27 @@ describe('isSockPuppetRelation', () => {
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_device' });
   });
 
-  it('excludes a shared IP', async () => {
+  it('excludes a shared IP by default (jury behaviour unchanged)', async () => {
     graph[A] = { ips: ['1.2.3.4'] };
     graph[B] = { ips: ['1.2.3.4'] };
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_ip' });
+  });
+
+  it('does NOT exclude a shared-ONLY-IP pair when ignoreSharedIp is set (attestation)', async () => {
+    // Real-life attestation: meeting in person implies a shared network, so a
+    // shared IP (with distinct deviceIds, no graph edge) must be a SOFT signal.
+    graph[A] = { devices: ['dev-a'], ips: ['1.2.3.4'] };
+    graph[B] = { devices: ['dev-b'], ips: ['1.2.3.4'] };
+    expect(await isSockPuppetRelation(A, B, { ignoreSharedIp: true })).toEqual({ excluded: false });
+  });
+
+  it('still excludes a shared deviceId even when ignoreSharedIp is set', async () => {
+    graph[A] = { devices: ['dev-1'], ips: ['1.2.3.4'] };
+    graph[B] = { devices: ['dev-1'], ips: ['1.2.3.4'] };
+    expect(await isSockPuppetRelation(A, B, { ignoreSharedIp: true })).toEqual({
+      excluded: true,
+      reason: 'shared_device',
+    });
   });
 
   it('does NOT exclude two distinct installs that share only the coarse environment fingerprint', async () => {

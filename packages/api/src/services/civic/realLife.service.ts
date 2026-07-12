@@ -165,9 +165,13 @@ export async function submitRealLifeAttestation(
     return { ok: false, reason: 'bad_signature' };
   }
 
-  // Anti-sybil: B must not be A's puppet (no graph edge, no shared device/IP).
+  // Anti-sybil: B must not be A's puppet (no graph edge, no shared deviceId).
+  // A shared IP is a SOFT signal here (`ignoreSharedIp`): meeting in person
+  // almost always implies a shared network, so it must not hard-block a
+  // real-life attestation. deviceId + social graph + the jury carry the weight.
   const relation = await isSockPuppetRelation(subjectUserId, attestorUserId, {
     hops: REAL_LIFE_EXCLUSION_HOPS,
+    ignoreSharedIp: true,
   });
   if (relation.excluded) {
     return { ok: false, reason: exclusionReason(relation.reason) };

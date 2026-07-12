@@ -152,6 +152,15 @@ describe('submitRealLifeAttestation', () => {
     });
   });
 
+  it('runs the sock-puppet check with ignoreSharedIp so a shared IP does not hard-block', async () => {
+    // A shared IP is a soft signal for attestation: `isSockPuppetRelation`
+    // resolves `excluded:false` (IP downgraded) and the attestation proceeds.
+    const result = await submitRealLifeAttestation(envelope(), B);
+
+    expect(result).toEqual({ ok: true, recordId: 'rec-1', subjectUserId: A, attestorUserId: B, points: 25 });
+    expect(mockIsSockPuppet).toHaveBeenCalledWith(A, B, expect.objectContaining({ ignoreSharedIp: true }));
+  });
+
   it('rejects a per-pair cooldown hit (no award)', async () => {
     mockTxnFindOne.mockReturnValue({ lean: async () => ({ _id: 'old' }) });
     expect(await submitRealLifeAttestation(envelope(), B)).toEqual({ ok: false, reason: 'pair_cooldown' });
