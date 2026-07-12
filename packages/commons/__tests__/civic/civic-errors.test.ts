@@ -12,6 +12,11 @@ describe('attestErrorCode', () => {
     ['Attestation rejected: nonce_used', 'nonce_used'],
     ['Attestation rejected: pair_cooldown', 'pair_cooldown'],
     ['Attestation rejected: excluded_graph_neighbor', 'excluded_graph_neighbor'],
+    ['Attestation rejected: excluded_shared_device', 'excluded_shared_device'],
+    ['Attestation rejected: excluded_shared_ip', 'excluded_shared_ip'],
+    ['Attestation rejected: self_attestation', 'self_attestation'],
+    ['Attestation rejected: bad_signature', 'bad_signature'],
+    ['Attestation subject not found', 'subject_not_found'],
     ['Attestation rejected: expired', 'expired'],
   ])('maps "%s" → %s', (message, code) => {
     expect(attestErrorCode(new Error(message))).toBe(code);

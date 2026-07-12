@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOxy } from '@oxyhq/services';
 import type { CivicCardResult } from '@oxyhq/core';
 import type { RealLifeAttestationResult } from '@oxyhq/contracts';
@@ -66,6 +66,10 @@ export function useRealLifeAttest(
   const [errorCode, setErrorCode] = useState<AttestErrorCode | null>(null);
   const [result, setResult] = useState<RealLifeAttestationResult | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Guards the one automatic biometric+submit run per resolved subject (the tap
+  // itself is the intent — there is no separate confirm button). Reset whenever
+  // we re-resolve so a "try again" starts a fresh attempt.
+  const autoRanRef = useRef(false);
 
   const subjectDid = params?.subjectDid ?? null;
   const context = params?.context ?? '';
@@ -87,6 +91,7 @@ export function useRealLifeAttest(
     }
 
     let cancelled = false;
+    autoRanRef.current = false;
     setState('loading');
     setErrorCode(null);
     oxyServices
@@ -137,6 +142,17 @@ export function useRealLifeAttest(
       setState('error');
     }
   }, [oxyServices, subjectDid, context, nonce, exp, biometricReason]);
+
+  // The tap IS the confirmation intent: once the subject resolves, run the
+  // biometric gate + signed submit automatically, exactly once. A biometric
+  // failure leaves `autoRanRef` set so it does not re-prompt in a loop — the
+  // screen exposes a manual "try again" that calls `confirm` directly.
+  useEffect(() => {
+    if (state === 'ready' && !autoRanRef.current && !biometricFailed) {
+      autoRanRef.current = true;
+      void confirm();
+    }
+  }, [state, biometricFailed, confirm]);
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 

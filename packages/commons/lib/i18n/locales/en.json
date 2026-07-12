@@ -1369,10 +1369,10 @@
         "title": "Confirm in person",
         "biometricReason": "Verify it's you to confirm you met this person",
         "loading": "Resolving identity…",
-        "prompt": "Did you meet {{name}} in real life?",
-        "weight": "Real-life confirmations carry the most reputation weight.",
-        "cta": "Yes, I met them",
-        "biometricFailed": "Confirm with your device biometrics or passcode to continue.",
+        "verifying": "Verifying it's you…",
+        "recording": "Recording your confirmation…",
+        "biometricRetry": "Try again",
+        "biometricFailed": "Confirm with your device biometrics or passcode to record that you met {{name}}.",
         "error": {
           "title": "Couldn't confirm"
         },
@@ -1386,6 +1386,11 @@
         "nonce_used": "This code was already used. Ask them to generate a new one.",
         "pair_cooldown": "You've already confirmed this person recently. Try again later.",
         "excluded_graph_neighbor": "You're too closely connected to confirm this person.",
+        "excluded_shared_device": "This phone is tied to their account, so it can't confirm them.",
+        "excluded_shared_ip": "Both phones are on the same network — for anti-fraud, a confirmation needs the two phones on different networks (e.g. put this one on mobile data).",
+        "self_attestation": "You can't confirm your own identity. Sign in with a different account to confirm someone else.",
+        "bad_signature": "Your identity key couldn't be verified. Open Commons and finish setting up your identity, then try again.",
+        "subject_not_found": "We couldn't find that person's identity.",
         "generic": "We couldn't record this confirmation. Please try again."
       }
     },

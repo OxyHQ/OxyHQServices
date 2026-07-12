@@ -21,6 +21,11 @@ export type AttestErrorCode =
   | 'nonce_used'
   | 'pair_cooldown'
   | 'excluded_graph_neighbor'
+  | 'excluded_shared_device'
+  | 'excluded_shared_ip'
+  | 'self_attestation'
+  | 'bad_signature'
+  | 'subject_not_found'
   | 'generic';
 
 /** Recognized rejection codes for a validation vote. */
@@ -71,11 +76,15 @@ export type CredentialRevokeErrorCode =
   | 'not_found'
   | 'generic';
 
-const ATTEST_REASONS: readonly Exclude<AttestErrorCode, 'generic'>[] = [
+const ATTEST_REASONS: readonly Exclude<AttestErrorCode, 'generic' | 'subject_not_found'>[] = [
   'expired',
   'nonce_used',
   'pair_cooldown',
   'excluded_graph_neighbor',
+  'excluded_shared_device',
+  'excluded_shared_ip',
+  'self_attestation',
+  'bad_signature',
 ];
 
 const VOTE_REASONS: readonly Exclude<VoteErrorCode, 'generic' | 'not_selected'>[] = [
@@ -99,7 +108,13 @@ function messageOf(error: unknown): string {
 /** Classify a real-life-attestation submit error. */
 export function attestErrorCode(error: unknown): AttestErrorCode {
   const msg = messageOf(error);
-  return ATTEST_REASONS.find((reason) => msg.includes(reason)) ?? 'generic';
+  const match = ATTEST_REASONS.find((reason) => msg.includes(reason));
+  if (match) return match;
+  // `subject_not_found` surfaces as the sentence "Attestation subject not found".
+  if (msg.includes('subject not found')) {
+    return 'subject_not_found';
+  }
+  return 'generic';
 }
 
 /** Classify a validation-vote error. */

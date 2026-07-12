@@ -1369,10 +1369,10 @@
         "title": "Confirmar en persona",
         "biometricReason": "Verifica que eres tú para confirmar que conociste a esta persona",
         "loading": "Resolviendo identidad…",
-        "prompt": "¿Conociste a {{name}} en persona?",
-        "weight": "Las confirmaciones en persona tienen el mayor peso de reputación.",
-        "cta": "Sí, la conocí",
-        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para continuar.",
+        "verifying": "Verificando que eres tú…",
+        "recording": "Registrando tu confirmación…",
+        "biometricRetry": "Reintentar",
+        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para registrar que conociste a {{name}}.",
         "error": {
           "title": "No se pudo confirmar"
         },
@@ -1386,6 +1386,11 @@
         "nonce_used": "Este código ya se usó. Pídele que genere uno nuevo.",
         "pair_cooldown": "Ya confirmaste a esta persona hace poco. Inténtalo más tarde.",
         "excluded_graph_neighbor": "Estás demasiado conectado para confirmar a esta persona.",
+        "excluded_shared_device": "Este móvil está vinculado a su cuenta, así que no puede confirmarla.",
+        "excluded_shared_ip": "Los dos móviles están en la misma red — por antifraude, una confirmación necesita los móviles en redes distintas (p. ej. pon este con datos móviles).",
+        "self_attestation": "No puedes confirmar tu propia identidad. Inicia sesión con otra cuenta para confirmar a otra persona.",
+        "bad_signature": "No se pudo verificar tu clave de identidad. Abre Commons y termina de configurar tu identidad, luego inténtalo de nuevo.",
+        "subject_not_found": "No encontramos la identidad de esa persona.",
         "generic": "No pudimos registrar esta confirmación. Inténtalo de nuevo."
       }
     },
