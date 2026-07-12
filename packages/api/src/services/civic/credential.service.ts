@@ -43,6 +43,7 @@ import { signedRecordSigningInput, verifyEnvelopeSignature, type RejectionReason
 import SignatureService from '../signature.service';
 import {
   buildUserDid,
+  isSelfIssuedByUser,
   parseUserDid,
   buildDidDocument,
   buildOxyDidDocument,
@@ -196,10 +197,13 @@ export async function issueCredential(
   }
 
   // User-issued: the envelope is self-issued by the caller (their key signs).
-  const issuerDid = buildUserDid(issuerUserId);
-  if (envelope.subject !== issuerDid || envelope.issuer !== issuerDid) {
+  // Account-based check — the SDK's DID spelling may differ from the server's
+  // `DID_WEB_DOMAIN` anchor for the same account. The persisted row keeps the
+  // server-canonical spelling (`issuerDid` below), consistent with org rows.
+  if (!isSelfIssuedByUser(envelope, issuerUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
+  const issuerDid = buildUserDid(issuerUserId);
 
   const parsedRecord = credentialRecordSchema.safeParse(envelope.record);
   if (!parsedRecord.success) {

@@ -28,7 +28,7 @@ import { realLifeAttestationRecordSchema } from '@oxyhq/contracts';
 import { User } from '../../models/User';
 import { ReputationTransaction } from '../../models/ReputationTransaction';
 import CivicNonce from '../../models/CivicNonce';
-import { buildUserDid, parseUserDid } from '../did.service';
+import { isSelfIssuedByUser, parseUserDid } from '../did.service';
 import { isValidObjectId } from '../../utils/validation';
 import { verifyAndStoreRecord } from '../signedRecord.service';
 import { isSockPuppetRelation } from './graphExclusion';
@@ -128,8 +128,9 @@ export async function submitRealLifeAttestation(
   }
 
   // B's envelope must be SELF-ISSUED (B signs as the subject; `about` carries A).
-  const attestorDid = buildUserDid(attestorUserId);
-  if (envelope.subject !== attestorDid || envelope.issuer !== attestorDid) {
+  // Account-based: the SDK spells B's DID at the canonical identity apex, which
+  // may differ from the server's `DID_WEB_DOMAIN` anchor for the same account.
+  if (!isSelfIssuedByUser(envelope, attestorUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
 

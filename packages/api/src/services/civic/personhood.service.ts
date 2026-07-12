@@ -28,7 +28,7 @@ import { ReputationTransaction } from '../../models/ReputationTransaction';
 import { ReputationBalance } from '../../models/ReputationBalance';
 import PersonhoodVouch from '../../models/PersonhoodVouch';
 import PersonhoodStatus, { type IPersonhoodStatus } from '../../models/PersonhoodStatus';
-import { buildUserDid, parseUserDid } from '../did.service';
+import { isSelfIssuedByUser, parseUserDid } from '../did.service';
 import { isValidObjectId } from '../../utils/validation';
 import { verifyAndStoreRecord } from '../signedRecord.service';
 import { isSockPuppetRelation } from './graphExclusion';
@@ -263,8 +263,9 @@ export async function vouchForPerson(
   }
 
   // The vouch is the voucher's SELF-ISSUED statement (`subject === issuer === B`).
-  const voucherDid = buildUserDid(voucherUserId);
-  if (envelope.subject !== voucherDid || envelope.issuer !== voucherDid) {
+  // Account-based: the SDK's DID spelling may differ from the server's
+  // `DID_WEB_DOMAIN` anchor for the same account.
+  if (!isSelfIssuedByUser(envelope, voucherUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
 

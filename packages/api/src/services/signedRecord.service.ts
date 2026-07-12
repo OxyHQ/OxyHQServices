@@ -25,7 +25,7 @@ import { signedRecordSigningInput } from '@oxyhq/protocol';
 import { verifyAndAppend, verifyEnvelope as protocolVerifyEnvelope, type RejectionReason, type VerifyOutcome } from '@oxyhq/protocol';
 import { oxySignedRecordTypeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 import SignatureService from './signature.service';
-import { buildUserDid } from './did.service';
+import { parseUserDid } from './did.service';
 import { oxyRecordStore } from './oxyRecordStore';
 import { oxyVerificationResolver } from './oxyVerificationResolver';
 import type { ISignedRecord } from '../models/SignedRecord';
@@ -74,7 +74,10 @@ export function signRecordEnvelope(
  * Returns the rejection reason when a policy fails, or `null` when both pass.
  */
 function oxyStorePolicy(env: SignedRecordEnvelope, subjectUserId: string): RejectionReason | null {
-  if (env.subject !== buildUserDid(subjectUserId)) {
+  // Account-based, not DID-string-based: the SDK signs subjects at the canonical
+  // identity apex while `DID_WEB_DOMAIN` may re-anchor server-emitted DIDs, so
+  // the binding resolves the subject DID back to the account id and compares ids.
+  if (parseUserDid(env.subject) !== subjectUserId) {
     return 'subject_mismatch';
   }
   if (!oxySignedRecordTypeSchema.safeParse(env.type).success) {

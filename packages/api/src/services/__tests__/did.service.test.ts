@@ -215,6 +215,43 @@ describe('DID_WEB_DOMAIN override', () => {
       'did:web:oxy.so:u:507f1f77bcf86cd799439011',
     );
   });
+
+  it('parseUserDid accepts BOTH the DID_WEB_DOMAIN anchor and the canonical identity apex', async () => {
+    process.env.DID_WEB_DOMAIN = 'api.oxy.so';
+    const fresh = await loadDidServiceFresh();
+    const id = '507f1f77bcf86cd799439011';
+
+    // The server-emitted spelling.
+    expect(fresh.parseUserDid(`did:web:api.oxy.so:u:${id}`)).toBe(id);
+    // The SDK spelling (@oxyhq/core OXY_IDENTITY_APEX) — client-signed envelopes
+    // arrive anchored at the identity apex regardless of DID_WEB_DOMAIN.
+    expect(fresh.parseUserDid(`did:web:oxy.so:u:${id}`)).toBe(id);
+
+    // Foreign domains and malformed ids stay rejected.
+    expect(fresh.parseUserDid(`did:web:evil.com:u:${id}`)).toBeNull();
+    expect(fresh.parseUserDid(`did:web:oxy.so.evil.com:u:${id}`)).toBeNull();
+    expect(fresh.parseUserDid('did:web:oxy.so:u:')).toBeNull();
+    expect(fresh.parseUserDid(`did:web:oxy.so:u:${id}:extra`)).toBeNull();
+  });
+
+  it('isSelfIssuedByUser matches the caller account under either spelling and nobody else', async () => {
+    process.env.DID_WEB_DOMAIN = 'api.oxy.so';
+    const fresh = await loadDidServiceFresh();
+    const me = '507f1f77bcf86cd799439011';
+    const other = '507f1f77bcf86cd799439099';
+    const sdkDid = `did:web:oxy.so:u:${me}`;
+    const serverDid = `did:web:api.oxy.so:u:${me}`;
+
+    expect(fresh.isSelfIssuedByUser({ subject: sdkDid, issuer: sdkDid }, me)).toBe(true);
+    expect(fresh.isSelfIssuedByUser({ subject: serverDid, issuer: serverDid }, me)).toBe(true);
+
+    // Another account's DID, a foreign domain, or issuer ≠ subject all fail.
+    expect(fresh.isSelfIssuedByUser({ subject: sdkDid, issuer: sdkDid }, other)).toBe(false);
+    expect(
+      fresh.isSelfIssuedByUser({ subject: `did:web:evil.com:u:${me}`, issuer: `did:web:evil.com:u:${me}` }, me),
+    ).toBe(false);
+    expect(fresh.isSelfIssuedByUser({ subject: sdkDid, issuer: `did:web:oxy.so:u:${other}` }, me)).toBe(false);
+  });
 });
 
 describe('buildDidDocument — personal data node (F5a)', () => {

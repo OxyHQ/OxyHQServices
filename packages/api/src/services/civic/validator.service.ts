@@ -28,7 +28,7 @@ import ValidatorAffinity from '../../models/ValidatorAffinity';
 import { isSockPuppetRelation } from './graphExclusion';
 import { verifyAndStoreRecord } from '../signedRecord.service';
 import { reputationService } from '../reputation.service';
-import { buildUserDid } from '../did.service';
+import { isSelfIssuedByUser } from '../did.service';
 import {
   PEER_VALIDATED_ACTION,
   VALIDATION_CORRECT_ACTION,
@@ -257,8 +257,9 @@ export async function submitVote(
   if (envelope.type !== 'validation_verdict') {
     return { ok: false, reason: 'invalid_type' };
   }
-  const validatorDid = buildUserDid(validatorUserId);
-  if (envelope.subject !== validatorDid || envelope.issuer !== validatorDid) {
+  // Account-based self-issuance check (the SDK's DID spelling may differ from
+  // the server's `DID_WEB_DOMAIN` anchor for the same account).
+  if (!isSelfIssuedByUser(envelope, validatorUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
 

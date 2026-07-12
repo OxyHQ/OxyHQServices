@@ -22,6 +22,7 @@ import { getNormalizedUserHandle } from '@oxyhq/core';
 import {
   didDocumentSchema,
   type DidDocument,
+  type SignedRecordEnvelope,
   type VerificationMethod,
   type DidService,
 } from '@oxyhq/contracts';
@@ -116,22 +117,62 @@ export function buildUserDid(userId: string): string {
 }
 
 /**
- * Parse the stable account id out of a canonical user DID
- * (`did:web:<domain>:u:<userId>`). Returns the `<userId>` segment, or `null`
- * when the input is not a well-formed user DID for THIS issuer's domain. The
- * caller still validates the id (e.g. `isValidObjectId`) before use.
+ * The canonical identity apex — the domain the shipped SDK hardcodes into every
+ * CLIENT-signed user DID (`@oxyhq/core` `OXY_IDENTITY_APEX`, i.e. the federation
+ * apex). When `DID_WEB_DOMAIN` re-anchors the EMITTED `did:web` ids at the API
+ * host for zero-proxy web resolution (prod: `api.oxy.so`), client envelopes keep
+ * arriving spelled at this apex — both spellings name the SAME account namespace
+ * owned by this server, so parsing accepts both.
+ */
+const CANONICAL_IDENTITY_APEX = FEDERATION_DOMAIN.replace(/:/g, '%3A');
+
+/**
+ * Every `did:web:…:u:` prefix this server accepts as one of ITS OWN user DIDs:
+ * the emitted anchor (`DID_DOMAIN`) plus the canonical identity apex the SDK
+ * signs with. Collapses to a single prefix when `DID_WEB_DOMAIN` is unset.
+ */
+const USER_DID_PREFIXES: readonly string[] = [
+  ...new Set([`did:web:${DID_DOMAIN}:u:`, `did:web:${CANONICAL_IDENTITY_APEX}:u:`]),
+];
+
+/**
+ * Parse the stable account id out of a user DID (`did:web:<domain>:u:<userId>`).
+ * Accepts EITHER of this server's own anchors (see {@link USER_DID_PREFIXES}) —
+ * identity comparisons must happen in ACCOUNT-id space, never by DID string
+ * equality, or client-signed envelopes (SDK apex) stop matching server-derived
+ * DIDs whenever `DID_WEB_DOMAIN` re-anchors web resolution. Returns the
+ * `<userId>` segment, or `null` when the input is not a well-formed user DID for
+ * this issuer. The caller still validates the id (e.g. `isValidObjectId`).
  */
 export function parseUserDid(did: string): string | null {
-  const prefix = `did:web:${DID_DOMAIN}:u:`;
-  if (!did.startsWith(prefix)) {
-    return null;
+  for (const prefix of USER_DID_PREFIXES) {
+    if (!did.startsWith(prefix)) {
+      continue;
+    }
+    const userId = did.slice(prefix.length);
+    // A user DID has exactly one id segment after `:u:` (no further `:`).
+    if (userId.length === 0 || userId.includes(':')) {
+      return null;
+    }
+    return userId;
   }
-  const userId = did.slice(prefix.length);
-  // A user DID has exactly one id segment after `:u:` (no further `:`).
-  if (userId.length === 0 || userId.includes(':')) {
-    return null;
-  }
-  return userId;
+  return null;
+}
+
+/**
+ * True when `envelope` is SELF-ISSUED by the given account: its `subject`
+ * resolves to `userId` under one of this server's accepted anchors AND its
+ * `issuer` is exactly its `subject` (the same self-issuance equality the
+ * protocol engine's authorization branch applies). This is the ONE gate every
+ * self-issued civic/identity write goes through — account-based, so the SDK's
+ * `did:web:oxy.so` spelling and the server's `DID_WEB_DOMAIN` spelling both
+ * pass for the caller's OWN account and nobody else's.
+ */
+export function isSelfIssuedByUser(
+  envelope: Pick<SignedRecordEnvelope, 'subject' | 'issuer'>,
+  userId: string,
+): boolean {
+  return parseUserDid(envelope.subject) === userId && envelope.issuer === envelope.subject;
 }
 
 /**
