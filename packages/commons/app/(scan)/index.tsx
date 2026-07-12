@@ -15,15 +15,19 @@ import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import { parseScan, type ScanResult } from '@/lib/commons-signin/parse-scan';
 import { useNfcReader } from '@/hooks/nfc/useNfcReader';
+import { useAttestFlow } from '@/hooks/civic/useAttestFlow';
 
 /**
  * QR scanner for the Commons handoffs (approver / verifier side).
  *
- * `parseScan` branches the scanned string into one of two Commons payloads:
+ * `parseScan` branches the scanned string into one of three Commons payloads:
  *   - a "Sign in with Oxy" approval (`oxycommons://approve?code=…`) → the
  *     `/approve` flow, which re-resolves the requesting app identity server-side
  *   - a citizen Oxy ID card (`oxycommons://card?did=…`) → the `(id)/card` view,
  *     which resolves and verifies the signed card server-side
+ *   - a real-life attestation (`oxycommons://attest?…`) → signed and submitted
+ *     AUTOMATICALLY on the scan/NFC event (no confirm step, no biometric) and
+ *     rendered inline over the frozen camera: Confirming… → ✓ Verified
  *
  * The QR is never trusted for display — only the opaque `code` / `did` it
  * carries is used, and both are re-resolved server-side.
@@ -38,6 +42,10 @@ export default function ScanSignInScreen() {
   const [scanError, setScanError] = useState<'invalid' | 'expired' | null>(null);
   const { available: nfcAvailable, readOnce } = useNfcReader();
   const [nfcReading, setNfcReading] = useState(false);
+  const attest = useAttestFlow();
+  // Gates the attest overlay to a flow THIS screen session started, so stale
+  // store state from an earlier session can never surface over a fresh camera.
+  const [attestActive, setAttestActive] = useState(false);
 
   // Shared routing for anything `parseScan` can resolve, regardless of
   // whether the raw string came from the camera or an NFC read.
@@ -53,14 +61,17 @@ export default function ScanSignInScreen() {
         return;
       }
       if (parsed.kind === 'attest') {
-        router.replace({
-          pathname: '/(scan)/attest',
-          params: {
-            subjectDid: parsed.subjectDid,
-            context: parsed.context,
-            nonce: parsed.nonce,
-            exp: String(parsed.exp),
-          },
+        // Real-life attestation: signed + submitted AUTOMATICALLY on the scan/
+        // NFC event — no confirm step, no biometric. Rendered inline over the
+        // frozen camera. The server upserts idempotently, so re-confirming the
+        // same person is fine.
+        setScanned(true); // the NFC path hasn't frozen the camera yet
+        setAttestActive(true);
+        attest.submit({
+          subjectDid: parsed.subjectDid,
+          context: parsed.context,
+          nonce: parsed.nonce,
+          exp: parsed.exp,
         });
         return;
       }
@@ -70,7 +81,7 @@ export default function ScanSignInScreen() {
       setScanned(true);
       setScanError(parsed.reason);
     },
-    [router],
+    [router, attest.submit],
   );
 
   const handleBarcodeScanned = useCallback(
@@ -98,11 +109,16 @@ export default function ScanSignInScreen() {
   }, [nfcReading, readOnce, routeParsed]);
 
   const handleScanAgain = useCallback(() => {
+    attest.reset();
+    setAttestActive(false);
     setScanError(null);
     setScanned(false);
-  }, []);
+  }, [attest.reset]);
 
   const handleClose = useCallback(() => {
+    // Leaving the scanner ends the current attest flow; an in-flight submit is
+    // simply abandoned (the store ignores its late completion).
+    attest.reset();
     if (router.canGoBack()) {
       // Dismiss the scanner modal back to whatever presented it (the ID tab).
       router.back();
@@ -110,7 +126,7 @@ export default function ScanSignInScreen() {
       // No history (e.g. cold deep link) — land on the ID home, not the camera.
       router.replace('/(tabs)/(id)');
     }
-  }, [router]);
+  }, [attest.reset, router]);
 
   const toggleFlash = useCallback(() => setFlashOn((prev) => !prev), []);
 
@@ -121,6 +137,10 @@ export default function ScanSignInScreen() {
       Linking.openSettings().catch(() => undefined);
     }
   }, []);
+
+  // A's name from the server-resolved card (never from the QR). May still be
+  // resolving during the brief `submitting` window — the copy waits for it.
+  const attestName = attest.subject?.card.name ?? '';
 
   // Permission not determined yet
   if (!permission) {
@@ -250,6 +270,56 @@ export default function ScanSignInScreen() {
           </View>
         </View>
 
+        {attestActive && (
+          <View style={[StyleSheet.absoluteFill, styles.attestOverlay]}>
+            {attest.status === 'submitting' && (
+              <>
+                <ActivityIndicator size="large" color="#fff" />
+                {attestName !== '' && (
+                  <Text style={styles.attestBody}>
+                    {t('civic.attest.confirm.submitting', { name: attestName })}
+                  </Text>
+                )}
+              </>
+            )}
+            {attest.status === 'done' && attest.result && (
+              <>
+                <MaterialCommunityIcons name="check-decagram" size={72} color={colors.success} />
+                <Text style={styles.attestTitle}>{t('civic.attest.confirm.done.title')}</Text>
+                <Text style={styles.attestBody}>
+                  {t('civic.attest.confirm.done.body', { name: attestName, points: attest.result.points })}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.button, styles.attestDoneButton, { backgroundColor: colors.tint }]}
+                  onPress={handleClose}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.done')}
+                >
+                  <Text style={styles.buttonText}>{t('common.done')}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {attest.status === 'error' && (
+              <>
+                <MaterialCommunityIcons name="alert-circle-outline" size={72} color={colors.error} />
+                <Text style={styles.attestTitle}>{t('civic.attest.confirm.error.title')}</Text>
+                <Text style={styles.attestBody}>
+                  {t(`civic.attest.error.${attest.errorCode ?? 'generic'}`)}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.controlButton, styles.attestRetryButton]}
+                  onPress={handleScanAgain}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('signInApproval.scan.a11y.scanAgain')}
+                >
+                  <MaterialCommunityIcons name="refresh" size={28} color="#fff" />
+                  <Text style={styles.controlText}>{t('signInApproval.scan.scanAgain')}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
+
         <TouchableOpacity
           style={styles.closeButton}
           onPress={handleClose}
@@ -340,6 +410,33 @@ const styles = StyleSheet.create({
   controlText: {
     color: '#fff',
     fontSize: 12,
+  },
+  attestOverlay: {
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  attestTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  attestBody: {
+    color: '#fff',
+    fontSize: 16,
+    lineHeight: 23,
+    textAlign: 'center',
+  },
+  attestDoneButton: {
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  attestRetryButton: {
+    marginTop: 8,
   },
   closeButton: {
     position: 'absolute',

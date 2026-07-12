@@ -1367,12 +1367,8 @@
       },
       "confirm": {
         "title": "Confirmar en persona",
-        "biometricReason": "Verifica que eres tú para confirmar que conociste a esta persona",
         "loading": "Resolviendo identidad…",
-        "prompt": "¿Conociste a {{name}} en persona?",
-        "cta": "Sí, confirmar",
-        "biometricRetry": "Reintentar",
-        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para registrar que conociste a {{name}}.",
+        "submitting": "Confirmando que conociste a {{name}}…",
         "error": {
           "title": "No se pudo confirmar"
         },

@@ -1,140 +1,114 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { parseAttestPayload } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, StackHeader, CenteredState, PrimaryButton, SecondaryButton } from '@/components/ui';
-import { useRealLifeAttest, type RealLifeAttestParams } from '@/hooks/useRealLifeAttest';
+import { Screen, StackHeader, CenteredState, PrimaryButton } from '@/components/ui';
+import { useAttestFlow } from '@/hooks/civic/useAttestFlow';
+import { userIdFromDid } from '@/lib/civic/did';
 import { useTranslation } from '@/lib/i18n';
 
 /**
- * Confirm-someone screen (the scanner's / B's side of a real-life attestation).
+ * COLD-DEEP-LINK entry for a real-life attestation (the scanner's / B's side).
  *
- * Reached from the QR scanner / in-app NFC read after `parseScan` resolves an
- * `oxycommons://attest?…` payload (those paths pre-parse it and hand over
- * `subjectDid`/`context`/`nonce`/`exp`), OR reached directly by a system NDEF
- * tap on Android (app possibly closed): the OS launches straight to this route
- * from the tag's raw `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI
- * (the same bytes `OxyServices.civic.buildAttestQrPayload` puts on the QR — see
- * `useNfcAttestEmitter`), so expo-router hands back that URI's own query keys
- * (`subject`/`ctx`) instead of the scanner's camelCase fields. Both are
- * normalized into the same shape below (mirrors
- * `lib/commons-signin/parse-scan.ts`'s `parseAttestPayload` → `ScanResult`
- * mapping) before reaching `useRealLifeAttest`.
+ * The in-app paths (camera QR scan, in-app NFC read) no longer navigate here —
+ * they auto-submit inline on the scanner (`app/(scan)/index.tsx`). This route
+ * exists solely for the system NDEF tap on Android (app possibly closed): the
+ * OS launches straight here from the tag's raw
+ * `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI (the same bytes
+ * `OxyServices.civic.buildAttestQrPayload` puts on the QR — see
+ * `useNfcAttestEmitter` and the `plugins/with-hce.js` intent filter, which
+ * targets this route; do NOT delete it). expo-router hands back that URI's own
+ * query keys (`subject`/`ctx`), reconstructed and re-run through the shared
+ * Zod-backed `parseAttestPayload` so this path can never drift from the
+ * scanner's validation.
  *
- * Resolves the subject (A) server-side from the DID, gates the signed
- * attestation behind the device biometric, then submits it. The subject identity
- * shown comes ONLY from the resolved card — never from the scanned QR.
+ * NOTE — no auto-trigger on this path yet (owner decision pending): the attest
+ * flow is event-driven with zero `useEffect`, and this cold OS launch provides
+ * no in-app event to hook the automatic submit onto (the app has no OS-URL
+ * subscription / `+native-intent` infrastructure, and a cold-start submit would
+ * also race the SDK's session cold boot). Until that is decided, this screen
+ * renders A's server-resolved card plus whatever the flow store holds for this
+ * subject (submitting/done/error render identically to the scanner's overlay).
  */
-export default function AttestConfirmScreen() {
+export default function AttestDeepLinkScreen() {
   const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
-  const raw = useLocalSearchParams<{
-    subjectDid?: string;
-    context?: string;
-    nonce?: string;
-    exp?: string;
-    // Raw system-NDEF-tap fields — see the module doc comment above.
-    subject?: string;
-    ctx?: string;
-  }>();
+  const raw = useLocalSearchParams<{ subject?: string; ctx?: string; nonce?: string; exp?: string }>();
 
-  // Is this landing a system NDEF-tap deep link (vs a scanner handoff)? The
-  // deep link carries the raw URI's own keys (`subject`/`ctx`); the scanner
-  // paths pass `subjectDid`/`context` instead. `nonce`/`exp` exist on BOTH, so
-  // they only mark a deep link when the scanner's `subjectDid` is absent —
-  // that way a truncated tag that lost its `subject` still lands on the
-  // deep-link branch (and its warn) instead of silently falling through.
-  const isDeepLink =
-    raw.subject !== undefined ||
-    raw.ctx !== undefined ||
-    (raw.subjectDid === undefined && (raw.nonce !== undefined || raw.exp !== undefined));
-
-  // System NFC tap (Android, app possibly closed) deep-links the tag's raw
-  // `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` URI; expo-router hands
-  // back that URI's literal query keys. Reconstruct it — with `''` for any
-  // missing field, so partial/truncated tags still reach the parser — and
-  // re-run it through the shared, already-tested parser so this path can never
-  // drift from the scanner's validation (`parseAttestPayload` never throws —
-  // it returns `null` for anything unparseable, warn-logged here).
-  const fromDeepLink = useMemo(() => {
-    if (!isDeepLink) return null;
-    const reconstructed =
-      `oxycommons://attest?subject=${encodeURIComponent(raw.subject ?? '')}` +
-      `&ctx=${encodeURIComponent(raw.ctx ?? '')}` +
-      `&nonce=${encodeURIComponent(raw.nonce ?? '')}` +
-      `&exp=${encodeURIComponent(raw.exp ?? '')}`;
-    const parsed = parseAttestPayload(reconstructed);
-    if (!parsed) {
-      console.warn('[AttestScreen] invalid NFC attest deep link', { subject: raw.subject });
-    }
-    return parsed;
-  }, [isDeepLink, raw.subject, raw.ctx, raw.nonce, raw.exp]);
-
-  const params = useMemo<RealLifeAttestParams | null>(() => {
-    if (isDeepLink) {
-      // A malformed deep link never falls back to the scanner fields — it
-      // resolves to null and follows the screen's existing invalid state.
-      if (!fromDeepLink) return null;
-      return {
-        subjectDid: fromDeepLink.subjectDid,
-        context: fromDeepLink.context,
-        nonce: fromDeepLink.nonce,
-        exp: fromDeepLink.exp,
-      };
-    }
-    const exp = Number(raw.exp);
-    if (!raw.subjectDid || !raw.nonce || !Number.isFinite(exp)) return null;
-    return { subjectDid: raw.subjectDid, context: raw.context ?? '', nonce: raw.nonce, exp };
-  }, [isDeepLink, fromDeepLink, raw.subjectDid, raw.context, raw.nonce, raw.exp]);
-
-  const { state, subject, biometricFailed, errorCode, result, confirm, reload } = useRealLifeAttest(
-    params,
-    t('civic.attest.confirm.biometricReason'),
+  // Reconstruct the tag URI — with `''` for any missing field, so partial or
+  // truncated tags still reach the parser — and validate it with the shared,
+  // already-tested parser (`parseAttestPayload` never throws; it returns `null`
+  // for anything unparseable).
+  const parsed = useMemo(
+    () =>
+      parseAttestPayload(
+        `oxycommons://attest?subject=${encodeURIComponent(raw.subject ?? '')}` +
+          `&ctx=${encodeURIComponent(raw.ctx ?? '')}` +
+          `&nonce=${encodeURIComponent(raw.nonce ?? '')}` +
+          `&exp=${encodeURIComponent(raw.exp ?? '')}`,
+      ),
+    [raw.subject, raw.ctx, raw.nonce, raw.exp],
   );
 
+  const subjectUserId = parsed ? userIdFromDid(parsed.subjectDid) : null;
+  const flow = useAttestFlow(subjectUserId);
+
+  // Only surface the store flow when it is about THIS subject — a lingering
+  // flow from an earlier scanner session must not leak into a fresh deep link.
+  const flowMatches = parsed !== null && flow.subjectDid === parsed.subjectDid;
+  const status = flowMatches ? flow.status : 'idle';
+
   const handleClose = useCallback(() => {
+    flow.reset();
     if (router.canGoBack()) router.back();
     // Cold deep link with no history — land on the ID home, not the scanner.
     else router.replace('/(tabs)/(id)');
-  }, [router]);
+  }, [flow.reset, router]);
 
-  const card = subject?.card;
+  const card = flow.subject?.card;
   const name = card?.name ?? '';
 
   const renderBody = () => {
-    if (state === 'loading') {
-      return <CenteredState loading body={t('civic.attest.confirm.loading')} />;
-    }
-
-    if (state === 'error') {
+    // Malformed/truncated tag, an unresolvable DID, or a failed card lookup —
+    // there is no subject to show.
+    if (!parsed || !subjectUserId || flow.subjectFailed) {
       return (
         <CenteredState
           icon="alert-circle-outline"
           iconColor={colors.error}
           title={t('civic.attest.confirm.error.title')}
-          body={t(`civic.attest.error.${errorCode ?? 'generic'}`)}
+          body={t(`civic.attest.error.${!parsed || !subjectUserId ? 'generic' : 'subject_not_found'}`)}
           action={
-            <View style={styles.errorActions}>
-              <SecondaryButton label={t('common.close')} onPress={handleClose} fullWidth={false} />
-              {errorCode === 'generic' && (
-                <PrimaryButton label={t('common.retry')} onPress={reload} fullWidth={false} />
-              )}
-            </View>
+            <PrimaryButton label={t('common.close')} onPress={handleClose} fullWidth={false} />
           }
         />
       );
     }
 
-    if (state === 'done' && result) {
+    if (status === 'error') {
+      return (
+        <CenteredState
+          icon="alert-circle-outline"
+          iconColor={colors.error}
+          title={t('civic.attest.confirm.error.title')}
+          body={t(`civic.attest.error.${flow.errorCode ?? 'generic'}`)}
+          action={
+            <PrimaryButton label={t('common.close')} onPress={handleClose} fullWidth={false} />
+          }
+        />
+      );
+    }
+
+    if (status === 'done' && flow.result) {
       return (
         <CenteredState
           icon="check-decagram"
           iconColor={colors.success}
           title={t('civic.attest.confirm.done.title')}
-          body={t('civic.attest.confirm.done.body', { name, points: result.points })}
+          body={t('civic.attest.confirm.done.body', { name, points: flow.result.points })}
           action={
             <View style={styles.action}>
               <PrimaryButton label={t('common.done')} onPress={handleClose} fullWidth={false} />
@@ -144,13 +118,16 @@ export default function AttestConfirmScreen() {
       );
     }
 
-    // ready / confirming — B taps one button (biometric → sign → submit); a
-    // biometric failure just relabels it to a retry. The submit runs only on
-    // that press, so it never races an unready bearer.
+    if (!card) {
+      return <CenteredState loading body={t('civic.attest.confirm.loading')} />;
+    }
+
+    // idle / submitting — A's identity comes ONLY from the resolved card,
+    // never from the tag.
     return (
-      <View style={styles.confirmBody}>
+      <View style={styles.body}>
         <View style={styles.identity}>
-          {card?.avatarUrl ? (
+          {card.avatarUrl ? (
             <Image source={{ uri: card.avatarUrl }} style={styles.avatar} resizeMode="cover" />
           ) : (
             <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: colors.border }]}>
@@ -162,36 +139,21 @@ export default function AttestConfirmScreen() {
           <ThemedText style={styles.name} numberOfLines={2}>
             {name}
           </ThemedText>
-          {card?.username && (
+          {card.username && (
             <ThemedText style={[styles.username, { color: colors.textSecondary }]} numberOfLines={1}>
               @{card.username}
             </ThemedText>
           )}
         </View>
 
-        <ThemedText style={[styles.prompt, { color: colors.text }]}>
-          {t('civic.attest.confirm.prompt', { name })}
-        </ThemedText>
-
-        {biometricFailed && (
-          <ThemedText style={[styles.inlineWarn, { color: colors.warning }]}>
-            {t('civic.attest.confirm.biometricFailed', { name })}
-          </ThemedText>
+        {status === 'submitting' && (
+          <View style={styles.submitting}>
+            <ActivityIndicator color={colors.tint} />
+            <ThemedText style={[styles.submittingText, { color: colors.textSecondary }]}>
+              {t('civic.attest.confirm.submitting', { name })}
+            </ThemedText>
+          </View>
         )}
-
-        <View style={styles.actions}>
-          <PrimaryButton
-            tone="success"
-            label={t(biometricFailed ? 'civic.attest.confirm.biometricRetry' : 'civic.attest.confirm.cta')}
-            loading={state === 'confirming'}
-            onPress={confirm}
-          />
-          <SecondaryButton
-            label={t('common.cancel')}
-            onPress={handleClose}
-            disabled={state === 'confirming'}
-          />
-        </View>
       </View>
     );
   };
@@ -213,14 +175,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
   },
-  errorActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-  },
-  confirmBody: {
+  body: {
     alignItems: 'center',
-    gap: 14,
+    gap: 20,
     paddingTop: 12,
   },
   identity: {
@@ -249,19 +206,12 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 15,
   },
-  prompt: {
-    fontSize: 17,
-    fontWeight: '600',
-    lineHeight: 24,
-    textAlign: 'center',
+  submitting: {
+    alignItems: 'center',
+    gap: 10,
   },
-  inlineWarn: {
-    fontSize: 13,
+  submittingText: {
+    fontSize: 15,
     textAlign: 'center',
-  },
-  actions: {
-    alignSelf: 'stretch',
-    gap: 12,
-    marginTop: 8,
   },
 });

@@ -1367,12 +1367,8 @@
       },
       "confirm": {
         "title": "Confirm in person",
-        "biometricReason": "Verify it's you to confirm you met this person",
         "loading": "Resolving identity…",
-        "prompt": "Did you meet {{name}} in real life?",
-        "cta": "Yes, confirm",
-        "biometricRetry": "Try again",
-        "biometricFailed": "Confirm with your device biometrics or passcode to record that you met {{name}}.",
+        "submitting": "Confirming you met {{name}}…",
         "error": {
           "title": "Couldn't confirm"
         },
