@@ -1,7 +1,7 @@
 {
   "name": "@oxyhq/sdk",
   "version": "1.0.0",
-  "description": "OxyHQ SDK Monorepo \u2014 core, auth, services, and API packages",
+  "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
   "private": true,
   "trustedDependencies": [
     "@shopify/react-native-skia",
@@ -92,5 +92,8 @@
     "expo-splash-screen": "~57.0.2",
     "is-arrayish": "^0.3.2",
     "react-native-worklets": "0.10.0"
+  },
+  "patchedDependencies": {
+    "react-native-hce@0.3.0": "patches/react-native-hce@0.3.0.patch"
   }
 }
