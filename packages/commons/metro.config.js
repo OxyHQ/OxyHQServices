@@ -21,6 +21,10 @@ const nativeWindConfig = withNativeWind(config, {
 
 const parentResolveRequest = nativeWindConfig.resolver.resolveRequest;
 
+// Canonical Bloom package root for the single-instance rewrite below (invariant,
+// so hoisted out of the per-resolution closure).
+const BLOOM_ORIGIN = path.join(__dirname, 'package.json');
+
 // Force `@oxyhq/bloom` to resolve to a SINGLE physical instance. In this monorepo
 // the same Bloom version is duplicated under the hoisted root `node_modules` and
 // each app's local `node_modules`; two copies mean two React Context objects, so
@@ -36,12 +40,12 @@ nativeWindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
 
   const resolveContext =
     moduleName === '@oxyhq/bloom' || moduleName.startsWith('@oxyhq/bloom/')
-      ? { ...context, originModulePath: path.join(__dirname, 'package.json') }
+      ? { ...context, originModulePath: BLOOM_ORIGIN }
       : context;
 
-  return parentResolveRequest
-    ? parentResolveRequest(resolveContext, moduleName, platform)
-    : resolveContext.resolveRequest(resolveContext, moduleName, platform);
+  // withNativeWind always installs a resolver, so `parentResolveRequest` is
+  // guaranteed — always delegate to it (react-native-css requires being the parent).
+  return parentResolveRequest(resolveContext, moduleName, platform);
 };
 
 module.exports = nativeWindConfig;
