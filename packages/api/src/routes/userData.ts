@@ -21,6 +21,7 @@ import { Router, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError, ConflictError, UnauthorizedError } from '../utils/error';
@@ -94,7 +95,7 @@ const writeLimiter = rateLimit({
         });
       }
     }
-    return `userAppData:write:ip:${req.ip ?? 'unknown'}`;
+    return `userAppData:write:ip:${hashedIpKey(req)}`;
   },
 });
 

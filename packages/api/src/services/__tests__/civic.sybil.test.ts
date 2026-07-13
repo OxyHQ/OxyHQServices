@@ -1,19 +1,19 @@
 /**
  * Sybil heuristics tests (civic / Fase 3).
  *
- * `computeSybilPenalty` is driven with PersonhoodVouch + session-fingerprint
+ * `computeSybilPenalty` is driven with PersonhoodVouch + session-device
  * reads mocked, so the two heuristics are exercised in isolation:
- *  - SHARED DEVICE/IP CLUSTER — vouchers that share a fingerprint with one
- *    another raise the penalty.
+ *  - SHARED DEVICE CLUSTER — vouchers that share a deviceId with one
+ *    another raise the penalty. (IP is not a signal — no user IPs at rest.)
  *  - VOUCH-RING DENSITY — a reciprocal (subject vouches back) edge raises it.
  * No vouchers ⇒ no penalty.
  */
 
-const mockFingerprints = jest.fn();
+const mockDeviceIds = jest.fn();
 const mockVouchFind = jest.fn();
 
 jest.mock('../civic/graphExclusion', () => ({
-  sessionFingerprints: (...a: unknown[]) => mockFingerprints(...a),
+  sessionDeviceIds: (...a: unknown[]) => mockDeviceIds(...a),
 }));
 jest.mock('../../models/PersonhoodVouch', () => ({
   __esModule: true,
@@ -43,11 +43,8 @@ interface VouchQuery {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default: no overlapping fingerprints for any account.
-  mockFingerprints.mockImplementation(async (id: string) => ({
-    devices: new Set([`dev-${id}`]),
-    ips: new Set([`ip-${id}`]),
-  }));
+  // Default: no overlapping deviceIds for any account.
+  mockDeviceIds.mockImplementation(async (id: string) => new Set([`dev-${id}`]));
 });
 
 describe('computeSybilPenalty', () => {
@@ -67,11 +64,11 @@ describe('computeSybilPenalty', () => {
       return chain([]);
     });
     // A and B share the same device → both are "clustered".
-    mockFingerprints.mockImplementation(async (id: string) => {
+    mockDeviceIds.mockImplementation(async (id: string) => {
       if (id === A || id === B) {
-        return { devices: new Set(['shared-device']), ips: new Set([`ip-${id}`]) };
+        return new Set(['shared-device']);
       }
-      return { devices: new Set([`dev-${id}`]), ips: new Set([`ip-${id}`]) };
+      return new Set([`dev-${id}`]);
     });
 
     const signal = await computeSybilPenalty(SUBJECT);

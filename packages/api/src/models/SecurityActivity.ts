@@ -50,7 +50,6 @@ export interface ISecurityActivity extends Document {
   eventType: SecurityEventType;
   eventDescription: string;
   metadata?: Record<string, any>; // Additional event-specific data
-  ipAddress?: string;
   userAgent?: string;
   deviceId?: string;
   timestamp: Date;
@@ -80,9 +79,6 @@ const SecurityActivitySchema: Schema = new Schema(
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
-    },
-    ipAddress: {
-      type: String,
     },
     userAgent: {
       type: String,

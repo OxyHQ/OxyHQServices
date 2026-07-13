@@ -3,9 +3,10 @@
  *
  * Asserts the shared sock-puppet test used by BOTH the real-life flow and the
  * jury selection: related users (follow/block edge, common neighbour at 2 hops,
- * shared device/IP) are EXCLUDED; unrelated users are not. The Follow/Block/
- * Session models are driven by a tiny in-memory graph fixture so the rules are
- * exercised deterministically.
+ * shared device) are EXCLUDED; unrelated users are not. IP is NOT a signal
+ * (privacy invariant — no user IPs at rest). The Follow/Block/Session models are
+ * driven by a tiny in-memory graph fixture so the rules are exercised
+ * deterministically.
  */
 
 interface GraphEntry {
@@ -17,7 +18,6 @@ interface GraphEntry {
   /** Coarse client-supplied `deviceInfo.fingerprint` values (environment hash,
    * NOT device-unique — must never produce a `shared_device` verdict). */
   fingerprints: string[];
-  ips: string[];
 }
 
 const graph: Record<string, Partial<GraphEntry>> = {};
@@ -31,7 +31,6 @@ function entry(id: string): GraphEntry {
     blockedBy: e.blockedBy ?? [],
     devices: e.devices ?? [],
     fingerprints: e.fingerprints ?? [],
-    ips: e.ips ?? [],
   };
 }
 
@@ -70,7 +69,6 @@ jest.mock('../../models/Session', () => ({
       const rows = [
         ...e.devices.map((d, i) => ({ deviceId: d, deviceInfo: { fingerprint: e.fingerprints[i] } })),
         ...e.fingerprints.slice(e.devices.length).map((fp) => ({ deviceInfo: { fingerprint: fp } })),
-        ...e.ips.map((ip) => ({ deviceInfo: { ipAddress: ip } })),
       ];
       return chain(rows);
     },
@@ -110,37 +108,13 @@ describe('isSockPuppetRelation', () => {
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_device' });
   });
 
-  it('excludes a shared IP by default (jury behaviour unchanged)', async () => {
-    graph[A] = { ips: ['1.2.3.4'] };
-    graph[B] = { ips: ['1.2.3.4'] };
-    expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: true, reason: 'shared_ip' });
-  });
-
-  it('does NOT exclude a shared-ONLY-IP pair when ignoreSharedIp is set (attestation)', async () => {
-    // Real-life attestation: meeting in person implies a shared network, so a
-    // shared IP (with distinct deviceIds, no graph edge) must be a SOFT signal.
-    graph[A] = { devices: ['dev-a'], ips: ['1.2.3.4'] };
-    graph[B] = { devices: ['dev-b'], ips: ['1.2.3.4'] };
-    expect(await isSockPuppetRelation(A, B, { ignoreSharedIp: true })).toEqual({ excluded: false });
-  });
-
-  it('still excludes a shared deviceId even when ignoreSharedIp is set', async () => {
-    graph[A] = { devices: ['dev-1'], ips: ['1.2.3.4'] };
-    graph[B] = { devices: ['dev-1'], ips: ['1.2.3.4'] };
-    expect(await isSockPuppetRelation(A, B, { ignoreSharedIp: true })).toEqual({
-      excluded: true,
-      reason: 'shared_device',
-    });
-  });
-
   it('does NOT exclude two distinct installs that share only the coarse environment fingerprint', async () => {
     // Regression (prod incident): two DISTINCT physical phones — separate
-    // per-install deviceIds, separate IPs — produced the IDENTICAL client
-    // `deviceInfo.fingerprint` (environment hash of ua/platform/language/
-    // timezone: no device-unique input on React Native). The fingerprint must
-    // NOT yield a `shared_device` verdict.
-    graph[A] = { devices: ['dev-a'], fingerprints: ['same-env-fp'], ips: ['9.9.9.9'] };
-    graph[B] = { devices: ['dev-b'], fingerprints: ['same-env-fp'], ips: ['8.8.8.8'] };
+    // per-install deviceIds — produced the IDENTICAL client `deviceInfo.fingerprint`
+    // (environment hash of ua/platform/language/timezone: no device-unique input
+    // on React Native). The fingerprint must NOT yield a `shared_device` verdict.
+    graph[A] = { devices: ['dev-a'], fingerprints: ['same-env-fp'] };
+    graph[B] = { devices: ['dev-b'], fingerprints: ['same-env-fp'] };
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: false });
   });
 
@@ -151,8 +125,8 @@ describe('isSockPuppetRelation', () => {
   });
 
   it('does NOT exclude unrelated users', async () => {
-    graph[A] = { follows: [X], devices: ['dev-a'], ips: ['9.9.9.9'] };
-    graph[B] = { follows: ['z'.repeat(24)], devices: ['dev-b'], ips: ['8.8.8.8'] };
+    graph[A] = { follows: [X], devices: ['dev-a'] };
+    graph[B] = { follows: ['z'.repeat(24)], devices: ['dev-b'] };
     expect(await isSockPuppetRelation(A, B)).toEqual({ excluded: false });
   });
 });

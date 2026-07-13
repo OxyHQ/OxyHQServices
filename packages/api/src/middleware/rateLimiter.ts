@@ -3,6 +3,7 @@ import { RedisStore } from 'rate-limit-redis';
 import type { RedisReply } from 'rate-limit-redis';
 import { getRedisClient } from '../config/redis';
 import type { Request } from 'express';
+import { hashedIpKey } from '../utils/ipKey';
 
 interface RateLimitOptions {
   /**
@@ -40,6 +41,6 @@ export function rateLimit(options: RateLimitOptions) {
     message: options.message || 'Too many requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    ...(options.keyGenerator ? { keyGenerator: options.keyGenerator } : {}),
+    keyGenerator: options.keyGenerator ?? hashedIpKey,
   });
 }

@@ -48,8 +48,6 @@ async function refreshStats(now: number) {
     totalTransactions,
     totalApplications,
     totalFollows,
-    topCountries,
-    regionCount,
   ] = await Promise.all([
     User.countDocuments(),
     Session.countDocuments({ isActive: true }),
@@ -59,16 +57,6 @@ async function refreshStats(now: number) {
     Transaction.countDocuments(),
     Application.countDocuments({ status: 'active' }),
     Follow.countDocuments(),
-    Session.aggregate([
-      { $match: { isActive: true, 'deviceInfo.location': { $exists: true, $ne: '' } } },
-      { $group: { _id: '$deviceInfo.location', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 7 },
-    ]).catch(() => []),
-    Session.distinct('deviceInfo.location', {
-      isActive: true,
-      'deviceInfo.location': { $exists: true, $ne: '' },
-    }).then((locations) => locations.length).catch(() => 0),
   ]);
 
   const stats = {
@@ -81,11 +69,6 @@ async function refreshStats(now: number) {
     totalApplications,
     totalFollows,
     aiModels: 4,
-    topCountries: topCountries.map((c: any) => ({
-      location: c._id,
-      count: c.count,
-    })),
-    regions: regionCount,
     timestamp: new Date().toISOString(),
   };
 

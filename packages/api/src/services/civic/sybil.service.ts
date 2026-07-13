@@ -10,12 +10,12 @@
  * the {@link computeVouchRingSignal} boundary without changing this function's
  * return contract):
  *
- *  1. SHARED DEVICE / IP CLUSTER — the fraction of a subject's active vouchers
- *     that share an active-session device id or IP with the subject or with one
+ *  1. SHARED DEVICE CLUSTER — the fraction of a subject's active vouchers
+ *     that share an active-session device id with the subject or with one
  *     another. Real vouchers are independent people on independent devices; a
  *     multi-account farm shows a dense identifier overlap. (The coarse
  *     `deviceInfo.fingerprint` is NOT part of the print set — see
- *     `sessionFingerprints`.)
+ *     `sessionDeviceIds`. IP is NOT a signal — no user IPs at rest.)
  *
  *  2. VOUCH-RING DENSITY — reciprocal (A↔B) and short-cycle (A→B→C→A) vouch
  *     edges around the subject. An organic web-of-trust is broadly acyclic
@@ -25,7 +25,7 @@
  * bounded by `SYBIL_VOUCHER_SCAN_CAP` so the cost stays O(vouchers).
  */
 
-import { sessionFingerprints } from './graphExclusion';
+import { sessionDeviceIds } from './graphExclusion';
 import PersonhoodVouch from '../../models/PersonhoodVouch';
 import { clamp } from '../../utils/reputation.constants';
 import {
@@ -57,10 +57,10 @@ async function activeVoucherIds(subjectUserId: string): Promise<string[]> {
 }
 
 /**
- * Shared-device/IP cluster signal: the fraction of {subject ∪ vouchers} whose
- * active-session fingerprints overlap with at least one OTHER account in the
- * set. Each account's fingerprint set is fetched once; overlap is computed by an
- * in-memory inverted index (fingerprint → owning accounts), so the cost is
+ * Shared-device cluster signal: the fraction of {subject ∪ vouchers} whose
+ * active-session deviceIds overlap with at least one OTHER account in the
+ * set. Each account's device set is fetched once; overlap is computed by an
+ * in-memory inverted index (deviceId → owning accounts), so the cost is
  * O(accounts) queries with no pairwise blow-up.
  */
 async function computeSharedFingerprintSignal(
@@ -73,8 +73,8 @@ async function computeSharedFingerprintSignal(
   const accountPrints = new Map<string, string[]>();
 
   for (const accountId of accounts) {
-    const { devices, ips } = await sessionFingerprints(accountId);
-    const prints = [...[...devices].map((d) => `d:${d}`), ...[...ips].map((ip) => `i:${ip}`)];
+    const devices = await sessionDeviceIds(accountId);
+    const prints = [...devices].map((d) => `d:${d}`);
     accountPrints.set(accountId, prints);
     for (const print of prints) {
       const set = owners.get(print) ?? new Set<string>();

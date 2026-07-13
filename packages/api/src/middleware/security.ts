@@ -7,6 +7,7 @@ import type { RedisReply } from "rate-limit-redis";
 import { getRedisClient } from "../config/redis";
 import type { AuthRequest } from "./auth";
 import { verifyServiceToken } from "./serviceToken";
+import { hashedIpKey } from "../utils/ipKey";
 
 const isProd = process.env.NODE_ENV !== 'development';
 
@@ -140,6 +141,7 @@ const rateLimiter = rateLimit({
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: hashedIpKey,
   skip: (req: Request) =>
     req.path.startsWith('/files/upload') ||
     isIdpServiceToServicePath(req.path) ||
@@ -169,6 +171,7 @@ const federationServiceLimiter = rateLimit({
   message: "Too many federation signing requests, please slow down.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: hashedIpKey,
   skip: (req: Request) => req.path.startsWith('/files/upload'),
 });
 
@@ -187,6 +190,7 @@ const idpServiceLimiter = rateLimit({
   message: "Too many requests, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: hashedIpKey,
   skip: (req: Request) => req.path.startsWith('/files/upload'),
 });
 
@@ -204,6 +208,7 @@ const authRateLimiter = rateLimit({
   message: "Too many authentication attempts from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: hashedIpKey,
   skip: (req: Request) => req.path.startsWith('/files/upload'),
 });
 
@@ -216,7 +221,7 @@ const userRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
-    return (req as AuthRequest).user?.id || req.ip || 'unknown';
+    return (req as AuthRequest).user?.id || hashedIpKey(req);
   },
   skip: (req: Request) => {
     return req.path.startsWith('/files/upload') || !(req as AuthRequest).user;
@@ -232,6 +237,7 @@ const bruteForceProtection = slowDown({
   windowMs: 15 * 60 * 1000,
   delayAfter: isProd ? 100 : 1000,
   delayMs: () => isProd ? 500 : 100,
+  keyGenerator: hashedIpKey,
   skip: (req: Request) =>
     req.path.startsWith('/files/upload') ||
     isIdpServiceToServicePath(req.path) ||

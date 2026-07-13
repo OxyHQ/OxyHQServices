@@ -54,13 +54,6 @@ export function ActivityDetailsPanel({
             )} — ${formatters.time.format(timestamp)}`,
         });
     }
-    if (event.ipAddress) {
-        rows.push({
-            key: 'ip',
-            label: t('activity.details.ip'),
-            value: event.ipAddress,
-        });
-    }
     if (event.userAgent) {
         rows.push({
             key: 'ua',

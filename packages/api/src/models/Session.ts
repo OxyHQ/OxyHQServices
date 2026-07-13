@@ -11,9 +11,7 @@ export interface ISession extends Document {
     browser?: string;
     os?: string;
     lastActive: Date;
-    ipAddress?: string;
     userAgent?: string;
-    location?: string; // General location for security purposes
     fingerprint?: string; // Device fingerprint for identification
   };
   accessToken: string; // Current access token for this session
@@ -59,9 +57,7 @@ const SessionSchema: Schema = new Schema(
       browser: String,
       os: String,
       lastActive: { type: Date, default: Date.now },
-      ipAddress: String,
       userAgent: String,
-      location: String,
       fingerprint: String, // Device fingerprint for identification
     },
     accessToken: {

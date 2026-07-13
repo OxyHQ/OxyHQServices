@@ -6,6 +6,7 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { accountService, type AccountNode, type EffectiveAccess } from '../services/account.service';
@@ -75,7 +76,7 @@ function resolveCallerDeviceId(req: AuthRequest): string | null {
 function userScopedKey(scope: string) {
   return (req: Request): string => {
     const userId = (req as AuthRequest).user?._id?.toString();
-    return userId ? `${scope}:${userId}` : `${scope}:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
   };
 }
 

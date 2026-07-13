@@ -50,6 +50,7 @@ import {
 import { sanitizePlainText } from '../utils/sanitize';
 import { cleanDisplayName } from '../utils/displayNameSanitize';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { buildExportBundle } from '../services/identityExport.service';
 import { exportBundleSchema } from '@oxyhq/contracts';
 
@@ -1175,7 +1176,7 @@ const identityExportLimiter = rateLimit({
   message: 'Too many export requests. Please try again later.',
   keyGenerator: (req) => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `identity:export:${userId}` : `identity:export:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `identity:export:${userId}` : `identity:export:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -1548,7 +1549,7 @@ const userResolveServiceLimiter = rateLimit({
   message: 'Too many federated-user resolve requests, please slow down.',
   keyGenerator: (req: Request) => {
     const appId = (req as ServiceAuthRequest).serviceApp?.appId;
-    return appId ? `app:${appId}` : (req.ip ?? 'unknown');
+    return appId ? `app:${appId}` : hashedIpKey(req);
   },
 });
 

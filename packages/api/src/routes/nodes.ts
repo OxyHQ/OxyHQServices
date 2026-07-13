@@ -19,6 +19,7 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { isValidObjectId } from '../utils/validation';
 import { getUserNode, removeNode, provisionManagedVault } from '../services/nodeRegistry.service';
 import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
@@ -30,7 +31,7 @@ const router = Router();
 function userScopedKey(scope: string) {
   return (req: AuthRequest): string => {
     const userId = req.user?.id;
-    return userId ? `${scope}:${userId}` : `${scope}:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
   };
 }
 
@@ -76,7 +77,7 @@ const nodeIngestNotifyLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   message: 'Too many ingest notifications. Please slow down.',
-  keyGenerator: (req: Request): string => `nodes:ingest:ip:${req.ip ?? 'unknown'}`,
+  keyGenerator: (req: Request): string => `nodes:ingest:ip:${hashedIpKey(req)}`,
 });
 
 /** Public projection of a node row (drops Mongo internals). */

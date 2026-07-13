@@ -28,6 +28,7 @@ import { Router, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
@@ -70,7 +71,7 @@ const discoverLimiter = rateLimit({
         });
       }
     }
-    return `contacts:discover:ip:${req.ip ?? 'unknown'}`;
+    return `contacts:discover:ip:${hashedIpKey(req)}`;
   },
 });
 

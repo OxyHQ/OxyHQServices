@@ -455,6 +455,15 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 
 **General limiter threshold** (commit `641cea67`): raised 150 → **1000 / 15min**. The 150 ceiling was below a single authenticated user's normal traffic (feed scroll + socket fallback polling + profile loads + device-secret token mints). Per-endpoint limiters (`authRateLimiter` 300, `userRateLimiter` 200, `checkLimiter` 10/min, etc.) remain the relevant defense-in-depth. **Do NOT lower the general limiter below 1000 without measuring real production traffic.**
 
+## No User IPs At Rest (privacy invariant, owner-mandated 2026-07-14)
+
+Threat model: state-actor harassment of users. The platform must **never persist a user IP address** — raw, hashed, or geo-derived (country included, e.g. `cf-ipcountry`) — in MongoDB, logs (pino fields), metrics metadata, or response DTOs. Salted hashes of the IPv4 space are brute-forceable by anyone with server access, so hashing is NOT an acceptable at-rest form.
+
+- Removed entirely: `SecurityActivity.ipAddress`, `Session.deviceInfo.{ipAddress,location}`, `ApiKeyUsage.ipAddress`, the IP input to `deriveStableDeviceId`, IP-based anomaly detection (`detectRapidIPChanges`), and the civic `shared_ip` anti-sybil signal (`graphExclusion.ts` — device-fingerprint/interaction-history/affinity-throttle only now).
+- **Anonymous rate-limit keys are the one place IPs may be touched, and only transiently:** they MUST go through `hashedIpKey` (`packages/api/src/utils/ipKey.ts` — HMAC(`DEVICE_ID_SALT`), IPv6 /56-bucketed) and live only as a Redis key with the limiter's normal TTL. Never key a limiter on raw `req.ip`.
+- **The one sanctioned exception:** inbound-email `Received:` headers (third-party SMTP sender IPs, not Oxy users) stored in `Message.headers` — standard email practice, owner-approved.
+- Do NOT re-add IP capture "for security" (audit trails, anomaly detection, sybil resistance, etc.) — this was a deliberate trade-off, not an oversight. Design + rollout: `docs/superpowers/specs/2026-07-14-no-ip-storage-design.md`.
+
 ## useCurrentUser Pattern (services)
 
 - `queryFn` must be pure — never call `useAuthStore.setUser()` inside a `queryFn`.

@@ -519,7 +519,6 @@ class SessionService {
               ...(migrateToDeviceId ? { deviceId: migrateToDeviceId } : {}),
               'deviceInfo.lastActive': now,
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
-              'deviceInfo.ipAddress': deviceInfo.ipAddress,
               'deviceInfo.userAgent': deviceInfo.userAgent,
               // Bind the reused session to the CURRENT operator when this is an
               // account switch (keeps the act_as re-check pointed at whoever just
@@ -578,9 +577,7 @@ class SessionService {
           platform: deviceInfo.platform,
           browser: deviceInfo.browser,
           os: deviceInfo.os,
-          ipAddress: deviceInfo.ipAddress,
           userAgent: deviceInfo.userAgent,
-          location: deviceInfo.location,
           fingerprint: deviceInfo.fingerprint,
           lastActive: now
         },

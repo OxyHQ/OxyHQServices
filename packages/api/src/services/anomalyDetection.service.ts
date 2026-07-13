@@ -106,45 +106,6 @@ class AnomalyDetectionService {
   }
 
   /**
-   * Detect rapid login attempts from different IPs
-   */
-  async detectRapidIPChanges(
-    userId: string,
-    currentIp: string
-  ): Promise<{ isAnomaly: boolean; reason?: string }> {
-    try {
-      // Get sessions from last hour
-      const recentSessions = await Session.find({
-        userId,
-        createdAt: { $gt: new Date(Date.now() - 60 * 60 * 1000) },
-      })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean();
-
-      const uniqueIps = new Set<string>();
-      recentSessions.forEach(session => {
-        if (session.deviceInfo?.ipAddress) {
-          uniqueIps.add(session.deviceInfo.ipAddress);
-        }
-      });
-
-      // If more than 3 different IPs in last hour
-      if (uniqueIps.size > 3 && !uniqueIps.has(currentIp)) {
-        return {
-          isAnomaly: true,
-          reason: 'Multiple IPs detected in short time',
-        };
-      }
-
-      return { isAnomaly: false };
-    } catch (error) {
-      logger.error('Error detecting rapid IP changes:', error);
-      return { isAnomaly: false };
-    }
-  }
-
-  /**
    * Run all anomaly checks and alert if suspicious
    */
   async checkForAnomalies(
@@ -160,11 +121,10 @@ class AnomalyDetectionService {
     const location = deviceInfo?.location?.coordinates;
 
     // Run all detection checks in parallel
-    const [newLocation, newDevice, impossibleTravel, rapidIP] = await Promise.all([
+    const [newLocation, newDevice, impossibleTravel] = await Promise.all([
       this.detectNewLocation(userId, location),
       this.detectNewDevice(userId, deviceInfo),
       this.detectImpossibleTravel(userId, location),
-      this.detectRapidIPChanges(userId, req.ip || ''),
     ]);
 
     if (newLocation.isAnomaly) {
@@ -187,13 +147,6 @@ class AnomalyDetectionService {
         type: 'impossible_travel',
         reason: impossibleTravel.reason!,
         details: impossibleTravel.details,
-      });
-    }
-
-    if (rapidIP.isAnomaly) {
-      anomalies.push({
-        type: 'rapid_ip_change',
-        reason: rapidIP.reason!,
       });
     }
 
