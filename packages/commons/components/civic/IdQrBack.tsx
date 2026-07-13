@@ -3,7 +3,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { Canvas, Group, LinearGradient, RoundedRect, vec } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
-
 import { HolographicLogo } from '@/components/OxyID/holographic-logo';
 import { useTilt } from '@/components/OxyID/tilt-context';
 
