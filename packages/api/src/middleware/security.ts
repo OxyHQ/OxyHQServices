@@ -6,6 +6,7 @@ import { RedisStore } from "rate-limit-redis";
 import type { RedisReply } from "rate-limit-redis";
 import { getRedisClient } from "../config/redis";
 import type { AuthRequest } from "./auth";
+import { verifyServiceToken } from "./serviceToken";
 
 const isProd = process.env.NODE_ENV !== 'development';
 
@@ -78,6 +79,53 @@ export function isFederationServiceToServicePath(path: string): boolean {
   return path.startsWith('/federation/');
 }
 
+/**
+ * Exact paths that are EXCLUSIVELY service-to-service (each gated by
+ * `serviceAuthMiddleware`) yet live UNDER a user-facing prefix, and that a
+ * relying app's federation/connectors backfill calls in BULK — all fanned
+ * through ONE NAT egress IP:
+ *   - PUT  /users/resolve             (find-or-create a federated/agent user)
+ *   - POST /assets/service/cache      (mirror remote media into the cache ns)
+ *   - POST /assets/service/federation (persist durable federated media)
+ *   - POST /assets/service/user-media (persist media for a local user; MCP)
+ *
+ * Because these share a prefix with genuine browser/user routes (`/users/*`,
+ * `/assets/*`), a PURE path match — as used for the IdP worker / federation
+ * paths, whose whole prefix is service-only — is unsafe here: it could exempt a
+ * future sibling browser route and would leave UNauthenticated floods of the
+ * path unbounded. The exemption is therefore additionally gated on the request
+ * carrying a VALID service token (see {@link isServiceToServiceBulkRequest}).
+ *
+ * The `/api/` prefix is already stripped by the time the limiters run (the strip
+ * middleware is mounted before them), so the bare forms suffice.
+ */
+const SERVICE_TO_SERVICE_BULK_PATHS: ReadonlySet<string> = new Set([
+  '/users/resolve',
+  '/assets/service/cache',
+  '/assets/service/federation',
+  '/assets/service/user-media',
+]);
+
+/**
+ * True when the request targets a {@link SERVICE_TO_SERVICE_BULK_PATHS} path AND
+ * carries a valid `service`-type token. Used to exempt genuine internal backfill
+ * traffic from the per-IP BROWSER protections (rl:general + slowDown) WITHOUT
+ * weakening them for user-facing traffic or unauthenticated floods — anything
+ * lacking a valid service token is NOT exempted and stays under the general
+ * per-IP budget.
+ *
+ * MOUNT-ORDER INVARIANT: every exempt path MUST carry its own dedicated service
+ * limiter at its route — `/users/resolve` → `userResolveServiceLimiter`
+ * (routes/users.ts), `/assets/service/*` → `cacheUploadLimiter` (routes/assets.ts).
+ * The path set here and those route limiters must be kept in sync.
+ */
+export function isServiceToServiceBulkRequest(req: Request): boolean {
+  if (!SERVICE_TO_SERVICE_BULK_PATHS.has(req.path)) return false;
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return false;
+  return verifyServiceToken(authHeader.slice('Bearer '.length)).ok;
+}
+
 // General rate limiting middleware (exclude file uploads). The previous
 // ceiling of 150/15min was below what a single signed-in user generates
 // against the API in normal usage (feed scrolling, profile loads, sockets'
@@ -95,7 +143,8 @@ const rateLimiter = rateLimit({
   skip: (req: Request) =>
     req.path.startsWith('/files/upload') ||
     isIdpServiceToServicePath(req.path) ||
-    isFederationServiceToServicePath(req.path),
+    isFederationServiceToServicePath(req.path) ||
+    isServiceToServiceBulkRequest(req),
 });
 
 // Dedicated high-ceiling limiter for the federation sign-on-behalf surface
@@ -186,7 +235,8 @@ const bruteForceProtection = slowDown({
   skip: (req: Request) =>
     req.path.startsWith('/files/upload') ||
     isIdpServiceToServicePath(req.path) ||
-    isFederationServiceToServicePath(req.path),
+    isFederationServiceToServicePath(req.path) ||
+    isServiceToServiceBulkRequest(req),
 });
 
 /**
