@@ -60,12 +60,20 @@
       },
       "default": "./lib/module/ui/server.js"
     },
+    "./plugins/*": "./plugins/*.js",
+    "./expo-module.config.json": "./expo-module.config.json",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "lib",
-    "assets"
+    "assets",
+    "android/build.gradle",
+    "android/src",
+    "ios/OxyIdentityModule.swift",
+    "ios/OxyIdentity.podspec",
+    "plugins",
+    "expo-module.config.json"
   ],
   "keywords": [
     "react-native",
@@ -167,7 +175,7 @@
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/bloom": ">=0.16.0",
-    "@oxyhq/core": "^9.2.3",
+    "@oxyhq/core": "^10.0.0",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/query-async-storage-persister": "^5.101",
@@ -177,6 +185,7 @@
     "@types/react": "*",
     "@types/react-native": "*",
     "expo": ">=56.0.0",
+    "expo-modules-core": "*",
     "expo-document-picker": ">=56.0.0",
     "expo-file-system": ">=56.0.0",
     "expo-font": ">=13.0.0",
@@ -198,6 +207,9 @@
   },
   "peerDependenciesMeta": {
     "nativewind": {
+      "optional": true
+    },
+    "expo-modules-core": {
       "optional": true
     },
     "@expo/vector-icons": {

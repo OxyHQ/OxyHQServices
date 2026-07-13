@@ -104,7 +104,7 @@ export function useOnboardingStatus(): OnboardingState {
     // session will restore, so we stay `'checking'` (neutral backdrop) rather
     // than prematurely reporting `'in_progress'` and bouncing the user through
     // create-identity.
-    if (oxyLoading || !isAuthResolved || (isResolving && identityExists === null)) {
+    if (oxyLoading || !isAuthResolved || isResolving) {
       return 'checking';
     }
 
