@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
@@ -12,6 +13,7 @@ import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { runAccountDeletion } from '@/lib/account/delete-account-flow';
+import { ONBOARDING_IDENTITY_QUERY_KEY } from '@/hooks/useOnboardingStatus';
 
 /**
  * Account Deletion Screen.
@@ -26,6 +28,7 @@ export default function DeleteAccountScreen() {
   // Auth is enforced by the `(vault)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, logoutAll } = useOxy();
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const [confirmText, setConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -62,6 +65,11 @@ export default function DeleteAccountScreen() {
         signOutAll: () => logoutAll(),
       });
 
+      // The local identity has been purged (or the purge was attempted) — re-sync
+      // the shared onboarding probe to ground truth so routing doesn't resume a
+      // deleted account's stale identity.
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+
       // The account is gone server-side regardless. If the local key purge
       // failed, surface a non-fatal warning so the user knows to reinstall to
       // fully clear residual key material.
@@ -78,7 +86,7 @@ export default function DeleteAccountScreen() {
     } finally {
       setIsDeleting(false);
     }
-  }, [isConfirmValid, oxyServices, confirmText, logoutAll, router, alert, t]);
+  }, [isConfirmValid, oxyServices, confirmText, logoutAll, router, alert, t, queryClient]);
 
   if (oxyLoading) {
     return (

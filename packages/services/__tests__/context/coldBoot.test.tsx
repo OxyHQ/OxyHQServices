@@ -158,9 +158,43 @@ describe('OxyContext cold boot (device-first)', () => {
     expect(window.sessionStorage.getItem(OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY)).toBe('1');
   });
 
+  it('plants a still-valid persisted warm token as-is and skips the device-secret mint', async () => {
+    // The persisted warm access token is valid well beyond the refresh lead
+    // window, so warm-token-plant wins on the first paint: it plants the token
+    // AS-IS (no rotation, no network) and the mint lane never runs. The proactive
+    // refresh scheduler rotates it in the background afterwards.
+    window.localStorage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'sess_cb',
+        userId: USER_ID,
+        deviceId: 'dev-cb',
+        deviceSecret: 'cb.device.secret',
+        accessToken: 'cb.warm.token',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    );
+    const { stub } = buildStub();
+
+    renderProvider(stub);
+
+    await waitFor(() => expect(capturedContext?.isAuthenticated).toBe(true));
+    expect(capturedContext?.isAuthResolved).toBe(true);
+
+    // Warm token planted AS-IS; the zero-cookie mint was skipped entirely.
+    expect(stub.mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(stub.getAccessToken()).toBe('cb.warm.token');
+    // The full user is still hydrated for the committed session.
+    expect(stub.getCurrentUser).toHaveBeenCalled();
+    expect(capturedContext?.user?.id).toBe(USER_ID);
+    expect(redirectToAuthorize).not.toHaveBeenCalled();
+  });
+
   it('restores a session from the persisted store (device-secret mint) and hands off to the SessionClient', async () => {
     // A returning device: a persisted zero-cookie device credential (`deviceId` +
-    // `deviceSecret`) → cold boot mints a fresh access token from it.
+    // `deviceSecret`). Its warm access token has EXPIRED since the last visit, so
+    // warm-token-plant skips and cold boot mints a fresh access token from the
+    // credential.
     window.localStorage.setItem(
       AUTH_STATE_STORAGE_KEY,
       JSON.stringify({
@@ -169,7 +203,7 @@ describe('OxyContext cold boot (device-first)', () => {
         deviceId: 'dev-cb',
         deviceSecret: 'cb.device.secret',
         accessToken: 'cb.access.token',
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
       }),
     );
     const { stub } = buildStub();
@@ -201,6 +235,7 @@ describe('OxyContext cold boot (device-first)', () => {
   });
 
   it('restores a session when persisted device credentials exist', async () => {
+    // Stale (expired) warm token → warm-token-plant skips → device-secret mint runs.
     window.localStorage.setItem(
       AUTH_STATE_STORAGE_KEY,
       JSON.stringify({
@@ -209,7 +244,7 @@ describe('OxyContext cold boot (device-first)', () => {
         deviceId: 'dev-legacy',
         deviceSecret: 'legacy.secret',
         accessToken: 'legacy.access',
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
       }),
     );
     const { stub } = buildStub();

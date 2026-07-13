@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useOxy } from '@oxyhq/services';
+import { useQuery } from '@tanstack/react-query';
 import { KeyManager, logger } from '@oxyhq/core';
 
 export type OnboardingStatus = 'checking' | 'none' | 'in_progress' | 'complete';
@@ -13,6 +14,15 @@ export interface OnboardingState {
 }
 
 /**
+ * React Query key for the shared local-identity probe. Every consumer of
+ * `useOnboardingStatus` reads THIS key, so `KeyManager.hasIdentity()` runs once
+ * per app session and all consumers share one deduped result + one loading
+ * state. Identity mutations (create / import / delete) invalidate this key at
+ * their call sites so the probe re-runs exactly when the answer can change.
+ */
+export const ONBOARDING_IDENTITY_QUERY_KEY = ['onboarding', 'identity'] as const;
+
+/**
  * Centralized hook for managing onboarding state.
  *
  * Combines three signals into a single resolved status:
@@ -21,10 +31,15 @@ export interface OnboardingState {
  *   - `user.username`: the user has completed the username step
  *
  * Used by:
- *   - `_layout.tsx` for routing decisions (`needsAuth`)
+ *   - `_layout.tsx` for routing decisions (`needsAuth`) and splash readiness
  *   - `(auth)/index.tsx` to redirect existing identities away from the
  *     marketing splash on cold start
  *   - `create-identity.tsx` for flow initialization
+ *   - `useOnboardingFlow.ts`
+ *
+ * The `KeyManager.hasIdentity()` probe is a SHARED React Query read
+ * (`ONBOARDING_IDENTITY_QUERY_KEY`), so every consumer above shares ONE deduped
+ * result and one loading state — no per-component re-probe flashing.
  *
  * Correctness invariants:
  *   1. An active session implies identity exists. We never report
@@ -32,68 +47,64 @@ export interface OnboardingState {
  *      flash the welcome screen at returning users when the secure-store
  *      lookup races behind the session restore.
  *   2. `status === 'checking'` only renders while the answer is genuinely
- *      unknown. We never flip BACK to `'checking'` once resolved, which
- *      would cause the blank backdrop to re-flash mid-flow.
- *   3. The KeyManager identity check is re-run when `isAuthenticated`
- *      transitions from `false` to `true` (a fresh sign-in may have
- *      created an identity that the initial check missed). It is NOT
- *      re-run on other auth state changes, since `KeyManager.hasIdentity`
- *      uses an internal cache that is invalidated explicitly by
- *      `createIdentity` and `clearIdentity` — there's no other way for
- *      the answer to change.
+ *      unknown. We never flip BACK to `'checking'` once resolved: React Query
+ *      keeps the previous `data` across invalidation refetches (`staleTime:
+ *      Infinity`), so `identityExists` never regresses to `null`.
+ *   3. The probe re-runs only when the answer can actually change — i.e. when
+ *      an identity mutation invalidates `ONBOARDING_IDENTITY_QUERY_KEY`
+ *      (`createIdentity` / `importIdentity` / account deletion). `hasIdentity`
+ *      uses an internal cache, so there is no other way for the result to move,
+ *      and the session-implies-identity invariant (#1) already covers the
+ *      window between a fresh sign-in and the invalidation landing.
  */
 export function useOnboardingStatus(): OnboardingState {
-  const { user, isAuthenticated, isLoading: oxyLoading } = useOxy();
-  const [identityExists, setIdentityExists] = useState<boolean | null>(null);
+  const { user, isAuthenticated, isAuthResolved, isLoading: oxyLoading } = useOxy();
 
-  // We use a dedicated `isResolving` flag (rather than `identityExists === null`)
-  // so a second check triggered by `isAuthenticated` flipping does NOT regress
-  // us to "checking" — we keep the previously-resolved value while the next
-  // check is in flight. This prevents a backdrop flash on sign-in completion.
-  const [isResolving, setIsResolving] = useState(true);
-
-  useEffect(() => {
-    if (oxyLoading) return;
-
-    // Read `isAuthenticated` for its side effect of binding into the
-    // dependency list. A flip from `false` to `true` (successful sign-in)
-    // can create an identity that an earlier `hasIdentity()` call missed,
-    // so we must re-check. The value itself is not used in the body —
-    // the check below is unconditional. Without this read, Biome's
-    // exhaustive-deps rule flags `isAuthenticated` as unnecessary.
-    void isAuthenticated;
-
-    let cancelled = false;
-    KeyManager.hasIdentity()
-      .then((exists) => {
-        if (cancelled) return;
-        setIdentityExists(exists);
-      })
-      .catch((error) => {
-        // Storage threw — typically a transient keychain unlock issue.
-        // Treat as "no identity" so the welcome flow can run, but never
-        // silently swallow the error.
+  const identityQuery = useQuery({
+    queryKey: ONBOARDING_IDENTITY_QUERY_KEY,
+    queryFn: async (): Promise<boolean> => {
+      try {
+        return await KeyManager.hasIdentity();
+      } catch (error) {
+        // Storage threw — typically a transient keychain unlock issue. Treat as
+        // "no identity" so the welcome flow can run, but never silently swallow
+        // the error.
         logger.error(
           'useOnboardingStatus: KeyManager.hasIdentity threw',
           error instanceof Error ? error : new Error(String(error)),
           { component: 'useOnboardingStatus' },
         );
-        if (cancelled) return;
-        setIdentityExists(false);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setIsResolving(false);
-      });
+        return false;
+      }
+    },
+    // Defer the keychain read until the SDK provider has finished its initial
+    // load; the memo below reports `'checking'` during that window regardless.
+    enabled: !oxyLoading,
+    // The only things that change the answer are explicit identity mutations,
+    // which invalidate the key — so never auto-refetch.
+    staleTime: Infinity,
+    // `queryFn` already handles a keychain error (→ `false`); never retry.
+    retry: false,
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [oxyLoading, isAuthenticated]);
+  // Map React Query state onto the prior local-probe semantics:
+  //   - `identityExists`: `boolean` once resolved, `null` while still unknown.
+  //     React Query keeps the previous value across invalidation refetches, so
+  //     this never regresses to `null` once resolved (invariant #2).
+  //   - `isResolving`: `true` only until the FIRST probe resolves.
+  const identityExists: boolean | null = identityQuery.data ?? null;
+  const isResolving = identityQuery.data === undefined;
 
   const status = useMemo<OnboardingStatus>(() => {
-    // Genuinely unknown — still resolving the initial answer.
-    if (oxyLoading || (isResolving && identityExists === null)) {
+    // Genuinely unknown — still resolving the initial answer. `isAuthResolved`
+    // flips true only once the SDK's device-first cold boot has concluded
+    // (session committed OR definitively signed out) — `runProviderColdBoot`
+    // always calls `markAuthResolved()` in its `finally`, so it never hangs.
+    // Until then we cannot know whether a returning user's persisted device
+    // session will restore, so we stay `'checking'` (neutral backdrop) rather
+    // than prematurely reporting `'in_progress'` and bouncing the user through
+    // create-identity.
+    if (oxyLoading || !isAuthResolved || (isResolving && identityExists === null)) {
       return 'checking';
     }
 
@@ -111,27 +122,15 @@ export function useOnboardingStatus(): OnboardingState {
 
     // Identity exists locally but no active session — resume onboarding.
     return 'in_progress';
-  }, [identityExists, isResolving, isAuthenticated, user, oxyLoading]);
+  }, [identityExists, isResolving, isAuthenticated, isAuthResolved, user, oxyLoading]);
 
   const needsAuth = useMemo(() => {
-    // The auth gate is platform-agnostic. On web, an unauthenticated visitor
-    // is NOT silently parked on `(tabs)` — that produced a redirect deadlock,
-    // because `(tabs)/_layout` itself redirects unauthenticated users to
-    // `(auth)` while the root layout marked `(auth)` as redirect-away. The two
-    // guards bounced off each other and Expo Router settled on rendering no
-    // route at all (blank screen, pathname stuck at "/").
-    //
-    // Web sign-in still happens via FedCM silent SSO (OxyContext runs it on
-    // mount). While SSO is in flight `status === 'checking'` keeps us in the
-    // auth stack; if it succeeds, `isAuthenticated` flips and `status` becomes
-    // `complete` → `needsAuth` is false → `(tabs)` renders. If it fails,
-    // `status` resolves to `none` and the web `(auth)/index.web.tsx` routes to
-    // the SIGN-IN screen (identity creation is native-only) — a real terminal
-    // state instead of an infinite loop.
-
-    // Default to "show auth" while resolving — better to briefly show a
-    // blank backdrop inside the auth stack than to flash the tab bar at
-    // a user whose session is still being restored.
+    // While the device-first cold boot is unresolved (`status === 'checking'`)
+    // we default to showing the auth stack (which renders a neutral backdrop)
+    // rather than flashing the tab bar at a user whose persisted device session
+    // is still being restored. Once cold boot resolves, `isAuthenticated` drives
+    // the outcome: an active session settles `status` to `complete` → tabs;
+    // otherwise the user resolves to `none` or `in_progress` → onboarding.
     if (status === 'checking') {
       return true;
     }
@@ -142,7 +141,7 @@ export function useOnboardingStatus(): OnboardingState {
   return {
     status,
     needsAuth,
-    isLoading: isResolving || oxyLoading,
+    isLoading: isResolving || oxyLoading || !isAuthResolved,
     // An active session implies identity exists — keep this in lockstep
     // with the `status` invariant above so consumers that gate on
     // `hasIdentity` (e.g. the redirect in `(auth)/index.tsx`) don't fall

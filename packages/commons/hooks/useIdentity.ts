@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { useOxy, useAuthStore, handleAuthError } from '@oxyhq/services';
 import {
   KeyManager,
@@ -15,6 +16,7 @@ import { syncIdentityWithServer } from './identity/syncService';
 import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
 import { isAlreadyRegisteredError } from './identity/errorUtils';
+import { ONBOARDING_IDENTITY_QUERY_KEY } from './useOnboardingStatus';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
 
@@ -59,6 +61,7 @@ export interface UseIdentityResult {
 export const useIdentity = (): UseIdentityResult => {
   const { oxyServices, isAuthenticated } = useOxy();
   const { signIn } = useBiometricSignIn();
+  const queryClient = useQueryClient();
 
   const isSynced = useIdentityStore((state) => state.isSynced);
   const isSyncing = useIdentityStore((state) => state.isSyncing);
@@ -204,7 +207,12 @@ export const useIdentity = (): UseIdentityResult => {
 
       inFlightCreateIdentity = run();
       try {
-        return await inFlightCreateIdentity;
+        const result = await inFlightCreateIdentity;
+        // Identity now exists on-device → refresh the shared onboarding probe so
+        // routing (`useOnboardingStatus`) reflects it without a per-component
+        // re-check.
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        return result;
       } catch (error) {
         if (!(error instanceof IdentityAlreadyExistsError)) {
           handleAuthError(error, {
@@ -221,7 +229,7 @@ export const useIdentity = (): UseIdentityResult => {
         inFlightCreateIdentity = null;
       }
     },
-    [oxyServices, signIn, setSynced],
+    [oxyServices, signIn, setSynced, queryClient],
   );
 
   const importIdentity = useCallback(
@@ -274,7 +282,12 @@ export const useIdentity = (): UseIdentityResult => {
 
       inFlightImportIdentity = run();
       try {
-        return await inFlightImportIdentity;
+        const result = await inFlightImportIdentity;
+        // Identity now exists on-device → refresh the shared onboarding probe so
+        // routing (`useOnboardingStatus`) reflects it without a per-component
+        // re-check.
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        return result;
       } catch (error) {
         if (!(error instanceof IdentityAlreadyExistsError) && !(error instanceof IdentityPersistError)) {
           handleAuthError(error, {
@@ -289,7 +302,7 @@ export const useIdentity = (): UseIdentityResult => {
         inFlightImportIdentity = null;
       }
     },
-    [oxyServices, setSynced],
+    [oxyServices, setSynced, queryClient],
   );
 
   const hasIdentity = useCallback(() => KeyManager.hasIdentity(), []);

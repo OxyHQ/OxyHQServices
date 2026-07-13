@@ -72,6 +72,109 @@ function seedCredStore(extra: Partial<PersistedAuthState> = {}) {
   };
 }
 
+describe('runSessionColdBoot — warm-token-plant', () => {
+  /** Comfortably beyond the 60s refresh lead window. */
+  const farFuture = () => new Date(Date.now() + 3_600_000).toISOString();
+
+  it('plants a still-valid warm token FIRST, skipping the mint round-trip', async () => {
+    const { store, seed } = seedCredStore({ accessToken: 'warm-access', expiresAt: farFuture() });
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+    const saveSpy = jest.spyOn(store, 'save');
+    const onSession = jest.fn();
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB, onSession });
+
+    expect(outcome).toEqual({ kind: 'session', via: 'warm-token-plant', session: expect.any(Object) });
+    expect(setTokens).toHaveBeenCalledWith('warm-access');
+    // The warm plant won before the mint lane — no network round-trip on first paint.
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+    // Session identity comes straight from the persisted owning session.
+    expect(onSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-old',
+        userId: 'user-old',
+        accessToken: 'warm-access',
+        via: 'warm-token-plant',
+      }),
+    );
+    // Used AS-IS: the step never mints, rotates, or persists.
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(await store.load()).toMatchObject({ deviceSecret: 'ds-secret-orig', accessToken: 'warm-access' });
+  });
+
+  it('plants on native too (the step runs on both platforms)', async () => {
+    const { store, seed } = seedCredStore({ accessToken: 'warm-access', expiresAt: farFuture() });
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const signInWithSharedIdentity = jest.fn(async () => null);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret, signInWithSharedIdentity });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: NATIVE });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'warm-token-plant' });
+    expect(setTokens).toHaveBeenCalledWith('warm-access');
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(signInWithSharedIdentity).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['within the refresh lead window', () => new Date(Date.now() + 30_000).toISOString()],
+    ['already expired', () => new Date(Date.now() - 1_000).toISOString()],
+    ['malformed (Date.parse NaN)', () => 'not-a-real-date'],
+  ])('skips to the mint lane when the warm token is %s', async (_label, expiresAt) => {
+    const { store, seed } = seedCredStore({ accessToken: 'warm-access', expiresAt: expiresAt() });
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB });
+
+    // Warm plant skipped → the unchanged mint lane resolved the session.
+    expect(outcome).toMatchObject({ kind: 'session', via: 'device-secret-mint' });
+    expect(mintFromDeviceSecret).toHaveBeenCalledWith('dev-mint', 'ds-secret-orig');
+    expect(setTokens).toHaveBeenCalledWith('access-minted');
+    // The stale warm token was NOT planted.
+    expect(setTokens).not.toHaveBeenCalledWith('warm-access');
+  });
+
+  it('skips (regression guard) when no accessToken is persisted → mint lane runs', async () => {
+    const { store, seed } = seedCredStore(); // deviceId/deviceSecret only, no warm token
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'device-secret-mint' });
+    expect(mintFromDeviceSecret).toHaveBeenCalledWith('dev-mint', 'ds-secret-orig');
+    expect(setTokens).toHaveBeenCalledWith('access-minted');
+  });
+
+  it('skips when a warm token is present but the owning sessionId/userId is missing', async () => {
+    // Device-only bootstrap blob: deviceId + deviceSecret but empty session identity.
+    const store = createMemoryAuthStateStore();
+    await store.save({
+      sessionId: '',
+      userId: '',
+      deviceId: 'dev-mint',
+      deviceSecret: 'ds-secret-orig',
+      accessToken: 'warm-access',
+      expiresAt: farFuture(),
+    });
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: WEB });
+
+    // No owning session → warm plant skips → the mint lane resolves it.
+    expect(outcome).toMatchObject({ kind: 'session', via: 'device-secret-mint' });
+    expect(setTokens).not.toHaveBeenCalledWith('warm-access');
+    expect(mintFromDeviceSecret).toHaveBeenCalled();
+  });
+});
+
 describe('runSessionColdBoot — device-secret-mint', () => {
   it('wins FIRST via the mint, persisting nextDeviceSecret BEFORE planting the token', async () => {
     const { store, seed } = seedCredStore();

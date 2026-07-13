@@ -45,6 +45,7 @@ interface MockOxyServices {
 interface MockOxyState {
   user: { id?: string; username?: string; language?: string; avatar?: string | null } | null;
   isAuthenticated: boolean;
+  isAuthResolved: boolean;
   isLoading: boolean;
   oxyServices: MockOxyServices | null;
 }
@@ -53,6 +54,10 @@ function makeDefaultState(): MockOxyState {
   return {
     user: null,
     isAuthenticated: false,
+    // Defaults to `true`: these tests assert the settled onboarding status,
+    // i.e. after the SDK's device-first cold boot has concluded. Set it to
+    // `false` explicitly to exercise the still-resolving ("checking") window.
+    isAuthResolved: true,
     isLoading: false,
     oxyServices: { updateProfile: jest.fn(async () => undefined) },
   };

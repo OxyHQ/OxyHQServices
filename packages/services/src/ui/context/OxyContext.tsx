@@ -64,6 +64,7 @@ import {
   type CommitInput,
 } from './oxyContextTypes';
 import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
+import { commitDeviceSetAndResolve } from './commitSessionFlow';
 import { useOxyAccountGraph } from './useOxyAccountGraph';
 
 export type { OxyContextState, PasswordSignInResult, OxyContextProviderProps } from './oxyContextTypes';
@@ -526,47 +527,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         setActiveSessionId(input.sessionId);
       }
 
-      // Register into the device set. A deliberate sign-in ACTIVATES the account
-      // (`registerAndActivate`); the cold boot only ensures membership and lets
-      // the server's own `activeAccountId` win (`addCurrentAccount`). Both then
-      // start the socket + project. Best-effort — a failure never fails the
-      // sign-in (cold boot re-registers on the next load).
-      try {
-        if (options.activate) {
-          await sessionClient.registerAndActivate(input.userId);
-        } else {
-          await sessionClient.addCurrentAccount();
-        }
-        await sessionClient.start();
-        await syncFromClient();
-      } catch (registrationError) {
-        loggerUtil.warn(
-          'commitSession: device-set registration failed',
-          { component: 'OxyContext', method: 'commitSession' },
-          registrationError as unknown,
-        );
-      }
-
-      // Hydrate the full user (the commit input carries only minimal data). Fall
-      // back to the minimal shape if the profile fetch fails.
-      let fullUser: User | null = null;
-      try {
-        fullUser = await oxyServices.getCurrentUser();
-      } catch (profileError) {
-        if (__DEV__) {
-          loggerUtil.debug(
-            'Failed to fetch full user on commit; using minimal fallback',
-            { component: 'OxyContext', method: 'commitSession' },
-            profileError as unknown,
-          );
-        }
-        fullUser = (input.user as unknown as User) ?? null;
-      }
-      if (fullUser) {
-        loginSuccess(fullUser);
-        onAuthStateChangeRef.current?.(fullUser);
-      }
-      markAuthResolvedRef.current();
+      // Register into the device set, hydrate the full user, and flip the
+      // auth-resolution gate. A deliberate sign-in ACTIVATES the account and
+      // BLOCKS on the reconcile (register + socket + sessions projection) before
+      // resolving — unchanged ordering. The cold boot resolves auth from the
+      // profile fetch FIRST and reconciles the device set in the background, so
+      // first paint is not held behind those extra round-trips. Reconcile is
+      // best-effort — a failure never fails the sign-in (cold boot re-registers
+      // on the next load).
+      await commitDeviceSetAndResolve({
+        activate: options.activate,
+        userId: input.userId,
+        fallbackUser: (input.user as unknown as User) ?? null,
+        registerAndActivate: (userId) => sessionClient.registerAndActivate(userId),
+        addCurrentAccount: () => sessionClient.addCurrentAccount(),
+        startSocket: () => sessionClient.start(),
+        syncFromClient,
+        getCurrentUser: () => oxyServices.getCurrentUser(),
+        loginSuccess,
+        onAuthStateChange: onAuthStateChangeRef.current,
+        markAuthResolved: markAuthResolvedRef.current,
+      });
 
       if (options.activate && options.hubSync && hubSync && isWebBrowser()) {
         try {

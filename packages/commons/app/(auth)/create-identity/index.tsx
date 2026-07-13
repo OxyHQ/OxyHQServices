@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { IdentityAlreadyExistsError } from '@oxyhq/core';
@@ -200,9 +201,20 @@ export default function CreateIdentityScreen() {
     recoveryPhraseRef,
   ]);
 
+  // While onboarding status is still resolving on this screen's own mount,
+  // render a neutral backdrop instead of the "generating keys" copy.
+  if (status === 'checking') {
+    return <View style={{ flex: 1, backgroundColor }} />;
+  }
+
+  // Resume path (identity already exists) is a SYNC, not key generation —
+  // show the accurate copy so we never claim to be "generating" existing keys.
+  const isResuming = hasIdentity && status === 'in_progress';
+
   return (
     <CreatingStep
       progress={creatingProgress}
+      isSyncing={isResuming}
       backgroundColor={backgroundColor}
       textColor={textColor}
     />

@@ -7,12 +7,16 @@
  * the app renders with a "Sign in with Oxy" button.
  *
  * Ordered steps (first to yield a session wins):
- *   1. `device-secret-mint` (web + native) — the zero-cookie transport: when the
+ *   1. `warm-token-plant` (web + native) — the fastest path: when the persisted
+ *      store still holds a warm access token that is valid for more than the
+ *      refresh lead window, plant it and yield the session with NO network
+ *      round-trip. The background scheduler rotates it shortly after.
+ *   2. `device-secret-mint` (web + native) — the zero-cookie transport: when the
  *      origin persisted a `deviceId` + `deviceSecret`, mint a short access token
  *      with a single bearer-less POST to `/session/device/token` (no cookie, no
  *      navigation) and rotate the secret in-use.
- *   2. `shared-key-signin` (native) — re-mint from the shared-keychain identity.
- *   3. Signed out.
+ *   3. `shared-key-signin` (native) — re-mint from the shared-keychain identity.
+ *   4. Signed out.
  *
  * ESM-safe (no `require()`); no react/react-native/expo imports.
  */
@@ -20,6 +24,7 @@ import { runColdBoot, type ColdBootOutcome, type ColdBootStep } from '../utils/c
 import { isNative as detectNative } from '../utils/platform';
 import { extractErrorStatus } from '../utils/errorUtils';
 import { logger } from '../utils/loggerUtils';
+import { TOKEN_REFRESH_LEAD_MS } from '../session/refresh';
 import type { OxyServices } from '../OxyServices';
 import type { AuthStateStore, PersistedAuthState } from '../session/authStateStore';
 
@@ -90,7 +95,45 @@ export async function runSessionColdBoot(
 
   const steps: Array<ColdBootStep<DeviceBootSession>> = [];
 
-  // 1. device-secret-mint (web + native) — the zero-cookie fast path. When the
+  // 1. warm-token-plant (web + native) — the fastest path. When the persisted
+  //    store already holds a still-valid warm access token (its expiry more than
+  //    the refresh lead window away) plus its owning session identity, plant it
+  //    and yield the session IMMEDIATELY, skipping the blocking mint round-trip on
+  //    first paint. The token is used AS-IS: this step NEVER mints, rotates, or
+  //    persists anything. The proactive `startTokenRefreshScheduler` + the
+  //    request-time preflight (both wired in the services provider) rotate it in
+  //    the background; a revoked token self-heals via the 401 -> re-mint -> clear
+  //    path. This exposure is sanctioned by `authStateStore.ts` (~L30-36): the
+  //    warm token is short-lived and adds nothing over the already-persisted
+  //    `deviceSecret`.
+  steps.push({
+    id: 'warm-token-plant',
+    run: async () => {
+      const persisted = await store.load();
+      if (!persisted?.accessToken || !persisted.sessionId || !persisted.userId || !persisted.expiresAt) {
+        return { kind: 'skip' };
+      }
+      // Guard a malformed `expiresAt` (Date.parse -> NaN): treat as not-valid and
+      // fall through to the mint lane. A token still inside the refresh lead
+      // window (or already expired) is likewise skipped — let the mint lane get a
+      // fresh one rather than plant a token about to expire.
+      const expiresAtMs = new Date(persisted.expiresAt).getTime();
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now() + TOKEN_REFRESH_LEAD_MS) {
+        return { kind: 'skip' };
+      }
+      oxy.setTokens(persisted.accessToken);
+      return {
+        kind: 'session',
+        session: {
+          sessionId: persisted.sessionId,
+          userId: persisted.userId,
+          accessToken: persisted.accessToken,
+        },
+      };
+    },
+  });
+
+  // 2. device-secret-mint (web + native) — the zero-cookie fast path. When the
   //    origin persisted a deviceId + deviceSecret, mint a short access token with
   //    a single bearer-less POST (no cookie, no navigation).
   steps.push({
@@ -147,7 +190,7 @@ export async function runSessionColdBoot(
     },
   });
 
-  // 2. shared-key-signin (native) — re-mint from the shared identity.
+  // 3. shared-key-signin (native) — re-mint from the shared identity.
   steps.push({
     id: 'shared-key-signin',
     enabled: () => isNative,

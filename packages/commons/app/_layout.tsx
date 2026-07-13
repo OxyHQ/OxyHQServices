@@ -3,9 +3,8 @@ import { Stack } from 'expo-router';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
-import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -20,13 +19,11 @@ configureReanimatedLogger({
 });
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
-import AppSplashScreen from '@/components/AppSplashScreen';
-import { AppInitializer } from '@/lib/appInitializer';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
@@ -36,30 +33,27 @@ import {
   useHideNativeSplashWhenReady,
 } from '@oxyhq/expo-splash';
 
-// NATIVE ONLY: hold the OS splash so it stays visible until the app has finished
-// running init, then hide it once `appIsReady` flips (via
-// `useHideNativeSplashWhenReady`). This makes the native OS splash the SINGLE
-// splash on native — the Oxy mark (white silhouette) centered on the dark brand
-// background with the Oxy symbol pinned to the bottom (configured by
-// `@oxyhq/expo-splash` in app.config.js). Commons is NATIVE-ONLY (no web build),
-// so the custom `AppSplashScreen` — gated to web only below for structural
-// parity with Accounts — is effectively never rendered here; native readiness
-// flips from init alone. No-op on web (the shared helper guards
-// `Platform.OS === 'web'`).
+// NATIVE ONLY: hold the OS splash so the Oxy mark (white silhouette centered on
+// the dark brand background, Oxy symbol pinned to the bottom — configured by
+// `@oxyhq/expo-splash` in app.config.js) stays visible until the app can paint
+// its FIRST real screen. Commons is NATIVE-ONLY (no web build), so the branded
+// native OS splash is the single splash. We hold it here and hide it from
+// `AppStackContent` (below) once the app is genuinely ready — see the note there
+// on why readiness is computed inside the providers, not on frame 1. No-op on
+// web (the shared helper guards `Platform.OS === 'web'`).
 preventNativeSplashAutoHide();
 
 // Get API URL from environment variable with fallback
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
+// Safety net: never let a stalled readiness signal hold the OS splash forever.
+// If storage hydration / cold boot haven't settled within this window, reveal
+// the app anyway rather than trapping the user behind the splash.
+const SPLASH_FALLBACK_MS = 4000;
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };
-
-interface SplashState {
-  initializationComplete: boolean;
-  startFade: boolean;
-  fadeComplete: boolean;
-}
 
 export default function RootLayout() {
   return (
@@ -83,65 +77,11 @@ export function ErrorBoundary(props: { error: Error; retry: () => void }) {
 function RootLayoutInner() {
   const { themeMode } = useThemeMode();
 
-  const [splashState, setSplashState] = useState<SplashState>({
-    initializationComplete: false,
-    startFade: false,
-    fadeComplete: false,
-  });
-
-  const handleSplashFadeComplete = useCallback(() => {
-    setSplashState((prev) => ({ ...prev, fadeComplete: true }));
-  }, []);
-
-  const initializeApp = useCallback(async () => {
-    const result = await AppInitializer.initializeApp();
-    // Always mark complete (even on error) to unblock the app
-    setSplashState((prev) => ({ ...prev, initializationComplete: true }));
-    return result;
-  }, []);
-
-  // Derive the web splash fade trigger from state. `startFade` is fully derived
-  // from initialization completing — there is no other trigger. (Commons is
-  // native-only, so this drives no visible splash; kept for parity with
-  // Accounts.)
-  const startFade = splashState.initializationComplete;
-
-  const [appIsReady, setAppIsReady] = useState(false);
-
-  // Readiness gate.
-  // - WEB keeps the fade-gated flow: the custom <AppSplashScreen> renders, fades
-  //   out when init completes, and its `onFadeComplete` sets `fadeComplete`, so
-  //   web readiness = init complete AND the custom splash finished fading.
-  // - NATIVE renders NO custom splash (the held OS splash covers the screen), so
-  //   `onFadeComplete` never fires; native readiness = init complete ONLY, else
-  //   the OS splash would hang forever. Commons is native-only, so this is the
-  //   path that always runs.
-  useEffect(() => {
-    if (appIsReady) return;
-    const ready =
-      Platform.OS === 'web'
-        ? splashState.initializationComplete && splashState.fadeComplete
-        : splashState.initializationComplete;
-    if (ready) {
-      setAppIsReady(true);
-    }
-  }, [splashState.initializationComplete, splashState.fadeComplete, appIsReady]);
-
-  // NATIVE ONLY: once ready, hide the held OS splash. The shared helper is a
-  // no-op on web (the OS splash was never held; the custom overlay handles the
-  // transition there).
-  useHideNativeSplashWhenReady(appIsReady);
-
-  // Fire-and-forget initializer once per mount. A ref guard is required for
-  // React 19 Strict Mode, which intentionally double-invokes effects in
-  // development to surface side-effect bugs.
-  const initStartedRef = useRef(false);
-  useEffect(() => {
-    if (initStartedRef.current) return;
-    initStartedRef.current = true;
-    initializeApp();
-  }, [initializeApp]);
-
+  // `AppStackContent` is rendered UNCONDITIONALLY — the held native OS splash
+  // covers the RN view until `AppStackContent` hides it once the app is ready.
+  // This avoids an intermediate boot shell (which flashed white on the dark
+  // brand background) and the blank frame that appeared when the splash dropped
+  // before fonts + the query cache were ready.
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
@@ -154,21 +94,7 @@ function RootLayoutInner() {
           <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
             <LocaleProvider>
               <AppHead />
-              {!appIsReady ? (
-                // WEB: the custom splash covers init and fades out; its
-                // `onFadeComplete` gates `appIsReady`. NATIVE renders null here
-                // — the held OS splash is on top. Commons is native-only, so
-                // this branch renders null in practice; kept gated for parity
-                // with Accounts.
-                Platform.OS === 'web' ? (
-                  <AppSplashScreen
-                    startFade={startFade}
-                    onFadeComplete={handleSplashFadeComplete}
-                  />
-                ) : null
-              ) : (
-                <AppStackContent />
-              )}
+              <AppStackContent />
             </LocaleProvider>
           </OxyProvider>
         </BloomThemeProvider>
@@ -188,11 +114,41 @@ function AppHead() {
   );
 }
 
-/** Renders the navigation stack once the app is ready. */
+/**
+ * Renders the navigation stack and drives the native OS splash hand-off.
+ *
+ * Readiness is computed HERE, inside the providers, not on frame 1 of
+ * `RootLayoutInner`. This component lives UNDER `<BloomThemeProvider>`, whose
+ * Bloom `FontLoader` gates its subtree — so by the time `AppStackContent`
+ * mounts at all, fonts are already loaded. The only remaining readiness signals
+ * are:
+ *   - `isStorageReady`: the SDK's persisted query cache has hydrated, so the
+ *     first paint serves cached data instead of an empty `#ffffff` boot shell.
+ *   - `status !== 'checking'`: the device-first cold boot has settled the
+ *     onboarding decision, so the Stack renders the correct group on the FIRST
+ *     frame (no `(auth)` ↔ `(tabs)` flash).
+ *
+ * We hold the branded OS splash (see `preventNativeSplashAutoHide` at module
+ * scope) until BOTH resolve, so the transition is: OS splash → first real
+ * screen, with no blank frame and no white flash.
+ */
 function AppStackContent() {
   // Must be called inside OxyProvider (which wraps BloomThemeProvider)
   const navTheme = useNavigationTheme();
-  const { needsAuth } = useOnboardingStatus();
+  const { isStorageReady } = useOxy();
+  const { status, needsAuth } = useOnboardingStatus();
+
+  const appReady = isStorageReady && status !== 'checking';
+
+  // Bounded fallback so a stalled `isStorageReady`/`status` signal can never
+  // hang the OS splash forever. Cleaned up on unmount.
+  const [fallbackElapsed, setFallbackElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setFallbackElapsed(true), SPLASH_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useHideNativeSplashWhenReady(appReady || fallbackElapsed);
 
   return (
     <SafeAreaProvider>
