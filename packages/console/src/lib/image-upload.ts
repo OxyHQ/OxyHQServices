@@ -78,7 +78,7 @@ export type ImageValidationResult = { ok: true } | { ok: false; message: string 
  * Returns a discriminated result so callers can surface the precise message.
  */
 export function validateImageFile(file: File): ImageValidationResult {
-  const isAllowedType = (ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(file.type);
+  const isAllowedType = (ALLOWED_IMAGE_MIME_TYPES as ReadonlyArray<string>).includes(file.type);
   if (!isAllowedType) {
     return {
       ok: false,

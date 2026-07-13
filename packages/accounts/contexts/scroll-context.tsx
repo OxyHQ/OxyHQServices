@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useRef, useMemo } from 'react';
-import Animated from 'react-native-reanimated';
-import { useSharedValue, SharedValue } from 'react-native-reanimated';
+import Animated, { useSharedValue, SharedValue } from 'react-native-reanimated';
 
 interface ScrollContextType {
   isScrolled: boolean;

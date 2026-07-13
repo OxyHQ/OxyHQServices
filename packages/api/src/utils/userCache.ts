@@ -1,5 +1,5 @@
 import { getRedisClient } from '../config/redis';
-import { IUser } from '../models/User';
+import type { IUser } from '../models/User';
 import { logger } from './logger';
 
 const DEFAULT_TTL = 5 * 60; // 5 minutes in seconds

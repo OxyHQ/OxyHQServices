@@ -1,4 +1,4 @@
-import { Server as SocketIOServer } from 'socket.io';
+import type { Server as SocketIOServer } from 'socket.io';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 import { logger } from './logger';
 

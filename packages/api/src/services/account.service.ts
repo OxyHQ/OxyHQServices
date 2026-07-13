@@ -17,10 +17,10 @@
  * tested without a database (the API test harness mocks mongoose).
  */
 
-import mongoose, { ClientSession } from 'mongoose';
-import User, { IUser, MAX_ACCOUNT_DEPTH, type AccountKind, type OrganizationCategory } from '../models/User';
-import AccountMember, { IAccountMember } from '../models/AccountMember';
-import AccountCredential, { IAccountCredential } from '../models/AccountCredential';
+import mongoose, { type ClientSession } from 'mongoose';
+import User, { type IUser, MAX_ACCOUNT_DEPTH, type AccountKind, type OrganizationCategory } from '../models/User';
+import AccountMember, { type IAccountMember } from '../models/AccountMember';
+import AccountCredential, { type IAccountCredential } from '../models/AccountCredential';
 import {
   permissionsForAccountRole,
   roleCanActAs,

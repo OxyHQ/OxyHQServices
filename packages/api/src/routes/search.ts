@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express, { type Request, type Response } from "express";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { sanitizeSearchQuery } from '../utils/sanitize';

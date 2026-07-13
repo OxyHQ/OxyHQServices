@@ -24,7 +24,7 @@
  * identifier is empty.
  */
 
-import { User, IUser } from '../models/User';
+import { User, type IUser } from '../models/User';
 
 /** Escape regex metacharacters so the identifier matches literally. */
 export function escapeRegExp(value: string): string {

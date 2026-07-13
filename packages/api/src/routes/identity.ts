@@ -15,10 +15,10 @@
  * user-supplied domain).
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import dns from 'dns';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { validate } from '../middleware/validate';

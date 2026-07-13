@@ -160,7 +160,7 @@ export class RecoveryPhraseService {
   /**
    * Get suggestions for a partial word
    */
-  static getSuggestions(partial: string, limit: number = 5): string[] {
+  static getSuggestions(partial: string, limit = 5): string[] {
     const lowerPartial = partial.toLowerCase();
     return bip39.wordlists.english
       .filter((word: string) => word.startsWith(lowerPartial))

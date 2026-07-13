@@ -232,7 +232,7 @@ export class HttpService {
   private logger: SimpleLogger;
   private config: OxyConfig;
   private tokenRefreshPromise: Promise<string | null> | null = null;
-  private tokenRefreshCooldownUntil: number = 0;
+  private tokenRefreshCooldownUntil = 0;
   private authRefreshHandler: AuthRefreshHandler | null = null;
   private accessTokenProvider: AccessTokenProvider | null = null;
   private deviceSecretMintInFlight: Promise<DeviceSecretMintOutcome> | null = null;
@@ -242,7 +242,7 @@ export class HttpService {
    * re-emitted. Throttles the {@link CACHE_SOFT_MAX_ENTRIES} warning to at most
    * one per {@link CACHE_SIZE_WARNING_THROTTLE_MS} window.
    */
-  private cacheSizeWarningSilentUntil: number = 0;
+  private cacheSizeWarningSilentUntil = 0;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:

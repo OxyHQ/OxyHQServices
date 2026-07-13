@@ -10,7 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import { useTheme } from '@oxyhq/bloom/theme';
+import type { useTheme } from '@oxyhq/bloom/theme';
 import { fileManagementStyles } from '../../components/fileManagement/styles';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];

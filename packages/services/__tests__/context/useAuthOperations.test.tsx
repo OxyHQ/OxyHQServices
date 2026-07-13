@@ -152,7 +152,6 @@ const setup = (opts: SetupOpts = {}) => {
     username: 'alice',
     privacySettings: {},
   } as User));
-  const applyLanguagePreference = jest.fn(async () => undefined);
   const onAuthStateChange = jest.fn();
   const onError = jest.fn();
   const loginSuccess = jest.fn();
@@ -181,7 +180,6 @@ const setup = (opts: SetupOpts = {}) => {
       switchSession,
       sessionClient: sessionClient as never,
       syncFromClient,
-      applyLanguagePreference,
       onAuthStateChange,
       onError,
       loginSuccess,
@@ -203,7 +201,6 @@ const setup = (opts: SetupOpts = {}) => {
     saveActiveSessionId,
     clearSessionState,
     switchSession,
-    applyLanguagePreference,
     onAuthStateChange,
     onError,
     loginSuccess,

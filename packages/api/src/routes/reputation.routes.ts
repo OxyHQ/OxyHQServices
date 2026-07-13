@@ -1,4 +1,4 @@
-import express, { Response, NextFunction } from 'express';
+import express, { type Response, type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 import {

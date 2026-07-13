@@ -4,7 +4,7 @@
  * Centralized type definitions for notification-related operations.
  */
 
-import { Types } from 'mongoose';
+import type { Types } from 'mongoose';
 
 export interface NotificationData {
   recipientId: Types.ObjectId | string;

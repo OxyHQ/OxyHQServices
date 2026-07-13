@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import type { IncomingMessage } from 'http';
 import mongoose from 'mongoose';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
-import User, { IUser, type AccountKind } from '../models/User';
+import User, { type IUser, type AccountKind } from '../models/User';
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';

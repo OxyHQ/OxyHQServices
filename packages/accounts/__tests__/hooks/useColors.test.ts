@@ -26,7 +26,7 @@ describe('useColors', () => {
   it('exposes every key from DomainColors.light when mode is light', () => {
     __setBloomThemeMode('light');
     const { result } = renderHook(() => useColors());
-    for (const key of Object.keys(DomainColors.light) as Array<keyof typeof DomainColors.light>) {
+    for (const key of Object.keys(DomainColors.light) as (keyof typeof DomainColors.light)[]) {
       expect(result.current[key]).toBe(DomainColors.light[key]);
     }
   });
@@ -34,7 +34,7 @@ describe('useColors', () => {
   it('exposes every key from DomainColors.dark when mode is dark', () => {
     __setBloomThemeMode('dark');
     const { result } = renderHook(() => useColors());
-    for (const key of Object.keys(DomainColors.dark) as Array<keyof typeof DomainColors.dark>) {
+    for (const key of Object.keys(DomainColors.dark) as (keyof typeof DomainColors.dark)[]) {
       expect(result.current[key]).toBe(DomainColors.dark[key]);
     }
   });

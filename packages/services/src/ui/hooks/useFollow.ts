@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
-import { type OxyServices, type BulkFollowResult, type BulkUnfollowResult } from '@oxyhq/core';
+import type { OxyServices, BulkFollowResult, BulkUnfollowResult } from '@oxyhq/core';
 import { useShallow } from 'zustand/react/shallow';
 import { queryKeys } from './queries/queryKeys';
 

@@ -16,7 +16,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const TEST_WEBHOOK_SECRET = 'test-inbound-secret';
 process.env.EMAIL_INBOUND_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;

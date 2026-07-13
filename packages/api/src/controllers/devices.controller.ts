@@ -1,9 +1,9 @@
-import { Response } from 'express';
+import type { Response } from 'express';
 import Session from '../models/Session';
 import { logger } from '../utils/logger';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import sessionService from '../services/session.service';
-import { AuthRequest } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import { emitSessionUpdate } from '../server';
 
 

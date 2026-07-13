@@ -24,7 +24,7 @@ export function isMongoConnected(): boolean {
  * @returns Promise that resolves when connected or rejects on timeout
  * @throws Error if connection timeout is exceeded
  */
-export function waitForMongoConnection(timeout: number = 30000): Promise<void> {
+export function waitForMongoConnection(timeout = 30000): Promise<void> {
   return new Promise((resolve, reject) => {
     // If already connected, resolve immediately
     if (mongoose.connection.readyState === 1) {

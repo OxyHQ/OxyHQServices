@@ -1,17 +1,18 @@
 import * as React from 'react';
-import { useQuery, useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import {  useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/services';
+import type {UseQueryResult} from '@tanstack/react-query';
 import type {
-  AccountNode,
   AccountKind,
-  AccountRelationship,
   AccountMember,
-  AccountRole,
-  AccountMemberStatus,
   AccountMemberSource,
+  AccountMemberStatus,
+  AccountNode,
+  AccountRelationship,
+  AccountRole,
+  AccountSuccessResult,
   CreateAccountInput,
   UpdateAccountInput,
-  AccountSuccessResult,
 } from '@oxyhq/core';
 
 // ===========================================================================
@@ -68,7 +69,7 @@ export type AssignableAccountRole = Exclude<AccountRole, 'owner'>;
 
 interface AccountContextValue {
   // State
-  accounts: AccountNode[];
+  accounts: Array<AccountNode>;
   currentAccount: AccountNode | null;
   isLoading: boolean;
 
@@ -116,7 +117,7 @@ function persistAccountId(id: string): void {
 }
 
 /** Pick the default account: the personal one, else the first available. */
-function pickDefaultAccount(accounts: AccountNode[]): AccountNode | null {
+function pickDefaultAccount(accounts: Array<AccountNode>): AccountNode | null {
   if (accounts.length === 0) {
     return null;
   }
@@ -124,7 +125,7 @@ function pickDefaultAccount(accounts: AccountNode[]): AccountNode | null {
 }
 
 /** An account permission check that reads the embedded `callerMembership`. */
-function hasPermission(account: AccountNode, permissions: AccountPermission[]): boolean {
+function hasPermission(account: AccountNode, permissions: Array<AccountPermission>): boolean {
   const granted = account.callerMembership?.permissions;
   if (!granted) {
     return false;
@@ -293,7 +294,7 @@ export function useAccount() {
 export function useAccountMembers(
   accountId: string | undefined,
   enabled: boolean = true
-): UseQueryResult<AccountMember[]> {
+): UseQueryResult<Array<AccountMember>> {
   const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({

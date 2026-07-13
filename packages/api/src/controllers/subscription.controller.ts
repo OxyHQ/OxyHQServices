@@ -1,5 +1,5 @@
-import { Response } from "express";
-import { AuthRequest } from "../middleware/auth";
+import type { Response } from "express";
+import type { AuthRequest } from "../middleware/auth";
 import Subscription from "../models/Subscription";
 import User from "../models/User";
 import { logger } from '../utils/logger';

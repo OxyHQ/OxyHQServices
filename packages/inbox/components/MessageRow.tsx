@@ -26,7 +26,6 @@ import {
   Doc01Icon,
   FileZipIcon,
   File01Icon,
-  Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 import { Chip } from '@oxyhq/bloom/chip';
 import { Badge } from '@oxyhq/bloom/badge';

@@ -23,7 +23,7 @@
 import express from 'express';
 import http from 'http';
 import { Readable } from 'stream';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const LEGACY_PUBLIC_FILE_ID = '64c0000000000000000000a1';
 const PREFIXED_PUBLIC_FILE_ID = '64c0000000000000000000a2';

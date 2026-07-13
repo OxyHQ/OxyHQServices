@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import twoFactorService from '../services/twoFactor.service';
@@ -9,7 +9,7 @@ import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { sessionCreateOptionsFromBody } from './session.controller';
 import { buildSessionAuthResponse } from './session.controller';
-import { AuthRequest } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
 
 const TWO_FACTOR_LOCKOUT_SCOPE = '2fa-login';

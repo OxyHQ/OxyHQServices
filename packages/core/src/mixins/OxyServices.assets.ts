@@ -435,12 +435,16 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         if (error instanceof Error) {
           errorMessage = error.message || errorMessage;
         } else if (error && typeof error === 'object') {
-          if ('message' in error) {
-            errorMessage = String((error as any).message) || errorMessage;
-          } else if ('error' in error && typeof (error as any).error === 'string') {
-            errorMessage = (error as any).error;
-          } else if ('data' in error && (error as any).data?.message) {
-            errorMessage = String((error as any).data.message);
+          const errObj = error as Record<string, unknown>;
+          if ('message' in errObj) {
+            errorMessage = String(errObj.message) || errorMessage;
+          } else if (typeof errObj.error === 'string') {
+            errorMessage = errObj.error;
+          } else if (errObj.data && typeof errObj.data === 'object') {
+            const dataObj = errObj.data as Record<string, unknown>;
+            if (dataObj.message) {
+              errorMessage = String(dataObj.message);
+            }
           }
         } else if (error) {
           errorMessage = String(error) || errorMessage;
@@ -462,8 +466,8 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           throw handledError;
         }
         
-        const newError = new Error(errorMessage);
-        (newError as any).fileContext = contextError.fileContext;
+        const newError: Error & { fileContext?: Record<string, unknown> } = new Error(errorMessage);
+        newError.fileContext = contextError.fileContext;
         throw this.handleError(newError);
       }
     }
@@ -546,7 +550,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     /**
      * Delete asset with optional force
      */
-    async assetDelete(fileId: string, force: boolean = false): Promise<any> {
+    async assetDelete(fileId: string, force = false): Promise<any> {
       try {
         const params: any = force ? { force: 'true' } : undefined;
         const result = await this.makeRequest('DELETE', `/assets/${fileId}`, params, { cache: false });
@@ -590,7 +594,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     }
 
-    async uploadAvatar(file: AssetUploadInput, userId: string, app: string = 'profiles'): Promise<any> {
+    async uploadAvatar(file: AssetUploadInput, userId: string, app = 'profiles'): Promise<any> {
       try {
         const asset = await this.assetUpload(file, 'public');
         await this.assetLink(asset.file.id, app, 'avatar', userId, 'public');
@@ -600,7 +604,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     }
 
-    async uploadProfileBanner(file: AssetUploadInput, userId: string, app: string = 'profiles'): Promise<any> {
+    async uploadProfileBanner(file: AssetUploadInput, userId: string, app = 'profiles'): Promise<any> {
       try {
         const asset = await this.assetUpload(file, 'public');
         await this.assetLink(asset.file.id, app, 'profile-banner', userId, 'public');

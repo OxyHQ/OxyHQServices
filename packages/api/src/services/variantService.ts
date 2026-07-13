@@ -1,5 +1,5 @@
-import { File, IFile, IFileVariant, FileVisibility } from '../models/File';
-import { S3Service } from './s3Service';
+import { File, type IFile, type IFileVariant, type FileVisibility } from '../models/File';
+import type { S3Service } from './s3Service';
 import { storageKeyForVisibility } from '../config/cdn';
 import { logger } from '../utils/logger';
 import sharp from 'sharp';
@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { execSync, spawn } from 'child_process';
-import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
+import type { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
 import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 
 // FFprobe metadata interfaces for type safety
@@ -774,10 +774,10 @@ export class VariantService {
             const audioStream = metadata.streams?.find((s) => s.codec_type === 'audio');
 
             resolve({
-              duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
+              duration: metadata.format?.duration ? Number.parseFloat(metadata.format.duration) : undefined,
               width: videoStream?.width,
               height: videoStream?.height,
-              bitrate: metadata.format?.bit_rate ? parseInt(metadata.format.bit_rate) : undefined,
+              bitrate: metadata.format?.bit_rate ? Number.parseInt(metadata.format.bit_rate) : undefined,
               fps: videoStream?.r_frame_rate ? this.parseFps(videoStream.r_frame_rate) : undefined,
               codec: videoStream?.codec_name,
               audioCodec: audioStream?.codec_name
@@ -856,9 +856,9 @@ export class VariantService {
         // Parse progress from ffmpeg output
         const timeMatch = output.match(/time=(\d+):(\d+):(\d+\.\d+)/);
         if (timeMatch) {
-          const hours = parseInt(timeMatch[1]);
-          const minutes = parseInt(timeMatch[2]);
-          const seconds = parseFloat(timeMatch[3]);
+          const hours = Number.parseInt(timeMatch[1]);
+          const minutes = Number.parseInt(timeMatch[2]);
+          const seconds = Number.parseFloat(timeMatch[3]);
           const totalSeconds = hours * 3600 + minutes * 60 + seconds;
           _lastProgress = totalSeconds.toString();
         }
@@ -1144,7 +1144,7 @@ export class VariantService {
     const match = bitrate.match(/^(\d+)([kKmM])?$/);
     if (!match) return 1000000;
 
-    const value = parseInt(match[1]);
+    const value = Number.parseInt(match[1]);
     const unit = match[2]?.toLowerCase();
 
     if (unit === 'k') return value * 1000;
@@ -1372,7 +1372,7 @@ declare module './variantService' {
   }
 }
 
-VariantService.prototype.commitVariants = async function(file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> {
+VariantService.prototype.commitVariants = async (file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> => {
   const { maxRetries = 2, retryDelay = 60 } = options;
   let attempt = 0;
   // Persist variants and intrinsic metadata together.

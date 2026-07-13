@@ -5,13 +5,13 @@
  * Delegates to emailService for business logic and smtpOutbound for sending.
  */
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { emailService } from '../services/email.service';
 import { smtpOutbound } from '../services/smtp.outbound';
 import { assetService } from '../services/assetServiceSingleton';
 import { resolveEmailAddress } from '../config/email.config';
 import User from '../models/User';
-import { Message, IAttachment } from '../models/Message';
+import { Message, type IAttachment } from '../models/Message';
 import type { IFile } from '../models/File';
 import {
   BadRequestError,
@@ -156,8 +156,8 @@ export async function listMessages(req: AuthRequest, res: Response): Promise<voi
   const mailboxId = req.query.mailbox as string | undefined;
   const starred = req.query.starred === 'true';
   const label = req.query.label as string | undefined;
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
   const unseenOnly = req.query.unseen === 'true';
 
   // Must have at least one filter: mailbox, starred, or label
@@ -549,8 +549,8 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
   const dateBefore = getOptionalQueryString(req.query.dateBefore, 'dateBefore');
   const starred = req.query.starred === 'true';
   const label = getOptionalQueryString(req.query.label, 'label');
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
 
   // At least one search criterion required
   if (
@@ -614,8 +614,8 @@ export async function updateEmailSettings(req: AuthRequest, res: Response): Prom
 
 export async function listSubscriptions(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
 
   const result = await emailService.getSubscriptions(userId, { limit, offset });
   res.json({
@@ -672,8 +672,8 @@ export async function updateBundle(req: AuthRequest, res: Response): Promise<voi
 export async function listBundledMessages(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
   const mailboxId = req.query.mailbox as string | undefined;
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
 
   const result = await emailService.listBundledMessages(userId, mailboxId || null, { limit, offset });
   res.json({
@@ -718,8 +718,8 @@ export async function createReminder(req: AuthRequest, res: Response): Promise<v
 export async function listReminders(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
   const includeCompleted = req.query.completed === 'true';
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
 
   const result = await emailService.listReminders(userId, { includeCompleted, limit, offset });
   res.json({ data: result.data, pagination: result.pagination });
@@ -834,8 +834,8 @@ export async function listContacts(req: AuthRequest, res: Response): Promise<voi
   const userId = req.user!.id;
   const q = req.query.q as string | undefined;
   const starred = req.query.starred === 'true';
-  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(Number.parseInt(req.query.limit as string) || 50, 100);
+  const offset = Number.parseInt(req.query.offset as string) || 0;
 
   const result = await emailService.listContacts(userId, { q, starred: starred || undefined, limit, offset });
   res.json({

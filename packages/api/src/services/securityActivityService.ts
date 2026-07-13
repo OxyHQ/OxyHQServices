@@ -1,5 +1,5 @@
-import SecurityActivity, { ISecurityActivity, SecurityEventType, SecurityEventSeverity, SECURITY_EVENT_SEVERITY_MAP } from '../models/SecurityActivity';
-import { Request } from 'express';
+import SecurityActivity, { type ISecurityActivity, type SecurityEventType, type SecurityEventSeverity, SECURITY_EVENT_SEVERITY_MAP } from '../models/SecurityActivity';
+import type { Request } from 'express';
 import { extractDeviceInfo } from '../utils/deviceUtils';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
@@ -321,7 +321,7 @@ class SecurityActivityService {
    */
   async getRecentSecurityActivity(
     userId: string,
-    limit: number = 10
+    limit = 10
   ): Promise<ISecurityActivity[]> {
     // Validate userId
     if (!Types.ObjectId.isValid(userId)) {

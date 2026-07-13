@@ -7,7 +7,7 @@
  */
 
 import axios from 'axios';
-import { Message, CardType } from '../models/Message';
+import { Message, type CardType } from '../models/Message';
 import { AI_LABELING_CONFIG } from '../config/email.config';
 import { logger } from '../utils/logger';
 

@@ -13,7 +13,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { ec as EC } from 'elliptic';
 
 const USER_ID = '507f1f77bcf86cd799439011';

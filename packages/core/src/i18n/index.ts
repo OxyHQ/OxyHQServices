@@ -9,6 +9,7 @@ import jaJP from './locales/ja-JP.json';
 import koKR from './locales/ko-KR.json';
 import zhCN from './locales/zh-CN.json';
 import arSA from './locales/ar-SA.json';
+import { getBaseLanguage } from '../utils/languageUtils';
 
 export type LocaleDict = Record<string, any>;
 
@@ -39,12 +40,30 @@ const DICTS: Record<string, LocaleDict> = {
 
 const FALLBACK = 'en-US';
 
+/**
+ * Resolve a locale tag to the key of the dictionary that should serve it.
+ *
+ * Account locales are full BCP-47 tags (e.g. `es-MX`, `pt-BR`, `fr-CA`), but a
+ * translation dictionary is shipped per base language. Resolution order:
+ *   1. Exact dictionary for the tag (e.g. `es-ES`).
+ *   2. Dictionary for the base subtag (e.g. `es-MX` → `es`).
+ *   3. The English fallback.
+ */
+function resolveLang(locale: string | undefined): string {
+  if (locale) {
+    if (DICTS[locale]) return locale;
+    const base = getBaseLanguage(locale);
+    if (DICTS[base]) return base;
+  }
+  return FALLBACK;
+}
+
 function getNested(obj: any, path: string): any {
   return path.split('.').reduce((acc, key) => (acc && acc[key] != null ? acc[key] : undefined), obj);
 }
 
 export function translate(locale: string | undefined, key: string, vars?: Record<string, string | number>): string {
-  const lang = locale && DICTS[locale] ? locale : FALLBACK;
+  const lang = resolveLang(locale);
   const dict = DICTS[lang] || DICTS[FALLBACK];
   let val = getNested(dict, key);
   // Per-key fallback to the English dictionary when a key is missing from the
@@ -64,6 +83,6 @@ export function translate(locale: string | undefined, key: string, vars?: Record
 }
 
 export function hasKey(locale: string | undefined, key: string): boolean {
-  const lang = locale && DICTS[locale] ? locale : FALLBACK;
+  const lang = resolveLang(locale);
   return getNested(DICTS[lang], key) != null || getNested(DICTS[FALLBACK], key) != null;
 }

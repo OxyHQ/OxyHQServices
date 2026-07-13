@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import type { DeviceSessionState, SessionAccount } from '@oxyhq/contracts';
-import DeviceSession, { IDeviceSession, IDeviceSessionAccount } from '../models/DeviceSession';
+import DeviceSession, { type IDeviceSession, type IDeviceSessionAccount } from '../models/DeviceSession';
 import sessionService from './session.service';
 import { sha256Hex, base64UrlEncode, timingSafeStringEqual } from './oauthCode.service';
 import { logger } from '../utils/logger';

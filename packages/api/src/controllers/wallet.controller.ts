@@ -1,8 +1,8 @@
-import { Response } from 'express';
+import type { Response } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
 
-import { AuthRequest } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import Transaction from '../models/Transaction';
 import User from '../models/User';
 import Wallet from '../models/Wallet';

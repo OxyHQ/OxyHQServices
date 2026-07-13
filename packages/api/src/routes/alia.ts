@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import axios from 'axios';
 import { authMiddleware } from '../middleware/auth';
 

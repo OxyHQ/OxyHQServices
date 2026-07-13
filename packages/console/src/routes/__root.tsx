@@ -1,5 +1,5 @@
 import { Outlet, createRootRoute } from '@tanstack/react-router';
-import { lazy, Suspense } from 'react';
+import { Suspense, lazy } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';

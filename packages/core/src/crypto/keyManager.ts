@@ -1178,9 +1178,9 @@ export class KeyManager {
    * @param userConfirmed - If true, user has explicitly confirmed deletion (default: false)
    */
   static async deleteIdentity(
-    skipBackup: boolean = false, 
-    force: boolean = false,
-    userConfirmed: boolean = false
+    skipBackup = false, 
+    force = false,
+    userConfirmed = false
   ): Promise<void> {
     if (isWebPlatform()) {
       return; // Identity storage is only available on native platforms, nothing to delete

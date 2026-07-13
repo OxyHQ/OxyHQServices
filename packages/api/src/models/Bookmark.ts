@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, type Document } from "mongoose";
 
 interface IBookmark extends Document {
   userId: mongoose.Types.ObjectId;

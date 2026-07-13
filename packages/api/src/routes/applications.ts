@@ -1,15 +1,15 @@
 import express from 'express';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Application, IApplication } from '../models/Application';
+import { Application, type IApplication } from '../models/Application';
 import {
-  APPLICATION_SCOPES,
+  type APPLICATION_SCOPES,
   type ApplicationScope,
   isPrivilegedScope,
 } from '../utils/applicationScopes';
 import {
   ApplicationCredential,
-  IApplicationCredential,
+  type IApplicationCredential,
 } from '../models/ApplicationCredential';
 import ApiKeyUsage from '../models/ApiKeyUsage';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';

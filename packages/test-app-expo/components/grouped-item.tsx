@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, type ComponentProps } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -7,8 +7,10 @@ import { darkenColor } from '@/utils/colorUtils';
 import { normalizeColorScheme } from '@/utils/themeUtils';
 import { Colors } from '@/constants/theme';
 
+export type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
 interface GroupedItemProps {
-    icon?: string;
+    icon?: IoniconName;
     iconColor?: string;
     title: string;
     subtitle?: string;
@@ -58,7 +60,7 @@ const GroupedItemComponent = ({
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
                 <View style={[styles.iconContainer, { backgroundColor: finalIconColor }]}>
-                    <Ionicons name={icon as any} size={22} color={darkenColor(finalIconColor)} />
+                    <Ionicons name={icon} size={22} color={darkenColor(finalIconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>

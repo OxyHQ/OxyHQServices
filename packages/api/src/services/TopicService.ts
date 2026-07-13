@@ -1,4 +1,4 @@
-import { Topic, ITopic, TopicType, TopicSource } from '../models/Topic.js';
+import { Topic, type ITopic, TopicType, TopicSource } from '../models/Topic.js';
 import type { FilterQuery, ProjectionType, SortOrder } from 'mongoose';
 
 function slugify(name: string): string {
@@ -84,7 +84,7 @@ class TopicService {
   /**
    * Full-text search across name, displayName, aliases, and description.
    */
-  async search(query: string, limit: number = 20): Promise<ITopic[]> {
+  async search(query: string, limit = 20): Promise<ITopic[]> {
     if (!query || !query.trim()) return [];
 
     return Topic.find(

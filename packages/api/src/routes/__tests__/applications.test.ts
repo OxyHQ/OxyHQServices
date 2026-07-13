@@ -10,7 +10,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { Types } from 'mongoose';
 
 // Restore the real mongoose (the global setup stubs it) so ObjectId works.

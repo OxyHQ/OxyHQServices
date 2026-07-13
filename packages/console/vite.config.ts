@@ -1,11 +1,12 @@
-import { readFileSync } from 'fs'
-import { dirname, resolve } from 'path'
-import { fileURLToPath } from 'url'
-import { defineConfig, type Plugin } from 'vite'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {  defineConfig } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import reactNativeWeb from 'vite-plugin-react-native-web'
+import type {Plugin} from 'vite';
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 

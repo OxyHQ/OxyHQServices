@@ -1,7 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import mongoose from 'mongoose';
 import Stripe from 'stripe';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
 import BillingSubscription from '../models/BillingSubscription';
 import BillingTransaction from '../models/BillingTransaction';
@@ -363,7 +363,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return;
   }
 
-  const metadataCredits = parseInt(metadata.credits || '0');
+  const metadataCredits = Number.parseInt(metadata.credits || '0');
   if (metadataCredits !== pkg.credits) {
     logger.warn('Webhook checkout: credits mismatch between metadata and package', {
       metadataCredits,

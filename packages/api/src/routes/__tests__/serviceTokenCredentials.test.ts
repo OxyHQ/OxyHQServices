@@ -19,7 +19,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 

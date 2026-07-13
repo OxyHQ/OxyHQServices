@@ -1,24 +1,24 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/services';
-import { useAccount } from '@/hooks/use-account';
 import type {
-  Application,
-  ApplicationType,
-  ApplicationStatus,
-  ApplicationCredential,
-  ApplicationCredentialType,
-  ApplicationCredentialStatus,
-  ApplicationEnvironment,
-  CreateApplicationInput,
-  UpdateApplicationInput,
-  CreateApplicationCredentialInput,
-  ApplicationCredentialWithSecret,
-  ApplicationUsagePeriod,
-  ApplicationUsageStats,
   AccountMember,
   AccountRole,
+  Application,
+  ApplicationCredential,
+  ApplicationCredentialStatus,
+  ApplicationCredentialType,
+  ApplicationCredentialWithSecret,
+  ApplicationEnvironment,
+  ApplicationStatus,
+  ApplicationType,
+  ApplicationUsagePeriod,
+  ApplicationUsageStats,
+  CreateApplicationCredentialInput,
+  CreateApplicationInput,
+  UpdateApplicationInput,
 } from '@oxyhq/core';
 import type { AccountPermission } from '@/hooks/use-account';
+import { useAccount } from '@/hooks/use-account';
 
 // ===========================================================================
 // Types — re-exported from @oxyhq/core so the Console shares the single
@@ -53,7 +53,7 @@ export interface CreateCredentialInput {
   name: string;
   type: ApplicationCredentialType;
   environment: ApplicationEnvironment;
-  scopes?: string[];
+  scopes?: Array<string>;
 }
 
 // ===========================================================================
@@ -87,7 +87,7 @@ export function useApplications() {
     // Apps are scoped to the active account. The query is gated on `accountId`,
     // so the empty-array branch is only here to satisfy the type when disabled.
     queryFn: () =>
-      accountId ? oxyServices.listAccountApps(accountId) : Promise.resolve([] as Application[]),
+      accountId ? oxyServices.listAccountApps(accountId) : Promise.resolve([] as Array<Application>),
     staleTime: 1000 * 60 * 5,
     retry: 2,
     enabled: isReady && isAuthenticated && !!accountId,
@@ -118,7 +118,7 @@ export function useCreateApplication() {
       // on the input still wins; otherwise scope to the active account.
       oxyServices.createApp(accountId ? { ownerAccountId: accountId, ...data } : data),
     onSuccess: (newApp) => {
-      queryClient.setQueryData<Application[]>(queryKeys.applications(accountId), (old) =>
+      queryClient.setQueryData<Array<Application>>(queryKeys.applications(accountId), (old) =>
         old ? [newApp, ...old] : [newApp]
       );
       queryClient.setQueryData(queryKeys.application(newApp._id), newApp);
@@ -140,7 +140,7 @@ export function useUpdateApplication() {
     }): Promise<Application> => oxyServices.updateApp(appId, data),
     onSuccess: (updatedApp) => {
       // Patch the app in every cached account-scoped list (prefix match).
-      queryClient.setQueriesData<Application[]>(
+      queryClient.setQueriesData<Array<Application>>(
         { queryKey: APPLICATIONS_LIST_PREFIX },
         (old) =>
           old ? old.map((app) => (app._id === updatedApp._id ? updatedApp : app)) : old
@@ -161,7 +161,7 @@ export function useDeleteApplication() {
     },
     onSuccess: (appId) => {
       // Drop the app from every cached account-scoped list (prefix match).
-      queryClient.setQueriesData<Application[]>(
+      queryClient.setQueriesData<Array<Application>>(
         { queryKey: APPLICATIONS_LIST_PREFIX },
         (old) => (old ? old.filter((app) => app._id !== appId) : old)
       );
@@ -208,7 +208,7 @@ export function useCreateCredential() {
       return oxyServices.createAppCredential(appId, payload);
     },
     onSuccess: ({ credential }) => {
-      queryClient.setQueryData<ApplicationCredential[]>(
+      queryClient.setQueryData<Array<ApplicationCredential>>(
         queryKeys.credentials(credential.applicationId),
         (old) => (old ? [credential, ...old] : [credential])
       );
@@ -229,7 +229,7 @@ export function useRotateCredential() {
       credentialId: string;
     }): Promise<CredentialWithSecret> => oxyServices.rotateAppCredential(appId, credentialId),
     onSuccess: ({ credential }) => {
-      queryClient.setQueryData<ApplicationCredential[]>(
+      queryClient.setQueryData<Array<ApplicationCredential>>(
         queryKeys.credentials(credential.applicationId),
         (old) => (old ? old.map((c) => (c._id === credential._id ? credential : c)) : [credential])
       );
@@ -253,7 +253,7 @@ export function useRevokeCredential() {
       return { appId, credentialId };
     },
     onSuccess: ({ appId, credentialId }) => {
-      queryClient.setQueryData<ApplicationCredential[]>(queryKeys.credentials(appId), (old) =>
+      queryClient.setQueryData<Array<ApplicationCredential>>(queryKeys.credentials(appId), (old) =>
         old
           ? old.map((c) =>
               c._id === credentialId ? { ...c, status: 'revoked' as const } : c

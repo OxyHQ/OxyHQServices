@@ -1,4 +1,4 @@
-import { ZodSchema, ZodError } from 'zod';
+import { type ZodSchema, ZodError } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
 import { BadRequestError } from '../utils/error';
 

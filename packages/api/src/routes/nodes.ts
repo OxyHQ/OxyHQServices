@@ -14,8 +14,8 @@
  * cache write — the read-path invariant holds).
  */
 
-import { Router, Request, Response } from 'express';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { Router, type Request, type Response } from 'express';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';

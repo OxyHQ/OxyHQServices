@@ -1,15 +1,15 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import User, { IUser } from '../models/User';
+import User, { type IUser } from '../models/User';
 import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
-import { Document } from 'mongoose';
+import type { Document } from 'mongoose';
 import sessionService from '../services/session.service';
 import {
   extractTokenFromRequest,
   decodeToken,
   validateSessionToken,
-  TokenDecoded
+  type TokenDecoded
 } from './authUtils';
 
 // Ensure environment variables are loaded

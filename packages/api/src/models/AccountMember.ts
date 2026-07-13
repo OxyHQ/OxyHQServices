@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 import { ACCOUNT_ROLES, type AccountRole } from '../utils/accountRoles';
 
 export const ACCOUNT_MEMBER_STATUSES = ['active', 'invited', 'removed'] as const;

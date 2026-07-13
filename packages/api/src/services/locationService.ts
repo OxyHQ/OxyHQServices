@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 import locationCache from '../utils/locationCache';
 import { nominatimRateLimiter } from '../utils/apiRateLimiter';
 import performanceMonitor from '../utils/performanceMonitor';
-import {
+import type {
   NominatimResult,
   EnhancedLocationResult,
   LocationSearchOptions,
@@ -195,8 +195,8 @@ class LocationService {
   private transformResults(results: NominatimResult[]): EnhancedLocationResult[] {
     return results.map(result => {
       const address = result.address || {};
-      const lat = parseFloat(result.lat) || 0;
-      const lon = parseFloat(result.lon) || 0;
+      const lat = Number.parseFloat(result.lat) || 0;
+      const lon = Number.parseFloat(result.lon) || 0;
       
       // Extract name from display_name (first part before comma)
       const name = result.display_name.split(',')[0].trim() || result.display_name;

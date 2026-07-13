@@ -1,6 +1,6 @@
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const mockAuthMiddleware = jest.fn();
 const mockExists = jest.fn();

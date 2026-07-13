@@ -9,6 +9,24 @@
 export type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos' | 'unknown';
 
 /**
+ * Shape of the RN-platform marker that the React Native entry point registers
+ * on `globalThis` via {@link setPlatformOS}. Declared locally (rather than as a
+ * global type augmentation) so core stays self-contained and does not leak an
+ * ambient global into every consumer's type space.
+ */
+interface RNPlatformGlobal {
+  __REACT_NATIVE_PLATFORM__?: PlatformOS;
+}
+
+/**
+ * Typed view over `globalThis` for the RN-platform marker, avoiding an `any`
+ * cast at each access site.
+ */
+function rnPlatformGlobal(): RNPlatformGlobal {
+  return globalThis as unknown as RNPlatformGlobal;
+}
+
+/**
  * Detect the current platform without importing react-native
  *
  * Detection order:
@@ -20,9 +38,9 @@ export type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos' | 'unkn
 function detectPlatform(): PlatformOS {
   // Check if React Native Platform is available globally (set by RN runtime)
   // This avoids static imports while still detecting RN environment
-  const rnPlatform = (globalThis as any).__REACT_NATIVE_PLATFORM__;
+  const rnPlatform = rnPlatformGlobal().__REACT_NATIVE_PLATFORM__;
   if (rnPlatform) {
-    return rnPlatform as PlatformOS;
+    return rnPlatform;
   }
 
   // Check navigator.product for React Native
@@ -95,7 +113,7 @@ export function isAndroid(): boolean {
  */
 export function setPlatformOS(os: PlatformOS): void {
   cachedPlatform = os;
-  (globalThis as any).__REACT_NATIVE_PLATFORM__ = os;
+  rnPlatformGlobal().__REACT_NATIVE_PLATFORM__ = os;
 }
 
 /**

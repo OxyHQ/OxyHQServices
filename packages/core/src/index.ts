@@ -53,6 +53,7 @@ export type {
     BulkFollowResult,
     BulkUnfollowEntry,
     BulkUnfollowResult,
+    ViewerGraph,
 } from './mixins/OxyServices.user';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
@@ -323,13 +324,18 @@ export type { TopicData, TopicTranslation } from './models/Topic';
 // ---------------------------------------------------------------------------
 export {
     SUPPORTED_LANGUAGES,
+    FALLBACK_LOCALE,
+    getBaseLanguage,
+    normalizeLocale,
+    isSupportedLocale,
     getLanguageMetadata,
     getLanguageName,
     getNativeLanguageName,
-    normalizeLanguageCode,
     isRTLLocale,
+    getUserLanguages,
+    getPrimaryLanguage,
 } from './utils/languageUtils';
-export type { LanguageMetadata } from './utils/languageUtils';
+export type { SupportedLanguage } from './utils/languageUtils';
 
 // ---------------------------------------------------------------------------
 // Platform detection

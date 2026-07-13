@@ -37,7 +37,6 @@ import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
-import { useEmailStore } from '@/hooks/useEmail';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useMessageActions } from '@/hooks/useMessageActions';
 import { MessageRow } from '@/components/MessageRow';

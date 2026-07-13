@@ -9,7 +9,7 @@
  * - Proper logging
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { readBoundedBody } from '../services/linkPreview/boundedBody';
@@ -25,6 +25,7 @@ import {
   BadRequestError,
 } from '../utils/error';
 import { userService } from '../services/user.service';
+import graphCache from '../utils/graphCache';
 import { assetService } from '../services/assetServiceSingleton';
 import { UsersController } from '../controllers/users.controller';
 import { resolveUserIdToObjectId } from '../utils/validation';
@@ -139,8 +140,8 @@ const resolveUserId = async (req: Request, res: Response, next: NextFunction): P
  */
 const validatePagination = (req: Request, res: Response, next: NextFunction): void => {
   const query = req.query as PaginationQuery;
-  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
-  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+  const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? Number.parseInt(query.offset, 10) : undefined;
 
   if (limit !== undefined && (isNaN(limit) || limit < 0)) {
     res.status(400).json({
@@ -576,7 +577,7 @@ router.get(
     const { limit } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_MUTUAL_IDS)
+      ? Math.min(Number.parseInt(limit, 10), MAX_MUTUAL_IDS)
       : MAX_MUTUAL_IDS;
 
     const ids = await userService.getMutualUserIds(viewerId, { limit: parsedLimit });
@@ -624,7 +625,7 @@ router.get(
     const { limit } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_FOLLOWS_OF_FOLLOWS_IDS)
+      ? Math.min(Number.parseInt(limit, 10), MAX_FOLLOWS_OF_FOLLOWS_IDS)
       : MAX_FOLLOWS_OF_FOLLOWS_IDS;
 
     const ids = await userService.getFollowsOfFollowsIds(viewerId, { limit: parsedLimit });
@@ -636,6 +637,64 @@ router.get(
     });
 
     sendSuccess(res, ids);
+  })
+);
+
+/**
+ * GET /users/me/graph
+ *
+ * The authenticated VIEWER's OWN social graph — the accounts they follow, the
+ * subset who follow back (mutuals), and the accounts they have blocked — as ONE
+ * ids-only payload `{ followingIds, mutualIds, blockedIds }`. Consolidates the
+ * three per-viewer graph reads consuming apps (Mention, Allo, Homiio) otherwise
+ * make as separate round trips on nearly every feed request.
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutual-ids` and `/follows-of-follows-ids`) — never a
+ * client-supplied id, and there is no `:userId` param to spoof (anti-IDOR).
+ * OPTIONAL semantics: an anonymous caller (or a service token with no user
+ * context) has no graph → every list is empty.
+ *
+ * Backed by a short-TTL Redis cache (`graphCache`) filled on miss and busted by
+ * the follow/unfollow/block/unblock write paths; degrades to a straight Mongo
+ * recompute when Redis is unconfigured.
+ *
+ * Registered as a two-segment `/me/graph` path (distinct from the single-segment
+ * `/:userId` param route) so Express never treats it as a `:userId` value.
+ *
+ * @returns {ViewerGraph} `{ followingIds, mutualIds, blockedIds }`.
+ */
+router.get(
+  '/me/graph',
+  optionalUserOrServiceAuth,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+
+    // Anonymous / no-user-context callers have no graph. Short-circuit with the
+    // empty graph and never touch the cache (its keys are strictly per-viewer).
+    if (!viewerId) {
+      sendSuccess(res, { followingIds: [], mutualIds: [], blockedIds: [] });
+      return;
+    }
+
+    const cached = await graphCache.get(viewerId);
+    if (cached) {
+      sendSuccess(res, cached);
+      return;
+    }
+
+    const graph = await userService.getViewerGraph(viewerId);
+    await graphCache.set(viewerId, graph);
+
+    logger.debug('GET /users/me/graph', {
+      viewerId,
+      following: graph.followingIds.length,
+      mutuals: graph.mutualIds.length,
+      blocked: graph.blockedIds.length,
+    });
+
+    sendSuccess(res, graph);
   })
 );
 
@@ -689,9 +748,9 @@ router.get(
     const { limit, offset } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     const result = await userService.getUserFollowers(userId, {
       limit: parsedLimit,
@@ -728,9 +787,9 @@ router.get(
     const { limit, offset } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     const result = await userService.getUserFollowing(userId, {
       limit: parsedLimit,
@@ -781,9 +840,9 @@ router.get(
     const viewerId = resolveViewerId(req);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     const result = await userService.getUserMutuals(viewerId, userId, {
       limit: parsedLimit,

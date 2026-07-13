@@ -19,7 +19,7 @@ export interface ModelStats {
 }
 
 export interface ModelsStatsResponse {
-  models: ModelStats[];
+  models: Array<ModelStats>;
   count: number;
   timestamp: string;
 }

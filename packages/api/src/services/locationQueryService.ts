@@ -29,7 +29,7 @@ class LocationQueryService {
   async findLocationsNear(
     lat: number, 
     lon: number, 
-    maxDistance: number = 10000,
+    maxDistance = 10000,
     options: LocationQueryOptions = {}
   ): Promise<LocationSearchResult> {
     const endTimer = performanceMonitor.startTimer('db_find_locations_near');

@@ -1,7 +1,17 @@
-import { Request } from 'express';
+import type { Request } from 'express';
 import Session from '../models/Session';
 import { logger } from '../utils/logger';
 import securityActivityService from './securityActivityService';
+
+/**
+ * Device metadata optionally attached to a request by upstream middleware and
+ * consulted by the anomaly checks. Only the fields the detectors read are
+ * modelled; everything is optional because the field may be absent entirely.
+ */
+export interface RequestDeviceInfo {
+  fingerprint?: string;
+  location?: { coordinates?: { lat: number; lon: number } };
+}
 
 /**
  * Anomaly Detection Service
@@ -55,7 +65,7 @@ class AnomalyDetectionService {
    */
   async detectNewDevice(
     userId: string,
-    deviceInfo: any
+    deviceInfo: RequestDeviceInfo | undefined
   ): Promise<{ isAnomaly: boolean; reason?: string }> {
     if (!deviceInfo) {
       return { isAnomaly: false };
@@ -146,7 +156,7 @@ class AnomalyDetectionService {
   }> {
     const anomalies: Array<{ type: string; reason: string; details?: string }> = [];
 
-    const deviceInfo = (req as any).deviceInfo;
+    const deviceInfo = (req as Request & { deviceInfo?: RequestDeviceInfo }).deviceInfo;
     const location = deviceInfo?.location?.coordinates;
 
     // Run all detection checks in parallel

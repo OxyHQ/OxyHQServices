@@ -1,11 +1,24 @@
 /**
  * Language Methods Mixin
  */
-import { normalizeLanguageCode, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
-import type { LanguageMetadata } from '../utils/languageUtils';
+import { normalizeLocale, getPrimaryLanguage, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
+import type { SupportedLanguage } from '../utils/languageUtils';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { loadAsyncStorage } from '@oxyhq/protocol';
 import { isDev } from '../shared/utils/debugUtils';
+
+/**
+ * Cross-mixin surface consumed by the language methods. `getCurrentUser` is
+ * provided by the user mixin at runtime — both live on the composed
+ * `OxyServices` instance — but it is not visible on `OxyServicesBase` at the
+ * type level. We narrow `this` through this interface (mirroring the
+ * `OxyAuthInstance` pattern in `OxyServices.utility.ts`) instead of casting to
+ * `any`. Only the fields this mixin reads are declared, keeping it decoupled
+ * from the full `User` shape.
+ */
+interface LanguageMixinCrossAccess {
+  getCurrentUser(): Promise<{ languages?: string[] }>;
+}
 
 export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -62,29 +75,30 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
     }
 
     /**
-     * Get the current language from storage or user profile
+     * Get the current locale from the user profile or local storage.
      * @param storageKeyPrefix - Optional prefix for storage key (default: 'oxy_session')
-     * @returns The current language code (e.g., 'en-US') or null if not set
+     * @returns The current BCP-47 locale (e.g., 'en-US') or null if not set
      */
-    async getCurrentLanguage(storageKeyPrefix: string = 'oxy_session'): Promise<string | null> {
+    async getCurrentLanguage(storageKeyPrefix = 'oxy_session'): Promise<string | null> {
       try {
-        // First try to get from user profile if authenticated
+        // First try the authenticated user's primary account locale.
         try {
-          const user = await (this as any).getCurrentUser();
-          const userLanguage = (user as Record<string, unknown>)?.language as string | undefined;
-          if (userLanguage) {
-            return normalizeLanguageCode(userLanguage) || userLanguage;
+          const user = await (this as unknown as LanguageMixinCrossAccess).getCurrentUser();
+          const primary = getPrimaryLanguage(user);
+          if (primary) {
+            return primary;
           }
-        } catch (e) {
-          // User not authenticated or error, continue to storage
+        } catch {
+          // Not authenticated or the profile fetch failed — fall through to the
+          // locally stored preference below.
         }
 
-        // Fall back to storage
+        // Fall back to the locally stored locale preference.
         const storage = await this.getStorage();
         const storageKey = `${storageKeyPrefix}_language`;
         const storedLanguage = await storage.getItem(storageKey);
         if (storedLanguage) {
-          return normalizeLanguageCode(storedLanguage) || storedLanguage;
+          return normalizeLocale(storedLanguage) ?? storedLanguage;
         }
 
         return null;
@@ -101,7 +115,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
      * @param storageKeyPrefix - Optional prefix for storage key (default: 'oxy_session')
      * @returns Language metadata object or null if not set
      */
-    async getCurrentLanguageMetadata(storageKeyPrefix: string = 'oxy_session'): Promise<LanguageMetadata | null> {
+    async getCurrentLanguageMetadata(storageKeyPrefix = 'oxy_session'): Promise<SupportedLanguage | null> {
       const languageCode = await this.getCurrentLanguage(storageKeyPrefix);
       return getLanguageMetadata(languageCode);
     }
@@ -111,7 +125,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
      * @param storageKeyPrefix - Optional prefix for storage key (default: 'oxy_session')
      * @returns Language name or null if not set
      */
-    async getCurrentLanguageName(storageKeyPrefix: string = 'oxy_session'): Promise<string | null> {
+    async getCurrentLanguageName(storageKeyPrefix = 'oxy_session'): Promise<string | null> {
       const languageCode = await this.getCurrentLanguage(storageKeyPrefix);
       if (!languageCode) return null;
       return getLanguageName(languageCode);
@@ -122,7 +136,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
      * @param storageKeyPrefix - Optional prefix for storage key (default: 'oxy_session')
      * @returns Native language name or null if not set
      */
-    async getCurrentNativeLanguageName(storageKeyPrefix: string = 'oxy_session'): Promise<string | null> {
+    async getCurrentNativeLanguageName(storageKeyPrefix = 'oxy_session'): Promise<string | null> {
       const languageCode = await this.getCurrentLanguage(storageKeyPrefix);
       if (!languageCode) return null;
       return getNativeLanguageName(languageCode);

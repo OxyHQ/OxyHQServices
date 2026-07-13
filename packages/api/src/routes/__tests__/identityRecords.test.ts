@@ -12,7 +12,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { ec as EC } from 'elliptic';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 

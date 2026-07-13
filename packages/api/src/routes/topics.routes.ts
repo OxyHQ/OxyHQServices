@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { requireStaff } from '../middleware/requireStaff';
 import { topicService } from '../services/TopicService.js';

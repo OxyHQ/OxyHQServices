@@ -6,7 +6,7 @@
  */
 
 import type { IncomingMessage } from 'node:http';
-import { Request, Response as ExpressResponse } from 'express';
+import type { Request, Response as ExpressResponse } from 'express';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { BadRequestError } from '../utils/error';
 import { logger } from '../utils/logger';

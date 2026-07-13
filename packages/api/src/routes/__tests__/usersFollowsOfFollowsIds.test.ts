@@ -24,7 +24,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../../utils/recommendationWeights';
 
 const mockGetFollowsOfFollowsIds = jest.fn();

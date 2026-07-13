@@ -12,32 +12,50 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Longer refresh tokens
  * @returns Object containing access and refresh tokens
  */
 export const generateSessionTokens = (userId: string, sessionId: string, deviceId: string) => {
-  const payload = { 
-    userId, 
+  const accessSecret = process.env.ACCESS_TOKEN_SECRET;
+  const refreshSecret = process.env.REFRESH_TOKEN_SECRET;
+  if (!accessSecret || !refreshSecret) {
+    throw new Error('Token secrets are not configured (ACCESS_TOKEN_SECRET / REFRESH_TOKEN_SECRET)');
+  }
+
+  const payload = {
+    userId,
     sessionId,
     deviceId,
     type: 'access'
   };
-  
-  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET!, { 
-    expiresIn: ACCESS_TOKEN_EXPIRES_IN 
+
+  const accessToken = jwt.sign(payload, accessSecret, {
+    expiresIn: ACCESS_TOKEN_EXPIRES_IN
   });
-  
+
   const refreshToken = jwt.sign(
-    { ...payload, type: 'refresh' }, 
-    process.env.REFRESH_TOKEN_SECRET!, 
+    { ...payload, type: 'refresh' },
+    refreshSecret,
     { expiresIn: REFRESH_TOKEN_EXPIRES_IN }
   );
-  
+
   return { accessToken, refreshToken };
 };
+
+/**
+ * Decoded claims carried by the session access/refresh JWTs minted here.
+ * Extends `JwtPayload` so the standard registered claims (`iat`, `exp`, …) and
+ * its index signature remain available on the decoded token.
+ */
+export interface SessionTokenPayload extends jwt.JwtPayload {
+  userId: string;
+  sessionId: string;
+  deviceId: string;
+  type: 'access' | 'refresh';
+}
 
 /**
  * Token validation result with error information
  */
 export interface TokenValidationResult {
   valid: boolean;
-  payload?: any;
+  payload?: SessionTokenPayload;
   error?: 'expired' | 'invalid' | 'malformed';
 }
 
@@ -52,8 +70,16 @@ export interface TokenValidationResult {
  */
 export const validateAccessToken = (token: string): TokenValidationResult => {
   try {
-    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
-    return { valid: true, payload };
+    const secret = process.env.ACCESS_TOKEN_SECRET;
+    if (!secret) {
+      logger.error('[SessionUtils] ACCESS_TOKEN_SECRET is not configured');
+      return { valid: false, error: 'invalid' };
+    }
+    const decoded = jwt.verify(token, secret);
+    if (typeof decoded === 'string') {
+      return { valid: false, error: 'malformed' };
+    }
+    return { valid: true, payload: decoded as SessionTokenPayload };
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       logger.debug('[SessionUtils] Access token expired');
@@ -81,8 +107,16 @@ export const validateAccessToken = (token: string): TokenValidationResult => {
  */
 export const validateRefreshToken = (token: string): TokenValidationResult => {
   try {
-    const payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as any;
-    return { valid: true, payload };
+    const secret = process.env.REFRESH_TOKEN_SECRET;
+    if (!secret) {
+      logger.error('[SessionUtils] REFRESH_TOKEN_SECRET is not configured');
+      return { valid: false, error: 'invalid' };
+    }
+    const decoded = jwt.verify(token, secret);
+    if (typeof decoded === 'string') {
+      return { valid: false, error: 'malformed' };
+    }
+    return { valid: true, payload: decoded as SessionTokenPayload };
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       logger.debug('[SessionUtils] Refresh token expired');

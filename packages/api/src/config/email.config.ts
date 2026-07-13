@@ -52,9 +52,9 @@ export const SPAM_CONFIG = {
   enabled: getEnvBoolean('SPAM_FILTER_ENABLED', true),
   rspamdUrl: getEnvVar('RSPAMD_URL', 'http://localhost:11333'),
   /** Score threshold above which a message is marked as spam */
-  spamThreshold: parseFloat(getEnvVar('SPAM_THRESHOLD', '5.0')),
+  spamThreshold: Number.parseFloat(getEnvVar('SPAM_THRESHOLD', '5.0')),
   /** Score threshold above which a message is rejected outright */
-  rejectThreshold: parseFloat(getEnvVar('SPAM_REJECT_THRESHOLD', '15.0')),
+  rejectThreshold: Number.parseFloat(getEnvVar('SPAM_REJECT_THRESHOLD', '15.0')),
 };
 
 /** Storage quotas per subscription tier (in bytes) */

@@ -32,9 +32,9 @@ interface CreateReminderSheetProps {
   onUpdate?: (text: string, remindAt: Date) => void;
 }
 
-function getPresetTimes(): Array<{ label: string; date: Date; icon: MaterialCommunityIconName }> {
+function getPresetTimes(): { label: string; date: Date; icon: MaterialCommunityIconName }[] {
   const now = new Date();
-  const presets: Array<{ label: string; date: Date; icon: MaterialCommunityIconName }> = [];
+  const presets: { label: string; date: Date; icon: MaterialCommunityIconName }[] = [];
 
   // Later today (6 PM or +3h)
   const laterToday = new Date(now);

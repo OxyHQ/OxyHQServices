@@ -15,7 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -30,7 +30,6 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 import type { FileMetadata } from '@oxyhq/core';
-import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';

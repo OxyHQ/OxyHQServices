@@ -7,6 +7,7 @@
 
 import User, { IUser } from '../models/User';
 import Follow, { FollowType } from '../models/Follow';
+import Block from '../models/Block';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 import userCache from '../utils/userCache';
@@ -23,9 +24,11 @@ import {
   UserProfile,
   UserStatistics,
   FollowActionResult,
+  ViewerGraph,
 } from '../types/user.types';
 import Subscription from '../models/Subscription';
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
+import { normalizeLocale } from '@oxyhq/core';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
@@ -34,7 +37,10 @@ import {
   MAX_MUTUAL_IDS,
   MAX_FOLLOWS_OF_FOLLOWS_IDS,
   MAX_FOF_FIRST_HOP,
+  MAX_FOLLOWING_IDS,
+  MAX_BLOCKED_IDS,
 } from '../utils/recommendationWeights';
+import graphCache from '../utils/graphCache';
 
 interface UserWithCount {
   _count?: {
@@ -186,8 +192,12 @@ export class UserService {
   }
 
   /**
-   * Update user profile
-   * Handles MongoDB language field conflict with text indexes
+   * Update user profile.
+   *
+   * Filters the input to an allowlist, validates each field at the boundary
+   * (display name, color/premium gate, account locales, expiry), then applies
+   * the changes through the Mongoose document so all schema validation and
+   * middleware run on save.
    */
   async updateUserProfile(
     userId: string,
@@ -209,7 +219,7 @@ export class UserService {
       'links',
       'linksMetadata',
       'locations',
-      'language',
+      'languages',
       'accountExpiresAfterInactivityDays',
       'notificationPreferences',
       'userPreferences',
@@ -264,6 +274,34 @@ export class UserService {
         }
       }
 
+      // Account locales — the ONLY language field (no singular `language`). Each
+      // entry must resolve to a supported BCP-47 locale; we persist the CANONICAL
+      // `language-REGION` form (`normalizeLocale`) with order preserved and
+      // duplicates dropped, and reject anything unsupported at the boundary with a
+      // structured 400.
+      if (key === 'languages') {
+        if (!Array.isArray(value)) {
+          throw new BadRequestError('languages must be an array of locale codes', {
+            field: 'languages',
+          });
+        }
+        const normalizedLocales: string[] = [];
+        for (const entry of value) {
+          const canonical = typeof entry === 'string' ? normalizeLocale(entry) : undefined;
+          if (!canonical) {
+            throw new BadRequestError('Unsupported locale', {
+              field: 'languages',
+              value: entry,
+            });
+          }
+          if (!normalizedLocales.includes(canonical)) {
+            normalizedLocales.push(canonical);
+          }
+        }
+        (filteredUpdates as Record<string, unknown>).languages = normalizedLocales;
+        continue;
+      }
+
       // Validate accountExpiresAfterInactivityDays
       if (key === 'accountExpiresAfterInactivityDays') {
         if (value !== null && value !== undefined) {
@@ -281,9 +319,6 @@ export class UserService {
     // Validate uniqueness constraints
     await this.validateUniqueFields(userId, filteredUpdates);
 
-    // Handle language field separately to avoid MongoDB text index conflict
-    const { language, ...otherUpdates } = filteredUpdates;
-
     // Fetch user document to update
     const user = await User.findById(userId).select('-password -refreshToken');
     if (!user) {
@@ -292,15 +327,12 @@ export class UserService {
 
     // Track email change for security logging
     const oldEmail = user.email;
-    const emailChanged = otherUpdates.email && otherUpdates.email !== oldEmail;
+    const emailChanged = filteredUpdates.email && filteredUpdates.email !== oldEmail;
 
-    // Update language directly on document to avoid MongoDB conflict
-    if (language !== undefined) {
-      user.set('language', language);
-    }
-
-    // Update other fields directly on the document
-    Object.entries(otherUpdates).forEach(([key, value]) => {
+    // Apply the validated updates directly on the document. Saving through the
+    // document (not an atomic update) ensures all Mongoose middleware and
+    // validation runs.
+    Object.entries(filteredUpdates).forEach(([key, value]) => {
       user.set(key, value);
     });
 
@@ -316,14 +348,14 @@ export class UserService {
 
     // Log security events
     try {
-      const updatedFields = Object.keys(otherUpdates);
-      
+      const updatedFields = Object.keys(filteredUpdates);
+
       // Log email change if it occurred
-      if (emailChanged && oldEmail && otherUpdates.email) {
+      if (emailChanged && oldEmail && filteredUpdates.email) {
         await securityActivityService.logEmailChange(
           userId,
           oldEmail,
-          otherUpdates.email,
+          filteredUpdates.email,
           req
         );
       }
@@ -692,6 +724,93 @@ export class UserService {
   }
 
   /**
+   * Get the authenticated VIEWER's OWN social graph — the accounts they follow,
+   * the subset who follow back (mutuals), and the accounts they have blocked —
+   * as ONE ids-only payload.
+   *
+   * Consolidates three per-viewer graph reads consuming apps (Mention, Allo,
+   * Homiio) previously made as separate round trips into a single service call,
+   * so the consolidated `GET /users/me/graph` endpoint can serve (and cache) the
+   * whole graph in one request. Each sub-read REUSES the existing, battle-tested
+   * logic: the same following query as {@link getUserFollowing}, the same
+   * bidirectional intersection as {@link getMutualUserIds}, and the same
+   * `Block.find({ userId })` the privacy routes use. The three sub-reads run in
+   * PARALLEL — they are independent Mongo queries.
+   *
+   * The viewer id is ALWAYS derived server-side by the route (`resolveViewerId`),
+   * never a client param. An anonymous caller (or a service token with no user
+   * context) has no graph ⇒ every list is empty.
+   *
+   * Every list is bounded (`MAX_FOLLOWING_IDS` / `MAX_MUTUAL_IDS` /
+   * `MAX_BLOCKED_IDS`) so the queries and the payload stay small regardless of
+   * how large the viewer's graph is. Bare ids only — no hydrated DTOs, no
+   * `_count` — because the consumer hydrates/ranks itself.
+   */
+  async getViewerGraph(
+    viewerId: string | undefined,
+    opts: {
+      followingLimit?: number;
+      mutualLimit?: number;
+      blockedLimit?: number;
+    } = {}
+  ): Promise<ViewerGraph> {
+    if (!viewerId) {
+      return { followingIds: [], mutualIds: [], blockedIds: [] };
+    }
+
+    const followingLimit = Math.min(
+      opts.followingLimit && opts.followingLimit > 0
+        ? opts.followingLimit
+        : MAX_FOLLOWING_IDS,
+      MAX_FOLLOWING_IDS
+    );
+    const blockedLimit = Math.min(
+      opts.blockedLimit && opts.blockedLimit > 0
+        ? opts.blockedLimit
+        : MAX_BLOCKED_IDS,
+      MAX_BLOCKED_IDS
+    );
+
+    const [followingIds, mutualIds, blockedIds] = await Promise.all([
+      // Following — same query/shape as getUserFollowing, ids-only and bounded,
+      // most-recently-established first so the cap keeps the current follows.
+      Follow.find({
+        followerUserId: viewerId,
+        followType: FollowType.USER,
+      })
+        .select('followedId')
+        .sort({ createdAt: -1 })
+        .limit(followingLimit)
+        .lean()
+        .then((follows) =>
+          follows
+            .map((follow) => follow.followedId)
+            .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+            .map((id) => id.toString())
+        ),
+
+      // Mutuals — reuse the canonical bidirectional intersection so there is a
+      // single source of truth for "mutual" semantics and caps.
+      this.getMutualUserIds(viewerId, { limit: opts.mutualLimit }),
+
+      // Blocked — same read the privacy routes use (`Block.find({ userId })`),
+      // ids-only and bounded.
+      Block.find({ userId: viewerId })
+        .select('blockedId')
+        .limit(blockedLimit)
+        .lean()
+        .then((blocks) =>
+          blocks
+            .map((block) => block.blockedId)
+            .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+            .map((id) => id.toString())
+        ),
+    ]);
+
+    return { followingIds, mutualIds, blockedIds };
+  }
+
+  /**
    * Get the VIEWER's bounded "follows-of-follows" user ids — the union of the
    * accounts followed by the accounts the viewer follows (a two-hop walk of the
    * follow graph), MINUS the viewer's own follows and the viewer themselves.
@@ -857,6 +976,17 @@ export class UserService {
         User.findByIdAndUpdate(targetId, { $inc: { '_count.followers': 1 } }),
         User.findByIdAndUpdate(followerId, { $inc: { '_count.following': 1 } }),
       ]);
+
+      // The follow edge changed both sides' cached graph: the follower's
+      // `followingIds`, and — because a follow can complete a bidirectional
+      // edge — either side's `mutualIds`. Invalidate BOTH (mutuals are
+      // symmetric) so the next `GET /users/me/graph` recomputes fresh truth.
+      // No-op when the edge already existed (nothing changed) or when Redis is
+      // unconfigured; invalidation errors are swallowed inside graphCache.
+      await Promise.all([
+        graphCache.invalidate(followerId),
+        graphCache.invalidate(targetId),
+      ]);
     }
 
     const counts = await this.readFollowCounts(targetId, followerId);
@@ -898,6 +1028,14 @@ export class UserService {
       await Promise.all([
         User.findByIdAndUpdate(targetId, { $inc: { '_count.followers': -1 } }),
         User.findByIdAndUpdate(followerId, { $inc: { '_count.following': -1 } }),
+      ]);
+
+      // Symmetric to followUser: removing the edge changed the follower's
+      // `followingIds` and can break a bidirectional edge, so invalidate BOTH
+      // sides' cached graph. No-op when no edge was actually removed.
+      await Promise.all([
+        graphCache.invalidate(followerId),
+        graphCache.invalidate(targetId),
       ]);
     }
 
@@ -1095,6 +1233,15 @@ export class UserService {
           $inc: { '_count.following': newlyFollowedIds.length },
         }),
       ]);
+
+      // The batch changed the viewer's `followingIds` and can complete
+      // bidirectional edges, so invalidate the viewer plus every newly-followed
+      // target's cached graph (mutuals are symmetric). Only the ids whose edge
+      // actually changed are invalidated.
+      await Promise.all([
+        graphCache.invalidate(currentUserId),
+        ...newlyFollowedIds.map((id) => graphCache.invalidate(id)),
+      ]);
     }
 
     const newlyFollowedSet = new Set<string>(newlyFollowedIds);
@@ -1225,6 +1372,13 @@ export class UserService {
           User.findByIdAndUpdate(currentUserId, {
             $inc: { '_count.following': -actuallyRemovedIds.length },
           }),
+        ]);
+
+        // Symmetric to bulkFollow: invalidate the viewer plus every target
+        // whose edge was actually removed (mutuals are symmetric).
+        await Promise.all([
+          graphCache.invalidate(currentUserId),
+          ...actuallyRemovedIds.map((id) => graphCache.invalidate(id)),
         ]);
       }
     }

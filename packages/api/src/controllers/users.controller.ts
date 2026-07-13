@@ -5,7 +5,7 @@
  * or don't fit into the standard service pattern.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
 import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';

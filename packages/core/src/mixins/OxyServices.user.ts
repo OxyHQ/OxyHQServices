@@ -49,6 +49,23 @@ export interface BulkFollowResult {
   followedCount: number;
 }
 
+/**
+ * The authenticated viewer's OWN social graph, ids-only — the response of
+ * `GET /users/me/graph`. Consolidates the accounts the viewer follows, the
+ * subset who follow back (mutuals), and the accounts the viewer has blocked
+ * into one payload so a consumer can fetch its whole viewer graph in a single
+ * round trip instead of three. Each list is server-bounded; bare ids only (no
+ * hydrated DTOs) because the consumer hydrates/ranks itself.
+ */
+export interface ViewerGraph {
+  /** Accounts the viewer follows (most-recent first, bounded). */
+  followingIds: string[];
+  /** Accounts the viewer follows that ALSO follow the viewer back (bounded). */
+  mutualIds: string[];
+  /** Accounts the viewer has blocked (bounded). */
+  blockedIds: string[];
+}
+
 /** Per-user outcome returned by `POST /users/unfollow/bulk`. */
 export interface BulkUnfollowEntry {
   /** The user ID that was processed. */
@@ -666,6 +683,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         const result = await this.makeRequest<{ success: boolean; message: string }>('POST', `/users/${userId}/follow`, undefined, { cache: false });
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        // The follow changed the viewer's graph — bust the cached consolidated
+        // `GET /users/me/graph` so the next read reflects the new following/
+        // mutual set instead of the stale pre-write snapshot.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -690,6 +711,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         for (const id of userIds) {
           this.clearCacheEntry(`GET:/users/${id}/follow-status`);
         }
+        // The batch changed the viewer's graph — bust the consolidated cache.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -714,6 +737,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         for (const id of userIds) {
           this.clearCacheEntry(`GET:/users/${id}/follow-status`);
         }
+        // The batch changed the viewer's graph — bust the consolidated cache.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -728,6 +753,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const result = await this.makeRequest<{ success: boolean; message: string }>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
         // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        // The unfollow changed the viewer's graph — bust the consolidated cache.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -867,6 +894,36 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
         return response.data || [];
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get the authenticated VIEWER's OWN social graph — the accounts they follow,
+     * the subset who follow back (mutuals), and the accounts they have blocked —
+     * as ONE ids-only payload. The viewer is derived server-side from the SDK's
+     * auth token (never a param).
+     *
+     * Consolidates what were three separate round trips (`getUserFollowing` /
+     * `getMutualUserIds` / `getBlockedUsers`) into a single request so a consumer
+     * can prime its whole viewer graph at once. Mirrors {@link getMutualUserIds}'s
+     * caching posture (2-minute identity-scoped cache); the follow/unfollow/block/
+     * unblock write methods bust this entry so a local mutation is reflected
+     * immediately. An anonymous caller resolves to empty lists.
+     */
+    async getViewerGraph(): Promise<ViewerGraph> {
+      try {
+        const response = await this.makeRequest<{ data: ViewerGraph }>('GET', '/users/me/graph', undefined, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        const graph = response.data;
+        return {
+          followingIds: graph?.followingIds || [],
+          mutualIds: graph?.mutualIds || [],
+          blockedIds: graph?.blockedIds || [],
+        };
       } catch (error) {
         throw this.handleError(error);
       }

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { type ViewStyle, type TextStyle, type StyleProp } from 'react-native';
+import type { ViewStyle, TextStyle, StyleProp } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';

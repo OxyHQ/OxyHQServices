@@ -57,7 +57,7 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
      * @param limit - Number of recent events to fetch (default: 10)
      * @returns Array of recent security activities
      */
-    async getRecentSecurityActivity(limit: number = 10): Promise<SecurityActivity[]> {
+    async getRecentSecurityActivity(limit = 10): Promise<SecurityActivity[]> {
       try {
         const response = await this.getSecurityActivity(limit, 0);
         return response.data || [];

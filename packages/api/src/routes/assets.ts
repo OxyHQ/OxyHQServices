@@ -9,7 +9,7 @@ import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ApiError, BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
-import { FileVisibility } from '../models/File';
+import type { FileVisibility } from '../models/File';
 import { validate } from '../middleware/validate';
 import {
   assetIdParams,
@@ -1101,20 +1101,20 @@ router.post('/:id/links', authMiddleware, validate({ params: assetIdParams, body
   }
 
   const { id: fileId } = req.params;
-  let validatedData;
+  let validatedData: z.infer<typeof linkFileSchema>;
   try {
     validatedData = linkFileSchema.parse(req.body);
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
+  } catch (error) {
+    if (error instanceof z.ZodError) {
       throw new ValidationError('Invalid request data', { details: error.errors });
     }
     throw error;
   }
-  
+
   const linkRequest = {
     ...validatedData,
     createdBy: user._id,
-    webhookUrl: (validatedData as any).webhookUrl
+    webhookUrl: validatedData.webhookUrl
   };
 
   const file = await assetService.linkFile(fileId, linkRequest);
@@ -1307,7 +1307,7 @@ router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: 
   const { variant, expiresIn } = req.query;
 
   const variantType = typeof variant === 'string' ? variant : undefined;
-  const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
+  const expiry = typeof expiresIn === 'string' ? Number.parseInt(expiresIn) : 3600;
 
   const file = await assetService.getFile(fileId);
   if (!file) {
@@ -1630,7 +1630,7 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
   }
 
   const variantType = typeof variant === 'string' ? variant : undefined;
-  const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
+  const expiry = typeof expiresIn === 'string' ? Number.parseInt(expiresIn) : 3600;
 
   if (!(await assetService.fileContentExists(fileId, file))) {
     await assetService.repairMissingFederationFileContent(file);

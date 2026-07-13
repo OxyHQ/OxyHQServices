@@ -169,9 +169,12 @@
   },
   "language": {
     "title": "Language",
-    "subtitle": "Choose your preferred language",
+    "subtitle": "Choose the languages you use. The first is your primary interface language.",
     "current": "Current Language",
+    "selected": "Your languages",
     "available": "Available Languages",
+    "primary": "Primary",
+    "remove": "Remove",
     "changed": "Language changed to {{lang}}",
     "saveFailed": "Failed to save language preference",
     "search": "Search languages"

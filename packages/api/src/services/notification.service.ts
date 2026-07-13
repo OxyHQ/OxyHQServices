@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import Notification from '../models/Notification';
-import { NotificationData } from '../types/notification.types';
+import type { NotificationData } from '../types/notification.types';
 import { logger } from '../utils/logger';
 
 /**

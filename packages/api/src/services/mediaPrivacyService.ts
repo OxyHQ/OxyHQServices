@@ -1,9 +1,9 @@
-import { IFile } from '../models/File';
-import { User } from '../models/User';
+import type { IFile } from '../models/File';
+import { User, type IUser } from '../models/User';
 import Block from '../models/Block';
 import Restricted from '../models/Restricted';
 import { logger } from '../utils/logger';
-import { MediaAccessContext, MediaAccessResult } from '../types/mediaPrivacy.types';
+import type { MediaAccessContext, MediaAccessResult } from '../types/mediaPrivacy.types';
 import mongoose from 'mongoose';
 import blockCache from '../utils/blockCache';
 import userCache from '../utils/userCache';
@@ -47,12 +47,12 @@ export class MediaPrivacyService {
         const ownerIdStr = ownerId;
         let owner = userCache.get(ownerIdStr);
         if (!owner) {
-          const ownerDoc = await User.findById(ownerIdStr).select('privacySettings followers').lean();
+          const ownerDoc = await User.findById(ownerIdStr)
+            .select('privacySettings followers')
+            .lean<IUser>();
           if (ownerDoc) {
-            owner = ownerDoc as any;
-            if (owner) {
-              userCache.set(ownerIdStr, owner);
-            }
+            owner = ownerDoc;
+            userCache.set(ownerIdStr, owner);
           }
         }
 
@@ -127,17 +127,23 @@ export class MediaPrivacyService {
         if (authorId === viewerUserId) return { allowed: true };
         
         if (postVisibility === 'followers') {
+          // `authorId` is caller-supplied. Reject anything that is not a valid
+          // ObjectId, then query with a constructed ObjectId — so no user-shaped
+          // value can ever reach the query as a query operator.
+          if (!mongoose.Types.ObjectId.isValid(authorId)) {
+            return { allowed: false };
+          }
+
           // Use cache for author lookup to avoid repeated database queries
           // Author data (followers list) rarely changes, so caching significantly improves performance
           let author = userCache.get(authorId);
           if (!author) {
-            const authorDoc = await User.findById(authorId).select('followers').lean();
+            const authorDoc = await User.findById(new mongoose.Types.ObjectId(authorId))
+              .select('followers')
+              .lean<IUser>();
             if (authorDoc) {
-              author = authorDoc as any;
-              // Only cache if author exists (userCache.set requires non-null IUser)
-              if (author) {
-                userCache.set(authorId, author);
-              }
+              author = authorDoc;
+              userCache.set(authorId, author);
             }
           }
           // Handle case where author doesn't exist (null check)

@@ -47,7 +47,6 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useMessageActions } from '@/hooks/useMessageActions';
-import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
 import { useDailyBrief } from '@/hooks/queries/useDailyBrief';
@@ -186,7 +185,7 @@ export function HomeScreen() {
 
   // AI-powered sections: emails needing response and follow-up
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
-  const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(allMessages, 5);
+  const { messages: followUpMessages, count: followUpCount } = useFollowUp(allMessages, 5);
 
   // Greeting respects empty user (signed-out / not loaded yet) — no dangling comma.
   const greetingBase = getGreeting();

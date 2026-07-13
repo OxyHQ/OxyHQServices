@@ -18,21 +18,21 @@ import type {
  * key for visibility.
  */
 const CONSOLE_DICTS: Partial<Record<Locale, LocaleDict>> = {
-  'en-US': enConsole as LocaleDict,
-  'es-ES': esConsole as LocaleDict,
+  'en-US': enConsole,
+  'es-ES': esConsole,
 };
 
 function lookup(dict: LocaleDict | undefined, key: string): string | undefined {
   if (!dict) return undefined;
   const parts = key.split('.');
-  let node: LocaleNode | LocaleNode[] | undefined = dict;
+  let node: LocaleNode | Array<LocaleNode> | undefined = dict;
   for (const part of parts) {
     if (Array.isArray(node)) {
       const idx = Number.parseInt(part, 10);
       if (!Number.isInteger(idx)) return undefined;
       node = node[idx];
     } else if (node && typeof node === 'object') {
-      node = (node as Record<string, LocaleNode | LocaleNode[]>)[part];
+      node = (node as Record<string, LocaleNode | Array<LocaleNode>>)[part];
     } else {
       return undefined;
     }

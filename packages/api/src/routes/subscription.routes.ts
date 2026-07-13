@@ -1,6 +1,6 @@
 import express from 'express';
 import { getSubscription, updateSubscription, cancelSubscription } from '../controllers/subscription.controller';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
 import { subscriptionUserIdParams, updateSubscriptionSchema } from '../schemas/subscription.schemas';

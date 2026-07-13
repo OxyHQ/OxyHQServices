@@ -144,6 +144,14 @@ export interface User {
   managedBy?: string;
   /** Real-estate taxonomy when this user is a `kind: 'organization'` account. */
   organizationCategory?: OrganizationCategory;
+  /**
+   * The account's languages as full BCP-47 locales (`language-REGION`, e.g.
+   * `en-US`, `es-MX`, `pt-BR`), ordered with the PRIMARY (UI) locale first.
+   * `languages[0]` is the primary locale — there is no singular `language`
+   * field. Resolve via `getUserLanguages` / `getPrimaryLanguage`, which
+   * normalize, validate against the supported catalog, and de-duplicate.
+   */
+  languages?: string[];
   // User-controlled notification preferences. All channels default to on; users
   // opt out per-channel. Updated via `PUT /users/me`.
   notificationPreferences?: NotificationPreferences;

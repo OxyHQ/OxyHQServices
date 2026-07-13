@@ -4,6 +4,7 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { UserPreferences } from '@oxyhq/core';
+import { getNativeLanguageName } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
@@ -112,12 +113,9 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
     const nextTheme: ThemePreference =
         THEME_ORDER[(THEME_ORDER.indexOf(themePref) + 1) % THEME_ORDER.length] ?? 'system';
 
-    const languageDescription = useMemo(() => {
-        if (prefs?.language) {
-            return prefs.language;
-        }
-        return locale;
-    }, [prefs?.language, locale]);
+    // The active UI locale is driven by the account's primary language when
+    // signed in (else the device locale) — surfaced here via the i18n `locale`.
+    const languageDescription = useMemo(() => getNativeLanguageName(locale), [locale]);
 
     const isSaving = updateMutation.isPending;
 

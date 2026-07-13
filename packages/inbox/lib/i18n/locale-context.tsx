@@ -4,12 +4,10 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useState,
 } from 'react';
 import { I18nManager } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useOxy } from '@oxyhq/services';
-import { isRTLLocale, normalizeLanguageCode } from '@oxyhq/core';
+import { useOxy, useUpdateProfile } from '@oxyhq/services';
+import { getBaseLanguage, isRTLLocale, normalizeLocale } from '@oxyhq/core';
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
@@ -17,42 +15,30 @@ import {
 } from './types';
 
 // Allow RTL flipping system-wide once on module init. `allowRTL` is idempotent
-// and gates whether `forceRTL` and device-locale RTL detection take effect.
+// and gates whether `forceRTL` takes effect.
 I18nManager.allowRTL(true);
 
-const STORAGE_KEY = 'oxy_inbox_locale';
-
-/** Coerce any candidate language tag to a supported `Locale`, or `null`. */
-function coerceLocale(value: string | null | undefined): Locale | null {
-  if (!value) return null;
-  const normalized = normalizeLanguageCode(value);
-  if (SUPPORTED_LOCALES.includes(normalized as Locale)) {
-    return normalized as Locale;
-  }
-  // Try the bare language portion (e.g. 'es-419' -> 'es' -> 'es-ES').
-  const base = value.split('-')[0];
-  if (base) {
-    const fromBase = normalizeLanguageCode(base);
-    if (SUPPORTED_LOCALES.includes(fromBase as Locale)) {
-      return fromBase as Locale;
+/**
+ * Coerce a canonical BCP-47 locale from the SDK down to a locale this app
+ * actually ships a dictionary for. An exact catalog match wins; otherwise the
+ * closest supported locale sharing the same base language (`es-MX` -> `es-ES`);
+ * otherwise the app default.
+ */
+function coerceLocale(value: string | null | undefined): Locale {
+  if (value) {
+    const canonical = normalizeLocale(value);
+    if (canonical && SUPPORTED_LOCALES.includes(canonical as Locale)) {
+      return canonical as Locale;
+    }
+    const base = getBaseLanguage(value);
+    if (base) {
+      const byBase = SUPPORTED_LOCALES.find(
+        (locale) => getBaseLanguage(locale) === base,
+      );
+      if (byBase) return byBase;
     }
   }
-  return null;
-}
-
-/**
- * Read the device's primary locale via the Intl API. Hermes ships Intl by
- * default on RN 0.85+, so this works without an extra native module. The
- * resolved locale is a BCP-47 tag like `'es-ES'` that `coerceLocale` can
- * normalize against `SUPPORTED_LOCALES`.
- */
-function getDeviceLocale(): Locale | null {
-  try {
-    const tag = Intl.DateTimeFormat().resolvedOptions().locale;
-    return coerceLocale(tag);
-  } catch {
-    return null;
-  }
+  return DEFAULT_LOCALE;
 }
 
 interface LocaleContextValue {
@@ -68,76 +54,46 @@ interface LocaleProviderProps {
 }
 
 export function LocaleProvider({ children }: LocaleProviderProps) {
-  const { user, oxyServices, isAuthenticated } = useOxy();
+  const { currentLanguage, currentLanguages, isAuthenticated, setLanguage } = useOxy();
+  const updateProfile = useUpdateProfile();
 
-  // Initial locale is derived synchronously so we never flash English to a
-  // Spanish-first user when AsyncStorage is empty.
-  const initialLocale = useMemo<Locale>(() => {
-    const fromUser = coerceLocale(
-      (user as { language?: string } | null)?.language,
-    );
-    if (fromUser) return fromUser;
-    const fromDevice = getDeviceLocale();
-    if (fromDevice) return fromDevice;
-    return DEFAULT_LOCALE;
-  }, [user]);
-
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
-  const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
-
-  // Hydrate from AsyncStorage exactly once. The persisted value is the user's
-  // explicit override and takes precedence over the auto-detected default.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        const stored = coerceLocale(raw);
-        if (!cancelled && stored && stored !== locale) {
-          setLocaleState(stored);
-        }
-      } catch {
-        // Storage unavailable; keep the derived initial locale.
-      } finally {
-        if (!cancelled) setHasLoadedStorage(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Storage is read once on mount; further changes flow through `setLocale`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The active locale is DERIVED from the SDK's centralized `currentLanguage`
+  // — the account's primary locale when signed in, else the guest/device
+  // locale — coerced to a locale this app has a dictionary for. The SDK owns
+  // account-vs-device resolution and hydration, so there is nothing local to
+  // store or await here.
+  const locale = useMemo<Locale>(
+    () => coerceLocale(currentLanguage),
+    [currentLanguage],
+  );
 
   const setLocale = useCallback(
     async (next: Locale) => {
       if (!SUPPORTED_LOCALES.includes(next)) return;
-      setLocaleState(next);
-      try {
-        await AsyncStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        // Storage write failed; in-memory state still updated.
-      }
-      if (isAuthenticated && oxyServices) {
-        try {
-          await oxyServices.updateProfile({ language: next });
-        } catch {
-          // Profile sync failed (offline?); the local preference stands.
-        }
+      if (isAuthenticated) {
+        // Write the account's ordered locales, primary first, preserving any
+        // additional locales the user has chosen.
+        const rest = currentLanguages.filter((entry) => entry !== next);
+        await updateProfile.mutateAsync({ languages: [next, ...rest] });
+      } else {
+        // Guests hold a single locally-stored locale, owned by the SDK.
+        await setLanguage(next);
       }
     },
-    [isAuthenticated, oxyServices],
+    [isAuthenticated, currentLanguages, updateProfile, setLanguage],
   );
 
-  // Keep RN layout direction in sync with the active locale. `forceRTL`
-  // only takes effect after a JS bundle reload, so we set it eagerly here.
+  // Keep RN layout direction in sync with the active locale. `forceRTL` only
+  // takes effect after a JS bundle reload, so we set it eagerly here.
   useEffect(() => {
     I18nManager.forceRTL(isRTLLocale(locale));
   }, [locale]);
 
   const value = useMemo<LocaleContextValue>(
-    () => ({ locale, setLocale, isReady: hasLoadedStorage }),
-    [locale, setLocale, hasLoadedStorage],
+    // Hydration is owned by the SDK; the derived locale is always immediately
+    // available, so the context is ready from first paint.
+    () => ({ locale, setLocale, isReady: true }),
+    [locale, setLocale],
   );
 
   return (

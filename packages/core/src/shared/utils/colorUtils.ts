@@ -20,12 +20,12 @@
  * darkenColor('FF0000', 0.3);  // Also works without #
  * ```
  */
-export const darkenColor = (color: string, factor: number = 0.6): string => {
+export const darkenColor = (color: string, factor = 0.6): string => {
   const hex = color.replace('#', '');
 
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+  const r = Number.parseInt(hex.substring(0, 2), 16);
+  const g = Number.parseInt(hex.substring(2, 4), 16);
+  const b = Number.parseInt(hex.substring(4, 6), 16);
 
   const newR = Math.max(0, Math.round(r * (1 - factor)));
   const newG = Math.max(0, Math.round(g * (1 - factor)));
@@ -46,12 +46,12 @@ export const darkenColor = (color: string, factor: number = 0.6): string => {
  * lightenColor('#0000FF', 0.5); // Returns a lighter blue
  * ```
  */
-export const lightenColor = (color: string, factor: number = 0.3): string => {
+export const lightenColor = (color: string, factor = 0.3): string => {
   const hex = color.replace('#', '');
 
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+  const r = Number.parseInt(hex.substring(0, 2), 16);
+  const g = Number.parseInt(hex.substring(2, 4), 16);
+  const b = Number.parseInt(hex.substring(4, 6), 16);
 
   const newR = Math.min(255, Math.round(r + (255 - r) * factor));
   const newG = Math.min(255, Math.round(g + (255 - g) * factor));
@@ -75,9 +75,9 @@ export const hexToRgb = (hex: string): { r: number; g: number; b: number } | nul
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return result
     ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
+        r: Number.parseInt(result[1], 16),
+        g: Number.parseInt(result[2], 16),
+        b: Number.parseInt(result[3], 16),
       }
     : null;
 };

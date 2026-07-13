@@ -24,7 +24,7 @@
  */
 
 import type { Request } from 'express';
-import AuthSession, { IAuthSession, AuthSessionStatus } from '../models/AuthSession';
+import AuthSession, { type IAuthSession, type AuthSessionStatus } from '../models/AuthSession';
 import AuthChallenge from '../models/AuthChallenge';
 import { User } from '../models/User';
 import { Application } from '../models/Application';

@@ -35,11 +35,11 @@ import {
 
 type SectionBucketKey = 'personal' | 'mail' | 'system';
 
-const BUCKETS: ReadonlyArray<{
+const BUCKETS: readonly {
   key: SectionBucketKey;
   title: string;
-  sectionKeys: ReadonlyArray<SettingsSectionDef['key']>;
-}> = [
+  sectionKeys: readonly SettingsSectionDef['key'][];
+}[] = [
   {
     key: 'personal',
     title: 'Personal',

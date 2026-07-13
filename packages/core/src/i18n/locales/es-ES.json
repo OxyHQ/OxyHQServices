@@ -123,9 +123,12 @@
   },
   "language": {
     "title": "Idioma",
-    "subtitle": "Elige tu idioma preferido",
+    "subtitle": "Elige los idiomas que usas. El primero es tu idioma de interfaz principal.",
     "current": "Idioma actual",
+    "selected": "Tus idiomas",
     "available": "Idiomas disponibles",
+    "primary": "Principal",
+    "remove": "Quitar",
     "changed": "Idioma cambiado a {{lang}}",
     "saveFailed": "Error al guardar la preferencia de idioma",
     "search": "Buscar idiomas"

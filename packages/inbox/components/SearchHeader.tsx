@@ -21,13 +21,13 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
+
 const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
   menu: Menu01Icon as unknown as IconSvgElement,
   'arrow-left': ArrowLeft01Icon as unknown as IconSvgElement,
 };
-
-import { useColors } from '@/constants/theme';
-import { useTranslation } from '@/lib/i18n';
 
 const ICON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 

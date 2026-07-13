@@ -1,5 +1,5 @@
-import express, { Request, Response } from 'express';
-import { Model, Document } from 'mongoose';
+import express, { type Request, type Response } from 'express';
+import type { Model, Document } from 'mongoose';
 import User from "../models/User";
 import Block from "../models/Block";
 import Restricted from "../models/Restricted";
@@ -9,6 +9,7 @@ import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from
 import { resolveUserIdToObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
 import blockCache from '../utils/blockCache';
+import graphCache from '../utils/graphCache';
 import { z } from "zod";
 import { validate } from '../middleware/validate';
 import { privacyUserIdParams, targetIdParams } from '../schemas/privacy.schemas';
@@ -160,6 +161,14 @@ const createUserActionHandler = <T extends Document>(
     if (fieldName === 'blockedId') {
       blockCache.invalidate(authUser.id, targetId);
       blockCache.invalidate(targetId, authUser.id);
+
+      // The block changed the blocker's cached `blockedIds`; invalidate both
+      // sides' viewer graph (symmetric, like the blockCache busts above) so the
+      // next `GET /users/me/graph` recomputes fresh truth.
+      await Promise.all([
+        graphCache.invalidate(authUser.id),
+        graphCache.invalidate(targetId),
+      ]);
     }
 
     res.json({ message: `User ${actionName === 'block' ? 'blocked' : 'restricted'} successfully` });
@@ -194,6 +203,13 @@ const createUserRemoveHandler = <T extends Document>(
     if (fieldName === 'blockedId') {
       blockCache.invalidate(authUser.id, targetId);
       blockCache.invalidate(targetId, authUser.id);
+
+      // Symmetric to blockUser: the unblock changed the blocker's cached
+      // `blockedIds`, so invalidate both sides' viewer graph.
+      await Promise.all([
+        graphCache.invalidate(authUser.id),
+        graphCache.invalidate(targetId),
+      ]);
     }
 
     res.json({ message: `User ${actionName === 'unblock' ? 'unblocked' : 'unrestricted'} successfully` });

@@ -22,7 +22,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -54,7 +54,6 @@ import { useThread } from '@/hooks/queries/useThread';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels, useTogglePin, useSnoozeMessage } from '@/hooks/mutations/useMessageMutations';
-import { toast } from '@oxyhq/bloom';
 import { SenderAvatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';

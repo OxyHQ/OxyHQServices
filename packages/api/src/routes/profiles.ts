@@ -5,7 +5,7 @@
  * Uses service layer for business logic and standardized error handling.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { Types } from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
 import {
@@ -246,8 +246,8 @@ function formatProfileResult(u: RecommendationRow) {
  */
 const validatePagination = (req: Request, res: Response, next: () => void): void => {
   const query = req.query as PaginationQuery;
-  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
-  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+  const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? Number.parseInt(query.offset, 10) : undefined;
 
   if (limit !== undefined && (isNaN(limit) || limit < 0 || limit > PAGINATION.MAX_LIMIT)) {
     res.status(400).json({
@@ -416,9 +416,9 @@ router.get(
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     // Sanitize search query to prevent regex injection
     const sanitizedQuery = query.trim().substring(0, 100);
@@ -563,9 +563,9 @@ router.get(
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
     const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
 
     const [targetFollowers, currentFollowing] = await Promise.all([
@@ -1271,9 +1271,9 @@ router.get(
     const excludeTypes = parseExcludeTypesQuery(excludeTypesRaw);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     logger.debug('GET /profiles/recommendations', {
       currentUserId: currentUserId ?? null,

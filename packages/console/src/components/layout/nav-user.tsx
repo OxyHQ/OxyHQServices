@@ -1,12 +1,14 @@
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Logout03Icon,
-  Setting06Icon,
-  Money01Icon,
   ArrowUp01Icon,
+  Logout03Icon,
+  Money01Icon,
   Notification01Icon,
+  Setting06Icon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons';
+import { useAuth } from '@oxyhq/services';
+import { Link } from '@tanstack/react-router';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -23,8 +25,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useAuth } from '@oxyhq/services';
-import { Link } from '@tanstack/react-router';
 import config from '@/lib/config';
 
 export function NavUser() {

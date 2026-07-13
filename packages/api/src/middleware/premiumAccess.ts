@@ -1,6 +1,6 @@
-import { Response, NextFunction } from 'express';
+import type { Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-import { AuthRequest } from './auth';
+import type { AuthRequest } from './auth';
 
 export const checkPremiumAccess = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {

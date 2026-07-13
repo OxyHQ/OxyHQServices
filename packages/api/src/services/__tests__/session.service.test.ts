@@ -151,7 +151,7 @@ import Session from '../../models/Session';
 import sessionCache from '../../utils/sessionCache';
 import { generateSessionTokens, validateAccessToken } from '../../utils/sessionUtils';
 import { deriveServiceDeviceId } from '../../utils/deviceUtils';
-import { Request } from 'express';
+import type { Request } from 'express';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000;

@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import type {Application, CallerAccess} from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
 import {
-  useApplicationUsage,
-  type Application,
-  type CallerAccess,
+  
+  
+  useApplicationUsage
 } from '@/hooks/use-applications';
 
 const PERIODS = [

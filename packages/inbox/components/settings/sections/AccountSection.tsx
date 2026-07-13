@@ -22,7 +22,7 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { GroupedButtons } from '@oxyhq/bloom/grouped-buttons';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
 import {
   Pencil_Stroke2_Corner0_Rounded,
   ArrowBoxLeft_Stroke2_Corner0_Rounded,
@@ -30,7 +30,6 @@ import {
   PaperPlane_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
 import { useOxy } from '@oxyhq/services';
-import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';

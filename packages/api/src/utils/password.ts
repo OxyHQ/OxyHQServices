@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { hash as argon2Hash, verify as argon2Verify, Options } from '@node-rs/argon2';
+import { hash as argon2Hash, verify as argon2Verify, type Options } from '@node-rs/argon2';
 
 export const PASSWORD_MIN_LENGTH = 12;
 
@@ -30,7 +30,7 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   }
 }
 
-export function generateNumericCode(length: number = 6): string {
+export function generateNumericCode(length = 6): string {
   const max = 10 ** length;
   return crypto.randomInt(0, max).toString().padStart(length, '0');
 }
@@ -40,7 +40,7 @@ export function generateNumericCode(length: number = 6): string {
  * Uses uppercase letters and digits, excluding ambiguous characters (0, O, 1, I, L)
  * for better readability and user experience
  */
-export function generateAlphanumericCode(length: number = 8): string {
+export function generateAlphanumericCode(length = 8): string {
   // Character set: digits 2-9 and uppercase A-Z excluding O, I, L
   // This gives us 31 characters and avoids confusion between 0/O, 1/I/L
   const charset = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';

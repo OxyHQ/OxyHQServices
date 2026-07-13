@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { requireStaff } from '../middleware/requireStaff';
 import { User } from '../models/User';

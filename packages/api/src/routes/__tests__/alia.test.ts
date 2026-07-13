@@ -1,6 +1,6 @@
 import express from 'express';
 import http, { IncomingMessage } from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import axios from 'axios';
 
 jest.mock('axios');

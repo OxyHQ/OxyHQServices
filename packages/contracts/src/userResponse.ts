@@ -87,7 +87,7 @@ export const userNameSchema: z.ZodType<UserNameResponse> = z
  *
  * `.passthrough()` keeps the large tail of profile fields
  * (`privacySettings`, `locations`, `links`, `linksMetadata`, `bio`,
- * `description`, `language`, `verified`, timestamps, …) available to callers
+ * `description`, `languages`, `verified`, timestamps, …) available to callers
  * that need them without enumerating every nested shape here — the load-bearing
  * identity/display fields are the ones we pin precisely.
  */
@@ -109,7 +109,13 @@ export const userResponseSchema = z
         color: z.string().nullable().optional(),
         name: userNameSchema,
         verified: z.boolean().optional(),
-        language: z.string().optional(),
+        /**
+         * The account's languages as full BCP-47 locales (`language-REGION`,
+         * e.g. `es-ES`, `en-US`, `pt-BR`), ordered with the PRIMARY (UI) locale
+         * first. `languages[0]` is the primary locale — there is no singular
+         * `language` field.
+         */
+        languages: z.array(z.string()).optional(),
         /**
          * The account's self-sovereign identifier
          * (`did:web:<FEDERATION_DOMAIN>:u:<userId>`). Surfaced as a `User`
@@ -161,7 +167,12 @@ export const userProfileUpdateSchema = z
                 }),
             )
             .optional(),
-        language: z.string().optional(),
+        /**
+         * Ordered account locales (`language-REGION`), primary first. Replaces
+         * the eliminated singular `language`; `languages[0]` is the primary UI
+         * locale.
+         */
+        languages: z.array(z.string()).optional(),
         accountExpiresAfterInactivityDays: z.number().nullable().optional(),
         notificationPreferences: z.record(z.unknown()).optional(),
         userPreferences: z.record(z.unknown()).optional(),

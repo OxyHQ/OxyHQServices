@@ -67,20 +67,6 @@ export function HorizontalScrollSection({
     });
   }, []);
 
-  const scrollLeft = useCallback(() => {
-    scrollViewRef.current?.scrollTo({ x: 0, animated: true });
-    handlePressIn();
-    onPressIn?.();
-  }, [handlePressIn, onPressIn]);
-
-  const scrollRight = useCallback(() => {
-    scrollViewRef.current?.measure(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    });
-    handlePressIn();
-    onPressIn?.();
-  }, [handlePressIn, onPressIn]);
-
   const scrollBy = useCallback((direction: 'left' | 'right', distance: number = 200) => {
     const newX = direction === 'right' 
       ? currentScrollX.current + distance 

@@ -12,7 +12,7 @@
  * - The proxied content is already publicly accessible
  */
 
-import { Router, RequestHandler } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { proxyResource } from '../controllers/emailProxy.controller';

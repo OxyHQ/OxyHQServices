@@ -33,7 +33,6 @@ import {
   quickParseSearch,
   type ParsedSearchQuery,
 } from '@/hooks/queries/useNaturalLanguageSearch';
-import { useTranslation, type TranslateFn } from '@/lib/i18n';
 
 /**
  * Parse Gmail-style search operators from query string.

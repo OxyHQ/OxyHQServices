@@ -4,6 +4,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     "dist/**",
     "node_modules/**",
+    ".next/**",
   ]),
 ]);
 

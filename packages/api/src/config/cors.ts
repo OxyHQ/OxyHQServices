@@ -20,7 +20,7 @@
  * Origin guard middleware via `./allowedOrigins`.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { isAllowedOrigin } from './allowedOrigins';
 import { getCorsDecision } from './dynamicOriginRegistry';
 

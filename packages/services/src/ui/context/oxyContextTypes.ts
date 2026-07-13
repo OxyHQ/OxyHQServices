@@ -28,7 +28,10 @@ export interface OxyContextState {
   isAuthResolved: boolean;
   isStorageReady: boolean;
   error: string | null;
+  /** Active UI locale (`language-REGION`): the account's primary locale when signed in, else the guest/device locale. */
   currentLanguage: string;
+  /** Ordered account locales (primary first) when signed in, or the single guest override when signed out. */
+  currentLanguages: string[];
   currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
   currentLanguageName: string;
   currentNativeLanguageName: string;

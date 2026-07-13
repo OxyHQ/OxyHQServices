@@ -1,8 +1,9 @@
-import React, { useEffect, useCallback, useMemo, useState, memo } from 'react';
-import {
-  type ViewStyle,
-  type TextStyle,
-  type StyleProp,
+import type React from 'react';
+import { useEffect, useCallback, useMemo, useState, memo } from 'react';
+import type {
+  ViewStyle,
+  TextStyle,
+  StyleProp,
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '@oxyhq/bloom';

@@ -44,19 +44,19 @@ export function validateRequiredFields(
 export function validatePagination(
   limit?: unknown,
   offset?: unknown,
-  maxLimit: number = 100,
-  defaultLimit: number = 50
+  maxLimit = 100,
+  defaultLimit = 50
 ): { limit: number; offset: number } {
   // Convert to string first, then parse
   const limitStr = limit !== undefined ? String(limit) : undefined;
   const offsetStr = offset !== undefined ? String(offset) : undefined;
   
   const parsedLimit = limitStr !== undefined 
-    ? Math.min(Math.max(parseInt(limitStr, 10) || defaultLimit, 1), maxLimit)
+    ? Math.min(Math.max(Number.parseInt(limitStr, 10) || defaultLimit, 1), maxLimit)
     : defaultLimit;
   
   const parsedOffset = offsetStr !== undefined
-    ? Math.max(parseInt(offsetStr, 10) || 0, 0)
+    ? Math.max(Number.parseInt(offsetStr, 10) || 0, 0)
     : 0;
   
   return { limit: parsedLimit, offset: parsedOffset };
