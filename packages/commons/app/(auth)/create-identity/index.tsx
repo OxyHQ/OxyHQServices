@@ -131,7 +131,15 @@ export default function CreateIdentityScreen() {
 
           creatingProgressRef.current = progressInterval as unknown as NodeJS.Timeout;
 
-          const result = await createIdentity();
+          // Detect connectivity up front so createIdentity can skip the ~19s
+          // DNS-timeout on the register/signIn round-trip when offline (the
+          // identity is still created locally; sync is deferred). `checkIfOffline`
+          // is already imported here safely — do NOT move this probe into
+          // `useIdentity`: it loads early in the provider tree and importing
+          // `networkUtils` there triggers a circular import that crashes
+          // OxyProvider at boot (see issue #605).
+          const offline = await checkIfOffline();
+          const result = await createIdentity({ skipSync: offline });
 
           cleanupTimers();
 
