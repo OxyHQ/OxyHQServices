@@ -180,7 +180,6 @@
       "viewDevice": "View Device",
       "detailType": "Type",
       "detailSeverity": "Severity",
-      "detailIp": "IP",
       "detailDevice": "Device",
       "detailDeviceId": "Device ID",
       "detailBrowser": "Browser",
@@ -330,7 +329,6 @@
       "type": "Event type",
       "severity": "Severity",
       "time": "Time",
-      "ip": "IP address",
       "browser": "Browser",
       "device": "Device",
       "deviceId": "Device ID"

@@ -648,7 +648,6 @@ export interface SecurityActivity {
   eventType: SecurityEventType;
   eventDescription: string;
   metadata?: Record<string, any>;
-  ipAddress?: string;
   userAgent?: string;
   deviceId?: string;
   timestamp: string;

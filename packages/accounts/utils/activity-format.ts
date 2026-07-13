@@ -159,24 +159,19 @@ export function getEventTitle(event: SecurityActivity, t: TranslateFn): string {
     return localized;
 }
 
-/** Row subtitle (relative time + optional device name / IP). */
+/** Row subtitle (relative time + optional device name). */
 export function getEventSubtitle(
     event: SecurityActivity,
     formatters: DayFormatters,
     t: TranslateFn,
 ): string {
     const relative = formatRelativeTime(event.timestamp, formatters, t);
-    const ip = event.ipAddress;
     const deviceName =
         event.metadata && typeof event.metadata === 'object'
             ? (event.metadata as { deviceName?: unknown }).deviceName
             : undefined;
     const deviceLabel = typeof deviceName === 'string' ? deviceName : null;
 
-    if (deviceLabel && ip) {
-        return `${relative} • ${deviceLabel} • ${ip}`;
-    }
     if (deviceLabel) return `${relative} • ${deviceLabel}`;
-    if (ip) return `${relative} • ${ip}`;
     return relative;
 }

@@ -180,7 +180,6 @@
       "viewDevice": "Ver dispositivo",
       "detailType": "Tipo",
       "detailSeverity": "Severidad",
-      "detailIp": "IP",
       "detailDevice": "Dispositivo",
       "detailDeviceId": "ID de dispositivo",
       "detailBrowser": "Navegador",
@@ -330,7 +329,6 @@
       "type": "Tipo de evento",
       "severity": "Gravedad",
       "time": "Hora",
-      "ip": "Dirección IP",
       "browser": "Navegador",
       "device": "Dispositivo",
       "deviceId": "ID del dispositivo"
