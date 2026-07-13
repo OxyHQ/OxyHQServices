@@ -38,10 +38,20 @@ describe('security.ts limiter prefixes are unique', () => {
     expect(capturedPrefixes).toContain('rl:idp:service:');
   });
 
+  it('registers the dedicated federation service limiter with rl:federation:service:', () => {
+    expect(capturedPrefixes).toContain('rl:federation:service:');
+  });
+
   it('keeps every limiter prefix distinct (no ERR_ERL_DOUBLE_COUNT)', () => {
-    // The four Redis-backed limiters defined in security.ts. slowDown's
+    // The five Redis-backed limiters defined in security.ts. slowDown's
     // bruteForceProtection uses an in-memory store (no prefix), so it is absent.
-    const securityPrefixes = ['rl:general:', 'rl:idp:service:', 'rl:auth:', 'rl:user:'];
+    const securityPrefixes = [
+      'rl:general:',
+      'rl:idp:service:',
+      'rl:federation:service:',
+      'rl:auth:',
+      'rl:user:',
+    ];
 
     for (const prefix of securityPrefixes) {
       // Present, and registered EXACTLY once — a duplicate would double-count.

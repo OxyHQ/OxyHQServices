@@ -11,7 +11,7 @@ import dotenv from "dotenv";
 import User, { IUser } from "./models/User";
 import { ensureFileSha256LiveUniqueIndex } from "./models/File";
 import searchRoutes from "./routes/search";
-import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
+import { rateLimiter, authRateLimiter, userRateLimiter, federationServiceLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
 import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
@@ -683,7 +683,14 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 // service token with the `federation:write` scope and bound to the credential's
 // own registered domain. The legacy `GET /federation/keypair/:username` route —
 // which returned `privateKeyPem` — has been removed in favour of these.
-app.use('/federation', federationRoutes);
+// The federation sign-on-behalf surface is service-to-service (federation:write
+// service token) and legitimately high-frequency: a relying app fans its whole
+// outbound-signing workload (outbox backfill, delivery fan-out) through one NAT
+// egress IP. It is therefore EXCLUDED from the per-IP browser budget (rl:general)
+// — which a backfill would exhaust in seconds → 429 → silent federation outage —
+// and capped instead by this dedicated high-ceiling limiter. Mounted before the
+// router so it also bounds unauthenticated floods.
+app.use('/federation', federationServiceLimiter, federationRoutes);
 
 // Self-sovereign DID documents (did:web). Public, cacheable, CORS-open, no
 // auth/CSRF — served at the API root beside the WebFinger/ActivityPub handlers

@@ -49,6 +49,35 @@ export function isIdpServiceToServicePath(path: string): boolean {
   return path.startsWith('/session/validate/');
 }
 
+/**
+ * Paths hit ONLY by relying-app backends server-to-server via a `federation:write`
+ * service token, never by a browser directly — the federation sign-on-behalf
+ * surface:
+ *   - POST /federation/sign            (HTTP-Signature signing on behalf)
+ *   - GET  /federation/public-key/:u   (publish an actor's public key block)
+ *   - POST /federation/follow          (mirror a remote follow into the graph)
+ *
+ * Every route under `/federation/` is gated by `serviceAuthMiddleware`, so the
+ * whole prefix is service-to-service. A relying app (e.g. Mention) fans ALL of
+ * its outbound ActivityPub signing through a SINGLE NAT egress IP — an outbox
+ * backfill or a large delivery fan-out legitimately signs tens of thousands of
+ * requests in a burst. Subjecting that to the per-IP browser budget
+ * (`rl:general`, 1000/15min) exhausts the shared budget in seconds → 429 → ALL
+ * of that app's federation signing (and every other oxy-api call from the same
+ * IP) fails intermittently, silently degrading outbound federation. So these
+ * paths are excluded from the general per-IP limiter (and the slowDown latency
+ * penalty) and capped instead by their own dedicated high-ceiling limiter
+ * (`federationServiceLimiter`).
+ *
+ * MOUNT-ORDER INVARIANT: the general `rateLimiter` skips these paths, so the
+ * `/federation` mount MUST carry `federationServiceLimiter` (it does, in
+ * server.ts). Adding a path here without that dedicated limiter would leave it
+ * entirely unthrottled.
+ */
+export function isFederationServiceToServicePath(path: string): boolean {
+  return path.startsWith('/federation/');
+}
+
 // General rate limiting middleware (exclude file uploads). The previous
 // ceiling of 150/15min was below what a single signed-in user generates
 // against the API in normal usage (feed scrolling, profile loads, sockets'
@@ -64,7 +93,34 @@ const rateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req: Request) =>
-    req.path.startsWith('/files/upload') || isIdpServiceToServicePath(req.path),
+    req.path.startsWith('/files/upload') ||
+    isIdpServiceToServicePath(req.path) ||
+    isFederationServiceToServicePath(req.path),
+});
+
+// Dedicated high-ceiling limiter for the federation sign-on-behalf surface
+// (see isFederationServiceToServicePath: /federation/*). Because those paths are
+// skipped by rl:general, this is their SOLE per-IP budget. Mounted at the
+// `/federation` router in server.ts so it also bounds unauthenticated floods
+// (it runs before serviceAuthMiddleware).
+//
+// The ceiling is deliberately high: a relying app's outbox backfill / delivery
+// fan-out signs tens of thousands of requests through ONE NAT egress IP. Sizing
+// for the empirical worst case — a sustained ~25 req/s backfill (a 12k-post
+// reconciliation) plus concurrent live delivery — needs well above the general
+// 1000/15min: 60000/15min ≈ 66 req/s sustained is ~2.6x that peak, with room
+// for live traffic, while still bounding a runaway loop or a compromised
+// credential (whose signatures are already domain-scoped to its own actor).
+// Unique prefix (`rl:federation:service:`) keeps this budget distinct from every
+// other limiter (no ERR_ERL_DOUBLE_COUNT).
+const federationServiceLimiter = rateLimit({
+  ...makeStore('rl:federation:service:'),
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 60000 : 120000,
+  message: "Too many federation signing requests, please slow down.",
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req: Request) => req.path.startsWith('/files/upload'),
 });
 
 // Dedicated high-ceiling limiter for the IdP worker's server-to-server READ
@@ -128,7 +184,9 @@ const bruteForceProtection = slowDown({
   delayAfter: isProd ? 100 : 1000,
   delayMs: () => isProd ? 500 : 100,
   skip: (req: Request) =>
-    req.path.startsWith('/files/upload') || isIdpServiceToServicePath(req.path),
+    req.path.startsWith('/files/upload') ||
+    isIdpServiceToServicePath(req.path) ||
+    isFederationServiceToServicePath(req.path),
 });
 
 /**
@@ -179,4 +237,4 @@ const securityHeaders = helmet({
   // X-Permitted-Cross-Domain-Policies: Restrict Adobe Flash and PDF
 });
 
-export { rateLimiter, idpServiceLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders };
+export { rateLimiter, idpServiceLimiter, federationServiceLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders };
