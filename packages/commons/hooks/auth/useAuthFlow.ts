@@ -1,9 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { AuthStep } from '@/types/auth';
 
 /**
  * Hook for managing authentication flow state
- * 
+ *
  * @param initialStep - The initial step
  * @returns Auth flow state and handlers
  */
@@ -11,13 +11,9 @@ export function useAuthFlow(initialStep: AuthStep = 'creating') {
   const [step, setStep] = useState<AuthStep>(initialStep);
   const [error, setError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
-  const previousStepRef = useRef<AuthStep>(initialStep);
 
   const goToStep = useCallback((newStep: AuthStep) => {
-    setStep((currentStep) => {
-      previousStepRef.current = currentStep;
-      return newStep;
-    });
+    setStep(newStep);
   }, []);
 
   const setAuthError = useCallback((errorMessage: string | null) => {
@@ -32,7 +28,6 @@ export function useAuthFlow(initialStep: AuthStep = 'creating') {
     step,
     error,
     isSigningIn,
-    previousStep: previousStepRef.current,
     goToStep,
     setAuthError,
     setSigningIn,

@@ -242,7 +242,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [lastSelectedFileId, setLastSelectedFileId] = useState<string | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const photoScrollViewRef = useRef<ScrollView>(null);
-    const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
     const containerRef = useRef<View>(null);
     useEffect(() => {
         if (initialSelectedIds?.length) {
@@ -1003,11 +1002,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // filteredFiles is already sorted, so just use it directly
         const sortedFiles = filteredFiles;
 
-        // Store file positions for scrolling
-        sortedFiles.forEach((file, index) => {
-            itemRefs.current.set(file.id, index);
-        });
-
         return sortedFiles.map((file) => {
             const isImage = file.contentType.startsWith('image/');
             const isPDF = file.contentType.includes('pdf');
@@ -1114,10 +1108,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     useEffect(() => {
         if (lastSelectedFileId && selectMode) {
             if (viewMode === 'all' && scrollViewRef.current) {
-                // Find the index of the selected file
-                const itemIndex = itemRefs.current.get(lastSelectedFileId);
+                // Find the index of the selected file (filteredFiles is already sorted)
+                const itemIndex = filteredFiles.findIndex(file => file.id === lastSelectedFileId);
 
-                if (itemIndex !== undefined && itemIndex >= 0) {
+                if (itemIndex >= 0) {
                     // Estimate item height (GroupedItem with dense mode is approximately 60-70px)
                     // Account for description rows which add extra height
                     const baseItemHeight = 65;
