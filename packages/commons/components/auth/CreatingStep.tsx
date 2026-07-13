@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import LottieView from 'lottie-react-native';
 import Animated, {
   FadeIn,
@@ -19,6 +19,14 @@ interface CreatingStepProps {
   textColor: string;
   isSyncing?: boolean;
   isSigningIn?: boolean;
+  /**
+   * When set, the step renders a recoverable error state (message + Retry)
+   * instead of the loading animation. Without this, a failed `createIdentity()`
+   * left the user stuck on an endless "Setting up your account…" screen with no
+   * feedback and no way forward (see issue #605).
+   */
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 const TOTAL_PROGRESS_STEPS = 3; // 0, 1, 2
@@ -31,7 +39,7 @@ const PROGRESS_MESSAGE_KEYS = [
 /**
  * Creating step component showing progress during identity creation, sync, and sign-in
  */
-export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, isSigningIn }: CreatingStepProps) {
+export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, isSigningIn, error, onRetry }: CreatingStepProps) {
   const { t } = useTranslation();
   // Determine message based on current state
   let currentMessage: string;
@@ -78,6 +86,32 @@ export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, 
       opacity: progressValue.value > 0 ? 1 : 0.5,
     };
   });
+
+  // Recoverable failure: show the reason + a Retry instead of an endless
+  // "Setting up your account…" with no way forward (issue #605).
+  if (error) {
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <View style={styles.centeredContainer}>
+          <Text style={[styles.creatingTitle, { color: textColor }]}>
+            {t('auth.creating.errorTitle')}
+          </Text>
+          <Text style={[styles.creatingSubtitle, { color: textColor, opacity: 0.7 }]}>
+            {error}
+          </Text>
+          {onRetry ? (
+            <Pressable
+              onPress={onRetry}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.retryButton, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text style={styles.retryButtonText}>{t('auth.creating.retry')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
@@ -171,6 +205,18 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     // Ensure minimum width for visibility even at 0%
     minWidth: 1,
+  },
+  retryButton: {
+    marginTop: 28,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 24,
+    backgroundColor: '#8B5CF6',
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
