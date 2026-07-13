@@ -5,7 +5,7 @@
  * to avoid code duplication and ensure consistency
  */
 
-import { Request } from 'express';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 import sessionService from '../services/session.service';
@@ -104,7 +104,7 @@ export async function validateSessionToken(token: string): Promise<NormalizedUse
  */
 export async function authenticateRequestNonBlocking(
   req: Request,
-  requireAuth: boolean = false
+  requireAuth = false
 ): Promise<{ user: NormalizedUser | null; source: 'header' | null }> {
   const token = extractTokenFromRequest(req);
   const source = req.headers.authorization ? 'header' : null;

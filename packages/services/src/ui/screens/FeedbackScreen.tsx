@@ -12,7 +12,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { normalizeTheme } from '@oxyhq/core';
 import { packageInfo } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, type MaterialCommunityIcons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { H2, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';

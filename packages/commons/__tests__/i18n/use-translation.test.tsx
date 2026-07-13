@@ -1,6 +1,5 @@
 import React from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { __resetAsyncStorage, __seedAsyncStorage } from '@/__mocks__/async-storage';
+import { act, renderHook } from '@testing-library/react';
 import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
 import { LocaleProvider } from '@/lib/i18n/locale-context';
 import { useTranslation } from '@/lib/i18n/use-translation';
@@ -11,18 +10,17 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 
 describe('useTranslation', () => {
   beforeEach(() => {
-    __resetAsyncStorage();
     __resetOxyState();
   });
 
-  it('looks up an accounts-namespaced key in en-US', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
+  it('looks up an accounts-namespaced key in en-US', () => {
+    __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
     expect(result.current.t('common.save')).toBe('Save');
   });
 
-  it('falls back to core translate when accounts dict is missing the key', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
+  it('falls back to core translate when accounts dict is missing the key', () => {
+    __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
     // `signin.title` lives in core's en-US dictionary, not accounts'.
     const value = result.current.t('signin.title');
@@ -30,40 +28,34 @@ describe('useTranslation', () => {
     expect(value).not.toBe('signin.title');
   });
 
-  it('returns the key itself when neither accounts nor core has a translation', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
+  it('returns the key itself when neither accounts nor core has a translation', () => {
+    __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
     expect(result.current.t('this.key.does.not.exist.anywhere')).toBe(
       'this.key.does.not.exist.anywhere',
     );
   });
 
-  it('interpolates {{vars}} into the resolved string', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
+  it('interpolates {{vars}} into the resolved string', () => {
+    __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
-    // Use a missing key so we know exactly what the template is; missing keys
-    // pass straight through interpolate. Here we lean on a core key that
-    // contains a known {{name}} placeholder instead.
+    // Missing keys pass straight through interpolate, so this exercises the
+    // interpolation path against a template with a known {{name}} placeholder.
     const greeting = result.current.t('this.key.does.not.exist {{name}}', { name: 'Ada' });
-    // Missing-key passthrough returns the literal key, so the interpolation
-    // path runs against templates that do exist. Verify via a key with no
-    // interpolation that vars don't corrupt non-templated strings.
     expect(typeof greeting).toBe('string');
   });
 
-  it('uses Spanish dictionary when locale is es-ES', async () => {
-    __seedAsyncStorage('oxy_accounts_locale', 'es-ES');
+  it('uses the Spanish dictionary when the active locale is es-ES', () => {
+    __setOxyState({ currentLanguage: 'es-ES' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(result.current.locale).toBe('es-ES');
-    });
+    expect(result.current.locale).toBe('es-ES');
     // `common.save` exists in both locales but should be the Spanish form now.
     const value = result.current.t('common.save');
     expect(value).not.toBe('Save');
   });
 
   it('exposes a setLocale that updates the active locale', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
+    __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
     expect(result.current.locale).toBe('en-US');
     await act(async () => {

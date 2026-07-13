@@ -4,26 +4,15 @@ import { StatusBar } from 'expo-status-bar';
 import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import 'react-native-reanimated';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-// Reanimated 4 ships with a strict logger that surfaces `.value` reads during
-// render as runtime warnings. Several deeply nested third-party components in
-// this app trip it; lowering the level to `warn` (without strict mode) keeps
-// real errors visible while silencing the false-positive cascade.
-configureReanimatedLogger({
-  level: ReanimatedLogLevel.warn,
-  strict: false,
-});
-
 import type { ReactNode } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider , useOxy } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 
-import { useOxy } from '@oxyhq/services';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
@@ -36,6 +25,15 @@ import {
   preventNativeSplashAutoHide,
   useHideNativeSplashWhenReady,
 } from '@oxyhq/expo-splash';
+
+// Reanimated 4 ships with a strict logger that surfaces `.value` reads during
+// render as runtime warnings. Several deeply nested third-party components in
+// this app trip it; lowering the level to `warn` (without strict mode) keeps
+// real errors visible while silencing the false-positive cascade.
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 // NATIVE ONLY: hold the OS splash so it stays visible until the app has finished
 // running init, then hide it once `appIsReady` flips (via

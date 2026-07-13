@@ -97,7 +97,7 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { SessionController } from '../session.controller';
 
 function createMockRes(): Response {

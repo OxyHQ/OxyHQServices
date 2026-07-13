@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Request } from 'express';
+import type { Request } from 'express';
 import Session from '../models/Session';
 import { logger } from './logger';
 import { formatUserResponse } from './userTransform';
@@ -329,6 +329,17 @@ export const registerDevice = async (
   }
 };
 
+/** One deduplicated device session row returned by {@link getDeviceActiveSessions}. */
+interface DeviceSessionEntry {
+  sessionId: string;
+  user: ReturnType<typeof formatUserResponse>;
+  lastActive: string | Date;
+  createdAt: Date;
+  deviceId: string;
+  expiresAt: Date;
+  isCurrent: boolean;
+}
+
 /**
  * Get all active sessions for a specific device
  * Deduplicates by userId - returns only one session per user (most recent)
@@ -354,10 +365,10 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
     .exec();
 
     // Map sessions and deduplicate by userId - keep only most recent session per user
-    const userSessionMap = new Map<string, any>();
+    const userSessionMap = new Map<string, DeviceSessionEntry>();
     
     for (const session of sessions) {
-      const user = session.userId as any;
+      const user: unknown = session.userId;
       if (!user || typeof user !== 'object') continue;
 
       const formattedUser = formatUserResponse(user);

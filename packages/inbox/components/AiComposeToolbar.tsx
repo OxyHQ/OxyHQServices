@@ -22,18 +22,17 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-
-type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 import {
   AiBeautifyIcon,
   TextWrapIcon,
   ArrowShrink02Icon,
-  ArrowExpand02Icon,
   SmileIcon,
 } from '@hugeicons/core-free-icons';
 
 import { useColors } from '@/constants/theme';
 import { useAiCompose, type ComposeTone } from '@/hooks/mutations/useAiCompose';
+
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 interface AiComposeToolbarProps {
   body: string;
@@ -50,7 +49,7 @@ const TONE_OPTIONS: { value: ComposeTone; label: string; icon: MaterialCommunity
 
 export function AiComposeToolbar({ body, onBodyChange, onSubjectSuggested }: AiComposeToolbarProps) {
   const colors = useColors();
-  const { draft, streamDraft, polish, changeTone, adjustLength, suggestSubject, isLoading } = useAiCompose();
+  const { streamDraft, polish, changeTone, adjustLength, suggestSubject, isLoading } = useAiCompose();
 
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [showToneMenu, setShowToneMenu] = useState(false);

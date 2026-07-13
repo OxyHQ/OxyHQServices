@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 import {
   deviceTokenMintRequestSchema,
@@ -6,7 +6,7 @@ import {
   deviceHubTicketRedeemRequestSchema,
 } from '@oxyhq/contracts';
 import { isOfficialWebOrigin, normalizeOfficialReturnOrigin } from '@oxyhq/core/server';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
 import { rateLimit } from '../middleware/rateLimiter';

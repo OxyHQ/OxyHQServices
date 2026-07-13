@@ -1,7 +1,7 @@
-import { Response, Request } from 'express';
+import type { Response, Request } from 'express';
 import { z } from 'zod';
 
-import { AuthRequest } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import Notification from '../models/Notification';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/asyncHandler';
@@ -76,8 +76,8 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
       throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
-    const page = parseInt(req.query.page as string) || PAGINATION.DEFAULT_PAGE;
-    const limit = parseInt(req.query.limit as string) || PAGINATION.DEFAULT_PAGE_SIZE;
+    const page = Number.parseInt(req.query.page as string) || PAGINATION.DEFAULT_PAGE;
+    const limit = Number.parseInt(req.query.limit as string) || PAGINATION.DEFAULT_PAGE_SIZE;
 
     if (!validatePaginationParams(page, limit)) {
       throw new BadRequestError('Invalid pagination parameters');

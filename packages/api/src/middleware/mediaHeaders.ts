@@ -14,7 +14,7 @@
  * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Headers for media file streaming

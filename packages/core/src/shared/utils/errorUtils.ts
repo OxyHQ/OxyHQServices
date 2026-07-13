@@ -57,7 +57,7 @@ export const getErrorStatus = (error: unknown): number | undefined => {
  * @param fallback - Fallback message if none found
  * @returns The error message
  */
-export const getErrorMessage = (error: unknown, fallback: string = 'An unknown error occurred'): string => {
+export const getErrorMessage = (error: unknown, fallback = 'An unknown error occurred'): string => {
   if (!error) return fallback;
 
   if (typeof error === 'string') return error;

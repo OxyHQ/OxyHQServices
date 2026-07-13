@@ -7,7 +7,7 @@
  */
 
 import express from 'express';
-import mongoose from 'mongoose';
+import type mongoose from 'mongoose';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';

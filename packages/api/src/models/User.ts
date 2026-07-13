@@ -255,7 +255,15 @@ export interface IUser extends Document {
    * Defaults to `false`, so it is a no-op until populated.
    */
   isSensitive?: boolean;
-  language?: string;
+  /**
+   * Ordered account locales (full BCP-47 `language-REGION`, e.g. `en-US`,
+   * `es-ES`), PRIMARY (UI) locale first. This is the ONLY language field on the
+   * account — there is no singular `language`. Entries are normalized and
+   * validated at the write boundary via `@oxyhq/core` (`normalizeLocale` /
+   * `isSupportedLocale`); the read path resolves them with `getUserLanguages`.
+   * Defaults to `['en-US']` for new accounts with no declared locale.
+   */
+  languages?: string[];
   privacySettings: {
     isPrivateAccount: boolean;
     hideOnlineStatus: boolean;
@@ -535,11 +543,20 @@ const UserSchema: Schema = new Schema(
       default: false,
       index: true,
     },
-    language: {
-      type: String,
-      default: 'en',
+    // Ordered account locales (full BCP-47 `language-REGION`), PRIMARY first.
+    // The ONLY language field on the account — there is no singular `language`.
+    // Entries are normalized/validated at the write boundary (`updateUserProfile`
+    // via `@oxyhq/core`). Defaults to `['en-US']` for new accounts.
+    //
+    // NOTE: there is deliberately no top-level `language` field. The `locations`
+    // text index below leaves `language_override` at its implicit default
+    // (`language`); with no such field on any document, MongoDB uses the index's
+    // `default_language` and never reads a locale (e.g. `es-ES`) as a text-search
+    // language — which would raise error 17262.
+    languages: {
+      type: [String],
+      default: ['en-US'],
       select: true,
-      trim: true,
     },
     following: [
       {

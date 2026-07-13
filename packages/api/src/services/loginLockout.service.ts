@@ -76,7 +76,7 @@ export async function isLockedOut(options: LockoutOptions): Promise<LockoutCheck
   if (redis) {
     try {
       const [countStr, ttlSec] = await Promise.all([redis.get(key), redis.ttl(key)]);
-      const count = countStr ? parseInt(countStr, 10) : 0;
+      const count = countStr ? Number.parseInt(countStr, 10) : 0;
       if (count >= max) {
         const retryAfter = ttlSec > 0 ? ttlSec : windowSeconds;
         return { locked: true, retryAfterSeconds: retryAfter, attempts: count };
@@ -134,7 +134,7 @@ export async function recordFailure(options: LockoutOptions): Promise<LockoutChe
       }
       const count = typeof incrValue === 'number'
         ? incrValue
-        : parseInt(String(incrValue ?? '0'), 10);
+        : Number.parseInt(String(incrValue ?? '0'), 10);
 
       if (count >= max) {
         const ttlSec = await redis.ttl(key);

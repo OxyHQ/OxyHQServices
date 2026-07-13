@@ -70,9 +70,9 @@ interface DeviceContactInput {
   /** Display name as shown to the user — never sent to the server. */
   displayName: string;
   /** All emails from the address-book entry (raw strings). */
-  emails: ReadonlyArray<string | undefined | null>;
+  emails: readonly (string | undefined | null)[];
   /** All phone numbers from the address-book entry (raw strings). */
-  phones: ReadonlyArray<string | undefined | null>;
+  phones: readonly (string | undefined | null)[];
 }
 
 export interface HashedContactBatch {
@@ -98,12 +98,12 @@ export interface HashedContactBatch {
  * batch repeatedly if they have more contacts.
  */
 export async function hashContacts(
-  contacts: ReadonlyArray<DeviceContactInput>,
+  contacts: readonly DeviceContactInput[],
   maxHashesPerChannel = 200,
 ): Promise<HashedContactBatch> {
   const hashToContacts = new Map<string, DeviceContactInput[]>();
-  const emailJobs: Array<Promise<{ hash: string | null; contact: DeviceContactInput }>> = [];
-  const phoneJobs: Array<Promise<{ hash: string | null; contact: DeviceContactInput }>> = [];
+  const emailJobs: Promise<{ hash: string | null; contact: DeviceContactInput }>[] = [];
+  const phoneJobs: Promise<{ hash: string | null; contact: DeviceContactInput }>[] = [];
 
   for (const contact of contacts) {
     for (const email of contact.emails) {

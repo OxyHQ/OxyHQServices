@@ -21,8 +21,8 @@
 
 import express from 'express';
 import http from 'http';
-import { Readable } from 'stream';
-import { AddressInfo } from 'net';
+import type { Readable } from 'stream';
+import type { AddressInfo } from 'net';
 
 const CACHE_FILE_ID = '64c0000000000000000000ff';
 const USER_FILE_ID = '64c0000000000000000000aa';

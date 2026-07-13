@@ -24,8 +24,8 @@ class PerformanceMonitor {
   private metrics: PerformanceMetric[] = [];
   private stats: Map<string, PerformanceStats> = new Map();
   private durations: Map<string, number[]> = new Map();
-  private maxMetrics: number = 1000;
-  private maxDurations: number = 500;
+  private maxMetrics = 1000;
+  private maxDurations = 500;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -136,14 +136,14 @@ class PerformanceMonitor {
   /**
    * Get recent metrics
    */
-  getRecentMetrics(limit: number = 50): PerformanceMetric[] {
+  getRecentMetrics(limit = 50): PerformanceMetric[] {
     return this.metrics.slice(-limit);
   }
 
   /**
    * Get metrics for a specific operation
    */
-  getOperationMetrics(operation: string, limit: number = 50): PerformanceMetric[] {
+  getOperationMetrics(operation: string, limit = 50): PerformanceMetric[] {
     return this.metrics
       .filter(m => m.operation === operation)
       .slice(-limit);
@@ -160,7 +160,7 @@ class PerformanceMonitor {
   /**
    * Check if an operation is performing poorly
    */
-  isOperationSlow(operation: string, threshold: number = 1000): boolean {
+  isOperationSlow(operation: string, threshold = 1000): boolean {
     const avgDuration = this.getAverageDuration(operation);
     return avgDuration > threshold;
   }
@@ -168,7 +168,7 @@ class PerformanceMonitor {
   /**
    * Get slow operations
    */
-  getSlowOperations(threshold: number = 1000): PerformanceStats[] {
+  getSlowOperations(threshold = 1000): PerformanceStats[] {
     return this.getStats().filter(stats => stats.avgDuration > threshold);
   }
 

@@ -20,7 +20,7 @@
  * blocking (24 h gradual deploy); default is `enforce`.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { isAllowedOrigin } from '../config/allowedOrigins';
 import { logger } from '../utils/logger';
 

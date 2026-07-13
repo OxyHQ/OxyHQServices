@@ -56,11 +56,11 @@ import {
   activeUserOf,
   accountIdsOf,
 } from '../session';
-import {
-  type OxyContextState,
-  type PasswordSignInResult,
-  type OxyContextProviderProps,
-  type CommitInput,
+import type {
+  OxyContextState,
+  PasswordSignInResult,
+  OxyContextProviderProps,
+  CommitInput,
 } from './oxyContextTypes';
 import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
 import { commitDeviceSetAndResolve } from './commitSessionFlow';
@@ -210,14 +210,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const {
     currentLanguage,
+    languages: currentLanguages,
     metadata: currentLanguageMetadata,
     languageName: currentLanguageName,
     nativeLanguageName: currentNativeLanguageName,
     setLanguage,
-    applyLanguagePreference,
   } = useLanguageManagement({
     storage,
     languageKey: storageKeys.language,
+    user,
     onError,
     logger,
   });
@@ -238,7 +239,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storageKeyPrefix,
     loginSuccess,
     logoutStore,
-    applyLanguagePreference,
     onAuthStateChange,
     onError,
     setAuthError: (message) => setAuthState({ error: message }),
@@ -376,7 +376,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     switchSession,
     sessionClient,
     syncFromClient,
-    applyLanguagePreference,
     onAuthStateChange,
     onError,
     loginSuccess,
@@ -873,6 +872,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       isStorageReady: storage !== null,
       error,
       currentLanguage,
+      currentLanguages,
       currentLanguageMetadata,
       currentLanguageName,
       currentNativeLanguageName,
@@ -924,6 +924,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       storage,
       error,
       currentLanguage,
+      currentLanguages,
       currentLanguageMetadata,
       currentLanguageName,
       currentNativeLanguageName,
@@ -992,10 +993,11 @@ const LOADING_STATE: OxyContextState = {
   isAuthResolved: false,
   isStorageReady: false,
   error: null,
-  currentLanguage: 'en',
+  currentLanguage: 'en-US',
+  currentLanguages: [],
   currentLanguageMetadata: null,
-  currentLanguageName: 'English',
-  currentNativeLanguageName: 'English',
+  currentLanguageName: 'English (United States)',
+  currentNativeLanguageName: 'English (United States)',
   hasIdentity: () => Promise.resolve(false),
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),

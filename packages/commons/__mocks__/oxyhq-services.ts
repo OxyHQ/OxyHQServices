@@ -43,10 +43,14 @@ interface MockOxyServices {
 }
 
 interface MockOxyState {
-  user: { id?: string; username?: string; language?: string; avatar?: string | null } | null;
+  user: { id?: string; username?: string; languages?: string[]; avatar?: string | null } | null;
   isAuthenticated: boolean;
   isAuthResolved: boolean;
   isLoading: boolean;
+  /** The active UI locale, as the real SDK derives it. */
+  currentLanguage: string;
+  /** The ordered account locales (primary first), or the single guest locale. */
+  currentLanguages: string[];
   oxyServices: MockOxyServices | null;
 }
 
@@ -59,6 +63,8 @@ function makeDefaultState(): MockOxyState {
     // `false` explicitly to exercise the still-resolving ("checking") window.
     isAuthResolved: true,
     isLoading: false,
+    currentLanguage: 'en-US',
+    currentLanguages: [],
     oxyServices: { updateProfile: jest.fn(async () => undefined) },
   };
 }
@@ -75,10 +81,36 @@ export function __setOxyState(next: Partial<MockOxyState>): void {
   emit();
 }
 
+// Guest override writer: stores a single locale and makes it the active locale.
+const setLanguage = jest.fn(async (locale: string): Promise<void> => {
+  __setOxyState({ currentLanguage: locale, currentLanguages: [locale] });
+});
+
+// Account writer: `{ languages }` sets the ordered account locales; the derived
+// `currentLanguage` then follows `languages[0]`.
+const updateProfileMutateAsync = jest.fn(
+  async (updates: { languages?: string[] }): Promise<void> => {
+    const languages = updates.languages;
+    if (languages && languages.length > 0) {
+      __setOxyState({ currentLanguage: languages[0], currentLanguages: languages });
+    }
+  },
+);
+
 export function __resetOxyState(): void {
   state = makeDefaultState();
+  setLanguage.mockClear();
+  updateProfileMutateAsync.mockClear();
   emit();
   oxyEventHandlers.clear();
+}
+
+/** Exposes the locale writer spies for call assertions. */
+export function __getLanguageMocks(): {
+  setLanguage: jest.Mock;
+  updateProfileMutateAsync: jest.Mock;
+} {
+  return { setLanguage, updateProfileMutateAsync };
 }
 
 function subscribe(listener: () => void): () => void {
@@ -92,8 +124,14 @@ function getSnapshot(): MockOxyState {
   return state;
 }
 
-export const useOxy = (): MockOxyState =>
-  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+export const useOxy = (): MockOxyState & { setLanguage: jest.Mock } => {
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return { ...snapshot, setLanguage };
+};
+
+export function useUpdateProfile(): { mutateAsync: jest.Mock; isPending: boolean } {
+  return { mutateAsync: updateProfileMutateAsync, isPending: false };
+}
 
 /** Hydration hook — a no-op in tests. */
 export const useCurrentUser = (): { data: undefined } => ({ data: undefined });

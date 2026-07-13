@@ -9,11 +9,11 @@
  * - View and manage linked auth methods
  */
 
-import { Router, Response } from 'express';
+import { Router, type Response } from 'express';
 import { hashPassword, validatePasswordStrength } from '../utils/password.js';
 import { User, buildAuthMethod } from '../models/User.js';
 import type { AuthMethodType } from '../models/User.js';
-import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { authMiddleware, type AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { BadRequestError, ConflictError, UnauthorizedError } from '../utils/error.js';

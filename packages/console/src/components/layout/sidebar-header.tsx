@@ -2,12 +2,15 @@ import * as React from 'react';
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  ArrowDown01Icon,
   Add01Icon,
+  ArrowDown01Icon,
+  Settings01Icon,
   Tick02Icon,
   UserMultiple02Icon,
-  Settings01Icon,
 } from '@hugeicons/core-free-icons';
+import { useAuth } from '@oxyhq/services';
+import { toast } from 'sonner';
+import type {AccountKind, AccountNode, AccountRole} from '@/hooks/use-account';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,13 +39,11 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import {
-  useAccount,
-  type AccountNode,
-  type AccountRole,
-  type AccountKind,
+  
+  
+  
+  useAccount
 } from '@/hooks/use-account';
-import { useAuth } from '@oxyhq/services';
-import { toast } from 'sonner';
 
 const roleLabels: Record<AccountRole, string> = {
   owner: 'Owner',

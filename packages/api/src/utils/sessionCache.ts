@@ -1,5 +1,5 @@
 import { getRedisClient } from '../config/redis';
-import { ISession } from '../models/Session';
+import type { ISession } from '../models/Session';
 
 const DEFAULT_TTL = 5 * 60; // 5 minutes in seconds
 const LAST_ACTIVE_THRESHOLD = 60 * 1000; // 1 minute in ms

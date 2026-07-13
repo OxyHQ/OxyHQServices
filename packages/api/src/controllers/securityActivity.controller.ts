@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
-import { AuthRequest } from '../middleware/auth';
+import { Request, type Response } from 'express';
+import type { AuthRequest } from '../middleware/auth';
 import securityActivityService from '../services/securityActivityService';
-import { SecurityEventType, SECURITY_EVENT_TYPES } from '../models/SecurityActivity';
+import { type SecurityEventType, SECURITY_EVENT_TYPES } from '../models/SecurityActivity';
 import { validatePagination } from '../utils/validation';
 import { sendPaginated } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';

@@ -27,7 +27,7 @@ jest.mock('mongoose', () => {
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 // ---------------------------------------------------------------------------
 // In-memory data store shared by the User + Follow model mocks.

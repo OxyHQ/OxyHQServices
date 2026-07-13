@@ -1,14 +1,14 @@
 import express from "express";
 import http from "http";
 import mongoose from "mongoose";
-import { Server as SocketIOServer, Socket } from "socket.io";
+import { Server as SocketIOServer, type Socket } from "socket.io";
 import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
 import sessionDeviceRouter from "./routes/sessionDevice";
 import dotenv from "dotenv";
-import User, { IUser } from "./models/User";
+import User, { type IUser } from "./models/User";
 import { ensureFileSha256LiveUniqueIndex } from "./models/File";
 import searchRoutes from "./routes/search";
 import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
@@ -63,7 +63,7 @@ import { startLinkPreviewWarmJobs, stopLinkPreviewWarmJobs } from './queue/linkP
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import { logger } from './utils/logger';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
 import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';

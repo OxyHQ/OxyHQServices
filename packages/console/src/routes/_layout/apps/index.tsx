@@ -1,13 +1,14 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
-  Package01Icon,
   ArrowRight01Icon,
-  Settings01Icon,
   Copy01Icon,
+  Package01Icon,
+  Settings01Icon,
 } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -32,7 +33,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useApplications, useCreateApplication } from '@/hooks/use-applications';
-import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_layout/apps/')({
   component: AppsPage,

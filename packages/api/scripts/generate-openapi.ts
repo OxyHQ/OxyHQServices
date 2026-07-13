@@ -209,8 +209,7 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
   if (!schema || typeof (schema as { _def?: unknown })._def !== 'object') {
     return { type: 'string' };
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const def = (schema as any)._def as { typeName?: string; [key: string]: unknown };
+  const def = (schema as { _def: { typeName?: string; [key: string]: unknown } })._def;
   const typeName = def.typeName ?? '';
 
   switch (typeName) {
@@ -276,8 +275,7 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       return out;
     }
     case 'ZodObject': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const shape = (schema as any)._def.shape();
+      const shape = (schema as { _def: { shape: () => Record<string, ZodTypeAny> } })._def.shape();
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       for (const [key, value] of Object.entries(shape) as Array<[string, ZodTypeAny]>) {
@@ -301,20 +299,16 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       };
     }
     case 'ZodOptional': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      return zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
     }
     case 'ZodNullable': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inner = zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      const inner = zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
       return { ...inner, nullable: true };
     }
     case 'ZodDefault': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const innerSchema = zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      const innerSchema = zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const defaultFn = (def as any).defaultValue as () => unknown;
+        const defaultFn = (def as { defaultValue: () => unknown }).defaultValue;
         innerSchema.default = defaultFn();
       } catch {
         // Default produced an error — drop it; OpenAPI default is optional anyway.
@@ -322,18 +316,15 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       return innerSchema;
     }
     case 'ZodUnion': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const options = ((def as any).options as ZodTypeAny[]).map(zodToOpenApi);
+      const options = (def as { options: ZodTypeAny[] }).options.map((option) => zodToOpenApi(option));
       return { oneOf: options };
     }
     case 'ZodEffects': {
       // superRefine / refine wraps the underlying schema. Unwrap and reuse.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).schema as ZodTypeAny));
+      return zodToOpenApi((def as { schema: ZodTypeAny }).schema);
     }
     case 'ZodPipeline': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).out as ZodTypeAny));
+      return zodToOpenApi((def as { out: ZodTypeAny }).out);
     }
     case 'ZodAny':
     case 'ZodUnknown':

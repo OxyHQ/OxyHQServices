@@ -82,6 +82,9 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
           cache: false,
         });
         this.clearCacheEntry('GET:/privacy/blocked');
+        // The block changed the viewer's graph (`blockedIds`) — bust the cached
+        // consolidated `GET /users/me/graph` so the next read reflects it.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -105,6 +108,9 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
           cache: false,
         });
         this.clearCacheEntry('GET:/privacy/blocked');
+        // Symmetric to blockUser: the unblock changed the viewer's `blockedIds`,
+        // so bust the consolidated `GET /users/me/graph` cache.
+        this.clearCacheEntry('GET:/users/me/graph');
         return result;
       } catch (error) {
         throw this.handleError(error);

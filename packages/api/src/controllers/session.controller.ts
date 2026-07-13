@@ -1,10 +1,10 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User, buildAuthMethod } from '../models/User';
 import Session from '../models/Session';
 import AuthChallenge from '../models/AuthChallenge';
 import RecoveryCode from '../models/RecoveryCode';
-import { SessionAuthResponse, ClientSession } from '../types/session';
+import type { SessionAuthResponse, ClientSession } from '../types/session';
 import {
   getDeviceActiveSessions,
   logoutAllDeviceSessions

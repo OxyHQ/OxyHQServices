@@ -17,7 +17,7 @@
  */
 
 import { AssetService } from '../assetService';
-import { S3Service } from '../s3Service';
+import type { S3Service } from '../s3Service';
 
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },

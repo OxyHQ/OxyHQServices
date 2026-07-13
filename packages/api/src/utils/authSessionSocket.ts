@@ -5,7 +5,7 @@
  * Used to notify third-party apps when a user authorizes via Oxy Accounts.
  */
 
-import { Namespace } from 'socket.io';
+import type { Namespace } from 'socket.io';
 import { logger } from './logger';
 
 let authSessionNamespace: Namespace | null = null;

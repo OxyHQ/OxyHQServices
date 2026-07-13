@@ -1,4 +1,4 @@
-import nodemailer, { Transporter } from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import {
   SMTP_OUTBOUND_CONFIG,
@@ -7,7 +7,7 @@ import {
 } from '../config/email.config';
 import { emailService } from './email.service';
 import { assetService } from './assetServiceSingleton';
-import { IEmailAddress, IAttachment } from '../models/Message';
+import type { IEmailAddress, IAttachment } from '../models/Message';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { getRedisClient } from '../config/redis';

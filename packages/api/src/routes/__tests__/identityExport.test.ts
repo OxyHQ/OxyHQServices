@@ -11,7 +11,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import { ec as EC } from 'elliptic';
 import { canonicalize } from '@oxyhq/protocol';
 import { exportBundleSchema } from '@oxyhq/contracts';

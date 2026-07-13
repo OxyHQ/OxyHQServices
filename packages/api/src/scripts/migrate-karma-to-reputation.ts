@@ -48,8 +48,8 @@ import dotenv from 'dotenv';
 import { ReputationTransaction } from '../models/ReputationTransaction.js';
 import { ReputationRule } from '../models/ReputationRule.js';
 import reputationService from '../services/reputation.service.js';
-import {
-  type ReputationCategory,
+import type {
+  ReputationCategory,
 } from '../utils/reputation.constants.js';
 import {
   mapLegacyRuleCategory,

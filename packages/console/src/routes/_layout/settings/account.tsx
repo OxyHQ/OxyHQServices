@@ -1,17 +1,19 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link, createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  ArrowLeft01Icon,
-  Delete02Icon,
   Add01Icon,
-  UserMultiple02Icon,
-  Mail01Icon,
+  ArrowDataTransferHorizontalIcon,
+  ArrowLeft01Icon,
   Cancel01Icon,
   CrownIcon,
-  ArrowDataTransferHorizontalIcon,
+  Delete02Icon,
+  Mail01Icon,
+  UserMultiple02Icon,
 } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import type {AccountMember, AccountRole, AssignableAccountRole} from '@/hooks/use-account';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,21 +50,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  
+  
+  
   useAccount,
   useAccountMembers,
   useInviteAccountMember,
-  useUpdateAccountMember,
   useRemoveAccountMember,
   useTransferAccountOwnership,
-  type AccountRole,
-  type AccountMember,
-  type AssignableAccountRole,
+  useUpdateAccountMember
 } from '@/hooks/use-account';
-import { toast } from 'sonner';
 import {
+  USER_NOT_FOUND_MESSAGE,
   getErrorMessage,
   isUserNotFoundError,
-  USER_NOT_FOUND_MESSAGE,
 } from '@/lib/api-error';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 
@@ -87,7 +88,7 @@ const roleDescriptions: Record<AssignableAccountRole, string> = {
   viewer: 'Read-only access',
 };
 
-const ASSIGNABLE_ROLES: AssignableAccountRole[] = ['admin', 'editor', 'developer', 'billing', 'viewer'];
+const ASSIGNABLE_ROLES: Array<AssignableAccountRole> = ['admin', 'editor', 'developer', 'billing', 'viewer'];
 
 /** Short, readable handle for a member identified only by user id. */
 function shortUserId(userId: string): string {

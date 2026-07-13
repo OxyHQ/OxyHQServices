@@ -17,7 +17,7 @@ export interface AssetVisibilityService {
 export async function updateAvatarVisibility(
   fileId: string | undefined,
   oxyServices: AssetVisibilityService,
-  contextName: string = 'AvatarUtils'
+  contextName = 'AvatarUtils'
 ): Promise<void> {
   if (!fileId || fileId.startsWith('temp-')) {
     return;

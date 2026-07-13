@@ -1,4 +1,4 @@
-import { URL } from 'url';
+import type { URL } from 'url';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { logger } from '../../utils/logger';
 import { LINK_PREVIEW_TIMEOUT_MS } from './constants';

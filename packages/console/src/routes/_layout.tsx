@@ -1,6 +1,6 @@
-import { createFileRoute, Outlet } from '@tanstack/react-router';
-import { useAuth, RequireOxyAuth } from '@oxyhq/services';
-import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { Outlet, createFileRoute } from '@tanstack/react-router';
+import { RequireOxyAuth, useAuth } from '@oxyhq/services';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { CommandMenuTrigger } from '@/components/command-menu';

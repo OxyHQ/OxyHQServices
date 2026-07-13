@@ -1,10 +1,10 @@
 import React, { memo } from 'react';
 import { View } from 'react-native';
-import { GroupedItem } from './grouped-item';
+import { GroupedItem, type IoniconName } from './grouped-item';
 
 interface GroupedSectionItem {
     id: string;
-    icon?: string;
+    icon?: IoniconName;
     iconColor?: string;
     title: string;
     subtitle?: string;

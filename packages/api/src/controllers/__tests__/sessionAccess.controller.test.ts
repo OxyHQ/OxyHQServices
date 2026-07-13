@@ -112,7 +112,7 @@ jest.mock('../../server', () => ({
   emitSessionUpdate: jest.fn(),
 }));
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { SessionController } from '../session.controller';
 import type { AuthRequest } from '../../middleware/auth';
 

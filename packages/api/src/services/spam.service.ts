@@ -19,7 +19,7 @@ class SpamService {
   private readonly baseUrl: string;
   private readonly spamThreshold: number;
   private readonly rejectThreshold: number;
-  private available: boolean = true;
+  private available = true;
 
   constructor() {
     this.baseUrl = SPAM_CONFIG.rspamdUrl;

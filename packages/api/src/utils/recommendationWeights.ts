@@ -73,6 +73,24 @@ export const MAX_FOLLOWING_FOR_MUTUALS = 2000;
 export const MAX_MUTUAL_IDS = 5000;
 
 /**
+ * Hard cap on the viewer's OWN following id set surfaced by the consolidated
+ * viewer-graph read (`getViewerGraph`). Bounds BOTH the Follow scan and the
+ * number of ids returned, so the query and payload stay small regardless of how
+ * many accounts the viewer follows. Mirrors {@link MAX_MUTUAL_IDS}; the
+ * most-recently-established follows are returned first when the viewer follows
+ * more accounts than the cap.
+ */
+export const MAX_FOLLOWING_IDS = 5000;
+
+/**
+ * Hard cap on the viewer's OWN blocked id set surfaced by the consolidated
+ * viewer-graph read (`getViewerGraph`). Bounds BOTH the Block scan and the
+ * number of ids returned. A viewer with more blocks than the cap is a
+ * pathological outlier; the cap keeps the payload bounded either way.
+ */
+export const MAX_BLOCKED_IDS = 5000;
+
+/**
  * Hard cap on the viewer's "follows-of-follows" id set (`getFollowsOfFollowsIds`,
  * which SEEDS Mention's friends-of-friends feed). Bounds BOTH the viewer's own
  * following set scanned for exclusion AND the number of ids returned, so the

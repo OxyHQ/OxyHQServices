@@ -16,7 +16,7 @@
  * API exactly as it already forwards the well-known and ActivityPub prefixes.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { User } from '../models/User';
 import { isValidObjectId } from '../utils/validation';
 import { buildDidDocument, buildOxyDidDocument } from '../services/did.service';

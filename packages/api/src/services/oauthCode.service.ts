@@ -18,8 +18,8 @@
  */
 
 import * as crypto from 'crypto';
-import { Types } from 'mongoose';
-import AuthCode, { IAuthCode } from '../models/AuthCode';
+import type { Types } from 'mongoose';
+import AuthCode, { type IAuthCode } from '../models/AuthCode';
 
 export const AUTH_CODE_TTL_MS = 60 * 1000;
 export const AUTH_CODE_BYTES = 32;

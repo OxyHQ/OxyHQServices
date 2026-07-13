@@ -90,14 +90,14 @@ describe("LoginForm — security alert repudiation", () => {
         // loginHint auto-advances to the password step.
         await flush()
         const password = container.querySelector<HTMLInputElement>("#password")
-        expect(password).not.toBeNull()
+        if (!password) throw new Error("expected the password input to be present")
 
         // Submit the password → server returns a flagged session.
-        password!.value = "hunter2-correct-horse"
-        const form = password!.closest("form")
-        expect(form).not.toBeNull()
+        password.value = "hunter2-correct-horse"
+        const form = password.closest("form")
+        if (!form) throw new Error("expected the password input to be within a form")
         act(() => {
-            form!.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }))
+            form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }))
         })
         await flush()
 

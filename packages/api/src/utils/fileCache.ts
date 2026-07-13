@@ -1,4 +1,4 @@
-import { IFile } from '../models/File';
+import type { IFile } from '../models/File';
 
 interface CachedFile {
   file: IFile;
@@ -67,14 +67,14 @@ class FileCache {
     }
   }
 
-  private evictOldest(count: number = 1): void {
+  private evictOldest(count = 1): void {
     if (count <= 0 || this.cache.size === 0) {
       return;
     }
 
     if (count === 1) {
       let oldestKey: string | null = null;
-      let oldestTimestamp = Infinity;
+      let oldestTimestamp = Number.POSITIVE_INFINITY;
 
       for (const [key, cached] of this.cache.entries()) {
         if (cached.timestamp < oldestTimestamp) {

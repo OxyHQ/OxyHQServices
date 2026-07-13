@@ -3,6 +3,7 @@
  * Returns clean, explicit user object with id (MongoDB ObjectId) and publicKey as separate fields.
  */
 
+import { getUserLanguages } from '@oxyhq/core';
 import { formatUserNameResponse, type NameParts } from './displayName';
 
 type StringableId = string | { toString(): string };
@@ -18,7 +19,7 @@ export type UserLike = {
   organizationCategory?: string;
   privacySettings?: unknown;
   verified?: boolean;
-  language?: string;
+  languages?: string[];
   bio?: string;
   description?: string;
   locations?: unknown;
@@ -120,7 +121,13 @@ export function formatUserResponse(user: unknown) {
     name,
     privacySettings: user.privacySettings,
     verified: booleanValue(user.verified),
-    language: stringValue(user.language),
+    // Ordered account locales, PRIMARY first. `languages` is the ONLY language
+    // field; `getUserLanguages` normalizes and drops unsupported entries.
+    languages: getUserLanguages({
+      languages: Array.isArray(user.languages)
+        ? user.languages.filter((code): code is string => typeof code === 'string')
+        : undefined,
+    }),
     bio: stringValue(user.bio),
     description: stringValue(user.description),
     locations: Array.isArray(user.locations) ? user.locations : undefined,

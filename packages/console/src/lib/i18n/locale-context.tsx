@@ -1,34 +1,36 @@
 import {
+  
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
-  useState,
-  type ReactNode,
+  useState
 } from 'react';
-import { normalizeLanguageCode } from '@oxyhq/core';
+import { getBaseLanguage, normalizeLocale } from '@oxyhq/core';
 import {
   DEFAULT_LOCALE,
-  SUPPORTED_LOCALES,
-  type Locale,
+  
+  SUPPORTED_LOCALES
 } from './types';
+import type {ReactNode} from 'react';
+import type {Locale} from './types';
 
 const STORAGE_KEY = 'oxy_console_locale';
 
 /** Coerce any candidate language tag to a supported `Locale`, or `null`. */
 function coerceLocale(value: string | null | undefined): Locale | null {
   if (!value) return null;
-  const normalized = normalizeLanguageCode(value);
-  if (SUPPORTED_LOCALES.includes(normalized as Locale)) {
-    return normalized as Locale;
+  const canonical = normalizeLocale(value);
+  if (canonical && SUPPORTED_LOCALES.includes(canonical as Locale)) {
+    return canonical as Locale;
   }
-  const base = value.split('-')[0];
+  // Fall back to a supported locale sharing the same base language
+  // (e.g. `en-GB` or bare `en` -> `en-US`, `es-419` -> `es-ES`).
+  const base = getBaseLanguage(value);
   if (base) {
-    const fromBase = normalizeLanguageCode(base);
-    if (SUPPORTED_LOCALES.includes(fromBase as Locale)) {
-      return fromBase as Locale;
-    }
+    const byBase = SUPPORTED_LOCALES.find((locale) => getBaseLanguage(locale) === base);
+    if (byBase) return byBase;
   }
   return null;
 }
@@ -36,7 +38,7 @@ function coerceLocale(value: string | null | undefined): Locale | null {
 /** Read browser navigator language and coerce to a supported locale. */
 function getBrowserLocale(): Locale | null {
   if (typeof navigator === 'undefined') return null;
-  const candidates: string[] = [];
+  const candidates: Array<string> = [];
   if (Array.isArray(navigator.languages)) {
     candidates.push(...navigator.languages);
   }

@@ -6,7 +6,7 @@ import { pipeline } from 'stream/promises';
 import type { Readable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-import {
+import type {
   S3Config,
   UploadOptions as S3UploadOptions,
   FileInfo,
@@ -71,7 +71,7 @@ export class S3Service {
     options: UploadOptions = {}
   ): Promise<FileInfo> {
     try {
-      let body: Buffer | NodeJS.ReadableStream;
+      let body: Buffer | Readable;
       let contentType = options.contentType;
 
       if (typeof filePath === 'string') {
@@ -87,7 +87,9 @@ export class S3Service {
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: finalKey,
-        Body: body as any, // Type assertion for compatibility
+        // `Buffer | Readable` are both members of the AWS SDK's node-runtime
+        // `StreamingBlobPayloadInputTypes`, so no cast is needed.
+        Body: body,
         ContentType: contentType,
         Metadata: metadata,
         ACL: acl,
@@ -224,7 +226,9 @@ export class S3Service {
       }
 
       const writeStream = createWriteStream(localPath);
-      await pipeline(response.Body.transformToWebStream() as any, writeStream);
+      // In the Node runtime the S3 GetObject `Body` is a `Readable`; pipe it
+      // straight to disk (narrowing the streaming-output union to `Readable`).
+      await pipeline(response.Body as Readable, writeStream);
     } catch (error) {
       throw new Error(`Failed to download file from S3: ${error}`);
     }
@@ -364,7 +368,7 @@ export class S3Service {
    */
   async getPresignedDownloadUrl(
     key: string,
-    expiresIn: number = 3600
+    expiresIn = 3600
   ): Promise<string> {
     try {
       const command = new GetObjectCommand({
@@ -381,7 +385,7 @@ export class S3Service {
   /**
    * List files in a directory
    */
-  async listFiles(prefix: string = '', maxKeys: number = 1000): Promise<FileInfo[]> {
+  async listFiles(prefix = '', maxKeys = 1000): Promise<FileInfo[]> {
     try {
       const command = new ListObjectsV2Command({
         Bucket: this.bucketName,
@@ -446,7 +450,7 @@ export class S3Service {
       
       return {
         key,
-        size: parseInt(response.ContentLength?.toString() || '0'),
+        size: Number.parseInt(response.ContentLength?.toString() || '0'),
         lastModified: response.LastModified!,
         contentType: response.ContentType,
         metadata: response.Metadata,

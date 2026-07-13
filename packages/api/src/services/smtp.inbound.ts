@@ -6,8 +6,8 @@
  * parses MIME with `mailparser`, and stores messages through the email service.
  */
 
-import { SMTPServer, SMTPServerSession, SMTPServerAddress, SMTPServerDataStream } from 'smtp-server';
-import { simpleParser, ParsedMail } from 'mailparser';
+import { SMTPServer, type SMTPServerSession, type SMTPServerAddress, type SMTPServerDataStream } from 'smtp-server';
+import { simpleParser, type ParsedMail } from 'mailparser';
 import { SMTP_INBOUND_CONFIG, EMAIL_DOMAIN, extractUsername, extractAliasTag } from '../config/email.config';
 import { emailService } from './email.service';
 import { spamService } from './spam.service';
@@ -201,7 +201,7 @@ export function startSmtpInbound(): SMTPServer {
   });
 
   smtpServer.on('error', (err: Error) => {
-    const code = (err as any).code;
+    const code = (err as NodeJS.ErrnoException).code;
     if (
       code === 'ERR_SSL_NO_SUITABLE_SIGNATURE_ALGORITHM' ||
       code === 'ECONNRESET' ||

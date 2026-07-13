@@ -15,7 +15,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 // The global mongoose mock (jest.setup.cjs) does not expose `Types`, which the
 // profiles route relies on (`new Types.ObjectId(...)`, `instanceof` checks).

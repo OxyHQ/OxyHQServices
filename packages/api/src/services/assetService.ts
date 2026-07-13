@@ -1,10 +1,10 @@
 import crypto from 'crypto';
-import { IncomingMessage } from 'http';
-import { Readable, Transform } from 'stream';
+import type { IncomingMessage } from 'http';
+import { type Readable, Transform } from 'stream';
 import mongoose from 'mongoose';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
-import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
-import { S3Service } from './s3Service';
+import { File, type IFile, type IFileLink, type IFileVariant, type FileVisibility } from '../models/File';
+import type { S3Service } from './s3Service';
 import {
   FEDERATION_CACHE_OWNER_ID,
   FEDERATION_MEDIA_CACHE_PURPOSE,
@@ -23,7 +23,7 @@ import {
 import { logger } from '../utils/logger';
 import { ConflictError } from '../utils/error';
 import path from 'path';
-import {
+import type {
   AssetInitResponse,
   AssetCompleteRequest,
   AssetLinkRequest,
@@ -31,7 +31,7 @@ import {
 } from '../types/asset.types';
 
 import { mediaPrivacyService } from './mediaPrivacyService';
-import { MediaAccessContext } from '../types/mediaPrivacy.types';
+import type { MediaAccessContext } from '../types/mediaPrivacy.types';
 import fileCache from '../utils/fileCache';
 import { BadRequestError } from '../utils/error';
 import { isDeclaredImageContentValid } from '../utils/imageContentSignature';
@@ -463,8 +463,8 @@ export class AssetService {
    */
   async listFilesByUser(
     userId: string,
-    limit: number = 50,
-    offset: number = 0
+    limit = 50,
+    offset = 0
   ): Promise<{ files: IFile[]; total: number }> {
     try {
       const query = { ownerUserId: userId, status: { $ne: 'deleted' } } as const;
@@ -1606,7 +1606,7 @@ export class AssetService {
   async getFileUrl(
     fileId: string,
     variant?: string,
-    _expiresIn: number = 3600,
+    _expiresIn = 3600,
     file?: IFile
   ): Promise<string | null> {
     const fileObj = file || await this.getFile(fileId);
@@ -1647,7 +1647,7 @@ export class AssetService {
   /**
    * Delete file permanently
    */
-  async deleteFile(fileId: string, force: boolean = false, requestingUserId?: string): Promise<void> {
+  async deleteFile(fileId: string, force = false, requestingUserId?: string): Promise<void> {
     try {
       const file = await File.findById(fileId);
       if (!file) {

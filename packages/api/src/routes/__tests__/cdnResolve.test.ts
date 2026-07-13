@@ -22,7 +22,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const PUBLIC_FILE_ID = '64c0000000000000000000b1';
 const PRIVATE_FILE_ID = '64c0000000000000000000b2';

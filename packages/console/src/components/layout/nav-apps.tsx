@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Package01Icon,
   MoreHorizontalSquare01Icon,
+  Package01Icon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons';
 import {

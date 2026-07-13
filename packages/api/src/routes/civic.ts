@@ -12,8 +12,8 @@
  * More civic routes (validations, personhood) arrive in Fase 2 Part B / Fase 3.
  */
 
-import { Router, Request, Response } from 'express';
-import { authMiddleware, serviceAuthMiddleware, AuthRequest, ServiceAuthRequest } from '../middleware/auth';
+import { Router, type Request, type Response } from 'express';
+import { authMiddleware, serviceAuthMiddleware, type AuthRequest, type ServiceAuthRequest } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';

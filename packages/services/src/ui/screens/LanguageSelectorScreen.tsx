@@ -1,110 +1,162 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeTheme } from '@oxyhq/core';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { SearchInput } from '@oxyhq/bloom/search-input';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import {
+    SUPPORTED_LANGUAGES,
+    getNativeLanguageName,
+    type SupportedLanguage,
+} from '@oxyhq/core';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
-import { SUPPORTED_LANGUAGES } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
+import { addLocale, removeLocale, setPrimaryLocale } from '../hooks/useLanguageManagement';
+import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
-// Size (in dp) of the circular flag chip rendered as each row's leading icon.
-const FLAG_CHIP_SIZE = 40;
-// Selected-row check indicator size (dp).
-const CHECK_ICON_SIZE = 24;
+// Size (in dp) of the circular chip rendered as each row's leading icon.
+const CHIP_SIZE = 40;
+// Trailing remove-affordance icon size (dp).
+const REMOVE_ICON_SIZE = 24;
+
+/** O(1) catalog lookup by canonical locale code. */
+const CATALOG_BY_CODE: ReadonlyMap<string, SupportedLanguage> = new Map(
+    SUPPORTED_LANGUAGES.map((entry) => [entry.code, entry]),
+);
 
 /**
- * LanguageSelectorScreen - Optimized for performance
+ * LanguageSelectorScreen — multi-select over the supported BCP-47 locales.
  *
- * Performance optimizations:
- * - useMemo for the filtered language list to prevent recreation on every render
- * - useCallback for handlers to prevent unnecessary re-renders
- * - Memoized component to prevent unnecessary re-renders
+ * The user picks one or more locales; the FIRST (primary) drives the app's UI
+ * language. When signed in the ordered selection is persisted to the account
+ * (`updateProfile({ languages })`, primary first) and every Oxy app follows it;
+ * when signed out a single local override is stored on-device.
  */
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
     onClose,
-    theme,
 }) => {
-    // Use useOxy() hook for OxyContext values. The language preference persists
-    // on the ACTIVE account's profile — the active session IS that account — so
-    // gate the server sync on the active account.
-    const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
+    const { user, isAuthenticated, currentLanguage, currentLanguages, setLanguage } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const [isLoading, setIsLoading] = useState(false);
+    const updateProfile = useUpdateProfile();
     const [query, setQuery] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Memoize the language select handler to prevent recreation on every render
-    const handleLanguageSelect = useCallback(async (languageId: string) => {
-        if (languageId === currentLanguage || isLoading) {
-            return; // Already selected or loading
-        }
+    // The current ordered selection: the account locales when signed in, else
+    // the single guest/device locale. Always non-empty (`currentLanguage`
+    // resolves to the device or fallback locale).
+    const selected = useMemo<string[]>(
+        () => (currentLanguages.length > 0 ? currentLanguages : [currentLanguage]),
+        [currentLanguages, currentLanguage],
+    );
 
-        setIsLoading(true);
+    const selectedSet = useMemo(() => new Set(selected), [selected]);
 
-        try {
-            let serverSyncFailed = false;
+    const selectedEntries = useMemo<SupportedLanguage[]>(
+        () =>
+            selected
+                .map((code) => CATALOG_BY_CODE.get(code))
+                .filter((entry): entry is SupportedLanguage => entry !== undefined),
+        [selected],
+    );
 
-            // If signed in, persist preference to backend user settings
-            if (isAuthenticated && user?.id) {
-                try {
-                    await oxyServices.updateProfile({ language: languageId });
-                } catch (e: unknown) {
-                    // Server sync failed, but we'll save locally anyway
-                    serverSyncFailed = true;
-                    if (__DEV__) {
-                        console.warn('Failed to sync language to server (will save locally only):', e instanceof Error ? e.message : e);
-                    }
+    // Available = supported locales not already selected, filtered by the query
+    // (matches English name + native name).
+    const availableEntries = useMemo<SupportedLanguage[]>(() => {
+        const normalizedQuery = query.trim().toLowerCase();
+        return SUPPORTED_LANGUAGES.filter((entry) => {
+            if (selectedSet.has(entry.code)) {
+                return false;
+            }
+            if (!normalizedQuery) {
+                return true;
+            }
+            return (
+                entry.name.toLowerCase().includes(normalizedQuery) ||
+                entry.nativeName.toLowerCase().includes(normalizedQuery)
+            );
+        });
+    }, [query, selectedSet]);
+
+    const isBusy = isSubmitting || updateProfile.isPending;
+
+    // Persist the next ordered selection. Signed-in accounts write the full
+    // ordered array; guests store only the primary locally.
+    const commitSelection = useCallback(
+        async (next: string[], announceCode: string): Promise<void> => {
+            if (isBusy || next.length === 0) {
+                return;
+            }
+            setIsSubmitting(true);
+            try {
+                if (isAuthenticated && user?.id) {
+                    await updateProfile.mutateAsync({ languages: next });
+                } else {
+                    await setLanguage(next[0]);
                 }
+                toast.success(t('language.changed', { lang: getNativeLanguageName(announceCode) }));
+            } catch (error) {
+                // `useUpdateProfile` already surfaces a toast on failure; only the
+                // local (guest) path needs its own error toast.
+                if (!(isAuthenticated && user?.id)) {
+                    toast.error(t('language.saveFailed'));
+                }
+                if (__DEV__) {
+                    console.error('Error saving language preference:', error);
+                }
+            } finally {
+                setIsSubmitting(false);
             }
+        },
+        [isAuthenticated, user?.id, updateProfile, setLanguage, t, isBusy],
+    );
 
-            // Always persist locally for immediate UX and for guests
-            await setLanguage(languageId);
+    // Adding a locale: signed-in appends (non-primary); a guest can only hold a
+    // single locale, so the tapped locale becomes their primary.
+    const handleAdd = useCallback(
+        (code: string) => {
+            const next = isAuthenticated && user?.id ? addLocale(selected, code) : [code];
+            void commitSelection(next, code);
+        },
+        [isAuthenticated, user?.id, selected, commitSelection],
+    );
 
-            const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
-
-            // Show success message (language is saved locally regardless of server sync)
-            toast.success(t('language.changed', { lang: selectedLang?.name || languageId }));
-
-            // Log server sync failure only in dev mode (user experience is still good - saved locally)
-            if (serverSyncFailed && __DEV__) {
-                console.warn('Language saved locally but server sync failed');
+    const handleSetPrimary = useCallback(
+        (code: string) => {
+            if (selected[0] === code) {
+                return;
             }
+            void commitSelection(setPrimaryLocale(selected, code), code);
+        },
+        [selected, commitSelection],
+    );
 
-            setIsLoading(false);
-            // Close the bottom sheet if possible; otherwise, go back
-            if (onClose) onClose(); else goBack?.();
-
-        } catch (error) {
-            // Only show error if local storage also failed
-            if (__DEV__) {
-                console.error('Error saving language preference:', error);
+    const handleRemove = useCallback(
+        (code: string) => {
+            if (selected.length <= 1) {
+                return;
             }
-            toast.error(t('language.saveFailed'));
-            setIsLoading(false);
-        }
-    }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);
+            const next = removeLocale(selected, code);
+            const announceCode = next[0] ?? code;
+            void commitSelection(next, announceCode);
+        },
+        [selected, commitSelection],
+    );
 
-    // Filter the supported languages by the search query (name + native name).
-    const filteredLanguages = useMemo(() => {
-        const normalized = query.trim().toLowerCase();
-        if (!normalized) {
-            return SUPPORTED_LANGUAGES;
-        }
-        return SUPPORTED_LANGUAGES.filter((language) =>
-            language.name.toLowerCase().includes(normalized) ||
-            language.nativeName.toLowerCase().includes(normalized)
-        );
-    }, [query]);
+    const renderChip = (entry: SupportedLanguage) => (
+        <View className="bg-fill-secondary items-center justify-center" style={styles.chip}>
+            <Text className="text-text-secondary" style={styles.chipLabel}>
+                {entry.language.toUpperCase()}
+            </Text>
+        </View>
+    );
 
     return (
         <View className="flex-1 bg-bg">
@@ -120,10 +172,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 className="flex-1"
                 contentContainerClassName="px-screen-margin pt-space-24 pb-space-24"
                 showsVerticalScrollIndicator={false}
-                removeClippedSubviews={true}
                 keyboardShouldPersistTaps="handled"
             >
-                {/* Big Title */}
                 <View className="mb-space-16">
                     <H1 className="text-text" style={styles.bigTitle}>
                         {t('language.title')}
@@ -135,7 +185,6 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                     ) : null}
                 </View>
 
-                {/* Search / filter */}
                 <View className="mb-space-16">
                     <SearchInput
                         value={query}
@@ -145,37 +194,74 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                     />
                 </View>
 
-                {/* Available languages - Main section */}
-                <SettingsListGroup>
-                    {filteredLanguages.map((language) => {
-                        const isSelected = currentLanguage === language.id;
+                {/* Selected locales — ordered, primary first. */}
+                <SettingsListGroup title={t('language.selected')}>
+                    {selectedEntries.map((entry, index) => {
+                        const isPrimary = index === 0;
+                        const canRemove = selected.length > 1;
                         return (
                             <SettingsListItem
-                                key={language.id}
-                                icon={
-                                    <View
-                                        className="bg-fill-secondary items-center justify-center"
-                                        style={styles.languageFlag}
-                                    >
-                                        <Text style={styles.flagEmoji}>{language.flag}</Text>
-                                    </View>
+                                key={entry.code}
+                                icon={renderChip(entry)}
+                                title={entry.nativeName}
+                                description={entry.name}
+                                onPress={isPrimary ? undefined : () => handleSetPrimary(entry.code)}
+                                disabled={isBusy}
+                                accessibilityLabel={
+                                    isPrimary
+                                        ? `${entry.name} — ${t('language.primary')}`
+                                        : entry.name
                                 }
-                                title={language.name}
-                                description={language.nativeName}
-                                onPress={() => handleLanguageSelect(language.id)}
                                 rightElement={
-                                    isSelected ? (
-                                        <Ionicons
-                                            name="checkmark-circle"
-                                            size={CHECK_ICON_SIZE}
-                                            color={bloomTheme.colors.primary}
-                                        />
+                                    isPrimary ? (
+                                        <View className="bg-fill-secondary rounded-full px-space-8 py-space-2">
+                                            <Text className="text-primary" style={styles.primaryBadge}>
+                                                {t('language.primary')}
+                                            </Text>
+                                        </View>
+                                    ) : canRemove ? (
+                                        <TouchableOpacity
+                                            onPress={() => handleRemove(entry.code)}
+                                            disabled={isBusy}
+                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`${t('language.remove')} ${entry.name}`}
+                                        >
+                                            <Ionicons
+                                                name="close-circle"
+                                                size={REMOVE_ICON_SIZE}
+                                                color={bloomTheme.colors.textSecondary}
+                                            />
+                                        </TouchableOpacity>
                                     ) : undefined
                                 }
                                 showChevron={false}
                             />
                         );
                     })}
+                </SettingsListGroup>
+
+                {/* Available locales. */}
+                <SettingsListGroup title={t('language.available')}>
+                    {availableEntries.map((entry) => (
+                        <SettingsListItem
+                            key={entry.code}
+                            icon={renderChip(entry)}
+                            title={entry.nativeName}
+                            description={entry.name}
+                            onPress={() => handleAdd(entry.code)}
+                            disabled={isBusy}
+                            accessibilityLabel={entry.name}
+                            rightElement={
+                                <Ionicons
+                                    name="add-circle-outline"
+                                    size={REMOVE_ICON_SIZE}
+                                    color={bloomTheme.colors.textSecondary}
+                                />
+                            }
+                            showChevron={false}
+                        />
+                    ))}
                 </SettingsListGroup>
             </ScrollView>
         </View>
@@ -193,13 +279,18 @@ const styles = StyleSheet.create({
         fontSize: 16,
         lineHeight: 22,
     },
-    languageFlag: {
-        width: FLAG_CHIP_SIZE,
-        height: FLAG_CHIP_SIZE,
-        borderRadius: FLAG_CHIP_SIZE / 2,
+    chip: {
+        width: CHIP_SIZE,
+        height: CHIP_SIZE,
+        borderRadius: CHIP_SIZE / 2,
     },
-    flagEmoji: {
-        fontSize: 20,
+    chipLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    primaryBadge: {
+        fontSize: 12,
+        fontWeight: '600',
     },
 });
 

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 import { APPLICATION_SCOPES, type ApplicationScope } from '../utils/applicationScopes';
 
 export const APPLICATION_TYPES = [

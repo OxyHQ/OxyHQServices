@@ -43,7 +43,7 @@ export function decodeHtmlEntities(text: string): string {
   if (!text) return text;
   return text
     .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -106,11 +106,16 @@ export function sanitizeObject<T extends Record<string, unknown>>(
   skipFields: string[] = []
 ): T {
   const result = { ...obj };
+  // `result` is the generic `T`, whose per-key value types TypeScript won't let
+  // us reassign through. Mutate it via a `Record<string, unknown>` view of the
+  // same object (an upcast of the `T extends Record<string, unknown>` bound),
+  // then return the original reference so the caller keeps the `T` shape.
+  const writable = result as Record<string, unknown>;
   for (const key of Object.keys(result)) {
     if (skipFields.includes(key)) continue;
-    const value = result[key];
+    const value = writable[key];
     if (typeof value === 'string') {
-      (result as any)[key] = sanitizePlainText(value);
+      writable[key] = sanitizePlainText(value);
     }
   }
   return result;
@@ -138,10 +143,10 @@ export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<
     if (skipFields.includes(key)) continue;
     const value = result[key];
     if (typeof value === 'string') {
-      (result as any)[key] = sanitizePlainText(value);
+      result[key] = sanitizePlainText(value);
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       // Handle nested objects like `notificationPreferences` / `userPreferences`
-      (result as any)[key] = sanitizeObject(value as Record<string, unknown>);
+      result[key] = sanitizeObject(value as Record<string, unknown>);
     }
   }
 

@@ -215,7 +215,7 @@ export function createEmailApi(http: HttpService) {
       html?: string;
       inReplyTo?: string;
       references?: string[];
-      attachments?: Array<{ fileId: string; contentId?: string; isInline?: boolean }>;
+      attachments?: { fileId: string; contentId?: string; isInline?: boolean }[];
       scheduledAt?: string;
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
       const res = await http.post('/email/messages', message);
@@ -351,7 +351,7 @@ export function createEmailApi(http: HttpService) {
       options: { mailboxId?: string; limit?: number; offset?: number } = {},
     ): Promise<{
       primary: Message[];
-      bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
+      bundles: { bundle: Bundle; messages: Message[]; unreadCount: number }[];
       pagination: Pagination;
     }> {
       const params: Record<string, string> = {};
@@ -362,7 +362,7 @@ export function createEmailApi(http: HttpService) {
       const res = await http.get('/email/messages/bundled', { params }) as {
         data: {
           primary: Message[];
-          bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
+          bundles: { bundle: Bundle; messages: Message[]; unreadCount: number }[];
         };
         pagination: Pagination;
       };

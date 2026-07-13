@@ -20,7 +20,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
   linkPreviewBatchRequestSchema,
   linkPreviewBatchResponseSchema,

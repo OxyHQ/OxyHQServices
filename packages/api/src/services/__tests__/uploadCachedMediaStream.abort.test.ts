@@ -14,7 +14,7 @@
 
 import { Readable } from 'stream';
 import { AssetService } from '../assetService';
-import { S3Service } from '../s3Service';
+import type { S3Service } from '../s3Service';
 import type { UploadOptions } from '../s3Service';
 import type { FileInfo } from '../../types/s3.types';
 

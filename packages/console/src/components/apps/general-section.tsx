@@ -3,6 +3,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Add01Icon, Delete02Icon, Image01Icon } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import type {Application, CallerAccess} from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,17 +21,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { toast } from 'sonner';
 import { getErrorMessage } from '@/lib/api-error';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 import {
-  useUpdateApplication,
+  
+  
   useDeleteApplication,
-  type Application,
-  type CallerAccess,
+  useUpdateApplication
 } from '@/hooks/use-applications';
 
-function arraysEqual(a: string[], b: string[]): boolean {
+function arraysEqual(a: Array<string>, b: Array<string>): boolean {
   if (a.length !== b.length) {
     return false;
   }
@@ -55,7 +56,7 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
   const [privacyPolicyUrl, setPrivacyPolicyUrl] = useState(application.privacyPolicyUrl ?? '');
   const [termsUrl, setTermsUrl] = useState(application.termsUrl ?? '');
   const [icon, setIcon] = useState(application.icon ?? '');
-  const [redirectUris, setRedirectUris] = useState<string[]>(application.redirectUris);
+  const [redirectUris, setRedirectUris] = useState<Array<string>>(application.redirectUris);
   const [newRedirectUri, setNewRedirectUri] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 

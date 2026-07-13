@@ -17,7 +17,6 @@ export interface UseSessionManagementOptions {
   storageKeyPrefix?: string;
   loginSuccess: (user: User) => void;
   logoutStore: () => void;
-  applyLanguagePreference: (user: User) => Promise<void>;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
   setAuthError?: (message: string | null) => void;
@@ -54,7 +53,6 @@ export const useSessionManagement = ({
   storageKeyPrefix,
   loginSuccess,
   logoutStore,
-  applyLanguagePreference,
   onAuthStateChange,
   onError,
   setAuthError,
@@ -207,10 +205,9 @@ export const useSessionManagement = ({
       setActiveSessionId(sessionId);
       loginSuccess(user);
       await saveActiveSessionId(sessionId);
-      await applyLanguagePreference(user);
       onAuthStateChange?.(user);
     },
-    [applyLanguagePreference, loginSuccess, onAuthStateChange, saveActiveSessionId, setTokenReady],
+    [loginSuccess, onAuthStateChange, saveActiveSessionId, setTokenReady],
   );
 
   const removalTimerIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());

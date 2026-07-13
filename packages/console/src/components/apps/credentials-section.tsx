@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
+  Alert02Icon,
   Copy01Icon,
   Delete02Icon,
-  RefreshIcon,
   Key01Icon,
-  Alert02Icon,
+  RefreshIcon,
 } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import type {Application, ApplicationCredential, ApplicationCredentialType, ApplicationEnvironment, CallerAccess} from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -37,17 +39,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { toast } from 'sonner';
 import {
+  
+  
+  
+  
+  
   useApplicationCredentials,
   useCreateCredential,
-  useRotateCredential,
   useRevokeCredential,
-  type Application,
-  type ApplicationCredential,
-  type ApplicationCredentialType,
-  type ApplicationEnvironment,
-  type CallerAccess,
+  useRotateCredential
 } from '@/hooks/use-applications';
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -57,13 +58,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-const CREDENTIAL_TYPES: { value: ApplicationCredentialType; label: string }[] = [
+const CREDENTIAL_TYPES: Array<{ value: ApplicationCredentialType; label: string }> = [
   { value: 'public', label: 'Public' },
   { value: 'confidential', label: 'Confidential' },
   { value: 'service', label: 'Service' },
 ];
 
-const ENVIRONMENTS: { value: ApplicationEnvironment; label: string }[] = [
+const ENVIRONMENTS: Array<{ value: ApplicationEnvironment; label: string }> = [
   { value: 'development', label: 'Development' },
   { value: 'staging', label: 'Staging' },
   { value: 'production', label: 'Production' },

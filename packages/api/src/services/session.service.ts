@@ -1,5 +1,5 @@
-import Session, { ISession } from '../models/Session';
-import { User, IUser } from '../models/User';
+import Session, { type ISession } from '../models/Session';
+import { User, type IUser } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionCache from '../utils/sessionCache';
 import userCache from '../utils/userCache';
@@ -14,10 +14,10 @@ import {
 } from '../utils/deviceUtils';
 import { generateSessionTokens, validateAccessToken, validateRefreshToken } from '../utils/sessionUtils';
 import deviceSessionService from './deviceSession.service';
-import { Request } from 'express';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import {
+import type {
   SessionValidationResult,
   SessionCreateOptions,
   SessionRefreshResult,
@@ -171,7 +171,7 @@ class SessionService {
    * @param useCache - Whether to use cache (default: true)
    * @returns Session object or null if not found or expired
    */
-  async getSession(sessionId: string, useCache: boolean = true): Promise<ISession | null> {
+  async getSession(sessionId: string, useCache = true): Promise<ISession | null> {
     try {
       // Try cache first
       if (useCache) {
@@ -641,7 +641,7 @@ class SessionService {
       const sessionId = payload.sessionId;
 
       // First, try matching the current refresh token (fast path)
-      let session = await Session.findOne({
+      const session = await Session.findOne({
         sessionId,
         refreshToken,
         isActive: true,
@@ -855,7 +855,7 @@ class SessionService {
    */
   async validateSessionById(
     sessionId: string, 
-    populateUser: boolean = true
+    populateUser = true
   ): Promise<{ session: ISession; user?: any } | null> {
     try {
       if (populateUser) {

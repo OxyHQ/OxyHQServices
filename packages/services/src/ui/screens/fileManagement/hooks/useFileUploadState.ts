@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { toast } from '@oxyhq/bloom';
 import type { AssetUploadInput, FileMetadata } from '@oxyhq/core';
 import { useFileStore } from '../../../stores/fileStore';
-import { useUploadFile } from '../../../hooks/mutations/useAccountMutations';
+import type { useUploadFile } from '../../../hooks/mutations/useAccountMutations';
 import { convertDocumentPickerAssetToFile, formatFileSize } from '../../../utils/fileManagement';
 import {
     type PendingUploadFile,

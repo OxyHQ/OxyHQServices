@@ -21,7 +21,7 @@
 import express from 'express';
 import http from 'http';
 import crypto from 'crypto';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const mockServiceAuthMiddleware = jest.fn();
 const mockGetUserPublicKey = jest.fn();

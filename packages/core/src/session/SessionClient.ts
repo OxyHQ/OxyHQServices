@@ -374,7 +374,7 @@ export class SessionClient {
       transports: ['websocket'],
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: Number.POSITIVE_INFINITY,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10000,
       auth: (cb: (data: Record<string, string>) => void) => {

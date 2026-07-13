@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/services';
 
 export interface CreditPackage {
@@ -96,8 +96,8 @@ export function useCreditPackages() {
 
   return useQuery({
     queryKey: ['credit-packages'],
-    queryFn: async (): Promise<CreditPackage[]> => {
-      const result = await oxyServices.makeRequest<{ packages: CreditPackage[] }>(
+    queryFn: async (): Promise<Array<CreditPackage>> => {
+      const result = await oxyServices.makeRequest<{ packages: Array<CreditPackage> }>(
         'GET',
         '/billing/packages'
       );
@@ -118,8 +118,8 @@ export function useSubscriptionPlans() {
 
   return useQuery({
     queryKey: ['subscription-plans'],
-    queryFn: async (): Promise<SubscriptionPlan[]> => {
-      const result = await oxyServices.makeRequest<{ plans: SubscriptionPlan[] }>(
+    queryFn: async (): Promise<Array<SubscriptionPlan>> => {
+      const result = await oxyServices.makeRequest<{ plans: Array<SubscriptionPlan> }>(
         'GET',
         '/billing/plans'
       );
@@ -163,7 +163,7 @@ export function useTransactions(limit: number = 20, offset: number = 0) {
   return useQuery({
     queryKey: ['transactions', limit, offset],
     queryFn: () =>
-      oxyServices.makeRequest<{ transactions: Transaction[]; total: number }>(
+      oxyServices.makeRequest<{ transactions: Array<Transaction>; total: number }>(
         'GET',
         '/billing/transactions',
         { limit, offset }

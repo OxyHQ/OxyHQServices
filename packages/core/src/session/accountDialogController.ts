@@ -37,7 +37,7 @@ import {
   normalizeOAuthRedirectUri,
   persistOAuthHandshake,
 } from '../utils/oauthPkce';
-import { SessionClient } from './SessionClient';
+import type { SessionClient } from './SessionClient';
 import {
   projectSwitchableAccounts,
   switchableAccountIds,

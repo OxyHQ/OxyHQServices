@@ -44,7 +44,7 @@ class TwoFactorService {
    * Generate backup codes for account recovery
    * Returns unhashed codes to display to user, and hashed codes to store
    */
-  async generateBackupCodes(count: number = 8): Promise<{
+  async generateBackupCodes(count = 8): Promise<{
     codes: string[];
     hashedCodes: string[];
   }> {

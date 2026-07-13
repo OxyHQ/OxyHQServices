@@ -36,7 +36,6 @@ export interface UseAuthOperationsOptions {
   sessionClient: SessionClient;
   /** Reprojects `sessionClient.getState()` onto sessions/activeSessionId/user (Task 1's callback). Awaited after a partial `signOut` so the exposed state reflects the server truth before the call resolves. */
   syncFromClient: () => Promise<void>;
-  applyLanguagePreference: (user: User) => Promise<void>;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
   loginSuccess: (user: User) => void;
@@ -91,7 +90,6 @@ export const useAuthOperations = ({
   switchSession,
   sessionClient,
   syncFromClient,
-  applyLanguagePreference,
   onAuthStateChange,
   onError,
   loginSuccess,
@@ -219,14 +217,12 @@ export const useAuthOperations = ({
       await saveActiveSessionId(sessionResponse.sessionId);
       updateSessions(allDeviceSessions, { merge: true });
 
-      await applyLanguagePreference(fullUser);
       loginSuccess(fullUser);
       onAuthStateChange?.(fullUser);
-      
+
       return fullUser;
     },
     [
-      applyLanguagePreference,
       logger,
       loginSuccess,
       onAuthStateChange,

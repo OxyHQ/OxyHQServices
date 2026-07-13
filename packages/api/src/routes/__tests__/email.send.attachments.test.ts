@@ -23,7 +23,7 @@
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 
 const TEST_USER_ID = '64b0000000000000000000aa';
 

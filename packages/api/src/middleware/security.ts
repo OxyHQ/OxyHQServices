@@ -1,11 +1,11 @@
 import rateLimit from "express-rate-limit";
 import slowDown from "express-slow-down";
-import { Request, Response, NextFunction } from "express";
+import { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { RedisStore } from "rate-limit-redis";
 import type { RedisReply } from "rate-limit-redis";
 import { getRedisClient } from "../config/redis";
-import { AuthRequest } from "./auth";
+import type { AuthRequest } from "./auth";
 
 const isProd = process.env.NODE_ENV !== 'development';
 

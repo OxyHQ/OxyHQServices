@@ -183,7 +183,7 @@ function ipv6ToGroups(ip: string): number[] | null {
     const groups: number[] = [];
     for (const part of segment.split(':')) {
       if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return null;
-      groups.push(parseInt(part, 16));
+      groups.push(Number.parseInt(part, 16));
     }
     return groups;
   };
@@ -234,8 +234,8 @@ function extractEmbeddedIpv4(ip: string): string | null {
   // Hex form "::ffff:0102:0304" → 1.2.3.4
   const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
   if (hexMapped) {
-    const hi = parseInt(hexMapped[1], 16);
-    const lo = parseInt(hexMapped[2], 16);
+    const hi = Number.parseInt(hexMapped[1], 16);
+    const lo = Number.parseInt(hexMapped[2], 16);
     return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
   }
   return null;

@@ -6,10 +6,10 @@
  * This allows routes to serve public content while still identifying authenticated users.
  */
 
-import { Response, NextFunction } from 'express';
+import type { Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { logger } from '../utils/logger';
-import { authenticateRequestNonBlocking, AuthenticatedRequest, extractTokenFromRequest, decodeToken, validateSessionToken } from './authUtils';
+import { authenticateRequestNonBlocking, type AuthenticatedRequest, extractTokenFromRequest, decodeToken, validateSessionToken } from './authUtils';
 import { verifyServiceToken, type ServiceTokenPayload } from './auth';
 
 /**

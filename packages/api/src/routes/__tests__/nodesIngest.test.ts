@@ -37,7 +37,7 @@ jest.mock('../../utils/logger', () => ({
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
 import nodeRoutes from '../nodes';
 import { errorHandler } from '../../middleware/errorHandler';
 

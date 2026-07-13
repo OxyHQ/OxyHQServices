@@ -33,7 +33,7 @@ export const getStorageUsage = async (req: AuthRequest, res: Response) => {
     let subscriptionPlan: 'basic' | 'pro' | 'business' | undefined;
     try {
       const subscription = await Subscription.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
-      subscriptionPlan = (subscription?.plan as any) || 'basic';
+      subscriptionPlan = subscription?.plan || 'basic';
     } catch {
       subscriptionPlan = 'basic';
     }

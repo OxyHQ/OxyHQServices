@@ -9,11 +9,11 @@
 
 import mongoose, { type SortOrder } from 'mongoose';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
-import { Mailbox, IMailbox } from '../models/Mailbox';
-import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
+import { Mailbox, type IMailbox } from '../models/Mailbox';
+import { Message, type IMessage, type IEmailAddress, type IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
 import { Bundle } from '../models/Bundle';
-import User, { IUser } from '../models/User';
+import User, { type IUser } from '../models/User';
 import { getAvatarPathsBatch } from './senderAvatar.service';
 import {
   DEFAULT_MAILBOXES,
@@ -22,7 +22,7 @@ import {
   resolveEmailAddress,
   extractUsername,
   extractAliasTag,
-  SubscriptionTier,
+  type SubscriptionTier,
 } from '../config/email.config';
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
@@ -760,7 +760,7 @@ class EmailService {
     return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
   }
 
-  async deleteMessage(userId: string, messageId: string, permanent: boolean = false): Promise<void> {
+  async deleteMessage(userId: string, messageId: string, permanent = false): Promise<void> {
     const message = await Message.findOne({ _id: messageId, userId });
     if (!message) throw new NotFoundError('Message not found');
 
@@ -3111,7 +3111,7 @@ class EmailService {
   async searchContacts(
     userId: string,
     query: string,
-    limit: number = 10,
+    limit = 10,
   ): Promise<Array<{ name: string; address: string }>> {
     if (!query || query.length < 2) return [];
 

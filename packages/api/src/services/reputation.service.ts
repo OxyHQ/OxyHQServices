@@ -11,21 +11,21 @@
  *  - Every constant lives in `reputation.constants.ts`.
  */
 
-import mongoose, { ClientSession } from 'mongoose';
+import mongoose, { type ClientSession } from 'mongoose';
 
 import {
   ReputationTransaction,
-  IReputationTransaction,
+  type IReputationTransaction,
 } from '../models/ReputationTransaction';
 import {
   ReputationBalance,
-  IReputationBalance,
-  ReputationBreakdown,
+  type IReputationBalance,
+  type ReputationBreakdown,
 } from '../models/ReputationBalance';
-import { ReputationRule, IReputationRule } from '../models/ReputationRule';
+import { ReputationRule, type IReputationRule } from '../models/ReputationRule';
 import {
   ReputationDispute,
-  IReputationDispute,
+  type IReputationDispute,
 } from '../models/ReputationDispute';
 import { User } from '../models/User';
 import {
