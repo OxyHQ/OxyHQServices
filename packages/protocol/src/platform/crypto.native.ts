@@ -38,6 +38,7 @@
 import * as ExpoCrypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { ExpoCryptoLike, ExpoSecureStoreLike, SharedIdentityBridge } from './expoTypes';
 
 // Re-export the interfaces so consumers can import them from the same
@@ -115,40 +116,42 @@ export function getRandomBytesRN(byteCount: number): Uint8Array {
 // ---------------------------------------------------------------------------
 // Shared identity bridge — `@oxyhq/expo-oxy-identity` (native-only, OPTIONAL).
 //
-// Unlike the RN modules above, `@oxyhq/expo-oxy-identity` is loaded through a
-// runtime-computed dynamic import (the variable-indirection trick, same pattern
-// `@oxyhq/services`' authStore uses for expo-secure-store) so Metro's static
-// analyzer never traces it into a bundle that lacks it, and its absence is never
-// fatal. It is an in-repo Expo module that is autolinked only into the identity
-// apps (Commons + the reader RPs); other consumers resolve `null` here and
-// `@oxyhq/core`'s `KeyManager` falls back to its package-private store.
+// `@oxyhq/expo-oxy-identity` is the in-repo Expo module autolinked into the
+// identity apps (Commons + the reader RPs). We resolve its NATIVE module
+// directly via expo-modules-core's `requireOptionalNativeModule('OxyIdentity')`
+// — a static import Metro always resolves — instead of dynamically importing the
+// module's JS wrapper. A runtime-computed `import(moduleName)` compiled to a
+// `require(variable)` in the CJS build, which Metro cannot resolve in a consuming
+// repo (the bridge silently resolved `null` there — the cross-app SSO bug). Since
+// the native module is what actually holds the shared identity, going through the
+// native registry is both correct and Metro-safe. `requireOptionalNativeModule`
+// returns `null` (never throws) when the module is not autolinked (web, or apps
+// that don't ship it), so `@oxyhq/core`'s `KeyManager` cleanly falls back to its
+// package-private store.
 // ---------------------------------------------------------------------------
-
-const SHARED_IDENTITY_MODULE = '@oxyhq/expo-oxy-identity';
 
 let sharedIdentityBridgePromise: Promise<SharedIdentityBridge | null> | null = null;
 
 export function loadSharedIdentityBridge(): Promise<SharedIdentityBridge | null> {
   if (!sharedIdentityBridgePromise) {
-    const moduleName = SHARED_IDENTITY_MODULE;
-    sharedIdentityBridgePromise = import(moduleName)
-      .then((mod: Partial<SharedIdentityBridge>) => {
-        if (
-          typeof mod.getShared === 'function' &&
-          typeof mod.putShared === 'function' &&
-          typeof mod.hasShared === 'function' &&
-          typeof mod.clearShared === 'function'
-        ) {
-          return {
-            getShared: mod.getShared.bind(mod),
-            putShared: mod.putShared.bind(mod),
-            hasShared: mod.hasShared.bind(mod),
-            clearShared: mod.clearShared.bind(mod),
-          } satisfies SharedIdentityBridge;
-        }
-        return null;
-      })
-      .catch(() => null);
+    sharedIdentityBridgePromise = Promise.resolve().then(() => {
+      const native = requireOptionalNativeModule<Partial<SharedIdentityBridge>>('OxyIdentity');
+      if (
+        native &&
+        typeof native.getShared === 'function' &&
+        typeof native.putShared === 'function' &&
+        typeof native.hasShared === 'function' &&
+        typeof native.clearShared === 'function'
+      ) {
+        return {
+          getShared: native.getShared.bind(native),
+          putShared: native.putShared.bind(native),
+          hasShared: native.hasShared.bind(native),
+          clearShared: native.clearShared.bind(native),
+        } satisfies SharedIdentityBridge;
+      }
+      return null;
+    });
   }
   return sharedIdentityBridgePromise;
 }
