@@ -78,7 +78,6 @@ export type VouchRejectionReason =
   | 'excluded_self'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
-  | 'excluded_shared_ip'
   | RejectionReason;
 
 export type VouchResult =
@@ -92,15 +91,13 @@ function isDuplicateKeyError(error: unknown): boolean {
 
 /** Map a sock-puppet exclusion reason to the matching vouch rejection reason. */
 function exclusionReason(
-  reason: 'self' | 'graph_neighbor' | 'shared_device' | 'shared_ip',
+  reason: 'self' | 'graph_neighbor' | 'shared_device',
 ): VouchRejectionReason {
   switch (reason) {
     case 'self':
       return 'excluded_self';
     case 'shared_device':
       return 'excluded_shared_device';
-    case 'shared_ip':
-      return 'excluded_shared_ip';
     default:
       return 'excluded_graph_neighbor';
   }

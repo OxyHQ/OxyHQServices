@@ -7,7 +7,7 @@
  *  - RANDOM selection — weighted reservoir sampling keyed by a per-request RNG
  *    seed (stored for audit), so a subject cannot predict or pack their jury.
  *  - GRAPH EXCLUSION — the shared `isSockPuppetRelation` (2 hops + shared
- *    device/IP) drops the subject's neighbours from the pool.
+ *    device) drops the subject's neighbours from the pool.
  *  - AFFINITY THROTTLE — a candidate that has co-voted heavily with an
  *    already-selected juror is skipped (breaks up voting rings).
  *  - SLASHING — if the resulting award is later reversed (dispute/fraud), the
@@ -93,7 +93,7 @@ export interface ValidatorSelection {
  * Select the jury for `subjectUserId`. Eligible pool = balances with a
  * jury-eligible trust tier, minus the subject and anyone the shared exclusion
  * test flags (graph neighbour within {@link VALIDATION_EXCLUSION_HOPS} or shared
- * device/IP). The remaining candidates are ranked by a seeded weighted-reservoir
+ * device). The remaining candidates are ranked by a seeded weighted-reservoir
  * key; the top `VALIDATOR_COUNT` are taken, skipping any candidate with high
  * co-vote affinity to an already-selected juror.
  */

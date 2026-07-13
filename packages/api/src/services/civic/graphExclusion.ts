@@ -12,9 +12,12 @@
  *     neighbour; 2 = shares a common neighbour). Two-hop is computed as the
  *     intersection of the two users' direct-neighbour sets (bounded, no BFS
  *     blow-up).
- *  2. SHARED DEVICE / IP — an overlap in the `deviceId` / IP of the two users'
- *     active sessions (a classic multi-account signal). `deviceInfo.fingerprint`
- *     is deliberately NOT a device signal here — see `sessionFingerprints`.
+ *  2. SHARED DEVICE — an overlap in the `deviceId` of the two users' active
+ *     sessions (a classic multi-account signal). IP is deliberately NOT a
+ *     signal: the platform stores no user IP addresses at rest (privacy
+ *     invariant — see docs/superpowers/specs/2026-07-14-no-ip-storage-design.md).
+ *     `deviceInfo.fingerprint` is also NOT a device signal here — see
+ *     `sessionDeviceIds`.
  *
  * `Contact` is intentionally NOT used: it keys on email, not a resolved Oxy
  * user id, so it does not yield a user↔user edge without a privacy-sensitive
@@ -24,10 +27,9 @@
 import Follow, { FollowType } from '../../models/Follow';
 import Block from '../../models/Block';
 import Session from '../../models/Session';
-import { logger } from '../../utils/logger';
 
 /** Why two users were judged related (for audit + a machine-readable reason). */
-export type ExclusionReason = 'self' | 'graph_neighbor' | 'shared_device' | 'shared_ip';
+export type ExclusionReason = 'self' | 'graph_neighbor' | 'shared_device';
 
 export type ExclusionResult =
   | { excluded: false }
@@ -80,9 +82,13 @@ export async function areGraphRelated(a: string, b: string, hops = 1): Promise<b
   return false;
 }
 
-/** Collect a user's active-session device ids + IPs. Exported so the Fase 3
- * sybil heuristics can cluster accounts by shared identifiers without
- * re-implementing the (deviceId / IP) extraction.
+/** Collect a user's active-session device ids. Exported so the Fase 3 sybil
+ * heuristics can cluster accounts by shared deviceId without re-implementing the
+ * extraction.
+ *
+ * IPs are deliberately NOT collected: the platform stores no user IP addresses
+ * at rest (privacy invariant — see
+ * docs/superpowers/specs/2026-07-14-no-ip-storage-design.md).
  *
  * `deviceInfo.fingerprint` is deliberately EXCLUDED from the device set: it is
  * the sha256 of a client-supplied environment blob ({userAgent, platform,
@@ -97,60 +103,38 @@ export async function areGraphRelated(a: string, b: string, hops = 1): Promise<b
  * additional sign-in), while the server-derived fallback is salted +
  * user-scoped and can never collide across users — so a genuine
  * multi-account-on-one-device pair still overlaps on `deviceId`. */
-export async function sessionFingerprints(
-  userId: string,
-): Promise<{ devices: Set<string>; ips: Set<string> }> {
+export async function sessionDeviceIds(userId: string): Promise<Set<string>> {
   const sessions = await Session.find({ userId, isActive: true })
-    .select('deviceId deviceInfo.ipAddress')
+    .select('deviceId')
     .lean();
   const devices = new Set<string>();
-  const ips = new Set<string>();
   for (const session of sessions) {
-    const record = session as { deviceId?: string; deviceInfo?: { ipAddress?: string } };
+    const record = session as { deviceId?: string };
     if (record.deviceId) devices.add(record.deviceId);
-    if (record.deviceInfo?.ipAddress) ips.add(record.deviceInfo.ipAddress);
   }
-  return { devices, ips };
+  return devices;
 }
 
-/** True (with kind) when `a` and `b` share an active-session deviceId or IP. */
-export async function shareDeviceOrIp(
-  a: string,
-  b: string,
-): Promise<{ shared: false } | { shared: true; kind: 'device' | 'ip' }> {
-  const [fa, fb] = await Promise.all([sessionFingerprints(a), sessionFingerprints(b)]);
-  for (const device of fa.devices) {
-    if (fb.devices.has(device)) {
-      return { shared: true, kind: 'device' };
+/** True when `a` and `b` share an active-session deviceId. */
+export async function shareDevice(a: string, b: string): Promise<boolean> {
+  const [da, db] = await Promise.all([sessionDeviceIds(a), sessionDeviceIds(b)]);
+  for (const device of da) {
+    if (db.has(device)) {
+      return true;
     }
   }
-  for (const ip of fa.ips) {
-    if (fb.ips.has(ip)) {
-      return { shared: true, kind: 'ip' };
-    }
-  }
-  return { shared: false };
+  return false;
 }
 
 /**
  * The shared sock-puppet test: `a` and `b` are excluded from attesting/judging
  * each other when they are the same account, within `hops` graph hops, or share
- * an active device/IP. Returns the FIRST matching reason.
- *
- * `ignoreSharedIp` DOWNGRADES the IP overlap from a hard exclusion to a SOFT
- * (logged-only) signal for the caller. The real-life attestation flow sets it:
- * people who genuinely meet in person almost always share a network (home /
- * café / CGNAT), so a shared IP contradicts — rather than confirms — sock-puppet
- * suspicion there. `deviceId` (per-install), the social graph, and the jury
- * carry the anti-sybil weight for attestation. A shared `deviceId` still
- * hard-excludes regardless of this flag (it wins over IP inside
- * `shareDeviceOrIp`). Jury selection does NOT pass the flag and keeps IP as a
- * hard exclusion.
+ * an active-session deviceId. Returns the FIRST matching reason.
  */
 export async function isSockPuppetRelation(
   a: string,
   b: string,
-  opts: { hops?: number; ignoreSharedIp?: boolean } = {},
+  opts: { hops?: number } = {},
 ): Promise<ExclusionResult> {
   if (a === b) {
     return { excluded: true, reason: 'self' };
@@ -158,18 +142,8 @@ export async function isSockPuppetRelation(
   if (await areGraphRelated(a, b, opts.hops ?? 1)) {
     return { excluded: true, reason: 'graph_neighbor' };
   }
-  const device = await shareDeviceOrIp(a, b);
-  if (device.shared) {
-    if (device.kind === 'ip' && opts.ignoreSharedIp) {
-      // Soft signal: record the shared-IP overlap for telemetry but do NOT
-      // exclude — no shared deviceId was found (that check wins above), so the
-      // pair is treated as unrelated for this caller.
-      logger.info('civic.sockpuppet shared IP downgraded to soft signal', {
-        component: 'civic.graphExclusion',
-      });
-      return { excluded: false };
-    }
-    return { excluded: true, reason: device.kind === 'ip' ? 'shared_ip' : 'shared_device' };
+  if (await shareDevice(a, b)) {
+    return { excluded: true, reason: 'shared_device' };
   }
   return { excluded: false };
 }

@@ -2729,7 +2729,6 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     applicationId: app._id.toString(),
     appName: app.name,
     expiresIn: SERVICE_TOKEN_EXPIRY,
-    ip: req.ip,
   });
 
   sendSuccess(res, {

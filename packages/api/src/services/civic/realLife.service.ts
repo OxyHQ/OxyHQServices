@@ -58,7 +58,6 @@ export type RealLifeRejectionReason =
   | 'nonce_used'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
-  | 'excluded_shared_ip'
   | RejectionReason;
 
 export type RealLifeResult =
@@ -102,13 +101,11 @@ async function claimNonce(nonce: string, subjectUserId: string, exp: number): Pr
 
 /** Map a graph-exclusion reason to the matching rejection reason. */
 function exclusionReason(
-  reason: 'self' | 'graph_neighbor' | 'shared_device' | 'shared_ip',
+  reason: 'self' | 'graph_neighbor' | 'shared_device',
 ): RealLifeRejectionReason {
   switch (reason) {
     case 'shared_device':
       return 'excluded_shared_device';
-    case 'shared_ip':
-      return 'excluded_shared_ip';
     case 'self':
       return 'self_attestation';
     default:
@@ -168,12 +165,10 @@ export async function submitRealLifeAttestation(
   }
 
   // Anti-sybil: B must not be A's puppet (no graph edge, no shared deviceId).
-  // A shared IP is a SOFT signal here (`ignoreSharedIp`): meeting in person
-  // almost always implies a shared network, so it must not hard-block a
-  // real-life attestation. deviceId + social graph + the jury carry the weight.
+  // IP is not a signal (no user IPs at rest); deviceId + social graph + the
+  // jury carry the anti-sybil weight for real-life attestation.
   const relation = await isSockPuppetRelation(subjectUserId, attestorUserId, {
     hops: REAL_LIFE_EXCLUSION_HOPS,
-    ignoreSharedIp: true,
   });
   if (relation.excluded) {
     return { ok: false, reason: exclusionReason(relation.reason) };

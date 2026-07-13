@@ -216,7 +216,6 @@ function throwForRealLifeReason(reason: RealLifeRejectionReason): never {
     case 'self_attestation':
     case 'excluded_graph_neighbor':
     case 'excluded_shared_device':
-    case 'excluded_shared_ip':
       throw new ForbiddenError(`Attestation rejected: ${reason}`);
     default:
       throw new BadRequestError(`Attestation rejected: ${reason}`);
@@ -240,7 +239,6 @@ function throwForVouchReason(reason: VouchRejectionReason): never {
     case 'excluded_self':
     case 'excluded_graph_neighbor':
     case 'excluded_shared_device':
-    case 'excluded_shared_ip':
       throw new ForbiddenError(`Vouch rejected: ${reason}`);
     default:
       throw new BadRequestError(`Vouch rejected: ${reason}`);

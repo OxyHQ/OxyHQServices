@@ -96,7 +96,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('Native app CSRF bypass without auth', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -109,7 +108,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('CSRF token missing (native app)', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -124,7 +122,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('CSRF token invalid format (native app)', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -148,7 +145,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       path: req.path,
       hasCookie: !!cookieToken,
       hasHeader: !!headerToken,
-      ip: req.ip,
     });
 
     return res.status(403).json({
@@ -166,7 +162,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     logger.warn('CSRF token mismatch', {
       method: req.method,
       path: req.path,
-      ip: req.ip,
     });
 
     return res.status(403).json({

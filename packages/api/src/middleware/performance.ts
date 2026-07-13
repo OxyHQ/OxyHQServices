@@ -20,7 +20,6 @@ export const performanceMiddleware = (req: Request, res: Response, next: NextFun
       path: req.path,
       statusCode: res.statusCode,
       userAgent: req.get('user-agent'),
-      ip: req.ip,
     });
 
     // Log slow requests

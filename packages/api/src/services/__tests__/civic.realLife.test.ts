@@ -153,13 +153,14 @@ describe('submitRealLifeAttestation', () => {
     });
   });
 
-  it('runs the sock-puppet check with ignoreSharedIp so a shared IP does not hard-block', async () => {
-    // A shared IP is a soft signal for attestation: `isSockPuppetRelation`
-    // resolves `excluded:false` (IP downgraded) and the attestation proceeds.
+  it('runs the sock-puppet check with only the hop radius (IP is not a signal)', async () => {
+    // IP is never a signal (no user IPs at rest): the sock-puppet check is
+    // driven by deviceId + social graph, so it is called with only `hops` and
+    // must NOT carry an `ignoreSharedIp` flag. A not-excluded pair proceeds.
     const result = await submitRealLifeAttestation(envelope(), B);
 
     expect(result).toEqual({ ok: true, recordId: 'rec-1', subjectUserId: A, attestorUserId: B, points: 25 });
-    expect(mockIsSockPuppet).toHaveBeenCalledWith(A, B, expect.objectContaining({ ignoreSharedIp: true }));
+    expect(mockIsSockPuppet).toHaveBeenCalledWith(A, B, { hops: 1 });
   });
 
   it('is idempotent for a repeat of the same pair: returns the original award, no second +25', async () => {
