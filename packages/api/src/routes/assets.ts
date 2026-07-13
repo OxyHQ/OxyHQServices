@@ -5,6 +5,7 @@ import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '
 import { optionalAuthMiddleware, getMediaViewerUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ApiError, BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
@@ -552,7 +553,7 @@ const cacheUploadLimiter = rateLimit({
     if (serviceApp?.appId) {
       return `asset-cache:upload:${serviceApp.appId}`;
     }
-    return `asset-cache:upload:ip:${req.ip ?? 'unknown'}`;
+    return `asset-cache:upload:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -566,7 +567,7 @@ const cacheDeleteLimiter = rateLimit({
     if (serviceApp?.appId) {
       return `asset-cache:delete:${serviceApp.appId}`;
     }
-    return `asset-cache:delete:ip:${req.ip ?? 'unknown'}`;
+    return `asset-cache:delete:ip:${hashedIpKey(req)}`;
   },
 });
 

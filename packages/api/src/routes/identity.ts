@@ -24,6 +24,7 @@ import { BadRequestError, NotFoundError, UnauthorizedError } from '../utils/erro
 import { validate } from '../middleware/validate';
 import { isValidObjectId } from '../utils/validation';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { logger } from '../utils/logger';
 import { safeFetch } from '@oxyhq/core/server';
 import {
@@ -56,7 +57,7 @@ const router = Router();
 function userScopedKey(scope: string) {
   return (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `${scope}:${userId}` : `${scope}:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
   };
 }
 

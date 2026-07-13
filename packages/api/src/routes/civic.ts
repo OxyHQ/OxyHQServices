@@ -16,6 +16,7 @@ import { Router, type Request, type Response } from 'express';
 import { authMiddleware, serviceAuthMiddleware, type AuthRequest, type ServiceAuthRequest } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { isValidObjectId } from '../utils/validation';
@@ -62,7 +63,7 @@ const attestationLimiter = rateLimit({
   message: 'Too many attestation submissions. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:attest:${userId}` : `civic:attest:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:attest:${userId}` : `civic:attest:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -73,7 +74,7 @@ const validationLimiter = rateLimit({
   message: 'Too many validation requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:validate:${userId}` : `civic:validate:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:validate:${userId}` : `civic:validate:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -85,7 +86,7 @@ const vouchLimiter = rateLimit({
   message: 'Too many vouch operations. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:vouch:${userId}` : `civic:vouch:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:vouch:${userId}` : `civic:vouch:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -97,7 +98,7 @@ const personhoodReadLimiter = rateLimit({
   message: 'Too many personhood status requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:personhood:read:${userId}` : `civic:personhood:read:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:personhood:read:${userId}` : `civic:personhood:read:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -109,7 +110,7 @@ const personhoodAdminLimiter = rateLimit({
   message: 'Too many personhood admin operations. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:personhood:admin:${userId}` : `civic:personhood:admin:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:personhood:admin:${userId}` : `civic:personhood:admin:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -121,7 +122,7 @@ const credentialIssueLimiter = rateLimit({
   message: 'Too many credential issuance requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:credential:issue:${userId}` : `civic:credential:issue:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:credential:issue:${userId}` : `civic:credential:issue:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -133,7 +134,7 @@ const credentialReadLimiter = rateLimit({
   message: 'Too many credential requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:credential:read:${userId}` : `civic:credential:read:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:credential:read:${userId}` : `civic:credential:read:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -145,7 +146,7 @@ const credentialVerifyLimiter = rateLimit({
   message: 'Too many credential verification requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:credential:verify:${userId}` : `civic:credential:verify:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:credential:verify:${userId}` : `civic:credential:verify:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -157,7 +158,7 @@ const credentialRevokeLimiter = rateLimit({
   message: 'Too many credential revocation requests. Please slow down.',
   keyGenerator: (req: Request): string => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `civic:credential:revoke:${userId}` : `civic:credential:revoke:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `civic:credential:revoke:${userId}` : `civic:credential:revoke:ip:${hashedIpKey(req)}`;
   },
 });
 
