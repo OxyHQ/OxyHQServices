@@ -71,11 +71,11 @@
  */
 
 import { isReactNative } from './platform';
-import type { ExpoCryptoLike, ExpoSecureStoreLike } from './expoTypes';
+import type { ExpoCryptoLike, ExpoSecureStoreLike, SharedIdentityBridge } from './expoTypes';
 
 // Re-export the interfaces so consumers can import them from the same
 // entry-point they use for the loaders.
-export type { ExpoCryptoLike, ExpoSecureStoreLike };
+export type { ExpoCryptoLike, ExpoSecureStoreLike, SharedIdentityBridge };
 
 // ---------------------------------------------------------------------------
 // Node `crypto` — Node built-in
@@ -154,4 +154,17 @@ export async function loadAsyncStorage(): Promise<{
  */
 export function getRandomBytesRN(_byteCount: number): Uint8Array {
   throw notReactNativeError('expo-crypto.getRandomBytes (sync)');
+}
+
+// ---------------------------------------------------------------------------
+// Shared identity bridge — `@oxyhq/expo-oxy-identity` (native-only).
+//
+// The default (web / Node) variant has no cross-app identity channel, so this
+// always resolves to `null`. `@oxyhq/core`'s `KeyManager` treats `null` as "no
+// bridge" and falls back to its package-private store — which is correct on web
+// (there is no shared identity there).
+// ---------------------------------------------------------------------------
+
+export function loadSharedIdentityBridge(): Promise<SharedIdentityBridge | null> {
+  return Promise.resolve(null);
 }

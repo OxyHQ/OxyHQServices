@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'so.oxy.identity'
+version = '0.1.0'
+
+android {
+  namespace "so.oxy.identity"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // Hardware-backed EncryptedSharedPreferences (MasterKey AES256_GCM) for the
+  // cross-app shared identity keypair.
+  implementation "androidx.security:security-crypto:1.1.0-alpha06"
+}

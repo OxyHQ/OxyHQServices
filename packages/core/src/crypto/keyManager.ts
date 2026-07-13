@@ -8,7 +8,7 @@
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid } from '../utils/platform';
-import { type ExpoCryptoLike, type ExpoSecureStoreLike, isReactNative, isNodeJS, loadExpoCrypto, loadNodeCrypto, loadSecureStore } from '@oxyhq/protocol';
+import { type ExpoCryptoLike, type ExpoSecureStoreLike, isReactNative, isNodeJS, loadExpoCrypto, loadNodeCrypto, loadSecureStore, loadSharedIdentityBridge } from '@oxyhq/protocol';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
@@ -298,13 +298,20 @@ export class KeyManager {
         );
       }
     } else if (isAndroid()) {
-      // Android: Store in secure store (accessible via sharedUserId)
-      // Note: All Oxy apps must have the same sharedUserId in AndroidManifest.xml
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
-        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey);
+      // Android: write through the cross-app bridge (`@oxyhq/expo-oxy-identity`)
+      // when present — it persists into Commons's hardware-backed
+      // EncryptedSharedPreferences behind a signature-protected ContentProvider,
+      // so same-key Oxy apps can read it. When the bridge is not linked, fall
+      // back to the package-private secure store (no cross-app sharing).
+      const bridge = await loadSharedIdentityBridge();
+      if (bridge) {
+        await bridge.putShared(privateKey, publicKey);
+      } else {
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
+          keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey);
+      }
     }
 
     // Update cache
@@ -341,7 +348,14 @@ export class KeyManager {
         const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
         publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, opts);
       } else if (isAndroid()) {
-        publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY);
+        // Android reads through the cross-app bridge; when it is not linked, fall
+        // back to the package-private store the fallback write path used.
+        const bridge = await loadSharedIdentityBridge();
+        if (bridge) {
+          publicKey = (await bridge.getShared())?.publicKey ?? null;
+        } else {
+          publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY);
+        }
       }
 
       // Cache result
@@ -378,7 +392,14 @@ export class KeyManager {
         const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
         privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, opts);
       } else if (isAndroid()) {
-        privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY);
+        // Android reads through the cross-app bridge; when it is not linked, fall
+        // back to the package-private store the fallback write path used.
+        const bridge = await loadSharedIdentityBridge();
+        if (bridge) {
+          privateKey = (await bridge.getShared())?.privateKey ?? null;
+        } else {
+          privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY);
+        }
       }
 
       return privateKey;
@@ -458,11 +479,17 @@ export class KeyManager {
       };
       await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, publicOpts);
     } else if (isAndroid()) {
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
-        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey);
+      // Android: write through the cross-app bridge when present; otherwise the
+      // package-private store (kept consistent with the read fallback).
+      const bridge = await loadSharedIdentityBridge();
+      if (bridge) {
+        await bridge.putShared(canonicalPrivate, publicKey);
+      } else {
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
+          keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey);
+      }
     }
 
     // Update cache

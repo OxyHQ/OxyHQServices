@@ -17,6 +17,7 @@
     "@lottiefiles/dotlottie-react": "^0.19.5",
     "@oxyhq/bloom": "^0.30.0",
     "@oxyhq/core": "*",
+    "@oxyhq/expo-oxy-identity": "workspace:*",
     "@oxyhq/expo-splash": "workspace:*",
     "@oxyhq/services": "*",
     "@react-native-async-storage/async-storage": "^2.2.0",

@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OxyIdentityModule"]
+  },
+  "android": {
+    "modules": ["so.oxy.identity.OxyIdentityModule"]
+  }
+}

@@ -39,6 +39,14 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: APP_ID,
+      // Shared Keychain Access Group so the identity keypair is readable by
+      // every same-Team Oxy app (silent "Sign in with Oxy"). `$(AppIdentifierPrefix)`
+      // expands to the Team ID prefix at build; the runtime group string in
+      // @oxyhq/core's KeyManager stays `group.so.oxy.shared` (suffix match).
+      // Prerequisite: all Oxy iOS apps ship under the SAME Apple Developer Team.
+      entitlements: {
+        'keychain-access-groups': ['$(AppIdentifierPrefix)group.so.oxy.shared'],
+      },
     },
     plugins: [
       'expo-router',
@@ -93,6 +101,10 @@ module.exports = {
       // "Sign in with Oxy" shares the session across apps (requires all Oxy apps
       // to be signed with the same key — the oxy-ecosystem release keystore).
       './plugins/withSharedUserId',
+      // Hosts the signature-protected OxyIdentityProvider (from
+      // @oxyhq/expo-oxy-identity) that lets same-key Oxy apps read the shared
+      // identity keypair Commons writes. Commons is the ONLY app that hosts it.
+      './plugins/withSharedIdentityProvider',
       'expo-secure-store',
       'expo-font',
       'expo-image',

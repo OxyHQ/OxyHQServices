@@ -29,6 +29,7 @@
         "@lottiefiles/dotlottie-react": "^0.19.5",
         "@oxyhq/bloom": "^0.29.3",
         "@oxyhq/core": "*",
+        "@oxyhq/expo-oxy-identity": "workspace:*",
         "@oxyhq/expo-splash": "workspace:*",
         "@oxyhq/services": "*",
         "@react-native-async-storage/async-storage": "^2.2.0",
@@ -237,6 +238,7 @@
         "@lottiefiles/dotlottie-react": "^0.19.5",
         "@oxyhq/bloom": "^0.30.0",
         "@oxyhq/core": "*",
+        "@oxyhq/expo-oxy-identity": "workspace:*",
         "@oxyhq/expo-splash": "workspace:*",
         "@oxyhq/services": "*",
         "@react-native-async-storage/async-storage": "^2.2.0",
@@ -420,6 +422,23 @@
         "expo-secure-store",
         "express",
       ],
+    },
+    "packages/expo-oxy-identity": {
+      "name": "@oxyhq/expo-oxy-identity",
+      "version": "0.1.0",
+      "devDependencies": {
+        "expo": "*",
+        "expo-modules-core": "*",
+        "react": "*",
+        "react-native": "*",
+        "typescript": "^5.9.2",
+      },
+      "peerDependencies": {
+        "expo": ">=51.0.0",
+        "expo-modules-core": "*",
+        "react": ">=18.0.0",
+        "react-native": ">=0.74.0",
+      },
     },
     "packages/expo-splash": {
       "name": "@oxyhq/expo-splash",
@@ -1628,6 +1647,8 @@
     "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
+
+    "@oxyhq/expo-oxy-identity": ["@oxyhq/expo-oxy-identity@workspace:packages/expo-oxy-identity"],
 
     "@oxyhq/expo-splash": ["@oxyhq/expo-splash@workspace:packages/expo-splash"],
 

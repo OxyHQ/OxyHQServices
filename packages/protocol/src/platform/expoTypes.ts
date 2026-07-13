@@ -75,3 +75,25 @@ export interface ExpoSecureStoreLike {
    */
   readonly WHEN_UNLOCKED: number;
 }
+
+/**
+ * Structural interface for the `@oxyhq/expo-oxy-identity` native module — the
+ * cross-app shared Oxy identity bridge.
+ *
+ * On Android the keypair crosses the process boundary through a
+ * signature-protected `ContentProvider` hosted by Commons; on iOS every method
+ * is a no-op (the Keychain Access Group path in `@oxyhq/core`'s `KeyManager`
+ * owns iOS sharing). Typed structurally here so `@oxyhq/protocol` and
+ * `@oxyhq/core` can reference the bridge without a hard dependency on the
+ * optional native module.
+ */
+export interface SharedIdentityBridge {
+  /** Read the shared keypair, or null when none is available on this device. */
+  getShared(): Promise<{ privateKey: string; publicKey: string } | null>;
+  /** Persist the shared keypair into this app's hardware-backed store (Commons only). */
+  putShared(privateKey: string, publicKey: string): Promise<void>;
+  /** Whether a shared identity is readable on this device. */
+  hasShared(): Promise<boolean>;
+  /** Remove the shared identity from this app's local store (best-effort). */
+  clearShared(): Promise<void>;
+}

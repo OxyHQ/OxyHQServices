@@ -35,6 +35,14 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: APP_ID,
+      // Shared Keychain Access Group so this app can READ the identity keypair
+      // Commons wrote (silent "Sign in with Oxy"). `$(AppIdentifierPrefix)`
+      // expands to the Team ID prefix at build; the runtime group string in
+      // @oxyhq/core's KeyManager stays `group.so.oxy.shared` (suffix match).
+      // Prerequisite: all Oxy iOS apps ship under the SAME Apple Developer Team.
+      entitlements: {
+        'keychain-access-groups': ['$(AppIdentifierPrefix)group.so.oxy.shared'],
+      },
     },
     web: {
       output: 'static',
@@ -81,6 +89,10 @@ module.exports = {
       // Android keychain namespace as every other Oxy app signed with the
       // shared ecosystem cert — enables sign-in-once-use-everywhere.
       './plugins/withSharedUserId',
+      // Requests the signature-level READ_IDENTITY permission + provider queries
+      // so this app can READ the shared identity Commons hosts (from
+      // @oxyhq/expo-oxy-identity). Reader-only: it never hosts the provider.
+      './plugins/withSharedIdentityReader',
     ],
     experiments: {
       typedRoutes: true,

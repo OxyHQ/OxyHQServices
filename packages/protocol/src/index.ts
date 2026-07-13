@@ -60,6 +60,7 @@ export {
   loadSecureStore,
   loadAsyncStorage,
   getRandomBytesRN,
+  loadSharedIdentityBridge,
 } from './platform/crypto';
 
 // ---------------------------------------------------------------------------
@@ -69,4 +70,4 @@ export {
 // without importing `typeof import('expo-crypto')` / `typeof import('expo-secure-store')`
 // (which would trigger NodeNext type pollution in server packages).
 // ---------------------------------------------------------------------------
-export type { ExpoCryptoLike, ExpoSecureStoreLike } from './platform/expoTypes';
+export type { ExpoCryptoLike, ExpoSecureStoreLike, SharedIdentityBridge } from './platform/expoTypes';
