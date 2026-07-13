@@ -134,7 +134,8 @@ describe('createWebAuthStateStore', () => {
 
     // Construction must not throw, and the store must still function (in-memory).
     const store = createWebAuthStateStore();
-    await expect(store.save(SAMPLE)).resolves.toBeUndefined();
+    // A degraded in-memory store IS its own durability backing → reports `true`.
+    await expect(store.save(SAMPLE)).resolves.toBe(true);
     expect(await store.load()).toEqual(SAMPLE);
   });
 
@@ -143,11 +144,44 @@ describe('createWebAuthStateStore', () => {
     const store = createWebAuthStateStore();
     const withCreds: PersistedAuthState = { ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' };
 
-    await expect(store.save(withCreds)).resolves.toBeUndefined();
+    // The durable write threw → the store reports the persist did NOT land.
+    await expect(store.save(withCreds)).resolves.toBe(false);
     // The write never reached storage...
     expect(localStorage.getItem(AUTH_STATE_STORAGE_KEY)).toBeNull();
     // ...but the in-memory mirror keeps the session (incl. the mint credential) live.
     expect(await store.load()).toEqual(withCreds);
+  });
+
+  it('reports false when the durable write SILENTLY no-ops (read-back mismatch, no throw)', async () => {
+    // A backing store whose setItem neither throws nor persists — the exact
+    // failure the read-back guards. The mirror keeps the session live, but the
+    // credential did not land, so save() must report false.
+    const map = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        // Only the WARM key writes; the durable credential silently vanishes.
+        if (k === AUTH_STATE_TOKEN_STORAGE_KEY) map.set(k, v);
+      },
+      removeItem: (k: string) => {
+        map.delete(k);
+      },
+      clear: () => map.clear(),
+      key: (i: number) => Array.from(map.keys())[i] ?? null,
+      get length() {
+        return map.size;
+      },
+    } as Storage;
+    installLocalStorage(storage);
+    const store = createWebAuthStateStore();
+
+    await expect(
+      store.save({ ...SAMPLE, deviceId: 'dev-x', deviceSecret: 'ds-x' }),
+    ).resolves.toBe(false);
+    // The durable blob never landed…
+    expect(storage.getItem(AUTH_STATE_STORAGE_KEY)).toBeNull();
+    // …but the mirror still serves the session for this page's lifetime.
+    expect(await store.load()).toMatchObject({ deviceId: 'dev-x', deviceSecret: 'ds-x' });
   });
 
   it('a cleared session reads null even if storage later holds a stale blob (mirror wins)', async () => {
@@ -222,7 +256,7 @@ describe('createWebAuthStateStore', () => {
 
     await expect(
       store.save({ ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
 
     // The durable mint credential landed despite the warm-token write throwing.
     const durableRaw = storage.getItem(AUTH_STATE_STORAGE_KEY);
@@ -304,9 +338,33 @@ describe('createNativeAuthStateStore', () => {
         throw new Error('secure store locked');
       },
     });
-    await expect(store.save(SAMPLE)).resolves.toBeUndefined();
-    // The write threw, but the in-memory mirror preserves the session.
+    // The durable write threw → reports the persist did NOT land…
+    await expect(store.save(SAMPLE)).resolves.toBe(false);
+    // …but the in-memory mirror preserves the session for this app run.
     expect(await store.load()).toEqual(SAMPLE);
+  });
+
+  it('reports false when the durable SecureStore write SILENTLY no-ops (oversize value, no throw)', async () => {
+    // Android SecureStore can resolve a write WITHOUT throwing yet not persist an
+    // oversize value — the read-back is the only reliable proof. save() must
+    // report false so a rotating-secret lane refuses to plant on it.
+    const map = new Map<string, string>();
+    const storage: NativeKeyValueStorage = {
+      getItem: async (k) => map.get(k) ?? null,
+      setItem: async (k, v) => {
+        if (k === AUTH_STATE_TOKEN_STORAGE_KEY) map.set(k, v); // durable silently dropped
+      },
+      removeItem: async (k) => {
+        map.delete(k);
+      },
+    };
+    const store = createNativeAuthStateStore(storage);
+
+    await expect(
+      store.save({ ...SAMPLE, deviceId: 'dev-x', deviceSecret: 'ds-x' }),
+    ).resolves.toBe(false);
+    expect(map.get(AUTH_STATE_STORAGE_KEY)).toBeUndefined();
+    expect(await store.load()).toMatchObject({ deviceId: 'dev-x', deviceSecret: 'ds-x' });
   });
 
   it('persists the durable credential even when the warm-token write fails (oversize SecureStore value)', async () => {
@@ -329,7 +387,7 @@ describe('createNativeAuthStateStore', () => {
 
     await expect(
       store.save({ ...SAMPLE, deviceId: 'dev-n', deviceSecret: 'ds-n' }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(true);
 
     // The durable mint credential landed to disk.
     expect(map.get(AUTH_STATE_STORAGE_KEY)).toBeTruthy();

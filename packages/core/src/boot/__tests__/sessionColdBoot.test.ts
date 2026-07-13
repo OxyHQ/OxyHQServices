@@ -10,11 +10,25 @@ import type { OxyServices } from '../../OxyServices';
 import type { DeviceTokenMintResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../../models/session';
 import { runSessionColdBoot } from '../sessionColdBoot';
+import type { DeviceSecretMintOutcome } from '../../session/refresh';
 import { createMemoryAuthStateStore, type PersistedAuthState } from '../../session/authStateStore';
 
 interface OxyOverrides {
   signInWithSharedIdentity?: OxyServices['signInWithSharedIdentity'];
   mintFromDeviceSecret?: OxyServices['mintFromDeviceSecret'];
+}
+
+/** A real device-secret mint single-flight matching HttpService's. */
+function makeMintSingleFlight(): (mint: () => Promise<DeviceSecretMintOutcome>) => Promise<DeviceSecretMintOutcome> {
+  let inFlight: Promise<DeviceSecretMintOutcome> | null = null;
+  return (mint) => {
+    if (!inFlight) {
+      inFlight = mint().finally(() => {
+        inFlight = null;
+      });
+    }
+    return inFlight;
+  };
 }
 
 function makeOxy(overrides: OxyOverrides = {}): { oxy: OxyServices; setTokens: jest.Mock } {
@@ -30,6 +44,8 @@ function makeOxy(overrides: OxyOverrides = {}): { oxy: OxyServices; setTokens: j
       ?? (async () => {
         throw new Error('mintFromDeviceSecret not stubbed');
       }),
+    // The device-secret-mint step runs through the client's single-flight.
+    httpService: { runSingleFlightDeviceSecretMint: makeMintSingleFlight() },
   } as unknown as OxyServices;
   return { oxy, setTokens };
 }

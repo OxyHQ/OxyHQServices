@@ -1,8 +1,34 @@
 import type { OxyServices } from '../../OxyServices';
 import type { DeviceTokenMintResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../../models/session';
-import { refreshPersistedSession, startTokenRefreshScheduler } from '../refresh';
-import { createMemoryAuthStateStore, type PersistedAuthState } from '../authStateStore';
+import {
+  refreshPersistedSession,
+  startTokenRefreshScheduler,
+  type DeviceSecretMintOutcome,
+} from '../refresh';
+import {
+  createMemoryAuthStateStore,
+  type AuthStateStore,
+  type PersistedAuthState,
+} from '../authStateStore';
+
+/**
+ * A real, per-client device-secret mint single-flight matching
+ * `HttpService.runSingleFlightDeviceSecretMint`: concurrent callers await the
+ * SAME in-flight mint and all receive its result; a fresh call after it settles
+ * starts a new one.
+ */
+function makeMintSingleFlight(): (mint: () => Promise<DeviceSecretMintOutcome>) => Promise<DeviceSecretMintOutcome> {
+  let inFlight: Promise<DeviceSecretMintOutcome> | null = null;
+  return (mint) => {
+    if (!inFlight) {
+      inFlight = mint().finally(() => {
+        inFlight = null;
+      });
+    }
+    return inFlight;
+  };
+}
 
 /** The persisted zero-cookie mint credential the refresh reads. */
 const STORED: PersistedAuthState = {
@@ -37,6 +63,9 @@ function makeOxy(overrides: RefreshMockOverrides = {}): { oxy: OxyServices; setT
     setTokens,
     mintFromDeviceSecret: overrides.mintFromDeviceSecret ?? (async () => MINT),
     signInWithSharedIdentity: overrides.signInWithSharedIdentity ?? (async () => null),
+    // The rotating mint runs under the client's process-wide single-flight; the
+    // arm reaches for it via `oxy.httpService.runSingleFlightDeviceSecretMint`.
+    httpService: { runSingleFlightDeviceSecretMint: makeMintSingleFlight() },
   } as unknown as OxyServices;
   return { oxy, setTokens };
 }
@@ -168,6 +197,116 @@ describe('refreshPersistedSession — arm 2 (native shared-key fallback)', () =>
 
     expect(await refreshPersistedSession({ oxy, store, allowSharedKeyFallback: true })).toBeNull();
     expect(signInWithSharedIdentity).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists the recovered credential from the shared-key re-mint (repopulates the fast lane)', async () => {
+    // Bug #3: an in-session shared-key recovery must repopulate the durable
+    // device credential, not leave the fast device-secret lane empty.
+    const store = createMemoryAuthStateStore(); // no persisted secret → arm 1 skips
+    const RECOVERED: SessionLoginResponse = {
+      sessionId: 'sess-shared',
+      deviceId: 'dev-shared',
+      deviceSecret: 'ds-shared-secret',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      user: { id: 'user-shared', username: 'u', name: {}, avatar: undefined },
+      accessToken: 'access-shared',
+    };
+    const { oxy } = makeOxy({ signInWithSharedIdentity: jest.fn(async () => RECOVERED) });
+
+    const token = await refreshPersistedSession({ oxy, store, allowSharedKeyFallback: true });
+
+    expect(token).toBe('access-shared');
+    expect(await store.load()).toEqual({
+      sessionId: 'sess-shared',
+      userId: 'user-shared',
+      deviceId: 'dev-shared',
+      deviceSecret: 'ds-shared-secret',
+      accessToken: 'access-shared',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    });
+  });
+});
+
+describe('refreshPersistedSession — single-flight (no double-rotation)', () => {
+  it('coalesces two concurrent mints into ONE server rotation; the store holds the final current secret', async () => {
+    // The server rotates the secret on every mint. Two concurrent lanes must
+    // therefore share ONE in-flight mint (one rotation) or the store could
+    // converge on a superseded secret.
+    const store = createMemoryAuthStateStore();
+    await store.save(STORED);
+
+    let release: (() => void) | null = null;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const mintFromDeviceSecret = jest.fn(async (deviceId: string, deviceSecret: string) => {
+      // Block until BOTH callers have entered so the single-flight is exercised.
+      await gate;
+      expect(deviceId).toBe('dev-mint');
+      expect(deviceSecret).toBe('ds-secret-orig');
+      return MINT;
+    });
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const first = refreshPersistedSession({ oxy, store, allowSharedKeyFallback: false });
+    const second = refreshPersistedSession({ oxy, store, allowSharedKeyFallback: false });
+    // Both callers entered while the mint is in flight.
+    release?.();
+    const [t1, t2] = await Promise.all([first, second]);
+
+    // Exactly one server rotation despite two concurrent callers…
+    expect(mintFromDeviceSecret).toHaveBeenCalledTimes(1);
+    // …both callers received the same minted token…
+    expect(t1).toBe('access-new');
+    expect(t2).toBe('access-new');
+    // …and the durable store converged on the rotated (current) secret.
+    expect((await store.load())?.deviceSecret).toBe('ds-next-secret');
+    // The token was planted exactly once (inside the single-flighted mint).
+    expect(setTokens).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('refreshPersistedSession — durable persist failure is fatal to the mint', () => {
+  it('does NOT plant a token when the rotated secret cannot be durably persisted', async () => {
+    // Bug #2: a mint that rotated the server secret but could not persist it must
+    // not leave the process advertising a session on an unsaved, soon-dead secret.
+    const failingStore: AuthStateStore = {
+      load: async () => STORED,
+      save: async () => false, // durable write did not land
+      clear: async () => undefined,
+    };
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const token = await refreshPersistedSession({
+      oxy,
+      store: failingStore,
+      allowSharedKeyFallback: false,
+    });
+
+    // The mint ran (the server rotated) but the token was NOT planted…
+    expect(mintFromDeviceSecret).toHaveBeenCalledTimes(1);
+    expect(setTokens).not.toHaveBeenCalled();
+    // …and the lane reports failure rather than a healthy session.
+    expect(token).toBeNull();
+  });
+
+  it('does NOT fall through to the shared-key arm on a persist failure', async () => {
+    const failingStore: AuthStateStore = {
+      load: async () => STORED,
+      save: async () => false,
+      clear: async () => undefined,
+    };
+    const signInWithSharedIdentity = jest.fn(async () => null);
+    const { oxy } = makeOxy({
+      mintFromDeviceSecret: async () => MINT,
+      signInWithSharedIdentity,
+    });
+
+    await refreshPersistedSession({ oxy, store: failingStore, allowSharedKeyFallback: true });
+
+    // A storage failure is not a bad-secret signal — the shared-key arm must not run.
+    expect(signInWithSharedIdentity).not.toHaveBeenCalled();
   });
 });
 

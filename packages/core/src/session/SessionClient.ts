@@ -13,6 +13,22 @@ export interface TokenTransport {
   ensureActiveToken(state: DeviceSessionState): Promise<void>;
 }
 
+/**
+ * Where an applied device state came from, so consumers can decide how
+ * AUTHORITATIVE a zero-account ("signed out") verdict is:
+ *  - `request` — the response to a direct REST call this client made
+ *    (`bootstrap` / `switch` / `signOut` / `add`). A stable, server-authoritative
+ *    verdict: an empty state here reflects a real sign-out or revocation, so the
+ *    durable device credential MAY be erased.
+ *  - `push` — an out-of-band Socket.IO `session_state` broadcast. Potentially
+ *    transient (a reconnect race / another device's mutation), so an empty state
+ *    here must NOT erase THIS origin's durable device credential — only clear the
+ *    local UI session. A dead credential re-mints to `no_active_session` and
+ *    resolves signed-out cleanly on the next boot; a wrongly-erased one cannot be
+ *    recovered without a fresh sign-in.
+ */
+export type SessionStateOrigin = 'request' | 'push';
+
 export interface DeviceCredential {
   deviceId: string;
   deviceSecret: string;
@@ -34,13 +50,20 @@ export interface SessionClientOptions {
   /**
    * Invoked when an APPLIED state has zero accounts — i.e. a device
    * signout-all removed the last account from this device set. Providers use
-   * this to clear the persisted {@link AuthStateStore} so a reload does not
-   * try to restore a session that no longer exists on the device.
+   * this to clear local session state and, for a `request`-origin verdict, the
+   * persisted {@link AuthStateStore} so a reload does not try to restore a
+   * session that no longer exists on the device.
+   *
+   * The {@link SessionStateOrigin} is passed so the consumer can gate the
+   * DESTRUCTIVE credential wipe: a `push`-origin empty state (a socket broadcast,
+   * possibly a transient reconnect artifact) must NOT erase the durable device
+   * credential — only a `request`-origin verdict (a direct REST sign-out /
+   * revocation) is authoritative enough for that.
    *
    * Only fires when a state is actually applied (revision advanced), never on
    * a stale/rejected push. Exceptions thrown by the callback are isolated.
    */
-  onUnauthenticated?: () => void;
+  onUnauthenticated?: (origin: SessionStateOrigin) => void;
   /**
    * Statically-injected `socket.io-client` factory (its `io` export).
    * `@oxyhq/services` lists `socket.io-client` as a real dependency and
@@ -148,7 +171,7 @@ export class SessionClient {
   }
 
   /** Validate + last-writer-wins by revision. Returns true if applied. */
-  protected applyState(raw: unknown): boolean {
+  protected applyState(raw: unknown, origin: SessionStateOrigin = 'push'): boolean {
     const next = safeParseContract(deviceSessionStateSchema, raw);
     if (!next) {
       logger.warn('[SessionClient] discarded invalid session state');
@@ -176,7 +199,7 @@ export class SessionClient {
       this.notify();
       if (next.accounts.length === 0 && this.options.onUnauthenticated) {
         try {
-          this.options.onUnauthenticated();
+          this.options.onUnauthenticated(origin);
         } catch (error) {
           logger.error('[SessionClient] onUnauthenticated threw', error);
         }
@@ -224,7 +247,10 @@ export class SessionClient {
       logger.warn('[SessionClient] discarded invalid session sync', { component: 'SessionClient', issues, keys });
       return;
     }
-    this.applyState(sync.state);
+    // A `sync` is always the response to a direct REST call this client made
+    // (bootstrap / switch / signOut / add) → a `request`-origin, authoritative
+    // verdict.
+    this.applyState(sync.state, 'request');
     if (sync.activeToken && this.state && sync.state.activeAccountId === this.state.activeAccountId) {
       this.host.setTokens(sync.activeToken.accessToken);
     }
@@ -366,7 +392,9 @@ export class SessionClient {
       },
     });
     socket.on('session_state', (payload: unknown) => {
-      const applied = this.applyState(payload);
+      // A socket broadcast is a `push`-origin — potentially transient, so an
+      // empty state here must not erase the durable device credential.
+      const applied = this.applyState(payload, 'push');
       if (!applied) return;
       // A push changed the active account on another device/tab — re-fetch state
       // to plant the access token for the newly-active account. When this tab is

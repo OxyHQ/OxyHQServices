@@ -20,6 +20,7 @@
  *
  * Framework-free; no module-level mutable state.
  */
+import type { DeviceTokenMintResponse } from '@oxyhq/contracts';
 import type { OxyServices } from '../OxyServices';
 import type { AuthRefreshHandler, AuthRefreshReason } from '../HttpService';
 import type { AuthStateStore, PersistedAuthState } from './authStateStore';
@@ -72,67 +73,172 @@ export interface RefreshDeps {
 }
 
 /**
+ * The outcome of ONE device-secret mint attempt (arm 1). Discriminated so both
+ * the re-mint handler and the cold boot can react per the transport contract
+ * without re-classifying the raw error:
+ *  - `ok` — minted, persisted the rotated secret, planted the token.
+ *  - `no-secret` — the store holds no `deviceId` + `deviceSecret` to mint from.
+ *  - `invalid-secret` — 401 `invalid_device_secret`: the presented secret
+ *    diverged (another tab/device rotated it past the grace window).
+ *  - `no-session` — 401 `no_active_session`: the device is known but has no live
+ *    session (authoritative signed-out).
+ *  - `transient` — network / 5xx; keep the secret, a later attempt can succeed.
+ *  - `persist-failed` — the mint succeeded (the SERVER rotated the secret) but
+ *    the rotated `nextDeviceSecret` could NOT be durably persisted. The token is
+ *    deliberately NOT planted: advertising a healthy session on a secret that
+ *    will not survive a reload is exactly the divergence that logs users out.
+ */
+export type DeviceSecretMintOutcome =
+  | { status: 'ok'; token: string; sessionId: string; userId: string }
+  | { status: 'no-secret' }
+  | { status: 'invalid-secret' }
+  | { status: 'no-session' }
+  | { status: 'transient' }
+  | { status: 'persist-failed' };
+
+/**
+ * Arm 1 — the rotating device-secret mint, run under the owning client's
+ * PROCESS-WIDE single-flight (`httpService.runSingleFlightDeviceSecretMint`).
+ *
+ * The server ROTATES the presented `deviceSecret` on every successful mint and
+ * the just-presented secret is valid only for a short grace window. If two lanes
+ * (cold boot, the proactive scheduler, a request-time preflight, a 401 retry,
+ * the socket token transport, or a tab-focus reconcile) minted concurrently they
+ * would double-rotate the server and the durable store could converge on the
+ * SUPERSEDED secret — after the grace window the next cold boot mint 401s and the
+ * user is signed out. Routing EVERY lane through this one single-flight makes
+ * concurrent callers await the SAME in-flight mint and all receive its result, so
+ * there is exactly one rotation and the store always converges on the true
+ * `current` secret.
+ *
+ * On success it persists `nextDeviceSecret` (read-back-verified) BEFORE planting
+ * the access token; a failed durable persist yields `persist-failed` WITHOUT
+ * planting. This function performs NO store mutation on failure — the caller
+ * applies the drop/clear policy (which differs web vs native) from the returned
+ * status.
+ */
+export async function refreshDeviceSecretArm(deps: {
+  oxy: OxyServices;
+  store: AuthStateStore;
+}): Promise<DeviceSecretMintOutcome> {
+  const { oxy, store } = deps;
+  return oxy.httpService.runSingleFlightDeviceSecretMint(async () => {
+    const persisted = await store.load();
+    if (!persisted?.deviceId || !persisted?.deviceSecret) {
+      return { status: 'no-secret' };
+    }
+
+    let mint: DeviceTokenMintResponse;
+    try {
+      mint = await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
+    } catch (error) {
+      if (extractErrorStatus(error) === 401) {
+        // Structural read (not `instanceof Error`): the thrown value can be a
+        // plain ApiError-shaped object or come from another realm.
+        const message = (error as { message?: unknown })?.message;
+        return typeof message === 'string' && message.includes('no_active_session')
+          ? { status: 'no-session' }
+          : { status: 'invalid-secret' };
+      }
+      return { status: 'transient' };
+    }
+
+    const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
+    const next: PersistedAuthState = {
+      ...persisted,
+      deviceId: mint.state.deviceId,
+      deviceSecret: mint.nextDeviceSecret,
+      accessToken: mint.accessToken,
+      expiresAt: mint.expiresAt,
+      ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
+    };
+    // Rotation-in-use anti-loss: persist the NEXT secret and read-back-VERIFY it
+    // landed BEFORE planting the token. A failed durable persist must NOT plant.
+    const persistedOk = await store.save(next);
+    if (!persistedOk) {
+      return { status: 'persist-failed' };
+    }
+    oxy.setTokens(mint.accessToken);
+    return { status: 'ok', token: mint.accessToken, sessionId: next.sessionId, userId: next.userId };
+  });
+}
+
+/**
  * Re-mint the persisted session and return the fresh access token, or `null`
  * when no arm could produce one.
  *
- * Arm 1 (`POST /session/device/token`): if the store holds a `deviceId` +
- * `deviceSecret`, mint — on success plant + persist the rotated secret. A 401
- * means the secret is diverged (`invalid_device_secret`) or the device has no
- * live session (`no_active_session`): drop the secret so the mint lane stops (or
- * clear the store on web, where there is no fallback). A transient error leaves
- * the store and returns `null`.
+ * Arm 1 (`POST /session/device/token`, via {@link refreshDeviceSecretArm}): mint
+ * from the persisted `deviceId` + `deviceSecret`. On a 401 the secret is diverged
+ * or the device has no live session: drop the secret so the mint lane stops (or
+ * clear the store on web, where there is no fallback), then fall to arm 2 on
+ * native. A transient error — or a durable-persist failure — leaves the store and
+ * returns `null` WITHOUT falling to shared-key (those are not bad-secret signals).
  *
  * Arm 2 (native shared-keychain): when the secret is absent or was just rejected,
- * re-mint via `signInWithSharedIdentity` (which plants tokens). The shared
- * keychain — not the per-origin store — is the durable native credential, so this
- * arm does not write the store.
+ * re-mint via `signInWithSharedIdentity` (which plants tokens). On success the
+ * recovered `{deviceId, deviceSecret, …}` is PERSISTED so the fast device-secret
+ * lane is repopulated (mirrors the cold boot's `shared-key-signin` step) — an
+ * in-session shared-key recovery must not leave the fast-lane credential empty.
  */
 export async function refreshPersistedSession(deps: RefreshDeps): Promise<string | null> {
   const { oxy, store } = deps;
   const allowSharedKeyFallback = deps.allowSharedKeyFallback ?? isNative();
 
-  const persisted = await store.load();
-
-  if (persisted?.deviceId && persisted?.deviceSecret) {
-    try {
-      const mint = await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
-      oxy.setTokens(mint.accessToken);
-      const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
-      const next: PersistedAuthState = {
-        ...persisted,
-        deviceId: mint.state.deviceId,
-        deviceSecret: mint.nextDeviceSecret,
-        accessToken: mint.accessToken,
-        expiresAt: mint.expiresAt,
-        ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
-      };
-      await store.save(next);
-      return mint.accessToken;
-    } catch (error) {
-      if (extractErrorStatus(error) === 401) {
-        // Secret diverged / no active session. On a shared-key device drop only
-        // the secret so arm 2 below can recover; otherwise the session is over.
-        if (allowSharedKeyFallback) {
+  const arm1 = await refreshDeviceSecretArm({ oxy, store });
+  switch (arm1.status) {
+    case 'ok':
+      return arm1.token;
+    case 'transient':
+      logger.debug(
+        'Persisted deviceSecret mint failed (transient) — keeping store',
+        { component: 'refresh', method: 'refreshPersistedSession' },
+      );
+      return null;
+    case 'persist-failed':
+      // The server rotated the secret but it did not durably persist. Do NOT fall
+      // to shared-key and do NOT plant — a later attempt re-mints (the process
+      // mirror still holds the rotated secret the server accepts) and can persist
+      // once storage recovers. Never advertise a session on an unsaved secret.
+      logger.error(
+        'Device-secret mint rotated the secret but it could not be durably persisted — refusing to plant (a later attempt re-mints)',
+        undefined,
+        { component: 'refresh', method: 'refreshPersistedSession' },
+      );
+      return null;
+    case 'invalid-secret':
+    case 'no-session': {
+      // 401: secret diverged or no live session. On a shared-key device drop only
+      // the secret (keep the identity so arm 2 can recover); otherwise (web) the
+      // session is over — clear the store.
+      const persisted = await store.load();
+      if (allowSharedKeyFallback) {
+        if (persisted) {
           await store.save({ ...persisted, deviceSecret: undefined });
-        } else {
-          await store.clear();
         }
-        // Fall through to the native shared-key arm.
       } else {
-        logger.debug(
-          'Persisted deviceSecret mint failed (transient) — keeping store',
-          { component: 'refresh', method: 'refreshPersistedSession' },
-          error,
-        );
-        return null;
+        await store.clear();
       }
+      break;
     }
+    case 'no-secret':
+      break;
   }
 
   if (allowSharedKeyFallback) {
     try {
       const session = await oxy.signInWithSharedIdentity();
       if (session?.accessToken) {
+        // Repopulate the fast device-secret lane from the shared-key re-mint.
+        if (session.deviceId && session.deviceSecret) {
+          await store.save({
+            sessionId: session.sessionId,
+            userId: session.user.id,
+            deviceId: session.deviceId,
+            deviceSecret: session.deviceSecret,
+            accessToken: session.accessToken,
+            expiresAt: session.expiresAt,
+          });
+        }
         return session.accessToken;
       }
     } catch (error) {

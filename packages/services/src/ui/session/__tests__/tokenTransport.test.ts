@@ -1,23 +1,17 @@
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import { logger, createMemoryAuthStateStore, refreshPersistedSession } from '@oxyhq/core';
+import { logger } from '@oxyhq/core';
 import { createTokenTransport } from '../tokenTransport';
 
-// The device-first transport mints a fallback token from the persisted
-// zero-cookie device credential via `refreshPersistedSession` (the ONE unified
-// refresh path) — there is no `silentSignIn`/`signInWithSharedIdentity` arm
-// anymore. Mock that one core function so the transport's own coalescing /
-// logging contract can be exercised in isolation; keep the real `logger` +
-// memory store.
-jest.mock('@oxyhq/core', () => {
-  const actual = jest.requireActual('@oxyhq/core');
-  return { __esModule: true, ...actual, refreshPersistedSession: jest.fn() };
-});
+// The device-first transport no longer owns a private mint single-flight: it
+// routes through the ONE shared `oxyServices.httpService.refreshAccessToken(...)`
+// the scheduler/preflight/401 use, so concurrent lanes can never double-rotate
+// the device secret. These tests exercise the transport's own no-op / error /
+// swallow contract around that single call.
 
-const mockedRefresh = refreshPersistedSession as jest.MockedFunction<typeof refreshPersistedSession>;
-
-function fakeOxy(accessToken: string | null) {
+function fakeOxy(accessToken: string | null, refreshAccessToken = jest.fn(async () => 'minted-token')) {
   return {
     getAccessToken: jest.fn().mockReturnValue(accessToken),
+    httpService: { refreshAccessToken },
   };
 }
 
@@ -30,35 +24,33 @@ const state: DeviceSessionState = {
 };
 
 describe('createTokenTransport', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockedRefresh.mockResolvedValue('minted-token');
-  });
-
   test('no-ops when a token is already present', async () => {
-    const oxy = fakeOxy('tok');
-    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy('tok', refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
 
     await transport.ensureActiveToken(state);
 
-    expect(mockedRefresh).not.toHaveBeenCalled();
+    expect(refreshAccessToken).not.toHaveBeenCalled();
   });
 
-  test('mints via refreshPersistedSession when no token is present', async () => {
-    const oxy = fakeOxy(null);
-    const store = createMemoryAuthStateStore();
-    const transport = createTokenTransport(oxy as never, store);
+  test('mints via the shared httpService.refreshAccessToken single-flight when no token is present', async () => {
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy(null, refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
 
     await transport.ensureActiveToken(state);
 
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
-    expect(mockedRefresh).toHaveBeenCalledWith({ oxy, store });
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).toHaveBeenCalledWith('preflight');
   });
 
   test('resolves (never rejects) and logs a warning when the refresh throws', async () => {
-    const oxy = fakeOxy(null);
-    mockedRefresh.mockRejectedValue(new Error('mint boom'));
-    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
+    const refreshAccessToken = jest.fn(async () => {
+      throw new Error('mint boom');
+    });
+    const oxy = fakeOxy(null, refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
@@ -73,48 +65,39 @@ describe('createTokenTransport', () => {
   });
 
   test('resolves cleanly when the refresh produces no session', async () => {
-    const oxy = fakeOxy(null);
-    mockedRefresh.mockResolvedValue(null);
-    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
+    const refreshAccessToken = jest.fn(async () => null);
+    const oxy = fakeOxy(null, refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
   });
 
-  test('coalesces concurrent calls into a single mint', async () => {
-    const oxy = fakeOxy(null);
-    let resolveMint: ((value: string | null) => void) | null = null;
-    mockedRefresh.mockImplementation(
-      () =>
-        new Promise<string | null>((resolve) => {
-          resolveMint = resolve;
-        }),
-    );
-    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
+  test('delegates concurrent calls to the shared single-flight (no private guard of its own)', async () => {
+    // The transport keeps NO local coalescing — it forwards each call to the
+    // shared `httpService.refreshAccessToken`, which owns the single-flight that
+    // collapses concurrent mints into one server rotation (covered in core).
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy(null, refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
 
     const first = transport.ensureActiveToken(state);
     const second = transport.ensureActiveToken(state);
+    // Both concurrent callers reached the shared entry point synchronously — the
+    // transport does not swallow the second behind a private guard; dedup is the
+    // shared single-flight's job.
+    expect(refreshAccessToken).toHaveBeenCalledTimes(2);
 
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
-
-    resolveMint?.(null);
-    await Promise.all([first, second]);
-
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
-
-    // A later call after the in-flight mint settled starts a fresh mint.
-    const third = transport.ensureActiveToken(state);
-    expect(mockedRefresh).toHaveBeenCalledTimes(2);
-    resolveMint?.(null);
-    await third;
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
   });
 
   test('treats a throwing getAccessToken as no-token and still mints', async () => {
-    const oxy = fakeOxy(null);
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy(null, refreshAccessToken);
     oxy.getAccessToken.mockImplementation(() => {
       throw new Error('storage unavailable');
     });
-    const transport = createTokenTransport(oxy as never, createMemoryAuthStateStore());
+    const transport = createTokenTransport(oxy as never);
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
 
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
@@ -124,7 +107,7 @@ describe('createTokenTransport', () => {
       { component: 'TokenTransport' },
       expect.any(Error),
     );
-    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
 
     warnSpy.mockRestore();
   });

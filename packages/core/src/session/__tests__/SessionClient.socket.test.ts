@@ -131,4 +131,36 @@ describe('SessionClient socket', () => {
     c.stop();
     expect(fakeSocket.connected).toBe(false);
   });
+
+  it('a socket-pushed empty state fires onUnauthenticated with the PUSH origin (bug #4)', async () => {
+    const onUnauthenticated = jest.fn();
+    const c = new SessionClient(makeHost(), { onUnauthenticated });
+    await c.start();
+
+    const EMPTY: DeviceSessionState = { deviceId: 'd1', accounts: [], activeAccountId: null, revision: 9, updatedAt: 1720000000001 };
+    fakeSocket.trigger('session_state', EMPTY);
+
+    expect(onUnauthenticated).toHaveBeenCalledWith('push');
+    c.stop();
+  });
+
+  it('a REST signOut-all empty response fires onUnauthenticated with the REQUEST origin', async () => {
+    const onUnauthenticated = jest.fn();
+    const EMPTY_SYNC = {
+      state: { deviceId: 'd1', accounts: [], activeAccountId: null, revision: 9, updatedAt: 1720000000001 },
+      activeToken: null,
+    };
+    // bootstrap during start() returns a populated state; the signout (and any
+    // stray reconcile) returns empty.
+    const makeRequest = jest.fn().mockResolvedValue(EMPTY_SYNC).mockResolvedValueOnce(SYNC(1));
+    const c = new SessionClient(makeHost({ makeRequest }), { onUnauthenticated });
+    await c.start();
+
+    await c.signOut({ all: true });
+    // Flush any fire-and-forget post-commit reconcile before asserting/teardown.
+    await Promise.resolve();
+
+    expect(onUnauthenticated).toHaveBeenCalledWith('request');
+    c.stop();
+  });
 });

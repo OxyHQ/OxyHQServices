@@ -23,7 +23,6 @@ import {
   installAuthRefreshHandler,
   startTokenRefreshScheduler,
   createAccountDialogController,
-  refreshPersistedSession,
   logger as loggerUtil,
   syncHubAfterSignIn,
 } from '@oxyhq/core';
@@ -282,9 +281,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   if (!sessionClientPairRef.current) {
     sessionClientPairRef.current = createSessionClient(
       oxyServices,
-      authStore,
-      () => {
-        clearPersistedAuthSafe(authStore, logger);
+      (origin) => {
+        // Erase the DURABLE device credential only on a `request`-origin verdict
+        // (a REST sign-out / revocation). A `push`-origin empty state is a socket
+        // broadcast that may be a transient reconnect artifact — clearing the
+        // credential on it would strand the user signed out with no way back, so
+        // we clear only the local UI session and keep the credential (a dead one
+        // re-mints to `no_active_session` and resolves signed-out on next boot).
+        if (origin === 'request') {
+          clearPersistedAuthSafe(authStore, logger);
+        }
         void clearSessionStateRef.current().catch((clearError) => {
           logger('Failed to clear local state on remote sign-out', clearError);
         });
@@ -302,8 +308,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       return;
     }
     if (state.accounts.length === 0) {
+      // Clear the LOCAL UI session on any applied empty state, but NEVER the
+      // durable device credential here: `syncFromClient` runs for socket-pushed
+      // (possibly transient) states too, and wiping the credential on one would
+      // strand the user signed out. The credential wipe is gated on a
+      // `request`-origin verdict in `onUnauthenticated` above.
       sessionClientHost.setCurrentAccountId(null);
-      clearPersistedAuthSafe(authStore, logger);
       await clearSessionState();
       return;
     }
@@ -334,7 +344,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     oxyServices,
     sessionClient,
     sessionClientHost,
-    authStore,
     updateSessions,
     setActiveSessionId,
     loginSuccess,
@@ -769,7 +778,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       if (document.visibilityState !== 'visible') return;
       const reconcile = async (): Promise<void> => {
         if (!oxyServices.getAccessToken() && sessionClientHost.getDeviceCredential()) {
-          await refreshPersistedSession({ oxy: oxyServices, store: authStore });
+          // Route through the ONE shared single-flight the scheduler/preflight/401
+          // use — never a private mint lane — so a tab-focus reconcile can't
+          // double-rotate the device secret against them.
+          await oxyServices.httpService.refreshAccessToken('preflight');
         }
         if (!oxyServices.getAccessToken() && !sessionClientHost.getDeviceCredential()) {
           return;
@@ -781,7 +793,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [oxyServices, sessionClient, sessionClientHost, authStore, syncFromClient]);
+  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
 
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.

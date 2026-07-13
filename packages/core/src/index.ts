@@ -557,7 +557,7 @@ export type { SyncHubAfterSignInOptions } from './session/hubSync';
 // Session sync (device-scoped multi-account session client)
 // ---------------------------------------------------------------------------
 export { SessionClient } from './session/SessionClient';
-export type { TokenTransport, SessionClientHost, SessionClientOptions, DeviceCredential } from './session/SessionClient';
+export type { TokenTransport, SessionClientHost, SessionClientOptions, DeviceCredential, SessionStateOrigin } from './session/SessionClient';
 // The injectable socket factory type: consumers that bundle socket.io-client
 // (services/auth-sdk) pass its `io` export as `socketFactory` so realtime sync
 // never relies on core's lazy dynamic import of a bare specifier.
@@ -629,12 +629,13 @@ export type {
 
 export {
     refreshPersistedSession,
+    refreshDeviceSecretArm,
     createAuthRefreshHandler,
     installAuthRefreshHandler,
     startTokenRefreshScheduler,
     TOKEN_REFRESH_LEAD_MS,
 } from './session/refresh';
-export type { RefreshDeps, TokenRefreshSchedulerHandle } from './session/refresh';
+export type { RefreshDeps, TokenRefreshSchedulerHandle, DeviceSecretMintOutcome } from './session/refresh';
 
 export { runSessionColdBoot } from './boot/sessionColdBoot';
 export type {

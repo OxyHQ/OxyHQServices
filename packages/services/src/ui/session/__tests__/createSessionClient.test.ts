@@ -1,4 +1,4 @@
-import { SessionClient, createMemoryAuthStateStore } from '@oxyhq/core';
+import { SessionClient } from '@oxyhq/core';
 
 type Handler = (...args: unknown[]) => void;
 class FakeSocket {
@@ -36,7 +36,7 @@ describe('createSessionClient', () => {
   test('wires a SessionClient instance backed by the host + device-first token transport', () => {
     const oxy = fakeOxy();
 
-    const { client, host } = createSessionClient(oxy as never, createMemoryAuthStateStore());
+    const { client, host } = createSessionClient(oxy as never);
 
     expect(client).toBeInstanceOf(SessionClient);
     expect(typeof client.bootstrap).toBe('function');
@@ -47,7 +47,7 @@ describe('createSessionClient', () => {
   test('the returned host reflects setCurrentAccountId', () => {
     const oxy = fakeOxy();
 
-    const { host } = createSessionClient(oxy as never, createMemoryAuthStateStore());
+    const { host } = createSessionClient(oxy as never);
 
     expect(host.getCurrentAccountId()).toBeNull();
     host.setCurrentAccountId('u1');
@@ -58,7 +58,7 @@ describe('createSessionClient', () => {
     ioMock.mockClear();
     const oxy = fakeOxy();
 
-    const { client } = createSessionClient(oxy as never, createMemoryAuthStateStore());
+    const { client } = createSessionClient(oxy as never);
     await client.start();
 
     // The injected `io` was used to open the session socket at the base URL.
@@ -72,7 +72,7 @@ describe('createSessionClient', () => {
     const oxy = fakeOxy();
     const onUnauthenticated = jest.fn();
 
-    const { client } = createSessionClient(oxy as never, createMemoryAuthStateStore(), onUnauthenticated);
+    const { client } = createSessionClient(oxy as never, onUnauthenticated);
 
     // The client was constructed with the callback (no direct getter is exposed;
     // constructing without throwing + wiring the socket factory is the contract

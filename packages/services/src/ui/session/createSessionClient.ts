@@ -2,8 +2,8 @@ import { io } from 'socket.io-client';
 import {
   SessionClient,
   createSessionClientHost,
-  type AuthStateStore,
   type OxyServices,
+  type SessionStateOrigin,
 } from '@oxyhq/core';
 import { createTokenTransport } from './tokenTransport';
 
@@ -19,27 +19,30 @@ import { createTokenTransport } from './tokenTransport';
  *    core's lazy dynamic import of a bare specifier — bundler-fragile in
  *    Metro/Expo-web against the published core dist.
  *  - the device-first {@link createTokenTransport}, which mints a fallback token
- *    from the persisted device credential (`store` → `deviceId` + `deviceSecret`).
+ *    through the ONE shared `httpService.refreshAccessToken` single-flight (it
+ *    reads the persisted `deviceId` + `deviceSecret` via the installed handler,
+ *    so it takes no `store` of its own).
  *
- * `onUnauthenticated` fires when an applied device state has zero accounts (a
- * device signout-all): the provider clears the persisted store + local state so
- * a reload does not try to restore a dead session. The host is returned
- * alongside the client so the caller can call `host.setCurrentAccountId(...)`
- * as the active account changes.
+ * `onUnauthenticated` fires when an applied device state has zero accounts. It
+ * receives the {@link SessionStateOrigin} so the provider can gate the
+ * destructive credential wipe: a `request`-origin verdict (a REST sign-out /
+ * revocation) clears the persisted store; a `push`-origin verdict (a possibly
+ * transient socket broadcast) clears only the local UI session and KEEPS the
+ * durable device credential. The host is returned alongside the client so the
+ * caller can call `host.setCurrentAccountId(...)` as the active account changes.
  *
  * The realtime socket uses bearer when authenticated, or deviceId+deviceSecret
  * when signed out (after the one-shot join redirect).
  */
 export function createSessionClient(
   oxyServices: OxyServices,
-  store: AuthStateStore,
-  onUnauthenticated?: () => void,
+  onUnauthenticated?: (origin: SessionStateOrigin) => void,
 ): {
   client: SessionClient;
   host: ReturnType<typeof createSessionClientHost>;
 } {
   const host = createSessionClientHost(oxyServices);
-  const transport = createTokenTransport(oxyServices, store);
+  const transport = createTokenTransport(oxyServices);
   const client = new SessionClient(host, { transport, socketFactory: io, onUnauthenticated });
   return { client, host };
 }

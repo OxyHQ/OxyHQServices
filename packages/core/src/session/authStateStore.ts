@@ -68,7 +68,21 @@ export interface PersistedAuthState {
  */
 export interface AuthStateStore {
   load(): Promise<PersistedAuthState | null>;
-  save(state: PersistedAuthState): Promise<void>;
+  /**
+   * Persist the credential blob and report whether it durably landed.
+   *
+   * Resolves `true` when the state is retained consistent with this store's
+   * durability guarantee — a durable backing whose read-back matched, or a
+   * degraded/in-memory store that held it in memory. Resolves `false` when a
+   * DURABLE backing was expected but the write did NOT land (read-back mismatch
+   * or a thrown write); the in-memory mirror still keeps the session live for
+   * this process, but it will be lost on reload.
+   *
+   * A lane persisting a ROTATED device secret (the mint's `nextDeviceSecret`)
+   * MUST treat `false` as fatal for that mint: it must NOT plant/advertise a
+   * session built on a secret that will not survive a reload.
+   */
+  save(state: PersistedAuthState): Promise<boolean>;
   clear(): Promise<void>;
 }
 
@@ -275,7 +289,9 @@ export function createMemoryAuthStateStore(): AuthStateStore {
   return {
     load: async () => current,
     save: async (state) => {
+      // Memory IS this store's durability backing — the write always lands.
       current = state;
+      return true;
     },
     clear: async () => {
       current = null;
@@ -376,6 +392,9 @@ export function createWebAuthStateStore(): AuthStateStore {
       } catch {
         // Quota / private-mode / disabled storage — non-fatal warm-boot loss only.
       }
+      // Report ONLY the durable-credential landing; the warm-token outcome above
+      // is intentionally excluded (it is a best-effort optimization).
+      return durablePersisted;
     },
     clear: async () => {
       sessionMirror = null;
@@ -462,6 +481,9 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
       } catch {
         // Locked / oversize keychain — non-fatal warm-boot loss only.
       }
+      // Report ONLY the durable-credential landing; the warm-token outcome above
+      // is intentionally excluded (it is a best-effort optimization).
+      return durablePersisted;
     },
     clear: async () => {
       sessionMirror = null;

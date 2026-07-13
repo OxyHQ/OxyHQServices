@@ -1,5 +1,6 @@
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import { SessionClient, type SessionClientHost } from '../SessionClient';
+import { SessionClient, type SessionClientHost, type SessionStateOrigin } from '../SessionClient';
+import { createMemoryAuthStateStore } from '../authStateStore';
 
 const stateWith = (rev: number, active: string | null, accountIds: string[]): DeviceSessionState => ({
   deviceId: 'd1',
@@ -26,6 +27,10 @@ function makeHost(makeRequest: jest.Mock, currentAccountId: string | null = null
 class TestClient extends SessionClient {
   public apply(raw: unknown): boolean {
     return this.applyState(raw);
+  }
+
+  public applyWith(raw: unknown, origin: SessionStateOrigin): boolean {
+    return this.applyState(raw, origin);
   }
 }
 
@@ -89,5 +94,57 @@ describe('SessionClient onUnauthenticated', () => {
     // revision 4 <= 5 → rejected, so onUnauthenticated must NOT fire.
     c.apply(stateWith(4, null, []));
     expect(onUnauthenticated).not.toHaveBeenCalled();
+  });
+
+  it('passes the applied-state ORIGIN through to onUnauthenticated', () => {
+    const onUnauthenticated = jest.fn();
+    const c = new TestClient(makeHost(jest.fn()), { onUnauthenticated });
+
+    // A socket-pushed empty state → `push` origin.
+    c.applyWith(stateWith(1, null, []), 'push');
+    expect(onUnauthenticated).toHaveBeenLastCalledWith('push');
+
+    // A direct REST response empty state → `request` origin.
+    c.applyWith(stateWith(2, null, []), 'request');
+    expect(onUnauthenticated).toHaveBeenLastCalledWith('request');
+  });
+});
+
+describe('SessionClient onUnauthenticated — durable credential guard (bug #4)', () => {
+  const CRED = { sessionId: 's1', userId: 'a1', deviceId: 'dev-1', deviceSecret: 'ds-1' };
+
+  // Mirror the provider's origin-gated wipe: erase the durable credential ONLY on
+  // a `request`-origin verdict, never on a (possibly transient) `push`.
+  function wireGuardedStore() {
+    const store = createMemoryAuthStateStore();
+    const onUnauthenticated = (origin: SessionStateOrigin) => {
+      if (origin === 'request') void store.clear();
+    };
+    return { store, onUnauthenticated };
+  }
+
+  it('a transient socket-pushed accounts===0 does NOT wipe the durable credential', async () => {
+    const { store, onUnauthenticated } = wireGuardedStore();
+    await store.save(CRED);
+    const c = new TestClient(makeHost(jest.fn()), { onUnauthenticated });
+
+    // A `push`-origin empty state (e.g. a reconnect race on another device).
+    c.applyWith(stateWith(2, null, []), 'push');
+    await Promise.resolve();
+
+    // The device credential survives — a reload can still restore the session.
+    expect(await store.load()).toEqual(CRED);
+  });
+
+  it('a real (request-origin) sign-out DOES wipe the durable credential', async () => {
+    const { store, onUnauthenticated } = wireGuardedStore();
+    await store.save(CRED);
+    const c = new TestClient(makeHost(jest.fn()), { onUnauthenticated });
+
+    // A `request`-origin empty state = the REST sign-out response.
+    c.applyWith(stateWith(2, null, []), 'request');
+    await Promise.resolve();
+
+    expect(await store.load()).toBeNull();
   });
 });

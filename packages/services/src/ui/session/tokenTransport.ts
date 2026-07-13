@@ -1,10 +1,4 @@
-import {
-  refreshPersistedSession,
-  logger,
-  type AuthStateStore,
-  type OxyServices,
-  type TokenTransport,
-} from '@oxyhq/core';
+import { logger, type OxyServices, type TokenTransport } from '@oxyhq/core';
 import type { DeviceSessionState } from '@oxyhq/contracts';
 
 /**
@@ -12,21 +6,18 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
  *
  * `ensureActiveToken` is the fallback the client uses when a `session_state`
  * push arrived WITHOUT an embedded `activeToken` and the app currently holds no
- * bearer. It mints one through the ONE unified refresh path
- * (`refreshPersistedSession`), which presents the persisted zero-cookie device
- * credential (`deviceId` + `deviceSecret`) at `POST /session/device/token`. The
- * persisted device credential is the sole durable restore credential.
+ * bearer. It mints one through the ONE unified single-flight the scheduler, the
+ * request-time preflight, and the 401 retry all use —
+ * `oxyServices.httpService.refreshAccessToken(...)` — which runs the installed
+ * refresh handler (present the persisted zero-cookie `deviceId` + `deviceSecret`
+ * at `POST /session/device/token`). Routing through the SAME entry point means
+ * this lane can never double-rotate the device secret against the others: it has
+ * NO private single-flight of its own.
  *
- * Concurrent pushes coalesce onto one in-flight mint. A failure is logged and
- * swallowed: this method must never throw out (it runs inside the socket state
- * handler).
+ * A failure is logged and swallowed: this method must never throw out (it runs
+ * inside the socket state handler).
  */
-export function createTokenTransport(
-  oxyServices: OxyServices,
-  store: AuthStateStore,
-): TokenTransport {
-  let inFlightMint: Promise<void> | null = null;
-
+export function createTokenTransport(oxyServices: OxyServices): TokenTransport {
   return {
     async ensureActiveToken(state: DeviceSessionState): Promise<void> {
       try {
@@ -37,28 +28,18 @@ export function createTokenTransport(
         logger.warn('ensureActiveToken: getAccessToken threw', { component: 'TokenTransport' }, error);
       }
 
-      if (inFlightMint) {
-        return inFlightMint;
-      }
-
-      inFlightMint = (async () => {
-        try {
-          const token = await refreshPersistedSession({ oxy: oxyServices, store });
-          if (!token) {
-            logger.debug('ensureActiveToken: refresh produced no session', {
-              component: 'TokenTransport',
-              deviceId: state.deviceId,
-            });
-          }
-        } catch (error) {
-          logger.warn('ensureActiveToken: refresh failed', { component: 'TokenTransport' }, error);
-        }
-      })();
-
       try {
-        await inFlightMint;
-      } finally {
-        inFlightMint = null;
+        // The shared HttpService single-flight coalesces concurrent callers onto
+        // one in-flight mint; no local `inFlightMint` guard is needed.
+        const token = await oxyServices.httpService.refreshAccessToken('preflight');
+        if (!token) {
+          logger.debug('ensureActiveToken: refresh produced no session', {
+            component: 'TokenTransport',
+            deviceId: state.deviceId,
+          });
+        }
+      } catch (error) {
+        logger.warn('ensureActiveToken: refresh failed', { component: 'TokenTransport' }, error);
       }
     },
   };
