@@ -12,6 +12,16 @@ node_modules/
 *.log
 .DS_Store
 
+# Native build outputs — regenerated per-app at autolink/build time. Only the
+# sources (android/src, android/build.gradle, ios/*.swift, ios/*.podspec,
+# expo-module.config.json) ship; compiled artifacts must NOT bloat the tarball.
+android/build
+android/.gradle
+android/.cxx
+ios/build
+ios/Pods
+*.tgz
+
 # Tests
 **/*.test.ts
 **/*.spec.ts

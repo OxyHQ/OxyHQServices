@@ -68,8 +68,10 @@
     "src",
     "lib",
     "assets",
-    "android",
-    "ios",
+    "android/build.gradle",
+    "android/src",
+    "ios/OxyIdentityModule.swift",
+    "ios/OxyIdentity.podspec",
     "plugins",
     "expo-module.config.json"
   ],
