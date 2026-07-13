@@ -34,8 +34,14 @@ let inFlightCreateIdentity: Promise<{ recoveryPhrase: string[]; synced: boolean;
 let inFlightImportIdentity: Promise<{ synced: boolean }> | null = null;
 
 export interface UseIdentityResult {
-  /** Create a new identity locally (offline-first) and optionally sync with server */
-  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }>;
+  /**
+   * Create a new identity locally (offline-first) and optionally sync with server.
+   * Pass `{ skipSync: true }` (e.g. when the caller already detected no
+   * connectivity) to skip the register + signIn round-trip entirely instead of
+   * blocking on a ~19s DNS timeout — the identity is still created locally and
+   * the sync is deferred to the reconnect handler / username step.
+   */
+  createIdentity: (opts?: { skipSync?: boolean }) => Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }>;
   /** Import an existing identity from recovery phrase */
   importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
   /** Sync local identity with server (when online) */
@@ -124,7 +130,7 @@ export const useIdentity = (): UseIdentityResult => {
   );
 
   const createIdentity = useCallback(
-    async (): Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> => {
+    async (opts?: { skipSync?: boolean }): Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
       if (!signIn) throw new Error('signIn not available');
 
@@ -171,6 +177,15 @@ export const useIdentity = (): UseIdentityResult => {
         // the next time they wipe the app.
         setSynced(false);
         await persistIdentitySyncState(false);
+
+        // Caller detected no connectivity: skip the register + signIn round-trip
+        // rather than stalling the "Setting up your account…" screen on a ~19s
+        // DNS timeout. The identity already exists locally (keys generated
+        // above); sync is deferred to the reconnect handler / username step.
+        if (opts?.skipSync) {
+          console.warn('[useIdentity] Offline during create — identity stored locally, server sync deferred');
+          return { recoveryPhrase: words, synced: false };
+        }
 
         try {
           const { signature, timestamp } = await SignatureService.createRegistrationSignature();
