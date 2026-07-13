@@ -91,7 +91,7 @@ jest.mock('../../utils/sessionUtils', () => ({
 jest.mock('../../utils/deviceUtils', () => ({
   extractDeviceInfo: jest.fn().mockReturnValue({
     deviceId: 'device-x', deviceName: 'Dev', deviceType: 'desktop', platform: 'web',
-    browser: 'Chrome', os: 'Linux', ipAddress: '127.0.0.1', userAgent: 'ua',
+    browser: 'Chrome', os: 'Linux', userAgent: 'ua',
   }),
   generateDeviceFingerprint: jest.fn(),
   registerDevice: jest.fn(),

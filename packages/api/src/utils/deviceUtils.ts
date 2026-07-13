@@ -15,7 +15,6 @@ export interface DeviceFingerprint {
     height: number;
     colorDepth: number;
   };
-  ipAddress: string;
 }
 
 export type DeviceFingerprintInput = DeviceFingerprint | string;
@@ -29,9 +28,7 @@ export interface DeviceInfo {
   platform: string;
   browser?: string;
   os?: string;
-  ipAddress?: string;
   userAgent?: string;
-  location?: string;
   fingerprint?: string;
   /**
    * How `deviceId` was sourced. Diagnostic only — never persisted on the
@@ -39,8 +36,6 @@ export interface DeviceInfo {
    */
   deviceIdSource?: 'provided' | 'fingerprint-derived' | 'random';
 }
-
-const UNRESOLVABLE_IPS: ReadonlySet<string> = new Set(['unknown', '127.0.0.1', '::1']);
 
 const PRE_AUTH_USER_SCOPE = 'pre-auth';
 
@@ -64,42 +59,44 @@ function getDeviceIdSalt(): string | null {
 }
 
 /**
- * Derive a stable, non-PII deviceId from a request's User-Agent + IP +
+ * Derive a stable, non-PII deviceId from a request's User-Agent +
  * Accept-Language, scoped by a server-side salt and (optionally) the
  * authenticated `userId`. The output is the first 32 hex chars of
- * `sha256("${salt}|${userScope}|${ua}|${ip}|${lang}")`, which gives roughly
+ * `sha256("${salt}|${userScope}|${ua}|${lang}")`, which gives roughly
  * 128 bits of entropy in the digest space.
  *
- * **Why salt + userId?** Without them, two distinct users behind the same
- * NAT/proxy/office using the same Chrome version + Accept-Language would
- * derive the SAME deviceId — leaking the existence of one user's sessions
- * to the other via `getDeviceActiveSessions`, and enabling cross-tenant
- * session termination via `logoutAllDeviceSessions`. Scoping by `userId`
- * makes the device-grouping per-user (the multi-account browser-switcher
- * is driven separately by indexed refresh cookies, not by this id).
+ * **IP is deliberately NOT an input.** The platform stores no user IP addresses
+ * at rest (privacy invariant — see
+ * docs/superpowers/specs/2026-07-14-no-ip-storage-design.md). Beyond the privacy
+ * requirement, a salted hash over the tiny IPv4 space is brute-forceable by
+ * anyone with server access, and IP churn (mobile networks, NAT re-lease) made
+ * IP-seeded ids unstable — a single physical device kept minting fresh session
+ * rows as its IP rotated. Dropping IP fixes both.
+ *
+ * **Why salt + userId?** Without them, two distinct users on the same browser
+ * (same Chrome version + Accept-Language) would derive the SAME deviceId —
+ * leaking the existence of one user's sessions to the other via
+ * `getDeviceActiveSessions`, and enabling cross-tenant session termination via
+ * `logoutAllDeviceSessions`. Scoping by `userId` makes the device-grouping
+ * per-user. The accepted trade-off is that the same user + same UA + same
+ * language on two physical devices dedupe to one deviceId — acceptable because
+ * device-first auth uses the client-persisted deviceId as the authority.
  *
  * Pre-auth callers (e.g. signup, before the user record exists) MAY pass
  * `userId = null`; the resulting id is stable for the pre-auth phase but
  * deterministically distinct from any post-auth id derived from the same
- * UA/IP/lang.
+ * UA/lang.
  *
  * Falls back to `null` when:
  *   - the server-side salt is unset (caller should fall back to a random id);
- *   - the User-Agent is missing or the literal string `'unknown'`;
- *   - the IP is missing or one of the unresolvable sentinels
- *     (`'unknown'`, `'127.0.0.1'`, `'::1'`) — those would deterministically
- *     collide across totally unrelated requests.
+ *   - the User-Agent is missing or the literal string `'unknown'`.
  */
 export function deriveStableDeviceId(
   userAgent: string,
-  ip: string | undefined,
   acceptLanguage: string,
   userId?: string | null
 ): string | null {
   if (!userAgent || userAgent === 'unknown') {
-    return null;
-  }
-  if (!ip || UNRESOLVABLE_IPS.has(ip)) {
     return null;
   }
   const salt = getDeviceIdSalt();
@@ -109,7 +106,7 @@ export function deriveStableDeviceId(
   const userScope = userId && userId.length > 0 ? userId : PRE_AUTH_USER_SCOPE;
   return crypto
     .createHash('sha256')
-    .update(`${salt}|${userScope}|${userAgent}|${ip}|${acceptLanguage}`)
+    .update(`${salt}|${userScope}|${userAgent}|${acceptLanguage}`)
     .digest('hex')
     .slice(0, 32);
 }
@@ -122,16 +119,15 @@ export function deriveStableDeviceId(
  * segment is FIXED cryptographic derivation material for server-minted sessions.
  *
  * **Why a separate helper?** A server-to-server mint has no meaningful
- * User-Agent (`'unknown'`) and a per-call egress IP. Feeding those into
- * `deriveStableDeviceId` would yield a fresh random id every call → a
- * brand-new session row each time. Keying off a stable per-caller key (`key`)
- * instead makes one `(user, RP)` reuse a single session that simply refreshes
- * its tokens/expiry.
+ * User-Agent (`'unknown'`), so `deriveStableDeviceId` returns null for it → the
+ * caller would fall back to a fresh random id every call → a brand-new session
+ * row each time. Keying off a stable per-caller key (`key`) instead makes one
+ * `(user, RP)` reuse a single session that simply refreshes its tokens/expiry.
  *
  * **Why the `'idp'` namespace segment?** It guarantees the output can never
- * collide with an IP/UA-derived id from `deriveStableDeviceId` (whose hash
- * input never contains the literal `idp` in that position), so the two
- * device-id spaces stay disjoint.
+ * collide with a UA-derived id from `deriveStableDeviceId` (whose hash input
+ * never contains the literal `idp` in that position), so the two device-id
+ * spaces stay disjoint.
  *
  * **Per-user scoping is MANDATORY (security review H1):** `userId` is mixed
  * into the hash so two users with the same RP `key` can never derive the same
@@ -192,14 +188,13 @@ export const generateDeviceFingerprint = (fingerprint: DeviceFingerprintInput): 
 /**
  * Extract device information from request.
  *
- * @param req - Express request to read headers/IP from.
+ * @param req - Express request to read headers from.
  * @param providedDeviceId - Optional explicit deviceId supplied by the client.
  * @param deviceName - Optional explicit device name supplied by the client.
  * @param userId - Optional authenticated user id. When set, the derived
- *   deviceId is scoped to this user so two distinct users behind the same
- *   NAT/proxy on the same browser do NOT collide on the same id. Pre-auth
- *   callers (signup, device bootstrap before a session exists) should pass
- *   `null` / omit.
+ *   deviceId is scoped to this user so two distinct users on the same browser
+ *   do NOT collide on the same id. Pre-auth callers (signup, device bootstrap
+ *   before a session exists) should pass `null` / omit.
  */
 export const extractDeviceInfo = (
   req: Request,
@@ -216,18 +211,17 @@ export const extractDeviceInfo = (
   const os = parseUserAgentOS(userAgent);
   const deviceType = parseDeviceType(userAgent);
 
-  const ipAddress = req.ip || req.connection.remoteAddress;
   const acceptLanguageHeader = req.headers['accept-language'];
   const acceptLanguage = typeof acceptLanguageHeader === 'string' ? acceptLanguageHeader : '';
 
   // Stable deviceId fallback. The derived id is salted + user-scoped (see
   // `deriveStableDeviceId`) so device-grouping is per-user; the multi-account
   // browser switcher is driven by indexed refresh cookies, not by this id.
-  // We fall back to a random id when ANY of the inputs is unresolvable.
+  // We fall back to a random id when the UA is unresolvable or the salt is unset.
   let resolvedDeviceId = providedDeviceId;
   let deviceIdSource: DeviceInfo['deviceIdSource'] = providedDeviceId ? 'provided' : 'random';
   if (!resolvedDeviceId) {
-    const derived = deriveStableDeviceId(userAgent, ipAddress, acceptLanguage, userId);
+    const derived = deriveStableDeviceId(userAgent, acceptLanguage, userId);
     if (derived) {
       resolvedDeviceId = derived;
       deviceIdSource = 'fingerprint-derived';
@@ -244,9 +238,7 @@ export const extractDeviceInfo = (
     platform,
     browser,
     os,
-    ipAddress,
     userAgent,
-    location: req.headers['cf-ipcountry'] as string || undefined, // Cloudflare country header
     deviceIdSource,
   };
 };

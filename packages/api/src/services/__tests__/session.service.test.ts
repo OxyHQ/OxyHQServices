@@ -116,9 +116,7 @@ jest.mock('../../utils/deviceUtils', () => ({
       platform: 'web',
       browser: 'Chrome',
       os: 'Linux',
-      ipAddress: '127.0.0.1',
       userAgent: 'test-agent',
-      location: undefined,
       fingerprint: undefined,
     })),
   generateDeviceFingerprint: jest.fn().mockReturnValue('fingerprint-hash'),
@@ -169,7 +167,6 @@ function createMockSession(overrides: Record<string, unknown> = {}) {
       platform: 'web',
       browser: 'Chrome',
       os: 'Linux',
-      ipAddress: '127.0.0.1',
       userAgent: 'test-agent',
       lastActive: new Date(),
     },
@@ -237,7 +234,6 @@ describe('Session Service', () => {
       expect(result.deviceInfo.deviceType).toBe('desktop');
       expect(result.deviceInfo.platform).toBe('web');
       expect(result.deviceInfo.browser).toBe('Chrome');
-      expect(result.deviceInfo.ipAddress).toBe('127.0.0.1');
       expect(result.deviceId).toBe('device-123');
     });
   });

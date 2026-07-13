@@ -2,8 +2,9 @@
  * deviceUtils — `deriveStableDeviceId` tests (security review H1).
  *
  * The derived deviceId scopes session-grouping per (server-salt + user) so
- * two distinct users behind the same NAT/proxy on the same browser do NOT
- * collide on the same id. These tests pin that contract.
+ * two distinct users on the same browser do NOT collide on the same id. IP is
+ * deliberately NOT an input (privacy invariant — no user IPs at rest). These
+ * tests pin that contract.
  */
 
 jest.mock('../logger', () => ({
@@ -19,9 +20,11 @@ jest.mock('../sessionCache', () => ({ __esModule: true, default: { invalidate: j
 jest.mock('../userTransform', () => ({ formatUserResponse: jest.fn() }));
 
 import crypto from 'crypto';
+import type { Request } from 'express';
 import {
   deriveStableDeviceId,
   deriveServiceDeviceId,
+  extractDeviceInfo,
   generateDeviceFingerprint,
 } from '../deviceUtils';
 
@@ -29,7 +32,6 @@ const STRONG_SALT_A = 'a'.repeat(48);
 const STRONG_SALT_B = 'b'.repeat(48);
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0 Safari/537.36';
-const IP = '203.0.113.42';
 const LANG = 'en-US,en;q=0.9';
 
 const ORIGINAL_ENV = process.env;
@@ -45,29 +47,36 @@ describe('deriveStableDeviceId', () => {
   });
 
   it('returns a 32-char hex string for valid inputs', () => {
-    const id = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+    const id = deriveStableDeviceId(UA, LANG, 'user-1');
     expect(id).not.toBeNull();
     expect(id).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('is deterministic for the same (ua, ip, lang, userId) inputs', () => {
-    const a = deriveStableDeviceId(UA, IP, LANG, 'user-1');
-    const b = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+  it('is deterministic for the same (ua, lang, userId) inputs', () => {
+    const a = deriveStableDeviceId(UA, LANG, 'user-1');
+    const b = deriveStableDeviceId(UA, LANG, 'user-1');
     expect(a).toBe(b);
   });
 
-  it('produces DIFFERENT ids for two distinct users on the same browser/IP', () => {
-    const userA = deriveStableDeviceId(UA, IP, LANG, 'user-A');
-    const userB = deriveStableDeviceId(UA, IP, LANG, 'user-B');
+  it('derives the same deviceId regardless of network (no IP input)', () => {
+    process.env.DEVICE_ID_SALT = 'test-salt-0123456789abcdef';
+    const a = deriveStableDeviceId('Mozilla/5.0 (X11; Linux x86_64)', 'en-US', 'user1');
+    expect(a).toMatch(/^[a-f0-9]{32}$/);
+    expect(deriveStableDeviceId('Mozilla/5.0 (X11; Linux x86_64)', 'en-US', 'user1')).toBe(a);
+  });
+
+  it('produces DIFFERENT ids for two distinct users on the same browser', () => {
+    const userA = deriveStableDeviceId(UA, LANG, 'user-A');
+    const userB = deriveStableDeviceId(UA, LANG, 'user-B');
     expect(userA).not.toBeNull();
     expect(userB).not.toBeNull();
     expect(userA).not.toBe(userB);
   });
 
   it('produces a DIFFERENT id when the server salt changes (defends against salt-guessing)', () => {
-    const withSaltA = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+    const withSaltA = deriveStableDeviceId(UA, LANG, 'user-1');
     process.env.DEVICE_ID_SALT = STRONG_SALT_B;
-    const withSaltB = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+    const withSaltB = deriveStableDeviceId(UA, LANG, 'user-1');
     expect(withSaltA).not.toBeNull();
     expect(withSaltB).not.toBeNull();
     expect(withSaltA).not.toBe(withSaltB);
@@ -75,25 +84,25 @@ describe('deriveStableDeviceId', () => {
 
   describe('pre-auth (userId omitted / null)', () => {
     it('still returns a stable id (deterministic with itself)', () => {
-      const a = deriveStableDeviceId(UA, IP, LANG, null);
-      const b = deriveStableDeviceId(UA, IP, LANG, null);
-      const c = deriveStableDeviceId(UA, IP, LANG);
+      const a = deriveStableDeviceId(UA, LANG, null);
+      const b = deriveStableDeviceId(UA, LANG, null);
+      const c = deriveStableDeviceId(UA, LANG);
       expect(a).not.toBeNull();
       expect(a).toBe(b);
       expect(a).toBe(c);
     });
 
     it('produces a DIFFERENT id from any post-auth id derived from the same inputs', () => {
-      const preAuth = deriveStableDeviceId(UA, IP, LANG, null);
-      const postAuth = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+      const preAuth = deriveStableDeviceId(UA, LANG, null);
+      const postAuth = deriveStableDeviceId(UA, LANG, 'user-1');
       expect(preAuth).not.toBeNull();
       expect(postAuth).not.toBeNull();
       expect(preAuth).not.toBe(postAuth);
     });
 
     it('treats empty-string userId as pre-auth', () => {
-      const empty = deriveStableDeviceId(UA, IP, LANG, '');
-      const preAuth = deriveStableDeviceId(UA, IP, LANG, null);
+      const empty = deriveStableDeviceId(UA, LANG, '');
+      const preAuth = deriveStableDeviceId(UA, LANG, null);
       expect(empty).toBe(preAuth);
     });
   });
@@ -101,32 +110,55 @@ describe('deriveStableDeviceId', () => {
   describe('unresolvable inputs', () => {
     it('returns null when DEVICE_ID_SALT is unset', () => {
       delete process.env.DEVICE_ID_SALT;
-      expect(deriveStableDeviceId(UA, IP, LANG, 'user-1')).toBeNull();
+      expect(deriveStableDeviceId(UA, LANG, 'user-1')).toBeNull();
     });
 
     it('returns null when DEVICE_ID_SALT is empty', () => {
       process.env.DEVICE_ID_SALT = '';
-      expect(deriveStableDeviceId(UA, IP, LANG, 'user-1')).toBeNull();
+      expect(deriveStableDeviceId(UA, LANG, 'user-1')).toBeNull();
     });
 
     it.each([
-      ['empty UA', '', IP],
-      ['literal "unknown" UA', 'unknown', IP],
-      ['undefined IP', UA, undefined],
-      ['"unknown" IP', UA, 'unknown'],
-      ['loopback v4', UA, '127.0.0.1'],
-      ['loopback v6', UA, '::1'],
-    ])('returns null for %s', (_label, ua, ip) => {
-      expect(deriveStableDeviceId(ua, ip, LANG, 'user-1')).toBeNull();
+      ['empty UA', ''],
+      ['literal "unknown" UA', 'unknown'],
+    ])('returns null for %s', (_label, ua) => {
+      expect(deriveStableDeviceId(ua, LANG, 'user-1')).toBeNull();
     });
+  });
+});
+
+describe('extractDeviceInfo', () => {
+  const SAVED_SALT = process.env.DEVICE_ID_SALT;
+
+  beforeEach(() => {
+    process.env.DEVICE_ID_SALT = STRONG_SALT_A;
+  });
+
+  afterEach(() => {
+    if (SAVED_SALT === undefined) {
+      delete process.env.DEVICE_ID_SALT;
+    } else {
+      process.env.DEVICE_ID_SALT = SAVED_SALT;
+    }
+  });
+
+  it('returns no ipAddress and no location', () => {
+    const req = {
+      headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'en', 'cf-ipcountry': 'ES' },
+      ip: '203.0.113.7',
+      connection: { remoteAddress: '203.0.113.7' },
+    } as unknown as Request;
+    const info = extractDeviceInfo(req);
+    expect('ipAddress' in info).toBe(false);
+    expect('location' in info).toBe(false);
   });
 });
 
 /**
  * deviceUtils — `deriveServiceDeviceId` tests.
  *
- * The IdP/FedCM-issued device id is keyed by (server-salt + userId + RP key),
- * NOT by the IdP worker's UA/IP. These tests pin: determinism (so one
+ * The server-minted device id is keyed by (server-salt + userId + RP key),
+ * NOT by the caller's UA/IP. These tests pin: determinism (so one
  * (user, RP) reuses one session), per-user scoping (security review H1),
  * per-RP scoping, and fail-closed behaviour when the salt is unset.
  */
@@ -177,9 +209,9 @@ describe('deriveServiceDeviceId', () => {
     expect(withSaltA).not.toBe(withSaltB);
   });
 
-  it('can never collide with a UA/IP-derived id (distinct "idp" namespace)', () => {
+  it('can never collide with a UA-derived id (distinct "idp" namespace)', () => {
     const serviceId = deriveServiceDeviceId('user-1', RP_A);
-    const stableId = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+    const stableId = deriveStableDeviceId(UA, LANG, 'user-1');
     expect(serviceId).not.toBe(stableId);
   });
 
@@ -221,7 +253,6 @@ describe('generateDeviceFingerprint', () => {
         language: 'en-US',
         timezone: 'America/Los_Angeles',
         screen: { width: 1440, height: 900, colorDepth: 24 },
-        ipAddress: '203.0.113.10',
       })
     ).toBe(
       crypto
