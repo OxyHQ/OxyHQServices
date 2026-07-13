@@ -127,11 +127,20 @@ export class MediaPrivacyService {
         if (authorId === viewerUserId) return { allowed: true };
         
         if (postVisibility === 'followers') {
+          // `authorId` is caller-supplied. Reject anything that is not a valid
+          // ObjectId, then query with a constructed ObjectId — so no user-shaped
+          // value can ever reach the query as a query operator.
+          if (!mongoose.Types.ObjectId.isValid(authorId)) {
+            return { allowed: false };
+          }
+
           // Use cache for author lookup to avoid repeated database queries
           // Author data (followers list) rarely changes, so caching significantly improves performance
           let author = userCache.get(authorId);
           if (!author) {
-            const authorDoc = await User.findById(authorId).select('followers').lean<IUser>();
+            const authorDoc = await User.findById(new mongoose.Types.ObjectId(authorId))
+              .select('followers')
+              .lean<IUser>();
             if (authorDoc) {
               author = authorDoc;
               userCache.set(authorId, author);
