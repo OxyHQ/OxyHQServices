@@ -10,7 +10,7 @@ import type { Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { logger } from '../utils/logger';
 import { authenticateRequestNonBlocking, type AuthenticatedRequest, extractTokenFromRequest, decodeToken, validateSessionToken } from './authUtils';
-import { verifyServiceToken, type ServiceTokenPayload } from './auth';
+import { verifyServiceToken, type ServiceTokenPayload } from './serviceToken';
 
 /**
  * Optional authentication middleware

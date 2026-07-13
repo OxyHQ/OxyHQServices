@@ -1526,9 +1526,36 @@ async function verifyFederatedWebFingerBinding(username: string, actorUri: strin
   }
 }
 
+/**
+ * Dedicated per-app limiter for PUT /users/resolve — the federated/agent user
+ * find-or-create that a relying app's connectors call in BULK during a backfill
+ * (one resolve per unique external author), all through a single NAT egress IP.
+ *
+ * This path is EXEMPT from the global browser per-IP limiter (rl:general) and the
+ * slowDown penalty (see `isServiceToServiceBulkRequest` in middleware/security),
+ * because that per-IP browser budget — shared across ALL of the app's oxy-api
+ * calls from one NAT IP — 429'd bulk resolves (the same failure mode as the
+ * federation sign surface). This is therefore its dedicated budget. Keyed by the
+ * calling service app id (never the shared NAT IP), sized like
+ * `federationServiceLimiter` (60000/15min ≈ 66 req/s): generous enough for a
+ * large author backfill, still bounding a runaway or compromised credential.
+ * Applied AFTER serviceAuthMiddleware so `req.serviceApp` is populated for the key.
+ */
+const userResolveServiceLimiter = rateLimit({
+  prefix: 'rl:user-resolve:service:',
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 120000 : 60000,
+  message: 'Too many federated-user resolve requests, please slow down.',
+  keyGenerator: (req: Request) => {
+    const appId = (req as ServiceAuthRequest).serviceApp?.appId;
+    return appId ? `app:${appId}` : (req.ip ?? 'unknown');
+  },
+});
+
 router.put(
   '/resolve',
   serviceAuthMiddleware,
+  userResolveServiceLimiter,
   asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
     // Scope gate — only service tokens explicitly granted `federation:write`
     // may create or update federated/agent/automated users.

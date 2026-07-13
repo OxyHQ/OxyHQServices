@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 import type { Document } from 'mongoose';
 import sessionService from '../services/session.service';
+import { verifyServiceToken, type ServiceTokenPayload } from './serviceToken';
 import {
   extractTokenFromRequest,
   decodeToken,
@@ -199,23 +200,6 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 };
 
 /**
- * Decoded payload for service-to-service JWTs minted via
- * `POST /auth/service-token`. Carries the `scopes` granted to the
- * Application so downstream middleware can do per-scope authorisation.
- * The `appId` claim is the Application `_id`.
- */
-export interface ServiceTokenPayload {
-  type: 'service';
-  appId: string;
-  appName: string;
-  /** The specific ApplicationCredential `_id` that minted this token. */
-  credentialId: string;
-  scopes: string[];
-  iat?: number;
-  exp?: number;
-}
-
-/**
  * Request augmented by `serviceAuthMiddleware` with the verified service
  * principal. Routes can read `req.serviceApp.scopes` to gate sensitive
  * actions.
@@ -239,81 +223,6 @@ export interface ServiceAuthRequest extends Request {
  * @param res - Express response object
  * @param next - Express next function
  */
-/**
- * Outcome of {@link verifyServiceToken}. The verification is deliberately
- * tri-state so callers can produce the precise 4xx (blocking middleware) or
- * silently fall back to anonymous (non-blocking optional auth):
- *  - `{ ok: true, payload }` — a valid `service`-type token.
- *  - `{ ok: false, reason: 'not_service' }` — verified, but not a service token
- *    (a user session token, or missing required service claims).
- *  - `{ ok: false, reason: 'expired' | 'invalid' }` — verification failed.
- */
-export type ServiceTokenVerification =
-  | { ok: true; payload: ServiceTokenPayload }
-  | { ok: false; reason: 'not_service' | 'expired' | 'invalid' };
-
-/**
- * Pure verification of a service JWT. SINGLE SOURCE OF TRUTH for the service
- * token contract — both the blocking `serviceAuthMiddleware` and any optional /
- * dual-auth path verify through here so they cannot drift. Performs the full
- * `jwt.verify` (signature + expiry) and the required-claim checks; never throws.
- */
-export function verifyServiceToken(token: string): ServiceTokenVerification {
-  if (!process.env.ACCESS_TOKEN_SECRET) {
-    logger.error('ACCESS_TOKEN_SECRET not configured');
-    return { ok: false, reason: 'invalid' };
-  }
-
-  let decoded: {
-    type?: string;
-    appId?: string;
-    appName?: string;
-    credentialId?: string;
-    scopes?: unknown;
-    iat?: number;
-    exp?: number;
-    [key: string]: unknown;
-  };
-  try {
-    decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET) as typeof decoded;
-  } catch (error) {
-    if (error instanceof jwt.TokenExpiredError) {
-      return { ok: false, reason: 'expired' };
-    }
-    return { ok: false, reason: 'invalid' };
-  }
-
-  if (decoded.type !== 'service') {
-    return { ok: false, reason: 'not_service' };
-  }
-
-  if (
-    typeof decoded.appId !== 'string' ||
-    typeof decoded.appName !== 'string' ||
-    typeof decoded.credentialId !== 'string' ||
-    decoded.credentialId.length === 0
-  ) {
-    return { ok: false, reason: 'not_service' };
-  }
-
-  const scopes = Array.isArray(decoded.scopes)
-    ? decoded.scopes.filter((s): s is string => typeof s === 'string')
-    : [];
-
-  return {
-    ok: true,
-    payload: {
-      type: 'service',
-      appId: decoded.appId,
-      appName: decoded.appName,
-      credentialId: decoded.credentialId,
-      scopes,
-      iat: decoded.iat,
-      exp: decoded.exp,
-    },
-  };
-}
-
 export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {

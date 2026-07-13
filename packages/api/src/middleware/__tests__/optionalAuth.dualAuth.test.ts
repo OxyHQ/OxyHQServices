@@ -2,7 +2,7 @@
  * optionalUserOrServiceAuth + resolveViewerId — the dual-auth viewer resolution
  * for the recommendation surface.
  *
- * The token-verification primitives (`verifyServiceToken` from ./auth,
+ * The token-verification primitives (`verifyServiceToken` from ./serviceToken,
  * `authenticateRequestNonBlocking` from ./authUtils) are mocked so we exercise
  * the REAL middleware/resolver branching without a DB or real JWTs.
  *
@@ -24,7 +24,7 @@ import { Types } from 'mongoose';
 import type { Response } from 'express';
 
 const mockVerifyServiceToken = jest.fn();
-jest.mock('../auth', () => ({
+jest.mock('../serviceToken', () => ({
   __esModule: true,
   verifyServiceToken: (...args: unknown[]) => mockVerifyServiceToken(...args),
 }));
