@@ -15,7 +15,7 @@
 
 import { type FC, useMemo } from 'react';
 
-import { Canvas, Group, LinearGradient, Path, Skia, vec } from '@shopify/react-native-skia';
+import { Canvas, Group, LinearGradient, Path, PathOp, Skia, vec } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
 
 import { useTilt } from './tilt-context';
@@ -51,7 +51,14 @@ const buildOxyParts = (size: number) => {
     outer.transform(scale);
     inner.transform(scale);
     letters.transform(scale);
-    return { outer, inner, letters };
+
+    // Merge the silhouette + inner detail into one foil body so it fills with a
+    // single gradient. A true UNION (not addPath) makes the single fill identical
+    // to painting both layers — no winding cancellation where they overlap.
+    if (!outer.op(inner, PathOp.Union)) {
+        outer.addPath(inner);
+    }
+    return { body: outer, letters };
 };
 
 interface HolographicLogoProps {
@@ -69,8 +76,9 @@ export const HolographicLogo: FC<HolographicLogoProps> = ({ size = 22 }) => {
 
     // Diagonal iridescence band whose endpoints slide with tilt — the SAME motion
     // as the card's guilloché, so the foil shifts colour in step with the hologram.
-    const start = useDerivedValue(() => vec(w * (-0.3 + nx.value * 0.6), h * (-0.3 + ny.value * 0.6)));
-    const end = useDerivedValue(() => vec(w * (1.3 + nx.value * 0.6), h * (1.3 + ny.value * 0.6)));
+    // `w`/`h` are render-scope values, so declare them as explicit deps.
+    const start = useDerivedValue(() => vec(w * (-0.3 + nx.value * 0.6), h * (-0.3 + ny.value * 0.6)), [w, h]);
+    const end = useDerivedValue(() => vec(w * (1.3 + nx.value * 0.6), h * (1.3 + ny.value * 0.6)), [w, h]);
     // Always clearly visible (it's the logo), with a small flare on tilt.
     const opacity = useDerivedValue(() => Math.min(1, 0.9 + mag.value * 0.1));
 
@@ -81,10 +89,7 @@ export const HolographicLogo: FC<HolographicLogoProps> = ({ size = 22 }) => {
             {/* Foil body: the Oxy silhouette + inner detail, filled with the
                 tilt-driven iridescence in place of the solid brand colour. */}
             <Group opacity={opacity}>
-                <Path path={parts.outer}>
-                    <LinearGradient start={start} end={end} colors={IRIDESCENT} />
-                </Path>
-                <Path path={parts.inner}>
+                <Path path={parts.body}>
                     <LinearGradient start={start} end={end} colors={IRIDESCENT} />
                 </Path>
             </Group>
