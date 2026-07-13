@@ -94,7 +94,9 @@
       "signingIn": "Iniciando sesión...",
       "signingInSubtitle": "¡Casi listo!",
       "syncing": "Sincronizando tu identidad...",
-      "syncingSubtitle": "Conectando con los servidores de Oxy"
+      "syncingSubtitle": "Conectando con los servidores de Oxy",
+      "errorTitle": "No se pudo terminar la configuración",
+      "retry": "Reintentar"
     },
     "usernameRequired": {
       "title": "Nombre de usuario requerido",
@@ -1324,8 +1326,29 @@
       "activity": {
         "title": "Actividad reciente",
         "heatmapTitle": "Actividad",
-        "months": ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"],
-        "weekdays": ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"],
+        "months": [
+          "Ene",
+          "Feb",
+          "Mar",
+          "Abr",
+          "May",
+          "Jun",
+          "Jul",
+          "Ago",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dic"
+        ],
+        "weekdays": [
+          "Dom",
+          "Lun",
+          "Mar",
+          "Mié",
+          "Jue",
+          "Vie",
+          "Sáb"
+        ],
         "loading": "Cargando actividad…",
         "error": "No se pudo cargar la actividad reciente.",
         "empty": "Aún no hay actividad de reputación: tus acciones verificadas aparecerán aquí.",

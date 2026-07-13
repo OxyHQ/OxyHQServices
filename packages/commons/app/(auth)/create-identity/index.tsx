@@ -50,6 +50,20 @@ export default function CreateIdentityScreen() {
   // protection against a remount-induced bounce relies on the SDK-side
   // cache invalidation in `updateProfile` keeping `hasUsername` stable.
   const hasNavigatedResumeRef = useRef(false);
+  // A hard create failure (e.g. key generation/persistence failed) used to set
+  // an auth error that nothing rendered, leaving the user stuck on the endless
+  // "Setting up your account…" screen. Track it locally so `CreatingStep` can
+  // show the reason + a Retry (issue #605).
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  const handleRetry = useCallback(() => {
+    setCreateError(null);
+    hasStartedCreateRef.current = false;
+    hasNavigatedResumeRef.current = false;
+    setCreatingProgress(0);
+    setRetryNonce((n) => n + 1);
+  }, []);
 
   // Cleanup function for all timers
   const cleanupTimers = useCallback(() => {
@@ -191,6 +205,9 @@ export default function CreateIdentityScreen() {
           const errorMessage = extractAuthErrorMessage(err);
           setAuthError(errorMessage);
           setCreatingProgress(0);
+          // Surface the failure in the UI (with a Retry) instead of leaving the
+          // user on an endless loading screen.
+          setCreateError(errorMessage);
         }
       };
       create();
@@ -207,6 +224,7 @@ export default function CreateIdentityScreen() {
     setAuthError,
     cleanupTimers,
     recoveryPhraseRef,
+    retryNonce,
   ]);
 
   // While onboarding status is still resolving on this screen's own mount,
@@ -225,6 +243,8 @@ export default function CreateIdentityScreen() {
       isSyncing={isResuming}
       backgroundColor={backgroundColor}
       textColor={textColor}
+      error={createError}
+      onRetry={handleRetry}
     />
   );
 }

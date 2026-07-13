@@ -94,7 +94,9 @@
       "signingIn": "Signing in...",
       "signingInSubtitle": "Almost there!",
       "syncing": "Syncing your identity...",
-      "syncingSubtitle": "Connecting to Oxy servers"
+      "syncingSubtitle": "Connecting to Oxy servers",
+      "errorTitle": "Couldn't finish setting up",
+      "retry": "Try again"
     },
     "usernameRequired": {
       "title": "Username Required",
@@ -1324,8 +1326,29 @@
       "activity": {
         "title": "Recent activity",
         "heatmapTitle": "Activity",
-        "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
-        "weekdays": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        "months": [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec"
+        ],
+        "weekdays": [
+          "Sun",
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri",
+          "Sat"
+        ],
         "loading": "Loading activity…",
         "error": "Couldn't load recent activity.",
         "empty": "No reputation activity yet — your verified actions will appear here.",
