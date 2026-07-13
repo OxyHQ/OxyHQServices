@@ -711,6 +711,14 @@ class SessionService {
       session.refreshToken = newRefreshToken;
       session.lastRefresh = now;
       session.deviceInfo.lastActive = now;
+      // Sliding (idle) session window: a successful rotation is a USE of the
+      // session, so push the absolute expiry forward. In the zero-cookie
+      // device-first model the durable credential is the never-expiring
+      // deviceSecret; `expiresAt` must therefore be an IDLE timeout (a session
+      // dies only after SESSION_EXPIRES_IN of NO use), not a hard absolute cap
+      // measured from the last interactive sign-in. Renewed here alongside the
+      // token rotation so it is a single write.
+      session.expiresAt = new Date(now.getTime() + SESSION_EXPIRES_IN);
       await session.save();
 
       sessionCache.invalidate(sessionId);
@@ -924,6 +932,38 @@ class SessionService {
           accessToken: refreshResult.accessToken,
           expiresAt: refreshResult.session.expiresAt
         };
+      }
+
+      // Sliding (idle) session window — mint-path chokepoint.
+      //
+      // Reaching here means the stored access token is still valid, so we hand
+      // it back WITHOUT rotating. This is the ONE seam where a session is
+      // successfully used to issue a token without going through
+      // `refreshTokens` (both getAccessToken's expired/invalid branches above
+      // delegate to it, and it slides the window itself). Sliding exactly here
+      // — and nowhere higher up the mint path (resolveActiveToken / the route
+      // handler) — means every successful mint advances the window EXACTLY once
+      // with no double-write: the no-rotation reads slide here, the rotations
+      // slide in refreshTokens. A truly idle session (no mint/refresh for
+      // SESSION_EXPIRES_IN) is never renewed and still expires via the TTL index.
+      //
+      // Best-effort: a transient failure to persist the slide must NOT break an
+      // otherwise-valid mint — fall through and return the still-valid token.
+      try {
+        const slidExpiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
+        await Session.updateOne(
+          { sessionId, isActive: true },
+          { $set: { expiresAt: slidExpiresAt, updatedAt: new Date() } }
+        );
+        session.expiresAt = slidExpiresAt;
+        sessionCache.set(sessionId, session);
+      } catch (slideError) {
+        logger.warn('[SessionService] Failed to slide session expiry on token mint', {
+          component: 'SessionService',
+          method: 'getAccessToken',
+          sessionId,
+          error: slideError instanceof Error ? slideError.message : String(slideError),
+        });
       }
 
       return {

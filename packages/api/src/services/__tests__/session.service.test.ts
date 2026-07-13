@@ -13,18 +13,23 @@ const mockDetachMigratedAccount = jest.fn();
 /**
  * Creates a chainable mock that supports .select().lean() and .lean() patterns.
  * Each call to mockFindOne pushes a resolved value; subsequent chained methods pass it through.
+ *
+ * The returned value is ALSO a thenable so `await Session.findOne(...)` (the
+ * refresh path, which awaits the query directly with no `.lean()`) resolves to
+ * the queued doc, while `.select().lean()` / `.lean()` read chains keep working.
+ * Mirrors session.service.managedSwitch.test.ts.
  */
 const mockFindOneResults: unknown[] = [];
 const mockFindOne = jest.fn().mockImplementation(() => {
   const value = mockFindOneResults.shift() ?? null;
-  const chain = {
+  const p = Promise.resolve(value);
+  return Object.assign(p, {
     select: jest.fn().mockReturnValue({
       lean: jest.fn().mockResolvedValue(value),
     }),
     lean: jest.fn().mockResolvedValue(value),
     populate: jest.fn().mockResolvedValue(value),
-  };
-  return chain;
+  });
 });
 
 const mockFind = jest.fn();
@@ -139,13 +144,17 @@ jest.mock('../deviceSession.service', () => ({
   },
 }));
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 import sessionService from '../session.service';
 import Session from '../../models/Session';
 import sessionCache from '../../utils/sessionCache';
 import { generateSessionTokens, validateAccessToken } from '../../utils/sessionUtils';
 import { deriveServiceDeviceId } from '../../utils/deviceUtils';
 import { Request } from 'express';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000;
 
 function createMockSession(overrides: Record<string, unknown> = {}) {
   const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -621,6 +630,131 @@ describe('Session Service', () => {
       const result = await sessionService.validateSession('mock-access-token');
 
       expect(result).toBeNull();
+    });
+  });
+
+  /**
+   * Sliding (idle) session lifetime.
+   *
+   * `Session.expiresAt` must be an IDLE timeout, not a hard absolute cap: any
+   * successful USE of the session (a device-token mint or a refresh rotation)
+   * pushes the 7-day window forward, so a continuously-used device-first session
+   * never dies. A truly idle session (no mint/refresh for 7 days) still expires.
+   *
+   * Two chokepoints slide the window, without ever double-writing:
+   *   - getAccessToken's still-valid branch — the mint path when NO rotation
+   *     happens (the stored 15-min access token is still valid).
+   *   - refreshTokens — every token rotation (direct refresh + the mint path
+   *     when the stored access token has expired).
+   */
+  describe('sliding session window on use (getAccessToken mint path)', () => {
+    const SAVED_SECRET = process.env.ACCESS_TOKEN_SECRET;
+    const ACCESS_SECRET = 'test-access-secret';
+
+    beforeEach(() => {
+      process.env.ACCESS_TOKEN_SECRET = ACCESS_SECRET;
+    });
+
+    afterEach(() => {
+      if (SAVED_SECRET === undefined) {
+        delete process.env.ACCESS_TOKEN_SECRET;
+      } else {
+        process.env.ACCESS_TOKEN_SECRET = SAVED_SECRET;
+      }
+    });
+
+    it('slides expiresAt forward when a still-valid session is used to mint (no rotation) and stays mintable', async () => {
+      // A live access token (exp ~15m in the future) → getAccessToken returns it
+      // WITHOUT rotating, but must still push the session window forward.
+      const validAccessToken = jwt.sign(
+        { userId: 'user-123', sessionId: 'session-123' },
+        ACCESS_SECRET,
+        { expiresIn: '15m' }
+      );
+      // Session is on the verge of expiry (still live — findOne returns it).
+      const nearExpiry = new Date(Date.now() + 60_000);
+      mockFindOneResults.push(
+        createMockSession({ accessToken: validAccessToken, expiresAt: nearExpiry })
+      );
+      mockUpdateOne.mockResolvedValueOnce({ modifiedCount: 1 });
+
+      const before = Date.now();
+      const result = await sessionService.getAccessToken('session-123');
+
+      expect(result).not.toBeNull();
+      // Same (still-valid) token handed back — the session remains mintable.
+      expect(result!.accessToken).toBe(validAccessToken);
+      // The window slid ~7 days forward, well past the near-expiry it had.
+      expect(result!.expiresAt.getTime()).toBeGreaterThan(before + SIX_DAYS_MS);
+      expect(result!.expiresAt.getTime()).toBeGreaterThan(nearExpiry.getTime());
+      // The slide was persisted with the idle-renewal filter (never a rotation).
+      expect(mockUpdateOne).toHaveBeenCalledWith(
+        { sessionId: 'session-123', isActive: true },
+        { $set: { expiresAt: expect.any(Date), updatedAt: expect.any(Date) } }
+      );
+      const persisted = (mockUpdateOne.mock.calls[0][1] as { $set: { expiresAt: Date } }).$set.expiresAt;
+      expect(persisted.getTime()).toBeGreaterThan(before + SIX_DAYS_MS);
+    });
+
+    it('does NOT renew (no slide) and mints nothing for an idle-expired/absent session', async () => {
+      // An idle session past 7 days is excluded by getSession's
+      // `expiresAt: { $gt: now }` filter (and TTL-deleted), so findOne returns
+      // null: nothing is minted and the window is never renewed without use.
+      mockFindOneResults.push(null);
+
+      const result = await sessionService.getAccessToken('session-123');
+
+      expect(result).toBeNull();
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('still returns the valid token if persisting the slide fails (best-effort renewal)', async () => {
+      const validAccessToken = jwt.sign(
+        { userId: 'user-123', sessionId: 'session-123' },
+        ACCESS_SECRET,
+        { expiresIn: '15m' }
+      );
+      mockFindOneResults.push(createMockSession({ accessToken: validAccessToken }));
+      mockUpdateOne.mockRejectedValueOnce(new Error('transient write failure'));
+
+      const result = await sessionService.getAccessToken('session-123');
+
+      // A transient slide-write failure must not break an otherwise-valid mint.
+      expect(result).not.toBeNull();
+      expect(result!.accessToken).toBe(validAccessToken);
+    });
+  });
+
+  describe('sliding session window on use (refreshTokens rotation path)', () => {
+    it('slides expiresAt forward on a successful rotation', async () => {
+      const nearExpiry = new Date(Date.now() + 60_000);
+      const save = jest.fn().mockResolvedValue(undefined);
+      // refreshTokens awaits `Session.findOne(...)` directly (no `.lean()`), so
+      // the queued value is a mongoose-like doc carrying `.save()`.
+      const sessionDoc = {
+        sessionId: 'session-123',
+        userId: { toString: () => 'user-123' },
+        deviceId: 'device-123',
+        accessToken: 'old-access-token',
+        refreshToken: 'mock-refresh-token',
+        deviceInfo: { lastActive: new Date() },
+        isActive: true,
+        expiresAt: nearExpiry,
+        save,
+      };
+      mockFindOneResults.push(sessionDoc);
+
+      const before = Date.now();
+      const result = await sessionService.refreshTokens('mock-refresh-token');
+
+      expect(result).not.toBeNull();
+      expect(save).toHaveBeenCalledTimes(1);
+      // The rotation slid the window ~7 days forward, past the near-expiry.
+      expect(sessionDoc.expiresAt.getTime()).toBeGreaterThan(before + SIX_DAYS_MS);
+      expect(sessionDoc.expiresAt.getTime()).toBeGreaterThan(nearExpiry.getTime());
+      expect(result!.session.expiresAt.getTime()).toBeGreaterThan(before + SIX_DAYS_MS);
+      // Sanity: the slide never exceeds a full 7-day renewal from now.
+      expect(sessionDoc.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + SEVEN_DAYS_MS);
     });
   });
 });
