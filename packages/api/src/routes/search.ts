@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { sanitizeSearchQuery } from '../utils/sanitize';
 import { validate } from '../middleware/validate';
 import { searchQuerySchema } from '../schemas/search.schemas';
+import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
           { location: searchQuery }
         ]
       })
-      .select('username name description avatar location color')
+      .select(PUBLIC_USER_PROFILE_SELECT)
       .skip(skip)
       .limit(limit);
 

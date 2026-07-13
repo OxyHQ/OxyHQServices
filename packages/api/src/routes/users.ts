@@ -737,7 +737,7 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of followers
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of followers
  */
 router.get(
   '/:userId/followers',
@@ -776,7 +776,7 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of following
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of following
  */
 router.get(
   '/:userId/following',
@@ -825,7 +825,7 @@ router.get(
  * @param {string} userId - Target user ID (ObjectId or publicKey; resolved first)
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of mutual followers
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of mutual followers
  */
 router.get(
   '/:userId/mutuals',

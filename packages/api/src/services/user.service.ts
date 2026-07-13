@@ -21,11 +21,14 @@ import {
   PaginatedResponse,
   PublicUserProfile,
   ProfileUpdateInput,
-  UserProfile,
   UserStatistics,
   FollowActionResult,
   ViewerGraph,
 } from '../types/user.types';
+import {
+  PUBLIC_USER_PROFILE_SELECT,
+  type PublicUserDocument,
+} from '../utils/publicUserProjection';
 import Subscription from '../models/Subscription';
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { normalizeLocale } from '@oxyhq/core';
@@ -462,9 +465,9 @@ export class UserService {
     const followers = await User.find({
       _id: { $in: followerIds },
     })
-      .select('username name avatar color -email')
-      .lean()
-      .exec() as UserProfile[];
+      .select(PUBLIC_USER_PROFILE_SELECT)
+      .lean<PublicUserDocument[]>()
+      .exec();
 
     // Maintain order from original follow relationships
     const followersMap = new Map(
@@ -472,7 +475,7 @@ export class UserService {
     );
     const orderedFollowers = followerIds
       .map((id) => followersMap.get(id))
-      .filter((user): user is UserProfile => user !== undefined)
+      .filter((user): user is PublicUserDocument => user !== undefined)
       .map((user) => this.formatUserResponse(user));
 
     return {
@@ -523,9 +526,9 @@ export class UserService {
     const following = await User.find({
       _id: { $in: followingIds },
     })
-      .select('username name avatar color -email')
-      .lean()
-      .exec() as UserProfile[];
+      .select(PUBLIC_USER_PROFILE_SELECT)
+      .lean<PublicUserDocument[]>()
+      .exec();
 
     // Maintain order from original follow relationships
     const followingMap = new Map(
@@ -533,7 +536,7 @@ export class UserService {
     );
     const orderedFollowing = followingIds
       .map((id) => followingMap.get(id))
-      .filter((user): user is UserProfile => user !== undefined)
+      .filter((user): user is PublicUserDocument => user !== undefined)
       .map((user) => this.formatUserResponse(user));
 
     return {
@@ -632,9 +635,9 @@ export class UserService {
     const mutuals = await User.find({
       _id: { $in: mutualIds },
     })
-      .select('username name avatar color -email')
-      .lean()
-      .exec() as UserProfile[];
+      .select(PUBLIC_USER_PROFILE_SELECT)
+      .lean<PublicUserDocument[]>()
+      .exec();
 
     // Maintain order from the original follow relationships (most-recent first)
     const mutualsMap = new Map(
@@ -642,7 +645,7 @@ export class UserService {
     );
     const orderedMutuals = mutualIds
       .map((id) => mutualsMap.get(id))
-      .filter((user): user is UserProfile => user !== undefined)
+      .filter((user): user is PublicUserDocument => user !== undefined)
       .map((user) => this.formatUserResponse(user));
 
     return {
@@ -1525,10 +1528,15 @@ export class UserService {
   }
 
   /**
-   * Format user response with stats
+   * Format user response with stats.
+   *
+   * Reads only PUBLIC profile fields. A source document must therefore be loaded
+   * with a projection that covers them — `PUBLIC_USER_PROFILE_SELECT` for list
+   * queries, `-password -refreshToken` for the single-user reads — otherwise the
+   * unprojected fields serialize as `undefined` with no error anywhere.
    */
   formatUserResponse(
-    user: IUser | UserProfile,
+    user: IUser | PublicUserDocument,
     stats?: UserStatistics,
     options: { includePrivateFields?: boolean } = {}
   ): PublicUserProfile {
