@@ -1,10 +1,11 @@
 import '../global.css';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
+import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -54,6 +55,62 @@ const SPLASH_FALLBACK_MS = 4000;
 export const unstable_settings = {
   anchor: '(tabs)',
 };
+
+/**
+ * A typed expo-router `Href` for one of the root `(scan)` handoff screens. The
+ * object form (not a raw string) is required because `typedRoutes` is on: a
+ * runtime-built string can't narrow to the generated path union, whereas the
+ * `{ pathname, params }` shape does — mirroring `app/(scan)/index.tsx`.
+ */
+type ScanReplayHref =
+  | { pathname: '/(scan)/approve'; params: Record<string, string> }
+  | { pathname: '/(scan)/attest'; params: Record<string, string> };
+
+/**
+ * Map a cold-launch deep link onto its in-app `(scan)` target, or `null` when
+ * it is not a scan intent.
+ *
+ * The sign-in / real-life-attestation handoffs arrive as
+ * `oxycommons://approve?...` / `oxycommons://attest?...` (also the `commons://`
+ * scheme). `+native-intent` passes these through as `/approve` / `/attest`,
+ * which resolve into the root `(scan)` group. We strip any scheme + leading
+ * slashes and, when the first path segment is `approve` or `attest`, return the
+ * typed href with the query decoded into `params` (expo-router re-encodes them
+ * when it builds the URL). Card links (`/card/<did>`, a `(tabs)` route) and
+ * anything else yield `null` so they are never force-routed into `(scan)`.
+ */
+function scanTargetFromColdLaunch(url: string): ScanReplayHref | null {
+  const stripped = url
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/^\/+/, '');
+  const [pathPart, query = ''] = stripped.split(/[?#]/);
+  const segment = pathPart.toLowerCase();
+  if (segment !== 'approve' && segment !== 'attest') {
+    return null;
+  }
+
+  const params: Record<string, string> = {};
+  for (const pair of query.split('&')) {
+    if (!pair) continue;
+    const eq = pair.indexOf('=');
+    const rawKey = eq === -1 ? pair : pair.slice(0, eq);
+    const rawValue = eq === -1 ? '' : pair.slice(eq + 1);
+    try {
+      params[decodeURIComponent(rawKey)] = decodeURIComponent(rawValue);
+    } catch (error) {
+      // A malformed percent-sequence in a scanned/tapped payload: keep the raw
+      // bytes for this param rather than dropping the whole intent — the target
+      // (scan) screen validates params and rejects anything unusable.
+      console.warn('[commons] cold-start deep-link param decode failed', error);
+      params[rawKey] = rawValue;
+    }
+  }
+
+  return segment === 'approve'
+    ? { pathname: '/(scan)/approve', params }
+    : { pathname: '/(scan)/attest', params };
+}
 
 export default function RootLayout() {
   return (
@@ -149,6 +206,51 @@ function AppStackContent() {
   }, []);
 
   useHideNativeSplashWhenReady(appReady || fallbackElapsed);
+
+  // ── Cold-start `(scan)` deep-link replay ───────────────────────────────────
+  // On a warm start the `(scan)` redirect gate is already resolved, so an
+  // `oxycommons://approve|attest` link routes straight through. On a COLD start
+  // the gate is `needsAuth === true` while `status === 'checking'`, so the root
+  // Stack bounces `(scan)` → `(auth)` and the incoming intent is discarded once
+  // the gate settles. We capture the cold-launch URL once, then — after the gate
+  // has resolved to an authenticated device — `router.replace()` to it exactly
+  // once. If the gate instead resolves to `needsAuth` (no local identity), we
+  // drop the intent and let the normal onboarding flow proceed.
+  //
+  // `getInitialURL()` is cold-launch-only. Capturing into a ref + a resolved
+  // flag (state) makes the replay race-free: it fires only once BOTH the initial
+  // URL has been read AND the gate has settled, guarded by a ref so later
+  // renders never re-navigate.
+  const pendingScanTargetRef = useRef<ScanReplayHref | null>(null);
+  const scanReplayDoneRef = useRef(false);
+  const [initialUrlResolved, setInitialUrlResolved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Linking.getInitialURL()
+      .then((url) => {
+        if (cancelled) return;
+        pendingScanTargetRef.current = url ? scanTargetFromColdLaunch(url) : null;
+      })
+      .finally(() => {
+        if (!cancelled) setInitialUrlResolved(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (scanReplayDoneRef.current) return;
+    if (!initialUrlResolved || !appReady) return;
+    // Both the captured URL and the routing gate are now settled — act once.
+    scanReplayDoneRef.current = true;
+    const target = pendingScanTargetRef.current;
+    pendingScanTargetRef.current = null;
+    if (!needsAuth && target) {
+      router.replace(target);
+    }
+  }, [initialUrlResolved, appReady, needsAuth]);
 
   return (
     <SafeAreaProvider>

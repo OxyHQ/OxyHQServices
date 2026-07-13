@@ -43,6 +43,13 @@ module.exports = {
       entitlements: {
         'keychain-access-groups': ['$(AppIdentifierPrefix)group.so.oxy.shared'],
       },
+      // iOS 9+ requires every custom scheme this app probes with
+      // `Linking.canOpenURL` to be whitelisted here, else the probe always
+      // returns false. `oxycommons` lets "Sign in with Oxy" detect an installed
+      // Commons and deep-link straight into its approve screen.
+      infoPlist: {
+        LSApplicationQueriesSchemes: ['oxycommons'],
+      },
     },
     web: {
       output: 'static',

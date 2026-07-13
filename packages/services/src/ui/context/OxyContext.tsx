@@ -617,6 +617,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
         void Linking.openURL(url);
       },
+      // Native-only probe so the controller can detect an installed Commons and
+      // deep-link straight into its approve screen (keeping the QR/polling live
+      // as fallback). `undefined` on web mirrors the `openUrl` split — the
+      // controller short-circuits, so `redirectToAuthorize` never runs for the
+      // `oxycommons://` payload.
+      canOpenApp: isWebBrowser() ? undefined : (url) => Linking.canOpenURL(url),
     });
   }
   const accountDialogController = accountDialogControllerRef.current;

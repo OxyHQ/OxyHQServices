@@ -189,6 +189,14 @@ export const useIdentity = (): UseIdentityResult => {
 
           const user = await signIn(publicKey);
 
+          // Commons is the ONLY app that writes the cross-app shared identity
+          // slot other Oxy apps read for silent "Sign in with Oxy". Mirror it
+          // now — after `signIn` — so the shared public key equals the
+          // server-registered primary. Idempotent (guarded by
+          // `hasSharedIdentity`), native-only (no-op on web), and swallows its
+          // own errors, so it can never regress identity creation.
+          await KeyManager.migrateToSharedIdentity();
+
           return {
             recoveryPhrase: words,
             synced: true,
@@ -273,6 +281,11 @@ export const useIdentity = (): UseIdentityResult => {
 
           setSynced(true);
           await persistIdentitySyncState(true);
+
+          // Populate the cross-app shared identity slot (see createIdentity).
+          // Idempotent, native-only, error-swallowing — never regresses import.
+          await KeyManager.migrateToSharedIdentity();
+
           return { synced: true };
         } catch (syncError) {
           console.error('[useIdentity] Identity imported locally but server sync failed', syncError);
@@ -340,6 +353,16 @@ export const useIdentity = (): UseIdentityResult => {
             const backedUp = await KeyManager.backupIdentity();
             if (!backedUp) {
               console.warn('[useIdentity] Failed to refresh on-device identity backup');
+            }
+
+            // Existing users (healthy primary identity but no shared slot yet
+            // — e.g. created before shared-identity write-through shipped):
+            // mirror it into the cross-app shared slot once, on the next
+            // Commons open, so silent "Sign in with Oxy" works for apps
+            // installed later. Native-only (this effect early-returns on web);
+            // idempotent + error-swallowing.
+            if (!(await KeyManager.hasSharedIdentity())) {
+              await KeyManager.migrateToSharedIdentity();
             }
           }
         } else {
