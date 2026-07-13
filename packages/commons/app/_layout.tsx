@@ -205,7 +205,14 @@ function AppStackContent() {
     return () => clearTimeout(timer);
   }, []);
 
-  useHideNativeSplashWhenReady(appReady || fallbackElapsed);
+  // Single readiness signal shared by the splash hand-off AND the deep-link
+  // replay below, so the two can never disagree: whenever the splash is allowed
+  // to reveal the first frame, the replay is evaluated in the same tick. If the
+  // splash reveals via the fallback while the routing gate is still unresolved,
+  // the replay sees `needsAuth` and drops the intent explicitly, rather than
+  // leaving the captured URL stranded in the ref forever.
+  const splashReady = appReady || fallbackElapsed;
+  useHideNativeSplashWhenReady(splashReady);
 
   // ── Cold-start `(scan)` deep-link replay ───────────────────────────────────
   // On a warm start the `(scan)` redirect gate is already resolved, so an
@@ -242,7 +249,7 @@ function AppStackContent() {
 
   useEffect(() => {
     if (scanReplayDoneRef.current) return;
-    if (!initialUrlResolved || !appReady) return;
+    if (!initialUrlResolved || !splashReady) return;
     // Both the captured URL and the routing gate are now settled — act once.
     scanReplayDoneRef.current = true;
     const target = pendingScanTargetRef.current;
@@ -250,7 +257,7 @@ function AppStackContent() {
     if (!needsAuth && target) {
       router.replace(target);
     }
-  }, [initialUrlResolved, appReady, needsAuth]);
+  }, [initialUrlResolved, splashReady, needsAuth]);
 
   return (
     <SafeAreaProvider>

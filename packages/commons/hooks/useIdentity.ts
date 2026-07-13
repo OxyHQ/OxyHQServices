@@ -372,6 +372,12 @@ export const useIdentity = (): UseIdentityResult => {
           const restored = await KeyManager.restoreIdentityFromBackup();
           if (restored) {
             console.warn('[useIdentity] No primary identity found, restored from on-device backup');
+            // Identity presence just flipped false → true. The shared onboarding
+            // probe (`useOnboardingStatus`) cached the pre-restore `false` with
+            // `staleTime: Infinity`, so invalidate its key to force a re-read of
+            // KeyManager — otherwise a just-restored returning user (re-install
+            // with the keychain intact) is mis-routed into create-identity.
+            queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
           }
         }
       } catch (error) {
@@ -380,7 +386,7 @@ export const useIdentity = (): UseIdentityResult => {
     };
 
     checkAndRestoreIdentity();
-  }, []);
+  }, [queryClient]);
 
   // Network reconnect sync logic
   useNetworkReconnect({
