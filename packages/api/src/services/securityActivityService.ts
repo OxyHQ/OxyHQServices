@@ -32,7 +32,7 @@ const MAX_USER_AGENT_LENGTH = 500;
 const DEDUPLICATION_WINDOW_MS = 5000; // 5 seconds - prevent duplicate events
 
 // Field selection for queries (single source of truth)
-const ACTIVITY_SELECT_FIELDS = '_id userId eventType eventDescription metadata ipAddress userAgent deviceId timestamp severity createdAt';
+const ACTIVITY_SELECT_FIELDS = '_id userId eventType eventDescription metadata userAgent deviceId timestamp severity createdAt';
 
 class SecurityActivityService {
   /**
@@ -149,9 +149,7 @@ class SecurityActivityService {
       sanitizedDescription = `Security event: ${eventType}`;
     }
 
-    // Extract and sanitize IP address and user agent
-    const rawIpAddress = req?.ip || req?.socket?.remoteAddress || undefined;
-    const ipAddress = rawIpAddress ? this.sanitizeString(rawIpAddress, 45) : undefined; // IPv6 max length is 45 chars
+    // Extract and sanitize user agent
     const rawUserAgent = req?.headers['user-agent'];
     const userAgent = rawUserAgent ? this.sanitizeString(rawUserAgent, MAX_USER_AGENT_LENGTH) : undefined;
 
@@ -193,7 +191,6 @@ class SecurityActivityService {
         eventType,
         eventDescription: sanitizedDescription,
         metadata: sanitizedMetadata,
-        ipAddress,
         userAgent,
         deviceId: finalDeviceId,
         timestamp: new Date(),
@@ -208,7 +205,6 @@ class SecurityActivityService {
       eventType,
       eventDescription: sanitizedDescription,
       metadata: sanitizedMetadata,
-      ipAddress,
       userAgent,
       deviceId: finalDeviceId,
       timestamp: new Date(),

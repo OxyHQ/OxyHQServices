@@ -103,7 +103,6 @@ export const getSecurityActivity = async (req: AuthRequest, res: Response): Prom
       eventType: activity.eventType,
       eventDescription: activity.eventDescription,
       metadata: activity.metadata || {},
-      ipAddress: activity.ipAddress,
       userAgent: activity.userAgent,
       deviceId: activity.deviceId,
       timestamp: activity.timestamp,
