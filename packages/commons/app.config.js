@@ -101,10 +101,11 @@ module.exports = {
       // "Sign in with Oxy" shares the session across apps (requires all Oxy apps
       // to be signed with the same key — the oxy-ecosystem release keystore).
       './plugins/withSharedUserId',
-      // Hosts the signature-protected OxyIdentityProvider (from
-      // @oxyhq/expo-oxy-identity) that lets same-key Oxy apps read the shared
-      // identity keypair Commons writes. Commons is the ONLY app that hosts it.
-      './plugins/withSharedIdentityProvider',
+      // Hosts the signature-protected OxyIdentityProvider (the native module
+      // now ships inside @oxyhq/services) that lets same-key Oxy apps read the
+      // shared identity keypair Commons writes. Commons is the ONLY app that
+      // hosts it.
+      '@oxyhq/services/plugins/withSharedIdentityProvider',
       'expo-secure-store',
       'expo-font',
       'expo-image',
