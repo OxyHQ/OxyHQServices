@@ -5,29 +5,15 @@
  * Reuses model types to avoid duplication.
  */
 
-import { Types } from 'mongoose';
 import type { IUser } from '../models/User';
 import type { UserProfileUpdate, UserResponse } from '@oxyhq/contracts';
 
 // Reuse name structure from IUser
 export type UserName = IUser['name'];
 
-// User profile data for API responses (read-only, excludes sensitive fields)
-export type UserProfile = Pick<
-  IUser,
-  | '_id'
-  | 'username'
-  | 'name'
-  | 'avatar'
-  | 'color'
-  | 'bio'
-  | 'description'
-  | 'links'
-  | 'linksMetadata'
-  | 'verified'
-  | 'createdAt'
-  | 'updatedAt'
->;
+// The raw user document a public list query reads is `PublicUserDocument` in
+// `utils/publicUserProjection.ts` — it lives next to the projection that
+// produces it so the two cannot drift.
 
 export type PublicUserProfile = UserResponse;
 

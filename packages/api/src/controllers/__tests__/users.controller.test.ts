@@ -21,6 +21,7 @@ jest.mock('../../utils/asyncHandler', () => ({
 
 import { UsersController } from '../users.controller';
 import { BadRequestError, InternalServerError } from '../../utils/error';
+import { PUBLIC_USER_PROFILE_SELECT } from '../../utils/publicUserProjection';
 
 describe('UsersController', () => {
   let usersController: UsersController;
@@ -84,9 +85,35 @@ describe('UsersController', () => {
           { 'name.last': { $regex: 'test', $options: 'i' } },
         ],
       });
-      expect(mockQuery.select).toHaveBeenCalledWith('username name avatar email description color');
+      // Search rows are PUBLIC user rows — same shared projection the
+      // follower/following/mutual lists use, asserted against the exported
+      // constant so the two cannot drift apart again.
+      expect(mockQuery.select).toHaveBeenCalledWith(PUBLIC_USER_PROFILE_SELECT);
       expect(mockQuery.limit).toHaveBeenCalledWith(5);
       expect(mockQuery.lean).toHaveBeenCalled();
+    });
+
+    it('never projects the searched users\' email addresses', async () => {
+      mockRequest.body = { query: 'test' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // This projection used to include `email`, so a public user search
+      // returned every match's email address. The shared projection is
+      // inclusion-only: `email` is simply never loaded.
+      const projection = mockQuery.select.mock.calls[0]?.[0] as string;
+      expect(projection.split(' ')).not.toContain('email');
     });
 
     it('should throw InternalServerError on database errors', async () => {

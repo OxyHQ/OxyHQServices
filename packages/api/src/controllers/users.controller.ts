@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
 import { sanitizeSearchQuery } from '../utils/sanitize';
+import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
 
 export class UsersController {
   /**
@@ -40,7 +41,7 @@ export class UsersController {
           { 'name.last': { $regex: sanitizedQuery, $options: 'i' } },
         ],
       })
-        .select('username name avatar email description color')
+        .select(PUBLIC_USER_PROFILE_SELECT)
         .limit(5)
         .lean();
 

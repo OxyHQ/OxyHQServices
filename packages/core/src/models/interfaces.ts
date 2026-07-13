@@ -103,6 +103,12 @@ export interface User {
    */
   name: UserNameResponse;
   bio?: string;
+  /**
+   * Longer public profile text. Emitted alongside `bio` by every user DTO the
+   * API produces (single profile, `getUsersByIds`, follower/following/mutual
+   * lists, profile search) — the two are separate fields on the User document.
+   */
+  description?: string;
   phone?: string;
   address?: string;
   birthday?: string;
