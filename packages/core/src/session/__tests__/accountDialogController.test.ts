@@ -540,6 +540,91 @@ describe('AccountDialogController — sign in with Oxy', () => {
   });
 });
 
+describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
+  const START_HANDLE = {
+    sessionToken: 'secret-tok',
+    authorizeCode: 'AUTH-CODE',
+    qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+    expiresAt: Date.now() + 600_000,
+    status: 'pending' as const,
+  };
+
+  function makeController(opts: {
+    openUrl?: jest.Mock;
+    canOpenApp?: jest.Mock;
+  }): { controller: AccountDialogController; oxy: OxyMock } {
+    const oxy = makeOxy();
+    oxy.startCommonsSignIn.mockResolvedValue(START_HANDLE);
+    oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: new TestSessionClient(host()),
+      clientId: 'oxy_dk_test',
+      pollIntervalMs: 1000,
+      openUrl: opts.openUrl,
+      canOpenApp: opts.canOpenApp,
+    });
+    return { controller, oxy };
+  }
+
+  it('deep-links into Commons via openUrl when canOpenApp reports it installed, keeping the QR/polling fallback', async () => {
+    const openUrl = jest.fn();
+    const canOpenApp = jest.fn().mockResolvedValue(true);
+    const { controller } = makeController({ openUrl, canOpenApp });
+
+    await controller.showQr();
+    await flush(); // let the (non-awaited) canOpenApp probe resolve
+
+    expect(canOpenApp).toHaveBeenCalledWith('oxycommons://');
+    expect(openUrl).toHaveBeenCalledWith('oxycommons://approve?v=1&code=AUTH-CODE');
+    // The QR + polling remain the fallback path — the flow is still waiting.
+    const snap = controller.getSnapshot();
+    expect(snap.view).toBe('qr');
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    controller.cancelSignIn();
+  });
+
+  it('does NOT open Commons when canOpenApp reports it absent (renders QR only)', async () => {
+    const openUrl = jest.fn();
+    const canOpenApp = jest.fn().mockResolvedValue(false);
+    const { controller } = makeController({ openUrl, canOpenApp });
+
+    await controller.showQr();
+    await flush();
+
+    expect(canOpenApp).toHaveBeenCalledWith('oxycommons://');
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+    controller.cancelSignIn();
+  });
+
+  it('never probes or opens when canOpenApp is absent (web — unchanged behavior)', async () => {
+    const openUrl = jest.fn();
+    const { controller } = makeController({ openUrl });
+
+    await controller.showQr();
+    await flush();
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    controller.cancelSignIn();
+  });
+
+  it('swallows a canOpenApp probe rejection and keeps the QR fallback', async () => {
+    const openUrl = jest.fn();
+    const canOpenApp = jest.fn().mockRejectedValue(new Error('probe boom'));
+    const { controller } = makeController({ openUrl, canOpenApp });
+
+    await controller.showQr();
+    await flush();
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+    controller.cancelSignIn();
+  });
+});
+
 describe('AccountDialogController — openPasswordAtOxyAuth', () => {
   beforeEach(() => {
     const store = new Map<string, string>();

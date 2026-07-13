@@ -131,9 +131,26 @@ export interface AccountDialogControllerOptions {
    * `Linking.openURL`). Headless core never touches `window`/`Linking` itself.
    */
   openUrl?: (url: string) => void;
+  /**
+   * Optional "can this app open this URL scheme?" probe, symmetric to
+   * {@link openUrl}. When provided, `showQr` uses it to detect an installed
+   * Commons (`oxycommons://`) and, if present, deep-links straight into its
+   * approve screen via {@link openUrl} — while KEEPING the QR/polling active as
+   * the fallback. Injected by the provider (native: `Linking.canOpenURL`; web:
+   * absent/false). Headless core never touches `Linking` itself; when absent
+   * `showQr` behaves exactly as before (render QR only).
+   */
+  canOpenApp?: (url: string) => Promise<boolean>;
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 3000;
+
+/**
+ * Commons's custom URL scheme. Probed via the injected `canOpenApp` to detect an
+ * installed Commons on the same device; the `oxycommons://approve?...` deep link
+ * itself is the flow's `qrPayload`.
+ */
+const COMMONS_APP_SCHEME = 'oxycommons://';
 
 const IDLE_SIGN_IN: SignInFlowState = {
   phase: 'idle',
@@ -160,6 +177,7 @@ export class AccountDialogController {
   private readonly authRedirectUri: string | null;
   private readonly pollIntervalMs: number;
   private readonly openUrl?: (url: string) => void;
+  private readonly canOpenApp?: (url: string) => Promise<boolean>;
 
   private readonly listeners = new Set<SnapshotListener>();
 
@@ -197,6 +215,7 @@ export class AccountDialogController {
     this.authRedirectUri = options.authRedirectUri ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.openUrl = options.openUrl;
+    this.canOpenApp = options.canOpenApp;
     this.snapshot = this.computeSnapshot();
   }
 
@@ -534,8 +553,34 @@ export class AccountDialogController {
         error: null,
       });
       this.scheduleNextPoll(handle.sessionToken);
+      // Same-device convenience: if Commons is installed (native only — `canOpenApp`
+      // is undefined/false on web), deep-link straight into its approve screen with
+      // the same `oxycommons://approve?...` payload the QR encodes. The QR + polling
+      // stay live as the fallback, so a user who dismisses the app-open still
+      // completes the sign-in by scanning.
+      void this.maybeOpenCommons(handle.qrPayload);
     } catch (error) {
       this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: errorMessage(error) });
+    }
+  }
+
+  /**
+   * When a `canOpenApp` probe is injected and reports Commons installed, open the
+   * approve deep link via the injected `openUrl`. Best-effort and non-blocking: a
+   * probe/open failure is logged and swallowed — the QR/polling fallback remains.
+   */
+  private async maybeOpenCommons(qrPayload: string): Promise<void> {
+    if (!this.canOpenApp || !this.openUrl) return;
+    try {
+      if (await this.canOpenApp(COMMONS_APP_SCHEME)) {
+        this.openUrl(qrPayload);
+      }
+    } catch (error) {
+      logger.debug(
+        '[AccountDialogController] Commons deep-link probe failed (QR fallback active)',
+        { component: 'AccountDialogController' },
+        error,
+      );
     }
   }
 

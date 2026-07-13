@@ -17,6 +17,8 @@
  * ESM-safe (no `require()`).
  */
 
+import { logger } from '../utils/loggerUtils';
+
 /**
  * The persisted session credential set for a single origin.
  *
@@ -81,11 +83,33 @@ export interface NativeKeyValueStorage {
 }
 
 /**
- * Versioned storage key. The `.v1` suffix lets a future shape change ship a
- * `.v2` key without reading a stale/incompatible `.v1` blob. Distinct from the
- * `oxy_shared_*` keychain keys in `KeyManager`, so it never collides.
+ * Versioned DURABLE storage key. Holds ONLY the small, re-mint-critical fields
+ * (`sessionId`, `userId`, `deviceId`, `deviceSecret`) — never the large JWT
+ * `accessToken`. Keeping this blob small (<2KB) matters on Android
+ * `expo-secure-store`, whose backing store can silently fail to persist an
+ * oversize value; bundling the token here previously took the mint credential
+ * down with it on every write, losing the session on cold restart.
+ *
+ * The `.v1` suffix lets a future shape change ship a `.v2` key without reading a
+ * stale/incompatible `.v1` blob. Distinct from the `oxy_shared_*` keychain keys
+ * in `KeyManager`, so it never collides.
+ *
+ * BACK-COMPAT: pre-split builds wrote the WHOLE state (including `accessToken` /
+ * `expiresAt`) into this single key. `load()` still reads those token fields
+ * from here when the warm key ({@link AUTH_STATE_TOKEN_STORAGE_KEY}) is absent,
+ * so upgrading users are not signed out; the next `save()` splits them apart.
  */
 export const AUTH_STATE_STORAGE_KEY = 'oxy.auth.v1';
+
+/**
+ * Versioned BEST-EFFORT warm-token storage key. Holds the short-lived
+ * `{ accessToken, expiresAt }` pair only. Its write is genuinely non-fatal — a
+ * failure (quota / oversize keychain value) is swallowed because the session is
+ * fully re-mintable from the durable `deviceSecret`. Kept separate from
+ * {@link AUTH_STATE_STORAGE_KEY} so a failed token write can NEVER abort or
+ * corrupt the durable credential write.
+ */
+export const AUTH_STATE_TOKEN_STORAGE_KEY = 'oxy.auth.token.v1';
 
 /**
  * Parse + shape-validate a stored blob. Returns `null` for anything that is
@@ -142,6 +166,104 @@ function deserialize(raw: string | null): PersistedAuthState | null {
   return state;
 }
 
+/** The parsed warm-token blob: the short-lived optimization fields only. */
+interface WarmToken {
+  accessToken?: string;
+  expiresAt?: string;
+}
+
+/**
+ * Parse the best-effort warm-token blob. Returns `null` for anything not a
+ * well-formed object so a corrupt warm entry simply forgoes the warm-boot
+ * optimization (the durable credential re-mints a fresh token).
+ */
+function parseWarmToken(raw: string | null): WarmToken | null {
+  if (!raw) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return null;
+  }
+  const candidate = parsed as Record<string, unknown>;
+  const warm: WarmToken = {};
+  if (typeof candidate.accessToken === 'string' && candidate.accessToken.length > 0) {
+    warm.accessToken = candidate.accessToken;
+  }
+  if (typeof candidate.expiresAt === 'string' && candidate.expiresAt.length > 0) {
+    warm.expiresAt = candidate.expiresAt;
+  }
+  return warm;
+}
+
+/** Serialize ONLY the small, re-mint-critical fields for the durable key. */
+function serializeDurable(state: PersistedAuthState): string {
+  const durable: Record<string, string> = {
+    sessionId: state.sessionId,
+    userId: state.userId,
+  };
+  if (state.deviceId) {
+    durable.deviceId = state.deviceId;
+  }
+  if (state.deviceSecret) {
+    durable.deviceSecret = state.deviceSecret;
+  }
+  return JSON.stringify(durable);
+}
+
+/**
+ * Serialize the warm-token blob, or `null` when there is no token to persist
+ * (so the caller clears the warm key rather than writing an empty object).
+ */
+function serializeWarmToken(state: PersistedAuthState): string | null {
+  const warm: WarmToken = {};
+  if (state.accessToken) {
+    warm.accessToken = state.accessToken;
+  }
+  if (state.expiresAt) {
+    warm.expiresAt = state.expiresAt;
+  }
+  if (!warm.accessToken && !warm.expiresAt) {
+    return null;
+  }
+  return JSON.stringify(warm);
+}
+
+/**
+ * Compose the unchanged {@link PersistedAuthState} return shape from the two
+ * on-disk keys. `accessToken` / `expiresAt` come from the warm key when it is
+ * present; when the warm key is ABSENT the token fields fall back to whatever
+ * the durable blob carried — the pre-split combined `oxy.auth.v1` blob (BACK-COMPAT).
+ */
+function composeState(durableRaw: string | null, warmRaw: string | null): PersistedAuthState | null {
+  const state = deserialize(durableRaw);
+  if (!state) {
+    return null;
+  }
+  if (warmRaw !== null) {
+    // New split layout: the warm key is authoritative for the token fields.
+    // Drop anything the durable blob may have carried, then overlay the warm
+    // values (a warm key with no token → the session simply has no warm token).
+    delete state.accessToken;
+    delete state.expiresAt;
+    const warm = parseWarmToken(warmRaw);
+    if (warm?.accessToken) {
+      state.accessToken = warm.accessToken;
+    }
+    if (warm?.expiresAt) {
+      state.expiresAt = warm.expiresAt;
+    }
+  }
+  // else: BACK-COMPAT — the warm key is absent, so `deserialize` already applied
+  // any `accessToken` / `expiresAt` from the old combined blob.
+  return state;
+}
+
 /**
  * A process-lifetime, in-memory {@link AuthStateStore}. Used directly for
  * tests/SSR and as the degraded fallback of the web store when `localStorage`
@@ -180,8 +302,9 @@ function safeGetLocalStorage(): Storage | null {
 }
 
 /**
- * A `localStorage`-backed {@link AuthStateStore} under the versioned
- * {@link AUTH_STATE_STORAGE_KEY}.
+ * A `localStorage`-backed {@link AuthStateStore} split across the durable
+ * {@link AUTH_STATE_STORAGE_KEY} (mint credential) and the best-effort
+ * {@link AUTH_STATE_TOKEN_STORAGE_KEY} (warm access token).
  *
  * Resilience:
  *  - If `localStorage` is unreachable (sandboxed-iframe `SecurityError`, SSR),
@@ -208,24 +331,61 @@ export function createWebAuthStateStore(): AuthStateStore {
         return sessionMirror;
       }
       try {
-        return deserialize(storage.getItem(AUTH_STATE_STORAGE_KEY));
+        return composeState(
+          storage.getItem(AUTH_STATE_STORAGE_KEY),
+          storage.getItem(AUTH_STATE_TOKEN_STORAGE_KEY),
+        );
       } catch {
         return null;
       }
     },
     save: async (state) => {
       sessionMirror = state; // mirror FIRST — authoritative even if persist fails
+      // Durable credential FIRST, then VERIFY it landed. The in-memory mirror
+      // keeps the session live for this page, but a failed DURABLE write means
+      // the mint credential will NOT survive a reload — surface it, never swallow.
+      let durablePersisted = false;
       try {
-        storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify(state));
+        const durableJson = serializeDurable(state);
+        storage.setItem(AUTH_STATE_STORAGE_KEY, durableJson);
+        durablePersisted = storage.getItem(AUTH_STATE_STORAGE_KEY) === durableJson;
+        if (!durablePersisted) {
+          logger.error(
+            '[authStateStore] durable credential read-back mismatch after save — the device credential did not persist; the session survives this process via the in-memory mirror but will be lost on reload',
+            undefined,
+            { component: 'authStateStore' },
+          );
+        }
+      } catch (error) {
+        logger.error(
+          '[authStateStore] durable credential persist threw — the device credential did not persist; the session survives this process via the in-memory mirror but will be lost on reload',
+          error,
+          { component: 'authStateStore' },
+        );
+      }
+      // Warm token AFTER, best-effort. Its failure is genuinely non-fatal (the
+      // durable credential re-mints a fresh token) and must never abort or
+      // corrupt the durable write above.
+      try {
+        const warmJson = serializeWarmToken(state);
+        if (warmJson) {
+          storage.setItem(AUTH_STATE_TOKEN_STORAGE_KEY, warmJson);
+        } else {
+          storage.removeItem(AUTH_STATE_TOKEN_STORAGE_KEY);
+        }
       } catch {
-        // Quota / private-mode / disabled storage — non-fatal. The session
-        // stays live via the in-memory mirror; only reload durability is lost.
+        // Quota / private-mode / disabled storage — non-fatal warm-boot loss only.
       }
     },
     clear: async () => {
       sessionMirror = null;
       try {
         storage.removeItem(AUTH_STATE_STORAGE_KEY);
+      } catch {
+        // Non-fatal — see save().
+      }
+      try {
+        storage.removeItem(AUTH_STATE_TOKEN_STORAGE_KEY);
       } catch {
         // Non-fatal — see save().
       }
@@ -237,9 +397,12 @@ export function createWebAuthStateStore(): AuthStateStore {
  * A native {@link AuthStateStore} over an injected async key/value store.
  *
  * `@oxyhq/core` never imports `expo-secure-store`; `@oxyhq/services` constructs
- * the SecureStore-backed adapter and passes it here. Every operation is wrapped
- * so a storage exception degrades gracefully (read → `null`, write → swallowed)
- * exactly like the web store.
+ * the SecureStore-backed adapter and passes it here. Persistence is split across
+ * the durable {@link AUTH_STATE_STORAGE_KEY} (mint credential) and the
+ * best-effort {@link AUTH_STATE_TOKEN_STORAGE_KEY} (warm access token) — the
+ * durable write is read-back-verified and its failure surfaced (not swallowed),
+ * while the warm-token write and all reads degrade gracefully exactly like the
+ * web store.
  */
 export function createNativeAuthStateStore(storage: NativeKeyValueStorage): AuthStateStore {
   // Same in-memory mirror as the web store — a locked/failed SecureStore write
@@ -251,23 +414,64 @@ export function createNativeAuthStateStore(storage: NativeKeyValueStorage): Auth
         return sessionMirror;
       }
       try {
-        return deserialize(await storage.getItem(AUTH_STATE_STORAGE_KEY));
+        const [durableRaw, warmRaw] = await Promise.all([
+          storage.getItem(AUTH_STATE_STORAGE_KEY),
+          storage.getItem(AUTH_STATE_TOKEN_STORAGE_KEY),
+        ]);
+        return composeState(durableRaw, warmRaw);
       } catch {
         return null;
       }
     },
     save: async (state) => {
       sessionMirror = state;
+      // Durable credential FIRST, then VERIFY. On Android SecureStore an
+      // oversize/failed write can resolve WITHOUT throwing, so a read-back is the
+      // only reliable proof. The mirror keeps the session live for this app run,
+      // but a failed DURABLE write means the mint credential will NOT survive a
+      // cold restart — surface it, never swallow.
+      let durablePersisted = false;
       try {
-        await storage.setItem(AUTH_STATE_STORAGE_KEY, JSON.stringify(state));
+        const durableJson = serializeDurable(state);
+        await storage.setItem(AUTH_STATE_STORAGE_KEY, durableJson);
+        durablePersisted = (await storage.getItem(AUTH_STATE_STORAGE_KEY)) === durableJson;
+        if (!durablePersisted) {
+          logger.error(
+            '[authStateStore] durable credential read-back mismatch after save — the device credential did not persist (likely oversize SecureStore value); the session survives this app run via the in-memory mirror but will be lost on cold restart',
+            undefined,
+            { component: 'authStateStore' },
+          );
+        }
+      } catch (error) {
+        logger.error(
+          '[authStateStore] durable credential persist threw — the device credential did not persist; the session survives this app run via the in-memory mirror but will be lost on cold restart',
+          error,
+          { component: 'authStateStore' },
+        );
+      }
+      // Warm token AFTER, best-effort. Its failure is genuinely non-fatal (the
+      // durable credential re-mints a fresh token) and must never abort or
+      // corrupt the durable write above.
+      try {
+        const warmJson = serializeWarmToken(state);
+        if (warmJson) {
+          await storage.setItem(AUTH_STATE_TOKEN_STORAGE_KEY, warmJson);
+        } else {
+          await storage.removeItem(AUTH_STATE_TOKEN_STORAGE_KEY);
+        }
       } catch {
-        // Non-fatal — session stays live via the in-memory mirror.
+        // Locked / oversize keychain — non-fatal warm-boot loss only.
       }
     },
     clear: async () => {
       sessionMirror = null;
       try {
         await storage.removeItem(AUTH_STATE_STORAGE_KEY);
+      } catch {
+        // Non-fatal.
+      }
+      try {
+        await storage.removeItem(AUTH_STATE_TOKEN_STORAGE_KEY);
       } catch {
         // Non-fatal.
       }

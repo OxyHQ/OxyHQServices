@@ -3,6 +3,7 @@ import {
   createNativeAuthStateStore,
   createMemoryAuthStateStore,
   AUTH_STATE_STORAGE_KEY,
+  AUTH_STATE_TOKEN_STORAGE_KEY,
   type PersistedAuthState,
   type NativeKeyValueStorage,
 } from '../authStateStore';
@@ -161,6 +162,103 @@ describe('createWebAuthStateStore', () => {
     // The authoritative in-memory mirror still reports the cleared state.
     expect(await store.load()).toBeNull();
   });
+
+  it('splits the token into the warm key and keeps the durable blob token-free', async () => {
+    const storage = makeFakeStorage();
+    installLocalStorage(storage);
+    const store = createWebAuthStateStore();
+
+    await store.save({ ...SAMPLE, deviceId: 'dev-1', deviceSecret: 'ds-1' });
+
+    // Durable key holds ONLY the small mint-critical fields — never the JWT.
+    const durableRaw = storage.getItem(AUTH_STATE_STORAGE_KEY);
+    expect(durableRaw).toBeTruthy();
+    expect(JSON.parse(durableRaw ?? '{}')).toEqual({
+      sessionId: 's-1',
+      userId: 'u-1',
+      deviceId: 'dev-1',
+      deviceSecret: 'ds-1',
+    });
+
+    // Warm key holds ONLY the short-lived token pair.
+    const warmRaw = storage.getItem(AUTH_STATE_TOKEN_STORAGE_KEY);
+    expect(warmRaw).toBeTruthy();
+    expect(JSON.parse(warmRaw ?? '{}')).toEqual({
+      accessToken: 'a-jwt',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    // A FRESH store (empty mirror) composes both keys back into the same shape.
+    expect(await createWebAuthStateStore().load()).toEqual({
+      ...SAMPLE,
+      deviceId: 'dev-1',
+      deviceSecret: 'ds-1',
+    });
+  });
+
+  it('persists the durable credential even when the warm-token write fails', async () => {
+    const map = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        // Simulate the warm token exceeding the store's capacity while the small
+        // durable blob writes fine.
+        if (k === AUTH_STATE_TOKEN_STORAGE_KEY) {
+          throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+        }
+        map.set(k, v);
+      },
+      removeItem: (k: string) => {
+        map.delete(k);
+      },
+      clear: () => map.clear(),
+      key: (i: number) => Array.from(map.keys())[i] ?? null,
+      get length() {
+        return map.size;
+      },
+    } as Storage;
+    installLocalStorage(storage);
+    const store = createWebAuthStateStore();
+
+    await expect(
+      store.save({ ...SAMPLE, deviceId: 'dev-abc', deviceSecret: 'ds-secret-xyz' }),
+    ).resolves.toBeUndefined();
+
+    // The durable mint credential landed despite the warm-token write throwing.
+    const durableRaw = storage.getItem(AUTH_STATE_STORAGE_KEY);
+    expect(durableRaw).toBeTruthy();
+    const durable = JSON.parse(durableRaw ?? '{}');
+    expect(durable.deviceId).toBe('dev-abc');
+    expect(durable.deviceSecret).toBe('ds-secret-xyz');
+    expect(durable.accessToken).toBeUndefined();
+    // The warm-token key never persisted.
+    expect(storage.getItem(AUTH_STATE_TOKEN_STORAGE_KEY)).toBeNull();
+
+    // A fresh store restores the mint credential from disk; no warm token survives.
+    const loaded = await createWebAuthStateStore().load();
+    expect(loaded?.deviceId).toBe('dev-abc');
+    expect(loaded?.deviceSecret).toBe('ds-secret-xyz');
+    expect(loaded?.accessToken).toBeUndefined();
+  });
+
+  it('load() reads an old combined oxy.auth.v1 blob (pre-split back-compat)', async () => {
+    const storage = makeFakeStorage();
+    installLocalStorage(storage);
+    // A user upgraded from the pre-split build: the WHOLE state (incl. the token)
+    // lives in the single durable key; the warm key does not exist yet.
+    storage.setItem(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({ ...SAMPLE, deviceId: 'dev-old', deviceSecret: 'ds-old' }),
+    );
+    expect(storage.getItem(AUTH_STATE_TOKEN_STORAGE_KEY)).toBeNull();
+
+    const store = createWebAuthStateStore();
+    const loaded = await store.load();
+    // The token is read back from the combined blob (no one is logged out).
+    expect(loaded).toEqual({ ...SAMPLE, deviceId: 'dev-old', deviceSecret: 'ds-old' });
+    expect(loaded?.accessToken).toBe('a-jwt');
+    expect(loaded?.expiresAt).toBe('2030-01-01T00:00:00.000Z');
+  });
 });
 
 describe('createNativeAuthStateStore', () => {
@@ -209,6 +307,78 @@ describe('createNativeAuthStateStore', () => {
     await expect(store.save(SAMPLE)).resolves.toBeUndefined();
     // The write threw, but the in-memory mirror preserves the session.
     expect(await store.load()).toEqual(SAMPLE);
+  });
+
+  it('persists the durable credential even when the warm-token write fails (oversize SecureStore value)', async () => {
+    const map = new Map<string, string>();
+    const storage: NativeKeyValueStorage = {
+      getItem: async (k) => map.get(k) ?? null,
+      // The large JWT exceeds the SecureStore value limit; the small durable blob
+      // writes fine.
+      setItem: async (k, v) => {
+        if (k === AUTH_STATE_TOKEN_STORAGE_KEY) {
+          throw new Error('Value too large for SecureStore');
+        }
+        map.set(k, v);
+      },
+      removeItem: async (k) => {
+        map.delete(k);
+      },
+    };
+    const store = createNativeAuthStateStore(storage);
+
+    await expect(
+      store.save({ ...SAMPLE, deviceId: 'dev-n', deviceSecret: 'ds-n' }),
+    ).resolves.toBeUndefined();
+
+    // The durable mint credential landed to disk.
+    expect(map.get(AUTH_STATE_STORAGE_KEY)).toBeTruthy();
+    const durable = JSON.parse(map.get(AUTH_STATE_STORAGE_KEY) ?? '{}');
+    expect(durable.deviceId).toBe('dev-n');
+    expect(durable.deviceSecret).toBe('ds-n');
+    expect(durable.accessToken).toBeUndefined();
+    expect(map.get(AUTH_STATE_TOKEN_STORAGE_KEY)).toBeUndefined();
+
+    // A FRESH store (empty mirror) restores the mint credential from disk.
+    const loaded = await createNativeAuthStateStore(storage).load();
+    expect(loaded?.deviceId).toBe('dev-n');
+    expect(loaded?.deviceSecret).toBe('ds-n');
+    expect(loaded?.accessToken).toBeUndefined();
+  });
+
+  it('load() reads an old combined blob (pre-split back-compat)', async () => {
+    const map = new Map<string, string>();
+    const storage: NativeKeyValueStorage = {
+      getItem: async (k) => map.get(k) ?? null,
+      setItem: async (k, v) => {
+        map.set(k, v);
+      },
+      removeItem: async (k) => {
+        map.delete(k);
+      },
+    };
+    // Pre-split combined blob in the single durable key; no warm key.
+    map.set(
+      AUTH_STATE_STORAGE_KEY,
+      JSON.stringify({ ...SAMPLE, deviceId: 'dev-old', deviceSecret: 'ds-old' }),
+    );
+
+    const store = createNativeAuthStateStore(storage);
+    expect(await store.load()).toEqual({ ...SAMPLE, deviceId: 'dev-old', deviceSecret: 'ds-old' });
+  });
+
+  it('clear() wipes BOTH the durable and warm keys', async () => {
+    const storage = makeNativeStorage();
+    const store = createNativeAuthStateStore(storage);
+    await store.save({ ...SAMPLE, deviceId: 'dev-1', deviceSecret: 'ds-1' });
+    // Both keys were written by the split save.
+    expect(storage.map.get(AUTH_STATE_STORAGE_KEY)).toBeTruthy();
+    expect(storage.map.get(AUTH_STATE_TOKEN_STORAGE_KEY)).toBeTruthy();
+
+    await store.clear();
+    expect(storage.map.get(AUTH_STATE_STORAGE_KEY)).toBeUndefined();
+    expect(storage.map.get(AUTH_STATE_TOKEN_STORAGE_KEY)).toBeUndefined();
+    expect(await store.load()).toBeNull();
   });
 });
 
