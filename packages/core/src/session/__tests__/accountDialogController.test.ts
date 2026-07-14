@@ -4,6 +4,7 @@ import type { User } from '../../models/interfaces';
 import type { SessionLoginResponse, MinimalUserData } from '../../models/session';
 import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import { SessionClient, type SessionClientHost } from '../SessionClient';
+import { logger } from '../../utils/loggerUtils';
 import {
   AccountDialogController,
   createAccountDialogController,
@@ -206,6 +207,7 @@ describe('AccountDialogController — account list', () => {
   });
 
   it('keeps device rows and surfaces the error when listAccounts fails', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const { controller, oxy, sc } = makeHarness();
     sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
     oxy.getUsersByIds.mockResolvedValue([user('a1')]);
@@ -216,6 +218,40 @@ describe('AccountDialogController — account list', () => {
     const snap = controller.getSnapshot();
     expect(snap.error).toBe('graph boom');
     expect(snap.accounts.map((r) => r.accountId)).toEqual(['a1']);
+    // A genuine (non-401) failure STILL warns.
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[AccountDialogController] listAccounts failed',
+      { component: 'AccountDialogController' },
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('treats a 401 from listAccounts as the signed-out edge — debug, no surfaced error, no warn', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const { controller, oxy, sc } = makeHarness();
+    sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
+    oxy.getUsersByIds.mockResolvedValue([user('a1')]);
+    // A stale/revoked bearer 401s: an EXPECTED signed-out outcome, not a failure.
+    oxy.listAccounts.mockRejectedValue(
+      Object.assign(new Error('Invalid or missing authorization header'), { status: 401 }),
+    );
+
+    await controller.refresh();
+
+    const snap = controller.getSnapshot();
+    // Never surface an error for a normal signed-out state; device rows still render.
+    expect(snap.error).toBeNull();
+    expect(snap.accounts.map((r) => r.accountId)).toEqual(['a1']);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(
+      '[AccountDialogController] listAccounts unauthorized (signed out)',
+      { component: 'AccountDialogController' },
+      expect.objectContaining({ status: 401 }),
+    );
+    warnSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 });
 

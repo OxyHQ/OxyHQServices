@@ -30,6 +30,7 @@ import type { OxyServices } from '../OxyServices';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { User } from '../models/interfaces';
 import { logger } from '../utils/loggerUtils';
+import { extractErrorStatus } from '../utils/errorUtils';
 import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
 import {
   generateOAuthState,
@@ -392,10 +393,19 @@ export class AccountDialogController {
     try {
       graph = await this.oxyServices.listAccounts();
     } catch (error) {
-      // A graph-load failure is non-fatal: device rows still render. Surface the
-      // message but keep going with whatever graph we already had.
-      this.error = errorMessage(error);
-      logger.warn('[AccountDialogController] listAccounts failed', { component: 'AccountDialogController' }, error);
+      // A 401 here is the EXPECTED signed-out edge, not a failure: the bearer was
+      // stale/revoked, so `HttpService` already cleared it and emitted
+      // `onTokensChanged(null)`, which drops the graph via `reconcileAuth`. Log at
+      // debug and leave the dialog error-free — a signed-out device with zero
+      // accounts is a normal state, not a warning. Any other error (network, 5xx,
+      // malformed) IS unexpected: surface it and warn while keeping the prior graph
+      // so device rows still render.
+      if (extractErrorStatus(error) === 401) {
+        logger.debug('[AccountDialogController] listAccounts unauthorized (signed out)', { component: 'AccountDialogController' }, error);
+      } else {
+        this.error = errorMessage(error);
+        logger.warn('[AccountDialogController] listAccounts failed', { component: 'AccountDialogController' }, error);
+      }
     }
     if (seq !== this.refreshSeq) return; // superseded by a newer refresh
 
@@ -432,9 +442,15 @@ export class AccountDialogController {
     try {
       profiles = await this.oxyServices.getUsersByIds(ids);
     } catch (error) {
-      // `getUsersByIds` already swallows per-chunk failures and returns `[]`;
-      // this guards the unexpected total failure. Non-fatal — keep prior map.
-      logger.warn('[AccountDialogController] getUsersByIds failed', { component: 'AccountDialogController' }, error);
+      // A 401 is the EXPECTED signed-out edge (stale/cleared bearer) — log at debug.
+      // `getUsersByIds` already swallows per-chunk failures and returns `[]`, so any
+      // OTHER error here is an unexpected total failure worth a warn. Either way keep
+      // the prior profile map.
+      if (extractErrorStatus(error) === 401) {
+        logger.debug('[AccountDialogController] getUsersByIds unauthorized (signed out)', { component: 'AccountDialogController' }, error);
+      } else {
+        logger.warn('[AccountDialogController] getUsersByIds failed', { component: 'AccountDialogController' }, error);
+      }
       return;
     }
     if (seq !== this.refreshSeq) return; // superseded

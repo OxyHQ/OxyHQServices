@@ -1,5 +1,6 @@
 import type { User } from '@oxyhq/core';
 import { logger as loggerUtil } from '@oxyhq/core';
+import { isUnauthorizedStatus } from './oxyContextHelpers';
 
 const LOG_CONTEXT = { component: 'OxyContext', method: 'commitSession' } as const;
 
@@ -72,6 +73,15 @@ export async function commitDeviceSetAndResolve(
   };
 
   const logReconcileError = (registrationError: unknown): void => {
+    // A 401 here is the EXPECTED signed-out edge: the bearer was stale/cleared, so
+    // the device-set registration (`POST /session/device/add`) cannot carry auth.
+    // This is not a failure — the cold boot re-registers on the next load once a
+    // valid session is minted. Log at debug; warn only on genuine unexpected
+    // failures (network, 5xx, malformed).
+    if (isUnauthorizedStatus(registrationError)) {
+      loggerUtil.debug('commitSession: device-set registration skipped (signed out)', LOG_CONTEXT, registrationError);
+      return;
+    }
     loggerUtil.warn('commitSession: device-set registration failed', LOG_CONTEXT, registrationError);
   };
 

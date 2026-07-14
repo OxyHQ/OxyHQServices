@@ -149,6 +149,33 @@ describe('commitDeviceSetAndResolve — cold boot (activate: false)', () => {
       failure,
     );
   });
+
+  it('downgrades a 401 reconcile (signed-out edge) to debug — never warns', async () => {
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const order: string[] = [];
+    // A stale/cleared bearer 401s `POST /session/device/add`: the EXPECTED
+    // signed-out outcome, not a failure the user should see warned in the console.
+    const unauthorized = Object.assign(new Error('Invalid or missing authorization header'), {
+      status: 401,
+    });
+    const deps = buildDeps(order, {
+      addCurrentAccount: jest.fn(async () => {
+        throw unauthorized;
+      }),
+    });
+
+    await commitDeviceSetAndResolve(deps);
+    await flush();
+
+    expect(deps.markAuthResolved).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(
+      'commitSession: device-set registration skipped (signed out)',
+      { component: 'OxyContext', method: 'commitSession' },
+      unauthorized,
+    );
+  });
 });
 
 describe('commitDeviceSetAndResolve — deliberate sign-in (activate: true)', () => {
