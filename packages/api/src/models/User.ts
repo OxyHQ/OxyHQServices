@@ -396,9 +396,13 @@ export interface IUser extends Document {
   updateLocationCoordinates(locationId: string, lat: number, lon: number): Promise<IUser>;
 }
 
+// `trim` is a storage-level backstop only. The real display-name policy (NFC,
+// character set, whitespace collapse, length cap) is `cleanDisplayName`, applied
+// by every write path — native profile edits (`user.service`), signup
+// (`session.controller`) and federated actor sync (`federation.service`).
 const NameSchema = new Schema({
-  first: { type: String, default: "" },
-  last: { type: String, default: "" },
+  first: { type: String, default: "", trim: true },
+  last: { type: String, default: "", trim: true },
 });
 
 // Virtual for full name
@@ -624,8 +628,8 @@ const UserSchema: Schema = new Schema(
     birthday: { type: String, trim: true },
     locations: [{
       id: { type: String, required: true },
-      name: { type: String, required: true },
-      label: { type: String },
+      name: { type: String, required: true, trim: true },
+      label: { type: String, trim: true },
       type: { 
         type: String, 
         enum: ['home', 'work', 'school', 'other'],
@@ -655,11 +659,15 @@ const UserSchema: Schema = new Schema(
       createdAt: { type: Date, default: Date.now },
       updatedAt: { type: Date, default: Date.now }
     }],
-    links: [{ type: String }],
+    links: [{ type: String, trim: true }],
+    // `title` / `description` hold text scraped from a REMOTE page. `trim` is a
+    // backstop; the full normalization (interior newlines from an indented
+    // `<title>`, length caps) happens on the write path — see
+    // `utils/profileTextNormalization.ts`.
     linksMetadata: [{
-      url: { type: String, required: true },
-      title: { type: String, required: true },
-      description: { type: String, required: true },
+      url: { type: String, required: true, trim: true },
+      title: { type: String, required: true, trim: true },
+      description: { type: String, required: true, trim: true },
       image: { type: String }
     }],
     accountExpiresAfterInactivityDays: {

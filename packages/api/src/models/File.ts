@@ -1,4 +1,24 @@
 import mongoose, { Schema, type Document } from 'mongoose';
+import { normalizeInlineText } from '@oxyhq/core';
+
+/**
+ * Canonicalize a stored filename.
+ *
+ * `originalName` is whatever the uploading client called the file — on some
+ * platforms that is a share-sheet-supplied string that can carry newlines, tabs
+ * or a run of spaces — and it is echoed back to every viewer of the asset (and
+ * mirrored onto `Message` attachments). It is a single-line display value, so it
+ * gets the canonical inline normalization.
+ *
+ * This is a schema setter rather than a call in `assetService` because there are
+ * four independent upload paths (direct, streamed, chunked-complete, media-cache)
+ * that all write this one leaf field; normalizing at the field is the only place
+ * none of them can bypass. Non-string values pass through so Mongoose reports the
+ * cast error itself.
+ */
+function normalizeFileName(value: unknown): unknown {
+  return typeof value === 'string' ? normalizeInlineText(value) : value;
+}
 
 /**
  * File visibility levels
@@ -126,7 +146,7 @@ const FileSchema = new Schema<IFile>({
   links: [FileLinkSchema],
   variants: [FileVariantSchema],
   storageKey: { type: String, required: true },
-  originalName: { type: String },
+  originalName: { type: String, set: normalizeFileName },
   metadata: { type: Schema.Types.Mixed }
 }, {
   timestamps: true,

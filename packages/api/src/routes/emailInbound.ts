@@ -16,6 +16,7 @@
 import { Router } from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import { normalizeInlineText } from '@oxyhq/core';
 import { simpleParser } from 'mailparser';
 import type { ParsedMail } from 'mailparser';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -54,7 +55,11 @@ function buildSnippet(text?: string, html?: string): string {
           .replace(/&quot;/gi, '"')
           .replace(/&#39;/gi, "'")
       : '';
-  const collapsed = source.replace(/\s+/g, ' ').trim();
+  // A snippet is a ONE-LINE preview of a message body written by a third party,
+  // so the canonical inline normalizer applies: every line break the sender's
+  // markup happened to contain becomes a space. (Clients render it in an RN
+  // `Text`, which would otherwise preserve them.)
+  const collapsed = normalizeInlineText(source);
   return collapsed.length > SNIPPET_MAX_LENGTH
     ? collapsed.slice(0, SNIPPET_MAX_LENGTH)
     : collapsed;

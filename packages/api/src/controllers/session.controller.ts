@@ -23,6 +23,8 @@ import { recordFailure, clearFailures } from '../services/loginLockout.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import type { AuthRequest } from '../middleware/auth';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
+import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN, normalizeUsername } from '../utils/username';
+import { cleanDisplayName } from '../utils/displayNameSanitize';
 import type { SessionCreateOptions } from '../types/session.types';
 
 export function sessionCreateOptionsFromBody(body: {
@@ -104,7 +106,6 @@ function getRecoveryTokenFromRequest(req: Request): string | undefined {
 // More robust email validation regex (RFC 5322 compliant)
 // Validates: local-part@domain with proper character restrictions
 const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -152,10 +153,6 @@ function validateEmail(email: string): { valid: boolean; error?: string } {
   }
 
   return { valid: true };
-}
-
-function normalizeUsername(username: string): string {
-  return username.trim();
 }
 
 function parseIdentifier(identifier: string): { field: 'email' | 'username'; value: string } | null {
@@ -253,10 +250,8 @@ export class SessionController {
         }
 
         normalizedUsername = normalizeUsername(username);
-        if (!USERNAME_REGEX.test(normalizedUsername)) {
-          return res.status(400).json({
-            message: 'Username must be 3-30 characters and contain only letters and numbers'
-          });
+        if (!USERNAME_PATTERN.test(normalizedUsername)) {
+          return res.status(400).json({ message: INVALID_USERNAME_MESSAGE });
         }
       }
 
@@ -373,10 +368,8 @@ export class SessionController {
       }
 
       const normalizedUsername = normalizeUsername(username);
-      if (!USERNAME_REGEX.test(normalizedUsername)) {
-        return res.status(400).json({
-          message: 'Username must be 3-30 characters and contain only letters and numbers'
-        });
+      if (!USERNAME_PATTERN.test(normalizedUsername)) {
+        return res.status(400).json({ message: INVALID_USERNAME_MESSAGE });
       }
 
       const existingEmail = await User.findOne({ email: normalizedEmail }).select('_id').lean();
@@ -400,8 +393,17 @@ export class SessionController {
         authMethods: [buildAuthMethod('password', { email: normalizedEmail })],
       });
 
+      // The signup schema validates the display-name CHARACTER SET, and a space is
+      // a legal display-name character — so `"Ana" + 20 spaces + "Gómez"` passes
+      // validation. Run the same cleaner the profile-edit and federated-actor
+      // paths use, so a name is stored identically no matter which door it came
+      // through.
       if (name && typeof name === 'object') {
-        user.name = name;
+        const nameInput = name as { first?: unknown; last?: unknown };
+        user.name = {
+          first: typeof nameInput.first === 'string' ? cleanDisplayName(nameInput.first) : '',
+          last: typeof nameInput.last === 'string' ? cleanDisplayName(nameInput.last) : '',
+        };
       }
 
       await user.save();

@@ -146,6 +146,19 @@ describe('displayNameSanitize', () => {
       expect(cleanDisplayName('  Ada   Lovelace  ')).toBe('Ada Lovelace');
     });
 
+    it('collapses a long run of spaces (the native profile-edit case)', () => {
+      // `isValidDisplayName` accepts this — a space IS a legal display-name
+      // character — so the whitespace collapse is the only thing standing between
+      // the user and a name stored with a 20-space gap in it.
+      expect(cleanDisplayName(`Ana${' '.repeat(20)}Gómez`)).toBe('Ana Gómez');
+    });
+
+    it('collapses a non-breaking space to a plain space', () => {
+      // NBSP is `\p{Zs}`, so the character policy keeps it; the canonical inline
+      // normalizer is what turns it into a plain space.
+      expect(cleanDisplayName('Ada\u00A0Lovelace')).toBe('Ada Lovelace');
+    });
+
     it.each([
       ['Ada\tLovelace', 'tab'],
       ['Ada\nLovelace', 'newline'],
