@@ -27,6 +27,7 @@ import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } fro
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
+import { broadcastSessionAccountsChanged } from '../utils/socket';
 import socialAuthRouter from './socialAuth';
 import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
@@ -1343,6 +1344,11 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
     username: authenticatedUser.username,
   });
 
+  // A1: a brand-new session was minted for this user — signal all of their other
+  // connected sockets (across devices/origins) to refetch. No device mutation
+  // happens here, so the revision hint is 0.
+  broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+
   sendSuccess(res, {
     success: true,
     sessionId: newSession.sessionId,
@@ -1689,6 +1695,11 @@ router.post(
       userId: outcome.userId,
       username: outcome.username,
     });
+
+    // A1: a brand-new session was minted for the signer via the QR handoff —
+    // signal all of their other connected sockets to refetch. No device mutation
+    // happens here, so the revision hint is 0.
+    broadcastSessionAccountsChanged(outcome.userId, 0, 'login');
 
     sendSuccess(res, {
       success: true,

@@ -39,6 +39,7 @@ import {
   persistOAuthHandshake,
 } from '../utils/oauthPkce';
 import type { SessionClient } from './SessionClient';
+import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 import {
   projectSwitchableAccounts,
   switchableAccountIds,
@@ -124,8 +125,20 @@ export interface AccountDialogControllerOptions {
    * `location.origin` normalization in {@link openPasswordAtOxyAuth}.
    */
   authRedirectUri?: string | null;
-  /** QR device-flow poll interval in ms (default 3000). */
+  /**
+   * QR device-flow FALLBACK poll interval in ms (default 12000). The primary
+   * approval signal is the `/auth-session` socket's `auth_update` event (instant);
+   * this slow poll is only the safety net for when the socket can't connect.
+   */
   pollIntervalMs?: number;
+  /**
+   * Statically-injected `socket.io-client` factory (its `io` export), same as
+   * {@link SessionClient}'s. When provided, the QR flow subscribes to the
+   * `/auth-session` namespace for an INSTANT `auth_update` wake instead of relying
+   * on the slow fallback poll. Absent on web builds without a bundled `io` and in
+   * headless/core usage → the controller silently degrades to poll-only.
+   */
+  socketFactory?: SocketIOFactory;
   /**
    * Optional URL opener. When provided, `openPasswordAtOxyAuth` invokes it with
    * the built URL in addition to returning it (web: `location.assign`; native:
@@ -144,7 +157,16 @@ export interface AccountDialogControllerOptions {
   canOpenApp?: (url: string) => Promise<boolean>;
 }
 
-const DEFAULT_POLL_INTERVAL_MS = 3000;
+/**
+ * Slow FALLBACK poll cadence for the QR flow. The `/auth-session` socket delivers
+ * the approval instantly via `auth_update`; this poll only covers the case where
+ * the socket can't connect, so it is deliberately slow (was 3000 when polling was
+ * the sole mechanism).
+ */
+const DEFAULT_POLL_INTERVAL_MS = 12000;
+
+/** Socket.IO namespace the API emits QR-flow approval (`auth_update`) events on. */
+const AUTH_SESSION_NAMESPACE = '/auth-session';
 
 /**
  * Commons's custom URL scheme. Probed via the injected `canOpenApp` to detect an
@@ -179,6 +201,7 @@ export class AccountDialogController {
   private readonly pollIntervalMs: number;
   private readonly openUrl?: (url: string) => void;
   private readonly canOpenApp?: (url: string) => Promise<boolean>;
+  private readonly socketFactory?: SocketIOFactory;
 
   private readonly listeners = new Set<SnapshotListener>();
 
@@ -195,6 +218,18 @@ export class AccountDialogController {
   /** The secret device-flow token of the active QR flow (never surfaced). */
   private signInToken: string | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The `/auth-session` socket for the active QR flow, or null (poll-only). Its
+   * `auth_update` event wakes {@link pollOnce} instantly instead of waiting for the
+   * slow fallback timer.
+   */
+  private authSessionSocket: MinimalSocket | null = null;
+  /**
+   * Guards {@link pollOnce} against re-entrancy: the fallback timer and a socket
+   * `auth_update` wake can fire together — without this both could claim the
+   * single-use token concurrently.
+   */
+  private pollInFlight = false;
 
   // --- Store plumbing ---
   private unsubscribeSession: (() => void) | null = null;
@@ -217,6 +252,7 @@ export class AccountDialogController {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.openUrl = options.openUrl;
     this.canOpenApp = options.canOpenApp;
+    this.socketFactory = options.socketFactory;
     this.snapshot = this.computeSnapshot();
   }
 
@@ -289,6 +325,8 @@ export class AccountDialogController {
       this.unsubscribeTokens = null;
     }
     this.clearPollTimer();
+    this.closeAuthSessionSocket();
+    this.signInToken = null;
     this.listeners.clear();
   }
 
@@ -568,6 +606,10 @@ export class AccountDialogController {
         expiresAt: handle.expiresAt,
         error: null,
       });
+      // Primary path: an instant `auth_update` wake over the `/auth-session`
+      // socket. The poll below is only the fallback for when the socket can't
+      // connect, so it now runs at the slow fallback cadence.
+      this.openAuthSessionSocket(handle.sessionToken);
       this.scheduleNextPoll(handle.sessionToken);
       // Same-device convenience: if Commons is installed (native only — `canOpenApp`
       // is undefined/false on web), deep-link straight into its approve screen with
@@ -600,9 +642,10 @@ export class AccountDialogController {
     }
   }
 
-  /** Tear down the active sign-in device flow (timers + token) and reset to idle. */
+  /** Tear down the active sign-in device flow (timers + socket + token) and reset to idle. */
   cancelSignIn(): void {
     this.clearPollTimer();
+    this.closeAuthSessionSocket();
     this.signInToken = null;
     if (this.signIn !== IDLE_SIGN_IN) {
       this.setSignIn(IDLE_SIGN_IN);
@@ -664,36 +707,48 @@ export class AccountDialogController {
     }, this.pollIntervalMs);
   }
 
+  /**
+   * Run one status check + (on approval) claim. Triggered by the fallback timer
+   * AND by the `/auth-session` socket's `auth_update` wake, so it is guarded
+   * against concurrent entry: whichever fires first claims the single-use token;
+   * the other no-ops. The `auth_update` payload is never trusted — this always
+   * re-checks the authoritative status via `pollCommonsSignIn`.
+   */
   private async pollOnce(sessionToken: string): Promise<void> {
-    // A superseded / cancelled flow must not act.
-    if (this.signInToken !== sessionToken) return;
-    const expiresAt = this.signIn.expiresAt;
-    if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
-      this.failSignIn('Session expired. Please try again.');
-      return;
-    }
+    // A superseded / cancelled flow must not act; a poll already running owns the claim.
+    if (this.signInToken !== sessionToken || this.pollInFlight) return;
+    this.pollInFlight = true;
     try {
-      const status = await this.oxyServices.pollCommonsSignIn(sessionToken);
-      if (this.signInToken !== sessionToken) return; // cancelled mid-request
-      if (status.authorized && status.sessionId) {
-        this.clearPollTimer();
-        await this.claimAndComplete(status.sessionId, sessionToken);
-        return;
-      }
-      if (status.status === 'cancelled') {
-        this.failSignIn('Authorization was denied.');
-        return;
-      }
-      if (status.status === 'expired') {
+      const expiresAt = this.signIn.expiresAt;
+      if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
         this.failSignIn('Session expired. Please try again.');
         return;
       }
-    } catch (error) {
-      // Transient poll error — the next tick retries. Logged, never thrown.
-      logger.debug('[AccountDialogController] poll error (will retry)', { component: 'AccountDialogController' }, error);
-    }
-    if (this.signInToken === sessionToken) {
-      this.scheduleNextPoll(sessionToken);
+      try {
+        const status = await this.oxyServices.pollCommonsSignIn(sessionToken);
+        if (this.signInToken !== sessionToken) return; // cancelled mid-request
+        if (status.authorized && status.sessionId) {
+          this.clearPollTimer();
+          await this.claimAndComplete(status.sessionId, sessionToken);
+          return;
+        }
+        if (status.status === 'cancelled') {
+          this.failSignIn('Authorization was denied.');
+          return;
+        }
+        if (status.status === 'expired') {
+          this.failSignIn('Session expired. Please try again.');
+          return;
+        }
+      } catch (error) {
+        // Transient poll error — the next tick retries. Logged, never thrown.
+        logger.debug('[AccountDialogController] poll error (will retry)', { component: 'AccountDialogController' }, error);
+      }
+      if (this.signInToken === sessionToken) {
+        this.scheduleNextPoll(sessionToken);
+      }
+    } finally {
+      this.pollInFlight = false;
     }
   }
 
@@ -754,6 +809,7 @@ export class AccountDialogController {
     await this.commitAuthorizedSession(session, user);
     this.signInToken = null;
     this.clearPollTimer();
+    this.closeAuthSessionSocket();
     this.signIn = IDLE_SIGN_IN;
     this.view = 'accounts';
     this.emit();
@@ -779,6 +835,7 @@ export class AccountDialogController {
 
   private failSignIn(message: string): void {
     this.clearPollTimer();
+    this.closeAuthSessionSocket();
     this.signInToken = null;
     this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: message });
   }
@@ -787,6 +844,72 @@ export class AccountDialogController {
     if (this.pollTimer !== null) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
+    }
+  }
+
+  // =========================================================================
+  // /auth-session socket (instant QR approval wake — replaces 3s polling)
+  // =========================================================================
+
+  /**
+   * Subscribe the active QR flow to the `/auth-session` namespace so the API's
+   * `auth_update` event wakes {@link pollOnce} the instant the approval lands.
+   *
+   * The join is keyed by the secret `sessionToken` (the server's `auth:<token>`
+   * room, joined by emitting `join`) and re-issued on every (re)connect so it
+   * survives socket drops. `auth_update` is treated as a pure SIGNAL — the payload
+   * is never trusted; `pollOnce` re-checks the authoritative status and claims.
+   *
+   * No-op (poll-only) when no `socketFactory` was injected (web without a bundled
+   * `io`, headless/core usage, tests). The namespace needs no auth.
+   */
+  private openAuthSessionSocket(sessionToken: string): void {
+    this.closeAuthSessionSocket();
+    if (!this.socketFactory) return;
+    let socket: MinimalSocket;
+    try {
+      socket = this.socketFactory(`${this.oxyServices.getBaseURL()}${AUTH_SESSION_NAMESPACE}`, {
+        transports: ['websocket'],
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: Number.POSITIVE_INFINITY,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
+      });
+    } catch (error) {
+      // Socket unavailable — the fallback poll still completes the flow.
+      logger.debug('[AccountDialogController] auth-session socket create failed (poll fallback)', { component: 'AccountDialogController' }, error);
+      return;
+    }
+    const join = (): void => {
+      if (this.signInToken !== sessionToken) return;
+      try {
+        socket.emit('join', sessionToken);
+      } catch (error) {
+        logger.debug('[AccountDialogController] auth-session join failed', { component: 'AccountDialogController' }, error);
+      }
+    };
+    socket.on('connect', join);
+    if (socket.connected) join();
+    socket.on('auth_update', () => {
+      if (this.signInToken !== sessionToken) return;
+      // Pure wake signal — re-check the authoritative status + claim the poll would have.
+      void this.pollOnce(sessionToken);
+    });
+    this.authSessionSocket = socket;
+  }
+
+  /** Tear down the `/auth-session` socket, if any. Idempotent. */
+  private closeAuthSessionSocket(): void {
+    const socket = this.authSessionSocket;
+    if (!socket) return;
+    this.authSessionSocket = null;
+    try {
+      socket.off('auth_update');
+      socket.off('connect');
+      socket.disconnect();
+    } catch (error) {
+      logger.debug('[AccountDialogController] auth-session socket close failed', { component: 'AccountDialogController' }, error);
     }
   }
 

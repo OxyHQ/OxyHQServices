@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import { Linking } from 'react-native';
+import { io } from 'socket.io-client';
 import { OxyServices, oxyClient } from '@oxyhq/core';
 import type {
   User,
@@ -616,6 +617,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       clientId,
       authRedirectUri,
       locale: currentLanguage,
+      // Same statically-injected `io` as the SessionClient: gives the QR flow an
+      // instant `/auth-session` `auth_update` wake instead of a slow poll.
+      socketFactory: io,
       commitSession: (session) => handleWebSessionRef.current(session),
       onSignedIn: () => setAccountDialogOpen(false),
       openUrl: (url) => {

@@ -20,6 +20,7 @@ class FakeSocket implements MinimalSocket {
   handlers = new Map<string, Handler[]>();
   on(event: string, cb: Handler) { const l = this.handlers.get(event) ?? []; l.push(cb); this.handlers.set(event, l); }
   off(event: string, cb?: Handler) { if (!cb) { this.handlers.delete(event); return; } this.handlers.set(event, (this.handlers.get(event) ?? []).filter((h) => h !== cb)); }
+  emit(_event: string, ..._args: unknown[]) { /* no-op: device socket never emits */ }
   connect() { this.connected = true; }
   disconnect() { this.connected = false; }
 }

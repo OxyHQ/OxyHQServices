@@ -4,6 +4,7 @@ import type { User } from '../../models/interfaces';
 import type { SessionLoginResponse, MinimalUserData } from '../../models/session';
 import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import { SessionClient, type SessionClientHost } from '../SessionClient';
+import type { MinimalSocket, SocketIOFactory } from '../socketLoader';
 import { logger } from '../../utils/loggerUtils';
 import {
   AccountDialogController,
@@ -68,6 +69,7 @@ function graphNode(id: string, over: Partial<AccountNode> = {}): AccountNode {
 
 interface OxyMock {
   getAccessToken: jest.Mock;
+  getBaseURL: jest.Mock;
   onTokensChanged: jest.Mock;
   listAccounts: jest.Mock;
   getUsersByIds: jest.Mock;
@@ -91,6 +93,7 @@ function makeOxy(): OxyMock {
   let currentToken: string | null = 'access-token';
   return {
     getAccessToken: jest.fn(() => currentToken),
+    getBaseURL: jest.fn(() => 'http://test.invalid'),
     onTokensChanged: jest.fn((listener: (token: string | null) => void) => {
       tokenListeners.add(listener);
       return () => tokenListeners.delete(listener);
@@ -724,6 +727,110 @@ describe('AccountDialogController — openPasswordAtOxyAuth', () => {
     });
     const url = await controller.openPasswordAtOxyAuth({ returnUrl: 'https://alia.onl/' });
     expect(new URL(url).origin).toBe('https://auth.alia.onl');
+  });
+});
+
+describe('AccountDialogController — /auth-session socket (instant QR wake)', () => {
+  type Handler = (...args: unknown[]) => void;
+  class FakeAuthSocket implements MinimalSocket {
+    connected = false;
+    disconnected = false;
+    handlers = new Map<string, Handler[]>();
+    emitted: Array<{ event: string; args: unknown[] }> = [];
+    on(event: string, cb: Handler) { const l = this.handlers.get(event) ?? []; l.push(cb); this.handlers.set(event, l); }
+    off(event: string, cb?: Handler) { if (!cb) { this.handlers.delete(event); return; } this.handlers.set(event, (this.handlers.get(event) ?? []).filter((h) => h !== cb)); }
+    emit(event: string, ...args: unknown[]) { this.emitted.push({ event, args }); }
+    connect() { this.connected = true; }
+    disconnect() { this.connected = false; this.disconnected = true; }
+    /** Simulate a server→client push on this socket. */
+    server(event: string, payload?: unknown) { for (const h of this.handlers.get(event) ?? []) h(payload); }
+  }
+
+  const START_HANDLE = {
+    sessionToken: 'secret-tok',
+    authorizeCode: 'AUTH-CODE',
+    qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+    expiresAt: Date.now() + 600_000,
+    status: 'pending' as const,
+  };
+
+  function makeSocketHarness(): { controller: AccountDialogController; oxy: OxyMock; created: () => FakeAuthSocket | null; factory: jest.Mock; commitSession: jest.Mock } {
+    const oxy = makeOxy();
+    oxy.startCommonsSignIn.mockResolvedValue(START_HANDLE);
+    let socket: FakeAuthSocket | null = null;
+    const factory = jest.fn((_uri: string, _opts?: Record<string, unknown>): MinimalSocket => {
+      socket = new FakeAuthSocket();
+      socket.connected = true; // real io autoConnect resolves before we inspect
+      return socket;
+    });
+    const commitSession = jest.fn().mockResolvedValue(undefined);
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: new TestSessionClient(host()),
+      clientId: 'oxy_dk_test',
+      commitSession,
+      socketFactory: factory as unknown as SocketIOFactory,
+    });
+    return { controller, oxy, created: () => socket, factory, commitSession };
+  }
+
+  it('connects to /auth-session, joins the flow room, and wakes the claim on auth_update — no timer advance', async () => {
+    const { controller, oxy, created, factory, commitSession } = makeSocketHarness();
+    oxy.pollCommonsSignIn.mockResolvedValue({ authorized: true, sessionId: 'sess-1', status: 'authorized' });
+    oxy.claimSessionByToken.mockResolvedValue({
+      accessToken: 'access-1', sessionId: 'sess-1', deviceId: 'device-1', expiresAt: '2030-01-01T00:00:00Z', user: user('a1'),
+    });
+
+    await controller.showQr();
+
+    expect(factory).toHaveBeenCalledWith('http://test.invalid/auth-session', expect.any(Object));
+    const sock = created();
+    if (!sock) throw new Error('socket not created');
+    expect(sock.emitted).toContainEqual({ event: 'join', args: ['secret-tok'] });
+
+    // The server pushes auth_update → immediate status check + claim, without any poll timer firing.
+    sock.server('auth_update', { status: 'authorized', sessionId: 'sess-1' });
+    await flush();
+
+    expect(oxy.pollCommonsSignIn).toHaveBeenCalledWith('secret-tok');
+    expect(oxy.claimSessionByToken).toHaveBeenCalledWith('secret-tok');
+    expect(commitSession).toHaveBeenCalled();
+    expect(controller.getSnapshot().view).toBe('accounts');
+    expect(sock.disconnected).toBe(true); // torn down on completion
+  });
+
+  it('re-joins the room on reconnect (connect event) and tears the socket down on cancelSignIn', async () => {
+    const { controller, oxy, created } = makeSocketHarness();
+    oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+
+    await controller.showQr();
+    const sock = created();
+    if (!sock) throw new Error('socket not created');
+    expect(sock.emitted.filter((e) => e.event === 'join')).toHaveLength(1);
+
+    // A reconnect fires `connect` again → the join is re-issued so it survives drops.
+    sock.server('connect');
+    expect(sock.emitted.filter((e) => e.event === 'join')).toHaveLength(2);
+
+    controller.cancelSignIn();
+    expect(sock.disconnected).toBe(true);
+  });
+
+  it('a stale auth_update after the flow was cancelled does not re-poll', async () => {
+    const { controller, oxy, created } = makeSocketHarness();
+    oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+
+    await controller.showQr();
+    const sock = created();
+    if (!sock) throw new Error('socket not created');
+    oxy.pollCommonsSignIn.mockClear();
+
+    controller.cancelSignIn();
+    // Even if a late auth_update slips through on the (now-detached) socket, the
+    // superseded-token guard drops it.
+    sock.server('auth_update', { status: 'authorized' });
+    await flush();
+    expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
   });
 });
 
