@@ -132,6 +132,42 @@ describe('SessionClient socket', () => {
     expect(fakeSocket.connected).toBe(false);
   });
 
+  it('session_accounts_changed for the current user refetches device state (GET /session/device/state)', async () => {
+    const makeRequest = jest.fn().mockResolvedValue(SYNC(1));
+    const host = makeHost({ makeRequest, getCurrentAccountId: () => 'a1' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    fakeSocket.trigger('session_accounts_changed', { userId: 'a1', revision: 5, reason: 'add' });
+    await Promise.resolve();
+    expect(makeRequest).toHaveBeenCalledWith('GET', '/session/device/state', undefined, { cache: false });
+    c.stop();
+  });
+
+  it('session_accounts_changed for a DIFFERENT user is ignored (no refetch)', async () => {
+    const makeRequest = jest.fn().mockResolvedValue(SYNC(1));
+    const host = makeHost({ makeRequest, getCurrentAccountId: () => 'a1' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    fakeSocket.trigger('session_accounts_changed', { userId: 'someone-else', revision: 5, reason: 'switch' });
+    await Promise.resolve();
+    expect(makeRequest).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it('session_accounts_changed drops a malformed payload without refetching', async () => {
+    const makeRequest = jest.fn().mockResolvedValue(SYNC(1));
+    const host = makeHost({ makeRequest, getCurrentAccountId: () => 'a1' });
+    const c = new SessionClient(host);
+    await c.start();
+    makeRequest.mockClear();
+    fakeSocket.trigger('session_accounts_changed', { userId: 'a1', reason: 'not-a-real-reason' });
+    await Promise.resolve();
+    expect(makeRequest).not.toHaveBeenCalled();
+    c.stop();
+  });
+
   it('a socket-pushed empty state fires onUnauthenticated with the PUSH origin (bug #4)', async () => {
     const onUnauthenticated = jest.fn();
     const c = new SessionClient(makeHost(), { onUnauthenticated });

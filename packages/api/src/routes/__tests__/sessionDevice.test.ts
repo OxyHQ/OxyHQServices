@@ -9,6 +9,7 @@ const mockSwitchActive = jest.fn();
 const mockSignout = jest.fn();
 const mockResolveActiveToken = jest.fn();
 const mockBroadcast = jest.fn();
+const mockBroadcastAccounts = jest.fn();
 const mockDecodeToken = jest.fn();
 const mockGetSession = jest.fn();
 const mockGetStateBySecret = jest.fn();
@@ -51,7 +52,10 @@ jest.mock('../../services/loginLockout.service', () => ({
   recordFailure: (...a: unknown[]) => mockRecordFailure(...a),
   clearFailures: (...a: unknown[]) => mockClearFailures(...a),
 }));
-jest.mock('../../utils/socket', () => ({ broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a) }));
+jest.mock('../../utils/socket', () => ({
+  broadcastDeviceState: (...a: unknown[]) => mockBroadcast(...a),
+  broadcastSessionAccountsChanged: (...a: unknown[]) => mockBroadcastAccounts(...a),
+}));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
 import sessionDeviceRouter from '../sessionDevice';
@@ -88,6 +92,9 @@ afterAll((done) => { server.close(done); });
 beforeEach(() => {
   jest.clearAllMocks();
   mockResolveActiveToken.mockResolvedValue({ accessToken: 'jwt-active', expiresAt: '2026-07-07T00:00:00.000Z' });
+  // The signout route pre-reads the device state (to diff which users were
+  // removed) before signing out — default it to the single-account STATE.
+  mockGetState.mockResolvedValue(STATE);
   // Default to an active first-party session; individual tests override this
   // to exercise managed sessions or the expired/revoked (null) 401 path.
   mockGetSession.mockResolvedValue({ operatedByUserId: null });
@@ -115,6 +122,8 @@ describe('POST /session/device/switch', () => {
     expect(res.status).toBe(200);
     expect(mockSwitchActive).toHaveBeenCalledWith('d1', 'a1');
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
+    // A1: cross-device signal to the switched-to account's user room.
+    expect(mockBroadcastAccounts).toHaveBeenCalledWith('a1', STATE.revision, 'switch');
     expect(res.body.data.state).toEqual(STATE);
     expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });
@@ -124,6 +133,7 @@ describe('POST /session/device/switch', () => {
     const res = await requestJson(server, 'POST', '/session/device/switch', { accountId: 'ghost' });
     expect(res.status).toBe(404);
     expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockBroadcastAccounts).not.toHaveBeenCalled();
   });
 
   it('403 and broadcasts the healed state when the target session is revoked (act_as membership pulled)', async () => {
@@ -135,6 +145,8 @@ describe('POST /session/device/switch', () => {
     // switchActive healed the device set (dropped the revoked account); the
     // route broadcasts that healed state so the device's other tabs converge.
     expect(mockBroadcast).toHaveBeenCalledWith(healed);
+    // A1: the revoked account's user is signalled to refetch.
+    expect(mockBroadcastAccounts).toHaveBeenCalledWith('org1', healed.revision, 'revoke');
   });
 });
 
@@ -146,15 +158,27 @@ describe('POST /session/device/signout', () => {
     expect(res.status).toBe(200);
     expect(mockSignout).toHaveBeenCalledWith('d1', { accountId: 'a1' });
     expect(mockBroadcast).toHaveBeenCalledWith(after);
+    // A1: the removed account (present before, gone after) is signalled.
+    expect(mockBroadcastAccounts).toHaveBeenCalledWith(['a1'], after.revision, 'signout');
     expect(res.body.data.state).toEqual(after);
   });
 
-  it('signs out all when { all: true }', async () => {
+  it('signs out all when { all: true } and signals every removed user', async () => {
+    // Two accounts on the device before; all removed.
+    const before = {
+      ...STATE,
+      accounts: [
+        { accountId: 'a1', sessionId: 's1', authuser: 0 },
+        { accountId: 'a2', sessionId: 's2', authuser: 1 },
+      ],
+    };
+    mockGetState.mockResolvedValueOnce(before);
     const after = { ...STATE, accounts: [], activeAccountId: null, revision: 2 };
     mockSignout.mockResolvedValueOnce(after);
     const res = await requestJson(server, 'POST', '/session/device/signout', { all: true });
     expect(res.status).toBe(200);
     expect(mockSignout).toHaveBeenCalledWith('d1', { all: true });
+    expect(mockBroadcastAccounts).toHaveBeenCalledWith(['a1', 'a2'], after.revision, 'signout');
   });
 });
 
@@ -166,6 +190,8 @@ describe('POST /session/device/add', () => {
     expect(mockGetSession).toHaveBeenCalledWith('s1', true);
     expect(mockAddAccount).toHaveBeenCalledWith('d1', { accountId: '64b0000000000000000000aa', sessionId: 's1' });
     expect(mockBroadcast).toHaveBeenCalledWith(STATE);
+    // A1: the added account's user is signalled to refetch.
+    expect(mockBroadcastAccounts).toHaveBeenCalledWith('64b0000000000000000000aa', STATE.revision, 'add');
     expect(res.body.data.state).toEqual(STATE);
     expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });
@@ -175,6 +201,8 @@ describe('POST /session/device/add', () => {
     const res = await requestJson(server, 'POST', '/session/device/add', {});
     expect(res.status).toBe(200);
     expect(mockBroadcast).not.toHaveBeenCalled();
+    // No change → no cross-device signal either.
+    expect(mockBroadcastAccounts).not.toHaveBeenCalled();
     expect(res.body.data.state).toEqual(STATE);
     expect(res.body.data.activeToken.accessToken).toBe('jwt-active');
   });

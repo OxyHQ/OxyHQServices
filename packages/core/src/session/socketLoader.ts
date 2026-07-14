@@ -4,6 +4,8 @@ export interface MinimalSocket {
   connected: boolean;
   on(event: string, handler: (...args: unknown[]) => void): void;
   off(event: string, handler?: (...args: unknown[]) => void): void;
+  /** Client→server emit (e.g. joining the `/auth-session` room for a QR flow). */
+  emit(event: string, ...args: unknown[]): void;
   connect(): void;
   disconnect(): void;
 }

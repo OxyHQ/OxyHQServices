@@ -2,6 +2,8 @@ import {
   deviceSessionStateSchema,
   deviceSessionSyncSchema,
   safeParseContract,
+  SESSION_ACCOUNTS_CHANGED_EVENT,
+  sessionAccountsChangedEventSchema,
   type DeviceSessionState,
 } from '@oxyhq/contracts';
 import { logger } from '../utils/loggerUtils';
@@ -407,12 +409,46 @@ export class SessionClient {
         });
       }
     });
+    socket.on(SESSION_ACCOUNTS_CHANGED_EVENT, (payload: unknown) => {
+      this.onSessionAccountsChanged(payload);
+    });
     this.socket = socket;
     // (Re)bind app-facing server-event subscriptions on the fresh socket.
     this.boundServerEvents.clear();
     for (const event of this.serverEvents.keys()) {
       this.bindServerEvent(event);
     }
+  }
+
+  /**
+   * Handle the token-free `session_accounts_changed` signal (room `user:<userId>`).
+   *
+   * Unlike `session_state` (device-scoped, carries the new state to APPLY), this
+   * reaches ALL of a user's connected sockets across their devices/origins and is
+   * a pure SIGNAL: it carries no token, no secret, and no account bodies. The only
+   * trustworthy bit is "something changed for this user", so — matching the
+   * `session_state` contract's guidance — we re-fetch our OWN authoritative device
+   * state (`bootstrap` → `GET /session/device/state`) and let the existing
+   * `applyState` revision guard reconcile it. We never trust any field on the event
+   * beyond routing it to the current user.
+   *
+   * The refetch is a private (bearer) call: the socket only joins `user:<userId>`
+   * when authenticated, so a signed-out client never receives this — but we guard
+   * the bearer anyway so a race at sign-out can't 401.
+   */
+  private onSessionAccountsChanged(payload: unknown): void {
+    const event = safeParseContract(sessionAccountsChangedEventSchema, payload);
+    if (!event) {
+      logger.warn('[SessionClient] discarded invalid session_accounts_changed', { component: 'SessionClient' });
+      return;
+    }
+    // The socket is in `user:<activeUserId>` for the planted bearer, so this should
+    // always be the current user; ignore a foreign id defensively (out-of-band relay).
+    if (event.userId !== this.host.getCurrentAccountId()) return;
+    if (!this.host.getAccessToken()) return;
+    void this.bootstrap().catch((error) => {
+      logger.warn('[SessionClient] session_accounts_changed refetch failed', { component: 'SessionClient' }, error);
+    });
   }
 
   /**

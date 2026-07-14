@@ -13,7 +13,7 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
 import deviceSessionService from '../services/deviceSession.service';
 import sessionService from '../services/session.service';
-import { broadcastDeviceState } from '../utils/socket';
+import { broadcastDeviceState, broadcastSessionAccountsChanged } from '../utils/socket';
 import { asyncHandler } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';
 
@@ -238,7 +238,11 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
     ...(operatedByUserId ? { operatedByUserId } : {}),
   });
   // An idempotent re-register (reload handoff) changes nothing — do not broadcast.
-  if (changed) broadcastDeviceState(state);
+  if (changed) {
+    broadcastDeviceState(state);
+    // Also signal the added account's user across their other apps/devices.
+    broadcastSessionAccountsChanged(accountId, state.revision, 'add');
+  }
   res.json({ data: await withActiveToken(state) });
 }));
 
@@ -254,6 +258,8 @@ router.post('/switch', asyncHandler(async (req: AuthRequest, res: Response) => {
       // removing the dead account. Broadcast the healed state so the device's
       // other tabs drop it too, then reject the switch.
       broadcastDeviceState(outcome.state);
+      // The dropped account was revoked — signal its user to refetch.
+      broadcastSessionAccountsChanged(accountId, outcome.state.revision, 'revoke');
       res.status(403).json({ error: 'Account not authorized' });
       return;
     }
@@ -261,6 +267,7 @@ router.post('/switch', asyncHandler(async (req: AuthRequest, res: Response) => {
     return;
   }
   broadcastDeviceState(outcome.state);
+  broadcastSessionAccountsChanged(accountId, outcome.state.revision, 'switch');
   res.json({ data: await withActiveToken(outcome.state) });
 }));
 
@@ -270,8 +277,17 @@ router.post('/signout', asyncHandler(async (req: AuthRequest, res: Response) => 
   const { accountId, all } = req.body ?? {};
   const target = all === true ? { all: true as const } : accountId ? { accountId } : null;
   if (!target) { res.status(400).json({ error: 'accountId or all required' }); return; }
+  // Capture the account set BEFORE signout so we can signal every user actually
+  // removed — this covers `all`, a single account, AND the operator-cascade
+  // (signing out an operator removes their managed accounts too).
+  const before = await deviceSessionService.getState(deviceId);
   const state = await deviceSessionService.signout(deviceId, target);
   broadcastDeviceState(state);
+  const remaining = new Set(state.accounts.map((a) => a.accountId));
+  const removedUserIds = before.accounts
+    .map((a) => a.accountId)
+    .filter((id) => !remaining.has(id));
+  broadcastSessionAccountsChanged(removedUserIds, state.revision, 'signout');
   res.json({ data: await withActiveToken(state) });
 }));
 

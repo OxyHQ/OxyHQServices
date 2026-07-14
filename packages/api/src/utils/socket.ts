@@ -1,5 +1,6 @@
 import type { Server as SocketIOServer } from 'socket.io';
-import type { DeviceSessionState } from '@oxyhq/contracts';
+import type { DeviceSessionState, SessionAccountsChangedReason } from '@oxyhq/contracts';
+import { SESSION_ACCOUNTS_CHANGED_EVENT } from '@oxyhq/contracts';
 import { logger } from './logger';
 
 let io: SocketIOServer | null = null;
@@ -26,6 +27,31 @@ export function broadcastDeviceState(state: DeviceSessionState): void {
     return;
   }
   server.to(`device:${state.deviceId}`).emit('session_state', state);
+}
+
+/**
+ * Emit the token-free `session_accounts_changed` signal to `user:<userId>` for
+ * each affected user. Unlike {@link broadcastDeviceState} (scoped to a single
+ * device/origin), this reaches ALL of a user's connected sockets across their
+ * devices/origins so every Oxy app refetches its authenticated session/account
+ * state instantly. The payload carries NO token/secret — it is a signal only.
+ *
+ * `revision` is the mutated DeviceSession revision for device-scoped reasons; for
+ * `login` (no device mutation) callers pass 0. Empty / blank ids are dropped, and
+ * duplicate ids are de-duplicated so a user is signalled at most once per call.
+ */
+export function broadcastSessionAccountsChanged(
+  userIds: string | readonly string[],
+  revision: number,
+  reason: SessionAccountsChangedReason,
+): void {
+  const server = getIO();
+  if (!server) return;
+  const list = Array.isArray(userIds) ? userIds : [userIds as string];
+  const unique = new Set(list.filter((id): id is string => typeof id === 'string' && id.length > 0));
+  for (const userId of unique) {
+    server.to(`user:${userId}`).emit(SESSION_ACCOUNTS_CHANGED_EVENT, { userId, revision, reason });
+  }
 }
 
 export function deviceRoomFor(decoded: { deviceId?: string | null }): string | null {

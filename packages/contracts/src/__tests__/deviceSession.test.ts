@@ -1,4 +1,13 @@
-import { deviceSessionStateSchema, sessionAccountSchema, deviceSessionSyncSchema, deviceTokenMintRequestSchema, deviceTokenMintResponseSchema, safeParseContract } from '../index';
+import {
+  deviceSessionStateSchema,
+  sessionAccountSchema,
+  deviceSessionSyncSchema,
+  deviceTokenMintRequestSchema,
+  deviceTokenMintResponseSchema,
+  sessionAccountsChangedEventSchema,
+  SESSION_ACCOUNTS_CHANGED_EVENT,
+  safeParseContract,
+} from '../index';
 
 describe('deviceSessionStateSchema', () => {
   const account = { accountId: 'a1', sessionId: 's1', authuser: 0 };
@@ -78,5 +87,30 @@ describe('deviceTokenMintResponseSchema', () => {
   it('rejects a response with an invalid nested state', () => {
     const v = { accessToken: 'a', expiresAt: 'e', nextDeviceSecret: 'n', state: { deviceId: 'd1' } };
     expect(safeParseContract(deviceTokenMintResponseSchema, v)).toBeNull();
+  });
+});
+
+describe('sessionAccountsChangedEventSchema', () => {
+  it('parses a valid token-free signal', () => {
+    const v = { userId: 'u1', revision: 4, reason: 'add' as const };
+    expect(safeParseContract(sessionAccountsChangedEventSchema, v)).toEqual(v);
+  });
+
+  it('accepts every documented reason', () => {
+    for (const reason of ['login', 'add', 'switch', 'signout', 'revoke'] as const) {
+      expect(safeParseContract(sessionAccountsChangedEventSchema, { userId: 'u1', revision: 0, reason })).not.toBeNull();
+    }
+  });
+
+  it('rejects an unknown reason', () => {
+    expect(safeParseContract(sessionAccountsChangedEventSchema, { userId: 'u1', revision: 0, reason: 'nope' })).toBeNull();
+  });
+
+  it('rejects a negative revision', () => {
+    expect(safeParseContract(sessionAccountsChangedEventSchema, { userId: 'u1', revision: -1, reason: 'add' })).toBeNull();
+  });
+
+  it('exposes the canonical event name', () => {
+    expect(SESSION_ACCOUNTS_CHANGED_EVENT).toBe('session_accounts_changed');
   });
 });

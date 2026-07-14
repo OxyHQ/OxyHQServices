@@ -217,6 +217,9 @@ export {
     deviceHubTicketIssueResponseSchema,
     deviceHubTicketRedeemRequestSchema,
     deviceHubTicketRedeemResponseSchema,
+    SESSION_ACCOUNTS_CHANGED_EVENT,
+    sessionAccountsChangedReasonSchema,
+    sessionAccountsChangedEventSchema,
 } from './deviceSession';
 
 export type {
@@ -230,6 +233,8 @@ export type {
     DeviceHubTicketIssueResponse,
     DeviceHubTicketRedeemRequest,
     DeviceHubTicketRedeemResponse,
+    SessionAccountsChangedReason,
+    SessionAccountsChangedEvent,
 } from './deviceSession';
 
 export {
