@@ -24,21 +24,42 @@
  * canonical `@oxyhq/core` normalizers). This script cleans the documents that
  * were written BEFORE the fix.
  *
- * WHAT IT NORMALIZES (per user document)
- *   - `name.first` / `name.last`        → cleanDisplayName (inline + char policy + cap)
- *   - `bio` / `description`             → normalizeMultilineText (paragraphs survive)
- *   - `address`                         → normalizeInlineText
- *   - `linksMetadata[].url/.title/.description` → normalizeInlineText (+ length caps)
- *   - `locations[].name/.label` and every string leaf of `locations[].address`
- *                                       → normalizeInlineText (+ length cap)
- *   - `links[]`                         → normalizeInlineText, empty entries dropped
+ * THE INVARIANT: what this script writes is byte-identical to what the profile
+ * write path (`user.service.updateUserProfile`) would persist for the same input.
+ * It holds because the script CALLS the write path's own normalizers instead of
+ * restating their rules — a second copy of the policy is exactly how the backfill
+ * would come to fabricate a document the write path would have rejected (e.g. a
+ * `linksMetadata` entry with an empty `url`, which the schema marks `required`).
+ * `scripts/__tests__/normalizeUserTextFields.writePathParity.test.ts` pins it.
+ *
+ * WHAT IT NORMALIZES (per user document), all via the write path's normalizers
+ *   - `name`                            → normalizeProfileName (+ drops the stale
+ *                                         `full` virtual if a copy was persisted)
+ *   - `bio` / `description` / `address` → normalizeMultilineText (paragraphs survive)
+ *   - `linksMetadata[]`                 → normalizeLinksMetadata
+ *   - `locations[]`                     → normalizeLocations
+ *   - `links[]`                         → normalizeLinks
+ *
+ * SCOPE — whitespace only. The free-text fields (`bio`, `description`, `address`)
+ * are normalized with `normalizeMultilineText`, which is the WHITESPACE half of
+ * the write path's `sanitizePlainText`; its other half (HTML-entity decoding + tag
+ * stripping) is deliberately NOT replayed over historical documents. It is a
+ * content transform, not a whitespace fix, and `decodeHtmlEntities` is not
+ * idempotent for double-encoded input (`&amp;amp;` → `&amp;` → `&`), so folding it
+ * in would break the "a re-run writes nothing" guarantee below. For any value
+ * carrying no markup — the whole domain of the bug being fixed — the two agree
+ * byte for byte.
  *
  * `LinkPreview` documents are deliberately NOT touched: bumping
  * `LINK_PREVIEW_RESOLVER_VERSION` to 2 already marks every cached preview stale,
  * so they re-resolve through the fixed resolver on their own.
  *
  * Safety:
- *   - No deletes, no drops, no schema changes.
+ *   - No document deletes, no drops, no schema changes. Within an array, an entry
+ *     that cannot be the thing it claims to be — a link card with no URL, an empty
+ *     `links[]` string, a non-object entry — IS dropped, because that is what the
+ *     write path does with it and keeping it would persist a document that fails
+ *     the `required` validators on the user's next profile save.
  *   - Reads through a CURSOR and writes in bounded `bulkWrite` batches — a large
  *     `users` collection is never loaded into memory.
  *   - Writes ONLY the documents whose normalized value actually differs, and only
@@ -59,16 +80,14 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { normalizeInlineText, normalizeMultilineText } from '@oxyhq/core';
+import { normalizeMultilineText } from '@oxyhq/core';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
-import { cleanDisplayName } from '../utils/displayNameSanitize.js';
 import {
-  MAX_LINK_DESCRIPTION_LENGTH,
-  MAX_LINK_TITLE_LENGTH,
-  MAX_LINK_URL_LENGTH,
-  MAX_LOCATION_TEXT_LENGTH,
-  normalizeDisplayValue,
+  normalizeLinks,
+  normalizeLinksMetadata,
+  normalizeLocations,
+  normalizeProfileName,
 } from '../utils/profileTextNormalization.js';
 
 dotenv.config();
@@ -96,22 +115,54 @@ export interface StoredUserDoc {
   locations?: unknown;
 }
 
-/** The address leaves of a stored `locations[]` entry — all single-line values. */
-const LOCATION_ADDRESS_TEXT_KEYS = [
-  'street',
-  'streetNumber',
-  'streetDetails',
-  'postalCode',
-  'city',
-  'state',
-  'country',
-  'formattedAddress',
-] as const;
-
 type UnknownRecord = Record<string, unknown>;
 
-function isUnknownRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/**
+ * A JSON object as the driver deserializes it. BSON leaves (ObjectId, Date,
+ * Binary) are class instances, not plain objects, and are compared by identity /
+ * by value in {@link deepEquals} rather than key by key.
+ */
+function isPlainObject(value: unknown): value is UnknownRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/**
+ * Structural equality between a stored value and its normalized counterpart.
+ *
+ * This is the ONLY thing the script adds on top of the write path's normalizers:
+ * "did the value change?" is a diffing question, orthogonal to the normalization
+ * POLICY, which lives entirely in `utils/profileTextNormalization.ts`. Deciding it
+ * generically is what lets the script own zero copies of that policy.
+ *
+ * The normalizers rebuild only the containers they touch (arrays, entry objects)
+ * and pass every other leaf through BY REFERENCE, so the `a === b` fast path
+ * covers the BSON leaves (ObjectId, Binary) that have no meaningful structural
+ * comparison here. `Date` is compared by value anyway, defensively.
+ */
+function deepEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, index) => deepEquals(item, b[index]));
+  }
+
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+  }
+
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(b, key) && deepEquals(a[key], b[key])
+    );
+  }
+
+  return false;
 }
 
 /**
@@ -133,169 +184,61 @@ interface BulkUpdateOne {
 type FieldCounters = Record<string, number>;
 
 /**
- * Normalize the `name` sub-document. Returns `undefined` when nothing changes.
- * Uses the same `cleanDisplayName` the write paths use, so a backfilled name is
- * byte-identical to one written today.
+ * Add `key` to the `$set` only when the normalized value differs from what is on
+ * disk. This is the script's single decision point: the VALUE always comes from a
+ * write-path normalizer, and all this adds is "has it changed?".
  */
-function normalizeStoredName(value: unknown): UnknownRecord | undefined {
-  if (!isUnknownRecord(value)) return undefined;
-
-  let changed = false;
-  const result: UnknownRecord = { ...value };
-  for (const part of ['first', 'last'] as const) {
-    const partValue = result[part];
-    if (typeof partValue !== 'string') continue;
-    const cleaned = cleanDisplayName(partValue);
-    if (cleaned !== partValue) {
-      result[part] = cleaned;
-      changed = true;
-    }
+function setIfChanged(update: UpdateSet, key: string, current: unknown, next: unknown): void {
+  if (!deepEquals(current, next)) {
+    update[key] = next;
   }
-  // `full` is a schema virtual; a stored copy would go stale the moment first/last
-  // change, so it is dropped from the persisted sub-document if present.
-  if ('full' in result) {
-    delete result.full;
-    changed = true;
-  }
-  return changed ? result : undefined;
 }
 
-/** Normalize `linksMetadata[]`. Returns `undefined` when nothing changes. */
-function normalizeStoredLinksMetadata(value: unknown): unknown[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-
-  let changed = false;
-  const result: unknown[] = [];
-  for (const entry of value) {
-    if (!isUnknownRecord(entry)) {
-      // A non-object entry is unusable as a link card; dropping it IS a change.
-      changed = true;
-      continue;
-    }
-
-    const next: UnknownRecord = { ...entry };
-    const caps: Array<[key: string, max: number]> = [
-      ['url', MAX_LINK_URL_LENGTH],
-      ['title', MAX_LINK_TITLE_LENGTH],
-      ['description', MAX_LINK_DESCRIPTION_LENGTH],
-    ];
-    for (const [key, max] of caps) {
-      const current = next[key];
-      if (typeof current !== 'string') continue;
-      const normalized = normalizeDisplayValue(current, max);
-      if (normalized !== current) {
-        next[key] = normalized;
-        changed = true;
-      }
-    }
-    result.push(next);
+/**
+ * The write path's `normalizeProfileName`, plus the one thing that is specific to
+ * a STORED document: `name.full` is a schema virtual, so a persisted copy of it
+ * (written by an older code path) goes stale the moment first/last change and is
+ * dropped here. The write path never receives it — it only ever sees a client
+ * payload — which is why this sits on top of the shared normalizer instead of
+ * inside it.
+ */
+function normalizeStoredName(value: unknown): unknown {
+  const normalized = normalizeProfileName(value);
+  if (!isPlainObject(normalized) || !('full' in normalized)) {
+    return normalized;
   }
-  return changed ? result : undefined;
-}
-
-/** Normalize `locations[]`. Returns `undefined` when nothing changes. */
-function normalizeStoredLocations(value: unknown): unknown[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-
-  let changed = false;
-  const result: unknown[] = [];
-  for (const entry of value) {
-    if (!isUnknownRecord(entry)) {
-      changed = true;
-      continue;
-    }
-
-    const next: UnknownRecord = { ...entry };
-    for (const key of ['name', 'label'] as const) {
-      const current = next[key];
-      if (typeof current !== 'string') continue;
-      const normalized = normalizeDisplayValue(current, MAX_LOCATION_TEXT_LENGTH);
-      if (normalized !== current) {
-        next[key] = normalized;
-        changed = true;
-      }
-    }
-
-    if (isUnknownRecord(next.address)) {
-      const address: UnknownRecord = { ...next.address };
-      let addressChanged = false;
-      for (const key of LOCATION_ADDRESS_TEXT_KEYS) {
-        const current = address[key];
-        if (typeof current !== 'string') continue;
-        const normalized = normalizeDisplayValue(current, MAX_LOCATION_TEXT_LENGTH);
-        if (normalized !== current) {
-          address[key] = normalized;
-          addressChanged = true;
-        }
-      }
-      if (addressChanged) {
-        next.address = address;
-        changed = true;
-      }
-    }
-
-    result.push(next);
-  }
-  return changed ? result : undefined;
-}
-
-/** Normalize `links[]` (plain URLs). Returns `undefined` when nothing changes. */
-function normalizeStoredLinks(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-
-  let changed = false;
-  const result: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== 'string') {
-      changed = true;
-      continue;
-    }
-    const url = normalizeDisplayValue(entry, MAX_LINK_URL_LENGTH);
-    if (url !== entry) changed = true;
-    if (url) {
-      result.push(url);
-    } else {
-      changed = true;
-    }
-  }
-  return changed ? result : undefined;
+  const withoutVirtual: UnknownRecord = { ...normalized };
+  delete withoutVirtual.full;
+  return withoutVirtual;
 }
 
 /**
  * Build the `$set` for one stored user, containing ONLY the fields whose
  * normalized value differs from what is on disk. An empty object means the
  * document is already clean and must not be written.
+ *
+ * Every value in the result is produced by the SAME normalizer the profile write
+ * path runs, so a backfilled document is byte-identical to one written today.
  */
 export function buildUserTextUpdate(doc: StoredUserDoc): UpdateSet {
   const update: UpdateSet = {};
 
-  const name = normalizeStoredName(doc.name);
-  if (name) update.name = name;
+  setIfChanged(update, 'name', doc.name, normalizeStoredName(doc.name));
 
-  // Bodies: the author's line breaks are meaningful, so these use the MULTILINE
-  // normalizer — it strips the trailing spaces that turn a "blank" line into an
-  // uncollapsible one, without flattening real paragraphs.
-  for (const key of ['bio', 'description'] as const) {
+  // Free text: the author's line breaks are meaningful, so these use the MULTILINE
+  // normalizer — the same one `sanitizePlainText` delegates its whitespace pass to.
+  // It strips the trailing spaces that turn a "blank" line into an uncollapsible
+  // one, without flattening real paragraphs. See SCOPE in the header for why the
+  // entity-decoding / tag-stripping half of `sanitizePlainText` is not replayed.
+  for (const key of ['bio', 'description', 'address'] as const) {
     const current = doc[key];
     if (typeof current !== 'string') continue;
-    const normalized = normalizeMultilineText(current);
-    if (normalized !== current) update[key] = normalized;
+    setIfChanged(update, key, current, normalizeMultilineText(current));
   }
 
-  // A postal address is one line of display text.
-  if (typeof doc.address === 'string') {
-    const normalized = normalizeInlineText(doc.address);
-    if (normalized !== doc.address) update.address = normalized;
-  }
-
-  const linksMetadata = normalizeStoredLinksMetadata(doc.linksMetadata);
-  if (linksMetadata) update.linksMetadata = linksMetadata;
-
-  const locations = normalizeStoredLocations(doc.locations);
-  if (locations) update.locations = locations;
-
-  const links = normalizeStoredLinks(doc.links);
-  if (links) update.links = links;
+  setIfChanged(update, 'linksMetadata', doc.linksMetadata, normalizeLinksMetadata(doc.linksMetadata));
+  setIfChanged(update, 'locations', doc.locations, normalizeLocations(doc.locations));
+  setIfChanged(update, 'links', doc.links, normalizeLinks(doc.links));
 
   return update;
 }

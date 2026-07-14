@@ -1,12 +1,18 @@
-import {
-  INVALID_USERNAME_MESSAGE,
-  USERNAME_PATTERN,
-  isValidUsername,
-  normalizeUsername,
-} from '../username';
+import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN, normalizeUsername } from '../username';
 
 /** Non-breaking space, spelled with an escape so the code point is unambiguous. */
 const NBSP = '\u00A0';
+
+/**
+ * The composition every write path applies: normalize the submitted value, then
+ * test the normalized form. Spelled out here rather than exported as a helper \u2014
+ * an `isValidUsername` in this module would collide by name with the LOOSER
+ * `isValidUsername` of `@oxyhq/core` (which admits `_` and `-`), and a caller
+ * reaching for the wrong import would silently widen the server's policy.
+ */
+function accepts(raw: string): boolean {
+  return USERNAME_PATTERN.test(normalizeUsername(raw));
+}
 
 describe('username policy', () => {
   describe('normalizeUsername', () => {
@@ -19,14 +25,14 @@ describe('username policy', () => {
       // under a name they never chose. It collapses to a single space, which the
       // pattern then rejects.
       expect(normalizeUsername('al   ice')).toBe('al ice');
-      expect(isValidUsername('al   ice')).toBe(false);
+      expect(accepts('al   ice')).toBe(false);
     });
 
     it('normalizes a non-breaking space (the invisible-collision case)', () => {
       // A trailing NBSP would otherwise store a second "alice" that no human can
       // tell apart from the first.
       expect(normalizeUsername(`alice${NBSP}`)).toBe('alice');
-      expect(isValidUsername(`ali${NBSP}ce`)).toBe(false);
+      expect(accepts(`ali${NBSP}ce`)).toBe(false);
     });
   });
 

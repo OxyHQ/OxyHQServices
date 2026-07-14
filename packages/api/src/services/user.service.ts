@@ -13,11 +13,12 @@ import { Types } from 'mongoose';
 import userCache from '../utils/userCache';
 import securityActivityService from './securityActivityService';
 import { sanitizeProfileUpdate } from '../utils/sanitize';
-import { cleanDisplayName, isValidDisplayName } from '../utils/displayNameSanitize';
+import { isValidDisplayName } from '../utils/displayNameSanitize';
 import {
   normalizeLinks,
   normalizeLinksMetadata,
   normalizeLocations,
+  normalizeProfileName,
 } from '../utils/profileTextNormalization';
 import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN, normalizeUsername } from '../utils/username';
 import { BadRequestError } from '../utils/error';
@@ -178,35 +179,6 @@ function isBulkWriteLikeError(error: unknown): error is BulkWriteLikeError {
  */
 function normalizeProfileColor(value: unknown): unknown {
   return typeof value === 'string' ? value.trim().toLowerCase() : value;
-}
-
-/**
- * Canonicalize the `name` sub-document of a profile update with the SAME cleaner
- * the FEDERATED write paths use (`cleanDisplayName`): NFC, the display-name
- * character policy, whitespace collapse, length cap.
- *
- * Before this, the native path was the odd one out. `sanitizeProfileUpdate`
- * skips `name`, the `NameSchema` has no `trim`, and `isValidDisplayName` only
- * checks the CHARACTER SET — a space is a legal display-name character, so
- * `"Ana" + 20 spaces + "Gómez"` passed validation and was stored verbatim, while
- * the exact same string arriving from a federated actor was collapsed. The
- * character policy is validated (and rejected with a 400) BEFORE this runs, so
- * the cleaner here only ever has whitespace and length left to fix.
- *
- * Non-string parts are passed through untouched for the caller's own handling.
- */
-function normalizeProfileName(value: unknown): unknown {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return value;
-  }
-  const result: Record<string, unknown> = { ...(value as Record<string, unknown>) };
-  for (const part of ['first', 'last'] as const) {
-    const partValue = result[part];
-    if (typeof partValue === 'string') {
-      result[part] = cleanDisplayName(partValue);
-    }
-  }
-  return result;
 }
 
 /**
