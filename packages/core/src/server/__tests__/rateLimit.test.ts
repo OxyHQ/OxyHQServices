@@ -26,6 +26,8 @@ interface RateLimitTestRequest extends Request {
   observedKey?: string;
 }
 
+const HEX24 = /^[0-9a-f]{24}$/;
+
 function makeOxy(authHandler: RequestHandler): OxyServices {
   return {
     auth: jest.fn(() => authHandler),
@@ -33,17 +35,37 @@ function makeOxy(authHandler: RequestHandler): OxyServices {
 }
 
 function makeRequest(overrides: Partial<RateLimitTestRequest> = {}): RateLimitTestRequest {
+  const ip = overrides.ip ?? '203.0.113.9';
   return {
     method: 'GET',
     path: '/api/test',
-    ip: '203.0.113.9',
-    socket: { remoteAddress: '203.0.113.9' },
+    ip,
+    socket: { remoteAddress: ip },
     ...overrides,
   } as RateLimitTestRequest;
 }
 
+/** Run the anonymous limiter for a bare IP and return the store key it produced. */
+function keyForIp(ip: string): string {
+  const oxy = makeOxy((_req: Request, _res: Response, next: NextFunction) => next());
+  const req = makeRequest({ ip });
+  createOxyRateLimit(oxy)(req, {} as Response, jest.fn());
+  if (typeof req.observedKey !== 'string') {
+    throw new Error('key generator did not run');
+  }
+  return req.observedKey;
+}
+
 describe('@oxyhq/core/server rate limiter', () => {
+  const originalEnv = {
+    IP_HASH_SALT: process.env.IP_HASH_SALT,
+    DEVICE_ID_SALT: process.env.DEVICE_ID_SALT,
+  };
+
   beforeEach(() => {
+    // Isolate salt resolution from any ambient env so key assertions are deterministic.
+    delete process.env.IP_HASH_SALT;
+    delete process.env.DEVICE_ID_SALT;
     rateLimitMock.mockImplementation((options: CapturedRateLimitOptions) => {
       return (req: RateLimitTestRequest, _res: Response, next: NextFunction) => {
         req.observedMax = options.max(req);
@@ -55,6 +77,10 @@ describe('@oxyhq/core/server rate limiter', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    if (originalEnv.IP_HASH_SALT === undefined) delete process.env.IP_HASH_SALT;
+    else process.env.IP_HASH_SALT = originalEnv.IP_HASH_SALT;
+    if (originalEnv.DEVICE_ID_SALT === undefined) delete process.env.DEVICE_ID_SALT;
+    else process.env.DEVICE_ID_SALT = originalEnv.DEVICE_ID_SALT;
   });
 
   it('does not trust locally decoded non-session JWT identities for quota or bucket keys', () => {
@@ -73,7 +99,9 @@ describe('@oxyhq/core/server rate limiter', () => {
     );
 
     expect(req.observedMax).toBe(600);
-    expect(req.observedKey).toBe('203.0.113.9');
+    // Anonymous callers are bucketed by a hashed key, NEVER the raw IP.
+    expect(req.observedKey).toMatch(HEX24);
+    expect(req.observedKey).not.toContain('203.0.113.9');
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -93,6 +121,7 @@ describe('@oxyhq/core/server rate limiter', () => {
     );
 
     expect(req.observedMax).toBe(5000);
+    // Authenticated identities are keyed by the user id verbatim — NOT hashed.
     expect(req.observedKey).toBe('user:validated-user');
   });
 
@@ -110,7 +139,72 @@ describe('@oxyhq/core/server rate limiter', () => {
     );
 
     expect(req.observedMax).toBe(600);
-    expect(req.observedKey).toBe('203.0.113.9');
+    expect(req.observedKey).toMatch(HEX24);
+    expect(req.observedKey).not.toContain('203.0.113.9');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  describe('anonymous key hashing', () => {
+    it('produces a deterministic 24-hex key that never contains the raw IP', () => {
+      const first = keyForIp('203.0.113.9');
+      const second = keyForIp('203.0.113.9');
+
+      expect(first).toMatch(HEX24);
+      expect(first).toBe(second);
+      expect(first).not.toContain('203.0.113.9');
+    });
+
+    it('produces different keys for different IPv4 addresses', () => {
+      expect(keyForIp('203.0.113.9')).not.toBe(keyForIp('198.51.100.7'));
+    });
+
+    it('buckets IPv6 addresses in the same /56 to the same key', () => {
+      // 2001:db8:abcd:ee11 and 2001:db8:abcd:eeff share the /56 prefix (top byte of
+      // the 4th hextet is 0xee for both); the differing bits are host bits.
+      const a = keyForIp('2001:db8:abcd:ee11::1');
+      const b = keyForIp('2001:db8:abcd:eeff::9999');
+
+      expect(a).toMatch(HEX24);
+      expect(a).toBe(b);
+    });
+
+    it('produces different keys for IPv6 addresses in different /56 prefixes', () => {
+      const sameFiftySix = keyForIp('2001:db8:abcd:ee11::1');
+      const otherFiftySix = keyForIp('2001:db8:abcd:ff11::1');
+
+      expect(sameFiftySix).not.toBe(otherFiftySix);
+    });
+
+    it('salts the hash with IP_HASH_SALT so keys are not portable across salts', () => {
+      const unsalted = keyForIp('203.0.113.9');
+
+      process.env.IP_HASH_SALT = 'salt-a';
+      const saltedA = keyForIp('203.0.113.9');
+
+      process.env.IP_HASH_SALT = 'salt-b';
+      const saltedB = keyForIp('203.0.113.9');
+
+      expect(saltedA).toMatch(HEX24);
+      expect(saltedA).not.toBe(unsalted);
+      expect(saltedB).not.toBe(saltedA);
+    });
+
+    it('prefers IP_HASH_SALT over DEVICE_ID_SALT', () => {
+      process.env.DEVICE_ID_SALT = 'device-salt';
+      const deviceOnly = keyForIp('203.0.113.9');
+
+      process.env.IP_HASH_SALT = 'ip-salt';
+      const ipPreferred = keyForIp('203.0.113.9');
+
+      expect(ipPreferred).not.toBe(deviceOnly);
+    });
+
+    it('falls back to the literal "unknown" key when no IP is resolvable', () => {
+      const oxy = makeOxy((_req: Request, _res: Response, next: NextFunction) => next());
+      const req = makeRequest({ ip: undefined, socket: {} as Request['socket'] });
+      createOxyRateLimit(oxy)(req, {} as Response, jest.fn());
+
+      expect(req.observedKey).toBe('unknown');
+    });
   });
 });
