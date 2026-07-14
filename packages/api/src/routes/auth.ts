@@ -67,9 +67,9 @@ import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
 import { formatUserNameResponse } from '../utils/displayName';
+import { USERNAME_PATTERN, normalizeUsername } from '../utils/username';
 
 const router = express.Router();
-const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 
 // ============================================
 // Password Authentication Routes
@@ -705,9 +705,9 @@ router.get('/check-username/:username', checkLimiter, validate({ params: checkUs
     );
   }
 
-  username = username.trim();
+  username = normalizeUsername(username);
 
-  if (!USERNAME_REGEX.test(username)) {
+  if (!USERNAME_PATTERN.test(username)) {
     throw new BadRequestError('Username can only contain letters and numbers');
   }
 

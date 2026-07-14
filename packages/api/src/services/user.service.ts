@@ -13,7 +13,13 @@ import { Types } from 'mongoose';
 import userCache from '../utils/userCache';
 import securityActivityService from './securityActivityService';
 import { sanitizeProfileUpdate } from '../utils/sanitize';
-import { isValidDisplayName } from '../utils/displayNameSanitize';
+import { cleanDisplayName, isValidDisplayName } from '../utils/displayNameSanitize';
+import {
+  normalizeLinks,
+  normalizeLinksMetadata,
+  normalizeLocations,
+} from '../utils/profileTextNormalization';
+import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN, normalizeUsername } from '../utils/username';
 import { BadRequestError } from '../utils/error';
 import { Request } from 'express';
 import {
@@ -174,6 +180,68 @@ function normalizeProfileColor(value: unknown): unknown {
   return typeof value === 'string' ? value.trim().toLowerCase() : value;
 }
 
+/**
+ * Canonicalize the `name` sub-document of a profile update with the SAME cleaner
+ * the FEDERATED write paths use (`cleanDisplayName`): NFC, the display-name
+ * character policy, whitespace collapse, length cap.
+ *
+ * Before this, the native path was the odd one out. `sanitizeProfileUpdate`
+ * skips `name`, the `NameSchema` has no `trim`, and `isValidDisplayName` only
+ * checks the CHARACTER SET — a space is a legal display-name character, so
+ * `"Ana" + 20 spaces + "Gómez"` passed validation and was stored verbatim, while
+ * the exact same string arriving from a federated actor was collapsed. The
+ * character policy is validated (and rejected with a 400) BEFORE this runs, so
+ * the cleaner here only ever has whitespace and length left to fix.
+ *
+ * Non-string parts are passed through untouched for the caller's own handling.
+ */
+function normalizeProfileName(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const result: Record<string, unknown> = { ...(value as Record<string, unknown>) };
+  for (const part of ['first', 'last'] as const) {
+    const partValue = result[part];
+    if (typeof partValue === 'string') {
+      result[part] = cleanDisplayName(partValue);
+    }
+  }
+  return result;
+}
+
+/**
+ * Canonicalize ONE profile-update field into exactly the form that will be
+ * persisted. Every field whose value carries human- or third-party-authored text
+ * is normalized here, at the single write chokepoint, so no caller can store a
+ * value that a client would then render with `white-space: pre-wrap` intact.
+ *
+ * `bio` / `description` / `address` and the other free-text fields are already
+ * normalized upstream by `sanitizeProfileUpdate` (which delegates to the
+ * canonical multiline normalizer); the fields listed here are the ones it
+ * deliberately skips because they are structured, not plain strings.
+ *
+ * Fields with no text of their own (avatar id, birthday, preference objects,
+ * …) pass through untouched.
+ */
+function normalizeProfileField(key: string, value: unknown): unknown {
+  switch (key) {
+    case 'color':
+      return normalizeProfileColor(value);
+    case 'name':
+      return normalizeProfileName(value);
+    case 'username':
+      return typeof value === 'string' ? normalizeUsername(value) : value;
+    case 'linksMetadata':
+      return normalizeLinksMetadata(value);
+    case 'locations':
+      return normalizeLocations(value);
+    case 'links':
+      return normalizeLinks(value);
+    default:
+      return value;
+  }
+}
+
 export class UserService {
   /**
    * Get user by ID with proper serialization
@@ -257,7 +325,9 @@ export class UserService {
         continue;
       }
 
-      const normalizedValue = key === 'color' ? normalizeProfileColor(value) : value;
+      // Canonicalize the value into EXACTLY the form that will be persisted,
+      // before it is validated or compared — see `normalizeProfileField`.
+      const normalizedValue = normalizeProfileField(key, value);
 
       // Validate premium-exclusive colors against the SAME normalized value the
       // User schema will persist (trim + lowercase), so ' oxy '/'OXY' can't slip
@@ -319,14 +389,28 @@ export class UserService {
       (filteredUpdates as Record<string, unknown>)[key] = normalizedValue;
     }
 
-    // Validate uniqueness constraints
-    await this.validateUniqueFields(userId, filteredUpdates);
-
     // Fetch user document to update
     const user = await User.findById(userId).select('-password -refreshToken');
     if (!user) {
       throw new Error('User not found');
     }
+
+    // A username is a routing key (`/@alice`, `acct:alice@…`), not prose: it must
+    // satisfy the same 3–30 ASCII-alphanumeric policy signup enforces, which in
+    // particular admits no whitespace at all. Only an actual CHANGE is validated:
+    // clients that PUT the whole profile back echo the stored username, and a
+    // value that predates this policy must not make an unrelated bio edit fail.
+    const nextUsername = filteredUpdates.username;
+    if (
+      typeof nextUsername === 'string' &&
+      nextUsername !== user.username &&
+      !USERNAME_PATTERN.test(nextUsername)
+    ) {
+      throw new BadRequestError(INVALID_USERNAME_MESSAGE, { field: 'username' });
+    }
+
+    // Validate uniqueness constraints
+    await this.validateUniqueFields(userId, filteredUpdates);
 
     // Track email change for security logging
     const oldEmail = user.email;

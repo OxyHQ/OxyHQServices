@@ -87,6 +87,44 @@ describe('sanitize utilities', () => {
       expect(sanitizePlainText('  line one\nline two  ')).toBe('line one\nline two');
     });
 
+    it('preserves the author paragraphs of a bio (one blank line between them)', () => {
+      expect(sanitizePlainText('Para one\n\nPara two')).toBe('Para one\n\nPara two');
+    });
+
+    it('collapses blank lines that are made of SPACES, not just of newlines', () => {
+      // The behaviour change: a bare `\n{3,}` collapse never matched here,
+      // because the spaces break the run of newlines — so the extra blank lines
+      // survived into an RN `Text` (`white-space: pre-wrap`) and the reader saw
+      // them. Stripping each line's trailing whitespace FIRST is what makes the
+      // collapse work.
+      expect(sanitizePlainText('Para one\n   \n   \nPara two')).toBe('Para one\n\nPara two');
+    });
+
+    it('strips the trailing whitespace at the end of a line', () => {
+      expect(sanitizePlainText('line one   \nline two')).toBe('line one\nline two');
+    });
+
+    it('strips the leading indentation of a line (source-markup artifact)', () => {
+      // Once the runs of horizontal whitespace collapse, an indent is no longer
+      // an indent — only a stray leading space the source markup left behind.
+      expect(sanitizePlainText('Hola\n    \n\n      Mundo')).toBe('Hola\n\nMundo');
+    });
+
+    it('collapses a single tab and a non-breaking space to a plain space', () => {
+      // The old inline collapse only fired on runs of TWO OR MORE horizontal
+      // whitespace characters, so a lone tab / NBSP was stored verbatim.
+      expect(sanitizePlainText('a\tb')).toBe('a b');
+      expect(sanitizePlainText('a\u00A0b')).toBe('a b');
+    });
+
+    it('unifies CRLF line endings', () => {
+      expect(sanitizePlainText('line one\r\nline two')).toBe('line one\nline two');
+    });
+
+    it('caps runs of blank lines at one', () => {
+      expect(sanitizePlainText('a\n\n\n\n\nb')).toBe('a\n\nb');
+    });
+
     it('is idempotent (running twice yields the same result)', () => {
       const inputs = [
         'I don&#x27;t',

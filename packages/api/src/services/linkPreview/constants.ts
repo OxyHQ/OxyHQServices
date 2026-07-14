@@ -14,8 +14,13 @@ import { getEnvNumber } from '../../config/env';
  * provider / re-host logic changes in a way that should force previously stored
  * previews to be re-resolved on their next read (a stored doc whose `version` is
  * below this is treated as stale and refreshed in the background).
+ *
+ * v2 — the resolver now whitespace-normalizes title/description/siteName (a
+ * multi-line `<title>` used to be stored verbatim and rendered with a blank line
+ * + indent by clients) and prefers `og:` over the document `<title>` / `<meta
+ * name="description">`. Both change stored text, so v1 docs must be re-resolved.
  */
-export const LINK_PREVIEW_RESOLVER_VERSION = 1;
+export const LINK_PREVIEW_RESOLVER_VERSION = 2;
 
 /**
  * Age (seconds) after which a stored `resolved` / `empty` preview is considered

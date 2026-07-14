@@ -53,6 +53,7 @@ jest.mock('../../../models/LinkPreview', () => ({
 import { linkPreviewService } from '../linkPreviewService';
 import {
   LINK_PREVIEW_MAX_URL_LENGTH,
+  LINK_PREVIEW_RESOLVER_VERSION,
   LINK_PREVIEW_SYNC_MAX_CONCURRENCY,
 } from '../constants';
 
@@ -170,7 +171,7 @@ describe('getBatch — response shape', () => {
         title: 'Fresh',
         imageUrl: 'https://cloud.oxy.so/file999',
         status: 'resolved',
-        version: 1,
+        version: LINK_PREVIEW_RESOLVER_VERSION,
         resolvedAt: new Date(),
       },
     ]);
@@ -181,6 +182,32 @@ describe('getBatch — response shape', () => {
     expect(data[url].title).toBe('Fresh');
     expect(data[url].image).toBe('https://cloud.oxy.so/file999');
     expect(mockEnqueueWarm).not.toHaveBeenCalled();
+  });
+
+  // This is what makes a LINK_PREVIEW_RESOLVER_VERSION bump retroactively fix
+  // already-stored previews: a doc below the current version is stale no matter
+  // how recently it resolved, so it is re-warmed (and re-resolved) on next read.
+  it('re-warms a stored doc written by an older resolver version', async () => {
+    const url = 'https://stale.example/post';
+    const id = createHash('sha256').update(url).digest('hex');
+    mockFind.mockResolvedValueOnce([
+      {
+        _id: id,
+        requestedUrl: url,
+        canonicalUrl: url,
+        title: 'Stale title from an older resolver',
+        status: 'resolved',
+        version: LINK_PREVIEW_RESOLVER_VERSION - 1,
+        resolvedAt: new Date(),
+      },
+    ]);
+
+    const data = await linkPreviewService.getBatch([url]);
+
+    // The stale doc is still SERVED (stale-while-revalidate) …
+    expect(data[url].title).toBe('Stale title from an older resolver');
+    // … but a background re-resolve is queued.
+    expect(mockEnqueueWarm).toHaveBeenCalledWith(url);
   });
 
   it('drops an oversized batch url to empty WITHOUT warming or fetching', async () => {

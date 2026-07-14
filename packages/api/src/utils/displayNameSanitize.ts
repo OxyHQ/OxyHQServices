@@ -25,7 +25,14 @@
  * replace `sanitizeHtml(...)` with `cleanDisplayName(...)` for the NAME field:
  * `sanitizeHtml` would turn `O'Brien` into `O&#x27;Brien` (which then renders
  * literally), whereas `cleanDisplayName` yields a clean, already-safe `O'Brien`.
+ *
+ * Whitespace/Unicode normalization is NOT implemented here: it is delegated to
+ * the canonical `normalizeInlineText` from `@oxyhq/core`. This module owns only
+ * the display-name PRODUCT rules (character policy, shortcode stripping, length
+ * cap).
  */
+
+import { normalizeInlineText } from '@oxyhq/core';
 
 /** Maximum stored length of a display name, in code units after cleaning. */
 export const MAX_DISPLAY_NAME_LENGTH = 80;
@@ -77,18 +84,23 @@ const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
  *      letter (e.g. a lone Tibetan mark `U+0F18`, or a `U+FE0F` variation
  *      selector left after its emoji base was stripped in step 3). Marks that
  *      are still attached to a base letter are kept.
- *   5. Collapse runs of whitespace to a single space and trim the ends.
+ *   5. Collapse whitespace and trim — delegated to {@link normalizeInlineText}, the
+ *      ecosystem's canonical single-line normalizer. A display name is a
+ *      one-line value, so every whitespace run (including a `\n` smuggled in by
+ *      a federated actor) becomes a single space. The explicit NFC pass in step 1
+ *      is kept because the character policy in steps 3–4 must see the composed
+ *      form; `normalizeInlineText` re-normalizing an already-NFC string is a no-op.
  *   6. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
  *      the slice landed on a boundary space.
  */
 export function cleanDisplayName(raw: string): string {
-  const collapsed = String(raw)
-    .normalize('NFC')
-    .replace(SHORTCODE_PATTERN, ' ')
-    .replace(DISALLOWED_PATTERN, ' ')
-    .replace(ORPHANED_MARK_PATTERN, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const collapsed = normalizeInlineText(
+    String(raw)
+      .normalize('NFC')
+      .replace(SHORTCODE_PATTERN, ' ')
+      .replace(DISALLOWED_PATTERN, ' ')
+      .replace(ORPHANED_MARK_PATTERN, '')
+  );
 
   if (collapsed.length <= MAX_DISPLAY_NAME_LENGTH) {
     return collapsed;

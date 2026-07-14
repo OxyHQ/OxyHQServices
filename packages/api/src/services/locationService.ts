@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { normalizeInlineText } from '@oxyhq/core';
 import { logger } from '../utils/logger';
 import locationCache from '../utils/locationCache';
 import { nominatimRateLimiter } from '../utils/apiRateLimiter';
@@ -8,6 +9,15 @@ import type {
   EnhancedLocationResult,
   LocationSearchOptions,
 } from '../types/location.types';
+
+/**
+ * Normalize an OPTIONAL Nominatim text field. An absent field stays absent —
+ * normalizing it into an empty string would turn "OSM has no city for this
+ * place" into "this place's city is blank".
+ */
+function normalizeOptionalInlineText(value: string | undefined): string | undefined {
+  return typeof value === 'string' ? normalizeInlineText(value) : undefined;
+}
 
 class LocationService {
   private readonly baseUrl = 'https://nominatim.openstreetmap.org';
@@ -20,7 +30,7 @@ class LocationService {
    */
   private optimizeQuery(query: string): string {
     // Remove extra whitespace and normalize
-    let optimized = query.trim().replace(/\s+/g, ' ');
+    let optimized = normalizeInlineText(query);
     
     // Add common location keywords if not present
     const locationKeywords = ['street', 'avenue', 'road', 'boulevard', 'plaza', 'square'];
@@ -190,33 +200,41 @@ class LocationService {
   }
 
   /**
-   * Transform Nominatim results to our enhanced format
+   * Transform Nominatim results to our enhanced format.
+   *
+   * Every text field here is THIRD-PARTY: it is whatever OpenStreetMap
+   * contributors typed, relayed by Nominatim, and it lands on a user profile
+   * (`locations[].name` / `.address.formattedAddress`) that clients render in an
+   * RN `Text` (`white-space: pre-wrap`) — so a stray newline or a double space in
+   * an OSM name would be shown verbatim. Each one is a single-line display value,
+   * so all of them go through the canonical inline normalizer at ingest.
    */
   private transformResults(results: NominatimResult[]): EnhancedLocationResult[] {
     return results.map(result => {
       const address = result.address || {};
       const lat = Number.parseFloat(result.lat) || 0;
       const lon = Number.parseFloat(result.lon) || 0;
-      
+
+      const displayName = normalizeInlineText(result.display_name);
       // Extract name from display_name (first part before comma)
-      const name = result.display_name.split(',')[0].trim() || result.display_name;
-      
+      const name = normalizeInlineText(displayName.split(',')[0]) || displayName;
+
       return {
         id: result.place_id.toString(),
         name,
-        displayName: result.display_name,
+        displayName,
         type: result.type || result.class || 'unknown',
         coordinates: {
           lat,
           lon,
         },
         address: {
-          street: address.road,
-          city: address.city || address.suburb,
-          state: address.state,
-          postalCode: address.postcode,
-          country: address.country,
-          formattedAddress: result.display_name,
+          street: normalizeOptionalInlineText(address.road),
+          city: normalizeOptionalInlineText(address.city || address.suburb),
+          state: normalizeOptionalInlineText(address.state),
+          postalCode: normalizeOptionalInlineText(address.postcode),
+          country: normalizeOptionalInlineText(address.country),
+          formattedAddress: displayName,
         },
         metadata: {
           placeId: result.place_id.toString(),

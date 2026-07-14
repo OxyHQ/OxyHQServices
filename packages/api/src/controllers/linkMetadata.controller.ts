@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { normalizeInlineText } from '@oxyhq/core';
 import { logger } from '../utils/logger';
 import { linkPreviewService } from '../services/linkPreview/linkPreviewService';
 
@@ -23,10 +24,19 @@ export const fetchLinkMetadata = async (req: Request, res: Response) => {
 
     try {
         const preview = await linkPreviewService.get(trimmedUrl, { wait: true });
+        // The title/description come from a REMOTE page and are single-line card
+        // values: a `<title>` authored across indented source lines carries real
+        // newlines, and clients render this response in an RN `Text`
+        // (`white-space: pre-wrap`), which preserves them. A bare `.trim()` only
+        // ever fixed the ends. The stored copy on the profile is normalized again
+        // on write (`utils/profileTextNormalization.ts`) — this response is what a
+        // composer/profile editor echoes straight back, so it must already be clean.
+        const title = preview.title ? normalizeInlineText(preview.title) : '';
+        const description = preview.description ? normalizeInlineText(preview.description) : '';
         const metadata: LinkMetadata = {
             url: preview.url,
-            title: preview.title?.trim() || preview.url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-            description: preview.description?.trim() || 'Link',
+            title: title || preview.url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+            description: description || 'Link',
             image: preview.image,
         };
 
