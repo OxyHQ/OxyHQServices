@@ -1,6 +1,6 @@
 /**
- * Whitespace normalization for the STRUCTURED profile fields — `linksMetadata`,
- * `locations`, `links`.
+ * Whitespace normalization for the STRUCTURED profile fields — `name`,
+ * `linksMetadata`, `locations`, `links`.
  *
  * WHY THESE NEED THEIR OWN PASS
  * -----------------------------
@@ -28,12 +28,25 @@
  * line break in any of them is always an artifact of the source, never authored
  * intent.
  *
- * These normalizers run in the profile WRITE SERVICE (`user.service`), not in a
- * Mongoose setter: the write service is where the rest of the profile's
- * boundary validation already lives (display-name policy, locale canonicalization,
- * premium-color gate), and it is the layer that can reject a malformed payload
- * with a structured 400. A setter would silently fix up documents from every
- * internal caller and hide the same class of bug from tests.
+ * WHERE NORMALIZATION RUNS — the one rule for the whole API
+ * ---------------------------------------------------------
+ * Normalize in the WRITE SERVICE, not in a Mongoose setter. The write service is
+ * where the rest of the field's boundary validation already lives (display-name
+ * policy, locale canonicalization, premium-color gate); it is the layer that can
+ * reject a malformed payload with a structured 400, and it keeps the
+ * transformation visible to the tests that cover that boundary. A setter instead
+ * fixes up documents from every internal caller silently, which hides that same
+ * class of bug.
+ *
+ * The rule has exactly ONE named exception: a field with NO single write
+ * chokepoint. `File.originalName` (`models/File.ts`) is written by four
+ * independent upload paths, so the schema field itself is the only place none of
+ * them can bypass, and it therefore normalizes in a setter. A new normalized
+ * field needs either a chokepoint or that same argument — nothing else.
+ *
+ * The BACKFILL for these fields (`scripts/normalize-user-text-fields.ts`) calls
+ * the functions below rather than restating their rules, so a normalized-in-place
+ * document is byte-identical to one written through the service today.
  *
  * Length caps are applied here too: these are display strings coming from a
  * remote origin that we do not control, so an unbounded `og:description` cannot
@@ -41,6 +54,7 @@
  */
 
 import { normalizeInlineText } from '@oxyhq/core';
+import { cleanDisplayName } from './displayNameSanitize';
 
 /** Max stored length of a link card's title, in code units after normalization. */
 export const MAX_LINK_TITLE_LENGTH = 200;
@@ -90,23 +104,52 @@ export function normalizeDisplayValue(value: string, maxLength: number): string 
 
 /**
  * Normalize the string leaves of an object IN PLACE-free fashion: returns a new
- * object with `keys` normalized and every other key passed through untouched.
- * Keys that are absent, or hold a non-string, are left exactly as they were —
- * this function normalizes text, it does not validate shape.
+ * object with `keys` run through `normalize` and every other key passed through
+ * untouched (by reference). Keys that are absent, or hold a non-string, are left
+ * exactly as they were — this function normalizes text, it does not validate shape.
  */
 function withNormalizedKeys(
   source: UnknownRecord,
   keys: readonly string[],
-  maxLength: number
+  normalize: (value: string) => string
 ): UnknownRecord {
   const result: UnknownRecord = { ...source };
   for (const key of keys) {
     const value = result[key];
     if (typeof value === 'string') {
-      result[key] = normalizeDisplayValue(value, maxLength);
+      result[key] = normalize(value);
     }
   }
   return result;
+}
+
+/** The `normalize` argument of {@link withNormalizedKeys} for a capped display value. */
+function inlineTextNormalizer(maxLength: number): (value: string) => string {
+  return (value: string) => normalizeDisplayValue(value, maxLength);
+}
+
+/** The text leaves of the `name` sub-document. `full` is a schema VIRTUAL. */
+const NAME_TEXT_KEYS = ['first', 'last'] as const;
+
+/**
+ * Canonicalize the `name` sub-document with the SAME cleaner the FEDERATED write
+ * paths use (`cleanDisplayName`): NFC, the display-name character policy,
+ * whitespace collapse, length cap.
+ *
+ * Before this, the native path was the odd one out. `sanitizeProfileUpdate` skips
+ * `name`, the `NameSchema` has no `trim`, and `isValidDisplayName` only checks the
+ * CHARACTER SET — a space is a legal display-name character, so `"Ana"` + 20
+ * spaces + `"Gómez"` passed validation and was stored verbatim, while the exact
+ * same string arriving from a federated actor was collapsed. In `user.service` the
+ * character policy is validated (and rejected with a 400) BEFORE this runs, so
+ * there the cleaner only ever has whitespace and length left to fix.
+ *
+ * Non-object values, and non-string parts, are passed through untouched for the
+ * caller's own handling.
+ */
+export function normalizeProfileName(value: unknown): unknown {
+  if (!isUnknownRecord(value)) return value;
+  return withNormalizedKeys(value, NAME_TEXT_KEYS, cleanDisplayName);
 }
 
 /**
@@ -159,12 +202,13 @@ export function normalizeLocations(value: unknown): unknown {
   for (const entry of value) {
     if (!isUnknownRecord(entry)) continue;
 
-    const next = withNormalizedKeys(entry, ['name', 'label'], MAX_LOCATION_TEXT_LENGTH);
+    const normalizeLocationText = inlineTextNormalizer(MAX_LOCATION_TEXT_LENGTH);
+    const next = withNormalizedKeys(entry, ['name', 'label'], normalizeLocationText);
     if (isUnknownRecord(next.address)) {
       next.address = withNormalizedKeys(
         next.address,
         LOCATION_ADDRESS_TEXT_KEYS,
-        MAX_LOCATION_TEXT_LENGTH
+        normalizeLocationText
       );
     }
     normalized.push(next);

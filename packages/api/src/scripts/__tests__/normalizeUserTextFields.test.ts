@@ -7,6 +7,10 @@
  * function. What matters is the IDEMPOTENCE contract — the script must produce an
  * empty `$set` for a document that is already clean, so a re-run performs zero
  * writes.
+ *
+ * The other half of the contract — that what it writes is byte-identical to what
+ * the profile write path would persist — is pinned in
+ * `normalizeUserTextFields.writePathParity.test.ts`.
  */
 
 import mongoose from 'mongoose';
@@ -91,6 +95,25 @@ describe('buildUserTextUpdate', () => {
     const update = buildUserTextUpdate(storedUser({ links: [' https://a.example ', '  '] }));
 
     expect(update).toEqual({ links: ['https://a.example'] });
+  });
+
+  it('drops a stored link card with no usable URL instead of persisting an invalid one', () => {
+    // `linksMetadata.url` is `required` in the User schema, and this script writes
+    // through the raw driver, which runs no validators. Keeping the entry with an
+    // empty `url` would plant a document that fails to save the next time the user
+    // edits their profile — over a link card they can neither see nor fix.
+    const update = buildUserTextUpdate(
+      storedUser({
+        linksMetadata: [
+          { url: '  \n ', title: 'T', description: 'D' },
+          { url: 'https://example.com', title: 'T', description: 'D' },
+        ],
+      })
+    );
+
+    expect(update).toEqual({
+      linksMetadata: [{ url: 'https://example.com', title: 'T', description: 'D' }],
+    });
   });
 
   it('touches ONLY the fields that actually change', () => {

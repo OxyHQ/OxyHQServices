@@ -43,30 +43,6 @@
  * normalize whitespace and Unicode form.
  */
 
-/**
- * Characters that make a value ineligible for the zero-work fast path, and the
- * whitespace shapes that a normalized INLINE value can never contain.
- *
- * A value that matches nothing here is, by construction, already normalized:
- * it holds only printable ASCII (which is NFC-stable, so `normalize('NFC')`
- * would be a no-op), its only whitespace is the plain space, it has no leading
- * or trailing space, and no run of two spaces. Returning it untouched skips
- * three string allocations — worth it because the common case in the feed
- * hydration hot path is text that is already clean.
- *
- * Non-global (safe for repeated `.test()`; a global regex is stateful).
- */
-const INLINE_NEEDS_NORMALIZATION = /[^\x20-\x7E]|^ | $| {2}/;
-
-/**
- * Same idea as {@link INLINE_NEEDS_NORMALIZATION}, for MULTILINE values: `\n`
- * joins the printable-ASCII fast-path alphabet, and the additional shapes a
- * normalized body can never contain are a space adjacent to a line break — on
- * either side, since every line is trimmed — and a run of three line breaks
- * (more than one blank line).
- */
-const MULTILINE_NEEDS_NORMALIZATION = /[^\x20-\x7E\n]|^[ \n]|[ \n]$| {2}| \n|\n |\n{3}/;
-
 /** Any run of whitespace, including tabs, line breaks and Unicode spaces. */
 const ANY_WHITESPACE_RUN = /\s+/g;
 
@@ -134,9 +110,6 @@ const EXCESS_BLANK_LINES = /\n{3,}/g;
  * Idempotent: `f(f(x)) === f(x)`.
  */
 export function normalizeInlineText(value: string): string {
-  if (!INLINE_NEEDS_NORMALIZATION.test(value)) {
-    return value;
-  }
   return value.normalize('NFC').replace(ANY_WHITESPACE_RUN, ' ').trim();
 }
 
@@ -173,9 +146,6 @@ export function normalizeInlineText(value: string): string {
  * Idempotent: `f(f(x)) === f(x)`.
  */
 export function normalizeMultilineText(value: string): string {
-  if (!MULTILINE_NEEDS_NORMALIZATION.test(value)) {
-    return value;
-  }
   return value
     .normalize('NFC')
     .replace(LINE_BREAK_FORMS, '\n')

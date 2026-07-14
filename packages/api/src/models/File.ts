@@ -10,11 +10,15 @@ import { normalizeInlineText } from '@oxyhq/core';
  * mirrored onto `Message` attachments). It is a single-line display value, so it
  * gets the canonical inline normalization.
  *
- * This is a schema setter rather than a call in `assetService` because there are
- * four independent upload paths (direct, streamed, chunked-complete, media-cache)
- * that all write this one leaf field; normalizing at the field is the only place
- * none of them can bypass. Non-string values pass through so Mongoose reports the
- * cast error itself.
+ * The API's rule is to normalize in the WRITE SERVICE, never in a schema setter
+ * (stated once, in `utils/profileTextNormalization.ts`). THIS FIELD IS THE ONE
+ * NAMED EXCEPTION to it, because it is the one case the rule carves out: there is
+ * no single write chokepoint to put the call in. Four independent upload paths
+ * (direct, streamed, chunked-complete, media-cache) write this one leaf field, so
+ * the schema field itself is the only place none of them can bypass. Do not read
+ * this as a competing convention — a new field gets a setter only with the same
+ * argument. Non-string values pass through so Mongoose reports the cast error
+ * itself.
  */
 function normalizeFileName(value: unknown): unknown {
   return typeof value === 'string' ? normalizeInlineText(value) : value;

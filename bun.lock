@@ -380,7 +380,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "10.1.3",
+      "version": "10.1.4",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",

@@ -1,5 +1,5 @@
 /**
- * Username policy — the single source of truth.
+ * Username policy — THE ENFORCED ONE, for the API's write paths.
  *
  * A username is a HANDLE, not prose: it is the routing key of a profile URL
  * (`/@alice`), a webfinger `acct:` local part, and a login identifier. It
@@ -11,6 +11,19 @@
  * public-key registration controllers, each with its own copy of the regex. It
  * now lives here so every write path — signup, registration, the availability
  * check, and `PUT /users/me` — validates against the SAME rule.
+ *
+ * WHERE THE OTHER TWO LIVE (this file is NOT the ecosystem-wide source of truth,
+ * it is the SERVER-SIDE one — the only one that decides what gets stored):
+ *
+ *   - `@oxyhq/core` `utils/validationUtils.ts` — `/^[a-zA-Z0-9_-]{3,30}$/`. Also
+ *     admits `_` and `-`. It is the SDK's client-side pre-check; a value it
+ *     accepts can still be rejected here, and this rule is the one that wins.
+ *   - `@oxyhq/commons` `utils/auth/usernameUtils.ts` — `/^[a-z0-9]+$/i` plus a
+ *     `USERNAME_MIN_LENGTH` bound, used by the signup UI's suggestion/validation
+ *     helpers.
+ *
+ * Loosening any of the three without the others produces a username that a client
+ * accepts and the server 400s (or worse, the reverse). Change this one first.
  */
 
 import { normalizeInlineText } from '@oxyhq/core';
@@ -32,9 +45,4 @@ export const INVALID_USERNAME_MESSAGE =
  */
 export function normalizeUsername(raw: string): string {
   return normalizeInlineText(raw);
-}
-
-/** Whether `value` is a syntactically valid username (already normalized or not). */
-export function isValidUsername(value: string): boolean {
-  return USERNAME_PATTERN.test(normalizeUsername(value));
 }
