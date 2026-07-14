@@ -124,8 +124,16 @@ describe('normalizeMultilineText', () => {
     );
   });
 
-  it('preserves a single-space indent (it is the author\'s, not markup noise)', () => {
-    expect(normalizeMultilineText('a\n b')).toBe('a\n b');
+  it('strips leading horizontal whitespace from every line', () => {
+    expect(normalizeMultilineText('a\n b')).toBe('a\nb');
+    expect(normalizeMultilineText('one\n\ttwo\n      three')).toBe('one\ntwo\nthree');
+  });
+
+  it('leaves no indent residue after a space-filled blank line', () => {
+    // The blank line collapses AND the six-space indent goes away entirely —
+    // collapsing it to a single space would leave a visible artifact under
+    // `white-space: pre-wrap`.
+    expect(normalizeMultilineText('Hola\n    \n\n      Mundo')).toBe('Hola\n\nMundo');
   });
 
   it('normalizes CRLF and lone CR to \\n', () => {
@@ -176,6 +184,7 @@ describe('normalizeMultilineText', () => {
       'First paragraph.\n\nSecond paragraph.',
       `a${NBSP}b`,
       'a\n b',
+      'Hola\n    \n\n      Mundo',
       '',
       '   ',
       `Caf${DECOMPOSED_E_ACUTE}`,

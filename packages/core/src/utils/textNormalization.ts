@@ -61,12 +61,11 @@ const INLINE_NEEDS_NORMALIZATION = /[^\x20-\x7E]|^ | $| {2}/;
 /**
  * Same idea as {@link INLINE_NEEDS_NORMALIZATION}, for MULTILINE values: `\n`
  * joins the printable-ASCII fast-path alphabet, and the additional shapes a
- * normalized body can never contain are a space before a line break (trailing
- * horizontal whitespace) and a run of three line breaks (more than one blank
- * line). A single space AFTER a line break is legal — a one-space indent is
- * the author's, and normalization deliberately preserves it.
+ * normalized body can never contain are a space adjacent to a line break — on
+ * either side, since every line is trimmed — and a run of three line breaks
+ * (more than one blank line).
  */
-const MULTILINE_NEEDS_NORMALIZATION = /[^\x20-\x7E\n]|^[ \n]|[ \n]$| {2}| \n|\n{3}/;
+const MULTILINE_NEEDS_NORMALIZATION = /[^\x20-\x7E\n]|^[ \n]|[ \n]$| {2}| \n|\n |\n{3}/;
 
 /** Any run of whitespace, including tabs, line breaks and Unicode spaces. */
 const ANY_WHITESPACE_RUN = /\s+/g;
@@ -92,8 +91,19 @@ const LINE_BREAK_FORMS = /\r\n|\r|\p{Zl}|\p{Zp}/gu;
  */
 const HORIZONTAL_WHITESPACE_RUN = /[^\S\n]+/g;
 
-/** Horizontal whitespace at the end of a line — the blank-line spoiler. */
+/**
+ * Horizontal whitespace at the END of a line — the blank-line spoiler: it is
+ * what makes an "empty" line non-empty and hides it from {@link EXCESS_BLANK_LINES}.
+ */
 const TRAILING_HORIZONTAL_WHITESPACE = / +\n/g;
+
+/**
+ * Horizontal whitespace at the START of a line: source-markup indentation. HTML
+ * collapses it by spec, so it is invisible where the text came from and carries
+ * no meaning — it only becomes visible once a client renders the value with
+ * `white-space: pre-wrap`.
+ */
+const LEADING_HORIZONTAL_WHITESPACE = /\n +/g;
 
 /** Three or more line breaks: more than one blank line between paragraphs. */
 const EXCESS_BLANK_LINES = /\n{3,}/g;
@@ -140,20 +150,23 @@ export function normalizeInlineText(value: string): string {
  *   2. Unify every line-break form (CRLF, lone CR, U+2028, U+2029) to `\n`.
  *   3. Collapse runs of HORIZONTAL whitespace (spaces, tabs, NBSP and friends)
  *      to a single space. Line breaks are untouched.
- *   4. Strip the horizontal whitespace at the END of each line.
+ *   4. Strip the horizontal whitespace at BOTH ends of every line.
  *   5. Collapse three or more line breaks to exactly one blank line (`\n\n`).
- *   6. Trim both ends.
+ *   6. Trim both ends of the value.
  *
  * STEP 4 MUST PRECEDE STEP 5 — this is the whole point of the function. A
  * "blank" line that actually contains spaces (`"a\n   \n   \nb"`) breaks the
  * run of `\n` characters, so a bare `\n{3,}` collapse (step 5 alone) never sees
  * it and the extra blank lines survive into the UI. That is exactly the bug in
- * federated post bodies. Removing the trailing horizontal whitespace first
- * turns those lines into real, empty lines, which step 5 then collapses.
+ * federated post bodies. Trimming each line first turns those lines into real,
+ * empty lines, which step 5 then collapses.
  *
- * A single space at the START of a line is preserved: only RUNS of horizontal
- * whitespace collapse, and an indent is not trailing whitespace, so a one-space
- * indent is treated as the author's and left alone.
+ * Every line is trimmed on BOTH sides, so a leading indent is removed outright
+ * rather than reduced to one space. Step 3 has already destroyed whatever indent
+ * the author wrote (`"      Mundo"` → `" Mundo"`), so a surviving space would not
+ * be the author's intent — it would be an arbitrary remnant of exactly the
+ * source-markup indentation this function exists to erase, and `pre-wrap` renders
+ * it. Indentation is invisible in HTML by spec; it must be invisible here too.
  *
  * A value that is empty or whitespace-only returns `''`.
  *
@@ -168,6 +181,7 @@ export function normalizeMultilineText(value: string): string {
     .replace(LINE_BREAK_FORMS, '\n')
     .replace(HORIZONTAL_WHITESPACE_RUN, ' ')
     .replace(TRAILING_HORIZONTAL_WHITESPACE, '\n')
+    .replace(LEADING_HORIZONTAL_WHITESPACE, '\n')
     .replace(EXCESS_BLANK_LINES, '\n\n')
     .trim();
 }
