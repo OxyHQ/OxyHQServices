@@ -16,3 +16,8 @@ export const linkAuthMethodSchema = z.object({
 export const unlinkTypeParams = z.object({
   type: z.enum(['identity', 'password', 'google', 'apple', 'github']),
 });
+
+// DELETE /auth/link/webauthn/:credentialID
+export const unlinkWebauthnParams = z.object({
+  credentialID: z.string().trim().min(1),
+});
