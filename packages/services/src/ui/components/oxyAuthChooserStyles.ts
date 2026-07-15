@@ -129,6 +129,21 @@ export const authChooserStyles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13.5,
+    lineHeight: 18,
+  },
   qrPlate: {
     padding: 16,
     borderRadius: 16,

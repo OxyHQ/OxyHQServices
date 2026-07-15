@@ -323,7 +323,12 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
  */
 const ErrorBanner: React.FC<{ error: string | null; theme: Theme }> = ({ error, theme }) => {
   if (!error) return null;
-  return <Text style={[styles.errorText, { color: theme.colors.error, marginBottom: 8 }]}>{error}</Text>;
+  return (
+    <View style={[styles.errorBanner, { backgroundColor: theme.colors.negativeSubtle }]}>
+      <MaterialCommunityIcons name="alert-circle-outline" size={18} color={theme.colors.error} />
+      <Text style={[styles.errorBannerText, { color: theme.colors.error }]}>{error}</Text>
+    </View>
+  );
 };
 
 interface AccountsViewProps {
