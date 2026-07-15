@@ -65,6 +65,13 @@ import type {
 } from './oxyContextTypes';
 import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
 import { commitDeviceSetAndResolve } from './commitSessionFlow';
+import { runPasskeyLogin, runPasskeyRegister, runPasskeyAdd } from './passkeyFlow';
+import {
+  isPasskeySupported,
+  runRegistrationCeremony,
+  runAuthenticationCeremony,
+} from '../../webauthn/passkeyClient';
+import { queryKeys } from '../hooks/queries/queryKeys';
 import { useOxyAccountGraph } from './useOxyAccountGraph';
 
 export type { OxyContextState, PasswordSignInResult, OxyContextProviderProps } from './oxyContextTypes';
@@ -735,6 +742,66 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [oxyServices, commitSession],
   );
 
+  // ── Passkey (WebAuthn) ─────────────────────────────────────────────────────
+  // Web-only sign-in / registration via the browser WebAuthn ceremony. The fixed
+  // `options → ceremony → verify → commit` ordering lives in the pure
+  // `passkeyFlow` helpers (deps-injected, unit-tested); these wrappers supply the
+  // real deps (core `webauthn*` methods, the platform ceremony client, and the
+  // `commitSession` funnel). All three GATE on `isPasskeySupported()` so a native
+  // / unsupported surface throws loudly instead of stalling in a ceremony.
+
+  // Usernameless (discoverable) passkey sign-in.
+  const signInWithPasskey = useCallback(
+    async (opts?: { deviceName?: string; deviceFingerprint?: string }): Promise<void> => {
+      const persisted = await authStore.load();
+      await runPasskeyLogin({
+        isSupported: isPasskeySupported,
+        getLoginOptions: () => oxyServices.webauthnLoginOptions(),
+        runCeremony: runAuthenticationCeremony,
+        loginVerify: (response, envelope) => oxyServices.webauthnLoginVerify(response, envelope),
+        commit: (input) => commitSession(input, { activate: true, hubSync: true }),
+        deviceId: persisted?.deviceId,
+        deviceName: opts?.deviceName,
+        deviceFingerprint: opts?.deviceFingerprint,
+      });
+    },
+    [oxyServices, authStore, commitSession],
+  );
+
+  // Create a brand-new account whose first auth method is a passkey.
+  const registerWithPasskey = useCallback(
+    async (params: { username: string; deviceName?: string }): Promise<void> => {
+      await runPasskeyRegister({
+        isSupported: isPasskeySupported,
+        getRegisterOptions: (username) => oxyServices.webauthnRegisterOptions(username),
+        runCeremony: runRegistrationCeremony,
+        registerVerify: (response, envelope) => oxyServices.webauthnRegisterVerify(response, envelope),
+        commit: (input) => commitSession(input, { activate: true, hubSync: true }),
+        username: params.username,
+        deviceName: params.deviceName,
+      });
+    },
+    [oxyServices, commitSession],
+  );
+
+  // Add a passkey to the already-signed-in account (bearer present). No new
+  // session is committed — just refresh the linked auth-methods list.
+  const addPasskey = useCallback(
+    async (params?: { deviceName?: string }): Promise<void> => {
+      await runPasskeyAdd({
+        isSupported: isPasskeySupported,
+        getRegisterOptions: () => oxyServices.webauthnRegisterOptions(),
+        runCeremony: runRegistrationCeremony,
+        registerVerify: (response, envelope) => oxyServices.webauthnRegisterVerify(response, envelope),
+        onLinked: () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
+        },
+        deviceName: params?.deviceName,
+      });
+    },
+    [oxyServices, queryClient],
+  );
+
   // ── Cold boot ────────────────────────────────────────────────────────────
   // Device-first session restore via `runProviderColdBoot` (see boot/runProviderColdBoot.ts).
   const runColdBoot = useCallback(async (): Promise<void> => {
@@ -885,6 +952,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signIn,
       signInWithPassword,
       completeTwoFactorSignIn,
+      signInWithPasskey,
+      registerWithPasskey,
+      addPasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
       logout,
@@ -937,6 +1007,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signIn,
       signInWithPassword,
       completeTwoFactorSignIn,
+      signInWithPasskey,
+      registerWithPasskey,
+      addPasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
       logout,
@@ -1007,6 +1080,9 @@ const LOADING_STATE: OxyContextState = {
   signIn: () => rejectMissingProvider<User>(),
   signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
   completeTwoFactorSignIn: () => rejectMissingProvider<{ securityAlert?: SecurityAlert }>(),
+  signInWithPasskey: () => rejectMissingProvider<void>(),
+  registerWithPasskey: () => rejectMissingProvider<void>(),
+  addPasskey: () => rejectMissingProvider<void>(),
   revokeSuspiciousSignIn: () => rejectMissingProvider<void>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),

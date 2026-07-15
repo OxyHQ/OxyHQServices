@@ -54,6 +54,27 @@ export interface OxyContextState {
     deviceName?: string;
   }) => Promise<{ securityAlert?: SecurityAlert }>;
 
+  /**
+   * Sign in with a passkey (WebAuthn). Usernameless / discoverable-credential
+   * flow: the browser prompts for any resident Oxy passkey. WEB-ONLY — throws on
+   * native or an unsupported browser (native passkeys are Commons' job). On
+   * `useOxy()`, NOT re-exposed on `useAuth()`.
+   */
+  signInWithPasskey: (opts?: { deviceName?: string; deviceFingerprint?: string }) => Promise<void>;
+
+  /**
+   * Create a brand-new account whose first authentication method is a passkey.
+   * WEB-ONLY — throws on native or an unsupported browser.
+   */
+  registerWithPasskey: (params: { username: string; deviceName?: string }) => Promise<void>;
+
+  /**
+   * Add a passkey to the already-signed-in account (bearer present). Does NOT
+   * commit a new session; refreshes the linked auth-methods list on success.
+   * WEB-ONLY — throws on native or an unsupported browser.
+   */
+  addPasskey: (params?: { deviceName?: string }) => Promise<void>;
+
   revokeSuspiciousSignIn: () => Promise<void>;
   handleWebSession: (session: SessionLoginResponse) => Promise<void>;
 
