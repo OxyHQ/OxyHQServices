@@ -186,7 +186,7 @@ export interface VideoVariantConfig {
 
 export class VariantService {
   private readonly imageVariants: VariantConfigWithType[] = [
-    { type: 'avatar', width: 128, height: 128, quality: 82, format: 'webp' },
+    { type: 'w128', width: 128, height: 128, quality: 82, format: 'webp' },
     { type: 'thumb', width: 256, height: 256, quality: 82, format: 'webp' },
     { type: 'w320', width: 320, quality: 82, format: 'webp' },
     { type: 'w640', width: 640, quality: 82, format: 'webp' },

@@ -1,13 +1,17 @@
 /**
  * VariantService image-variant config + resize coverage.
  *
- * Focus: the `avatar` variant (128×128 webp, fit-inside) added to the
- * `imageVariants` config. Because the config is consumed by BOTH the
- * upload-time `generateImageVariants` path and the on-demand
- * `ensureImageVariant` (CDN-read) path, exercising `ensureImageVariant`
- * proves the new key is wired end to end: an unknown variant is rejected
- * (config-lookup gate), and a known one downloads the ORIGINAL object, runs
- * the real Sharp resize, and uploads the resized bytes.
+ * Focus: the `w128` variant (128×128 webp, fit-inside) added to the
+ * `imageVariants` config — named for its width, matching the existing
+ * `w320`/`w640`/`w1280`/`w2048` size-based variants (this one shipped
+ * briefly as `avatar` before being renamed to fit that convention, since
+ * it's a generic small-image size, not avatar-specific). Because the config
+ * is consumed by BOTH the upload-time `generateImageVariants` path and the
+ * on-demand `ensureImageVariant` (CDN-read) path, exercising
+ * `ensureImageVariant` proves the key is wired end to end: an unknown
+ * variant is rejected (config-lookup gate), and a known one downloads the
+ * ORIGINAL object, runs the real Sharp resize, and uploads the resized
+ * bytes.
  *
  * S3Service and the File model are stubbed at the module boundary; no AWS or
  * DB access occurs. Sharp runs for real so the assertions cover actual output
@@ -83,22 +87,22 @@ async function makeSquarePng(size: number): Promise<Buffer> {
     .toBuffer();
 }
 
-describe('VariantService imageVariants — avatar variant', () => {
-  it('generates a 128×128 webp for the avatar variant from an existing original', async () => {
+describe('VariantService imageVariants — w128 variant', () => {
+  it('generates a 128×128 webp for the w128 variant from an existing original', async () => {
     const original = await makeSquarePng(512);
     const fakeS3 = makeFakeS3(original);
     const service = new VariantService(fakeS3 as unknown as S3Service);
 
-    const variant = await service.ensureImageVariant(makeFile(), 'avatar');
+    const variant = await service.ensureImageVariant(makeFile(), 'w128');
 
-    expect(variant.type).toBe('avatar');
+    expect(variant.type).toBe('w128');
     expect(variant.width).toBe(128);
     expect(variant.height).toBe(128);
     expect(variant.metadata).toMatchObject({ format: 'webp', quality: 82 });
 
     // The on-demand path reads the canonical original then uploads the resize.
     expect(fakeS3.downloadBuffer).toHaveBeenCalledWith('public/uploads/2026/07/aa/original.png');
-    const uploaded = fakeS3.uploads.find(u => u.key.endsWith('/avatar.webp'));
+    const uploaded = fakeS3.uploads.find(u => u.key.endsWith('/w128.webp'));
     expect(uploaded).toBeDefined();
     const meta = await sharp(uploaded?.buffer).metadata();
     expect(meta.format).toBe('webp');
@@ -109,10 +113,10 @@ describe('VariantService imageVariants — avatar variant', () => {
   it('produces meaningfully smaller bytes than thumb for the same source', async () => {
     const original = await makeSquarePng(512);
 
-    const avatarS3 = makeFakeS3(original);
-    const avatar = await new VariantService(avatarS3 as unknown as S3Service).ensureImageVariant(
+    const w128S3 = makeFakeS3(original);
+    const w128 = await new VariantService(w128S3 as unknown as S3Service).ensureImageVariant(
       makeFile(),
-      'avatar',
+      'w128',
     );
 
     const thumbS3 = makeFakeS3(original);
@@ -121,16 +125,16 @@ describe('VariantService imageVariants — avatar variant', () => {
       'thumb',
     );
 
-    // thumb stays 256×256 (unchanged); avatar is half the linear dimension.
+    // thumb stays 256×256 (unchanged); w128 is half the linear dimension.
     expect(thumb.width).toBe(256);
     expect(thumb.height).toBe(256);
-    expect(avatar.width).toBe(128);
+    expect(w128.width).toBe(128);
 
-    const avatarBytes = avatarS3.uploads.find(u => u.key.endsWith('/avatar.webp'))?.buffer.length ?? 0;
+    const w128Bytes = w128S3.uploads.find(u => u.key.endsWith('/w128.webp'))?.buffer.length ?? 0;
     const thumbBytes = thumbS3.uploads.find(u => u.key.endsWith('/thumb.webp'))?.buffer.length ?? 0;
-    expect(avatarBytes).toBeGreaterThan(0);
+    expect(w128Bytes).toBeGreaterThan(0);
     expect(thumbBytes).toBeGreaterThan(0);
-    expect(avatarBytes).toBeLessThan(thumbBytes);
+    expect(w128Bytes).toBeLessThan(thumbBytes);
   });
 
   it('rejects a variant key that is not in the imageVariants config', async () => {
