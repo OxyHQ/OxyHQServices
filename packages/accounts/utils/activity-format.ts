@@ -32,10 +32,9 @@ export interface DayFormatters {
 /**
  * Map a backend `SecurityEventType` to the localized activity label key.
  *
- * The spec includes labels the backend does not yet emit (passwordChange,
- * twoFactorEnabled, twoFactorDisabled, privacyUpdate) — these are wired up
- * so that once the API starts emitting them they will render with the right
- * copy without further changes here.
+ * The spec includes a label the backend does not yet emit (privacyUpdate) —
+ * it is wired up so that once the API starts emitting it it will render with
+ * the right copy without further changes here.
  */
 export function getEventLabelKey(eventType: SecurityEventType | string): string {
     switch (eventType) {
@@ -61,12 +60,6 @@ export function getEventLabelKey(eventType: SecurityEventType | string): string 
             return 'activity.events.backupCreated';
         case 'suspicious_activity':
             return 'activity.events.suspicious';
-        case 'password_changed':
-            return 'activity.events.passwordChange';
-        case 'two_factor_enabled':
-            return 'activity.events.twoFactorEnabled';
-        case 'two_factor_disabled':
-            return 'activity.events.twoFactorDisabled';
         default:
             return 'activity.events.unknown';
     }

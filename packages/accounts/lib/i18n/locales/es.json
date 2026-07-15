@@ -52,7 +52,6 @@
     "subtitle": "Gestiona tu cuenta de Oxy.",
     "search": "Buscar en tu cuenta de Oxy",
     "searchChips": {
-      "password": "Contraseña",
       "devices": "Dispositivos",
       "security": "Seguridad",
       "activity": "Actividad",
@@ -326,7 +325,6 @@
     "events": {
       "signIn": "Inicio de sesión",
       "signOut": "Cierre de sesión",
-      "passwordChange": "Contraseña cambiada",
       "emailChanged": "Correo electrónico cambiado",
       "deviceAdded": "Nuevo dispositivo añadido",
       "deviceRemoved": "Dispositivo eliminado",
@@ -334,8 +332,6 @@
       "backupCreated": "Copia de seguridad creada",
       "profileUpdate": "Perfil actualizado",
       "privacyUpdate": "Ajuste de privacidad cambiado",
-      "twoFactorEnabled": "Autenticación en dos pasos activada",
-      "twoFactorDisabled": "Autenticación en dos pasos desactivada",
       "accountRecovery": "Recuperación de cuenta usada",
       "suspicious": "Actividad sospechosa detectada",
       "unknown": "Actividad"

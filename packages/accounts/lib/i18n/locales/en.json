@@ -52,7 +52,6 @@
     "subtitle": "Manage your Oxy account.",
     "search": "Search Oxy Account",
     "searchChips": {
-      "password": "Password",
       "devices": "Devices",
       "security": "Security",
       "activity": "Activity",
@@ -326,7 +325,6 @@
     "events": {
       "signIn": "Signed in",
       "signOut": "Signed out",
-      "passwordChange": "Password changed",
       "emailChanged": "Email address changed",
       "deviceAdded": "New device added",
       "deviceRemoved": "Device removed",
@@ -334,8 +332,6 @@
       "backupCreated": "Backup created",
       "profileUpdate": "Profile updated",
       "privacyUpdate": "Privacy setting changed",
-      "twoFactorEnabled": "Two-factor authentication enabled",
-      "twoFactorDisabled": "Two-factor authentication disabled",
       "accountRecovery": "Account recovery used",
       "suspicious": "Suspicious activity detected",
       "unknown": "Activity"
