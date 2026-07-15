@@ -22,6 +22,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
+import { Types } from 'mongoose';
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -170,6 +171,55 @@ async function burnChallenge(
 }
 
 /**
+ * Realistic transport spreads a decoy credential can advertise. A real
+ * credential's `transports` vary widely by authenticator (platform passkey →
+ * `['internal']`, hybrid/QR → `['internal','hybrid']`, security key →
+ * `['usb','nfc']`), so a deterministic pick from this pool sits inside the natural
+ * distribution and is not, by itself, an existence signal.
+ */
+const DECOY_TRANSPORT_POOL: AuthenticatorTransportFuture[][] = [
+  ['internal'],
+  ['internal', 'hybrid'],
+  ['usb', 'nfc'],
+  ['usb'],
+];
+
+/**
+ * A DETERMINISTIC decoy allow-credential for a username-first `login/options`
+ * request that does NOT resolve to an account with a passkey — i.e. the username
+ * is unknown OR belongs to a real account that has no WebAuthn credential. Its
+ * only job is anti-enumeration: the "no real credential" response must be
+ * INDISTINGUISHABLE from the "here are your credential ids" response so an
+ * unauthenticated caller cannot probe which usernames exist / have a passkey.
+ *
+ * - **Stable per username.** The id is `HMAC(DEVICE_ID_SALT, username)` — the SAME
+ *   username always yields the SAME id across requests, exactly as a real user's
+ *   credential ids are stable. A per-request-random decoy would itself be the tell
+ *   (a real allow-list does not change between two polls of the same username).
+ * - **Unforgeable.** Keying on the server-side salt (never a raw hash of the
+ *   username) stops an attacker precomputing "the decoy id for X" and matching it
+ *   against a response to classify fake vs real.
+ * - **Natural shape.** Length (16–31 bytes → 22–42 base64url chars) and transports
+ *   are derived from the same digest so they land within the spread of real
+ *   authenticator credential ids/transports rather than at a fixed tell-tale size.
+ *
+ * The paired challenge is bound by the caller to a throwaway ObjectId that maps to
+ * no user, so no real assertion can ever satisfy it: `login/verify` then fails with
+ * the same generic error a wrong/unknown passkey produces.
+ */
+function decoyAllowCredentials(
+  normalizedUsername: string,
+): { id: string; transports: AuthenticatorTransportFuture[] }[] {
+  const salt = process.env.DEVICE_ID_SALT ?? '';
+  const digest = crypto.createHmac('sha256', salt).update(`webauthn-decoy|${normalizedUsername}`).digest();
+  // Realistic, stable-per-username credential-id length (16–31 bytes).
+  const idByteLength = 16 + (digest[0] % 16);
+  const id = digest.subarray(1, 1 + idByteLength).toString('base64url');
+  const transports = DECOY_TRANSPORT_POOL[digest[digest.length - 1] % DECOY_TRANSPORT_POOL.length];
+  return [{ id, transports }];
+}
+
+/**
  * The shared session-mint finalisation. Identical to the `/auth/signup` /
  * `/auth/verify` tail: create the session, format the standard auth response,
  * register the session into its device set + mint the rotating `deviceSecret`,
@@ -291,8 +341,20 @@ router.post(
       attestationType: 'none',
       excludeCredentials,
       authenticatorSelection: {
-        residentKey: 'required',
+        // `preferred`, not `required`: a discoverable (resident) credential is still
+        // asked for so usernameless login keeps working on platform authenticators
+        // and modern security keys, but a roaming/hardware key with no resident-key
+        // support (or full resident slots) can STILL register — it just enrolls a
+        // non-discoverable credential, which the username-first login/options path
+        // serves via an explicit allow-list. `required` here is exactly what made a
+        // Google Titan fail Chrome's "device can't be used with this site" gate.
+        residentKey: 'preferred',
+        // Keep UV mandatory (the passwordless plan requires user verification): a key
+        // with no PIN/biometric legitimately cannot enrol — that is correct, not a bug.
         userVerification: 'required',
+        // `authenticatorAttachment` is deliberately UNPINNED so both platform (Face ID /
+        // Touch ID / Windows Hello) and cross-platform/roaming (USB-C / NFC security key)
+        // authenticators are offered.
       },
     });
 
@@ -484,13 +546,26 @@ router.post(
 /**
  * POST /webauthn/login/options
  *
- * ALWAYS discoverable-credential (usernameless) login: the allow-list is empty
- * regardless of any supplied `username`, and no user lookup is performed. Emitting
- * a user's `credentialID`s (a non-empty allow-list) — or even branching the
- * response/timing on whether a username resolves — would leak account existence
- * and let an unauthenticated caller enumerate a user's passkeys, so neither is
- * done. The authenticator returns the credentialID at verify time, which is where
- * the user is resolved. The challenge carries no `userId` (discoverable flow).
+ * Two flows, selected by whether the body carries a `username`:
+ *
+ *  - **No username → usernameless/discoverable.** Empty allow-list, unbound
+ *    challenge, no user lookup. The authenticator surfaces its resident credential
+ *    and the user is resolved by credentialID at verify time. (Unchanged.)
+ *
+ *  - **Username present → username-first.** Returns THAT user's credentialIDs in
+ *    `allowCredentials`, so a roaming/hardware key that did NOT store a resident
+ *    (discoverable) credential can still be used — the browser needs the explicit
+ *    id to invoke it. The challenge is bound to the resolved account so
+ *    `login/verify` can reject a credential owned by a different user.
+ *
+ * ANTI-ENUMERATION (this is why the M1 empty-allow-list existed — do NOT regress
+ * it): a username that does NOT resolve to an account-with-a-passkey (unknown, or a
+ * real account with no credential) returns a DETERMINISTIC decoy allow-credential
+ * of the same shape (see `decoyAllowCredentials`), bound to a throwaway id that
+ * maps to no user. Every branch does the SAME work — resolve the user, compute the
+ * decoy, run one credential query — and returns the SAME response shape, so an
+ * unknown username is indistinguishable from a known one by RESPONSE CONTENT and by
+ * TIMING. There are no account-existence-dependent early returns.
  */
 router.post(
   '/login/options',
@@ -502,16 +577,54 @@ router.post(
     }
 
     const rpID = getWebauthnRpId();
+    const requestedUsername = parsed.data.username;
+
+    let allowCredentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [];
+    let challengeUserId: Types.ObjectId | undefined;
+
+    if (requestedUsername) {
+      const normalizedUsername = normalizeUsername(requestedUsername);
+      // Always resolve the user (an unparseable/nonexistent username simply finds
+      // nothing — never a distinct rejection that would leak "no such account").
+      const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(normalizedUsername) })
+        .select('_id')
+        .lean();
+      // Always compute the decoy, whether or not it is ultimately used, so the
+      // found and not-found paths do the same work.
+      const decoy = decoyAllowCredentials(normalizedUsername);
+      // Always issue exactly one credential query. For a missing user a throwaway
+      // id keeps the query shape/cost identical while returning no rows.
+      const probeUserId = user?._id ?? new Types.ObjectId();
+      const credentials = await WebauthnCredential.find({ userId: probeUserId })
+        .select('credentialID transports')
+        .lean();
+
+      if (user && credentials.length > 0) {
+        allowCredentials = credentials.map((cred) => ({
+          id: cred.credentialID,
+          transports: cred.transports as AuthenticatorTransportFuture[] | undefined,
+        }));
+        // Bind the challenge to the resolved account — verify asserts the presented
+        // credential's owner equals this id (user A's challenge ≠ user B's key).
+        challengeUserId = user._id;
+      } else {
+        // Unknown username OR an account with no passkey → decoy. Bind the challenge
+        // to a throwaway id that maps to no user, so it can never be satisfied.
+        allowCredentials = decoy;
+        challengeUserId = new Types.ObjectId();
+      }
+    }
 
     const options = await generateAuthenticationOptions({
       rpID,
-      allowCredentials: [],
+      allowCredentials,
       userVerification: 'required',
     });
 
     await WebauthnChallenge.create({
       challenge: options.challenge,
       type: 'authentication',
+      ...(challengeUserId ? { userId: challengeUserId } : {}),
       expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
       used: false,
     });
@@ -553,9 +666,17 @@ router.post(
 
     const { origin, challenge } = decodeAndGuardClientData(response.response.clientDataJSON);
 
-    // Burn the challenge. A username-first challenge carries the account id; it
-    // must match the credential's owner. A discoverable challenge carries none
-    // (`{ userId: null }` matches the missing field).
+    // Burn the challenge, and in doing so ENFORCE the challenge↔owner binding
+    // atomically. Two mutually-exclusive shapes are accepted:
+    //   1. Username-first: the challenge was stored bound to an account id, so it is
+    //      only burned when that id EQUALS this credential's owner. A challenge
+    //      issued for user A is therefore unusable by user B's credential (the match
+    //      fails), and a decoy challenge (bound to a throwaway id that maps to no
+    //      user) is unusable by anyone — both fall through to the same generic error.
+    //   2. Discoverable: the challenge carries no account id (`{ userId: null }`
+    //      matches the missing field); any owner may satisfy it. (Unchanged.)
+    // Because the owner constraint lives INSIDE the atomic `findOneAndUpdate`, the
+    // cross-user rejection cannot race the burn.
     const owner = credential.userId.toString();
     const usernameFirstBurned = await burnChallenge(challenge, 'authentication', { userId: owner });
     const discoverableBurned = usernameFirstBurned
