@@ -132,6 +132,18 @@ describe('OxyAccountDialog', () => {
     expect(controller.signInWithOxy).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces snapshot.error as a banner in the accounts view (failed switch is not silent)', () => {
+    snapshot = makeSnapshot({
+      error: 'Cannot switch into a personal account',
+      activeAccountId: 'a',
+      accounts: [makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' })],
+    });
+
+    render(<OxyAccountDialog />);
+
+    expect(screen.getByText('Cannot switch into a personal account')).toBeTruthy();
+  });
+
   it('renders the QR payload while awaiting approval', () => {
     snapshot = makeSnapshot({
       view: 'qr',

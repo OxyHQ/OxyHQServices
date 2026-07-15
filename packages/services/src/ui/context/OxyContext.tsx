@@ -606,14 +606,41 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [commitSession],
   );
 
+  // Commit a minted graph-SWITCH session. Same funnel as `handleWebSession` but
+  // IN-PLACE: `hubSync: false` so switching accounts never triggers the
+  // cross-origin hub-sync full-page redirect. The switch already propagates
+  // across tabs/apps via the server's `session_state` socket broadcast.
+  const commitSwitchedSession = useCallback(
+    async (session: SessionLoginResponse): Promise<void> => {
+      if (!session?.user || !session?.sessionId || !session.accessToken) {
+        throw new Error('Session response did not include a usable session');
+      }
+      await commitSession(
+        {
+          sessionId: session.sessionId,
+          accessToken: session.accessToken,
+          deviceSecret: session.deviceSecret,
+          deviceId: session.deviceId,
+          expiresAt: session.expiresAt,
+          userId: session.user.id,
+          user: session.user,
+        },
+        { activate: true, hubSync: false },
+      );
+    },
+    [commitSession],
+  );
+
   // ── Unified account dialog ─────────────────────────────────────────────────
   // The single account-chooser + sign-in surface. Built ONCE per provider mount
   // and bound to the live `oxyServices` + `sessionClient` + this provider's
-  // `handleWebSession` commit funnel. `handleWebSession` is threaded through a ref
-  // so the controller keeps a STABLE `commitSession` (rebuilding the controller
-  // on every commit-identity change would drop its subscription + state).
+  // commit funnels. Both funnels are threaded through refs so the controller
+  // keeps STABLE commit callbacks (rebuilding the controller on every
+  // commit-identity change would drop its subscription + state).
   const handleWebSessionRef = useRef(handleWebSession);
   handleWebSessionRef.current = handleWebSession;
+  const commitSwitchedSessionRef = useRef(commitSwitchedSession);
+  commitSwitchedSessionRef.current = commitSwitchedSession;
 
   const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
   if (!accountDialogControllerRef.current) {
@@ -626,6 +653,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // instant `/auth-session` `auth_update` wake instead of a slow poll.
       socketFactory: io,
       commitSession: (session) => handleWebSessionRef.current(session),
+      commitSwitchedSession: (session) => commitSwitchedSessionRef.current(session),
       onSignedIn: () => setAccountDialogOpen(false),
       openUrl: (url) => {
         if (isWebBrowser()) {

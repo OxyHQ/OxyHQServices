@@ -238,6 +238,16 @@ const OxyAccountDialog: React.FC = () => {
         contentContainerStyle={styles.bodyContent}
         showsVerticalScrollIndicator={false}
       >
+        {snapshot.error && view !== 'qr' ? (
+          // A failed switch (or account-list load) records `snapshot.error`.
+          // Surface it here — the `qr` view renders its own sign-in error — so a
+          // switch that can't proceed tells the user why instead of silently
+          // no-op'ing.
+          <View style={[styles.errorBanner, { backgroundColor: theme.colors.negativeSubtle }]}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={18} color={theme.colors.error} />
+            <Text style={[styles.errorBannerText, { color: theme.colors.error }]}>{snapshot.error}</Text>
+          </View>
+        ) : null}
         {view === 'accounts' ? (
           <AccountsView snapshot={snapshot} theme={theme} t={t} handlers={handlers} />
         ) : view === 'qr' ? (
@@ -756,6 +766,20 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13.5,
+    lineHeight: 18,
   },
   qrPlate: {
     padding: 16,
