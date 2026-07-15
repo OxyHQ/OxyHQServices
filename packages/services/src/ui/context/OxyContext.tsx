@@ -750,16 +750,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // `commitSession` funnel). All three GATE on `isPasskeySupported()` so a native
   // / unsupported surface throws loudly instead of stalling in a ceremony.
 
-  // Usernameless (discoverable) passkey sign-in.
+  // Passkey sign-in. No `username` → usernameless (discoverable) flow. With a
+  // `username` → username-first: the server scopes `allowCredentials` to that
+  // user's passkeys so a non-discoverable hardware key (U2F/security key) can
+  // be selected.
   const signInWithPasskey = useCallback(
-    async (opts?: { deviceName?: string; deviceFingerprint?: string }): Promise<void> => {
+    async (opts?: { username?: string; deviceName?: string; deviceFingerprint?: string }): Promise<void> => {
       const persisted = await authStore.load();
       await runPasskeyLogin({
         isSupported: isPasskeySupported,
-        getLoginOptions: () => oxyServices.webauthnLoginOptions(),
+        getLoginOptions: (username) => oxyServices.webauthnLoginOptions(username),
         runCeremony: runAuthenticationCeremony,
         loginVerify: (response, envelope) => oxyServices.webauthnLoginVerify(response, envelope),
         commit: (input) => commitSession(input, { activate: true, hubSync: true }),
+        username: opts?.username,
         deviceId: persisted?.deviceId,
         deviceName: opts?.deviceName,
         deviceFingerprint: opts?.deviceFingerprint,

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, KeyRound, QrCode, ShieldAlert } from "lucide-react"
+import { ArrowLeft, KeyRound, QrCode, ShieldAlert, Usb } from "lucide-react"
 import { isOxyRpOrigin, type SwitchableAccount } from "@oxyhq/core"
 import type { SecurityAlert } from "@oxyhq/contracts"
 import { useOxy, useSwitchableAccounts } from "@oxyhq/services"
@@ -40,7 +40,7 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     loginHint?: string
 }
 
-type LoginStep = "identifier" | "password" | "2fa" | "security-alert"
+type LoginStep = "identifier" | "password" | "2fa" | "security-alert" | "security-key"
 
 type LookupResult = {
     username: string
@@ -206,7 +206,7 @@ export function LoginForm({
         setStepState({ step: next, direction: dir })
         requestAnimationFrame(() => {
             if (next === "password") passwordRef.current?.focus()
-            else if (next === "identifier") identifierRef.current?.focus()
+            else if (next === "identifier" || next === "security-key") identifierRef.current?.focus()
         })
     }
 
@@ -362,6 +362,33 @@ export function LoginForm({
         }
     }
 
+    /**
+     * Username-first passkey sign-in for a NON-discoverable hardware key (e.g. a
+     * U2F/security key like a Google Titan). The typed handle scopes the server's
+     * WebAuthn `allowCredentials` to that user's registered keys, so a key that
+     * stores no resident credential — and therefore can't be found by the
+     * usernameless ceremony above — can still be selected. On success the SDK has
+     * committed the device-first session, so we reuse `redirectAfterLogin`; a
+     * dismissed prompt surfaces the same calm inline message.
+     */
+    async function handleSecurityKeySignIn(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        const username = identifier.trim()
+        if (!username || passkeyPending || rateLimitSeconds > 0) return
+        setLocalError(undefined)
+        setPasskeyPending(true)
+        try {
+            const deviceFingerprint = await getOrCreateDeviceFingerprint()
+            await signInWithPasskey({ username, deviceFingerprint: deviceFingerprint ?? undefined })
+            redirectAfterLogin()
+        } catch (err) {
+            const message = describePasskeyError(err)
+            setLocalError(message)
+            toast.error("Security key sign-in failed", { description: message })
+            setPasskeyPending(false)
+        }
+    }
+
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         setLocalError(undefined)
@@ -512,6 +539,23 @@ export function LoginForm({
                             Sign in with a passkey
                         </Button>
                     )}
+                    {/* Security-key option: a non-discoverable hardware key (U2F,
+                        e.g. a Google Titan) can't be located by the usernameless
+                        prompt above, so this reveals a handle step that scopes the
+                        WebAuthn allow-list to that user's registered keys. */}
+                    {passkeyAvailable && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            className="w-full"
+                            disabled={passkeyPending || rateLimitSeconds > 0}
+                            onClick={() => goToStep("security-key", "forward")}
+                        >
+                            <Usb className="size-4" />
+                            Sign in with a security key
+                        </Button>
+                    )}
                     {/* Cross-device "Sign in with Oxy" (QR). The user approves in
                         their Oxy app on their phone — no password here. */}
                     <Button
@@ -599,6 +643,48 @@ export function LoginForm({
                             </Button>
                             <Button type="submit" size="lg" className="flex-1 min-w-0" loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
                                 Sign in
+                            </Button>
+                        </div>
+                    </FieldGroup>
+                </form>
+            )}
+
+            {/* Security-key step: username-first passkey for a NON-discoverable
+                hardware key (U2F, e.g. a Google Titan). The handle scopes the
+                server's `allowCredentials` to that user's registered keys so a
+                key with no resident credential can still assert. Reuses the
+                identifier field + state. */}
+            {step === "security-key" && (
+                <form onSubmit={handleSecurityKeySignIn} key="security-key" className={animationClass}>
+                    <FieldGroup>
+                        <AuthFormHeader title="Sign in with a security key" description="Enter your username, then tap your security key." />
+                        <Field data-invalid={displayError ? true : undefined}>
+                            <FieldLabel htmlFor="security-key-identifier">Username</FieldLabel>
+                            <Input
+                                ref={identifierRef}
+                                id="security-key-identifier"
+                                name="identifier"
+                                type="text"
+                                placeholder="yourname"
+                                autoComplete="username"
+                                value={identifier}
+                                onChange={(e) => {
+                                    setIdentifier(e.target.value)
+                                    if (localError) setLocalError(undefined)
+                                }}
+                                required
+                                autoFocus
+                                disabled={passkeyPending || rateLimitSeconds > 0}
+                            />
+                            {displayError && <FieldError>{displayError}</FieldError>}
+                        </Field>
+                        <div className="flex gap-3">
+                            <Button type="button" variant="outline" size="lg" onClick={() => goToStep("identifier", "back")} className="shrink-0" aria-label="Go back" disabled={passkeyPending}>
+                                <ArrowLeft className="size-4" />
+                            </Button>
+                            <Button type="submit" size="lg" className="flex-1 min-w-0" loading={passkeyPending} disabled={passkeyPending || rateLimitSeconds > 0}>
+                                <Usb className="size-4" />
+                                Continue
                             </Button>
                         </div>
                     </FieldGroup>
