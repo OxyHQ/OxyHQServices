@@ -20,7 +20,8 @@
     "packages/commons",
     "packages/inbox",
     "packages/test-app-expo",
-    "packages/console"
+    "packages/console",
+    "packages/ship"
   ],
   "scripts": {
     "build:all": "turbo run build",

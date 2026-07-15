@@ -695,6 +695,21 @@
         "react-native-qrcode-svg",
       ],
     },
+    "packages/ship": {
+      "name": "@oxyhq/ship",
+      "version": "0.1.0",
+      "bin": {
+        "oxy-ship": "dist/cli.js",
+      },
+      "dependencies": {
+        "@oxyhq/contracts": "workspace:*",
+        "@oxyhq/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.6.0",
+      },
+    },
     "packages/test-app-expo": {
       "name": "test-app",
       "version": "1.0.0",
@@ -1641,6 +1656,8 @@
     "@oxyhq/protocol": ["@oxyhq/protocol@workspace:packages/protocol"],
 
     "@oxyhq/services": ["@oxyhq/services@workspace:packages/services"],
+
+    "@oxyhq/ship": ["@oxyhq/ship@workspace:packages/ship"],
 
     "@paralleldrive/cuid2": ["@paralleldrive/cuid2@2.3.1", "", { "dependencies": { "@noble/hashes": "^1.1.5" } }, "sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw=="],
 
