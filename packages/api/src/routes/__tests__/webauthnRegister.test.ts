@@ -42,6 +42,7 @@ const mockCreateSession = jest.fn();
 const mockFinalizeDeviceLogin = jest.fn();
 const mockLogSignIn = jest.fn();
 const mockVerifyRegistration = jest.fn();
+const mockGenerateRegistration = jest.fn();
 
 let mockNewUserDoc: { _id: string; username?: string; avatar?: string; authMethods: unknown[]; save: jest.Mock };
 
@@ -54,13 +55,7 @@ function selectLean(value: unknown) {
 
 // ---- module mocks ----------------------------------------------------------
 jest.mock('@simplewebauthn/server', () => ({
-  generateRegistrationOptions: jest.fn(async () => ({
-    challenge: REG_CHALLENGE,
-    rp: { name: 'Oxy', id: 'localhost' },
-    user: { id: 'x', name: 'x', displayName: '' },
-    pubKeyCredParams: [],
-    excludeCredentials: [],
-  })),
+  generateRegistrationOptions: (...args: unknown[]) => mockGenerateRegistration(...args),
   verifyRegistrationResponse: (...args: unknown[]) => mockVerifyRegistration(...args),
 }));
 
@@ -233,6 +228,13 @@ beforeEach(() => {
   mockBurnResult = { _id: 'c1', challenge: REG_CHALLENGE, type: 'registration' };
   mockCredCreateError = null;
 
+  mockGenerateRegistration.mockResolvedValue({
+    challenge: REG_CHALLENGE,
+    rp: { name: 'Oxy', id: 'localhost' },
+    user: { id: 'x', name: 'x', displayName: '' },
+    pubKeyCredParams: [],
+    excludeCredentials: [],
+  });
   mockChallengeCreate.mockResolvedValue({});
   mockChallengeFindOneAndUpdate.mockImplementation(() => leanValue(mockBurnResult));
   mockCredFind.mockReturnValue(selectLean([]));
@@ -285,6 +287,25 @@ describe('POST /webauthn/register/options', () => {
   it('requires a username in the signup branch', async () => {
     const res = await request(server, 'POST', '/webauthn/register/options', {});
     expect(res.status).toBe(400);
+  });
+
+  it('offers residentKey:preferred + UV:required and does NOT pin authenticatorAttachment (roaming/hardware keys can enrol)', async () => {
+    const res = await request(server, 'POST', '/webauthn/register/options', { username: 'freshuser' });
+    expect(res.status).toBe(200);
+    const opts = mockGenerateRegistration.mock.calls[0][0] as {
+      authenticatorSelection: {
+        residentKey?: string;
+        userVerification?: string;
+        authenticatorAttachment?: string;
+      };
+    };
+    // `preferred` (not `required`) is what lets a Google Titan / roaming key with no
+    // resident-key support still register a non-discoverable credential.
+    expect(opts.authenticatorSelection.residentKey).toBe('preferred');
+    // UV stays mandatory (passwordless plan requires user verification).
+    expect(opts.authenticatorSelection.userVerification).toBe('required');
+    // Attachment is unpinned so both platform and cross-platform authenticators show.
+    expect(opts.authenticatorSelection.authenticatorAttachment).toBeUndefined();
   });
 });
 

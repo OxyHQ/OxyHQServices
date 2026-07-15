@@ -230,36 +230,94 @@ beforeEach(() => {
   mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 6 } });
 });
 
+interface AuthOptionsArg {
+  allowCredentials: { id: string; transports?: string[] }[];
+  userVerification?: string;
+}
+
 describe('POST /webauthn/login/options', () => {
-  it('a supplied username does NOT leak the account: empty allowCredentials, unbound challenge, no DB lookup', async () => {
-    // Arrange the store so that IF the handler looked the user up it would find a
-    // matching account with a credential — proving the handler ignores it.
+  it('username-first (KNOWN username): returns that user\'s allowCredentials + a challenge bound to the account', async () => {
     mockUserFindOne.mockReturnValue(selectLean({ _id: USER_ID }));
-    mockCredFind.mockReturnValue(selectLean([{ credentialID: CRED_ID, transports: ['internal'] }]));
+    mockCredFind.mockReturnValue(selectLean([{ credentialID: CRED_ID, transports: ['usb', 'nfc'] }]));
 
     const res = await request(server, 'POST', '/webauthn/login/options', { username: 'loginuser' });
 
     expect(res.status).toBe(200);
-    // Discoverable-only: never emit the user's credentialIDs.
-    const opts = mockGenerateAuthOptions.mock.calls[0][0] as { allowCredentials: unknown[]; userVerification?: string };
-    expect(opts.allowCredentials).toHaveLength(0);
+    const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
+    // The user's real credential id is surfaced so a non-discoverable hardware key
+    // can be invoked by the browser.
+    expect(opts.allowCredentials).toEqual([{ id: CRED_ID, transports: ['usb', 'nfc'] }]);
     expect(opts.userVerification).toBe('required');
-    // Challenge is not bound to any account.
-    const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: string };
+    // Challenge is bound to the resolved account (so verify can reject a foreign key).
+    const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: unknown };
     expect(stored.type).toBe('authentication');
-    expect(stored.userId).toBeUndefined();
-    // No account-existence-dependent branching or timing: the user/credential
-    // lookups must NOT run at all.
-    expect(mockUserFindOne).not.toHaveBeenCalled();
-    expect(mockCredFind).not.toHaveBeenCalled();
+    expect(String(stored.userId)).toBe(USER_ID);
+    // The user + credential lookups both ran (same work as the not-found path).
+    expect(mockUserFindOne).toHaveBeenCalledTimes(1);
+    expect(mockCredFind).toHaveBeenCalledTimes(1);
   });
 
-  it('usernameless (discoverable): empty allowCredentials and an unbound challenge', async () => {
+  it('username-first (UNKNOWN username): returns a decoy allowCredential of the same shape — never empty, never the real user\'s id, no non-existence tell', async () => {
+    // The account does not exist and the (throwaway-id) credential query returns none.
+    mockUserFindOne.mockReturnValue(selectLean(null));
+    mockCredFind.mockReturnValue(selectLean([]));
+
+    const res = await request(server, 'POST', '/webauthn/login/options', { username: 'ghostuser' });
+
+    expect(res.status).toBe(200);
+    const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
+    // Same SHAPE as the known-username response: exactly one non-empty allowCredential.
+    expect(opts.allowCredentials).toHaveLength(1);
+    expect(typeof opts.allowCredentials[0].id).toBe('string');
+    expect(opts.allowCredentials[0].id.length).toBeGreaterThan(0);
+    // The decoy is NOT any real credential id.
+    expect(opts.allowCredentials[0].id).not.toBe(CRED_ID);
+    // Structurally identical (transports present, like a real allow-list entry).
+    expect(Array.isArray(opts.allowCredentials[0].transports)).toBe(true);
+    // A bound challenge is still stored (non-null userId), so nothing about the
+    // response reveals that the account does not exist.
+    const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: unknown };
+    expect(stored.type).toBe('authentication');
+    expect(stored.userId).toBeDefined();
+    // SAME work as the found path: user lookup + one credential query both ran (no
+    // account-existence-dependent early return / timing oracle).
+    expect(mockUserFindOne).toHaveBeenCalledTimes(1);
+    expect(mockCredFind).toHaveBeenCalledTimes(1);
+  });
+
+  it('the decoy is DETERMINISTIC: the same unknown username yields the same decoy id across requests', async () => {
+    mockUserFindOne.mockReturnValue(selectLean(null));
+    mockCredFind.mockReturnValue(selectLean([]));
+
+    await request(server, 'POST', '/webauthn/login/options', { username: 'ghostuser' });
+    await request(server, 'POST', '/webauthn/login/options', { username: 'ghostuser' });
+
+    const first = (mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg).allowCredentials[0].id;
+    const second = (mockGenerateAuthOptions.mock.calls[1][0] as AuthOptionsArg).allowCredentials[0].id;
+    // Stable across polls (a per-request-random decoy would itself be the tell).
+    expect(second).toBe(first);
+  });
+
+  it('username-first (KNOWN account with NO passkey): returns a decoy, not an empty allow-list', async () => {
+    // A real account that simply has not enrolled a passkey must look identical to
+    // an unknown username — otherwise the empty allow-list would leak "exists".
+    mockUserFindOne.mockReturnValue(selectLean({ _id: USER_ID }));
+    mockCredFind.mockReturnValue(selectLean([]));
+
+    const res = await request(server, 'POST', '/webauthn/login/options', { username: 'loginuser' });
+
+    expect(res.status).toBe(200);
+    const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
+    expect(opts.allowCredentials).toHaveLength(1);
+    expect(opts.allowCredentials[0].id).not.toBe(CRED_ID);
+  });
+
+  it('usernameless (discoverable): empty allowCredentials and an unbound challenge, no lookups', async () => {
     const res = await request(server, 'POST', '/webauthn/login/options', {});
     expect(res.status).toBe(200);
-    const opts = mockGenerateAuthOptions.mock.calls[0][0] as { allowCredentials: unknown[] };
+    const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
     expect(opts.allowCredentials).toHaveLength(0);
-    const stored = mockChallengeCreate.mock.calls[0][0] as { userId?: string };
+    const stored = mockChallengeCreate.mock.calls[0][0] as { userId?: unknown };
     expect(stored.userId).toBeUndefined();
     expect(mockUserFindOne).not.toHaveBeenCalled();
     expect(mockCredFind).not.toHaveBeenCalled();
@@ -330,6 +388,29 @@ describe('POST /webauthn/login/verify', () => {
     mockChallengeFindOneAndUpdate.mockImplementation(() => leanValue(null));
     const res = await request(server, 'POST', '/webauthn/login/verify', { response: authenticationResponse() });
     expect(res.status).toBe(401);
+    expect(mockVerifyAuthentication).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects a credential whose owner does NOT match a username-bound challenge (cross-user)', async () => {
+    // The stored challenge was issued for a DIFFERENT account (OTHER_USER). The
+    // presented credential is owned by USER_ID. The owner-bound burn only matches
+    // when its queried userId equals the stored owner, so neither the owner-bound
+    // attempt (USER_ID) nor the discoverable fallback (null) can burn it.
+    const OTHER_USER = '507f1f77bcf86cd7994390ff';
+    mockChallengeFindOneAndUpdate.mockImplementation((query: { userId?: unknown }) =>
+      leanValue(query.userId === OTHER_USER ? { _id: 'ch-other', challenge: AUTH_CHALLENGE } : null),
+    );
+
+    const res = await request(server, 'POST', '/webauthn/login/verify', { response: authenticationResponse() });
+
+    expect(res.status).toBe(401);
+    // The handler DID attempt an owner-bound burn keyed on the credential's owner…
+    const ownerBoundQuery = mockChallengeFindOneAndUpdate.mock.calls[0][0] as { userId?: unknown };
+    expect(ownerBoundQuery.userId).toBe(USER_ID);
+    // …and a discoverable (userId:null) fallback — both missed the OTHER_USER row.
+    const discoverableQuery = mockChallengeFindOneAndUpdate.mock.calls[1][0] as { userId?: unknown };
+    expect(discoverableQuery.userId).toBeNull();
     expect(mockVerifyAuthentication).not.toHaveBeenCalled();
     expect(mockCreateSession).not.toHaveBeenCalled();
   });
