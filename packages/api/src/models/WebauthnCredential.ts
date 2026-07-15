@@ -14,6 +14,13 @@ import mongoose, { type Document, Schema, type Types } from 'mongoose';
  * signature counter, persisted on every successful assertion for replay
  * detection (platform authenticators keep it at 0 and never increment — that is
  * NOT a regression, see the login/verify route).
+ *
+ * `userVerified` records the ASSURANCE LEVEL of the most recent ceremony: `true`
+ * when the authenticator performed real user verification (PIN/biometric),
+ * `false` for a possession-only assertion (a U2F/CTAP1 security key with no PIN,
+ * accepted under the owner's possession-credential policy). It is stamped at
+ * enrollment and refreshed on every successful login, so a future step-up can
+ * gate sensitive actions on UV-backed credentials without re-running a ceremony.
  */
 export interface IWebauthnCredential extends Document {
   userId: Types.ObjectId;
@@ -23,6 +30,7 @@ export interface IWebauthnCredential extends Document {
   transports?: string[];
   deviceType: 'singleDevice' | 'multiDevice';
   backedUp: boolean;
+  userVerified: boolean;
   name: string;
   createdAt: Date;
   lastUsedAt?: Date;
@@ -60,6 +68,11 @@ const WebauthnCredentialSchema: Schema = new Schema(
       required: true,
     },
     backedUp: {
+      type: Boolean,
+      required: true,
+      default: false,
+    },
+    userVerified: {
       type: Boolean,
       required: true,
       default: false,
