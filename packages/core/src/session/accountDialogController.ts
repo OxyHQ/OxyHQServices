@@ -21,9 +21,8 @@
  *     `oxyServices.signInWithSharedIdentity`, else the cross-device QR handoff
  *     via `startCommonsSignIn` → poll → `claimSessionByToken`).
  *
- * It deliberately owns NO password/2FA logic — those live at the IdP
- * (auth.oxy.so). {@link AccountDialogController.openPasswordAtOxyAuth} only
- * builds the hand-off URL; device-first convergence syncs the session back.
+ * Sign-in is passkey (WebAuthn) or the Commons QR / shared-keychain handoff —
+ * password, social login, and 2FA were removed ecosystem-wide.
  */
 
 import type { OxyServices } from '../OxyServices';
@@ -31,13 +30,6 @@ import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { User } from '../models/interfaces';
 import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
-import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
-import {
-  generateOAuthState,
-  generatePkcePair,
-  normalizeOAuthRedirectUri,
-  persistOAuthHandshake,
-} from '../utils/oauthPkce';
 import type { SessionClient } from './SessionClient';
 import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 import {
@@ -117,14 +109,6 @@ export interface AccountDialogControllerOptions {
   commitSession?: (session: SessionLoginResponse) => Promise<void>;
   /** Notified after a completed sign-in (bearer planted + session committed). */
   onSignedIn?: (user: MinimalUserData) => void;
-  /** Central IdP apex for `openPasswordAtOxyAuth` (defaults to `CENTRAL_IDP_APEX`). */
-  idpApex?: string;
-  /**
-   * Registered OAuth redirect URI for this RP (exact match against
-   * `Application.redirectUris`). When set, wins over `returnUrl` /
-   * `location.origin` normalization in {@link openPasswordAtOxyAuth}.
-   */
-  authRedirectUri?: string | null;
   /**
    * QR device-flow FALLBACK poll interval in ms (default 12000). The primary
    * approval signal is the `/auth-session` socket's `auth_update` event (instant);
@@ -140,8 +124,8 @@ export interface AccountDialogControllerOptions {
    */
   socketFactory?: SocketIOFactory;
   /**
-   * Optional URL opener. When provided, `openPasswordAtOxyAuth` invokes it with
-   * the built URL in addition to returning it (web: `location.assign`; native:
+   * Optional URL opener. When provided, the controller invokes it to deep-link
+   * the Commons app for the QR handoff (web: `location.assign`; native:
    * `Linking.openURL`). Headless core never touches `window`/`Linking` itself.
    */
   openUrl?: (url: string) => void;
@@ -196,8 +180,6 @@ export class AccountDialogController {
   private readonly locale?: string;
   private readonly commitSession?: (session: SessionLoginResponse) => Promise<void>;
   private readonly onSignedIn?: (user: MinimalUserData) => void;
-  private readonly idpApex: string;
-  private readonly authRedirectUri: string | null;
   private readonly pollIntervalMs: number;
   private readonly openUrl?: (url: string) => void;
   private readonly canOpenApp?: (url: string) => Promise<boolean>;
@@ -247,8 +229,6 @@ export class AccountDialogController {
     this.locale = options.locale;
     this.commitSession = options.commitSession;
     this.onSignedIn = options.onSignedIn;
-    this.idpApex = options.idpApex ?? CENTRAL_IDP_APEX;
-    this.authRedirectUri = options.authRedirectUri ?? null;
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.openUrl = options.openUrl;
     this.canOpenApp = options.canOpenApp;
@@ -652,50 +632,6 @@ export class AccountDialogController {
     }
   }
 
-  /**
-   * Build (and, when an `openUrl` handler was supplied, open) the auth.oxy.so
-   * password sign-in URL. Password + 2FA are NOT in the SDK — they live at the
-   * IdP; this only hands off. Device-first: after login at the IdP the device
-   * session converges and the caller is woken via the device socket /
-   * `BroadcastChannel`, so the URL only needs to point at the IdP sign-in with
-   * the right return.
-   *
-   * @param params.returnUrl - Where the IdP returns after login. Defaults to the
-   *   current document URL on web (`globalThis.location.href`); pass explicitly
-   *   on native (no `location`).
-   * @param params.state - Optional opaque state echoed back on return.
-   * @returns The absolute auth.oxy.so sign-in URL.
-   */
-  async openPasswordAtOxyAuth(
-    params: { returnUrl?: string; state?: string; redirectUri?: string } = {},
-  ): Promise<string> {
-    const base = `https://auth.${this.idpApex}`;
-    const url = new URL('/login', base);
-    const rawRedirect =
-      params.redirectUri ??
-      this.authRedirectUri ??
-      params.returnUrl ??
-      currentLocationOrigin();
-    const redirectUri = rawRedirect ? normalizeOAuthRedirectUri(rawRedirect) : '';
-    if (redirectUri) {
-      url.searchParams.set('redirect_uri', redirectUri);
-    }
-    if (this.clientId) {
-      url.searchParams.set('client_id', this.clientId);
-    }
-    const state = params.state ?? (await generateOAuthState());
-    url.searchParams.set('state', state);
-    const { codeChallenge, codeVerifier } = await generatePkcePair();
-    url.searchParams.set('code_challenge', codeChallenge);
-    url.searchParams.set('code_challenge_method', 'S256');
-    if (!persistOAuthHandshake(state, codeVerifier)) {
-      throw new Error('Could not persist OAuth handshake for password sign-in');
-    }
-    const href = url.toString();
-    this.openUrl?.(href);
-    return href;
-  }
-
   // =========================================================================
   // Internal sign-in helpers
   // =========================================================================
@@ -960,14 +896,4 @@ export function createAccountDialogController(
   options: AccountDialogControllerOptions,
 ): AccountDialogController {
   return new AccountDialogController(options);
-}
-
-// ---------------------------------------------------------------------------
-// Local helpers
-// ---------------------------------------------------------------------------
-
-/** Current document origin on web; empty string where `location` is absent (native/SSR). */
-function currentLocationOrigin(): string {
-  const location = (globalThis as { location?: { origin?: string } }).location;
-  return typeof location?.origin === 'string' ? location.origin : '';
 }

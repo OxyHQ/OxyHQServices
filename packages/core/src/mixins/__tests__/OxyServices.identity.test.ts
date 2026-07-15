@@ -186,23 +186,6 @@ describe('OxyServices.identity', () => {
     });
   });
 
-  describe('linkPassword', () => {
-    it('POSTs /auth/link with the password method and sweeps cache', async () => {
-      makeRequestSpy.mockResolvedValue({ success: true, message: 'Password auth linked successfully' });
-
-      await oxy.linkPassword('nate@oxy.so', 'sup3r-secret');
-
-      expect(makeRequestSpy).toHaveBeenCalledWith(
-        'POST',
-        '/auth/link',
-        { type: 'password', email: 'nate@oxy.so', password: 'sup3r-secret' },
-        expect.objectContaining({ cache: false }),
-      );
-      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/users/me');
-      expect(clearEntrySpy).toHaveBeenCalledWith('GET:/auth/methods');
-    });
-  });
-
   describe('unlinkAuthMethod', () => {
     it('DELETEs /auth/link/:type and sweeps cache', async () => {
       makeRequestSpy.mockResolvedValue({ success: true, message: 'identity auth unlinked successfully' });
