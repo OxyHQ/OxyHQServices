@@ -152,6 +152,7 @@ describe('AccountDialogController — initial + views', () => {
     expect(snap.loading).toBe(false);
     expect(snap.switchingAccountId).toBeNull();
     expect(snap.signIn.phase).toBe('idle');
+    expect(snap.commonsAvailability).toBe('unknown');
   });
 
   it('setView / add / close move between views and notify subscribers', () => {
@@ -167,6 +168,19 @@ describe('AccountDialogController — initial + views', () => {
     expect(controller.getSnapshot().view).toBe('accounts');
 
     expect(seen).toEqual(['add', 'signin', 'accounts']);
+  });
+
+  it('startSignup moves to the signup view and notifies subscribers', () => {
+    const { controller } = makeHarness();
+    const seen: string[] = [];
+    controller.subscribe((s) => seen.push(s.view));
+
+    controller.startSignup();
+    expect(controller.getSnapshot().view).toBe('signup');
+    controller.close();
+    expect(controller.getSnapshot().view).toBe('accounts');
+
+    expect(seen).toEqual(['signup', 'accounts']);
   });
 
   it('getSnapshot returns a stable reference until a change occurs', () => {
@@ -627,7 +641,7 @@ describe('AccountDialogController — sign in with Oxy', () => {
   });
 });
 
-describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
+describe('AccountDialogController — Commons availability (canOpenApp)', () => {
   const START_HANDLE = {
     sessionToken: 'secret-tok',
     authorizeCode: 'AUTH-CODE',
@@ -669,6 +683,7 @@ describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
     expect(snap.view).toBe('qr');
     expect(snap.signIn.phase).toBe('waiting');
     expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    expect(snap.commonsAvailability).toBe('available');
     controller.cancelSignIn();
   });
 
@@ -683,6 +698,7 @@ describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
     expect(canOpenApp).toHaveBeenCalledWith('oxycommons://');
     expect(openUrl).not.toHaveBeenCalled();
     expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+    expect(controller.getSnapshot().commonsAvailability).toBe('unavailable');
     controller.cancelSignIn();
   });
 
@@ -695,10 +711,11 @@ describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
 
     expect(openUrl).not.toHaveBeenCalled();
     expect(controller.getSnapshot().signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    expect(controller.getSnapshot().commonsAvailability).toBe('unknown');
     controller.cancelSignIn();
   });
 
-  it('swallows a canOpenApp probe rejection and keeps the QR fallback', async () => {
+  it('swallows a canOpenApp probe rejection, keeps the QR fallback, and records unavailable', async () => {
     const openUrl = jest.fn();
     const canOpenApp = jest.fn().mockRejectedValue(new Error('probe boom'));
     const { controller } = makeController({ openUrl, canOpenApp });
@@ -708,7 +725,19 @@ describe('AccountDialogController — Commons deep-link (canOpenApp)', () => {
 
     expect(openUrl).not.toHaveBeenCalled();
     expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+    expect(controller.getSnapshot().commonsAvailability).toBe('unavailable');
     controller.cancelSignIn();
+  });
+
+  it('start() eagerly resolves commonsAvailability without requiring a QR flow', async () => {
+    const canOpenApp = jest.fn().mockResolvedValue(true);
+    const { controller } = makeController({ canOpenApp });
+
+    controller.start();
+    await flush();
+
+    expect(canOpenApp).toHaveBeenCalledWith('oxycommons://');
+    expect(controller.getSnapshot().commonsAvailability).toBe('available');
   });
 });
 

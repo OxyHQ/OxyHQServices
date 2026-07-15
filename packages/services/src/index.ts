@@ -233,6 +233,13 @@ export { LogoText } from './ui/components/logo/LogoText';
 export { default as ProfileButton } from './ui/components/ProfileButton';
 export type { ProfileButtonProps } from './ui/components/ProfileButton';
 
+// The account switcher/sign-in/sign-up chooser WITHOUT dialog chrome —
+// `OxyAccountDialog` wraps this in Bloom's `<Dialog>` for the normal in-app
+// surface; exported directly so a bare host (e.g. a future auth.oxy.so hub
+// page) can mount the exact same chooser with its own completion strategy.
+export { default as OxyAuthChooser } from './ui/components/OxyAuthChooser';
+export type { OxyAuthChooserProps } from './ui/components/OxyAuthChooser';
+
 // Unified switchable-accounts hook — the single source of everything the user
 // can switch into: device sign-ins AND linked graph accounts (owned orgs +
 // shared-with-you), deduped by account id and hydrated with real

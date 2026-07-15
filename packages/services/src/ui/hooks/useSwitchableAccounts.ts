@@ -23,6 +23,7 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
     error: null,
     switchingAccountId: null,
     signIn: { phase: 'idle', authorizeCode: null, qrPayload: null, expiresAt: null, error: null },
+    commonsAvailability: 'unknown',
 };
 
 /**

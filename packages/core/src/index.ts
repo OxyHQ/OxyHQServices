@@ -623,6 +623,7 @@ export type {
     AccountDialogControllerOptions,
     AccountDialogSnapshot,
     AccountDialogView,
+    CommonsAvailability,
     SignInFlowPhase,
     SignInFlowState,
 } from './session/accountDialogController';
