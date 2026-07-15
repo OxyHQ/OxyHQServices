@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft, QrCode, ShieldAlert } from "lucide-react"
-import type { SwitchableAccount } from "@oxyhq/core"
+import { ArrowLeft, KeyRound, QrCode, ShieldAlert } from "lucide-react"
+import { isOxyRpOrigin, type SwitchableAccount } from "@oxyhq/core"
 import type { SecurityAlert } from "@oxyhq/contracts"
 import { useOxy, useSwitchableAccounts } from "@oxyhq/services"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { getAvatarUrl } from "@/lib/oxy-api-client"
 import { buildPostLoginRedirect } from "@/lib/auth-utils"
+import { describePasskeyError } from "@/lib/passkey-error"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
 import { getOrCreateDeviceFingerprint } from "@/lib/device-fingerprint"
@@ -93,12 +94,22 @@ export function LoginForm({
     const {
         oxyServices,
         signInWithPassword,
+        signInWithPasskey,
         completeTwoFactorSignIn,
         revokeSuspiciousSignIn,
         switchToAccount,
         openAccountDialog,
     } = useOxy()
     const { setLogoSlot } = useLayoutContext()
+
+    // Passkey (WebAuthn) sign-in is only meaningful on a first-party Oxy web
+    // origin — a credential minted with `WEBAUTHN_RP_ID=oxy.so` can only be
+    // asserted from `oxy.so`, a subdomain, or a loopback dev host. On any other
+    // origin (or native/SSR) the browser would reject the ceremony, so we hide
+    // the affordance entirely. `isOxyRpOrigin()` reads `location` once and is
+    // stable for the page's lifetime, so it needs no reactive state.
+    const passkeyAvailable = isOxyRpOrigin()
+    const [passkeyPending, setPasskeyPending] = useState(false)
 
     const [localError, setLocalError] = useState<string | undefined>()
     const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
@@ -327,6 +338,30 @@ export function LoginForm({
         toast.error("Sign in failed", { description: message })
     }
 
+    /**
+     * Discoverable (usernameless) passkey sign-in. The SDK drives the WebAuthn
+     * assertion ceremony, verifies it, and commits the device-first session
+     * (token planted, `{deviceId, deviceSecret}` persisted, account activated) —
+     * exactly like the password path — so on success we reuse `redirectAfterLogin`.
+     * A dismissed/aborted browser prompt is a normal user action, not a crash:
+     * surface a calm inline message and let them retry.
+     */
+    async function handlePasskeySignIn() {
+        if (passkeyPending || rateLimitSeconds > 0) return
+        setLocalError(undefined)
+        setPasskeyPending(true)
+        try {
+            const deviceFingerprint = await getOrCreateDeviceFingerprint()
+            await signInWithPasskey({ deviceFingerprint: deviceFingerprint ?? undefined })
+            redirectAfterLogin()
+        } catch (err) {
+            const message = describePasskeyError(err)
+            setLocalError(message)
+            toast.error("Passkey sign-in failed", { description: message })
+            setPasskeyPending(false)
+        }
+    }
+
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         setLocalError(undefined)
@@ -459,8 +494,26 @@ export function LoginForm({
             className={className}
             footer={step === "identifier" ? (
                 <div className="flex flex-col gap-4">
-                    {/* Third option: cross-device "Sign in with Oxy" (QR). The user
-                        approves in their Oxy app on their phone — no password here. */}
+                    {/* Passkey option: a single tap runs the browser's WebAuthn
+                        prompt (discoverable credential — no username needed) and
+                        the SDK commits the session on success. First-party Oxy web
+                        origins only. */}
+                    {passkeyAvailable && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            className="w-full"
+                            loading={passkeyPending}
+                            disabled={passkeyPending || rateLimitSeconds > 0}
+                            onClick={() => { void handlePasskeySignIn() }}
+                        >
+                            <KeyRound className="size-4" />
+                            Sign in with a passkey
+                        </Button>
+                    )}
+                    {/* Cross-device "Sign in with Oxy" (QR). The user approves in
+                        their Oxy app on their phone — no password here. */}
                     <Button
                         type="button"
                         variant="outline"
