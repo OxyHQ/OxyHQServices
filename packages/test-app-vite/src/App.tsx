@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useAuth } from "@oxyhq/auth"
+import { useAuth } from "@oxyhq/services"
 import { AppSidebar, type Page } from "@/components/app-sidebar"
 import {
   SidebarProvider,

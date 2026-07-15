@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { useAuth, useWebOxy, useCurrentUser, useUpdateProfile, useUploadAvatar, useUserByUsername } from "@oxyhq/auth"
+import { useAuth, useCurrentUser, useUpdateProfile, useUploadAvatar, useUserByUsername } from "@oxyhq/services"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,8 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 
 export function ProfileDemo() {
-  const { isAuthenticated } = useAuth()
-  const { oxyServices } = useWebOxy()
+  const { isAuthenticated, oxyServices } = useAuth()
   const { data: currentUser, isLoading } = useCurrentUser()
   const updateProfile = useUpdateProfile()
   const uploadAvatar = useUploadAvatar()
@@ -43,7 +42,7 @@ export function ProfileDemo() {
       await updateProfile.mutateAsync({
         username: username || undefined,
         bio: bio || undefined,
-      } as any)
+      })
       toast.success("Profile updated")
     } catch (err) {
       toast.error("Failed to update profile: " + String(err))
@@ -95,8 +94,8 @@ export function ProfileDemo() {
               <div>
                 <p className="text-lg font-medium">{currentUser.username}</p>
                 <p className="text-sm text-muted-foreground">{currentUser.email}</p>
-                {(currentUser as any).bio && (
-                  <p className="mt-1 text-sm">{(currentUser as any).bio}</p>
+                {currentUser.bio && (
+                  <p className="mt-1 text-sm">{currentUser.bio}</p>
                 )}
               </div>
             </div>
@@ -228,12 +227,12 @@ export function ProfileDemo() {
           {lookedUpUser && !lookupLoading && (
             <div className="flex items-center gap-3 rounded-md border p-3">
               <Avatar>
-                <AvatarImage src={(lookedUpUser as any).avatar && oxyServices ? oxyServices.getFileDownloadUrl((lookedUpUser as any).avatar, 'thumb') : undefined} />
-                <AvatarFallback>{((lookedUpUser as any).username || "?")[0].toUpperCase()}</AvatarFallback>
+                <AvatarImage src={lookedUpUser.avatar && oxyServices ? oxyServices.getFileDownloadUrl(lookedUpUser.avatar, 'thumb') : undefined} />
+                <AvatarFallback>{(lookedUpUser.username || "?")[0].toUpperCase()}</AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-medium">{(lookedUpUser as any).username}</p>
-                <p className="text-sm text-muted-foreground">{(lookedUpUser as any).email}</p>
+                <p className="font-medium">{lookedUpUser.username}</p>
+                <p className="text-sm text-muted-foreground">{lookedUpUser.email}</p>
               </div>
             </div>
           )}
@@ -247,7 +246,7 @@ export function ProfileDemo() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
-{`import { useCurrentUser, useUpdateProfile, useUploadAvatar } from '@oxyhq/auth';
+{`import { useCurrentUser, useUpdateProfile, useUploadAvatar } from '@oxyhq/services';
 
 function Profile() {
   const { data: user } = useCurrentUser();

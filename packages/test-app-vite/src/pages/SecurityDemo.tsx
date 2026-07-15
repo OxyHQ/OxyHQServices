@@ -1,4 +1,4 @@
-import { useAuth, useSecurityActivity, usePrivacySettings, useUpdatePrivacySettings } from "@oxyhq/auth"
+import { useAuth, useSecurityActivity, usePrivacySettings, useUpdatePrivacySettings } from "@oxyhq/services"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
@@ -41,7 +41,7 @@ export function SecurityDemo() {
     }
   }
 
-  const activityItems = Array.isArray(activity) ? activity : (activity as any)?.events || []
+  const activityItems = activity?.data ?? []
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -61,19 +61,19 @@ export function SecurityDemo() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Event</TableHead>
-                  <TableHead>IP</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Severity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {activityItems.slice(0, 10).map((event: any, i: number) => (
-                  <TableRow key={event._id || i}>
+                {activityItems.slice(0, 10).map((event) => (
+                  <TableRow key={event.id}>
                     <TableCell className="font-medium text-sm">
-                      {event.eventType || event.type || event.action || "Unknown"}
+                      {event.eventType}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {event.ipAddress || event.ip || "—"}
+                    <TableCell className="text-sm text-muted-foreground">
+                      {event.eventDescription || "—"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {event.createdAt
@@ -83,8 +83,8 @@ export function SecurityDemo() {
                           : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={event.success !== false ? "default" : "destructive"}>
-                        {event.success !== false ? "OK" : "Failed"}
+                      <Badge variant={event.severity === "critical" || event.severity === "high" ? "destructive" : "default"}>
+                        {event.severity}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -110,7 +110,7 @@ export function SecurityDemo() {
             </div>
           ) : privacy ? (
             <div className="space-y-4">
-              {Object.entries(privacy as Record<string, any>)
+              {Object.entries(privacy)
                 .filter(([, value]) => typeof value === "boolean")
                 .map(([key, value]) => (
                   <div key={key} className="flex items-center justify-between">
@@ -122,7 +122,7 @@ export function SecurityDemo() {
                     </Label>
                     <Switch
                       id={key}
-                      checked={value as boolean}
+                      checked={Boolean(value)}
                       onCheckedChange={(checked) => handleToggle(key, checked)}
                       disabled={updatePrivacy.isPending}
                     />
@@ -142,7 +142,7 @@ export function SecurityDemo() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
-{`import { useSecurityActivity, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/auth';
+{`import { useSecurityActivity, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
 
 function Security() {
   const { data: activity } = useSecurityActivity();

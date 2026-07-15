@@ -1,4 +1,4 @@
-import { useAuth, useSessions, useUserDevices, useSwitchSession, useLogoutSession, useLogoutAll } from "@oxyhq/auth"
+import { useAuth, useSessions, useUserDevices, useSwitchSession, useLogoutSession, useLogoutAll } from "@oxyhq/services"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,8 +14,21 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 
+// `useUserDevices()` is typed loosely (`any[]`) by the SDK; this describes the
+// device fields this demo renders so the map callback is fully typed.
+interface DeviceInfo {
+  _id?: string
+  deviceId?: string
+  name?: string
+  deviceName?: string
+  platform?: string
+  os?: string
+  lastActive?: string
+  type?: string
+}
+
 export function SessionsDemo() {
-  const { isAuthenticated, activeSessionId } = useAuth()
+  const { isAuthenticated } = useAuth()
   const { data: sessions, isLoading: sessionsLoading } = useSessions()
   const { data: devices, isLoading: devicesLoading } = useUserDevices()
   const switchSession = useSwitchSession()
@@ -90,33 +103,33 @@ export function SessionsDemo() {
                 <TableRow>
                   <TableHead>Session ID</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
+                  <TableHead>Last Active</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sessions.map((session: any) => (
-                  <TableRow key={session.sessionId || session._id}>
+                {sessions.map((session) => (
+                  <TableRow key={session.sessionId}>
                     <TableCell className="font-mono text-xs">
-                      {(session.sessionId || session._id || "").substring(0, 12)}...
+                      {session.sessionId.substring(0, 12)}...
                     </TableCell>
                     <TableCell>
-                      {(session.sessionId || session._id) === activeSessionId ? (
+                      {session.isCurrent ? (
                         <Badge>Active</Badge>
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {session.createdAt ? new Date(session.createdAt).toLocaleDateString() : "—"}
+                      {session.lastActive ? new Date(session.lastActive).toLocaleDateString() : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        {(session.sessionId || session._id) !== activeSessionId && (
+                        {!session.isCurrent && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleSwitch(session.sessionId || session._id)}
+                            onClick={() => handleSwitch(session.sessionId)}
                             disabled={switchSession.isPending}
                           >
                             Switch
@@ -125,7 +138,7 @@ export function SessionsDemo() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleLogoutSession(session.sessionId || session._id)}
+                          onClick={() => handleLogoutSession(session.sessionId)}
                           disabled={logoutSession.isPending}
                         >
                           Logout
@@ -157,7 +170,7 @@ export function SessionsDemo() {
             </div>
           ) : devices && Array.isArray(devices) && devices.length > 0 ? (
             <div className="space-y-3">
-              {(devices as any[]).map((device: any) => (
+              {devices.map((device: DeviceInfo) => (
                 <div
                   key={device._id || device.deviceId}
                   className="flex items-center justify-between rounded-md border p-3"
@@ -186,7 +199,7 @@ export function SessionsDemo() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
-{`import { useSessions, useSwitchSession, useLogoutAll } from '@oxyhq/auth';
+{`import { useSessions, useSwitchSession, useLogoutAll } from '@oxyhq/services';
 
 function Sessions() {
   const { data: sessions } = useSessions();
