@@ -79,11 +79,6 @@ jest.mock('../../models/AuthChallenge', () => ({
   default: {},
 }));
 
-jest.mock('../../models/RecoveryCode', () => ({
-  __esModule: true,
-  default: {},
-}));
-
 jest.mock('../../models/Notification', () => ({
   __esModule: true,
   default: jest.fn(),

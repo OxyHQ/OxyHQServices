@@ -61,15 +61,14 @@ export function isValidUserColor(value: unknown): boolean {
 
 /**
  * Represents an authentication method linked to a user account.
- * Users can have multiple auth methods (identity, password, social) linked to the same account.
+ * An account may link an identity key and/or one or more passkeys (webauthn).
  */
 export interface AuthMethod {
-  type: 'identity' | 'password' | 'google' | 'apple' | 'github' | 'webauthn';
+  type: 'identity' | 'webauthn';
   linkedAt: Date;
   metadata?: {
     publicKey?: string;      // For identity type
-    email?: string;          // For password/social types
-    providerId?: string;     // For social types (Google ID, Apple ID, etc.)
+    email?: string;          // Optional contact email captured at link time
     credentialID?: string;   // For webauthn type — the passkey's base64url credential id
     name?: string;           // For webauthn type — the passkey's user-facing label
   };
@@ -80,11 +79,10 @@ export type AuthMethodType = AuthMethod['type'];
 /**
  * Canonical constructor for an {@link AuthMethod} entry.
  *
- * Every entry point that links an auth method (register, signup, social
- * sign-in, identity/password/social linking) stamps `linkedAt = new Date()`
- * and the provider `metadata` by hand. Centralising that here keeps the shape
- * identical across all of them and makes the linked-at semantics a single
- * source of truth.
+ * Every entry point that links an auth method (register, passkey registration,
+ * identity linking) stamps `linkedAt = new Date()` and the provider `metadata`
+ * by hand. Centralising that here keeps the shape identical across all of them
+ * and makes the linked-at semantics a single source of truth.
  */
 export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['metadata']): AuthMethod {
   return { type, linkedAt: new Date(), metadata };
@@ -125,7 +123,6 @@ export interface IUser extends Document {
    */
   hashedPhone?: string;
   publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
-  password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
   /**
@@ -200,12 +197,6 @@ export interface IUser extends Document {
   };
   automation?: {
     ownerId?: string;   // User ID of the human owner/creator
-  };
-  twoFactorAuth?: {
-    enabled: boolean;
-    secret?: string; // TOTP secret (encrypted)
-    backupCodes?: string[]; // Hashed backup codes
-    verifiedAt?: Date; // When 2FA was last verified
   };
   following?: mongoose.Types.ObjectId[];
   followers?: mongoose.Types.ObjectId[];
@@ -470,33 +461,22 @@ const UserSchema: Schema = new Schema(
       trim: true,
       select: true,
     },
-    password: {
-      type: String,
-      select: false,
-    },
     refreshToken: {
       type: String,
       default: null,
       select: false,
     },
-    twoFactorAuth: {
-      enabled: { type: Boolean, default: false },
-      secret: { type: String, select: false }, // TOTP secret
-      backupCodes: { type: [String], select: false, default: [] }, // Hashed backup codes
-      verifiedAt: { type: Date },
-    },
     authMethods: {
       type: [{
         type: {
           type: String,
-          enum: ['identity', 'password', 'google', 'apple', 'github', 'webauthn'],
+          enum: ['identity', 'webauthn'],
           required: true,
         },
         linkedAt: { type: Date, default: Date.now },
         metadata: {
           publicKey: { type: String },
           email: { type: String },
-          providerId: { type: String },
           credentialID: { type: String },
           name: { type: String },
         },

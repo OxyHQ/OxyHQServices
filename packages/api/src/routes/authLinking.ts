@@ -3,25 +3,20 @@
  *
  * Endpoints for linking multiple authentication methods to a single user account.
  * Allows users to:
- * - Link identity (publicKey) to existing password account
- * - Link password (email/password) to existing identity account
- * - Link social auth (Google, Apple, GitHub) to existing account
+ * - Link an identity (publicKey) to an existing account
  * - View and manage linked auth methods
+ * - Unlink an identity or an individual passkey (webauthn)
  */
 
 import { Router, type Response } from 'express';
-import { hashPassword, validatePasswordStrength } from '../utils/password.js';
 import { User, buildAuthMethod } from '../models/User.js';
-import type { AuthMethodType } from '../models/User.js';
 import { authMiddleware, type AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { BadRequestError, ConflictError, UnauthorizedError } from '../utils/error.js';
+import { BadRequestError, ConflictError } from '../utils/error.js';
 import { validate } from '../middleware/validate.js';
 import { linkAuthMethodSchema, unlinkTypeParams, unlinkWebauthnParams } from '../schemas/authLinking.schemas.js';
 import WebauthnCredential from '../models/WebauthnCredential.js';
-import socialAuthService from '../services/socialAuth.service.js';
-import type { SocialProfile } from '../services/socialAuth.service.js';
 import userCache from '../utils/userCache.js';
 import { buildUserDid } from '../services/did.service.js';
 import { buildAuthMethodEntries } from '../utils/authMethodEntries.js';
@@ -29,43 +24,18 @@ import { authMethodsResponseSchema } from '@oxyhq/contracts';
 
 const router = Router();
 
-type SocialAuthMethodType = 'google' | 'apple' | 'github';
-
-async function verifySocialLinkToken(type: SocialAuthMethodType, providerToken: unknown): Promise<SocialProfile> {
-  if (typeof providerToken !== 'string' || !providerToken.trim()) {
-    throw new BadRequestError('providerToken is required for social auth linking');
-  }
-
-  const safeProviderToken = providerToken.trim();
-  const profile = type === 'google'
-    ? await socialAuthService.verifyGoogleToken(safeProviderToken)
-    : type === 'apple'
-      ? await socialAuthService.verifyAppleToken(safeProviderToken)
-      : await socialAuthService.verifyGitHubCode(safeProviderToken);
-
-  if (!profile) {
-    throw new UnauthorizedError(`Invalid ${type} provider token`);
-  }
-
-  return profile;
-}
-
 /**
- * Count the account's distinct authentication methods: the identity key, a
- * password, each linked social provider, AND each registered passkey. Used by
- * the unlink guards to keep every account with at least ONE usable auth method
- * (removing the last would lock the user out).
+ * Count the account's distinct authentication methods: the identity key AND
+ * each registered passkey. Used by the unlink guards to keep every account with
+ * at least ONE usable auth method (removing the last would lock the user out).
  */
 function countAuthMethods(user: {
   publicKey?: string | null;
-  password?: string | null;
   authMethods?: Array<{ type: string }> | null;
 }): number {
   let count = 0;
   if (user.publicKey) count++;
-  if (user.password) count++;
   const methods = user.authMethods ?? [];
-  count += methods.filter((m) => ['google', 'apple', 'github'].includes(m.type)).length;
   count += methods.filter((m) => m.type === 'webauthn').length;
   return count;
 }
@@ -77,8 +47,7 @@ router.use(authMiddleware);
  * GET /api/auth/methods
  * Get the account DID and all linked authentication methods for the current
  * user, shaped to the `authMethodsResponseSchema` contract. Identity methods
- * carry their DID verification-method id (`#key-1`); password/social methods
- * carry none.
+ * carry their DID verification-method id (`#key-1`); passkeys carry none.
  */
 router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
@@ -86,15 +55,13 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
     throw new BadRequestError('User not authenticated');
   }
 
-  const user = await User.findById(userId).select('+password authMethods publicKey email createdAt').lean();
+  const user = await User.findById(userId).select('authMethods publicKey email createdAt').lean();
   if (!user) {
     throw new BadRequestError('User not found');
   }
 
   const methods = buildAuthMethodEntries({
     publicKey: user.publicKey,
-    email: user.email,
-    hasPassword: !!user.password,
     authMethods: user.authMethods,
     createdAt: user.createdAt,
   });
@@ -109,7 +76,7 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 /**
  * POST /api/auth/link
- * Link a new authentication method to the current user account
+ * Link an identity (publicKey) to the current user account.
  */
 router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
@@ -117,7 +84,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
     throw new BadRequestError('User not authenticated');
   }
 
-  const { type, publicKey, signature, timestamp, email, password, providerId, providerToken } = req.body;
+  const { type, publicKey, signature, timestamp } = req.body;
 
   // Validate type is a non-empty string to prevent NoSQL injection
   if (typeof type !== 'string' || !type.trim()) {
@@ -125,162 +92,65 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
   }
   const safeType = type.trim();
 
-  const user = await User.findById(userId).select('+password');
+  const user = await User.findById(userId);
   if (!user) {
     throw new BadRequestError('User not found');
   }
 
-  switch (safeType) {
-    case 'identity': {
-      // Link identity (publicKey) to account
-      if (!publicKey || !signature || !timestamp) {
-        throw new BadRequestError('publicKey, signature, and timestamp are required for identity linking');
-      }
-
-      // Validate publicKey is a non-empty string to prevent NoSQL injection
-      if (typeof publicKey !== 'string' || !publicKey.trim()) {
-        throw new BadRequestError('publicKey must be a non-empty string');
-      }
-      const safePublicKey = publicKey.trim();
-
-      // Check if publicKey is already used by another user
-      const existingUser = await User.findOne({ publicKey: safePublicKey }).select('_id').lean();
-      if (existingUser && existingUser._id.toString() !== userId.toString()) {
-        throw new ConflictError('This identity is already linked to another account');
-      }
-
-      // Verify signature proves ownership of the private key
-      const message = JSON.stringify({
-        action: 'link_identity',
-        userId: userId.toString(),
-        timestamp,
-      });
-
-      const isValid = SignatureService.verifySignature(message, signature, safePublicKey);
-      if (!isValid) {
-        throw new BadRequestError('Invalid signature - cannot verify identity ownership');
-      }
-
-      // Check timestamp is recent (within 5 minutes) and not in the future
-      const age = Date.now() - timestamp;
-      if (age > 5 * 60 * 1000 || age < 0) {
-        throw new BadRequestError('Signature expired or invalid timestamp - please try again');
-      }
-
-      // Link the identity
-      user.publicKey = safePublicKey;
-
-      // Add to authMethods array
-      if (!user.authMethods) {
-        user.authMethods = [];
-      }
-      const existingMethod = user.authMethods.find(m => m.type === 'identity');
-      if (!existingMethod) {
-        user.authMethods.push(buildAuthMethod('identity', { publicKey: safePublicKey }));
-      }
-
-      await user.save();
-      userCache.invalidate(userId.toString());
-      res.json({ success: true, message: 'Identity linked successfully' });
-      break;
-    }
-
-    case 'password': {
-      // Link password auth to account
-      if (!email || !password) {
-        throw new BadRequestError('email and password are required for password linking');
-      }
-
-      // Validate email and password are strings to prevent NoSQL injection
-      if (typeof email !== 'string' || typeof password !== 'string') {
-        throw new BadRequestError('email and password must be strings');
-      }
-      const safeEmail = email.trim().toLowerCase();
-
-      // Check if email is already used by another user
-      const existingUser = await User.findOne({ email: safeEmail }).select('_id').lean();
-      if (existingUser && existingUser._id.toString() !== userId.toString()) {
-        throw new ConflictError('This email is already linked to another account');
-      }
-
-      // Validate password strength
-      const passwordValidation = validatePasswordStrength(password);
-      if (!passwordValidation.valid) {
-        throw new BadRequestError(passwordValidation.errors[0] || 'Password does not meet security requirements');
-      }
-
-      // Hash password and update user
-      const hashedPassword = await hashPassword(password);
-      user.email = safeEmail;
-      user.password = hashedPassword;
-
-      // Add to authMethods array
-      if (!user.authMethods) {
-        user.authMethods = [];
-      }
-      const existingMethod = user.authMethods.find(m => m.type === 'password');
-      if (!existingMethod) {
-        user.authMethods.push(buildAuthMethod('password', { email: safeEmail }));
-      }
-
-      await user.save();
-      userCache.invalidate(userId.toString());
-      res.json({ success: true, message: 'Password auth linked successfully' });
-      break;
-    }
-
-    case 'google':
-    case 'apple':
-    case 'github': {
-      // Link social auth to account
-      if (!providerId) {
-        throw new BadRequestError('providerId is required for social auth linking');
-      }
-
-      // Validate providerId is a non-empty string to prevent NoSQL injection
-      if (typeof providerId !== 'string' || !providerId.trim()) {
-        throw new BadRequestError('providerId must be a non-empty string');
-      }
-      const safeProviderId = providerId.trim();
-      const verifiedProfile = await verifySocialLinkToken(safeType as SocialAuthMethodType, providerToken);
-      if (verifiedProfile.providerId !== safeProviderId) {
-        throw new BadRequestError('providerId does not match verified provider token');
-      }
-      const verifiedEmail = verifiedProfile.email?.trim().toLowerCase();
-
-      // Check if this social account is already linked to another user
-      // Use literal type values instead of user-controlled type to prevent injection
-      const existingUser = await User.findOne({
-        'authMethods.type': safeType,
-        'authMethods.metadata.providerId': safeProviderId,
-      }).select('_id').lean();
-      if (existingUser && existingUser._id.toString() !== userId.toString()) {
-        throw new ConflictError(`This ${safeType} account is already linked to another user`);
-      }
-
-      // Add to authMethods array
-      if (!user.authMethods) {
-        user.authMethods = [];
-      }
-      const existingMethod = user.authMethods.find(
-        m => m.type === safeType && m.metadata?.providerId === safeProviderId
-      );
-      if (!existingMethod) {
-        user.authMethods.push(buildAuthMethod(safeType as AuthMethodType, {
-          providerId: safeProviderId,
-          email: verifiedEmail,
-        }));
-      }
-
-      await user.save();
-      userCache.invalidate(userId.toString());
-      res.json({ success: true, message: `${safeType} auth linked successfully` });
-      break;
-    }
-
-    default:
-      throw new BadRequestError(`Unknown auth method type: ${safeType}`);
+  if (safeType !== 'identity') {
+    throw new BadRequestError(`Unknown auth method type: ${safeType}`);
   }
+
+  // Link identity (publicKey) to account
+  if (!publicKey || !signature || !timestamp) {
+    throw new BadRequestError('publicKey, signature, and timestamp are required for identity linking');
+  }
+
+  // Validate publicKey is a non-empty string to prevent NoSQL injection
+  if (typeof publicKey !== 'string' || !publicKey.trim()) {
+    throw new BadRequestError('publicKey must be a non-empty string');
+  }
+  const safePublicKey = publicKey.trim();
+
+  // Check if publicKey is already used by another user
+  const existingUser = await User.findOne({ publicKey: safePublicKey }).select('_id').lean();
+  if (existingUser && existingUser._id.toString() !== userId.toString()) {
+    throw new ConflictError('This identity is already linked to another account');
+  }
+
+  // Verify signature proves ownership of the private key
+  const message = JSON.stringify({
+    action: 'link_identity',
+    userId: userId.toString(),
+    timestamp,
+  });
+
+  const isValid = SignatureService.verifySignature(message, signature, safePublicKey);
+  if (!isValid) {
+    throw new BadRequestError('Invalid signature - cannot verify identity ownership');
+  }
+
+  // Check timestamp is recent (within 5 minutes) and not in the future
+  const age = Date.now() - timestamp;
+  if (age > 5 * 60 * 1000 || age < 0) {
+    throw new BadRequestError('Signature expired or invalid timestamp - please try again');
+  }
+
+  // Link the identity
+  user.publicKey = safePublicKey;
+
+  // Add to authMethods array
+  if (!user.authMethods) {
+    user.authMethods = [];
+  }
+  const existingMethod = user.authMethods.find(m => m.type === 'identity');
+  if (!existingMethod) {
+    user.authMethods.push(buildAuthMethod('identity', { publicKey: safePublicKey }));
+  }
+
+  await user.save();
+  userCache.invalidate(userId.toString());
+  res.json({ success: true, message: 'Identity linked successfully' });
 }));
 
 /**
@@ -301,7 +171,7 @@ router.delete('/link/webauthn/:credentialID', validate({ params: unlinkWebauthnP
 
   const { credentialID } = req.params;
 
-  const user = await User.findById(userId).select('+password');
+  const user = await User.findById(userId);
   if (!user) {
     throw new BadRequestError('User not found');
   }
@@ -330,8 +200,9 @@ router.delete('/link/webauthn/:credentialID', validate({ params: unlinkWebauthnP
 
 /**
  * DELETE /api/auth/link/:type
- * Unlink an authentication method from the current user account
- * Must keep at least one auth method
+ * Unlink an authentication method from the current user account.
+ * Must keep at least one auth method. Only `identity` is unlinkable by type —
+ * passkeys are per-credential (see the webauthn route above).
  */
 router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
@@ -340,12 +211,11 @@ router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandle
   }
 
   const { type } = req.params;
-  const validTypes = ['identity', 'password', 'google', 'apple', 'github'];
-  if (!validTypes.includes(type)) {
+  if (type !== 'identity') {
     throw new BadRequestError(`Invalid auth method type: ${type}`);
   }
 
-  const user = await User.findById(userId).select('+password');
+  const user = await User.findById(userId);
   if (!user) {
     throw new BadRequestError('User not found');
   }
@@ -357,34 +227,11 @@ router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandle
     throw new BadRequestError('Cannot unlink last authentication method - account would become inaccessible');
   }
 
-  switch (type) {
-    case 'identity':
-      if (!user.publicKey) {
-        throw new BadRequestError('No identity is linked to this account');
-      }
-      user.publicKey = undefined;
-      user.authMethods = user.authMethods?.filter(m => m.type !== 'identity');
-      break;
-
-    case 'password':
-      if (!user.password) {
-        throw new BadRequestError('No password is set for this account');
-      }
-      user.password = undefined;
-      user.authMethods = user.authMethods?.filter(m => m.type !== 'password');
-      // Keep email for contact purposes but remove auth capability
-      break;
-
-    case 'google':
-    case 'apple':
-    case 'github':
-      const methodIndex = user.authMethods?.findIndex(m => m.type === type);
-      if (methodIndex === undefined || methodIndex === -1) {
-        throw new BadRequestError(`No ${type} account is linked`);
-      }
-      user.authMethods?.splice(methodIndex, 1);
-      break;
+  if (!user.publicKey) {
+    throw new BadRequestError('No identity is linked to this account');
   }
+  user.publicKey = undefined;
+  user.authMethods = user.authMethods?.filter(m => m.type !== 'identity');
 
   await user.save();
   userCache.invalidate(userId.toString());

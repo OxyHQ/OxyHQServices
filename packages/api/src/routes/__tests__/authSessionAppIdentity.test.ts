@@ -145,10 +145,6 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-jest.mock('../socialAuth', () => ({
-  __esModule: true,
-  default: express.Router(),
-}));
 
 // auth.ts statically imports the AppGrant model (OAuth consent
 // grants); mock them so the real Mongoose schema does not run under the global

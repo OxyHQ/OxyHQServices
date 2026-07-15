@@ -159,10 +159,6 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-jest.mock('../socialAuth', () => ({
-  __esModule: true,
-  default: express.Router(),
-}));
 
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
