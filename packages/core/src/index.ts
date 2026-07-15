@@ -10,7 +10,7 @@
  * ```ts
  * import { OxyServices, oxyClient } from '@oxyhq/core';
  *
- * const user = await oxyClient.signIn(publicKey);
+ * const user = await oxyClient.getCurrentUser();
  * ```
  *
  * Every export below is NOMINAL — no `export *`, no barrels, no compat shims.
@@ -611,9 +611,10 @@ export type {
 
 // Headless controller for the unified account dialog. Framework-agnostic
 // state machine + subscribe/getSnapshot store (bind via `useSyncExternalStore`)
-// — no password/2FA logic (that lives at the IdP; `openPasswordAtOxyAuth` only
-// hands off). Reuses `SessionClient.switchAccount` / `oxyServices.switchToAccount`
-// for the uniform switch and the existing device-flow methods for sign-in.
+// — sign-in is passkey (WebAuthn) or the Commons QR / shared-keychain handoff;
+// password, social login, and 2FA were removed ecosystem-wide. Reuses
+// `SessionClient.switchAccount` / `oxyServices.switchToAccount` for the uniform
+// switch and the existing device-flow methods for sign-in.
 export {
     AccountDialogController,
     createAccountDialogController,

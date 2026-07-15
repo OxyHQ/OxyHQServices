@@ -243,7 +243,6 @@ export {
 } from './deviceBoot';
 
 export type {
-    LoginTwoFactorRequired,
     LoginSessionResult,
     LoginResult,
     SecurityAlert,

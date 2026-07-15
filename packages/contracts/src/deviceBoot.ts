@@ -1,10 +1,11 @@
 /**
  * First-party login result contract.
  *
- * SINGLE SOURCE OF TRUTH for the first-party password login result (2FA arm vs.
- * session arm). The API validates its OUTPUT against this schema; every consumer
- * (`@oxyhq/core`'s auth mixin) validates its INPUT against the same definition,
- * so producer and consumers cannot drift.
+ * SINGLE SOURCE OF TRUTH for the first-party login result (the session arm). The
+ * API validates its OUTPUT against this schema; every consumer (`@oxyhq/core`'s
+ * auth mixin) validates its INPUT against the same definition, so producer and
+ * consumers cannot drift. Sign-in is passkey (WebAuthn) or Commons handoff —
+ * password and 2FA were removed, so the only outcome is a completed session.
  *
  * The device transport is `deviceId` + `deviceSecret` + `POST /session/device/token`
  * (see `deviceSession.ts`). The legacy cookie/bootstrap/refresh-family lanes were
@@ -25,7 +26,7 @@
 import { z } from 'zod';
 
 /* -------------------------------------------------------------------------- */
-/*  First-party password login result (2FA arm | session arm)                 */
+/*  First-party login result (session arm)                                    */
 /* -------------------------------------------------------------------------- */
 
 /** One anomalous signal the server flagged on a sign-in (new device, location, …). */
@@ -47,19 +48,9 @@ export interface SecurityAlert {
 }
 
 /**
- * `POST /auth/login` when the account has 2FA enabled: a short-lived login
- * token to be presented at the 2FA challenge, and no session yet.
- */
-export interface LoginTwoFactorRequired {
-    twoFactorRequired: true;
-    loginToken: string;
-}
-
-/**
- * `POST /auth/login` when authentication completed in one step. Matches the
- * API's `SessionAuthResponse` EXACTLY (`buildSessionAuthResponse`). `user` is the
- * truncated session-user shape the login endpoint emits (NOT the full
- * `userResponseSchema`).
+ * A successful sign-in. Matches the API's `SessionAuthResponse` EXACTLY
+ * (`buildSessionAuthResponse`). `user` is the truncated session-user shape the
+ * sign-in endpoints emit (NOT the full `userResponseSchema`).
  */
 export interface LoginSessionResult {
     sessionId: string;
@@ -87,13 +78,8 @@ export interface LoginSessionResult {
     };
 }
 
-/** The discriminated outcome of `POST /auth/login`. */
-export type LoginResult = LoginTwoFactorRequired | LoginSessionResult;
-
-const loginTwoFactorRequiredSchema = z.object({
-    twoFactorRequired: z.literal(true),
-    loginToken: z.string(),
-});
+/** The outcome of a successful sign-in — always a completed session. */
+export type LoginResult = LoginSessionResult;
 
 const securityAlertSchema: z.ZodType<SecurityAlert> = z.object({
     message: z.string(),
@@ -120,7 +106,4 @@ const loginSessionResultSchema = z.object({
     }),
 });
 
-export const loginResultSchema: z.ZodType<LoginResult> = z.union([
-    loginTwoFactorRequiredSchema,
-    loginSessionResultSchema,
-]);
+export const loginResultSchema: z.ZodType<LoginResult> = loginSessionResultSchema;

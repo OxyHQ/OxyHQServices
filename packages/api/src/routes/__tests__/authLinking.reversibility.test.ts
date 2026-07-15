@@ -21,7 +21,6 @@ const USER_ID = '507f1f77bcf86cd799439011';
 interface MockUserDoc {
   _id: string;
   email?: string;
-  password?: string;
   publicKey?: string;
   createdAt: Date;
   authMethods: Array<{ type: string; linkedAt: Date; metadata?: Record<string, unknown> }>;
@@ -35,6 +34,7 @@ const mockWacDeleteOne = jest.fn();
 
 function selectable(doc: unknown) {
   return {
+    select: () => selectable(doc),
     lean: () => Promise.resolve(doc),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(doc).then(resolve, reject),
@@ -51,7 +51,7 @@ jest.mock('../../middleware/auth', () => ({
 jest.mock('../../models/User', () => ({
   __esModule: true,
   User: {
-    findById: () => ({ select: () => selectable(mockUserDoc) }),
+    findById: () => selectable(mockUserDoc),
     findOne: () => ({ select: () => ({ lean: () => Promise.resolve(null) }) }),
   },
   buildAuthMethod: (type: string, metadata?: Record<string, unknown>) => ({ type, linkedAt: new Date(), metadata }),
@@ -61,8 +61,6 @@ jest.mock('../../utils/userCache', () => ({
   __esModule: true,
   default: { invalidate: (...args: unknown[]) => mockInvalidate(...args) },
 }));
-
-jest.mock('../../services/socialAuth.service', () => ({ __esModule: true, default: {} }));
 
 jest.mock('../../models/WebauthnCredential', () => ({
   __esModule: true,
@@ -127,10 +125,12 @@ beforeEach(() => {
   mockUserDoc = {
     _id: USER_ID,
     email: 'nate@oxy.so',
-    password: 'hashed-password',
     publicKey: undefined,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    authMethods: [{ type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') }],
+    // Custodial baseline: a passkey-only account (no identity key). Keeping one
+    // passkey here means the identity link/unlink round trip is not blocked by
+    // the "keep ≥1 auth method" guard when the identity is later removed.
+    authMethods: [{ type: 'webauthn', linkedAt: new Date('2026-01-01T00:00:00.000Z'), metadata: { credentialID: 'baseline-passkey' } }],
     save: jest.fn().mockResolvedValue(undefined),
   };
   mockWacFindOne.mockResolvedValue({ _id: 'wac-1', credentialID: 'passkey-1', userId: USER_ID });
@@ -189,9 +189,10 @@ describe('identity link/unlink reversibility', () => {
 
 describe('DELETE /auth/link/webauthn/:credentialID (keep ≥1 auth method)', () => {
   it('unlinks a passkey when other auth methods remain (removes row + credential + invalidates cache)', async () => {
-    // password + one passkey → two methods; unlinking the passkey is allowed.
+    // identity + one passkey → two methods; unlinking the passkey is allowed.
+    mockUserDoc.publicKey = ec.genKeyPair().getPublic('hex');
     mockUserDoc.authMethods = [
-      { type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'identity', linkedAt: new Date('2026-01-01T00:00:00.000Z'), metadata: { publicKey: mockUserDoc.publicKey } },
       { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1', name: 'Laptop' } },
     ];
 
@@ -205,8 +206,7 @@ describe('DELETE /auth/link/webauthn/:credentialID (keep ≥1 auth method)', () 
   });
 
   it('refuses to unlink the LAST auth method — a passkey-only account (no write, no delete)', async () => {
-    // The passkey is the ONLY auth method: no password, no publicKey, no social.
-    mockUserDoc.password = undefined;
+    // The passkey is the ONLY auth method: no publicKey.
     mockUserDoc.publicKey = undefined;
     mockUserDoc.authMethods = [
       { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1', name: 'Laptop' } },
@@ -221,8 +221,9 @@ describe('DELETE /auth/link/webauthn/:credentialID (keep ≥1 auth method)', () 
   });
 
   it('rejects unlinking a passkey the account does not own (404-style 400)', async () => {
+    mockUserDoc.publicKey = ec.genKeyPair().getPublic('hex');
     mockUserDoc.authMethods = [
-      { type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'identity', linkedAt: new Date('2026-01-01T00:00:00.000Z'), metadata: { publicKey: mockUserDoc.publicKey } },
       { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1' } },
     ];
     mockWacFindOne.mockResolvedValue(null);
@@ -239,7 +240,7 @@ describe('GET /auth/methods contract (B4)', () => {
     mockUserDoc.publicKey = ec.genKeyPair().getPublic('hex');
     mockUserDoc.authMethods = [
       { type: 'identity', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { publicKey: mockUserDoc.publicKey } },
-      { type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'webauthn', linkedAt: new Date('2026-01-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1', name: 'Laptop' } },
     ];
 
     const res = await request(server, 'GET', '/auth/methods');
@@ -248,10 +249,10 @@ describe('GET /auth/methods contract (B4)', () => {
     expect(res.body.did).toBe(buildUserDid(USER_ID));
     const methods = res.body.methods as Array<{ type: string; verificationMethodId?: string }>;
     const identity = methods.find((m) => m.type === 'identity');
-    const password = methods.find((m) => m.type === 'password');
+    const passkey = methods.find((m) => m.type === 'webauthn');
     expect(identity?.verificationMethodId).toBe('#key-1');
-    expect(password).toBeDefined();
-    expect(password?.verificationMethodId).toBeUndefined();
+    expect(passkey).toBeDefined();
+    expect(passkey?.verificationMethodId).toBeUndefined();
     // The legacy free-form `identifier` field is gone — the response is exactly
     // the `authMethodsResponseSchema` shape.
     expect((methods[0] as Record<string, unknown>).identifier).toBeUndefined();

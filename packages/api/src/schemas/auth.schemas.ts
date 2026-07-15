@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import { isValidDisplayName } from '../utils/displayNameSanitize';
 import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN } from '../utils/username';
-
-const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
 
 const deviceIdField = z.string().trim().min(1).max(128).optional();
 
@@ -18,49 +15,6 @@ const usernameField = z
   .min(3)
   .max(30)
   .regex(USERNAME_PATTERN, INVALID_USERNAME_MESSAGE);
-
-// POST /auth/signup
-export const signupSchema = z.object({
-  email: z.string().trim().email(),
-  username: usernameField,
-  password: z.string().min(8),
-  name: z.object({
-    first: z.string().trim().optional(),
-    last: z.string().trim().optional(),
-  }).optional(),
-  deviceName: z.string().trim().optional(),
-  deviceFingerprint: z.string().trim().optional(),
-  deviceId: deviceIdField,
-}).superRefine((data, ctx) => {
-  // Native users must supply a clean display name (letters/spaces/apostrophe
-  // only). Federated names are stripped silently elsewhere; native names are
-  // rejected with a 400 so the user fixes them at the source.
-  if (typeof data.name?.first === 'string' && !isValidDisplayName(data.name.first)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['name', 'first'],
-      message: INVALID_NAME_MESSAGE,
-    });
-  }
-  if (typeof data.name?.last === 'string' && !isValidDisplayName(data.name.last)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['name', 'last'],
-      message: INVALID_NAME_MESSAGE,
-    });
-  }
-});
-
-// POST /auth/login
-export const loginSchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-  password: z.string().min(1),
-  deviceName: z.string().trim().optional(),
-  deviceFingerprint: z.string().trim().optional(),
-  deviceId: deviceIdField,
-});
 
 // POST /auth/register (public key)
 export const registerPublicKeySchema = z.object({
@@ -85,26 +39,6 @@ export const verifyChallengeSchema = z.object({
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
   deviceId: deviceIdField,
-});
-
-// POST /auth/recover/request
-export const recoverRequestSchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-});
-
-// POST /auth/recover/verify
-export const recoverVerifySchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-  code: z.string().trim().min(1),
-});
-
-// POST /auth/recover/reset
-export const recoverResetSchema = z.object({
-  password: z.string().min(8),
 });
 
 // GET /auth/check-username/:username

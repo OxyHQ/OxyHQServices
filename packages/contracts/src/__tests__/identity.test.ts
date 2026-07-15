@@ -365,13 +365,16 @@ describe('authMethodEntrySchema / authMethodsResponseSchema', () => {
         expect(parsed?.verificationMethodId).toBe('did:web:oxy.so:u:1#key-1');
     });
 
-    it('accepts a password method with no verificationMethodId', () => {
+    it('accepts a webauthn method with no verificationMethodId', () => {
         const parsed = safeParseContract(authMethodEntrySchema, {
-            type: 'password',
+            type: 'webauthn',
             linkedAt: '2026-06-26T12:00:00.000Z',
+            credentialId: 'cred_abc',
+            name: 'MacBook Touch ID',
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.verificationMethodId).toBeUndefined();
+        expect(parsed?.credentialId).toBe('cred_abc');
     });
 
     it('rejects an unknown auth-method type', () => {
@@ -391,7 +394,7 @@ describe('authMethodEntrySchema / authMethodsResponseSchema', () => {
                     linkedAt: '2026-06-26T12:00:00.000Z',
                     verificationMethodId: 'did:web:oxy.so:u:1#key-1',
                 },
-                { type: 'google', linkedAt: '2026-06-26T12:01:00.000Z' },
+                { type: 'webauthn', linkedAt: '2026-06-26T12:01:00.000Z', credentialId: 'cred_abc', name: 'Passkey' },
             ],
         };
         const parsed = safeParseContract(authMethodsResponseSchema, response);

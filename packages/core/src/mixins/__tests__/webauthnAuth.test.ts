@@ -3,7 +3,7 @@
  * (`webauthnRegisterOptions` / `webauthnRegisterVerify` /
  * `webauthnLoginOptions` / `webauthnLoginVerify`).
  *
- * Stubs `makeRequest` (HTTP-mock style, like `passwordSignIn.test.ts`) and
+ * Stubs `makeRequest` (HTTP-mock style) and
  * asserts: each method hits the right endpoint with the right body; the opaque
  * ceremony `response` is forwarded verbatim; the login/verify + register/verify
  * (signup) paths parse the login contract and plant the access token on the

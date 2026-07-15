@@ -13,8 +13,6 @@ import { AuthLayout } from "@/src/pages/layout"
 import { LoginPage } from "@/src/pages/login"
 import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
-import { RecoverPage } from "@/src/pages/recover"
-import { SocialCallbackPage } from "@/src/pages/social-callback"
 import { HubSyncPage } from "@/src/pages/hub-sync"
 import "@/app/globals.css"
 
@@ -60,11 +58,9 @@ function App() {
                                 <Route path="/login" element={<LoginPage />} />
                                 <Route path="/signup" element={<SignUpPage />} />
                                 <Route path="/authorize" element={<AuthorizePage />} />
-                                <Route path="/recover" element={<RecoverPage />} />
                                 <Route path="/auth/login" element={<LoginPage />} />
                                 <Route path="/auth/signup" element={<SignUpPage />} />
                                 <Route path="/auth/authorize" element={<AuthorizePage />} />
-                                <Route path="/auth/recover" element={<RecoverPage />} />
                             </Route>
 
                             {/* Account management lives on accounts.oxy.so — the IdP no longer
@@ -75,7 +71,6 @@ function App() {
                             <Route path="/settings/sessions" element={<ExternalRedirect url="https://accounts.oxy.so/sessions" />} />
 
                             {/* Callback routes (no layout) */}
-                            <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
                             <Route path="/sync" element={<HubSyncPage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />

@@ -250,7 +250,6 @@ const OxyAccountDialog: React.FC = () => {
             handlers={handlers}
             onSignInWithOxy={() => void controller.signInWithOxy()}
             onScanQr={() => void controller.showQr()}
-            onUsePassword={() => void controller.openPasswordAtOxyAuth()}
             onSignInWithPasskey={passkeyAvailable ? () => void handleSignInWithPasskey() : undefined}
             passkeyPending={passkeyPending}
             passkeyError={passkeyError}
@@ -447,7 +446,6 @@ interface SignInViewProps {
   handlers: OxyAccountDialogHandlers;
   onSignInWithOxy: () => void;
   onScanQr: () => void;
-  onUsePassword: () => void;
   /** When present, offer a "Sign in with a passkey" button (first-party Oxy web only). */
   onSignInWithPasskey?: () => void;
   passkeyPending: boolean;
@@ -461,7 +459,6 @@ const SignInView: React.FC<SignInViewProps> = ({
   handlers,
   onSignInWithOxy,
   onScanQr,
-  onUsePassword,
   onSignInWithPasskey,
   passkeyPending,
   passkeyError,
@@ -508,12 +505,6 @@ const SignInView: React.FC<SignInViewProps> = ({
     <Button variant="secondary" onPress={onScanQr} style={styles.secondaryButton}>
       {t('accountSwitcher.scanQr') || 'Scan a QR from another device'}
     </Button>
-
-    <Pressable onPress={onUsePassword} accessibilityRole="button" style={styles.passwordLink}>
-      <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>
-        Use a password instead
-      </Text>
-    </Pressable>
   </View>
 );
 
@@ -737,11 +728,6 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 14,
     marginTop: 10,
-  },
-  passwordLink: {
-    alignSelf: 'center',
-    paddingVertical: 10,
-    marginTop: 12,
   },
   dividerRow: {
     flexDirection: 'row',

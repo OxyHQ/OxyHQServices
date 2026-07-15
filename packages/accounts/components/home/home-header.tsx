@@ -40,7 +40,6 @@ export function HomeHeader({
   const hasPlayedRef = useRef(false);
 
   const chips = useMemo(() => [
-    { label: t('home.searchChips.password'), query: 'password' },
     { label: t('home.searchChips.devices'), query: 'devices' },
     { label: t('home.searchChips.security'), query: 'security' },
     { label: t('home.searchChips.activity'), query: 'activity' },

@@ -108,8 +108,6 @@ export async function buildExportBundle(userId: string): Promise<ExportBundleRes
 
   const authMethods = buildAuthMethodEntries({
     publicKey: user.publicKey,
-    email: user.email,
-    hasPassword: (user.authMethods ?? []).some((method) => method?.type === 'password'),
     authMethods: user.authMethods,
     createdAt: user.createdAt,
   });

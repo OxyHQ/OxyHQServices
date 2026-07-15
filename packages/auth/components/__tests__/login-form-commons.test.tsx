@@ -1,9 +1,9 @@
 /**
- * The login form surfaces a THIRD sign-in option — "Sign in with Oxy" — on the
- * identifier step, alongside the password steps and the social buttons.
- * Selecting it now opens the shared services `OxyAccountDialog` (QR / Commons
- * device-flow handoff) via `useOxy().openAccountDialog('signin')`, replacing the
- * IdP's former bespoke inline QR step.
+ * The login form surfaces a "Sign in with Oxy" option on the identifier step,
+ * alongside the passkey + security-key affordances. Selecting it opens the
+ * shared services `OxyAccountDialog` (QR / Commons device-flow handoff) via
+ * `useOxy().openAccountDialog('signin')`, replacing the IdP's former bespoke
+ * inline QR step.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { act } from "react"

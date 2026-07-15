@@ -365,15 +365,15 @@ export type DomainVerificationInstructions = z.infer<
 
 /**
  * One linked authentication method. Mirrors a `User.authMethods[]` entry.
- * `verificationMethodId` is present for `identity` methods (a key) and absent
- * for `password`/social methods, linking the auth method to its DID
- * verification-method fragment. For `webauthn` methods `credentialId` identifies
- * the specific passkey (one entry per registered credential) and `name` is its
- * user-facing label; a passkey is NOT a DID verification method, so it carries
- * no `verificationMethodId` (a passkey-only account stays custodial).
+ * `verificationMethodId` is present for `identity` methods (a key), linking the
+ * auth method to its DID verification-method fragment. For `webauthn` methods
+ * `credentialId` identifies the specific passkey (one entry per registered
+ * credential) and `name` is its user-facing label; a passkey is NOT a DID
+ * verification method, so it carries no `verificationMethodId` (a passkey-only
+ * account stays custodial).
  */
 export interface AuthMethodEntry {
-    type: 'identity' | 'password' | 'google' | 'apple' | 'github' | 'webauthn';
+    type: 'identity' | 'webauthn';
     linkedAt: string | Date;
     verificationMethodId?: string;
     credentialId?: string;
@@ -381,7 +381,7 @@ export interface AuthMethodEntry {
 }
 
 export const authMethodEntrySchema: z.ZodType<AuthMethodEntry> = z.object({
-    type: z.enum(['identity', 'password', 'google', 'apple', 'github', 'webauthn']),
+    type: z.enum(['identity', 'webauthn']),
     linkedAt: z.union([z.string(), z.date()]),
     verificationMethodId: z.string().optional(),
     credentialId: z.string().optional(),

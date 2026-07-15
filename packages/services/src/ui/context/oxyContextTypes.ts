@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccountInput, ClientSession, AccountDialogController, AccountDialogView, ApiError, SessionClient } from '@oxyhq/core';
-import type { SecurityAlert } from '@oxyhq/contracts';
 import type { UseFollowHook } from '../hooks/useFollow.types';
 import type { useLanguageManagement } from '../hooks/useLanguageManagement';
 import type { RouteName } from '../navigation/routes';
@@ -40,19 +39,6 @@ export interface OxyContextState {
   getPublicKey: () => Promise<string | null>;
 
   signIn: (publicKey: string, deviceName?: string) => Promise<User>;
-
-  signInWithPassword: (
-    identifier: string,
-    password: string,
-    opts?: { deviceName?: string; deviceFingerprint?: string },
-  ) => Promise<PasswordSignInResult>;
-
-  completeTwoFactorSignIn: (params: {
-    loginToken: string;
-    token?: string;
-    backupCode?: string;
-    deviceName?: string;
-  }) => Promise<{ securityAlert?: SecurityAlert }>;
 
   /**
    * Sign in with a passkey (WebAuthn). With no `username` this is the
@@ -131,13 +117,6 @@ export interface OxyContextState {
   refreshAccounts: () => Promise<void>;
   createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
 }
-
-/**
- * Result of {@link OxyContextState.signInWithPassword}.
- */
-export type PasswordSignInResult =
-  | { status: 'ok'; securityAlert?: SecurityAlert }
-  | { status: '2fa_required'; loginToken: string };
 
 export interface OxyContextProviderProps {
   children: ReactNode;

@@ -44,7 +44,6 @@ const controller = {
   signInWithOxy: jest.fn(),
   setView: jest.fn(),
   cancelSignIn: jest.fn(),
-  openPasswordAtOxyAuth: jest.fn(() => 'https://auth.oxy.so/login'),
 };
 
 const closeAccountDialog = jest.fn();

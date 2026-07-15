@@ -27,7 +27,6 @@ import {
   logger as loggerUtil,
   syncHubAfterSignIn,
 } from '@oxyhq/core';
-import type { SecurityAlert } from '@oxyhq/contracts';
 import {
   registerAccountDialogControls,
   notifyAccountDialogVisibility,
@@ -59,7 +58,6 @@ import {
 } from '../session';
 import type {
   OxyContextState,
-  PasswordSignInResult,
   OxyContextProviderProps,
   CommitInput,
 } from './oxyContextTypes';
@@ -74,7 +72,7 @@ import {
 import { queryKeys } from '../hooks/queries/queryKeys';
 import { useOxyAccountGraph } from './useOxyAccountGraph';
 
-export type { OxyContextState, PasswordSignInResult, OxyContextProviderProps } from './oxyContextTypes';
+export type { OxyContextState, OxyContextProviderProps } from './oxyContextTypes';
 
 const OxyContext = createContext<OxyContextState | null>(null);
 
@@ -623,7 +621,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       oxyServices,
       sessionClient,
       clientId,
-      authRedirectUri,
       locale: currentLanguage,
       // Same statically-injected `io` as the SessionClient: gives the QR flow an
       // instant `/auth-session` `auth_update` wake instead of a slow poll.
@@ -676,72 +673,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   useEffect(() => {
     notifyAccountDialogVisibility(accountDialogOpen);
   }, [accountDialogOpen]);
-
-  // Keyless password sign-in: username/email + password.
-  const signInWithPassword = useCallback(
-    async (
-      identifier: string,
-      password: string,
-      opts?: { deviceName?: string; deviceFingerprint?: string },
-    ): Promise<PasswordSignInResult> => {
-      const persisted = await authStore.load();
-      const result = await oxyServices.passwordSignIn(identifier, password, {
-        deviceName: opts?.deviceName,
-        deviceFingerprint: opts?.deviceFingerprint,
-        deviceId: persisted?.deviceId,
-      });
-      if ('twoFactorRequired' in result) {
-        return { status: '2fa_required', loginToken: result.loginToken };
-      }
-      // `passwordSignIn` already planted the access token on the session arm.
-      await commitSession(
-        {
-          sessionId: result.sessionId,
-          accessToken: result.accessToken,
-          deviceSecret: result.deviceSecret,
-          deviceId: result.deviceId,
-          expiresAt: result.expiresAt,
-          userId: result.user.id,
-          user: result.user,
-        },
-        { activate: true, hubSync: true },
-      );
-      return { status: 'ok', ...(result.securityAlert ? { securityAlert: result.securityAlert } : {}) };
-    },
-    [oxyServices, commitSession],
-  );
-
-  const completeTwoFactorSignIn = useCallback(
-    async (params: {
-      loginToken: string;
-      token?: string;
-      backupCode?: string;
-      deviceName?: string;
-    }): Promise<{ securityAlert?: SecurityAlert }> => {
-      const persisted = await authStore.load();
-      const result = await oxyServices.completeTwoFactorSignIn({
-        loginToken: params.loginToken,
-        token: params.token,
-        backupCode: params.backupCode,
-        deviceName: params.deviceName,
-        deviceId: persisted?.deviceId,
-      });
-      await commitSession(
-        {
-          sessionId: result.sessionId,
-          accessToken: result.accessToken,
-          deviceSecret: result.deviceSecret,
-          deviceId: result.deviceId,
-          expiresAt: result.expiresAt,
-          userId: result.user.id,
-          user: result.user,
-        },
-        { activate: true, hubSync: true },
-      );
-      return { securityAlert: result.securityAlert };
-    },
-    [oxyServices, commitSession],
-  );
 
   // ── Passkey (WebAuthn) ─────────────────────────────────────────────────────
   // Web-only sign-in / registration via the browser WebAuthn ceremony. The fixed
@@ -968,8 +899,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       hasIdentity,
       getPublicKey,
       signIn,
-      signInWithPassword,
-      completeTwoFactorSignIn,
       signInWithPasskey,
       registerWithPasskey,
       addPasskey,
@@ -1024,8 +953,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       hasIdentity,
       getPublicKey,
       signIn,
-      signInWithPassword,
-      completeTwoFactorSignIn,
       signInWithPasskey,
       registerWithPasskey,
       addPasskey,
@@ -1098,8 +1025,6 @@ const LOADING_STATE: OxyContextState = {
   hasIdentity: () => Promise.resolve(false),
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),
-  signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
-  completeTwoFactorSignIn: () => rejectMissingProvider<{ securityAlert?: SecurityAlert }>(),
   signInWithPasskey: () => rejectMissingProvider<void>(),
   registerWithPasskey: () => rejectMissingProvider<void>(),
   addPasskey: () => rejectMissingProvider<void>(),

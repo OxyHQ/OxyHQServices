@@ -53,7 +53,7 @@ const OXY_IDENTITY_APEX = 'oxy.so';
 export type IdentityRecordType = OxySignedRecordType;
 
 /** Auth-method types that can be unlinked via {@link OxyServicesIdentityMixin}. */
-export type UnlinkableAuthMethodType = 'identity' | 'password' | 'google' | 'apple' | 'github';
+export type UnlinkableAuthMethodType = 'identity' | 'webauthn';
 
 /**
  * Result of a link/unlink auth-method mutation (`POST /auth/link`,
@@ -200,28 +200,6 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
           { cache: false },
         );
         this._invalidateIdentityCaches(userId);
-        return result;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Link password authentication to the current account. Adds a `password`
-     * auth method (does not remove existing methods).
-     *
-     * @param email - The email to associate with password auth.
-     * @param password - The new password (server enforces strength rules).
-     */
-    async linkPassword(email: string, password: string): Promise<LinkAuthMethodResult> {
-      try {
-        const result = await this.makeRequest<LinkAuthMethodResult>(
-          'POST',
-          '/auth/link',
-          { type: 'password', email, password },
-          { cache: false },
-        );
-        this._invalidateIdentityCaches(this.getCurrentUserId());
         return result;
       } catch (error) {
         throw this.handleError(error);
