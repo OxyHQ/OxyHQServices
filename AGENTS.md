@@ -122,6 +122,9 @@ packages/
   inbox/                            Inbox app
   test-app-expo/                    Expo test/playground app
   expo-splash/    @oxyhq/expo-splash
+  app-preset/     @oxyhq/app-preset Shared Expo config plugin + Metro/Babel/CSS/ESLint/tsconfig bases for every Oxy app
+  create-oxy-app/ create-oxy-app    `bun create oxy-app` scaffolder — generates the canonical packages/frontend+backend+shared-types monorepo
+  ship/           @oxyhq/ship       oxy-ship CLI — publishes Expo OTA updates to the Oxy Updates service
 ```
 
 **Dependency graph:**
@@ -452,6 +455,18 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 - `rl:auth:session-approve-info:`, `rl:auth:session-authorize-signed:` — Commons QR handoff endpoints
 - `rl:identity:export:` (5/hr — signed data export), `rl:identity:domainreq:`, `rl:identity:domainverify:` — domain verification
 - `rl:civic:attest:` (real-life QR attestation), `rl:civic:validate:` (jury vote submit), `rl:civic:vouch:` (personhood vouch/withdraw), `rl:civic:credential:` (credential issue/revoke)
+- `rl:updates:manifest:` (public expo-updates manifest poll), `rl:updates:publish:`, `rl:updates:read:` — Oxy Updates admin surface
+
+## Oxy Updates — self-hosted OTA (api + ship + console)
+
+Self-hosted `expo-updates`-protocol OTA server, namespaced entirely under `/updates/v1` (`packages/api/src/server.ts`) so it never clashes with the rest of the API.
+
+- **Public manifest endpoint** (`packages/api/src/routes/updates.ts`): `GET /updates/v1/apps/:clientId/manifest` — no auth, no CSRF (mounted before the CSRF group); `:clientId` is an `ApplicationCredential.publicKey` (`oxy_dk_…`). Resolves `(channel, runtimeVersion, platform)` from expo-updates request headers and returns a signed `multipart/mixed` manifest or a `noUpdateAvailable` directive via `manifest.service.ts`.
+- **Admin surface** (`packages/api/src/routes/updatesAdmin.ts`): channel/publish/rollback management, gated by the `Application`/role permission system (not a separate auth scheme).
+- **Models** (`packages/api/src/models/`): `AppUpdate`, `UpdateAsset`, `UpdateChannel`.
+- **Services** (`packages/api/src/services/updates/`): `manifest.service.ts`, `publish.service.ts`, `signing.service.ts` (code-signing; throws `CodeSigningNotConfiguredError` when keys aren't set up — see the keygen script), `assetKeys.ts`.
+- **Publishing CLI:** `@oxyhq/ship` (`packages/ship`, bin `oxy-ship`) parses an `expo export` output, hashes assets, and publishes to a channel via the admin API — see `packages/ship/README.md`.
+- **Console UI:** per-app Updates tab at `packages/console/src/routes/_layout/apps/$appId/updates.tsx` (+ `components/apps/updates-section.tsx`).
 
 **General limiter threshold** (commit `641cea67`): raised 150 → **1000 / 15min**. The 150 ceiling was below a single authenticated user's normal traffic (feed scroll + socket fallback polling + profile loads + device-secret token mints). Per-endpoint limiters (`authRateLimiter` 300, `userRateLimiter` 200, `checkLimiter` 10/min, etc.) remain the relevant defense-in-depth. **Do NOT lower the general limiter below 1000 without measuring real production traffic.**
 
