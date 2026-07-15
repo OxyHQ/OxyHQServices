@@ -62,6 +62,14 @@ export interface OxyProviderProps {
     baseURL?: string;
     authWebUrl?: string;
     authRedirectUri?: string;
+    /**
+     * Authorize endpoint override for silent cross-origin session restore
+     * (web cross-app SSO on cold boot). Defaults to the production Oxy IdP
+     * (`https://auth.oxy.so/authorize`) when unset. Set this from an env var
+     * (e.g. Vite `VITE_OXY_AUTHORIZE_URL`, Expo `EXPO_PUBLIC_OXY_AUTHORIZE_URL`)
+     * so a local/staging deployment targets its own IdP instead of production.
+     */
+    authorizeBaseUrl?: string;
     queryClient?: QueryClient;
     /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
     hubSync?: boolean;

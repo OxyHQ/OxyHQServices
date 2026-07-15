@@ -145,6 +145,13 @@ export interface OxyContextProviderProps {
   baseURL?: string;
   authWebUrl?: string;
   authRedirectUri?: string;
+  /**
+   * Authorize endpoint override for silent cross-origin session restore
+   * (web cross-app SSO). Defaults to the production Oxy IdP when unset; a
+   * local/staging deployment points it at its own IdP so cold boot never
+   * bounces the tab to production `auth.oxy.so`.
+   */
+  authorizeBaseUrl?: string;
   storageKeyPrefix?: string;
   clientId?: string;
   /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */

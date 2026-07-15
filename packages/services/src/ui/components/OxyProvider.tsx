@@ -114,6 +114,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
     baseURL,
     authWebUrl,
     authRedirectUri,
+    authorizeBaseUrl,
     queryClient: providedQueryClient,
     requireAuth = 'off',
     hubSync = true,
@@ -309,6 +310,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     baseURL={baseURL}
                     authWebUrl={authWebUrl}
                     authRedirectUri={authRedirectUri}
+                    authorizeBaseUrl={authorizeBaseUrl}
                     storageKeyPrefix={storageKeyPrefix}
                     clientId={clientId}
                     hubSync={hubSync}
