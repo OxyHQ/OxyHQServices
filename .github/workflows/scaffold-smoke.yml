@@ -35,12 +35,31 @@ jobs:
       - name: Run the CLI unit tests
         run: bun run --cwd packages/create-oxy-app test
 
-      - name: Scaffold a test app
+      - name: Pack + install the scaffolder from its tarball
         run: |
-          node packages/create-oxy-app/dist/index.js "$RUNNER_TEMP/smoke-app" \
+          # Run the scaffolder from its PACKED tarball, not the repo tree, so the
+          # template file set exercised here is exactly what `bun publish` ships.
+          # This catches template files the packer silently strips (e.g. a literal
+          # `templates/base/bunfig.toml` — bun/npm exclude that exact name, which
+          # once shipped a scaffold whose `bun install` failed).
+          bun pm pack --cwd packages/create-oxy-app --destination "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/cli" && cd "$RUNNER_TEMP/cli"
+          echo '{"name":"coa-runner","private":true}' > package.json
+          bun add "$RUNNER_TEMP"/create-oxy-app-*.tgz
+
+      - name: Scaffold a test app (from the packed tarball)
+        run: |
+          node "$RUNNER_TEMP/cli/node_modules/create-oxy-app/dist/index.js" "$RUNNER_TEMP/smoke-app" \
             --yes --no-register --no-git --no-install \
             --name "Smoke App" --slug smoke-app --scheme smokeapp \
             --bundle-id com.example.smokeapp --domain api.smoke.example.com
+
+      - name: Assert the scaffold ships a hoisted-linker bunfig.toml
+        run: |
+          # Isolated linker (bun's default) does not hoist @oxyhq/app-preset to
+          # the root node_modules, so shared-types' tsconfig extends fail. The
+          # generated app MUST carry bunfig.toml with the hoisted linker.
+          grep -q 'linker = "hoisted"' "$RUNNER_TEMP/smoke-app/bunfig.toml"
 
       - name: Install the generated app (+ local @oxyhq/app-preset)
         working-directory: ${{ runner.temp }}/smoke-app

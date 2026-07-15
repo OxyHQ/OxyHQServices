@@ -107,3 +107,17 @@ describe('renderTree', () => {
     }
   });
 });
+
+describe('base template bunfig.toml', () => {
+  // A literal `bunfig.toml` is stripped from bun/npm publish tarballs (treated
+  // as a local config file, like `.npmrc`), so the base template ships it as
+  // `bunfig.toml.tpl`; render maps the `.tpl` suffix back to the real filename.
+  // This guards against a rename back to the packer-stripped name and against
+  // dropping the hoisted linker (isolated linker breaks the scaffold's install).
+  test('ships as bunfig.toml.tpl and renders a hoisted-linker bunfig.toml', async () => {
+    const templateFile = path.join(__dirname, '..', '..', 'templates', 'base', 'bunfig.toml.tpl');
+    const raw = await fs.readFile(templateFile, 'utf8');
+    expect(targetSegment('bunfig.toml.tpl', true)).toBe('bunfig.toml');
+    expect(renderString(raw, ctx, 'bunfig.toml.tpl')).toContain('linker = "hoisted"');
+  });
+});
