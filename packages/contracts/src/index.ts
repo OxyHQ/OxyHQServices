@@ -249,3 +249,18 @@ export type {
     SecurityAlert,
     SecurityAlertAnomaly,
 } from './deviceBoot';
+
+export {
+    // Schemas
+    webauthnRegisterOptionsRequestSchema,
+    webauthnLoginOptionsRequestSchema,
+    webauthnRegisterVerifyRequestSchema,
+    webauthnLoginVerifyRequestSchema,
+} from './webauthn';
+
+export type {
+    WebauthnRegisterOptionsRequest,
+    WebauthnLoginOptionsRequest,
+    WebauthnRegisterVerifyRequest,
+    WebauthnLoginVerifyRequest,
+} from './webauthn';
