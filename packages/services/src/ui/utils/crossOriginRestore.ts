@@ -3,6 +3,9 @@ import {
   buildOAuthAuthorizeUrl,
   generateOAuthState,
   generatePkcePair,
+  isIdpHubOrigin,
+  isLoopbackOrigin,
+  isOfficialWebOrigin,
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   persistOAuthHandshake,
@@ -43,11 +46,35 @@ export function clearCrossOriginRestoreGuards(): void {
   }
 }
 
+/**
+ * Whether cold boot should attempt silent cross-origin OAuth restore for the
+ * given web origin.
+ *
+ * Mirrors the hub-sync WRITE gate (`syncHubAfterSignIn`): only OFFICIAL Oxy web
+ * origins participate in cross-app SSO — a random third-party / preview origin
+ * must never have its tab bounced to the IdP. Additionally, loopback / local-dev
+ * origins are EXCLUDED here even though {@link isOfficialWebOrigin} treats them
+ * as official: a developer's local app must never be redirected to a hosted IdP
+ * on cold boot (it signs in through the in-app dialog instead). The central IdP
+ * hub's own origin is excluded to avoid a wasteful self-hop.
+ */
+export function isSilentRestoreEligibleOrigin(origin: string): boolean {
+  if (isLoopbackOrigin(origin)) return false;
+  if (isIdpHubOrigin()) return false;
+  return isOfficialWebOrigin(origin);
+}
+
 export interface SilentOAuthRestoreOptions {
   oxyServices: OxyServices;
   clientId: string;
   redirectUri?: string;
   scope?: string;
+  /**
+   * Authorize endpoint override (env-configurable per deployment). Defaults to
+   * the production Oxy IdP when unset, so a local/staging app points silent
+   * restore at its OWN IdP instead of production `auth.oxy.so`.
+   */
+  authorizeBaseUrl?: string;
 }
 
 /**
@@ -61,6 +88,12 @@ export async function maybeStartSilentOAuthRestore(
 
   const location = (globalThis as { location?: Location }).location;
   if (!location) return false;
+
+  // Defense-in-depth: never bounce a loopback / non-official / IdP-hub origin to
+  // a hosted authorize endpoint (the caller gates on this too).
+  if (!isSilentRestoreEligibleOrigin(location.origin)) {
+    return false;
+  }
 
   if (isCrossOriginRestoreBlocked()) {
     return false;
@@ -83,6 +116,7 @@ export async function maybeStartSilentOAuthRestore(
     );
 
     const authorizeUrl = buildOAuthAuthorizeUrl({
+      authorizeBaseUrl: opts.authorizeBaseUrl,
       clientId: opts.clientId,
       redirectUri,
       state,
