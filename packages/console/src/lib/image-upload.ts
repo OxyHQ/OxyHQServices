@@ -8,10 +8,10 @@ import type { OxyServices } from '@oxyhq/core';
  *  2. The upload response is `{ file: { id, mime, size, ... } }` — the id is at
  *     `response.file.id`. The response does NOT contain a ready URL.
  *  3. We derive a public, directly-renderable URL with the synchronous helper
- *     `oxyServices.getFileDownloadUrl(id)`, which returns the
- *     `/assets/:id/stream` endpoint. For `public`-visibility assets, we request
- *     a token-free URL so persisted logo/avatar metadata cannot disclose a
- *     user's bearer token.
+ *     `oxyServices.getFileDownloadUrl(id)`, which for a public asset returns the
+ *     clean CDN URL (`${cloudURL}/<id>`). That URL is token-free by construction
+ *     — core never embeds the caller's bearer token in a download URL (#317) —
+ *     so persisted logo/avatar metadata cannot disclose a user's access token.
  */
 
 /** Allowed image MIME types for logo / avatar uploads. */
@@ -107,9 +107,5 @@ export async function uploadPublicImage(
   if (!isRawFileUploadResponse(response)) {
     throw new Error('Upload did not return a file id');
   }
-  return stripSensitiveImageUrlQueryParams(
-    oxyServices.getFileDownloadUrl(response.file.id, undefined, undefined, {
-      omitToken: true,
-    })
-  );
+  return stripSensitiveImageUrlQueryParams(oxyServices.getFileDownloadUrl(response.file.id));
 }
