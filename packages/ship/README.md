@@ -14,7 +14,10 @@ token — you never pass it).
 |------|-----|---------|
 | `--client-id` | `OXY_SHIP_CLIENT_ID` | — (required) |
 | `--secret` | `OXY_SHIP_SECRET` | — (required) |
-| `--api-url` | `OXY_API_URL` | `https://api.oxy.so` |
+| `--url` (or `--api-url`) | `OXY_API_URL` | `https://api.oxy.so` |
+
+Every command accepts `--json` for machine-readable stdout (progress goes to
+stderr, so stdout stays clean for CI parsing).
 
 ## Commands
 
@@ -35,7 +38,13 @@ oxy-ship promote --update-id <uuid> --to-channel production [--rollout 100]
 
 # List the app's channels
 oxy-ship channel:list
+
+# List recent updates (optionally filtered)
+oxy-ship update:list [--channel production] [--runtime-version 1.2.3] [--platform ios] [--limit 20]
 ```
+
+`publish` derives `gitCommit`/`gitBranch` from `git rev-parse` (overridable with
+`--git-commit`/`--git-branch`, or `GITHUB_SHA`/`GITHUB_REF_NAME` in CI).
 
 ## What `publish` does
 

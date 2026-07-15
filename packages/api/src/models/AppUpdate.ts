@@ -61,6 +61,7 @@ export interface IAppUpdate extends Omit<Document, '_id'> {
   /** Rollout percentage [0,100]; deterministic per-device bucketing at serve time. */
   rolloutPercent: number;
   gitCommit?: string;
+  gitBranch?: string;
   message?: string;
   /** When this update is a promotion, the `updateId` it was promoted from. */
   promotedFromUpdateId?: string;
@@ -145,6 +146,7 @@ const AppUpdateSchema = new Schema<IAppUpdate>(
       max: 100,
     },
     gitCommit: { type: String },
+    gitBranch: { type: String },
     message: { type: String },
     promotedFromUpdateId: { type: String },
   },

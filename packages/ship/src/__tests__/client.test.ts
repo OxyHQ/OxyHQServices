@@ -98,18 +98,24 @@ describe('ShipClient', () => {
     ).rejects.toThrow(/403/);
   });
 
-  test('uploadAsset PUTs raw bytes with the content type (no auth header)', async () => {
+  test('uploadAsset PUTs raw bytes with the signed content-type + cache-control (no auth header)', async () => {
     const calls: RecordedCall[] = [];
     const tmp = path.join(os.tmpdir(), `ship-upload-${Date.now()}.bin`);
     fs.writeFileSync(tmp, Buffer.from([1, 2, 3, 4]));
     try {
-      await client(mockFetch(calls, '')).uploadAsset('http://s3/put', 'image/png', tmp);
+      await client(mockFetch(calls, '')).uploadAsset(
+        'http://s3/put',
+        'image/png',
+        'public, max-age=31536000, immutable',
+        tmp
+      );
     } finally {
       fs.rmSync(tmp, { force: true });
     }
     expect(calls[0].url).toBe('http://s3/put');
     expect(calls[0].method).toBe('PUT');
     expect(calls[0].headers['content-type']).toBe('image/png');
+    expect(calls[0].headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(calls[0].headers.authorization).toBeUndefined();
     expect(calls[0].isBytes).toBe(true);
   });
@@ -143,5 +149,28 @@ describe('ShipClient', () => {
     expect(channels).toHaveLength(1);
     expect(calls[0].url).toBe('http://api.test/updates/v1/channels?applicationId=app123');
     expect(calls[0].method).toBe('GET');
+  });
+
+  test('listUpdates targets the channel-scoped route with filters', async () => {
+    const calls: RecordedCall[] = [];
+    const updates = await client(mockFetch(calls, { data: { updates: [{ id: 'u1' }] } })).listUpdates({
+      channel: 'production',
+      runtimeVersion: '1.0.0',
+      platform: 'ios',
+      limit: 5,
+    });
+    expect(updates).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+    expect(calls[0].url).toContain('/updates/v1/channels/production/updates?');
+    expect(calls[0].url).toContain('applicationId=app123');
+    expect(calls[0].url).toContain('runtimeVersion=1.0.0');
+    expect(calls[0].url).toContain('platform=ios');
+    expect(calls[0].url).toContain('limit=5');
+  });
+
+  test('listUpdates without a channel uses the flat route', async () => {
+    const calls: RecordedCall[] = [];
+    await client(mockFetch(calls, { data: { updates: [] } })).listUpdates({});
+    expect(calls[0].url).toBe('http://api.test/updates/v1/updates?applicationId=app123');
   });
 });

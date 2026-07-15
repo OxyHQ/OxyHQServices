@@ -114,9 +114,16 @@ describe('initAssets', () => {
       uploadUrl: 'https://s3.example/presigned-put',
       storageKey: updateAssetS3Key(SHA_B),
       contentType: 'image/png',
+      cacheControl: 'public, max-age=31536000, immutable',
     });
     expect(mockPresign).toHaveBeenCalledTimes(1);
-    expect(mockPresign).toHaveBeenCalledWith(updateAssetS3Key(SHA_B), expect.objectContaining({ contentType: 'image/png' }));
+    expect(mockPresign).toHaveBeenCalledWith(
+      updateAssetS3Key(SHA_B),
+      expect.objectContaining({
+        contentType: 'image/png',
+        cacheControl: 'public, max-age=31536000, immutable',
+      })
+    );
     expect(mockAssetCreate).toHaveBeenCalledTimes(1);
   });
 });

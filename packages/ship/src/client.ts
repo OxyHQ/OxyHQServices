@@ -107,12 +107,21 @@ export class ShipClient {
     });
   }
 
-  /** Upload raw bytes to a presigned S3 PUT URL (no auth header — the URL is signed). */
-  async uploadAsset(uploadUrl: string, contentType: string, absPath: string): Promise<void> {
+  /**
+   * Upload raw bytes to a presigned S3 PUT URL (no auth header — the URL is
+   * signed). `contentType` AND `cacheControl` are SIGNED headers baked into the
+   * presign, so they MUST be replayed verbatim or S3 rejects the signature.
+   */
+  async uploadAsset(
+    uploadUrl: string,
+    contentType: string,
+    cacheControl: string,
+    absPath: string
+  ): Promise<void> {
     const bytes = fs.readFileSync(absPath);
     const response = await this.fetchFn(uploadUrl, {
       method: 'PUT',
-      headers: { 'content-type': contentType },
+      headers: { 'content-type': contentType, 'cache-control': cacheControl },
       body: bytes,
     });
     if (!response.ok) {
@@ -187,5 +196,23 @@ export class ShipClient {
       `/updates/v1/channels?applicationId=${encodeURIComponent(applicationId)}`
     );
     return result.channels;
+  }
+
+  async listUpdates(filters: {
+    channel?: string;
+    runtimeVersion?: string;
+    platform?: UpdatePlatform;
+    limit?: number;
+  }): Promise<Update[]> {
+    const applicationId = await this.getApplicationId();
+    const query = new URLSearchParams({ applicationId });
+    if (filters.runtimeVersion) query.set('runtimeVersion', filters.runtimeVersion);
+    if (filters.platform) query.set('platform', filters.platform);
+    if (filters.limit !== undefined) query.set('limit', String(filters.limit));
+    const path = filters.channel
+      ? `/updates/v1/channels/${encodeURIComponent(filters.channel)}/updates?${query}`
+      : `/updates/v1/updates?${query}`;
+    const result = await this.requestJson<{ updates: Update[] }>('GET', path);
+    return result.updates;
   }
 }

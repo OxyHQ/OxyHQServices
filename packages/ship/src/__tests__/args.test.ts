@@ -1,5 +1,12 @@
 import { test, expect, describe } from 'bun:test';
-import { parseArgs, platformsFlag, rolloutFlag, stringFlag, requireString } from '../args';
+import {
+  parseArgs,
+  platformsFlag,
+  rolloutFlag,
+  stringFlag,
+  requireString,
+  baseUrlFlag,
+} from '../args';
 
 describe('parseArgs', () => {
   test('splits command, flag values, = form, and booleans', () => {
@@ -19,10 +26,14 @@ describe('parseArgs', () => {
     expect(parsed.flags.message).toBe('hello world');
   });
 
-  test('a value-less non-boolean flag at the end becomes true', () => {
+  test('a boolean flag becomes true and the subcommand is the positional', () => {
     const parsed = parseArgs(['channel:list', '--json']);
     expect(parsed.command).toBe('channel:list');
     expect(parsed.flags.json).toBe(true);
+  });
+
+  test('an unknown flag is rejected (strict)', () => {
+    expect(() => parseArgs(['publish', '--bogus', 'x'])).toThrow();
   });
 });
 
@@ -52,5 +63,11 @@ describe('flag helpers', () => {
 
   test('requireString throws when neither flag nor env is set', () => {
     expect(() => requireString({}, 'client-id', 'OXY_SHIP_CLIENT_ID_MISSING')).toThrow(/client-id/);
+  });
+
+  test('baseUrlFlag prefers --url, then --api-url/OXY_API_URL, then the default', () => {
+    expect(baseUrlFlag({ url: 'http://a' })).toBe('http://a');
+    expect(baseUrlFlag({ 'api-url': 'http://b' })).toBe('http://b');
+    expect(baseUrlFlag({})).toBe('https://api.oxy.so');
   });
 });

@@ -338,8 +338,8 @@ export class S3Service {
     options: PresignedUrlOptions = {}
   ): Promise<string> {
     try {
-      const { expiresIn = 3600, contentType = 'application/octet-stream', metadata } = options;
-      
+      const { expiresIn = 3600, contentType = 'application/octet-stream', metadata, cacheControl } = options;
+
       // Sanitize metadata to ensure all values are strings
       const sanitizedMetadata: Record<string, string> = {};
       if (metadata) {
@@ -349,11 +349,12 @@ export class S3Service {
           }
         }
       }
-      
+
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         ContentType: contentType,
+        CacheControl: cacheControl,
         Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
       });
 

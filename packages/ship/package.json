@@ -2,12 +2,14 @@
   "name": "@oxyhq/ship",
   "version": "0.1.0",
   "description": "oxy-ship — publish Expo OTA updates to the Oxy Updates service",
-  "private": true,
   "type": "commonjs",
   "bin": {
     "oxy-ship": "dist/cli.js"
   },
   "main": "dist/cli.js",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "templates"

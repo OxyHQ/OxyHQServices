@@ -13,9 +13,11 @@ let distDir: string;
 
 // Record the client interactions the orchestration drives.
 const initCalls: Array<Array<{ sha256: string }>> = [];
-const uploadCalls: Array<{ url: string }> = [];
+const uploadCalls: Array<{ url: string; cacheControl: string }> = [];
 const completeCalls: string[][] = [];
 const createCalls: Array<Record<string, unknown>> = [];
+
+const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
 const fakeClient = {
   initAssets: async (items: Array<{ sha256: string; contentType: string; size: number }>) => {
@@ -26,12 +28,13 @@ const fakeClient = {
         uploadUrl: `http://s3/${item.sha256}`,
         storageKey: `public/updates/assets/${item.sha256}`,
         contentType: item.contentType,
+        cacheControl: CACHE_CONTROL,
       })),
       existing: [],
     };
   },
-  uploadAsset: async (url: string) => {
-    uploadCalls.push({ url });
+  uploadAsset: async (url: string, _contentType: string, cacheControl: string) => {
+    uploadCalls.push({ url, cacheControl });
   },
   completeAssets: async (sha256s: string[]) => {
     completeCalls.push(sha256s);
@@ -100,8 +103,9 @@ describe('publishCommand orchestration', () => {
     expect(offered.has(sha(androidBundle))).toBe(true);
     expect(offered.has(sha(sharedAsset))).toBe(true);
 
-    // Every missing asset is uploaded exactly once.
+    // Every missing asset is uploaded exactly once, replaying the signed cache-control.
     expect(uploadCalls).toHaveLength(3);
+    expect(uploadCalls.every((c) => c.cacheControl === CACHE_CONTROL)).toBe(true);
     // Complete is called with the full unique set.
     expect(completeCalls[0].length).toBe(3);
 

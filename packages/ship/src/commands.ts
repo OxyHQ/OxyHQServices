@@ -4,7 +4,7 @@ import {
   requireString,
   rolloutFlag,
   platformsFlag,
-  type ParsedArgs,
+  type ShipFlags,
 } from './args';
 import {
   collectPlatformAssets,
@@ -14,10 +14,19 @@ import {
   type ShipAssetRef,
 } from './metadata';
 import { runExpoExport, readExpoPublicConfig } from './exec';
+import { resolveGitCommit, resolveGitBranch } from './git';
 import { createShipClient } from './config';
 import type { UpdatePlatform } from '@oxyhq/contracts';
 
-type Flags = ParsedArgs['flags'];
+/** Progress goes to stderr so `--json` keeps stdout clean for machine parsing. */
+function progress(message: string): void {
+  process.stderr.write(`${message}\n`);
+}
+
+/** Emit the command result: JSON to stdout under `--json`, else a human string. */
+function emit(flags: ShipFlags, human: string, json: unknown): void {
+  process.stdout.write(flags.json ? `${JSON.stringify(json)}\n` : `${human}\n`);
+}
 
 /** De-duplicate the asset set across platforms (content-addressed by sha256). */
 function uniqueAssets(bundles: PlatformBundle[]): Map<string, ShipAssetRef> {
@@ -32,20 +41,21 @@ function uniqueAssets(bundles: PlatformBundle[]): Map<string, ShipAssetRef> {
   return bySha;
 }
 
-export async function publishCommand(flags: Flags): Promise<void> {
+export async function publishCommand(flags: ShipFlags): Promise<void> {
   const channel = requireString(flags, 'channel', 'OXY_SHIP_CHANNEL');
   const platforms = platformsFlag(flags);
   const rolloutPercent = rolloutFlag(flags);
   const message = stringFlag(flags, 'message');
-  const gitCommit = stringFlag(flags, 'git-commit', 'GITHUB_SHA');
   const projectDir = path.resolve(stringFlag(flags, 'project-dir', undefined, '.') as string);
   const distDir = path.resolve(projectDir, stringFlag(flags, 'dist-dir', undefined, 'dist') as string);
   const runtimeOverride = stringFlag(flags, 'runtime-version');
+  const gitCommit = resolveGitCommit(projectDir, stringFlag(flags, 'git-commit'));
+  const gitBranch = resolveGitBranch(projectDir, stringFlag(flags, 'git-branch'));
   const dryRun = flags['dry-run'] === true;
   const skipExport = flags['skip-export'] === true;
 
   if (!skipExport) {
-    console.log(`Exporting (${platforms.join(', ')}) → ${distDir} …`);
+    progress(`Exporting (${platforms.join(', ')}) → ${distDir} …`);
     runExpoExport(projectDir, platforms, distDir);
   }
 
@@ -56,17 +66,24 @@ export async function publishCommand(flags: Flags): Promise<void> {
   const bundles = platforms.map((platform) => collectPlatformAssets(distDir, metadata, platform));
   const bySha = uniqueAssets(bundles);
 
-  console.log(
+  progress(
     `Runtime ${runtimeVersion} · channel ${channel} · ${bySha.size} unique assets across ${platforms.length} platform(s)`
   );
 
   if (dryRun) {
-    for (const bundle of bundles) {
-      console.log(
-        `  [dry-run] ${bundle.platform}: launch ${bundle.launchAsset.sha256.slice(0, 12)} + ${bundle.assets.length} assets`
-      );
-    }
-    console.log('Dry run — no API calls made.');
+    emit(
+      flags,
+      `Dry run — ${bySha.size} assets, runtime ${runtimeVersion}, channel ${channel}, platforms ${platforms.join(', ')}. No API calls made.`,
+      {
+        dryRun: true,
+        runtimeVersion,
+        channel,
+        platforms,
+        assetCount: bySha.size,
+        gitCommit,
+        gitBranch,
+      }
+    );
     return;
   }
 
@@ -78,14 +95,14 @@ export async function publishCommand(flags: Flags): Promise<void> {
     size: asset.size,
   }));
   const init = await client.initAssets(initItems);
-  console.log(`Assets: ${init.existing.length} already stored, ${init.missing.length} to upload.`);
+  progress(`Assets: ${init.existing.length} already stored, ${init.missing.length} to upload.`);
 
   for (const ticket of init.missing) {
     const asset = bySha.get(ticket.sha256);
     if (!asset) {
       throw new Error(`Server asked for an asset we did not offer: ${ticket.sha256}`);
     }
-    await client.uploadAsset(ticket.uploadUrl, ticket.contentType, asset.absPath);
+    await client.uploadAsset(ticket.uploadUrl, ticket.contentType, ticket.cacheControl, asset.absPath);
   }
 
   const complete = await client.completeAssets([...bySha.keys()]);
@@ -96,6 +113,7 @@ export async function publishCommand(flags: Flags): Promise<void> {
     );
   }
 
+  const published = [];
   for (const bundle of bundles) {
     const update = await client.createUpdate({
       channel,
@@ -115,55 +133,102 @@ export async function publishCommand(flags: Flags): Promise<void> {
       extra: { expoClient: config },
       ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
       ...(gitCommit ? { gitCommit } : {}),
+      ...(gitBranch ? { gitBranch } : {}),
       ...(message ? { message } : {}),
     });
-    console.log(`Published ${bundle.platform}: ${update.id}  (rollout ${update.rolloutPercent}%)`);
+    progress(`Published ${bundle.platform}: ${update.id}  (rollout ${update.rolloutPercent}%)`);
+    published.push(update);
   }
+
+  emit(
+    flags,
+    published.map((u) => `${u.platform} ${u.id} (rollout ${u.rolloutPercent}%)`).join('\n'),
+    { channel, runtimeVersion, updates: published }
+  );
 }
 
-export async function rollbackCommand(flags: Flags): Promise<void> {
+export async function rollbackCommand(flags: ShipFlags): Promise<void> {
   const channel = requireString(flags, 'channel', 'OXY_SHIP_CHANNEL');
   const runtimeVersion = requireString(flags, 'runtime-version', 'OXY_SHIP_RUNTIME_VERSION');
   const platform = requirePlatform(flags);
   const client = createShipClient(flags);
   const result = await client.rollback(channel, runtimeVersion, platform);
-  console.log(`Rolled back ${result.rolledBack.id}; new head: ${result.head?.id ?? '(none)'}`);
+  emit(
+    flags,
+    `Rolled back ${result.rolledBack.id}; new head: ${result.head?.id ?? '(none)'}`,
+    result
+  );
 }
 
-export async function rollbackToEmbeddedCommand(flags: Flags): Promise<void> {
+export async function rollbackToEmbeddedCommand(flags: ShipFlags): Promise<void> {
   const channel = requireString(flags, 'channel', 'OXY_SHIP_CHANNEL');
   const runtimeVersion = requireString(flags, 'runtime-version', 'OXY_SHIP_RUNTIME_VERSION');
   const platform = requirePlatform(flags);
   const client = createShipClient(flags);
-  await client.rollbackToEmbedded(channel, runtimeVersion, platform);
-  console.log(`Set rollback-to-embedded on ${channel} for ${runtimeVersion}/${platform}.`);
+  const result = await client.rollbackToEmbedded(channel, runtimeVersion, platform);
+  emit(
+    flags,
+    `Set rollback-to-embedded on ${channel} for ${runtimeVersion}/${platform}.`,
+    result
+  );
 }
 
-export async function promoteCommand(flags: Flags): Promise<void> {
+export async function promoteCommand(flags: ShipFlags): Promise<void> {
   const updateId = requireString(flags, 'update-id', 'OXY_SHIP_UPDATE_ID');
   const toChannel = requireString(flags, 'to-channel', 'OXY_SHIP_TO_CHANNEL');
   const rolloutPercent = rolloutFlag(flags);
   const client = createShipClient(flags);
   const update = await client.promote(toChannel, updateId, rolloutPercent);
-  console.log(`Promoted ${updateId} → ${toChannel} as ${update.id} (rollout ${update.rolloutPercent}%)`);
+  emit(
+    flags,
+    `Promoted ${updateId} → ${toChannel} as ${update.id} (rollout ${update.rolloutPercent}%)`,
+    update
+  );
 }
 
-export async function channelListCommand(flags: Flags): Promise<void> {
+export async function channelListCommand(flags: ShipFlags): Promise<void> {
   const client = createShipClient(flags);
   const channels = await client.listChannels();
-  if (channels.length === 0) {
-    console.log('No channels yet.');
-    return;
-  }
-  for (const channel of channels) {
-    const rollbacks = channel.rollbacksToEmbedded
-      .map((entry) => `${entry.runtimeVersion}/${entry.platform}`)
-      .join(', ');
-    console.log(`${channel.name}${rollbacks ? `  (rollback-to-embedded: ${rollbacks})` : ''}`);
-  }
+  const human =
+    channels.length === 0
+      ? 'No channels yet.'
+      : channels
+          .map((channel) => {
+            const rollbacks = channel.rollbacksToEmbedded
+              .map((entry) => `${entry.runtimeVersion}/${entry.platform}`)
+              .join(', ');
+            return `${channel.name}${rollbacks ? `  (rollback-to-embedded: ${rollbacks})` : ''}`;
+          })
+          .join('\n');
+  emit(flags, human, channels);
 }
 
-function requirePlatform(flags: Flags): UpdatePlatform {
+export async function updateListCommand(flags: ShipFlags): Promise<void> {
+  const channel = stringFlag(flags, 'channel', 'OXY_SHIP_CHANNEL');
+  const runtimeVersion = stringFlag(flags, 'runtime-version');
+  const platform = stringFlag(flags, 'platform') as UpdatePlatform | undefined;
+  const limitRaw = stringFlag(flags, 'limit');
+  const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const client = createShipClient(flags);
+  const updates = await client.listUpdates({
+    channel,
+    runtimeVersion,
+    platform: platform === 'ios' || platform === 'android' ? platform : undefined,
+    limit,
+  });
+  const human =
+    updates.length === 0
+      ? 'No updates.'
+      : updates
+          .map(
+            (u) =>
+              `${u.id}  ${u.channel}  ${u.runtimeVersion}/${u.platform}  ${u.status}  rollout ${u.rolloutPercent}%`
+          )
+          .join('\n');
+  emit(flags, human, updates);
+}
+
+function requirePlatform(flags: ShipFlags): UpdatePlatform {
   const value = stringFlag(flags, 'platform', 'OXY_SHIP_PLATFORM');
   if (value !== 'ios' && value !== 'android') {
     throw new Error('--platform must be ios or android for this command');

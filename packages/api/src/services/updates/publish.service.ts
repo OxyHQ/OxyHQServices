@@ -29,6 +29,14 @@ import { logger } from '../../utils/logger';
 /** Presigned PUT validity — generous enough for a large bundle upload. */
 const ASSET_UPLOAD_URL_EXPIRY_SECONDS = 60 * 60; // 1h
 
+/**
+ * Cache-Control baked into every asset object. Update assets are content-addressed
+ * (the URL contains the sha256), so the bytes at a URL never change — they can be
+ * cached forever. This is a SIGNED header on the presigned PUT, so the client
+ * replays it verbatim (see `assetUploadTicketSchema.cacheControl`).
+ */
+const ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
 /* -------------------------------------------------------------------------- */
 /*  Serializers (Mongoose doc → @oxyhq/contracts wire shape)                  */
 /* -------------------------------------------------------------------------- */
@@ -44,6 +52,7 @@ export interface SerializedUpdate {
   launchAssetSha256: string;
   assetSha256s: string[];
   gitCommit?: string;
+  gitBranch?: string;
   message?: string;
   promotedFromUpdateId?: string;
   createdAt: string;
@@ -62,6 +71,7 @@ function serializeUpdate(update: IAppUpdate, channelName: string): SerializedUpd
     launchAssetSha256: update.launchAsset.sha256,
     assetSha256s: update.assets.map((asset) => asset.sha256),
     ...(update.gitCommit ? { gitCommit: update.gitCommit } : {}),
+    ...(update.gitBranch ? { gitBranch: update.gitBranch } : {}),
     ...(update.message ? { message: update.message } : {}),
     ...(update.promotedFromUpdateId
       ? { promotedFromUpdateId: update.promotedFromUpdateId }
@@ -136,9 +146,16 @@ export async function initAssets(
 
     const uploadUrl = await s3Service.getPresignedUploadUrl(s3Key, {
       contentType: asset.contentType,
+      cacheControl: ASSET_CACHE_CONTROL,
       expiresIn: ASSET_UPLOAD_URL_EXPIRY_SECONDS,
     });
-    missing.push({ sha256: asset.sha256, uploadUrl, storageKey: s3Key, contentType: asset.contentType });
+    missing.push({
+      sha256: asset.sha256,
+      uploadUrl,
+      storageKey: s3Key,
+      contentType: asset.contentType,
+      cacheControl: ASSET_CACHE_CONTROL,
+    });
   }
 
   logger.info('Oxy Updates assets init', {
@@ -280,6 +297,7 @@ export async function createUpdate(
     metadata: input.metadata ?? {},
     rolloutPercent: input.rolloutPercent ?? 100,
     gitCommit: input.gitCommit,
+    gitBranch: input.gitBranch,
     message: input.message,
   });
 
@@ -434,6 +452,7 @@ export async function promote(
     metadata: source.metadata,
     rolloutPercent: rolloutPercent ?? 100,
     gitCommit: source.gitCommit,
+    gitBranch: source.gitBranch,
     message: source.message,
     promotedFromUpdateId: source.updateId,
   });

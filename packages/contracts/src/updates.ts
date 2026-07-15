@@ -100,6 +100,12 @@ export const assetUploadTicketSchema = z.object({
   storageKey: z.string(),
   /** The Content-Type the presigned URL was signed for; echo it on the PUT. */
   contentType: z.string(),
+  /**
+   * The Cache-Control the presigned URL was signed for; the client MUST send it
+   * verbatim on the PUT so the SigV4 signature matches and the stored object
+   * carries the long immutable cache header (assets are content-addressed).
+   */
+  cacheControl: z.string(),
 });
 export type AssetUploadTicket = z.infer<typeof assetUploadTicketSchema>;
 
@@ -185,6 +191,8 @@ export const createUpdateRequestSchema = z.object({
   rolloutPercent: rolloutPercentSchema.optional(),
   /** Git commit the bundle was built from (audit / console display). */
   gitCommit: z.string().max(100).optional(),
+  /** Git branch the bundle was built from (audit / console display). */
+  gitBranch: z.string().max(200).optional(),
   /** Human-readable publish message (console display). */
   message: z.string().max(500).optional(),
 });
@@ -211,6 +219,7 @@ export interface Update {
   launchAssetSha256: string;
   assetSha256s: string[];
   gitCommit?: string;
+  gitBranch?: string;
   message?: string;
   /** The updateId this update was promoted from, when it is a promotion. */
   promotedFromUpdateId?: string;
@@ -229,6 +238,7 @@ export const updateSchema: z.ZodType<Update> = z.object({
   launchAssetSha256: sha256HexSchema,
   assetSha256s: z.array(sha256HexSchema),
   gitCommit: z.string().optional(),
+  gitBranch: z.string().optional(),
   message: z.string().optional(),
   promotedFromUpdateId: z.string().optional(),
   createdAt: z.string(),

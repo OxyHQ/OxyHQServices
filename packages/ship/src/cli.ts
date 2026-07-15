@@ -5,6 +5,7 @@ import {
   rollbackToEmbeddedCommand,
   promoteCommand,
   channelListCommand,
+  updateListCommand,
 } from './commands';
 
 const USAGE = `oxy-ship — publish Expo OTA updates to Oxy Updates
@@ -12,16 +13,17 @@ const USAGE = `oxy-ship — publish Expo OTA updates to Oxy Updates
 Usage:
   oxy-ship publish --channel <name> [--platform ios|android|all] [--rollout N]
                    [--message "..."] [--runtime-version X] [--dist-dir dir]
-                   [--project-dir dir] [--skip-export] [--dry-run]
+                   [--project-dir dir] [--skip-export] [--dry-run] [--json]
   oxy-ship rollback --channel <name> --runtime-version X --platform ios|android
   oxy-ship rollback-to-embedded --channel <name> --runtime-version X --platform ios|android
   oxy-ship promote --update-id <uuid> --to-channel <name> [--rollout N]
-  oxy-ship channel:list
+  oxy-ship channel:list [--json]
+  oxy-ship update:list [--channel <name>] [--runtime-version X] [--platform ios|android] [--limit N] [--json]
 
 Auth (flags or env):
   --client-id   OXY_SHIP_CLIENT_ID    service credential public key (oxy_dk_…)
   --secret      OXY_SHIP_SECRET       service credential secret
-  --api-url     OXY_API_URL           API origin (default https://api.oxy.so)
+  --url         OXY_API_URL           API origin (default https://api.oxy.so)
 `;
 
 async function main(): Promise<void> {
@@ -47,6 +49,9 @@ async function main(): Promise<void> {
       break;
     case 'channel:list':
       await channelListCommand(flags);
+      break;
+    case 'update:list':
+      await updateListCommand(flags);
       break;
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);

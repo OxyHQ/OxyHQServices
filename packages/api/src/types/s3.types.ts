@@ -34,5 +34,11 @@ export interface PresignedUrlOptions {
   expiresIn?: number;
   contentType?: string;
   metadata?: Record<string, string>;
+  /**
+   * Cache-Control to bake into the presigned PUT. When set it is a SIGNED header,
+   * so the client MUST replay it verbatim on the PUT or S3 rejects with
+   * SignatureDoesNotMatch. Used for immutable content-addressed assets.
+   */
+  cacheControl?: string;
 }
 
