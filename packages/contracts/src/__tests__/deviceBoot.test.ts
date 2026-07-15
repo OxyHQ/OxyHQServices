@@ -8,21 +8,14 @@ import type {
 
 /**
  * The first-party login result contract MUST round-trip exactly what the
- * `/auth/login` surface emits and what `@oxyhq/core`'s auth mixin parses. These
- * tests lock the login-result union discrimination (2FA arm vs session arm) so
- * producer and consumers cannot drift. The device transport itself is the
- * zero-cookie `deviceId` + `deviceSecret` mint (see `deviceSession.test.ts`).
+ * sign-in surfaces emit and what `@oxyhq/core`'s auth mixin parses, so producer
+ * and consumers cannot drift. Sign-in is passkey (WebAuthn) or Commons handoff —
+ * password and 2FA were removed, so the only outcome is a completed session. The
+ * device transport itself is the zero-cookie `deviceId` + `deviceSecret` mint
+ * (see `deviceSession.test.ts`).
  */
 
-describe('loginResultSchema (union discrimination)', () => {
-    it('parses the 2FA arm', () => {
-        const twoFactor: LoginResult = { twoFactorRequired: true, loginToken: 'lt_abc' };
-        const parsed = safeParseContract(loginResultSchema, twoFactor);
-        expect(parsed).not.toBeNull();
-        // Discriminate on twoFactorRequired.
-        expect(parsed && 'twoFactorRequired' in parsed && parsed.twoFactorRequired).toBe(true);
-    });
-
+describe('loginResultSchema (session arm)', () => {
     it('parses the session arm', () => {
         const session: LoginResult = {
             sessionId: 's1',
@@ -33,7 +26,6 @@ describe('loginResultSchema (union discrimination)', () => {
         };
         const parsed = safeParseContract(loginResultSchema, session);
         expect(parsed).not.toBeNull();
-        // Discriminate: the session arm carries a sessionId, not twoFactorRequired.
         expect(parsed && 'sessionId' in parsed && parsed.sessionId).toBe('s1');
     });
 
@@ -89,13 +81,7 @@ describe('loginResultSchema (union discrimination)', () => {
         expect(parsed && 'securityAlert' in parsed ? parsed.securityAlert : undefined).toBeUndefined();
     });
 
-    it('rejects a 2FA arm with twoFactorRequired: false', () => {
-        expect(
-            safeParseContract(loginResultSchema, { twoFactorRequired: false, loginToken: 'x' }),
-        ).toBeNull();
-    });
-
-    it('rejects a shape that is neither arm', () => {
+    it('rejects a shape that is not the session arm', () => {
         expect(safeParseContract(loginResultSchema, { hello: 'world' })).toBeNull();
     });
 
