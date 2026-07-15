@@ -72,6 +72,45 @@ function resolveCallerDeviceId(req: AuthRequest): string | null {
   return decoded?.deviceId ?? null;
 }
 
+/**
+ * Resolve the OPERATOR anchoring the caller's account graph and switches — the
+ * HUMAN behind the request, NOT the account currently being acted-as.
+ *
+ * For an ordinary session the operator IS the authenticated account. For an
+ * operated (managed / sub-account) session — one minted by `POST /:id/switch`
+ * and carrying `operatedByUserId` — the operator is that recorded human, so
+ * every switcher surface stays anchored on the person no matter which of their
+ * accounts is currently active. Without this, acting-as a leaf sub-account
+ * (which has no children/memberships of its own) collapses the switchable set to
+ * just that account and makes sibling switches fail `verifyActingAs`.
+ *
+ * `operatedByUserId` is authoritative and server-set at switch time (bound to
+ * the operator's `account:act_as` membership, re-verified on validate/refresh),
+ * so trusting it here escalates nothing. The bearer JWT does not carry it
+ * (session-doc-only), so it is read from the (request-cached) session record; a
+ * missing/unreadable session degrades safely to the authenticated account.
+ */
+async function resolveOperatorId(req: AuthRequest): Promise<string> {
+  const authedUserId = requireUserId(req);
+  const token = extractTokenFromRequest(req);
+  const sessionId = token ? decodeToken(token)?.sessionId : undefined;
+  if (!sessionId) {
+    return authedUserId;
+  }
+  try {
+    const sessionDoc = await sessionService.getSession(sessionId, true);
+    const operator = sessionDoc?.operatedByUserId ? sessionDoc.operatedByUserId.toString() : null;
+    return operator ?? authedUserId;
+  } catch (error) {
+    logger.debug('[accounts] resolveOperatorId: session lookup failed, using active account', {
+      component: 'accounts',
+      method: 'resolveOperatorId',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return authedUserId;
+  }
+}
+
 /** Per-user (or per-IP when anonymous) rate-limit key for a scope. */
 function userScopedKey(scope: string) {
   return (req: Request): string => {
@@ -267,16 +306,22 @@ function requireAccountPermission(permission: AccountPermission) {
 // ============================================================================
 
 /**
- * The caller's accessible account forest: their own personal account plus every
+ * The OPERATOR's accessible account forest: their own personal account plus every
  * account they can reach (direct membership + inherited subtree). Flat by
  * default; `?tree=true` nests children under parents.
+ *
+ * Anchored on the operator (the human), NOT the currently-active account, so the
+ * switchable set is IDENTICAL regardless of which of the operator's accounts is
+ * active — switching only flips which account is marked current, never which are
+ * listed. (When acting-as a leaf sub-account, anchoring on the active account
+ * would collapse the list to just that account.)
  */
 router.get(
   '/',
   readLimiter,
   validate({ query: listAccountsQuerySchema }),
   asyncHandler(async (req: AuthRequest, res) => {
-    const userId = requireUserId(req);
+    const userId = await resolveOperatorId(req);
     const nodes = await accountService.listAccessibleAccounts(userId);
     const serialized = nodes.map(serializeAccountNode);
 
@@ -310,7 +355,13 @@ router.post(
   writeLimiter,
   validate({ params: accountIdRouteParams }),
   asyncHandler(async (req: AuthRequest, res) => {
-    const operatorId = requireUserId(req);
+    // Anchor on the OPERATOR (the human), not the active account: acting-as a
+    // sub-account must still let the operator switch into their SIBLING accounts.
+    // For an ordinary session this is the authenticated account itself; for an
+    // operated session it is the recorded `operatedByUserId`, so the operator
+    // chain never nests (a switch out of a sub-account is still authorised as,
+    // and recorded against, the human — never the sub-account).
+    const operatorId = await resolveOperatorId(req);
     const id = req.params.id;
     if (!mongoose.isValidObjectId(id)) {
       throw new NotFoundError('Account not found');

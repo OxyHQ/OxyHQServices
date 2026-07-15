@@ -391,6 +391,54 @@ describe('AccountDialogController — switchTo (uniform switch)', () => {
     expect(commitSession.mock.calls[0][0]).toMatchObject({ sessionId: 'sess-org', accessToken: 'access-org' });
   });
 
+  it('commits a graph switch via the IN-PLACE commitSwitchedSession — never the hub-syncing commitSession', async () => {
+    // PROBLEM 2: an account switch must not run the cross-origin hub-sync
+    // full-page redirect. When both funnels are wired, the mint-switch must use
+    // commitSwitchedSession (in-place) and NEVER commitSession (which may
+    // redirect on an official web origin).
+    const oxy = makeOxy();
+    const sc = new TestSessionClient(host());
+    sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
+    jest.spyOn(sc, 'switchAccount').mockResolvedValue(undefined);
+    oxy.switchToAccount.mockResolvedValue({
+      sessionId: 'sess-org',
+      deviceId: 'device-1',
+      expiresAt: '2030-01-01T00:00:00Z',
+      accessToken: 'access-org',
+      user: user('org1'),
+    });
+    const commitSession = jest.fn().mockResolvedValue(undefined);
+    const commitSwitchedSession = jest.fn().mockResolvedValue(undefined);
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: sc,
+      clientId: 'oxy_dk_test',
+      commitSession,
+      commitSwitchedSession,
+    });
+
+    await controller.switchTo('org1');
+
+    expect(commitSwitchedSession).toHaveBeenCalledTimes(1);
+    expect(commitSwitchedSession.mock.calls[0][0]).toMatchObject({ sessionId: 'sess-org', accessToken: 'access-org' });
+    expect(commitSession).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed switch as snapshot.error instead of silently no-op\'ing', async () => {
+    // PROBLEM 1: switching into an account the server refuses (e.g. a 403 for a
+    // personal-kind target) must tell the user why — the error is recorded on
+    // the snapshot, the switch does not throw, and switchingAccountId resets.
+    const { controller, oxy, sc } = makeHarness();
+    sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
+    oxy.switchToAccount.mockRejectedValue(new Error('Cannot switch into a personal account'));
+
+    await expect(controller.switchTo('org1')).resolves.toBeUndefined();
+
+    const snap = controller.getSnapshot();
+    expect(snap.error).toBe('Cannot switch into a personal account');
+    expect(snap.switchingAccountId).toBeNull();
+  });
+
   it('falls back to SessionClient.registerAndActivate when no commitSession is supplied', async () => {
     const oxy = makeOxy();
     const sc = new TestSessionClient(host());

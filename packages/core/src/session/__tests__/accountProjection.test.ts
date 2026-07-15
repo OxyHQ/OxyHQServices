@@ -164,6 +164,36 @@ describe('projectSwitchableAccounts', () => {
     });
     expect(rows.every((r) => !r.isCurrent)).toBe(true);
   });
+
+  it('keeps the OPERATOR full set when acting-as a sub-account (no collapse to the active account)', () => {
+    // nate operates albert: albert is the active on-device account, nate is also
+    // on-device, and the graph is OPERATOR-anchored (the server returns nate's
+    // full forest regardless of which account is active). The projection must
+    // faithfully union — switching in only changes which row is `isCurrent`,
+    // never which accounts are listed. This is the switcher-collapse regression.
+    const rows = projectSwitchableAccounts({
+      state: state([{ accountId: 'nate', sessionId: 's-nate' }, { accountId: 'albert', sessionId: 's-albert' }], 'albert'),
+      graph: [
+        graphNode('nate', { kind: 'personal', relationship: 'self' }),
+        graphNode('albert', { relationship: 'owner' }),
+        graphNode('oxy', { relationship: 'owner' }),
+        graphNode('faircoin', { relationship: 'owner' }),
+      ],
+      profilesById: mapOf(user('nate'), user('albert'), user('oxy'), user('faircoin')),
+      resolveAvatarUrl: noAvatar,
+    });
+
+    // The full operable set is present even though a leaf sub-account is active.
+    expect(rows.map((r) => r.accountId).sort()).toEqual(['albert', 'faircoin', 'nate', 'oxy']);
+    // Exactly the active sub-account is flagged current; operator + siblings stay.
+    expect(rows.find((r) => r.accountId === 'albert')?.isCurrent).toBe(true);
+    expect(rows.filter((r) => r.isCurrent)).toHaveLength(1);
+    // The operator's own personal account is not dropped by acting-as.
+    expect(rows.find((r) => r.accountId === 'nate')).toBeDefined();
+    // Graph-only siblings (operable but not yet on this device) still appear.
+    expect(rows.find((r) => r.accountId === 'oxy')?.onDevice).toBe(false);
+    expect(rows.find((r) => r.accountId === 'faircoin')?.onDevice).toBe(false);
+  });
 });
 
 describe('switchableAccountIds', () => {

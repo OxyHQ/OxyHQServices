@@ -30,9 +30,13 @@ const OPERATOR_ID = '6a0000000000000000000001';
 const ORG_ID = '6a0000000000000000000010';
 
 const mockVerifyActingAs = jest.fn();
+const mockListAccessibleAccounts = jest.fn();
 jest.mock('../../services/account.service', () => ({
   __esModule: true,
-  accountService: { verifyActingAs: (...args: unknown[]) => mockVerifyActingAs(...args) },
+  accountService: {
+    verifyActingAs: (...args: unknown[]) => mockVerifyActingAs(...args),
+    listAccessibleAccounts: (...args: unknown[]) => mockListAccessibleAccounts(...args),
+  },
 }));
 
 const mockFindById = jest.fn();
@@ -43,9 +47,15 @@ jest.mock('../../models/User', () => ({
 }));
 
 const mockCreateSession = jest.fn();
+const mockGetSession = jest.fn();
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
-  default: { createSession: (...args: unknown[]) => mockCreateSession(...args) },
+  default: {
+    createSession: (...args: unknown[]) => mockCreateSession(...args),
+    // Used by the route's `resolveOperatorId` to read `operatedByUserId` off the
+    // session doc (the JWT does not carry it).
+    getSession: (...args: unknown[]) => mockGetSession(...args),
+  },
 }));
 
 // The switch now registers the managed session into the operator's device set.
@@ -134,6 +144,37 @@ function post(srv: http.Server, path: string): Promise<JsonResponse> {
   });
 }
 
+function get(srv: http.Server, path: string): Promise<JsonResponse> {
+  const address = srv.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        method: 'GET',
+        host: '127.0.0.1',
+        port: address.port,
+        path,
+        headers: { Authorization: 'Bearer t' },
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (c) => { raw += c; });
+        res.on('end', () => {
+          try {
+            const setCookie = res.headers['set-cookie'] ?? [];
+            resolve({
+              status: res.statusCode ?? 0,
+              setCookie: Array.isArray(setCookie) ? setCookie : [setCookie],
+              body: raw.length > 0 ? JSON.parse(raw) : {},
+            });
+          } catch (err) { reject(err); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 let server: http.Server;
 
 beforeAll((done) => {
@@ -158,6 +199,12 @@ beforeEach(() => {
   // inherit it so the org session lands on the SAME device doc as the operator.
   mockDecodeToken.mockReset();
   mockDecodeToken.mockReturnValue({ sessionId: 'op-sess', deviceId: 'dev-op' });
+  // Default: an ordinary (non-operated) session → the operator IS the active
+  // account. Operated-session cases override with an `operatedByUserId`.
+  mockGetSession.mockReset();
+  mockGetSession.mockResolvedValue({ operatedByUserId: null });
+  mockListAccessibleAccounts.mockReset();
+  mockListAccessibleAccounts.mockResolvedValue([]);
 });
 
 describe('POST /accounts/:id/switch', () => {
@@ -225,6 +272,44 @@ describe('POST /accounts/:id/switch', () => {
     );
   });
 
+  it('anchors on the OPERATOR when acting-as a sub-account (sibling switch works, operator never nests)', async () => {
+    // The active session is an OPERATED sub-account: the human operator is the
+    // recorded `operatedByUserId`, NOT the active account (OPERATOR_ID here plays
+    // the acted-as sub-account). A switch out of it must authorise + record the
+    // HUMAN, so the operator can reach their sibling accounts.
+    const HUMAN_ID = '6a0000000000000000000099';
+    mockGetSession.mockResolvedValue({ operatedByUserId: { toString: () => HUMAN_ID } });
+    mockVerifyActingAs.mockResolvedValue('owner');
+    mockFindById.mockResolvedValue({
+      _id: new Types.ObjectId(ORG_ID),
+      username: 'sibling-org',
+      kind: 'organization',
+      accountStatus: 'active',
+    });
+    mockCreateSession.mockResolvedValue({
+      sessionId: 'sess-2',
+      deviceId: 'dev-op',
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+      accessToken: 'acc-2',
+    });
+
+    const res = await post(server, `/accounts/${ORG_ID}/switch`);
+
+    expect(res.status).toBe(200);
+    // Authorised as the human operator — NOT the acted-as sub-account.
+    expect(mockVerifyActingAs).toHaveBeenCalledWith(HUMAN_ID, ORG_ID);
+    // The minted session records the human operator (flat chain, never the sub-account).
+    expect(mockCreateSession).toHaveBeenCalledWith(ORG_ID, expect.anything(), {
+      operatedByUserId: HUMAN_ID,
+      deviceId: 'dev-op',
+    });
+    expect(mockAddAccount).toHaveBeenCalledWith(
+      'dev-op',
+      { accountId: ORG_ID, sessionId: 'sess-2', operatedByUserId: HUMAN_ID },
+      { activate: 'always' },
+    );
+  });
+
   it('falls back to a fresh device when the bearer has no resolvable deviceId', async () => {
     // No decodable deviceId on the caller's bearer → keep today's behavior
     // (let createSession derive/allocate a device) rather than passing undefined.
@@ -285,5 +370,29 @@ describe('POST /accounts/:id/switch', () => {
 
     expect(res.status).toBe(404);
     expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /accounts (operator-anchored switchable graph)', () => {
+  it('anchors an ordinary session on the authenticated account', async () => {
+    // No operatedByUserId → the operator IS the active account.
+    const res = await get(server, '/accounts');
+
+    expect(res.status).toBe(200);
+    expect(mockListAccessibleAccounts).toHaveBeenCalledWith(OPERATOR_ID);
+  });
+
+  it('anchors an OPERATED (sub-account) session on the human operator, not the active account', async () => {
+    // Acting-as a leaf sub-account must still return the OPERATOR's full forest
+    // (their personal account + every sibling they can act_as), so the switcher
+    // never collapses to just the active sub-account.
+    const HUMAN_ID = '6a0000000000000000000099';
+    mockGetSession.mockResolvedValue({ operatedByUserId: { toString: () => HUMAN_ID } });
+
+    const res = await get(server, '/accounts');
+
+    expect(res.status).toBe(200);
+    expect(mockListAccessibleAccounts).toHaveBeenCalledWith(HUMAN_ID);
+    expect(mockListAccessibleAccounts).not.toHaveBeenCalledWith(OPERATOR_ID);
   });
 });
