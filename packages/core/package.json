@@ -9,6 +9,9 @@
     "*": {
       "server": [
         "dist/types/server/index.d.ts"
+      ],
+      "logger": [
+        "dist/types/logger/index.d.ts"
       ]
     }
   },
@@ -40,6 +43,18 @@
         "default": "./dist/cjs/server/index.js"
       },
       "default": "./dist/esm/server/index.js"
+    },
+    "./logger": {
+      "react-native": "./dist/esm/logger/index.js",
+      "import": {
+        "types": "./dist/types/logger/index.d.ts",
+        "default": "./dist/esm/logger/index.js"
+      },
+      "require": {
+        "types": "./dist/types/logger/index.d.ts",
+        "default": "./dist/cjs/logger/index.js"
+      },
+      "default": "./dist/esm/logger/index.js"
     },
     "./package.json": "./package.json"
   },

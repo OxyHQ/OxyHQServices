@@ -6,7 +6,7 @@ import {
   sessionAccountsChangedEventSchema,
   type DeviceSessionState,
 } from '@oxyhq/contracts';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { getSocketIO } from './socketLoader';
 import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 

@@ -26,7 +26,7 @@ import type { AuthRefreshHandler, AuthRefreshReason } from '../HttpService';
 import type { AuthStateStore, PersistedAuthState } from './authStateStore';
 import { isNative } from '../utils/platform';
 import { extractErrorStatus } from '../utils/errorUtils';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 
 /**
  * Lead time (ms) before access-token expiry at which the proactive scheduler

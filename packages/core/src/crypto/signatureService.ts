@@ -20,7 +20,7 @@ import {
   isNodeJS,
 } from '@oxyhq/protocol';
 import { KeyManager } from './keyManager';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 
 export interface SignedMessage {
   message: string;

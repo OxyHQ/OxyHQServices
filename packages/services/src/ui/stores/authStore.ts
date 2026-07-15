@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { createDebugLogger, normalizeUserIdentity } from '@oxyhq/core';
+import { createLogger, normalizeUserIdentity } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 
-const debug = createDebugLogger('AuthStore');
+const log = createLogger('AuthStore');
 
 export interface AuthState {
   user: User | null;
@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
 
     // Use cached data if available and not forcing refresh
     if (!forceRefresh && state.user && cacheValid) {
-      debug.log('Using cached user data (age:', cacheAge, 'ms)');
+      log.info('Using cached user data', { cacheAge });
       return;
     }
 
@@ -56,7 +56,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
       set({ user, isLoading: false, isAuthenticated: true, lastUserFetch: now });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
-      debug.error('Error fetching user:', error);
+      log.error('Error fetching user', error);
       set({ error: errorMessage, isLoading: false });
     }
   },

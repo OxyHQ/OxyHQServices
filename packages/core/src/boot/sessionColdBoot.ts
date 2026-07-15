@@ -22,7 +22,7 @@
  */
 import { runColdBoot, type ColdBootOutcome, type ColdBootStep } from '../utils/coldBoot';
 import { isNative as detectNative } from '../utils/platform';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { TOKEN_REFRESH_LEAD_MS, refreshDeviceSecretArm } from '../session/refresh';
 import type { OxyServices } from '../OxyServices';
 import type { AuthStateStore } from '../session/authStateStore';

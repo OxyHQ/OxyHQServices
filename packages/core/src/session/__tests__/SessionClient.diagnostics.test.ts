@@ -1,6 +1,6 @@
 import type { DeviceSessionState } from '@oxyhq/contracts';
 import { SessionClient, type SessionClientHost } from '../SessionClient';
-import { logger } from '../../utils/loggerUtils';
+import { logger } from '../../logger';
 
 const STATE = (rev: number): DeviceSessionState => ({
   deviceId: 'd1', accounts: [{ accountId: 'a1', sessionId: 's1', authuser: 0 }], activeAccountId: 'a1', revision: rev, updatedAt: 1720000000000,

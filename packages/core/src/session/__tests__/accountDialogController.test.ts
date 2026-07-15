@@ -5,7 +5,7 @@ import type { SessionLoginResponse, MinimalUserData } from '../../models/session
 import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import { SessionClient, type SessionClientHost } from '../SessionClient';
 import type { MinimalSocket, SocketIOFactory } from '../socketLoader';
-import { logger } from '../../utils/loggerUtils';
+import { logger } from '../../logger';
 import {
   AccountDialogController,
   createAccountDialogController,

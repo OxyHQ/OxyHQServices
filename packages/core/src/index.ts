@@ -317,7 +317,7 @@ export { SECURITY_EVENT_SEVERITY_MAP } from './models/interfaces';
 
 // Topic enums + type
 export { TopicType, TopicSource } from './models/Topic';
-export type { TopicData, TopicTranslation } from './models/Topic';
+export type { TopicData, TopicTranslation, TopicListResult } from './models/Topic';
 
 // ---------------------------------------------------------------------------
 // Languages
@@ -402,14 +402,6 @@ export {
 } from './shared/utils/networkUtils';
 export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils';
 
-export {
-    isDev,
-    debugLog,
-    debugWarn,
-    debugError,
-    createDebugLogger,
-} from './shared/utils/debugUtils';
-
 // ---------------------------------------------------------------------------
 // i18n
 // ---------------------------------------------------------------------------
@@ -475,20 +467,26 @@ export {
 } from './utils/textNormalization';
 
 // ---------------------------------------------------------------------------
-// Logging
+// Logging — the ecosystem-wide chokepoint (also at subpath `@oxyhq/core/logger`)
 // ---------------------------------------------------------------------------
 export {
     logger,
+    createLogger,
+    configureLogger,
+    getLoggerConfig,
+    resetLoggerConfig,
+    consoleSink,
+    isDev,
+} from './logger';
+export type {
+    Logger,
     LogLevel,
-    logAuth,
-    logApi,
-    logSession,
-    logUser,
-    logDevice,
-    logPayment,
-    logPerformance,
-} from './utils/loggerUtils';
-export type { LogContext } from './utils/loggerUtils';
+    EmittableLogLevel,
+    LogContext,
+    LogEntry,
+    LogSink,
+    LoggerConfig,
+} from './logger';
 
 // ---------------------------------------------------------------------------
 // Avatars
