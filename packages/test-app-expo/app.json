@@ -41,7 +41,11 @@
       "expo-font",
       "expo-image",
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@oxyhq/app-preset",
+        {}
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

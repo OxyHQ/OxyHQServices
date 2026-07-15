@@ -13,6 +13,7 @@
     "packages/core",
     "packages/services",
     "packages/expo-splash",
+    "packages/app-preset",
     "packages/api",
     "packages/node",
     "packages/auth",

@@ -1,14 +1,9 @@
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/preflight.css" layer(base);
-@import "tailwindcss/utilities.css";
-@import "nativewind/theme";
-@import "@oxyhq/bloom/design-tokens/theme.css";
+/* Shared Oxy Tailwind v4 + NativeWind + Bloom base (imports + SDK @source globs).
+   See @oxyhq/app-preset/base.css. App-specific globs and theme follow below. */
+@import "@oxyhq/app-preset/base.css";
 
 @source "./app/**/*.{js,jsx,ts,tsx}";
 @source "./components/**/*.{js,jsx,ts,tsx}";
-@source "../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
-@source "../services/src/**/*.{ts,tsx}";
-@source "../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
 
 /* App base color tokens — registers the existing color KEYS so utilities like
    `text-foreground` / `bg-background` emit at build time. BloomThemeProvider writes

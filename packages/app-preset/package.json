@@ -1,0 +1,85 @@
+{
+  "name": "@oxyhq/app-preset",
+  "version": "0.1.0",
+  "description": "The Oxy distro of Expo — centralized Expo config plugin, Metro/Babel/ESLint factories, Tailwind base CSS and TypeScript bases shared by every Oxy app (Mention, Homiio, Allo, accounts, …). A zero-build package: apps replace copy-pasted config with a single dependency bump.",
+  "main": "./app.plugin.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./app.plugin.js",
+    "./app.plugin.js": "./app.plugin.js",
+    "./plugin/withOxyAppPreset": "./plugin/withOxyAppPreset.js",
+    "./plugin/withSharedUserId": "./plugin/withSharedUserId.js",
+    "./plugin/withOxyKeychain": "./plugin/withOxyKeychain.js",
+    "./plugin/withOxyBuildProperties": "./plugin/withOxyBuildProperties.js",
+    "./metro": "./metro/index.js",
+    "./babel": "./babel/index.js",
+    "./eslint": "./eslint/index.js",
+    "./base.css": "./css/base.css",
+    "./css/base.css": "./css/base.css",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/frontend.json": "./tsconfig/frontend.json",
+    "./tsconfig/backend.json": "./tsconfig/backend.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "app.plugin.js",
+    "plugin",
+    "metro",
+    "babel",
+    "eslint",
+    "css",
+    "tsconfig",
+    "README.md"
+  ],
+  "keywords": [
+    "oxyhq",
+    "expo",
+    "react-native",
+    "config-plugin",
+    "metro",
+    "babel",
+    "nativewind",
+    "preset"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/app-preset"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "echo \"@oxyhq/app-preset is a zero-build config package — no unit tests\" && exit 0"
+  },
+  "peerDependencies": {
+    "@oxyhq/bloom": "*",
+    "@oxyhq/services": "*",
+    "babel-plugin-module-resolver": "*",
+    "babel-preset-expo": "*",
+    "eslint": ">=9.0.0",
+    "eslint-config-expo": "*",
+    "expo": ">=56.0.0",
+    "expo-build-properties": "*",
+    "nativewind": ">=5.0.0-preview.0",
+    "react-native-worklets": "*",
+    "tailwindcss": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@oxyhq/bloom": { "optional": true },
+    "@oxyhq/services": { "optional": true },
+    "babel-plugin-module-resolver": { "optional": true },
+    "babel-preset-expo": { "optional": true },
+    "eslint": { "optional": true },
+    "eslint-config-expo": { "optional": true },
+    "expo-build-properties": { "optional": true },
+    "nativewind": { "optional": true },
+    "react-native-worklets": { "optional": true },
+    "tailwindcss": { "optional": true }
+  }
+}
