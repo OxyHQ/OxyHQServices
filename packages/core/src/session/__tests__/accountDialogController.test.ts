@@ -126,7 +126,13 @@ interface Harness {
   onSignedIn: jest.Mock;
 }
 
-function makeHarness(over: Partial<{ clientId: string | null }> = {}): Harness {
+function makeHarness(
+  over: Partial<{
+    clientId: string | null;
+    openPopup: () => import('../accountDialogController').PopupWindowHandle | null;
+    hubBaseUrl: string;
+  }> = {},
+): Harness {
   const oxy = makeOxy();
   const sc = new TestSessionClient(host());
   const commitSession = jest.fn().mockResolvedValue(undefined);
@@ -138,6 +144,8 @@ function makeHarness(over: Partial<{ clientId: string | null }> = {}): Harness {
     commitSession,
     onSignedIn,
     pollIntervalMs: 1000,
+    openPopup: over.openPopup,
+    hubBaseUrl: over.hubBaseUrl,
   });
   return { controller, oxy, sc, commitSession, onSignedIn };
 }
@@ -638,6 +646,130 @@ describe('AccountDialogController — sign in with Oxy', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+/** A controllable fake `PopupWindowHandle` for `startPasskeyHubSignIn` tests. */
+function fakePopup(): import('../accountDialogController').PopupWindowHandle & { setClosed: () => void } {
+  let closed = false;
+  return {
+    get closed() {
+      return closed;
+    },
+    close: jest.fn(() => {
+      closed = true;
+    }),
+    location: { href: '' },
+    setClosed: () => {
+      closed = true;
+    },
+  };
+}
+
+describe('AccountDialogController — startPasskeyHubSignIn (b2 passkey hub popup)', () => {
+  it('opens the popup synchronously, then navigates it to the hub URL with the authorizeCode once the session exists', async () => {
+    const popup = fakePopup();
+    const openPopup = jest.fn(() => popup);
+    const { controller, oxy } = makeHarness({ openPopup, hubBaseUrl: 'https://auth.oxy.so' });
+    oxy.startCommonsSignIn.mockResolvedValue({
+      sessionToken: 'secret-tok',
+      authorizeCode: 'AUTH-CODE',
+      qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+      expiresAt: Date.now() + 300_000,
+      status: 'pending',
+    });
+
+    await controller.startPasskeyHubSignIn();
+
+    expect(openPopup).toHaveBeenCalledTimes(1);
+    expect(popup.location.href).toBe('https://auth.oxy.so/hub-passkey?code=AUTH-CODE');
+    // Same underlying device-flow session showQr would create — the QR view
+    // still renders as a fallback/alternative alongside the popup.
+    const snap = controller.getSnapshot();
+    expect(snap.view).toBe('qr');
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.authorizeCode).toBe('AUTH-CODE');
+    controller.cancelSignIn();
+  });
+
+  it('falls back to the plain QR flow (no navigation) when the popup is blocked', async () => {
+    const openPopup = jest.fn(() => null);
+    const { controller, oxy } = makeHarness({ openPopup });
+    oxy.startCommonsSignIn.mockResolvedValue({
+      sessionToken: 'secret-tok',
+      authorizeCode: 'AUTH-CODE',
+      qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+      expiresAt: Date.now() + 300_000,
+      status: 'pending',
+    });
+
+    await controller.startPasskeyHubSignIn();
+
+    expect(oxy.startCommonsSignIn).toHaveBeenCalledWith({ clientId: 'oxy_dk_test' });
+    const snap = controller.getSnapshot();
+    expect(snap.view).toBe('qr');
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    controller.cancelSignIn();
+  });
+
+  it('closes the popup without navigating it when device-flow session creation fails', async () => {
+    const popup = fakePopup();
+    const openPopup = jest.fn(() => popup);
+    const { controller, oxy } = makeHarness({ openPopup });
+    oxy.startCommonsSignIn.mockRejectedValue(new Error('network down'));
+
+    await controller.startPasskeyHubSignIn();
+
+    expect(popup.close).toHaveBeenCalledTimes(1);
+    expect(popup.location.href).toBe('');
+    expect(controller.getSnapshot().signIn.phase).toBe('error');
+  });
+
+  it('surfaces "cancelled" and closes the popup watcher when the user closes the popup before authorizing', async () => {
+    jest.useFakeTimers();
+    try {
+      const popup = fakePopup();
+      const openPopup = jest.fn(() => popup);
+      const { controller, oxy } = makeHarness({ openPopup });
+      oxy.startCommonsSignIn.mockResolvedValue({
+        sessionToken: 'secret-tok',
+        authorizeCode: 'AUTH-CODE',
+        qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+        expiresAt: Date.now() + 300_000,
+        status: 'pending',
+      });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+
+      await controller.startPasskeyHubSignIn();
+      expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+
+      popup.setClosed();
+      await jest.advanceTimersByTimeAsync(1000); // the 1s popup-close watchdog tick
+
+      const snap = controller.getSnapshot();
+      expect(snap.signIn.phase).toBe('error');
+      expect(snap.signIn.error).toMatch(/cancelled/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('closes the popup again (never navigates it) when clientId is missing', async () => {
+    const popup = fakePopup();
+    const openPopup = jest.fn(() => popup);
+    const { controller, oxy } = makeHarness({ clientId: null, openPopup });
+
+    await controller.startPasskeyHubSignIn();
+
+    // openPopup is invoked unconditionally (before the clientId check, since it
+    // must run synchronously) — but the popup must be closed again rather than
+    // navigated, since the flow can't proceed without a clientId.
+    expect(oxy.startCommonsSignIn).not.toHaveBeenCalled();
+    expect(popup.close).toHaveBeenCalledTimes(1);
+    expect(popup.location.href).toBe('');
+    expect(controller.getSnapshot().signIn.phase).toBe('error');
+    expect(controller.getSnapshot().signIn.error).toMatch(/clientId/);
   });
 });
 

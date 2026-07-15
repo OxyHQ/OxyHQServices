@@ -33,7 +33,7 @@ import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS, canonicalizeOAuthRedirectUri } from '../services/oauthCode.service';
-import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
+import { claimAuthSession, authorizeSessionWithSignedChallenge, authorizeSessionWithBearer } from '../services/authSession.service';
 import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
@@ -1337,6 +1337,92 @@ router.post(
         id: outcome.userId,
         username: outcome.username,
         publicKey: outcome.publicKey,
+      },
+    });
+  }),
+);
+
+// Bearer approval keyed on the PUBLIC authorizeCode. Tight, like the
+// sibling authorize-signed limiter — a legitimate approval hits this once
+// per flow; the cap blunts brute force against the authorizeCode.
+const authSessionAuthorizeCodeLimiter = rateLimit({
+  prefix: 'rl:auth:session-authorize-code:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * POST /auth/session/authorize-code/:authorizeCode
+ *
+ * Bearer-authed sibling of `POST /session/authorize/:sessionToken`, keyed on
+ * the PUBLIC `authorizeCode` instead of the secret `sessionToken` — for an
+ * approver that authenticates via bearer token (e.g. a passkey ceremony) but,
+ * unlike the Oxy Accounts app, never holds the secret. This lets the caller
+ * carry ONLY the public code (safe in a URL); the secret `sessionToken` never
+ * has to leave the originating client. The authenticated principal (bearer)
+ * is the sole source of "who is authorising" — mirrors `/session/authorize`.
+ *
+ * The claim + mint live in `authorizeSessionWithBearer` (atomic, see its
+ * doc) so two concurrent authorizes of the same code can't both mint a
+ * session — the route only resolves the bearer identity and maps the
+ * outcome to a status code.
+ */
+router.post(
+  '/session/authorize-code/:authorizeCode',
+  authMiddleware,
+  authSessionAuthorizeCodeLimiter,
+  validate({ params: authorizeCodeParams, body: authorizeSessionBodySchema }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { authorizeCode } = req.params;
+    const { deviceName, deviceFingerprint } = req.body;
+
+    const authenticatedUser = req.user;
+    if (!authenticatedUser?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+    const authenticatedUserId = authenticatedUser._id.toString();
+
+    const outcome = await authorizeSessionWithBearer({
+      authorizeCode,
+      authenticatedUserId,
+      authenticatedPublicKey: authenticatedUser.publicKey,
+      deviceName,
+      deviceFingerprint,
+      req,
+    });
+
+    if (!outcome.ok) {
+      if (outcome.status === 404) throw new NotFoundError(outcome.message);
+      throw new BadRequestError(outcome.message);
+    }
+
+    logger.info('Auth session authorized (bearer, by code)', {
+      authorizeCode: authorizeCode.substring(0, 8) + '...',
+      userId: authenticatedUserId,
+    });
+
+    // Notify the waiting originator on its secret sessionToken channel — the
+    // caller here only ever held the public authorizeCode.
+    emitAuthSessionUpdate(outcome.sessionToken, {
+      status: 'authorized',
+      sessionId: outcome.sessionId,
+      publicKey: authenticatedUser.publicKey,
+      userId: authenticatedUserId,
+      username: authenticatedUser.username,
+    });
+
+    // A1: a brand-new session was minted for this user — signal all of their
+    // other connected sockets (across devices/origins) to refetch. No device
+    // mutation happens here, so the revision hint is 0.
+    broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+
+    sendSuccess(res, {
+      success: true,
+      sessionId: outcome.sessionId,
+      user: {
+        id: authenticatedUserId,
+        username: authenticatedUser.username,
+        publicKey: authenticatedUser.publicKey,
       },
     });
   }),

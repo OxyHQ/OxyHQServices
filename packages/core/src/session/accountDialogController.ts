@@ -24,6 +24,12 @@
  *   - `commonsAvailability` — whether Commons is installed on this device
  *     (native only, via the injected `canOpenApp` probe), so the QR view can
  *     offer a "Get Commons" fallback instead of a same-device dead end.
+ *   - `startPasskeyHubSignIn` — on a non-Oxy web origin (where a WebAuthn
+ *     ceremony can't run locally, the RP-ID is bound to oxy.so), open a popup
+ *     at the auth.oxy.so passkey hub instead, scoped to the SAME device-flow
+ *     session `showQr` creates, and complete it via the SAME poll/socket/claim
+ *     engine. Falls back to `showQr`'s plain QR rendering if the popup is
+ *     blocked.
  *
  * Sign-in is passkey (WebAuthn) or the Commons QR / shared-keychain handoff —
  * password, social login, and 2FA were removed ecosystem-wide. Account
@@ -36,6 +42,7 @@ import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { User } from '../models/interfaces';
 import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
+import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
 import type { SessionClient } from './SessionClient';
 import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 import {
@@ -44,6 +51,7 @@ import {
   type SwitchableAccount,
 } from './accountProjection';
 import type { AccountNode } from '../mixins/OxyServices.accounts';
+import type { CommonsSignInHandle } from '../mixins/OxyServices.auth';
 
 /** The dialog's top-level view. */
 export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add' | 'signup';
@@ -63,6 +71,20 @@ export type CommonsAvailability = 'unknown' | 'checking' | 'available' | 'unavai
 
 /** Lifecycle phase of the "Sign in with Oxy" device flow. */
 export type SignInFlowPhase = 'idle' | 'starting' | 'waiting' | 'authorized' | 'error';
+
+/**
+ * Minimal structural handle over a popup `Window` — just enough for the
+ * cross-origin passkey hub flow ({@link AccountDialogController.startPasskeyHubSignIn}):
+ * navigate it once the device-flow session's `authorizeCode` is known, detect
+ * the user closing it early (`closed`), and close it programmatically on
+ * completion/failure. Satisfied directly by `window.open()`'s return value on
+ * web; native has no popup concept and never injects an opener.
+ */
+export interface PopupWindowHandle {
+  readonly closed: boolean;
+  close(): void;
+  location: { href: string };
+}
 
 /** State of the "Sign in with Oxy" (shared-key / QR) device flow. */
 export interface SignInFlowState {
@@ -181,6 +203,20 @@ export interface AccountDialogControllerOptions {
    * `showQr` behaves exactly as before (render QR only).
    */
   canOpenApp?: (url: string) => Promise<boolean>;
+  /**
+   * Open a new, empty popup window SYNCHRONOUSLY (before any `await`) so the
+   * browser attributes it to the click gesture that triggered it, returning a
+   * handle to navigate once the device-flow session is known — or `null` if
+   * the popup was blocked. Injected by the provider (web only:
+   * `window.open('', ...)`; absent on native, where the hub-popup flow does
+   * not apply). Used by {@link AccountDialogController.startPasskeyHubSignIn}.
+   */
+  openPopup?: () => PopupWindowHandle | null;
+  /**
+   * Base origin of the auth.oxy.so passkey hub (defaults to
+   * `https://auth.${CENTRAL_IDP_APEX}`). Overridable for local/staging testing.
+   */
+  hubBaseUrl?: string;
 }
 
 /**
@@ -227,6 +263,8 @@ export class AccountDialogController {
   private readonly openUrl?: (url: string) => void;
   private readonly canOpenApp?: (url: string) => Promise<boolean>;
   private readonly socketFactory?: SocketIOFactory;
+  private readonly openPopup?: () => PopupWindowHandle | null;
+  private readonly hubBaseUrl: string;
 
   private readonly listeners = new Set<SnapshotListener>();
 
@@ -256,6 +294,10 @@ export class AccountDialogController {
    * single-use token concurrently.
    */
   private pollInFlight = false;
+  /** The popup opened by {@link startPasskeyHubSignIn}, or `null`. */
+  private activePopup: PopupWindowHandle | null = null;
+  /** Watches {@link activePopup}'s `closed` state; see {@link watchPopup}. */
+  private popupWatchTimer: ReturnType<typeof setInterval> | null = null;
 
   // --- Store plumbing ---
   private unsubscribeSession: (() => void) | null = null;
@@ -278,6 +320,8 @@ export class AccountDialogController {
     this.openUrl = options.openUrl;
     this.canOpenApp = options.canOpenApp;
     this.socketFactory = options.socketFactory;
+    this.openPopup = options.openPopup;
+    this.hubBaseUrl = options.hubBaseUrl ?? `https://auth.${CENTRAL_IDP_APEX}`;
     this.snapshot = this.computeSnapshot();
   }
 
@@ -356,6 +400,7 @@ export class AccountDialogController {
     }
     this.clearPollTimer();
     this.closeAuthSessionSocket();
+    this.closeActivePopup();
     this.signInToken = null;
     this.listeners.clear();
   }
@@ -630,9 +675,64 @@ export class AccountDialogController {
   async showQr(): Promise<void> {
     this.cancelSignIn();
     this.setView('qr');
+    await this.startDeviceFlowSession();
+  }
+
+  /**
+   * Web-only: "Sign in with a passkey" on a non-Oxy origin cannot run the
+   * WebAuthn ceremony locally — a credential minted with `WEBAUTHN_RP_ID=oxy.so`
+   * can only be asserted from `oxy.so`/a subdomain/loopback, a browser-enforced
+   * boundary `isOxyRpOrigin()` (consumer-side) already gates on. Instead, open
+   * a popup at the auth.oxy.so passkey hub, scoped to the SAME device-flow
+   * session {@link showQr} would create (same `authorizeCode`/`sessionToken`
+   * pair), and let the SAME poll/socket/claim engine complete it once the hub
+   * authorizes the session (`POST /auth/session/authorize-code/:authorizeCode`,
+   * bearer-authed, server-side — this method never sees or transmits the
+   * secret `sessionToken`).
+   *
+   * The popup MUST be opened synchronously, before any `await`, or the
+   * browser's popup blocker loses the click-gesture attribution and silently
+   * blocks it — so {@link openPopup} is invoked as the very first step, before
+   * the device-flow session (which needs an async call) even exists. If the
+   * popup is blocked (or no `openPopup` was injected), this falls back to
+   * `showQr`'s plain QR rendering — no dead end.
+   */
+  async startPasskeyHubSignIn(): Promise<void> {
+    this.cancelSignIn();
+    this.setView('qr');
+    const popup = this.openPopup?.() ?? null;
+    if (!popup) {
+      await this.startDeviceFlowSession();
+      return;
+    }
+    const handle = await this.startDeviceFlowSession();
+    if (!handle) {
+      popup.close();
+      return;
+    }
+    // The user may have closed the popup during the async session creation
+    // above, before any watcher was attached to catch it — guard rather than
+    // navigate a dead window (browsers vary on whether that throws).
+    if (popup.closed) {
+      this.failSignIn('Sign-in was cancelled.');
+      return;
+    }
+    this.activePopup = popup;
+    popup.location.href = `${this.hubBaseUrl}/hub-passkey?code=${encodeURIComponent(handle.authorizeCode)}`;
+    this.watchPopup(popup);
+  }
+
+  /**
+   * Shared device-flow session creation for both {@link showQr} (renders the
+   * QR) and {@link startPasskeyHubSignIn} (also opens the hub popup) — the
+   * same `startCommonsSignIn` → poll/socket wiring either way. Returns the
+   * handle on success (already reflected in `signIn`), or `null` on failure
+   * (already set as `signIn.error`).
+   */
+  private async startDeviceFlowSession(): Promise<CommonsSignInHandle | null> {
     if (!this.clientId) {
       this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: 'This app is not configured for sign-in (missing clientId).' });
-      return;
+      return null;
     }
     this.setSignIn({ ...IDLE_SIGN_IN, phase: 'starting' });
     try {
@@ -657,8 +757,48 @@ export class AccountDialogController {
       // stay live as the fallback, so a user who dismisses the app-open still
       // completes the sign-in by scanning.
       void this.deepLinkIntoCommonsIfAvailable(handle.qrPayload);
+      return handle;
     } catch (error) {
       this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: errorMessage(error) });
+      return null;
+    }
+  }
+
+  /**
+   * Poll {@link PopupWindowHandle.closed} so a user who dismisses the hub
+   * popup without completing sign-in gets prompt feedback (there is no DOM
+   * event for a cross-origin popup closing — polling is the only mechanism).
+   * Cleared by {@link closeActivePopup}, which every sign-in exit path already
+   * calls.
+   */
+  private watchPopup(popup: PopupWindowHandle): void {
+    this.clearPopupWatchTimer();
+    this.popupWatchTimer = setInterval(() => {
+      if (!popup.closed) return;
+      this.clearPopupWatchTimer();
+      if (this.signIn.phase === 'starting' || this.signIn.phase === 'waiting') {
+        this.failSignIn('Sign-in was cancelled.');
+      }
+    }, 1000);
+  }
+
+  private clearPopupWatchTimer(): void {
+    if (this.popupWatchTimer !== null) {
+      clearInterval(this.popupWatchTimer);
+      this.popupWatchTimer = null;
+    }
+  }
+
+  /** Tear down the popup watch timer and close the popup, if any. Idempotent. */
+  private closeActivePopup(): void {
+    this.clearPopupWatchTimer();
+    const popup = this.activePopup;
+    this.activePopup = null;
+    if (!popup || popup.closed) return;
+    try {
+      popup.close();
+    } catch (error) {
+      logger.debug('[AccountDialogController] popup close failed', { component: 'AccountDialogController' }, error);
     }
   }
 
@@ -712,10 +852,11 @@ export class AccountDialogController {
     }
   }
 
-  /** Tear down the active sign-in device flow (timers + socket + token) and reset to idle. */
+  /** Tear down the active sign-in device flow (timers + socket + popup + token) and reset to idle. */
   cancelSignIn(): void {
     this.clearPollTimer();
     this.closeAuthSessionSocket();
+    this.closeActivePopup();
     this.signInToken = null;
     if (this.signIn !== IDLE_SIGN_IN) {
       this.setSignIn(IDLE_SIGN_IN);
@@ -836,6 +977,7 @@ export class AccountDialogController {
     this.signInToken = null;
     this.clearPollTimer();
     this.closeAuthSessionSocket();
+    this.closeActivePopup();
     this.signIn = IDLE_SIGN_IN;
     this.view = 'accounts';
     this.emit();
@@ -872,6 +1014,7 @@ export class AccountDialogController {
   private failSignIn(message: string): void {
     this.clearPollTimer();
     this.closeAuthSessionSocket();
+    this.closeActivePopup();
     this.signInToken = null;
     this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: message });
   }

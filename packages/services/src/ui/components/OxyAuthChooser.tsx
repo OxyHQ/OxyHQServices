@@ -138,12 +138,20 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
   const { t } = useI18n();
   const queryClient = useQueryClient();
 
-  // A credential minted for `oxy.so` can only be asserted there (or a loopback
-  // dev host) — this is a hard WebAuthn RP-ID boundary, not feature detection,
-  // so it is the ONLY gate on the passkey affordances. `isOxyRpOrigin()` is
-  // `false` on native by construction (no `location`), so no separate native
-  // check is needed.
-  const passkeyAvailable = useMemo(() => isOxyRpOrigin(), []);
+  // A credential minted for `oxy.so` can only be ASSERTED there (or a loopback
+  // dev host) — a hard WebAuthn RP-ID boundary the browser enforces, not
+  // feature detection. On a first-party Oxy web origin the ceremony runs
+  // directly ('direct'). On any OTHER web origin (b2) it can't run locally, so
+  // the passkey action instead opens a popup at the auth.oxy.so passkey hub —
+  // where the SAME ceremony IS first-party — and relays the resulting session
+  // back via `AccountDialogController.startPasskeyHubSignIn` ('hub'). Native
+  // has neither: Commons owns identity there ('none'). `isOxyRpOrigin()` reads
+  // `location` once and is stable for the component's lifetime.
+  const passkeyMode = useMemo<'direct' | 'hub' | 'none'>(() => {
+    if (!isWebBrowser()) return 'none';
+    return isOxyRpOrigin() ? 'direct' : 'hub';
+  }, []);
+  const passkeyAvailable = passkeyMode !== 'none';
 
   const [signInPasskeyPending, setSignInPasskeyPending] = useState(false);
   const [signInPasskeyError, setSignInPasskeyError] = useState<string | null>(null);
@@ -274,9 +282,16 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
         t={t}
         onRetry={() => void controller.showQr()}
         passkeyAvailable={passkeyAvailable}
-        onSignInWithPasskey={() => void handleSignInWithPasskey()}
-        passkeyPending={signInPasskeyPending}
-        passkeyError={signInPasskeyError}
+        onSignInWithPasskey={
+          passkeyMode === 'direct'
+            ? () => void handleSignInWithPasskey()
+            : () => void controller.startPasskeyHubSignIn()
+        }
+        // The hub-popup flow's pending/error state is `snapshot.signIn`
+        // (already rendered elsewhere in this view) — only the DIRECT ceremony
+        // uses this component-local pair.
+        passkeyPending={passkeyMode === 'direct' ? signInPasskeyPending : false}
+        passkeyError={passkeyMode === 'direct' ? signInPasskeyError : null}
         onCreateAccount={() => controller.startSignup()}
       />
     );
@@ -289,10 +304,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
         theme={theme}
         t={t}
         oxyServices={oxyServices}
-        passkeyAvailable={passkeyAvailable}
+        passkeyMode={passkeyMode}
         onCreateWithPasskey={handleCreateWithPasskey}
         createPending={createPasskeyPending}
         createError={createPasskeyError}
+        onOpenHub={() => void controller.startPasskeyHubSignIn()}
         onBackToSignIn={() => controller.setView('signin')}
       />
     );
@@ -742,10 +758,12 @@ interface SignUpViewProps {
   theme: Theme;
   t: Translate;
   oxyServices: OxyServices;
-  passkeyAvailable: boolean;
+  passkeyMode: 'direct' | 'hub' | 'none';
   onCreateWithPasskey: (username: string) => Promise<void>;
   createPending: boolean;
   createError: string | null;
+  /** Open the auth.oxy.so hub popup (b2) — the 'hub' mode's only path. */
+  onOpenHub: () => void;
   onBackToSignIn: () => void;
 }
 
@@ -754,10 +772,11 @@ const SignUpView: React.FC<SignUpViewProps> = ({
   theme,
   t,
   oxyServices,
-  passkeyAvailable,
+  passkeyMode,
   onCreateWithPasskey,
   createPending,
   createError,
+  onOpenHub,
   onBackToSignIn,
 }) => {
   const [username, setUsername] = useState('');
@@ -794,7 +813,7 @@ const SignUpView: React.FC<SignUpViewProps> = ({
   // passkey creation is the de-emphasized alternative underneath for someone
   // who doesn't want to install anything — secondary button, introduced by
   // its own "No Commons?" framing, same subordination as the QR view's link.
-  if (passkeyAvailable) {
+  if (passkeyMode === 'direct') {
     return (
       <View style={styles.signInBlock}>
         <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
@@ -851,15 +870,20 @@ const SignUpView: React.FC<SignUpViewProps> = ({
     );
   }
 
-  // Web, non-Oxy origin: passkey creation here requires the cross-origin hub
-  // relay (b2), which has not shipped yet — an honest message beats a button
-  // that would fail.
+  // Web, non-Oxy origin (b2): passkey creation can't run locally here — the
+  // same WebAuthn RP-ID boundary as sign-in — so this opens the SAME
+  // auth.oxy.so passkey hub popup `QrView`'s "No Commons?" link uses.
+  // Completing EITHER a sign-in OR a fresh sign-up there relays the resulting
+  // session back via the SAME poll/socket engine `showQr` drives.
   return (
     <View style={styles.centeredBlock}>
       <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>
-        {t('signup.notAvailableHere') ||
-          "Account creation isn't available in this app yet — create your identity with Commons, or visit oxy.so to sign up with a passkey."}
+        {t('signup.hubExplainer') ||
+          'Create your Oxy ID in a secure window, then come right back.'}
       </Text>
+      <Button variant="primary" onPress={onOpenHub} style={styles.primaryButton}>
+        {t('signup.continueInWindow') || 'Continue in a new window'}
+      </Button>
       <SignInFooterLink theme={theme} t={t} onPress={onBackToSignIn} />
     </View>
   );

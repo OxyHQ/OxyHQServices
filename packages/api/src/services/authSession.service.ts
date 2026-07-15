@@ -30,6 +30,7 @@ import { User } from '../models/User';
 import { Application } from '../models/Application';
 import SignatureService from './signature.service';
 import sessionService from './session.service';
+import { logger } from '../utils/logger';
 
 export interface ClaimAuthSessionOptions {
   sessionToken: string;
@@ -201,4 +202,97 @@ export async function authorizeSessionWithSignedChallenge(
     username: typeof user.username === 'string' ? user.username : undefined,
     publicKey,
   };
+}
+
+/** Options for {@link authorizeSessionWithBearer}. */
+export interface AuthorizeBearerOptions {
+  authorizeCode: string;
+  authenticatedUserId: string;
+  authenticatedPublicKey?: string;
+  deviceName?: string;
+  deviceFingerprint?: string;
+  req: Request;
+}
+
+export type AuthorizeBearerOutcome =
+  | { ok: true; sessionToken: string; sessionId: string }
+  | { ok: false; status: 400 | 404; message: string };
+
+/**
+ * Bearer approval of a pending cross-app auth session, keyed on the PUBLIC
+ * `authorizeCode` (the auth.oxy.so passkey hub, b2 — the approver
+ * authenticates via bearer token, never a local secp256k1 key, so it can't
+ * use {@link authorizeSessionWithSignedChallenge}). The authenticated
+ * principal is the bearer's `req.user` — never anything client-asserted.
+ *
+ * The claim is ATOMIC: a single `findOneAndUpdate` flips `pending` ->
+ * `authorized` conditioned on that exact prior status + an unexpired
+ * `expiresAt`, so two concurrent authorizes of the same code cannot both mint
+ * a session — the loser's update matches nothing and gets treated as
+ * already-processed, before ever calling `sessionService.createSession`.
+ * Mirrors {@link claimAuthSession}'s peek-then-atomic-claim shape.
+ *
+ * `originVerified` is an anti-phishing signal computed at `session/create`
+ * time from the REAL browser `Origin` header, not something this bearer
+ * caller can influence — an authorize with `originVerified: false` is
+ * exactly the shape a login-CSRF attempt would take (an attacker's own
+ * session, or an unregistered/third-party origin), so it's logged for audit
+ * even though the CLIENT-side consent screen (mandatory confirmation +
+ * non-suppressible acknowledgement) is the primary defense.
+ */
+export async function authorizeSessionWithBearer(
+  options: AuthorizeBearerOptions
+): Promise<AuthorizeBearerOutcome> {
+  const { authorizeCode, authenticatedUserId, authenticatedPublicKey, deviceName, deviceFingerprint, req } = options;
+
+  // Peek first for a precise reason (mirrors claimAuthSession) — the atomic
+  // update below is the actual source of truth for the claim.
+  const existing = await AuthSession.findOne({ authorizeCode });
+  if (!existing || existing.status !== 'pending') {
+    return { ok: false, status: 404, message: 'Auth session not found or already processed' };
+  }
+  if (existing.expiresAt < new Date()) {
+    return { ok: false, status: 400, message: 'Auth session has expired' };
+  }
+
+  const claimed = await AuthSession.findOneAndUpdate(
+    { _id: existing._id, status: 'pending', expiresAt: { $gt: new Date() } },
+    {
+      $set: {
+        status: 'authorized',
+        authorizedUserId: authenticatedUserId,
+        ...(authenticatedPublicKey ? { authorizedBy: authenticatedPublicKey } : {}),
+      },
+    },
+    { new: true }
+  );
+  if (!claimed) {
+    // Lost the race to a concurrent authorize (or expired between the peek
+    // and here) — the loser must NOT mint a session.
+    return { ok: false, status: 404, message: 'Auth session not found or already processed' };
+  }
+
+  if (!claimed.originVerified) {
+    logger.warn('Auth session authorized (bearer, by code) with an unverified origin', {
+      authorizeCode: authorizeCode.substring(0, 8) + '...',
+      userId: authenticatedUserId,
+      applicationId: claimed.applicationId.toString(),
+      boundOrigin: claimed.boundOrigin ?? null,
+    });
+  }
+
+  const app = await Application.findById(claimed.applicationId);
+  const appLabel = app ? app.name : 'App';
+  const newSession = await sessionService.createSession(authenticatedUserId, req, {
+    deviceName: deviceName || `${appLabel} App`,
+    deviceFingerprint,
+    ...(claimed.deviceId ? { deviceId: claimed.deviceId } : {}),
+  });
+
+  // Only the winner of the atomic claim above ever reaches here, so this
+  // final write is not racy — it just attaches the minted session id.
+  claimed.authorizedSessionId = newSession.sessionId;
+  await claimed.save();
+
+  return { ok: true, sessionToken: claimed.sessionToken, sessionId: newSession.sessionId };
 }

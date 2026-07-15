@@ -25,6 +25,10 @@ mock.module("@oxyhq/services", () => ({
         switchToAccount: async () => undefined,
     }),
     useSwitchableAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),
+    // No-op stub — this suite never renders it, but hub-passkey.test.tsx's
+    // mock of the SAME process-global specifier needs this export defined
+    // regardless of which file's mock.module call is currently active.
+    OxyAuthChooser: () => null,
 }))
 
 const { LoginForm } = await import("@/components/login-form")
