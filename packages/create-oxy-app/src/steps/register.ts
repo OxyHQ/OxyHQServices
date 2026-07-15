@@ -4,9 +4,10 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import type { ResolvedConfig } from '../context';
 
-// `@oxyhq/core` is an OPTIONAL dependency, imported lazily only when the user
-// opts into client registration. `import type` is erased at build; the runtime
-// `await import` is guarded so a missing install degrades to manual instructions
+// `@oxyhq/core` is a regular dependency but imported LAZILY (dynamic `await
+// import`) so the heavy SDK only loads when the user opts into client
+// registration, not on every CLI invocation. `import type` is erased at build;
+// the runtime import is guarded so any failure degrades to manual instructions
 // rather than crashing the scaffold.
 import type { OxyServices } from '@oxyhq/core';
 

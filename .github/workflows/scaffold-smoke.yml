@@ -12,6 +12,10 @@ on:
       - 'packages/create-oxy-app/**'
       - 'packages/app-preset/**'
 
+# Least privilege: this workflow only reads the repo (no writes, no packages).
+permissions:
+  contents: read
+
 jobs:
   scaffold:
     runs-on: ubuntu-24.04-arm

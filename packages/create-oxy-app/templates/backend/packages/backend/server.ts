@@ -45,12 +45,14 @@ app.get('/ready', (_req, res) => {
   res.status(503).json({ status: 'not-ready' });
 });
 
-// Per-user rate limiting (resolves the Oxy session). Keep it near the top.
-app.use(createOxyRateLimit(oxy));
+// API router. Per-user rate limiting (resolves the Oxy session) is mounted on
+// the router so EVERY API route — including authenticated ones — is throttled;
+// the liveness/readiness probes above are intentionally left unlimited.
+const api = express.Router();
+api.use(createOxyRateLimit(oxy));
 
 // Example authenticated route. Identity comes from the Oxy session — never from
 // the request body.
-const api = express.Router();
 api.get('/me', createOxyAuthMiddleware(oxy), (req, res) => {
   res.json({ userId: getRequiredOxyUserId(req as OxyAuthenticatedRequest) });
 });
