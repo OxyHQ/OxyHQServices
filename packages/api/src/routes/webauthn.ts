@@ -484,6 +484,14 @@ router.post(
       throw new BadRequestError('Passkey registration could not be verified');
     }
 
+    // CAVEAT — `userVerified` is authenticator-SELF-ASSERTED, not attestation-proven.
+    // We register with `attestationType: 'none'` and verify with
+    // `requireUserVerification: false`, so this flag is only the UV bit the
+    // authenticator reported for THIS ceremony; nothing cryptographically attests the
+    // authenticator's UV capability or that UV actually happened. Treat it as an
+    // assurance/telemetry marker ONLY — it must NOT be used as a hard security
+    // boundary for step-up (e.g. "require a UV-backed credential for sensitive
+    // actions"). A real step-up gate needs attestation.
     const { credential, credentialDeviceType, credentialBackedUp, userVerified } = verification.registrationInfo;
     const credentialName = envelope.deviceName?.trim() || DEFAULT_CREDENTIAL_NAME;
 
@@ -807,6 +815,11 @@ router.post(
     credential.lastUsedAt = new Date();
     // Refresh the assurance level: a credential that enrolled UV-capable but
     // authenticated presence-only (or vice versa) reflects its most recent ceremony.
+    // CAVEAT (same as register/verify): `userVerified` is authenticator-SELF-ASSERTED
+    // — verify runs with `requireUserVerification: false` and no attestation, so this
+    // is only the UV bit the authenticator reported for this assertion. It is an
+    // assurance/telemetry marker, NOT an attestation-proven fact, and must NOT gate a
+    // hard step-up boundary without attestation.
     credential.userVerified = userVerified;
     await credential.save();
 
