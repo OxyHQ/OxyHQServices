@@ -8,6 +8,7 @@ import type { SessionClient } from '@oxyhq/core';
 import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
 import {
   consumeSilentOAuthError,
+  isSilentRestoreEligibleOrigin,
   maybeStartSilentOAuthRestore,
 } from '../utils/crossOriginRestore';
 import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../utils/oauthReturn';
@@ -22,6 +23,12 @@ export interface RunProviderColdBootOptions {
   authStore: AuthStateStore;
   clientId?: string;
   authRedirectUri?: string;
+  /**
+   * Authorize endpoint override for silent cross-origin restore. Defaults to
+   * the production Oxy IdP when unset; a local/staging deployment sets it so the
+   * silent-restore redirect targets its own IdP, never production.
+   */
+  authorizeBaseUrl?: string;
   sessionClient: SessionClient;
   syncDeviceCredentialToHost: () => Promise<void>;
   commitSession: (
@@ -46,6 +53,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     authStore,
     clientId,
     authRedirectUri,
+    authorizeBaseUrl,
     sessionClient,
     syncDeviceCredentialToHost,
     commitSession,
@@ -129,11 +137,26 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       },
     });
 
-    if (isWebBrowser() && clientId && outcome.kind !== 'session') {
+    // Silent cross-origin OAuth restore (web cross-app SSO). Gate it the SAME
+    // way the hub-sync WRITE side (`syncHubAfterSignIn`) gates: official web
+    // origins only, never the IdP hub itself, and — unlike the write side —
+    // never a loopback / local-dev origin (which must not be bounced to a hosted
+    // IdP on cold boot). The authorize endpoint is env-configurable so a
+    // local/staging app targets its own IdP instead of production.
+    const webOrigin = isWebBrowser()
+      ? (globalThis as { location?: Location }).location?.origin
+      : undefined;
+    if (
+      clientId &&
+      outcome.kind !== 'session' &&
+      webOrigin &&
+      isSilentRestoreEligibleOrigin(webOrigin)
+    ) {
       const redirected = await maybeStartSilentOAuthRestore({
         oxyServices,
         clientId,
         redirectUri: authRedirectUri,
+        authorizeBaseUrl,
       });
       if (redirected) {
         return;

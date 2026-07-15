@@ -82,6 +82,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   baseURL,
   authWebUrl,
   authRedirectUri,
+  authorizeBaseUrl,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
   hubSync = true,
@@ -756,6 +757,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       authStore,
       clientId: clientIdProp,
       authRedirectUri,
+      authorizeBaseUrl,
       sessionClient,
       syncDeviceCredentialToHost,
       commitSession: (input, options) => commitSessionRef.current(input, options),
@@ -767,6 +769,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     authStore,
     clientIdProp,
     authRedirectUri,
+    authorizeBaseUrl,
     syncDeviceCredentialToHost,
     sessionClient,
   ]);
