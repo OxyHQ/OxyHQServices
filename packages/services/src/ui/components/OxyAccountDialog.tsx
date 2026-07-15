@@ -62,9 +62,11 @@ import {
   type AppColorName,
 } from '@oxyhq/bloom/theme';
 import type { SwitchableAccount, AccountDialogSnapshot } from '@oxyhq/core';
+import { isOxyRpOrigin } from '@oxyhq/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { isWebBrowser } from '../utils/isWebBrowser';
 import { LogoIcon } from './logo/LogoIcon';
 
 /** Diameter of a row avatar. */
@@ -112,10 +114,37 @@ const OxyAccountDialog: React.FC = () => {
     showBottomSheet,
     logoutAll,
     refreshAccounts,
+    signInWithPasskey,
   } = useOxy();
   const theme = useTheme();
   const { t } = useI18n();
   const queryClient = useQueryClient();
+
+  // Passkey sign-in is offered ONLY on a first-party Oxy web origin (a credential
+  // minted for `oxy.so` can only be asserted there or on a loopback dev host).
+  // Off the web / on a non-Oxy origin the button is hidden entirely (a hub popup
+  // for arbitrary web origins is a later phase). This is environment-static.
+  const passkeyAvailable = useMemo(() => isWebBrowser() && isOxyRpOrigin(), []);
+  const [passkeyPending, setPasskeyPending] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+
+  const handleSignInWithPasskey = useCallback(async () => {
+    if (passkeyPending) return;
+    setPasskeyPending(true);
+    setPasskeyError(null);
+    try {
+      await signInWithPasskey();
+      closeAccountDialog();
+    } catch (error) {
+      // A cancelled/failed ceremony keeps the dialog open so the user can retry
+      // or fall back to another method — surface a concise message, never swallow.
+      setPasskeyError(
+        error instanceof Error && error.message ? error.message : 'Passkey sign-in failed.',
+      );
+    } finally {
+      setPasskeyPending(false);
+    }
+  }, [passkeyPending, signInWithPasskey, closeAccountDialog]);
 
   // Bind the headless controller. `getSnapshot` returns a stable reference
   // between changes, so it is `useSyncExternalStore`-safe. Guard the no-provider
@@ -222,6 +251,9 @@ const OxyAccountDialog: React.FC = () => {
             onSignInWithOxy={() => void controller.signInWithOxy()}
             onScanQr={() => void controller.showQr()}
             onUsePassword={() => void controller.openPasswordAtOxyAuth()}
+            onSignInWithPasskey={passkeyAvailable ? () => void handleSignInWithPasskey() : undefined}
+            passkeyPending={passkeyPending}
+            passkeyError={passkeyError}
           />
         )}
       </ScrollView>
@@ -416,6 +448,10 @@ interface SignInViewProps {
   onSignInWithOxy: () => void;
   onScanQr: () => void;
   onUsePassword: () => void;
+  /** When present, offer a "Sign in with a passkey" button (first-party Oxy web only). */
+  onSignInWithPasskey?: () => void;
+  passkeyPending: boolean;
+  passkeyError: string | null;
 }
 
 const SignInView: React.FC<SignInViewProps> = ({
@@ -426,6 +462,9 @@ const SignInView: React.FC<SignInViewProps> = ({
   onSignInWithOxy,
   onScanQr,
   onUsePassword,
+  onSignInWithPasskey,
+  passkeyPending,
+  passkeyError,
 }) => (
   <View style={styles.signInBlock}>
     {snapshot.accounts.length > 0 ? (
@@ -447,6 +486,24 @@ const SignInView: React.FC<SignInViewProps> = ({
     <Button variant="primary" onPress={onSignInWithOxy} style={styles.primaryButton}>
       Sign in with Oxy
     </Button>
+
+    {onSignInWithPasskey ? (
+      <Button
+        variant="secondary"
+        onPress={onSignInWithPasskey}
+        disabled={passkeyPending}
+        style={styles.secondaryButton}
+        testID="passkey-signin-button"
+      >
+        {passkeyPending
+          ? t('accountSwitcher.passkeySigningIn') || 'Signing in…'
+          : t('accountSwitcher.signInWithPasskey') || 'Sign in with a passkey'}
+      </Button>
+    ) : null}
+
+    {passkeyError ? (
+      <Text style={[styles.errorText, { color: theme.colors.error }]}>{passkeyError}</Text>
+    ) : null}
 
     <Button variant="secondary" onPress={onScanQr} style={styles.secondaryButton}>
       {t('accountSwitcher.scanQr') || 'Scan a QR from another device'}

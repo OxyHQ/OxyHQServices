@@ -71,6 +71,12 @@ export const queryKeys = {
       [...queryKeys.security.all, 'infinite', limit, eventType] as const,
   },
 
+  // Linked authentication methods (passwords, identity keys, passkeys, social)
+  authMethods: {
+    all: ['authMethods'] as const,
+    list: (userId?: string) => [...queryKeys.authMethods.all, 'list', userId || 'current'] as const,
+  },
+
   // Storage usage queries
   storage: {
     all: ['storage'] as const,
@@ -157,6 +163,14 @@ export const invalidateSecurityQueries = (queryClient: QueryClient): void => {
  */
 export const invalidateStorageQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+};
+
+/**
+ * Helper to invalidate the user's linked auth-methods list (call after linking
+ * or removing a passkey / password / identity key).
+ */
+export const invalidateAuthMethodsQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
 };
 
 /**

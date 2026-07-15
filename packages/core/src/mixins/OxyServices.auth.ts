@@ -1197,6 +1197,139 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Begin a WebAuthn / passkey REGISTRATION ceremony. Requests the
+     * `PublicKeyCredentialCreationOptions` the browser's `navigator.credentials
+     * .create()` (or `@simplewebauthn/browser`'s `startRegistration`) needs.
+     *
+     * With a bearer token planted this links a passkey to the signed-in account
+     * (`username` ignored); without one it is a prospective signup and `username`
+     * is the desired handle. The returned options are OPAQUE — Oxy does not own
+     * their shape (the browser / `@simplewebauthn` does), so they pass through
+     * as `unknown` for the caller to hand straight to the ceremony.
+     */
+    async webauthnRegisterOptions(username?: string): Promise<unknown> {
+      try {
+        return await this.makeRequest<unknown>(
+          'POST',
+          '/auth/webauthn/register/options',
+          { ...(username !== undefined ? { username } : {}) },
+          { cache: false },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Finish a WebAuthn / passkey REGISTRATION ceremony. Forwards the opaque
+     * browser `RegistrationResponseJSON` (`response`) alongside the Oxy envelope
+     * (desired `username` for signup + the device-session naming fields).
+     *
+     * Two server branches, disambiguated by the response shape:
+     *  - **Signup** (no bearer): the account is created and a session minted —
+     *    the response carries `sessionId`, is the SAME {@link LoginResult}
+     *    contract as `POST /auth/verify`, and its access token is planted here.
+     *  - **Link** (bearer present): the passkey is attached to the signed-in
+     *    account and the server returns `{ success, message }` with no session,
+     *    which is returned verbatim (no token planting).
+     */
+    async webauthnRegisterVerify(
+      response: unknown,
+      envelope: {
+        username?: string;
+        deviceName?: string;
+        deviceFingerprint?: string;
+        deviceId?: string;
+      } = {},
+    ): Promise<{ success: true; message: string } | LoginResult> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/auth/webauthn/register/verify',
+          { response, ...envelope },
+          { cache: false },
+        );
+        if (res && typeof res === 'object') {
+          const record = res as Record<string, unknown>;
+          // Signup branch: mints a session (LoginSessionResult, carries
+          // `sessionId`). Parse against the login contract and plant the token.
+          if ('sessionId' in record) {
+            const parsed = safeParseContract(loginResultSchema, record);
+            if (!parsed) {
+              throw new Error('auth/webauthn/register/verify returned an unexpected response shape');
+            }
+            if (!('twoFactorRequired' in parsed) && parsed.accessToken) {
+              this.setTokens(parsed.accessToken);
+            }
+            return parsed;
+          }
+          // Link branch: passkey attached to the signed-in account, no session.
+          if (record.success === true && typeof record.message === 'string') {
+            return { success: true, message: record.message };
+          }
+        }
+        throw new Error('auth/webauthn/register/verify returned an unexpected response shape');
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Begin a WebAuthn / passkey AUTHENTICATION ceremony. Requests the
+     * `PublicKeyCredentialRequestOptions` the browser's `navigator.credentials
+     * .get()` (or `@simplewebauthn/browser`'s `startAuthentication`) needs.
+     *
+     * When `username` is present the server scopes `allowCredentials` to that
+     * user's passkeys (username-first); when omitted it returns an empty
+     * allow-list for the usernameless / discoverable-credential flow. The
+     * returned options are OPAQUE and pass through as `unknown`.
+     */
+    async webauthnLoginOptions(username?: string): Promise<unknown> {
+      try {
+        return await this.makeRequest<unknown>(
+          'POST',
+          '/auth/webauthn/login/options',
+          { ...(username !== undefined ? { username } : {}) },
+          { cache: false },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Finish a WebAuthn / passkey AUTHENTICATION ceremony. Forwards the opaque
+     * browser `AuthenticationResponseJSON` (`response`) alongside the
+     * device-session envelope. Resolves to the SAME {@link LoginResult} contract
+     * as `POST /auth/verify`; on the session arm the access token is planted
+     * immediately (mirroring {@link passwordSignIn}), and the response's
+     * `deviceId` + `deviceSecret` are the zero-cookie restore credential.
+     */
+    async webauthnLoginVerify(
+      response: unknown,
+      envelope: { deviceName?: string; deviceFingerprint?: string; deviceId?: string } = {},
+    ): Promise<LoginResult> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/auth/webauthn/login/verify',
+          { response, ...envelope },
+          { cache: false },
+        );
+        const parsed = safeParseContract(loginResultSchema, res);
+        if (!parsed) {
+          throw new Error('auth/webauthn/login/verify returned an unexpected response shape');
+        }
+        if (!('twoFactorRequired' in parsed) && parsed.accessToken) {
+          this.setTokens(parsed.accessToken);
+        }
+        return parsed;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Exchange an OAuth authorization code (returned to the RP redirect URI
      * after password sign-in at auth.oxy.so) for a device-first session.
      * Public first-party clients use PKCE (`codeVerifier`); the access token is

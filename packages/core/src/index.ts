@@ -517,6 +517,11 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 export { registrableApex } from './utils/registrableApex';
 export { CENTRAL_IDP_APEX } from './utils/authWebUrl';
 
+// WebAuthn relying-party origin guard (client side). Mirrors the server's
+// `isOxyApexOrigin` so consumers can decide whether to offer passkey UI on the
+// current page (first-party Oxy origin / loopback only).
+export { isOxyRpOrigin } from './utils/webauthnOrigin';
+
 export { runColdBoot } from './utils/coldBoot';
 export type {
     ColdBootStep,
