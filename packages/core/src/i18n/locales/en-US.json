@@ -50,11 +50,25 @@
     "currentAccount": "Current",
     "or": "or",
     "viewAllAccounts": "View {{count}} more",
+    "createAccountLink": "New to Oxy? Create one",
     "status": {
-      "accountSwitched": "Now using {{name}}"
+      "accountSwitched": "Now using {{name}}",
+      "signingIn": "Signing in…"
     }
   },
   "signup": {
+    "commonsHeadline": "Create your identity in Commons",
+    "commonsExplainer": "Commons is your full self-custody Oxy identity — one app, works everywhere.",
+    "createInCommons": "Create your identity in Commons",
+    "passkeyAlternative": "No Commons? Create a passkey on this device instead",
+    "createAccount": "Create account",
+    "creating": "Creating…",
+    "usernamePlaceholder": "Choose a username",
+    "usernameChecking": "Checking…",
+    "usernameAvailable": "Available",
+    "usernameTaken": "This username is taken",
+    "backToSignInLink": "Already have an account? Sign in",
+    "notAvailableHere": "Account creation isn't available in this app yet — create your identity with Commons, or visit oxy.so to sign up with a passkey.",
     "welcome": {
       "title": "Welcome to Oxy!",
       "subtitle": "Let's create your account in just a few steps",
@@ -391,7 +405,14 @@
     "scanTitle": "Scan to sign in",
     "scanSubtitle": "Open the Oxy app on your phone and scan this code",
     "scanWithOxy": "Scan with the Oxy app to continue",
-    "scanQr": "Scan QR code"
+    "scanQr": "Scan QR code",
+    "qrHeadline": "Sign in with your Oxy identity",
+    "signInWithOxy": "Sign in with Oxy",
+    "useIdentityOnDevice": "No Commons? Use a passkey on this device instead",
+    "passkeySigningIn": "Signing in…",
+    "getCommons": "Get Commons",
+    "commonsNotInstalled": "Don't have Commons? Get the app to sign in with your Oxy ID.",
+    "showQrAnyway": "I have Commons on another device"
   },
   "reputation": {
     "faq": {
@@ -1130,7 +1151,8 @@
       "resetPassword": "Reset Password",
       "signedOut": "Signed out",
       "close": "Close",
-      "delete": "Delete"
+      "delete": "Delete",
+      "tryAgain": "Try again"
     },
     "cancel": "Cancel",
     "revoke": "Revoke",

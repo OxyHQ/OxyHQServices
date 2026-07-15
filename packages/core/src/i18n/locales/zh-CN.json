@@ -43,11 +43,25 @@
     "currentAccount": "当前",
     "or": "或",
     "viewAllAccounts": "查看更多{{count}}个",
+    "createAccountLink": "初次使用 Oxy？创建账户",
     "status": {
-      "accountSwitched": "正在使用{{name}}"
+      "accountSwitched": "正在使用{{name}}",
+      "signingIn": "正在登录…"
     }
   },
   "signup": {
+    "commonsHeadline": "在 Commons 中创建您的身份",
+    "commonsExplainer": "Commons 是您完全自主保管的 Oxy 身份——一个应用，随处可用。",
+    "createInCommons": "在 Commons 中创建您的身份",
+    "passkeyAlternative": "没有 Commons？改为在此设备上创建通行密钥",
+    "createAccount": "创建账户",
+    "creating": "正在创建…",
+    "usernamePlaceholder": "选择一个用户名",
+    "usernameChecking": "正在检查…",
+    "usernameAvailable": "可用",
+    "usernameTaken": "该用户名已被占用",
+    "backToSignInLink": "已有账户？登录",
+    "notAvailableHere": "此应用暂不支持创建账户——请使用 Commons 创建您的身份，或访问 oxy.so 使用通行密钥注册。",
     "welcome": {
       "title": "欢迎使用Oxy！",
       "subtitle": "只需几步即可创建您的账户",
@@ -94,6 +108,15 @@
       "legalReminder": "创建账户即表示您同意我们的服务条款和隐私政策。"
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "使用您的 Oxy 身份登录",
+    "signInWithOxy": "使用 Oxy 登录",
+    "useIdentityOnDevice": "没有 Commons？改用此设备上的通行密钥",
+    "passkeySigningIn": "正在登录…",
+    "getCommons": "获取 Commons",
+    "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
+    "showQrAnyway": "我在另一台设备上有 Commons"
+  },
   "common": {
     "actions": {
       "back": "返回",
@@ -105,7 +128,8 @@
       "verify": "验证",
       "resetPassword": "重置密码",
       "signedOut": "已退出",
-      "close": "关闭"
+      "close": "关闭",
+      "tryAgain": "重试"
     },
     "links": {
       "recoverAccount": "恢复您的账户",

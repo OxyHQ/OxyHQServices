@@ -43,11 +43,25 @@
     "currentAccount": "현재",
     "or": "또는",
     "viewAllAccounts": "{{count}}개 더 보기",
+    "createAccountLink": "Oxy가 처음이신가요? 계정 만들기",
     "status": {
-      "accountSwitched": "{{name}} 사용 중"
+      "accountSwitched": "{{name}} 사용 중",
+      "signingIn": "로그인 중…"
     }
   },
   "signup": {
+    "commonsHeadline": "Commons에서 나의 아이덴티티 만들기",
+    "commonsExplainer": "Commons는 완전한 자기 보관 방식의 Oxy 아이덴티티입니다. 하나의 앱으로 어디서나 사용하세요.",
+    "createInCommons": "Commons에서 나의 아이덴티티 만들기",
+    "passkeyAlternative": "Commons가 없으신가요? 이 기기에서 패스키를 만드세요",
+    "createAccount": "계정 만들기",
+    "creating": "만드는 중…",
+    "usernamePlaceholder": "사용자 이름 선택",
+    "usernameChecking": "확인 중…",
+    "usernameAvailable": "사용 가능",
+    "usernameTaken": "이미 사용 중인 사용자 이름입니다",
+    "backToSignInLink": "이미 계정이 있으신가요? 로그인",
+    "notAvailableHere": "이 앱에서는 아직 계정을 만들 수 없습니다. Commons로 아이덴티티를 만들거나 oxy.so에서 패스키로 가입하세요.",
     "welcome": {
       "title": "Oxy에 오신 것을 환영합니다!",
       "subtitle": "몇 단계만으로 계정을 만드세요",
@@ -94,6 +108,15 @@
       "legalReminder": "계정을 만들면 서비스 약관 및 개인정보 보호정책에 동의하는 것입니다."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Oxy ID로 로그인",
+    "signInWithOxy": "Oxy로 로그인",
+    "useIdentityOnDevice": "Commons가 없으신가요? 이 기기의 패스키를 사용하세요",
+    "passkeySigningIn": "로그인 중…",
+    "getCommons": "Commons 다운로드",
+    "commonsNotInstalled": "Commons가 없으신가요? 앱을 다운로드하여 Oxy ID로 로그인하세요.",
+    "showQrAnyway": "다른 기기에 Commons가 있습니다"
+  },
   "common": {
     "actions": {
       "back": "뒤로",
@@ -105,7 +128,8 @@
       "verify": "확인",
       "resetPassword": "비밀번호 재설정",
       "signedOut": "로그아웃됨",
-      "close": "닫기"
+      "close": "닫기",
+      "tryAgain": "다시 시도"
     },
     "links": {
       "recoverAccount": "계정 복구",

@@ -43,11 +43,25 @@
     "currentAccount": "Actuel",
     "or": "ou",
     "viewAllAccounts": "Voir {{count}} de plus",
+    "createAccountLink": "Nouveau sur Oxy ? Créez un compte",
     "status": {
-      "accountSwitched": "Utilisation de {{name}}"
+      "accountSwitched": "Utilisation de {{name}}",
+      "signingIn": "Connexion…"
     }
   },
   "signup": {
+    "commonsHeadline": "Créez votre identité dans Commons",
+    "commonsExplainer": "Commons est votre identité Oxy en autoconservation complète : une seule app, partout.",
+    "createInCommons": "Créez votre identité dans Commons",
+    "passkeyAlternative": "Pas de Commons ? Créez une clé d'accès sur cet appareil",
+    "createAccount": "Créer un compte",
+    "creating": "Création…",
+    "usernamePlaceholder": "Choisissez un nom d'utilisateur",
+    "usernameChecking": "Vérification…",
+    "usernameAvailable": "Disponible",
+    "usernameTaken": "Ce nom d'utilisateur est déjà pris",
+    "backToSignInLink": "Vous avez déjà un compte ? Connectez-vous",
+    "notAvailableHere": "La création de compte n'est pas encore disponible dans cette app — créez votre identité avec Commons, ou rendez-vous sur oxy.so pour vous inscrire avec une clé d'accès.",
     "welcome": {
       "title": "Bienvenue sur Oxy !",
       "subtitle": "Créez votre compte en quelques étapes",
@@ -94,6 +108,15 @@
       "legalReminder": "En créant un compte, vous acceptez nos Conditions d'utilisation et notre Politique de confidentialité."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Connectez-vous avec votre identité Oxy",
+    "signInWithOxy": "Se connecter avec Oxy",
+    "useIdentityOnDevice": "Pas de Commons ? Utilisez une clé d'accès sur cet appareil",
+    "passkeySigningIn": "Connexion…",
+    "getCommons": "Obtenir Commons",
+    "commonsNotInstalled": "Pas de Commons ? Téléchargez l'app pour vous connecter avec votre Oxy ID.",
+    "showQrAnyway": "J'ai Commons sur un autre appareil"
+  },
   "common": {
     "actions": {
       "back": "Retour",
@@ -105,7 +128,8 @@
       "verify": "Vérifier",
       "resetPassword": "Réinitialiser le mot de passe",
       "signedOut": "Déconnecté",
-      "close": "Fermer"
+      "close": "Fermer",
+      "tryAgain": "Réessayer"
     },
     "links": {
       "recoverAccount": "Récupérer votre compte",

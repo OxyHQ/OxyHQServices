@@ -43,11 +43,25 @@
     "currentAccount": "Atual",
     "or": "ou",
     "viewAllAccounts": "Ver mais {{count}}",
+    "createAccountLink": "Novo no Oxy? Crie uma conta",
     "status": {
-      "accountSwitched": "Agora a usar {{name}}"
+      "accountSwitched": "Agora a usar {{name}}",
+      "signingIn": "A iniciar sessão…"
     }
   },
   "signup": {
+    "commonsHeadline": "Crie a sua identidade no Commons",
+    "commonsExplainer": "O Commons é a sua identidade Oxy com autocustódia total: uma app que funciona em todo o lado.",
+    "createInCommons": "Crie a sua identidade no Commons",
+    "passkeyAlternative": "Não tem o Commons? Crie uma chave de acesso neste dispositivo",
+    "createAccount": "Criar conta",
+    "creating": "A criar…",
+    "usernamePlaceholder": "Escolha um nome de utilizador",
+    "usernameChecking": "A verificar…",
+    "usernameAvailable": "Disponível",
+    "usernameTaken": "Este nome de utilizador já está em uso",
+    "backToSignInLink": "Já tem uma conta? Inicie sessão",
+    "notAvailableHere": "A criação de conta ainda não está disponível nesta app: crie a sua identidade com o Commons ou visite oxy.so para se registar com uma chave de acesso.",
     "welcome": {
       "title": "Bem-vindo ao Oxy!",
       "subtitle": "Crie a sua conta em poucos passos",
@@ -94,6 +108,15 @@
       "legalReminder": "Ao criar uma conta, concorda com os nossos Termos de Serviço e Política de Privacidade."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Inicie sessão com a sua identidade Oxy",
+    "signInWithOxy": "Iniciar sessão com Oxy",
+    "useIdentityOnDevice": "Não tem o Commons? Use uma chave de acesso neste dispositivo",
+    "passkeySigningIn": "A iniciar sessão…",
+    "getCommons": "Obter o Commons",
+    "commonsNotInstalled": "Não tem o Commons? Obtenha a app para iniciar sessão com o seu Oxy ID.",
+    "showQrAnyway": "Tenho o Commons noutro dispositivo"
+  },
   "common": {
     "actions": {
       "back": "Voltar",
@@ -105,7 +128,8 @@
       "verify": "Verificar",
       "resetPassword": "Repor palavra-passe",
       "signedOut": "Sessão terminada",
-      "close": "Fechar"
+      "close": "Fechar",
+      "tryAgain": "Tentar novamente"
     },
     "links": {
       "recoverAccount": "Recuperar a sua conta",

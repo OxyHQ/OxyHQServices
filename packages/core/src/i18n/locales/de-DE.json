@@ -43,11 +43,25 @@
     "currentAccount": "Aktuell",
     "or": "oder",
     "viewAllAccounts": "{{count}} weitere anzeigen",
+    "createAccountLink": "Neu bei Oxy? Konto erstellen",
     "status": {
-      "accountSwitched": "Verwende jetzt {{name}}"
+      "accountSwitched": "Verwende jetzt {{name}}",
+      "signingIn": "Anmeldung läuft…"
     }
   },
   "signup": {
+    "commonsHeadline": "Erstellen Sie Ihre Identität in Commons",
+    "commonsExplainer": "Commons ist Ihre vollständig selbstverwaltete Oxy-Identität – eine App, überall einsetzbar.",
+    "createInCommons": "Erstellen Sie Ihre Identität in Commons",
+    "passkeyAlternative": "Kein Commons? Erstellen Sie stattdessen einen Passkey auf diesem Gerät",
+    "createAccount": "Konto erstellen",
+    "creating": "Wird erstellt…",
+    "usernamePlaceholder": "Benutzernamen wählen",
+    "usernameChecking": "Wird geprüft…",
+    "usernameAvailable": "Verfügbar",
+    "usernameTaken": "Dieser Benutzername ist bereits vergeben",
+    "backToSignInLink": "Sie haben bereits ein Konto? Anmelden",
+    "notAvailableHere": "Die Kontoerstellung ist in dieser App noch nicht verfügbar – erstellen Sie Ihre Identität mit Commons oder besuchen Sie oxy.so, um sich mit einem Passkey zu registrieren.",
     "welcome": {
       "title": "Willkommen bei Oxy!",
       "subtitle": "Erstellen Sie Ihr Konto in nur wenigen Schritten",
@@ -94,6 +108,15 @@
       "legalReminder": "Durch die Erstellung eines Kontos stimmen Sie unseren Nutzungsbedingungen und der Datenschutzrichtlinie zu."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Melden Sie sich mit Ihrer Oxy-Identität an",
+    "signInWithOxy": "Mit Oxy anmelden",
+    "useIdentityOnDevice": "Kein Commons? Verwenden Sie stattdessen einen Passkey auf diesem Gerät",
+    "passkeySigningIn": "Anmeldung läuft…",
+    "getCommons": "Commons herunterladen",
+    "commonsNotInstalled": "Kein Commons? Holen Sie sich die App, um sich mit Ihrer Oxy-ID anzumelden.",
+    "showQrAnyway": "Ich habe Commons auf einem anderen Gerät"
+  },
   "common": {
     "actions": {
       "back": "Zurück",
@@ -105,7 +128,8 @@
       "verify": "Überprüfen",
       "resetPassword": "Passwort zurücksetzen",
       "signedOut": "Abgemeldet",
-      "close": "Schließen"
+      "close": "Schließen",
+      "tryAgain": "Erneut versuchen"
     },
     "links": {
       "recoverAccount": "Ihr Konto wiederherstellen",

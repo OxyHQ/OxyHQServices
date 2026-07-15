@@ -43,11 +43,25 @@
     "currentAccount": "Attuale",
     "or": "o",
     "viewAllAccounts": "Visualizza {{count}} altri",
+    "createAccountLink": "Nuovo su Oxy? Creane uno",
     "status": {
-      "accountSwitched": "Ora usando {{name}}"
+      "accountSwitched": "Ora usando {{name}}",
+      "signingIn": "Accesso in corso…"
     }
   },
   "signup": {
+    "commonsHeadline": "Crea la tua identità in Commons",
+    "commonsExplainer": "Commons è la tua identità Oxy in piena autocustodia: un'unica app, ovunque.",
+    "createInCommons": "Crea la tua identità in Commons",
+    "passkeyAlternative": "Non hai Commons? Crea una passkey su questo dispositivo",
+    "createAccount": "Crea account",
+    "creating": "Creazione…",
+    "usernamePlaceholder": "Scegli un nome utente",
+    "usernameChecking": "Verifica in corso…",
+    "usernameAvailable": "Disponibile",
+    "usernameTaken": "Questo nome utente è già in uso",
+    "backToSignInLink": "Hai già un account? Accedi",
+    "notAvailableHere": "La creazione dell'account non è ancora disponibile in questa app: crea la tua identità con Commons oppure visita oxy.so per registrarti con una passkey.",
     "welcome": {
       "title": "Benvenuto su Oxy!",
       "subtitle": "Crea il tuo account in pochi passaggi",
@@ -94,6 +108,15 @@
       "legalReminder": "Creando un account, accetti i nostri Termini di servizio e l'Informativa sulla privacy."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Accedi con la tua identità Oxy",
+    "signInWithOxy": "Accedi con Oxy",
+    "useIdentityOnDevice": "Non hai Commons? Usa una passkey su questo dispositivo",
+    "passkeySigningIn": "Accesso in corso…",
+    "getCommons": "Ottieni Commons",
+    "commonsNotInstalled": "Non hai Commons? Scarica l'app per accedere con il tuo Oxy ID.",
+    "showQrAnyway": "Ho Commons su un altro dispositivo"
+  },
   "common": {
     "actions": {
       "back": "Indietro",
@@ -105,7 +128,8 @@
       "verify": "Verifica",
       "resetPassword": "Reimposta password",
       "signedOut": "Disconnesso",
-      "close": "Chiudi"
+      "close": "Chiudi",
+      "tryAgain": "Riprova"
     },
     "links": {
       "recoverAccount": "Recupera il tuo account",

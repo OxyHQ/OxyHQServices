@@ -43,11 +43,25 @@
     "currentAccount": "Actual",
     "or": "o",
     "viewAllAccounts": "Veure {{count}} més",
+    "createAccountLink": "Ets nou a Oxy? Crea'n una",
     "status": {
-      "accountSwitched": "Ara utilitzant {{name}}"
+      "accountSwitched": "Ara utilitzant {{name}}",
+      "signingIn": "Iniciant sessió…"
     }
   },
   "signup": {
+    "commonsHeadline": "Crea la teva identitat a Commons",
+    "commonsExplainer": "Commons és la teva identitat d'Oxy amb autocustòdia completa: una app que funciona a tot arreu.",
+    "createInCommons": "Crea la teva identitat a Commons",
+    "passkeyAlternative": "No tens Commons? Crea una clau d'accés en aquest dispositiu",
+    "createAccount": "Crear compte",
+    "creating": "Creant…",
+    "usernamePlaceholder": "Tria un nom d'usuari",
+    "usernameChecking": "Comprovant…",
+    "usernameAvailable": "Disponible",
+    "usernameTaken": "Aquest nom d'usuari ja està en ús",
+    "backToSignInLink": "Ja tens compte? Inicia sessió",
+    "notAvailableHere": "La creació de comptes encara no està disponible en aquesta app: crea la teva identitat amb Commons o visita oxy.so per registrar-te amb una clau d'accés.",
     "welcome": {
       "title": "Benvingut a Oxy!",
       "subtitle": "Crea el teu compte en pocs passos",
@@ -94,6 +108,15 @@
       "legalReminder": "En crear un compte, acceptes els nostres Termes de servei i Política de privacitat."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "Inicia sessió amb la teva identitat d'Oxy",
+    "signInWithOxy": "Inicia sessió amb Oxy",
+    "useIdentityOnDevice": "No tens Commons? Fes servir una clau d'accés en aquest dispositiu",
+    "passkeySigningIn": "Iniciant sessió…",
+    "getCommons": "Descarrega Commons",
+    "commonsNotInstalled": "No tens Commons? Descarrega l'app per iniciar sessió amb el teu Oxy ID.",
+    "showQrAnyway": "Tinc Commons en un altre dispositiu"
+  },
   "common": {
     "actions": {
       "back": "Enrere",
@@ -105,7 +128,8 @@
       "verify": "Verificar",
       "resetPassword": "Restablir contrasenya",
       "signedOut": "Sessió tancada",
-      "close": "Tanca"
+      "close": "Tanca",
+      "tryAgain": "Torna-ho a provar"
     },
     "links": {
       "recoverAccount": "Recuperar el teu compte",

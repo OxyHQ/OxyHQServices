@@ -43,11 +43,25 @@
     "currentAccount": "الحالي",
     "or": "أو",
     "viewAllAccounts": "عرض {{count}} المزيد",
+    "createAccountLink": "جديد على Oxy؟ أنشئ حسابًا",
     "status": {
-      "accountSwitched": "استخدام {{name}} الآن"
+      "accountSwitched": "استخدام {{name}} الآن",
+      "signingIn": "جارٍ تسجيل الدخول…"
     }
   },
   "signup": {
+    "commonsHeadline": "أنشئ هويتك في Commons",
+    "commonsExplainer": "‏Commons هي هوية Oxy الخاصة بك بحفظ ذاتي كامل — تطبيق واحد يعمل في كل مكان.",
+    "createInCommons": "أنشئ هويتك في Commons",
+    "passkeyAlternative": "لا تملك Commons؟ أنشئ مفتاح مرور على هذا الجهاز بدلاً من ذلك",
+    "createAccount": "إنشاء حساب",
+    "creating": "جارٍ الإنشاء…",
+    "usernamePlaceholder": "اختر اسم مستخدم",
+    "usernameChecking": "جارٍ التحقق…",
+    "usernameAvailable": "متاح",
+    "usernameTaken": "اسم المستخدم هذا مستخدم بالفعل",
+    "backToSignInLink": "لديك حساب بالفعل؟ سجّل الدخول",
+    "notAvailableHere": "‏إنشاء الحساب غير متاح في هذا التطبيق بعد — أنشئ هويتك باستخدام Commons، أو تفضّل بزيارة oxy.so للتسجيل باستخدام مفتاح مرور.",
     "welcome": {
       "title": "مرحبًا بك في Oxy!",
       "subtitle": "أنشئ حسابك في خطوات قليلة",
@@ -94,6 +108,15 @@
       "legalReminder": "بإنشاء حساب، فإنك توافق على شروط الخدمة وسياسة الخصوصية الخاصة بنا."
     }
   },
+  "accountSwitcher": {
+    "qrHeadline": "سجّل الدخول بهوية Oxy الخاصة بك",
+    "signInWithOxy": "تسجيل الدخول باستخدام Oxy",
+    "useIdentityOnDevice": "لا تملك Commons؟ استخدم مفتاح مرور على هذا الجهاز بدلاً من ذلك",
+    "passkeySigningIn": "جارٍ تسجيل الدخول…",
+    "getCommons": "احصل على Commons",
+    "commonsNotInstalled": "لا تملك Commons؟ احصل على التطبيق لتسجيل الدخول بمعرّف Oxy الخاص بك.",
+    "showQrAnyway": "لدي Commons على جهاز آخر"
+  },
   "common": {
     "actions": {
       "back": "رجوع",
@@ -105,7 +128,8 @@
       "verify": "التحقق",
       "resetPassword": "إعادة تعيين كلمة المرور",
       "signedOut": "تم تسجيل الخروج",
-      "close": "إغلاق"
+      "close": "إغلاق",
+      "tryAgain": "حاول مرة أخرى"
     },
     "links": {
       "recoverAccount": "استعادة حسابك",
