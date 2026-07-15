@@ -23,6 +23,17 @@ const OXY_ORIGIN = 'https://accounts.oxy.so';
 const CRED_ID = 'existing-credential-id';
 const USER_ID = '507f1f77bcf86cd799439011';
 
+// The username-first decoy is keyed on DEVICE_ID_SALT (fail-closed if empty — see
+// `decoyAllowCredentials`). Pin a fixed, non-empty salt so the decoy is
+// deterministic under test and the count/length/transports assertions below are
+// stable rather than dependent on the ambient environment.
+process.env.DEVICE_ID_SALT = 'test-device-id-salt-for-webauthn-decoy-anti-enum';
+
+/** Decoded byte length of a base64url credential id. */
+function decodedByteLength(id: string): number {
+  return Buffer.from(id, 'base64url').length;
+}
+
 let mockCredDoc: {
   _id: string;
   credentialID: string;
@@ -259,7 +270,7 @@ describe('POST /webauthn/login/options', () => {
     expect(mockCredFind).toHaveBeenCalledTimes(1);
   });
 
-  it('username-first (UNKNOWN username): returns a decoy allowCredential of the same shape — never empty, never the real user\'s id, no non-existence tell', async () => {
+  it('username-first (UNKNOWN username): returns a decoy allow-list of the same shape — never empty, never the real user\'s id, no non-existence tell', async () => {
     // The account does not exist and the (throwaway-id) credential query returns none.
     mockUserFindOne.mockReturnValue(selectLean(null));
     mockCredFind.mockReturnValue(selectLean([]));
@@ -268,14 +279,30 @@ describe('POST /webauthn/login/options', () => {
 
     expect(res.status).toBe(200);
     const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
-    // Same SHAPE as the known-username response: exactly one non-empty allowCredential.
-    expect(opts.allowCredentials).toHaveLength(1);
-    expect(typeof opts.allowCredentials[0].id).toBe('string');
-    expect(opts.allowCredentials[0].id.length).toBeGreaterThan(0);
-    // The decoy is NOT any real credential id.
-    expect(opts.allowCredentials[0].id).not.toBe(CRED_ID);
-    // Structurally identical (transports present, like a real allow-list entry).
-    expect(Array.isArray(opts.allowCredentials[0].transports)).toBe(true);
+    // Non-empty and masked to 1 OR 2 entries (a real account with 1–2 passkeys must
+    // be indistinguishable — a fixed count-of-1 would leak "≥2 passkeys" via count).
+    expect(opts.allowCredentials.length).toBeGreaterThanOrEqual(1);
+    expect(opts.allowCredentials.length).toBeLessThanOrEqual(2);
+    for (const cred of opts.allowCredentials) {
+      expect(typeof cred.id).toBe('string');
+      expect(cred.id.length).toBeGreaterThan(0);
+      // NOT any real credential id.
+      expect(cred.id).not.toBe(CRED_ID);
+      // Realistic credential-id length (16–64 bytes), covering both short platform
+      // passkeys and long roaming/hardware-key ids — no fixed tell-tale size.
+      expect(decodedByteLength(cred.id)).toBeGreaterThanOrEqual(16);
+      expect(decodedByteLength(cred.id)).toBeLessThanOrEqual(64);
+      // transports is either a real-looking array or omitted entirely (like real
+      // credentials that advertise none) — never some other shape.
+      if (cred.transports !== undefined) {
+        expect(Array.isArray(cred.transports)).toBe(true);
+        expect(cred.transports.length).toBeGreaterThan(0);
+      }
+    }
+    // Distinct ids when the decoy has two entries (like a real multi-passkey account).
+    if (opts.allowCredentials.length === 2) {
+      expect(opts.allowCredentials[0].id).not.toBe(opts.allowCredentials[1].id);
+    }
     // A bound challenge is still stored (non-null userId), so nothing about the
     // response reveals that the account does not exist.
     const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: unknown };
@@ -285,6 +312,60 @@ describe('POST /webauthn/login/options', () => {
     // account-existence-dependent early return / timing oracle).
     expect(mockUserFindOne).toHaveBeenCalledTimes(1);
     expect(mockCredFind).toHaveBeenCalledTimes(1);
+  });
+
+  it('the decoy COUNT is masked (not always 1): across a spread of usernames both 1- and 2-entry decoys appear', async () => {
+    // A fixed count-of-1 decoy made `count === 2` a clean "this public username has
+    // ≥2 passkeys" oracle. The count is now a deterministic 1 OR 2 keyed on the salt,
+    // so surveying enough usernames must surface BOTH lengths.
+    mockUserFindOne.mockReturnValue(selectLean(null));
+    mockCredFind.mockReturnValue(selectLean([]));
+
+    const observedCounts = new Set<number>();
+    for (let i = 0; i < 16; i += 1) {
+      await request(server, 'POST', '/webauthn/login/options', { username: `probe${i}` });
+    }
+    for (const call of mockGenerateAuthOptions.mock.calls) {
+      observedCounts.add((call[0] as AuthOptionsArg).allowCredentials.length);
+    }
+    // Deterministic under the fixed test salt: probe0..15 yield both 1 and 2.
+    expect(observedCounts.has(1)).toBe(true);
+    expect(observedCounts.has(2)).toBe(true);
+  });
+
+  it('the decoy sometimes OMITS transports (deterministically) so [{id}] vs [{id,transports}] is not a tell', async () => {
+    mockUserFindOne.mockReturnValue(selectLean(null));
+    mockCredFind.mockReturnValue(selectLean([]));
+
+    let sawOmitted = false;
+    let sawPresent = false;
+    for (let i = 0; i < 30 && !(sawOmitted && sawPresent); i += 1) {
+      await request(server, 'POST', '/webauthn/login/options', { username: `shape${i}` });
+    }
+    for (const call of mockGenerateAuthOptions.mock.calls) {
+      for (const cred of (call[0] as AuthOptionsArg).allowCredentials) {
+        if (cred.transports === undefined) sawOmitted = true;
+        else sawPresent = true;
+      }
+    }
+    expect(sawOmitted).toBe(true);
+    expect(sawPresent).toBe(true);
+  });
+
+  it('fails closed (500) when DEVICE_ID_SALT is empty — never emits an attacker-computable decoy', async () => {
+    // An empty salt would make the decoy precomputable, defeating anti-enumeration.
+    mockUserFindOne.mockReturnValue(selectLean(null));
+    mockCredFind.mockReturnValue(selectLean([]));
+    const original = process.env.DEVICE_ID_SALT;
+    delete process.env.DEVICE_ID_SALT;
+    try {
+      const res = await request(server, 'POST', '/webauthn/login/options', { username: 'ghostuser' });
+      expect(res.status).toBe(500);
+      // No challenge is stored on the fail-closed path.
+      expect(mockChallengeCreate).not.toHaveBeenCalled();
+    } finally {
+      process.env.DEVICE_ID_SALT = original;
+    }
   });
 
   it('the decoy is DETERMINISTIC: the same unknown username yields the same decoy id across requests', async () => {
@@ -310,8 +391,12 @@ describe('POST /webauthn/login/options', () => {
 
     expect(res.status).toBe(200);
     const opts = mockGenerateAuthOptions.mock.calls[0][0] as AuthOptionsArg;
-    expect(opts.allowCredentials).toHaveLength(1);
-    expect(opts.allowCredentials[0].id).not.toBe(CRED_ID);
+    // Masked decoy (1–2 entries), never the empty allow-list that would leak "exists".
+    expect(opts.allowCredentials.length).toBeGreaterThanOrEqual(1);
+    expect(opts.allowCredentials.length).toBeLessThanOrEqual(2);
+    for (const cred of opts.allowCredentials) {
+      expect(cred.id).not.toBe(CRED_ID);
+    }
   });
 
   it('usernameless (discoverable): empty allowCredentials and an unbound challenge, no lookups', async () => {
