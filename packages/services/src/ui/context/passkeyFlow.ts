@@ -42,28 +42,39 @@ function toCommitInput(result: LoginSessionResult): CommitInput {
 /** Injected dependencies for {@link runPasskeyLogin}. */
 export interface RunPasskeyLoginDeps {
   isSupported: () => boolean;
-  getLoginOptions: () => Promise<unknown>;
+  getLoginOptions: (username?: string) => Promise<unknown>;
   runCeremony: (optionsJSON: unknown) => Promise<unknown>;
   loginVerify: (
     response: unknown,
     envelope: { deviceName?: string; deviceFingerprint?: string; deviceId?: string },
   ) => Promise<LoginResult>;
   commit: (input: CommitInput) => Promise<void>;
+  /**
+   * When present, scopes login options to that user's registered passkeys
+   * (username-first) — the path a NON-discoverable hardware key (e.g. a U2F
+   * security key) needs, since it can't be found by a usernameless ceremony.
+   * Omit for the discoverable / resident-credential path.
+   */
+  username?: string;
   deviceId?: string;
   deviceName?: string;
   deviceFingerprint?: string;
 }
 
 /**
- * Usernameless (discoverable-credential) passkey SIGN-IN: request login options,
- * run the authentication ceremony, verify, then commit the session. A passkey
- * assertion is itself the strong factor, so a 2FA arm here is a protocol error.
+ * Passkey SIGN-IN. With no `username` this is the usernameless
+ * (discoverable-credential) flow; with a `username` it is username-first —
+ * the server scopes `allowCredentials` to that user's passkeys so a
+ * non-discoverable hardware key (U2F/security key) can be selected. Either way:
+ * request login options, run the authentication ceremony, verify, then commit
+ * the session. A passkey assertion is itself the strong factor, so a 2FA arm
+ * here is a protocol error.
  */
 export async function runPasskeyLogin(deps: RunPasskeyLoginDeps): Promise<void> {
   if (!deps.isSupported()) {
     throw new Error(PASSKEY_UNSUPPORTED_MESSAGE);
   }
-  const options = await deps.getLoginOptions();
+  const options = await deps.getLoginOptions(deps.username);
   const response = await deps.runCeremony(options);
   const result = await deps.loginVerify(response, {
     deviceName: deps.deviceName,

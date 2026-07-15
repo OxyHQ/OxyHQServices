@@ -55,12 +55,19 @@ export interface OxyContextState {
   }) => Promise<{ securityAlert?: SecurityAlert }>;
 
   /**
-   * Sign in with a passkey (WebAuthn). Usernameless / discoverable-credential
-   * flow: the browser prompts for any resident Oxy passkey. WEB-ONLY — throws on
-   * native or an unsupported browser (native passkeys are Commons' job). On
-   * `useOxy()`, NOT re-exposed on `useAuth()`.
+   * Sign in with a passkey (WebAuthn). With no `username` this is the
+   * usernameless / discoverable-credential flow: the browser prompts for any
+   * resident Oxy passkey. Pass `username` for the username-first flow — the
+   * server scopes `allowCredentials` to that user's passkeys so a
+   * NON-discoverable hardware key (e.g. a U2F/security key) can be used.
+   * WEB-ONLY — throws on native or an unsupported browser (native passkeys are
+   * Commons' job). On `useOxy()`, NOT re-exposed on `useAuth()`.
    */
-  signInWithPasskey: (opts?: { deviceName?: string; deviceFingerprint?: string }) => Promise<void>;
+  signInWithPasskey: (opts?: {
+    username?: string;
+    deviceName?: string;
+    deviceFingerprint?: string;
+  }) => Promise<void>;
 
   /**
    * Create a brand-new account whose first authentication method is a passkey.

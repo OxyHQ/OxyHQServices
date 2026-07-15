@@ -92,6 +92,27 @@ describe('runPasskeyLogin', () => {
     expect(deps.commit).toHaveBeenCalledWith(expectedCommitInput);
   });
 
+  it('forwards the username to getLoginOptions for the username-first (hardware-key) path', async () => {
+    const order: string[] = [];
+    const deps = buildDeps(order, { username: 'alice' });
+
+    await runPasskeyLogin(deps);
+
+    // The username scopes login options to that user's passkeys — the path a
+    // non-discoverable U2F/security key needs.
+    expect(deps.getLoginOptions).toHaveBeenCalledWith('alice');
+  });
+
+  it('passes undefined to getLoginOptions for the usernameless (discoverable) path', async () => {
+    const order: string[] = [];
+    const deps = buildDeps(order);
+
+    await runPasskeyLogin(deps);
+
+    // No username → discoverable-credential ceremony (server returns an empty allow-list).
+    expect(deps.getLoginOptions).toHaveBeenCalledWith(undefined);
+  });
+
   it('throws and touches nothing when passkeys are unsupported', async () => {
     const order: string[] = [];
     const deps = buildDeps(order, { isSupported: jest.fn(() => false) });
