@@ -273,7 +273,7 @@ router.post(
       excludeCredentials,
       authenticatorSelection: {
         residentKey: 'required',
-        userVerification: 'preferred',
+        userVerification: 'required',
       },
     });
 
@@ -329,6 +329,7 @@ router.post(
         expectedChallenge: challenge,
         expectedOrigin: origin,
         expectedRPID: rpID,
+        requireUserVerification: true,
       });
     } catch (error) {
       logger.warn('webauthn register verification threw', {
@@ -464,11 +465,13 @@ router.post(
 /**
  * POST /webauthn/login/options
  *
- * With a `username` the returned allow-list is scoped to that user's passkeys
- * (username-first) and the challenge is bound to their account. Without one the
- * allow-list is empty for the usernameless / discoverable-credential flow (the
- * default). A username that resolves to no user still returns options (empty
- * allow-list) so account existence is not leaked.
+ * ALWAYS discoverable-credential (usernameless) login: the allow-list is empty
+ * regardless of any supplied `username`, and no user lookup is performed. Emitting
+ * a user's `credentialID`s (a non-empty allow-list) — or even branching the
+ * response/timing on whether a username resolves — would leak account existence
+ * and let an unauthenticated caller enumerate a user's passkeys, so neither is
+ * done. The authenticator returns the credentialID at verify time, which is where
+ * the user is resolved. The challenge carries no `userId` (discoverable flow).
  */
 router.post(
   '/login/options',
@@ -481,36 +484,15 @@ router.post(
 
     const rpID = getWebauthnRpId();
 
-    let allowCredentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [];
-    let challengeUserId: string | undefined;
-
-    if (parsed.data.username) {
-      const normalizedUsername = normalizeUsername(parsed.data.username);
-      const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(normalizedUsername) })
-        .select('_id')
-        .lean();
-      if (user) {
-        const creds = await WebauthnCredential.find({ userId: user._id })
-          .select('credentialID transports')
-          .lean();
-        allowCredentials = creds.map((cred) => ({
-          id: cred.credentialID,
-          transports: cred.transports as AuthenticatorTransportFuture[] | undefined,
-        }));
-        challengeUserId = user._id.toString();
-      }
-    }
-
     const options = await generateAuthenticationOptions({
       rpID,
-      allowCredentials,
-      userVerification: 'preferred',
+      allowCredentials: [],
+      userVerification: 'required',
     });
 
     await WebauthnChallenge.create({
       challenge: options.challenge,
       type: 'authentication',
-      ...(challengeUserId ? { userId: challengeUserId } : {}),
       expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
       used: false,
     });
@@ -568,6 +550,7 @@ router.post(
         expectedChallenge: challenge,
         expectedOrigin: origin,
         expectedRPID: rpID,
+        requireUserVerification: true,
         credential: {
           id: credential.credentialID,
           publicKey: new Uint8Array(credential.credentialPublicKey),

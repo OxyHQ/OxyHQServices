@@ -231,18 +231,27 @@ beforeEach(() => {
 });
 
 describe('POST /webauthn/login/options', () => {
-  it('username-first: scopes allowCredentials to the user and binds the challenge to their id', async () => {
+  it('a supplied username does NOT leak the account: empty allowCredentials, unbound challenge, no DB lookup', async () => {
+    // Arrange the store so that IF the handler looked the user up it would find a
+    // matching account with a credential — proving the handler ignores it.
     mockUserFindOne.mockReturnValue(selectLean({ _id: USER_ID }));
     mockCredFind.mockReturnValue(selectLean([{ credentialID: CRED_ID, transports: ['internal'] }]));
 
     const res = await request(server, 'POST', '/webauthn/login/options', { username: 'loginuser' });
 
     expect(res.status).toBe(200);
-    const opts = mockGenerateAuthOptions.mock.calls[0][0] as { allowCredentials: unknown[] };
-    expect(opts.allowCredentials).toHaveLength(1);
+    // Discoverable-only: never emit the user's credentialIDs.
+    const opts = mockGenerateAuthOptions.mock.calls[0][0] as { allowCredentials: unknown[]; userVerification?: string };
+    expect(opts.allowCredentials).toHaveLength(0);
+    expect(opts.userVerification).toBe('required');
+    // Challenge is not bound to any account.
     const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: string };
     expect(stored.type).toBe('authentication');
-    expect(stored.userId).toBe(USER_ID);
+    expect(stored.userId).toBeUndefined();
+    // No account-existence-dependent branching or timing: the user/credential
+    // lookups must NOT run at all.
+    expect(mockUserFindOne).not.toHaveBeenCalled();
+    expect(mockCredFind).not.toHaveBeenCalled();
   });
 
   it('usernameless (discoverable): empty allowCredentials and an unbound challenge', async () => {
@@ -252,6 +261,8 @@ describe('POST /webauthn/login/options', () => {
     expect(opts.allowCredentials).toHaveLength(0);
     const stored = mockChallengeCreate.mock.calls[0][0] as { userId?: string };
     expect(stored.userId).toBeUndefined();
+    expect(mockUserFindOne).not.toHaveBeenCalled();
+    expect(mockCredFind).not.toHaveBeenCalled();
   });
 });
 
