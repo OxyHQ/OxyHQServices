@@ -11,12 +11,12 @@ import {
 } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
-import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage } from './identity/identityStore';
+import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage, persistOnboardingComplete } from './identity/identityStore';
 import { syncIdentityWithServer } from './identity/syncService';
 import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
 import { isAlreadyRegisteredError } from './identity/errorUtils';
-import { ONBOARDING_IDENTITY_QUERY_KEY } from './useOnboardingStatus';
+import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from './useOnboardingStatus';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
 
@@ -177,6 +177,13 @@ export const useIdentity = (): UseIdentityResult => {
         // the next time they wipe the app.
         setSynced(false);
         await persistIdentitySyncState(false);
+        // A brand-new identity has NOT finished onboarding yet. Reset the
+        // local milestone so this identity starts fresh — otherwise a stale
+        // `true` left by a prior (deleted) identity on the same device would
+        // route the new one straight to the vault, skipping its onboarding
+        // wizard. It flips back to `true` only when THIS identity genuinely
+        // completes (username + session) in `useOnboardingStatus`.
+        await persistOnboardingComplete(false);
 
         // Caller detected no connectivity: skip the register + signIn round-trip
         // rather than stalling the "Setting up your account…" screen on a ~19s
@@ -231,10 +238,11 @@ export const useIdentity = (): UseIdentityResult => {
       inFlightCreateIdentity = run();
       try {
         const result = await inFlightCreateIdentity;
-        // Identity now exists on-device → refresh the shared onboarding probe so
-        // routing (`useOnboardingStatus`) reflects it without a per-component
-        // re-check.
+        // Identity now exists on-device → refresh the shared onboarding probes so
+        // routing (`useOnboardingStatus`) reflects both the new identity AND its
+        // reset onboarding-complete milestone without a per-component re-check.
         queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
         return result;
       } catch (error) {
         if (!(error instanceof IdentityAlreadyExistsError)) {
@@ -279,6 +287,10 @@ export const useIdentity = (): UseIdentityResult => {
 
         setSynced(false);
         await persistIdentitySyncState(false);
+        // Reset the local onboarding milestone for the freshly-imported identity
+        // (see the matching reset in `createIdentity`). It flips back to `true`
+        // only when this identity completes onboarding in `useOnboardingStatus`.
+        await persistOnboardingComplete(false);
 
         try {
           const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
@@ -311,10 +323,11 @@ export const useIdentity = (): UseIdentityResult => {
       inFlightImportIdentity = run();
       try {
         const result = await inFlightImportIdentity;
-        // Identity now exists on-device → refresh the shared onboarding probe so
-        // routing (`useOnboardingStatus`) reflects it without a per-component
-        // re-check.
+        // Identity now exists on-device → refresh the shared onboarding probes so
+        // routing (`useOnboardingStatus`) reflects both the new identity AND its
+        // reset onboarding-complete milestone without a per-component re-check.
         queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
         return result;
       } catch (error) {
         if (!(error instanceof IdentityAlreadyExistsError) && !(error instanceof IdentityPersistError)) {
