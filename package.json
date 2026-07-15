@@ -21,6 +21,7 @@
     "packages/inbox",
     "packages/test-app-expo",
     "packages/console",
+    "packages/ship",
     "packages/test-app-vite"
   ],
   "scripts": {

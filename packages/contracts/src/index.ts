@@ -251,6 +251,65 @@ export type {
 } from './deviceBoot';
 
 export {
+    // Shared primitives
+    updatePlatformSchema,
+    updateStatusSchema,
+    updateAssetStatusSchema,
+    sha256HexSchema,
+    channelNameSchema,
+    runtimeVersionSchema,
+    rolloutPercentSchema,
+    // Assets: init + complete
+    assetInitItemSchema,
+    assetInitRequestSchema,
+    assetUploadTicketSchema,
+    assetInitResponseSchema,
+    assetCompleteRequestSchema,
+    assetCompleteResultItemSchema,
+    assetCompleteResponseSchema,
+    // Create update
+    updateAssetRefSchema,
+    createUpdateRequestSchema,
+    // Read models
+    updateSchema,
+    createUpdateResponseSchema,
+    rollbackToEmbeddedEntrySchema,
+    channelSchema,
+    channelListResponseSchema,
+    updateListResponseSchema,
+    // Rollback / promote / rollout
+    rollbackRequestSchema,
+    rollbackToEmbeddedRequestSchema,
+    promoteRequestSchema,
+    updateRolloutPatchSchema,
+} from './updates';
+
+export type {
+    UpdatePlatform,
+    UpdateStatus,
+    UpdateAssetStatus,
+    AssetInitItem,
+    AssetInitRequest,
+    AssetUploadTicket,
+    AssetInitResponse,
+    AssetCompleteRequest,
+    AssetCompleteResultItem,
+    AssetCompleteResponse,
+    UpdateAssetRef,
+    CreateUpdateRequest,
+    Update,
+    CreateUpdateResponse,
+    RollbackToEmbeddedEntry,
+    Channel,
+    ChannelListResponse,
+    UpdateListResponse,
+    RollbackRequest,
+    RollbackToEmbeddedRequest,
+    PromoteRequest,
+    UpdateRolloutPatch,
+} from './updates';
+
+export {
     // Schemas
     webauthnRegisterOptionsRequestSchema,
     webauthnLoginOptionsRequestSchema,

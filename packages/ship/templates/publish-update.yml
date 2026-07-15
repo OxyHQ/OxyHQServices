@@ -1,0 +1,64 @@
+# Oxy Updates — OTA publish workflow (template).
+#
+# Copy this into an app repo as `.github/workflows/publish-update.yml`. It runs
+# `expo export` and publishes the JS bundle + assets to the Oxy Updates service:
+#   - push to `main`  → channel `production`
+#   - pull request     → channel `pr-<number>` (a disposable preview track)
+#
+# Prerequisites:
+#   - Repo secrets OXY_SHIP_CLIENT_ID / OXY_SHIP_SECRET: a `service`-type
+#     ApplicationCredential for THIS app, granted the `updates:publish` scope.
+#   - The app embeds the Oxy Updates code-signing certificate and points
+#     expo-updates at https://updates.oxy.so/updates/v1/apps/<clientId>/manifest.
+#   - `oxy-ship` on PATH. Until `@oxyhq/ship` is published to npm it is run from a
+#     checkout of OxyHQServices (see the "Run oxy-ship" step) — swap to
+#     `bunx oxy-ship` once it is published.
+#
+# This publishes ONLY the OTA update. It does NOT build native binaries.
+
+name: Publish OTA update
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: oxy-updates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Resolve channel
+        id: channel
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "name=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=production" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run oxy-ship publish
+        env:
+          OXY_SHIP_CLIENT_ID: ${{ secrets.OXY_SHIP_CLIENT_ID }}
+          OXY_SHIP_SECRET: ${{ secrets.OXY_SHIP_SECRET }}
+          OXY_API_URL: https://api.oxy.so
+        run: |
+          bunx oxy-ship publish \
+            --channel "${{ steps.channel.outputs.name }}" \
+            --platform all \
+            --git-commit "${{ github.sha }}" \
+            --message "${{ github.event.head_commit.message || github.event.pull_request.title }}"

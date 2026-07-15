@@ -43,6 +43,13 @@ export interface RequiredEnvVars {
   // falls back to the documented default in `config/cdn.ts` when unset.
   ASSET_CDN_URL?: string;
 
+  // Oxy Updates code-signing private key (base64-encoded RSA PEM). OPTIONAL at
+  // boot: the process starts without it, but any manifest request that asks for
+  // a signature (`expo-expect-signature`) then fails with a 500 until it is set.
+  // Production supplies it via SSM `/oxy/oxy-api/UPDATES_CODE_SIGNING_PRIVATE_KEY`.
+  // Read directly by `services/updates/signing.service.ts`.
+  UPDATES_CODE_SIGNING_PRIVATE_KEY?: string;
+
   // Server
   PORT?: string;
   NODE_ENV?: string;

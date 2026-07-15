@@ -1,16 +1,11 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  ArrowLeft01Icon,
-  ChartLineData02Icon,
-  Key01Icon,
-  Settings01Icon,
-} from '@hugeicons/core-free-icons';
+import { ChartLineData02Icon, Key01Icon, Settings01Icon } from '@hugeicons/core-free-icons';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useApplication, useCallerAccess } from '@/hooks/use-applications';
+import { AppDetailHeader } from '@/components/apps/app-detail-header';
 import { GeneralSection } from '@/components/apps/general-section';
 import { CredentialsSection } from '@/components/apps/credentials-section';
 import { UsageSection } from '@/components/apps/usage-section';
@@ -51,32 +46,7 @@ function AppSettingsPage() {
 
   return (
     <ScrollArea className="flex-1 bg-background">
-      {/* Header */}
-      <div className="px-6 py-6 border-b border-border">
-        <Link
-          to="/apps"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
-        >
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
-          Back to applications
-        </Link>
-        <div className="flex items-center gap-3">
-          <Avatar size="lg" className="rounded-lg after:rounded-lg">
-            {application.icon && (
-              <AvatarImage src={application.icon} alt={application.name} className="rounded-lg" />
-            )}
-            <AvatarFallback className="rounded-lg text-lg uppercase">
-              {application.name.charAt(0)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-foreground">{application.name}</h1>
-            {application.description && (
-              <p className="text-sm text-muted-foreground mt-1">{application.description}</p>
-            )}
-          </div>
-        </div>
-      </div>
+      <AppDetailHeader application={application} access={access} active="settings" />
 
       <div className="px-6 py-6">
         <Tabs defaultValue="general" className="gap-6">

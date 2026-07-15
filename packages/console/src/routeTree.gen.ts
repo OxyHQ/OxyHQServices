@@ -26,6 +26,7 @@ import { Route as LayoutDocumentationModelsRouteImport } from './routes/_layout/
 import { Route as LayoutDocumentationChatCompletionsRouteImport } from './routes/_layout/documentation/chat-completions'
 import { Route as LayoutDocumentationAuthenticationRouteImport } from './routes/_layout/documentation/authentication'
 import { Route as LayoutAppsAppIdIndexRouteImport } from './routes/_layout/apps/$appId/index'
+import { Route as LayoutAppsAppIdUpdatesRouteImport } from './routes/_layout/apps/$appId/updates'
 import { Route as LayoutAppsAppIdSettingsRouteImport } from './routes/_layout/apps/$appId/settings'
 
 const LayoutRoute = LayoutRouteImport.update({
@@ -117,6 +118,11 @@ const LayoutAppsAppIdIndexRoute = LayoutAppsAppIdIndexRouteImport.update({
   path: '/apps/$appId/',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutAppsAppIdUpdatesRoute = LayoutAppsAppIdUpdatesRouteImport.update({
+  id: '/apps/$appId/updates',
+  path: '/apps/$appId/updates',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutAppsAppIdSettingsRoute = LayoutAppsAppIdSettingsRouteImport.update({
   id: '/apps/$appId/settings',
   path: '/apps/$appId/settings',
@@ -140,6 +146,7 @@ export interface FileRoutesByFullPath {
   '/apps/': typeof LayoutAppsIndexRoute
   '/documentation/': typeof LayoutDocumentationIndexRoute
   '/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
+  '/apps/$appId/updates': typeof LayoutAppsAppIdUpdatesRoute
   '/apps/$appId/': typeof LayoutAppsAppIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/apps': typeof LayoutAppsIndexRoute
   '/documentation': typeof LayoutDocumentationIndexRoute
   '/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
+  '/apps/$appId/updates': typeof LayoutAppsAppIdUpdatesRoute
   '/apps/$appId': typeof LayoutAppsAppIdIndexRoute
 }
 export interface FileRoutesById {
@@ -180,6 +188,7 @@ export interface FileRoutesById {
   '/_layout/apps/': typeof LayoutAppsIndexRoute
   '/_layout/documentation/': typeof LayoutDocumentationIndexRoute
   '/_layout/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
+  '/_layout/apps/$appId/updates': typeof LayoutAppsAppIdUpdatesRoute
   '/_layout/apps/$appId/': typeof LayoutAppsAppIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -201,6 +210,7 @@ export interface FileRouteTypes {
     | '/apps/'
     | '/documentation/'
     | '/apps/$appId/settings'
+    | '/apps/$appId/updates'
     | '/apps/$appId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/apps'
     | '/documentation'
     | '/apps/$appId/settings'
+    | '/apps/$appId/updates'
     | '/apps/$appId'
   id:
     | '__root__'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/_layout/apps/'
     | '/_layout/documentation/'
     | '/_layout/apps/$appId/settings'
+    | '/_layout/apps/$appId/updates'
     | '/_layout/apps/$appId/'
   fileRoutesById: FileRoutesById
 }
@@ -369,6 +381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAppsAppIdIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/apps/$appId/updates': {
+      id: '/_layout/apps/$appId/updates'
+      path: '/apps/$appId/updates'
+      fullPath: '/apps/$appId/updates'
+      preLoaderRoute: typeof LayoutAppsAppIdUpdatesRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/apps/$appId/settings': {
       id: '/_layout/apps/$appId/settings'
       path: '/apps/$appId/settings'
@@ -395,6 +414,7 @@ interface LayoutRouteChildren {
   LayoutAppsIndexRoute: typeof LayoutAppsIndexRoute
   LayoutDocumentationIndexRoute: typeof LayoutDocumentationIndexRoute
   LayoutAppsAppIdSettingsRoute: typeof LayoutAppsAppIdSettingsRoute
+  LayoutAppsAppIdUpdatesRoute: typeof LayoutAppsAppIdUpdatesRoute
   LayoutAppsAppIdIndexRoute: typeof LayoutAppsAppIdIndexRoute
 }
 
@@ -416,6 +436,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAppsIndexRoute: LayoutAppsIndexRoute,
   LayoutDocumentationIndexRoute: LayoutDocumentationIndexRoute,
   LayoutAppsAppIdSettingsRoute: LayoutAppsAppIdSettingsRoute,
+  LayoutAppsAppIdUpdatesRoute: LayoutAppsAppIdUpdatesRoute,
   LayoutAppsAppIdIndexRoute: LayoutAppsAppIdIndexRoute,
 }
 

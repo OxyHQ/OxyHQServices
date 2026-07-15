@@ -1,0 +1,35 @@
+{
+  "name": "@oxyhq/ship",
+  "version": "0.1.0",
+  "description": "oxy-ship — publish Expo OTA updates to the Oxy Updates service",
+  "type": "commonjs",
+  "bin": {
+    "oxy-ship": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/add-shebang.mjs",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src",
+    "oxy-ship": "bun run src/cli.ts"
+  },
+  "dependencies": {
+    "@oxyhq/contracts": "workspace:*",
+    "@oxyhq/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
