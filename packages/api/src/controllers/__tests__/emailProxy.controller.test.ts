@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import type { IncomingMessage } from 'node:http';
+import type { Request, Response as ExpressResponse } from 'express';
 import { SsrfRejection } from '@oxyhq/core/server';
 import { proxyResource } from '../emailProxy.controller';
 
@@ -23,8 +24,9 @@ type MockResponse = {
   send: jest.Mock;
 };
 
-function makeReq(url: string) {
-  return { query: { url } } as any;
+function makeReq(url: string): Request {
+  // proxyResource only reads `req.query`; a partial Express Request is all it needs.
+  return { query: { url } } as unknown as Request;
 }
 
 function makeRes(): MockResponse {
@@ -60,7 +62,7 @@ describe('email proxy SSRF protections', () => {
     mockSafeFetch.mockRejectedValue(new SsrfRejection('blocked host'));
     const res = makeRes();
 
-    await expect(proxyResource(makeReq('http://127.0.0.1/internal.png'), res as any)).rejects.toThrow(
+    await expect(proxyResource(makeReq('http://127.0.0.1/internal.png'), res as unknown as ExpressResponse)).rejects.toThrow(
       'Private network URLs are not allowed'
     );
 
@@ -74,7 +76,7 @@ describe('email proxy SSRF protections', () => {
     mockSafeFetch.mockRejectedValue(new SsrfRejection('blocked metadata address'));
     const res = makeRes();
 
-    await expect(proxyResource(makeReq('http://metadata.example/internal.png'), res as any)).rejects.toThrow(
+    await expect(proxyResource(makeReq('http://metadata.example/internal.png'), res as unknown as ExpressResponse)).rejects.toThrow(
       'Private network URLs are not allowed'
     );
 
@@ -85,7 +87,7 @@ describe('email proxy SSRF protections', () => {
     mockSafeFetch.mockRejectedValue(new SsrfRejection('redirect target blocked'));
     const res = makeRes();
 
-    await expect(proxyResource(makeReq('http://public.example/redirect'), res as any)).rejects.toThrow(
+    await expect(proxyResource(makeReq('http://public.example/redirect'), res as unknown as ExpressResponse)).rejects.toThrow(
       'Private network URLs are not allowed'
     );
 
@@ -106,7 +108,7 @@ describe('email proxy SSRF protections', () => {
     );
     const res = makeRes();
 
-    await proxyResource(makeReq('https://public.example/redirect'), res as any);
+    await proxyResource(makeReq('https://public.example/redirect'), res as unknown as ExpressResponse);
 
     expect(mockSafeFetch).toHaveBeenCalledWith(
       'https://public.example/redirect',

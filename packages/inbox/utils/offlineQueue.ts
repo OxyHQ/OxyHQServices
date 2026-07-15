@@ -24,7 +24,7 @@
  * probe (`isOfflineQueueSupported`) and connectivity helpers; `enqueue` /
  * `flushQueue` have no producers in the app.
  *
- * ── TODO (cross-restart replay) ──────────────────────────────────────
+ * ── Cross-restart replay (future enhancement) ────────────────────────
  * Paused mutations are persisted (so they survive a cold restart), but full
  * cross-restart replay additionally needs `queryClient.setMutationDefaults(key,
  * { mutationFn })` for each mutation key so the dehydrated mutation can be
