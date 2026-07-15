@@ -399,7 +399,7 @@
     },
     "packages/contracts": {
       "name": "@oxyhq/contracts",
-      "version": "0.14.1",
+      "version": "0.14.2",
       "dependencies": {
         "zod": "^3.25.64",
       },
@@ -412,7 +412,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "11.0.0",
+      "version": "11.0.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
@@ -645,7 +645,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "21.0.0",
+      "version": "21.0.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "^11.0.0",
