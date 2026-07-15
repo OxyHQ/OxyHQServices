@@ -14,8 +14,9 @@ type PostLoginRedirectParams = {
  * error if no authorization request context was provided.
  *
  * No `authuser` hint: the caller has already committed the device-first session
- * through the shared SDK funnel (`signInWithPassword` / `handleWebSession`), so
- * the just-authenticated account is the SDK's ACTIVE account. `/authorize`
+ * through the shared SDK funnel (`signInWithPasskey` / `registerWithPasskey` /
+ * `handleWebSession`), so the just-authenticated account is the SDK's ACTIVE
+ * account. `/authorize`
  * targets that active account and offers the device chooser
  * (`useSwitchableAccounts`) to switch — the same mechanism every Oxy app uses.
  */

@@ -1,10 +1,9 @@
 /**
- * The sign-up form offers a username-only "Sign up with a passkey" sub-flow
- * (first-party Oxy web origins only — the jsdom host is loopback `localhost`).
- * The passkey signup backend reads ONLY `envelope.username` (no email/password),
- * so the sub-flow collects just a username and calls
+ * Sign-up is passkey-only — password and social sign-up were removed
+ * ecosystem-wide. The form collects ONLY a username (the backend register/verify
+ * path reads `envelope.username` and nothing else) and calls
  * `useOxy().registerWithPasskey({ username })`; on success the SDK has committed
- * the device-first session and the form redirects like a password signup.
+ * the device-first session and the form redirects to the OAuth authorize step.
  */
 import { beforeEach, afterEach, describe, expect, mock, test } from "bun:test"
 import { act } from "react"
@@ -67,12 +66,6 @@ function renderForm(): { container: HTMLDivElement; unmount: () => void } {
     }
 }
 
-function findButton(container: HTMLElement, label: RegExp): HTMLButtonElement | undefined {
-    return Array.from(container.querySelectorAll("button")).find((b) =>
-        label.test(b.textContent ?? ""),
-    )
-}
-
 function setInputValue(input: HTMLInputElement, value: string): void {
     const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -94,19 +87,8 @@ describe("SignUpForm — passkey signup", () => {
         registerWithPasskey.mockImplementation(async () => undefined)
     })
 
-    test("offers the passkey option in password mode", () => {
+    test("renders a username-only form (no password field)", () => {
         const { container, unmount } = renderForm()
-        expect(findButton(container, /sign up with a passkey/i)).toBeDefined()
-        unmount()
-    })
-
-    test("switching to passkey mode shows a username-only form (no password field)", () => {
-        const { container, unmount } = renderForm()
-        act(() => {
-            findButton(container, /sign up with a passkey/i)?.dispatchEvent(
-                new (window.MouseEvent)("click", { bubbles: true }),
-            )
-        })
         expect(container.querySelector("#passkey-username")).not.toBeNull()
         expect(container.querySelector('input[type="password"]')).toBeNull()
         unmount()
@@ -114,11 +96,6 @@ describe("SignUpForm — passkey signup", () => {
 
     test("submitting the username-only form calls registerWithPasskey", async () => {
         const { container, unmount } = renderForm()
-        act(() => {
-            findButton(container, /sign up with a passkey/i)?.dispatchEvent(
-                new (window.MouseEvent)("click", { bubbles: true }),
-            )
-        })
 
         const input = container.querySelector<HTMLInputElement>("#passkey-username")
         expect(input).not.toBeNull()
@@ -142,11 +119,6 @@ describe("SignUpForm — passkey signup", () => {
         registerWithPasskey.mockImplementation(async () => { throw cancel })
 
         const { container, unmount } = renderForm()
-        act(() => {
-            findButton(container, /sign up with a passkey/i)?.dispatchEvent(
-                new (window.MouseEvent)("click", { bubbles: true }),
-            )
-        })
         const input = container.querySelector<HTMLInputElement>("#passkey-username")
         act(() => {
             if (input) setInputValue(input, "newhuman")
