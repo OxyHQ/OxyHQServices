@@ -3,7 +3,7 @@
  */
 import type { OxyServicesBase } from '../OxyServices.base';
 import type { SecurityActivity, SecurityActivityResponse, SecurityEventType } from '../models/interfaces';
-import { isDev } from '../shared/utils/debugUtils';
+import { logger } from '../logger';
 
 export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -80,11 +80,9 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
           { cache: false }
         );
       } catch (error) {
-        // Don't throw - logging failures shouldn't break user flow
-        // But log for monitoring
-        if (isDev()) {
-          console.warn('[OxyServices] Failed to log private key exported event:', error);
-        }
+        // Don't throw - logging failures shouldn't break user flow, but surface
+        // for monitoring via the shared logger sink.
+        logger.warn('[OxyServices] Failed to log private key exported event', { component: 'OxyServices.security' }, error);
       }
     }
 
@@ -102,11 +100,9 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
           { cache: false }
         );
       } catch (error) {
-        // Don't throw - logging failures shouldn't break user flow
-        // But log for monitoring
-        if (isDev()) {
-          console.warn('[OxyServices] Failed to log backup created event:', error);
-        }
+        // Don't throw - logging failures shouldn't break user flow, but surface
+        // for monitoring via the shared logger sink.
+        logger.warn('[OxyServices] Failed to log backup created event', { component: 'OxyServices.security' }, error);
       }
     }
   };

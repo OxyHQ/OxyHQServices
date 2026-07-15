@@ -21,7 +21,8 @@
     "packages/inbox",
     "packages/test-app-expo",
     "packages/console",
-    "packages/ship"
+    "packages/ship",
+    "packages/test-app-vite"
   ],
   "scripts": {
     "build:all": "turbo run build",

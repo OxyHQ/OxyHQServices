@@ -13,7 +13,7 @@
  */
 
 import { OxyServices } from '../../OxyServices';
-import { logger } from '../../utils/loggerUtils';
+import { logger } from '../../logger';
 
 /** A JSON success `Response` mimicking the API's `{ data: ... }` envelope. */
 function jsonResponse(data: unknown): Response {

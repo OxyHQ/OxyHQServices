@@ -14,6 +14,11 @@ build/
 .turbo
 *.tsbuildinfo
 
+# test-app-vite ships a shadcn `src/lib/` SOURCE directory (the `cn()` helper),
+# which the broad `lib/` build-output rule above would otherwise swallow.
+!packages/test-app-vite/src/lib/
+!packages/test-app-vite/src/lib/**
+
 # Environment files — real secrets must NEVER be committed.
 # Patterns cover the repo root AND every workspace package
 # (e.g. packages/api/.env, packages/auth/.env.development).

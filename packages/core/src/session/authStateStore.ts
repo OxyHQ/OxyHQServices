@@ -17,7 +17,7 @@
  * ESM-safe (no `require()`).
  */
 
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 
 /**
  * The persisted session credential set for a single origin.

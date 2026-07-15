@@ -308,3 +308,18 @@ export type {
     PromoteRequest,
     UpdateRolloutPatch,
 } from './updates';
+
+export {
+    // Schemas
+    webauthnRegisterOptionsRequestSchema,
+    webauthnLoginOptionsRequestSchema,
+    webauthnRegisterVerifyRequestSchema,
+    webauthnLoginVerifyRequestSchema,
+} from './webauthn';
+
+export type {
+    WebauthnRegisterOptionsRequest,
+    WebauthnLoginOptionsRequest,
+    WebauthnRegisterVerifyRequest,
+    WebauthnLoginVerifyRequest,
+} from './webauthn';

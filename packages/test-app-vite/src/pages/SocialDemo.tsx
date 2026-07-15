@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useAuth, useWebOxy, useFollow, useFollowerCounts, useUserByUsername } from "@oxyhq/auth"
+import { useAuth, useFollow, useFollowerCounts, useUserByUsername } from "@oxyhq/services"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,8 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export function SocialDemo() {
-  const { isAuthenticated } = useAuth()
-  const { oxyServices } = useWebOxy()
+  const { isAuthenticated, oxyServices } = useAuth()
   const [searchUsername, setSearchUsername] = useState("")
   const [targetUsername, setTargetUsername] = useState("")
 
@@ -16,7 +15,7 @@ export function SocialDemo() {
   const targetUserId = foundUser?.id || ""
 
   const follow = useFollow(targetUserId || undefined)
-  const counts = useFollowerCounts(targetUserId || undefined)
+  const counts = useFollowerCounts(targetUserId)
 
   const handleSearch = () => {
     setTargetUsername(searchUsername.trim())
@@ -137,7 +136,7 @@ export function SocialDemo() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
-{`import { useFollow, useFollowerCounts, useUserByUsername } from '@oxyhq/auth';
+{`import { useFollow, useFollowerCounts, useUserByUsername } from '@oxyhq/services';
 
 function Social() {
   const { data: user } = useUserByUsername('john');

@@ -1,4 +1,4 @@
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 
 export interface MinimalSocket {
   connected: boolean;

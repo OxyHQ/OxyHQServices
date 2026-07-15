@@ -13,7 +13,7 @@ import { OxyAuthenticationError } from '../OxyServices.errors';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { loadNodeCrypto } from '@oxyhq/protocol';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 
 /**

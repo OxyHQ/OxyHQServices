@@ -1,3 +1,5 @@
+import { logger } from '../logger';
+
 /**
  * Minimal interface for services that can update asset visibility.
  * Kept loose to avoid mixin type-inference issues with the OxyServices class.
@@ -31,7 +33,7 @@ export async function updateAvatarVisibility(
       ? (visError as Error & { status: number }).status
       : undefined;
     if (status !== 404) {
-      console.error(`[${contextName}] Failed to update avatar visibility for ${fileId}:`, visError);
+      logger.error(`[${contextName}] Failed to update avatar visibility for ${fileId}`, visError, { component: contextName });
     }
   }
 }

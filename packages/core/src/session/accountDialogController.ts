@@ -29,7 +29,7 @@
 import type { OxyServices } from '../OxyServices';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { User } from '../models/interfaces';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
 import {

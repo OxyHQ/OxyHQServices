@@ -1,7 +1,7 @@
 import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor, ServiceAssetMetadata, ServiceAssetMetadataBySha } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { isReactNative } from '@oxyhq/protocol';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 
 /**
@@ -428,8 +428,8 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
 
         return response;
       } catch (error) {
-        console.error('File upload error:', error);
-        
+        logger.error('File upload error', error, { component: 'OxyServices.assets' });
+
         let errorMessage = 'File upload failed';
         
         if (error instanceof Error) {

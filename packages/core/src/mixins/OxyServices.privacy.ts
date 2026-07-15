@@ -3,7 +3,7 @@
  */
 import type { BlockedUser, RestrictedUser } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { isDev } from '../shared/utils/debugUtils';
+import { logger } from '../logger';
 
 export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -36,9 +36,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         });
       } catch (error) {
         // If there's an error, assume not in list to avoid breaking functionality
-        if (isDev()) {
-          console.warn('Error checking user list:', error);
-        }
+        logger.warn('Error checking user list', { component: 'OxyServices.privacy' }, error);
         return false;
       }
     }

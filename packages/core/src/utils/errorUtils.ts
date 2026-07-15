@@ -1,5 +1,5 @@
 import type { ApiError } from '../models/interfaces';
-import { logger } from './loggerUtils';
+import { logger } from '../logger';
 
 /**
  * Error handling utilities for consistent error processing

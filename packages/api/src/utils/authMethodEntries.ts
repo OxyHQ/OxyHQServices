@@ -25,7 +25,11 @@ export interface AuthMethodEntriesInput {
   email?: string | null;
   /** Whether a usable password credential exists (resolved by the caller). */
   hasPassword: boolean;
-  authMethods?: Array<{ type?: string | null; linkedAt?: Date | null } | null> | null;
+  authMethods?: Array<{
+    type?: string | null;
+    linkedAt?: Date | null;
+    metadata?: { credentialID?: string | null; name?: string | null } | null;
+  } | null> | null;
   /** Fallback `linkedAt` for methods predating the `authMethods[]` stamp. */
   createdAt: Date;
 }
@@ -34,7 +38,10 @@ export interface AuthMethodEntriesInput {
  * Build the contract-shaped list of linked authentication methods for an
  * account. The identity entry is present when the account holds a `publicKey`;
  * the password entry when `hasPassword` and an `email` exist; one social entry
- * per linked social `authMethods[]` row.
+ * per linked social `authMethods[]` row; and one `webauthn` entry per registered
+ * passkey row (carrying its `credentialId` + `name`). A passkey is NOT a DID
+ * verification method, so its entry has no `verificationMethodId` — a
+ * passkey-only account stays custodial.
  */
 export function buildAuthMethodEntries(input: AuthMethodEntriesInput): AuthMethodEntry[] {
   const entries: AuthMethodEntry[] = [];
@@ -57,6 +64,11 @@ export function buildAuthMethodEntries(input: AuthMethodEntriesInput): AuthMetho
   for (const method of methods) {
     if (method?.type && isSocialType(method.type)) {
       entries.push({ type: method.type, linkedAt: method.linkedAt ?? input.createdAt });
+    } else if (method?.type === 'webauthn') {
+      const entry: AuthMethodEntry = { type: 'webauthn', linkedAt: method.linkedAt ?? input.createdAt };
+      if (method.metadata?.credentialID) entry.credentialId = method.metadata.credentialID;
+      if (method.metadata?.name) entry.name = method.metadata.name;
+      entries.push(entry);
     }
   }
 

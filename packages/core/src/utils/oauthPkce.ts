@@ -17,7 +17,7 @@
  */
 
 import { isNodeJS, isReactNative, loadExpoCrypto, loadNodeCrypto, sha256 } from '@oxyhq/protocol';
-import { logger } from './loggerUtils';
+import { logger } from '../logger';
 
 /** The central Oxy IdP authorization endpoint used by default. */
 export const OXY_AUTHORIZE_URL = 'https://auth.oxy.so/authorize';

@@ -22,7 +22,7 @@ import { buildSearchParams, buildPaginationParams, type PaginationParams } from 
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 
 /**
