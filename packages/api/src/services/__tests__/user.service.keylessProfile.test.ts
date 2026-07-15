@@ -70,6 +70,27 @@ describe('UserService.formatUserResponse — keyless accounts', () => {
   });
 });
 
+describe('UserService.formatUserResponse — key-anchored accounts (with publicKey)', () => {
+  it('serializes id as the stable _id, NOT the publicKey', () => {
+    // Regression: once a self-custody user links a Commons identity (gains a
+    // `publicKey`), the public DTO `id` used to flip from the Mongo `_id` to the
+    // publicKey. The whole social graph (Mention `Post.oxyUserId === _id`, follow
+    // edges, client follow-state maps) is keyed on the ObjectId, so a publicKey
+    // `id` made author-feed/follow lookups miss and the user's posts vanished.
+    // The DTO `id` MUST stay the ObjectId; key identity is exposed separately.
+    const _id = new Types.ObjectId();
+    const publicKey = '048295c4a1b2c3d4e5f6a7b8c9d0e1f2';
+    const dto = userService.formatUserResponse({
+      _id,
+      publicKey,
+      username: 'nate',
+      name: { first: 'Nate' },
+    } as never);
+    expect(dto.id).toBe(_id.toString());
+    expect(dto.id).not.toBe(publicKey);
+  });
+});
+
 describe('UserService.updateUserProfile — keyless account return shape', () => {
   beforeEach(() => {
     jest.clearAllMocks();

@@ -21,11 +21,10 @@
  * dropped by MongoDB itself, instead of relying on an easily-forgotten `-field`
  * exclusion to keep a private field off a public row.
  *
- * `publicKey` is deliberately NOT projected. `formatUserResponse` prefers it as
- * the DTO `id`, and the social graph these lists feed (follow edges, the viewer
- * graph id lists, client-side follow-state maps) is keyed by the ObjectId —
- * projecting it here would flip the `id` of key-based accounts on these
- * endpoints only, which is a graph change, not a profile-row change.
+ * `publicKey` is deliberately NOT projected. The DTO `id` is always the stable
+ * ObjectId (`formatUserResponse` anchors it on `_id`), and the social graph these
+ * lists feed (follow edges, the viewer graph id lists, client-side follow-state
+ * maps) is keyed by that same ObjectId — the public row needs no key material.
  */
 
 import type { IUser } from '../models/User';

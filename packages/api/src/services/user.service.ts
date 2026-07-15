@@ -435,10 +435,10 @@ export class UserService {
 
     // Convert to plain object with virtuals. The User schema's toObject
     // transform DELETES `_id` (it emits the client `id` shape). `formatUserResponse`
-    // is a server-side serializer that resolves identity from `publicKey || _id`,
-    // so a keyless managed/org account (no publicKey) would otherwise reach it
-    // with neither field and throw "User must have a publicKey or _id". Re-attach
-    // `_id` so the serializer can identify keyless accounts.
+    // is a server-side serializer that resolves identity from `_id` (falling back
+    // to `id`), so a keyless managed/org account would otherwise reach it with
+    // neither field and throw "User must have an _id". Re-attach `_id` so the
+    // serializer can identify keyless accounts.
     const userObj = user.toObject({ virtuals: true }) as IUser;
     userObj._id = user._id;
 
@@ -1597,15 +1597,20 @@ export class UserService {
     options: { includePrivateFields?: boolean } = {}
   ): PublicUserProfile {
     // Handle both IUser (Mongoose document) and UserData (plain object).
-    // Identity preference: publicKey (local identity) → _id → the `id` field.
-    // The final `id` fallback covers objects that already went through the User
-    // schema's toObject/toJSON transform, which deletes `_id` and folds the
-    // identifier into `id` — a keyless managed/org account would otherwise have
-    // neither publicKey nor _id here.
+    // The DTO `id` is ALWAYS the stable Mongo ObjectId, never the publicKey. The
+    // social graph the whole ecosystem keys on (`Post.oxyUserId`, follow edges,
+    // client follow-state maps) is anchored on `_id`, so a key-anchored account
+    // (one that has a `publicKey`) MUST keep its public `id === _id` — flipping
+    // it to the publicKey makes author-feed/follow lookups miss (the bug this
+    // serializer used to cause once a user linked a Commons identity). Key
+    // identity stays available via the separate `publicKey`/`did` fields. The
+    // `id` fallback covers objects that already went through the User schema's
+    // toObject/toJSON transform, which deletes `_id` and folds the identifier
+    // into `id` (e.g. a keyless managed/org account).
     const userAsIUser = user as IUser & { id?: string };
-    const userId = userAsIUser.publicKey || userAsIUser._id?.toString() || userAsIUser.id;
+    const userId = userAsIUser._id?.toString() || userAsIUser.id;
     if (!userId) {
-      throw new Error('User must have a publicKey or _id');
+      throw new Error('User must have an _id');
     }
     const userAny = user as unknown as Record<string, unknown>;
 
