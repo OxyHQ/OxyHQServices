@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { OxyAuthChooser, useOxy } from "@oxyhq/services"
-import type { CommonsApprovalInfo } from "@oxyhq/core"
+import { getAccountDisplayName, type CommonsApprovalInfo } from "@oxyhq/core"
 import { Button } from "@oxyhq/bloom/button"
 import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/auth-form-layout"
@@ -16,22 +16,36 @@ import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/aut
  * startPasskeyHubSignIn`), where the ceremony IS first-party, and relays the
  * result back.
  *
- * This page just mounts the SAME `OxyAuthChooser` every other Oxy surface
- * uses — bare, no Dialog chrome — so every sign-in/sign-up path (passkey,
- * Commons QR, switching an existing hub-local account) works here for free.
- * Once it completes (a bearer is planted on THIS origin), this page
- * authorizes the RP's pending device-flow session by its PUBLIC
- * `authorizeCode` (`POST /auth/session/authorize-code/:code`, bearer-authed)
- * — the SECRET `sessionToken` never travels here in any form, only the
- * public code the popup URL carries. The opener's own poll/`/auth-session`
- * socket subscription (unchanged, the same one the Commons QR flow drives)
- * then completes the hand-off and closes its own waiting state; this page
- * just confirms success and closes itself.
+ * This page mounts the SAME `OxyAuthChooser` every other Oxy surface uses —
+ * bare, no Dialog chrome — so every sign-in/sign-up path (passkey, Commons
+ * QR, switching an existing hub-local account) works here for free.
+ *
+ * SECURITY (post-review, see PR #640): completing `OxyAuthChooser` only
+ * plants a bearer on THIS origin — it does NOT, by itself, authorize the
+ * opener's pending session. `OxyAuthChooser`'s "tap your already-active
+ * account row" shortcut is a silent, one-tap completion by design (it's
+ * fine inside a normal in-app dialog), but here it would let an attacker who
+ * crafted their OWN `authorizeCode` (from their own registered app, or their
+ * own self-registered third-party app) get a signed-in victim to
+ * unknowingly authorize THAT attacker-controlled session just by tapping
+ * their own name — a one-click login-CSRF / session-fixation. So the actual
+ * authorize call NEVER fires from `OxyAuthChooser`'s `onComplete` directly:
+ * it only flags "ready to confirm," and a SEPARATE, mandatory "Authorize
+ * sign-in to <App>?" screen (showing the resolved app identity + the
+ * account that's about to be used) requires an explicit press before
+ * `POST /auth/session/authorize-code/:code` (bearer-authed) ever fires. When
+ * the app's origin could not be verified at session-creation time
+ * (`approval.originVerified === false` — exactly the shape the attack above
+ * takes, since neither a spoofed origin nor a self-registered third-party
+ * app can pass `originVerified`), that screen additionally requires an
+ * explicit, unchecked-by-default acknowledgement before "Authorize" enables
+ * — modeled on the Commons approver's own non-suppressible anti-phishing
+ * warning for the identical signal.
  */
 export function HubPasskeyPage() {
     const [searchParams] = useSearchParams()
     const code = searchParams.get("code")
-    const { oxyServices, accountDialogController } = useOxy()
+    const { oxyServices, accountDialogController, user } = useOxy()
 
     const [approval, setApproval] = useState<CommonsApprovalInfo | null>(null)
     const [loadError, setLoadError] = useState<string | null>(null)
@@ -39,13 +53,16 @@ export function HubPasskeyPage() {
     const [done, setDone] = useState(false)
     const completingRef = useRef(false)
 
+    // Set once OxyAuthChooser completes (a bearer now exists on THIS origin)
+    // — but the authorize-code POST does NOT fire yet. See the module doc.
+    const [readyToConfirm, setReadyToConfirm] = useState(false)
+    const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false)
+
     const hasOpener = typeof window !== "undefined" && window.opener != null
 
     // Jump straight to the sign-in entry — on web this auto-starts "Sign in
     // with Oxy" (the QR + passkey link, since this origin IS oxy.so). Any
-    // account already active on THIS device still shows above it and
-    // completes in one tap (the chooser treats tapping the active row as an
-    // immediate `onComplete`, no network call).
+    // account already active on THIS device still shows above it.
     useEffect(() => {
         accountDialogController?.setView("signin")
     }, [accountDialogController])
@@ -70,7 +87,26 @@ export function HubPasskeyPage() {
         }
     }, [code, oxyServices])
 
-    const handleComplete = useCallback(() => {
+    // OxyAuthChooser completed (passkey ceremony, Commons QR, or tapping an
+    // already-active account) — do NOT authorize yet, just surface the
+    // mandatory confirmation screen below.
+    const handleChooserComplete = useCallback(() => {
+        setReadyToConfirm(true)
+    }, [])
+
+    // "Not you? Choose a different account" — back out of the confirmation
+    // WITHOUT denying the opener's flow (it's still pending; they may just
+    // want to pick a different account or method).
+    const handleChooseDifferentAccount = useCallback(() => {
+        setReadyToConfirm(false)
+        setAcknowledgedUnverified(false)
+        setAuthorizeError(null)
+        accountDialogController?.setView("accounts")
+    }, [accountDialogController])
+
+    // The ONLY path that calls the authorize-code endpoint — an explicit
+    // button press on the confirmation screen.
+    const handleAuthorizePress = useCallback(() => {
         if (!code || completingRef.current) return
         completingRef.current = true
         void (async () => {
@@ -150,18 +186,46 @@ export function HubPasskeyPage() {
         )
     }
 
+    if (readyToConfirm) {
+        const canAuthorize = approval.originVerified || acknowledgedUnverified
+        return (
+            <AuthFormLayout>
+                <AuthFormHeader
+                    title={`Authorize sign-in to ${approval.application.name}?`}
+                    description={`Continuing as ${getAccountDisplayName(user)}.`}
+                />
+                {!approval.originVerified && (
+                    <label className="flex items-start gap-2 text-sm">
+                        <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={acknowledgedUnverified}
+                            onChange={(event) => setAcknowledgedUnverified(event.target.checked)}
+                        />
+                        <span>
+                            We couldn&apos;t verify where this request came from. I understand the risk and
+                            started this sign-in myself in {approval.application.name}.
+                        </span>
+                    </label>
+                )}
+                {authorizeError && <p className="text-destructive text-sm">{authorizeError}</p>}
+                <Button disabled={!canAuthorize} onClick={handleAuthorizePress}>
+                    Authorize
+                </Button>
+                <Button variant="ghost" onClick={handleChooseDifferentAccount}>
+                    Not you? Choose a different account
+                </Button>
+                <Button variant="ghost" onClick={handleCancel}>
+                    Cancel
+                </Button>
+            </AuthFormLayout>
+        )
+    }
+
     return (
         <AuthFormLayout>
-            <AuthFormHeader
-                title={`Continue to ${approval.application.name}`}
-                description={
-                    approval.originVerified
-                        ? undefined
-                        : "We couldn't verify where this request came from — only continue if you started this yourself."
-                }
-            />
-            {authorizeError && <p className="text-destructive text-sm">{authorizeError}</p>}
-            <OxyAuthChooser onComplete={handleComplete} />
+            <AuthFormHeader title={`Continue to ${approval.application.name}`} />
+            <OxyAuthChooser onComplete={handleChooserComplete} />
             <Button variant="ghost" onClick={handleCancel}>
                 Cancel
             </Button>

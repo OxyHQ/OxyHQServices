@@ -33,7 +33,7 @@ import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS, canonicalizeOAuthRedirectUri } from '../services/oauthCode.service';
-import { claimAuthSession, authorizeSessionWithSignedChallenge } from '../services/authSession.service';
+import { claimAuthSession, authorizeSessionWithSignedChallenge, authorizeSessionWithBearer } from '../services/authSession.service';
 import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
@@ -1361,6 +1361,11 @@ const authSessionAuthorizeCodeLimiter = rateLimit({
  * carry ONLY the public code (safe in a URL); the secret `sessionToken` never
  * has to leave the originating client. The authenticated principal (bearer)
  * is the sole source of "who is authorising" — mirrors `/session/authorize`.
+ *
+ * The claim + mint live in `authorizeSessionWithBearer` (atomic, see its
+ * doc) so two concurrent authorizes of the same code can't both mint a
+ * session — the route only resolves the bearer identity and maps the
+ * outcome to a status code.
  */
 router.post(
   '/session/authorize-code/:authorizeCode',
@@ -1375,60 +1380,32 @@ router.post(
     if (!authenticatedUser?._id) {
       throw new UnauthorizedError('Authentication required');
     }
-
-    const authSession = await AuthSession.findOne({ authorizeCode, status: 'pending' });
-    if (!authSession) {
-      throw new NotFoundError('Auth session not found or already processed');
-    }
-
-    if (authSession.expiresAt < new Date()) {
-      authSession.status = 'expired';
-      await authSession.save();
-      throw new BadRequestError('Auth session has expired');
-    }
-
     const authenticatedUserId = authenticatedUser._id.toString();
 
-    // Resolve the bound Application for the device-name label. The session
-    // can't exist without a valid applicationId; fall back to a generic label
-    // only if the app was hard-deleted between create and authorize.
-    const app = await Application.findById(authSession.applicationId);
-    const appLabel = app ? app.name : 'App';
-
-    // Create a new session for the third-party app, owned by the
-    // authenticated user identified via the bearer token. When the flow was
-    // started with a device binding (`deviceId` persisted at create time),
-    // pass it as the explicit deviceId so the session lands on the
-    // originating device.
-    const newSession = await sessionService.createSession(
+    const outcome = await authorizeSessionWithBearer({
+      authorizeCode,
       authenticatedUserId,
+      authenticatedPublicKey: authenticatedUser.publicKey,
+      deviceName,
+      deviceFingerprint,
       req,
-      {
-        deviceName: deviceName || `${appLabel} App`,
-        deviceFingerprint,
-        ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
-      }
-    );
+    });
 
-    authSession.status = 'authorized';
-    if (authenticatedUser.publicKey) {
-      authSession.authorizedBy = authenticatedUser.publicKey;
+    if (!outcome.ok) {
+      if (outcome.status === 404) throw new NotFoundError(outcome.message);
+      throw new BadRequestError(outcome.message);
     }
-    authSession.authorizedUserId = authenticatedUser._id;
-    authSession.authorizedSessionId = newSession.sessionId;
-    await authSession.save();
 
     logger.info('Auth session authorized (bearer, by code)', {
       authorizeCode: authorizeCode.substring(0, 8) + '...',
       userId: authenticatedUserId,
-      applicationId: authSession.applicationId.toString(),
     });
 
     // Notify the waiting originator on its secret sessionToken channel — the
     // caller here only ever held the public authorizeCode.
-    emitAuthSessionUpdate(authSession.sessionToken, {
+    emitAuthSessionUpdate(outcome.sessionToken, {
       status: 'authorized',
-      sessionId: newSession.sessionId,
+      sessionId: outcome.sessionId,
       publicKey: authenticatedUser.publicKey,
       userId: authenticatedUserId,
       username: authenticatedUser.username,
@@ -1441,7 +1418,7 @@ router.post(
 
     sendSuccess(res, {
       success: true,
-      sessionId: newSession.sessionId,
+      sessionId: outcome.sessionId,
       user: {
         id: authenticatedUserId,
         username: authenticatedUser.username,

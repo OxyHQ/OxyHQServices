@@ -1,12 +1,16 @@
 /**
- * /auth/session/authorize-code/:authorizeCode tests
+ * /auth/session/authorize-code/:authorizeCode route tests.
  *
  * Bearer-authed sibling of `/auth/session/authorize/:sessionToken` (see
  * `sessionAuthorize.test.ts`), keyed on the PUBLIC `authorizeCode` instead of
  * the secret `sessionToken` — for an approver (e.g. the auth.oxy.so passkey
- * hub) that authenticates via bearer token but never holds the secret. These
- * tests mirror the sibling's C2 coverage (bearer-only authorization) plus the
- * authorizeCode-specific lookup behavior.
+ * hub) that authenticates via bearer token but never holds the secret.
+ *
+ * The actual claim/mint logic (atomic burn, origin-verified audit log) lives
+ * in `authorizeSessionWithBearer` and is unit-tested in
+ * `services/__tests__/authorizeSessionWithBearer.test.ts` — this file only
+ * covers the route's plumbing: bearer-required, and outcome -> status-code
+ * mapping.
  */
 
 import express from 'express';
@@ -14,11 +18,10 @@ import http from 'http';
 import type { AddressInfo } from 'net';
 
 const mockAuthMiddleware = jest.fn();
-const mockAuthSessionFindOne = jest.fn();
-const mockCreateSession = jest.fn();
+const mockAuthorizeSessionWithBearer = jest.fn();
 const mockEmitAuthSessionUpdate = jest.fn();
+const mockAuthSessionFindOne = jest.fn();
 const mockApplicationFindOne = jest.fn();
-const mockApplicationFindById = jest.fn();
 const mockApplicationCredentialFindOne = jest.fn();
 const mockAuthCodeCreate = jest.fn();
 
@@ -36,25 +39,23 @@ jest.mock('../../middleware/validate', () => ({
   validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
+// This route only touches AuthSession through the mocked service below; the
+// bare default-export is required so sibling routes in the same module load.
 jest.mock('../../models/AuthSession', () => ({
   __esModule: true,
   default: { findOne: mockAuthSessionFindOne },
   AuthSession: { findOne: mockAuthSessionFindOne },
 }));
 
-// Session model — the auth route file imports it for use by
-// `/auth/session/claim`. We don't exercise that path in this suite,
-// but the bare default-export is required so the module loads.
 jest.mock('../../models/Session', () => ({
   __esModule: true,
   default: { findOne: jest.fn() },
 }));
 
-// authSession.service is consumed by `/auth/session/claim` and
-// `/auth/session/authorize-signed` only; mocked to avoid the model import chain.
 jest.mock('../../services/authSession.service', () => ({
   claimAuthSession: jest.fn(),
   authorizeSessionWithSignedChallenge: jest.fn(),
+  authorizeSessionWithBearer: (...args: unknown[]) => mockAuthorizeSessionWithBearer(...args),
 }));
 
 jest.mock('../../models/AuthCode', () => ({
@@ -65,8 +66,8 @@ jest.mock('../../models/AuthCode', () => ({
 
 jest.mock('../../models/Application', () => ({
   __esModule: true,
-  Application: { findOne: mockApplicationFindOne, findById: mockApplicationFindById },
-  default: { findOne: mockApplicationFindOne, findById: mockApplicationFindById },
+  Application: { findOne: mockApplicationFindOne, findById: jest.fn() },
+  default: { findOne: mockApplicationFindOne, findById: jest.fn() },
 }));
 
 jest.mock('../../models/ApplicationCredential', () => ({
@@ -91,7 +92,7 @@ jest.mock('../../utils/authSessionSocket', () => ({
 
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
-  default: { createSession: mockCreateSession },
+  default: { createSession: jest.fn() },
 }));
 
 jest.mock('../../services/oauthCode.service', () => ({
@@ -130,9 +131,6 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-// auth.ts statically imports the AppGrant model (OAuth consent
-// grants); mock them so the real Mongoose schema does not run under the global
-// mongoose mock (which lacks Schema.Types).
 jest.mock('../../models/AppGrant', () => ({
   __esModule: true,
   AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
@@ -205,8 +203,17 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+function authenticateAs(userId: string, over: Record<string, unknown> = {}) {
+  mockAuthMiddleware.mockImplementationOnce(
+    (req: { user?: unknown }, _res: unknown, next: () => void) => {
+      req.user = { _id: { toString: () => userId }, username: 'someone', ...over };
+      next();
+    }
+  );
+}
+
 describe('POST /auth/session/authorize-code/:authorizeCode', () => {
-  it('returns 401 when no Authorization header is present', async () => {
+  it('returns 401 when no Authorization header is present — the service is never invoked', async () => {
     mockAuthMiddleware.mockImplementationOnce(
       (_req: unknown, res: { status: (n: number) => { json: (v: unknown) => unknown } }) => {
         res.status(401).json({ error: 'Authentication required', message: 'Invalid or missing authorization header' });
@@ -216,37 +223,15 @@ describe('POST /auth/session/authorize-code/:authorizeCode', () => {
     const res = await requestJson(server, 'POST', '/auth/session/authorize-code/code-abc', {});
 
     expect(res.status).toBe(401);
-    // AuthSession lookup must NOT have happened — the middleware bounced us.
-    expect(mockAuthSessionFindOne).not.toHaveBeenCalled();
+    expect(mockAuthorizeSessionWithBearer).not.toHaveBeenCalled();
   });
 
-  it('authorizes the session by the PUBLIC authorizeCode, never the secret sessionToken', async () => {
-    const authenticatedUserId = '64f7c2a1b8e9d3f4a1c2b3d4';
-    mockAuthMiddleware.mockImplementationOnce(
-      (req: { user?: unknown }, _res: unknown, next: () => void) => {
-        req.user = {
-          _id: { toString: () => authenticatedUserId },
-          publicKey: 'pk-of-real-user',
-          username: 'real-user',
-        };
-        next();
-      }
-    );
-
-    const authSession = {
-      sessionToken: 'secret-token-only-the-opener-holds',
-      applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3aa' },
-      status: 'pending',
-      expiresAt: new Date(Date.now() + 60_000),
-      save: jest.fn().mockResolvedValue(undefined),
-    };
-    mockAuthSessionFindOne.mockResolvedValueOnce(authSession);
-    mockApplicationFindById.mockResolvedValueOnce({ name: 'Acme Widgets' });
-    mockCreateSession.mockResolvedValueOnce({
-      sessionId: 'new-sess',
-      deviceId: 'dev-1',
-      expiresAt: new Date(Date.now() + 60_000),
-      accessToken: 'new-token',
+  it('authorizes on success and wakes the waiting originator on its (secret) sessionToken channel', async () => {
+    authenticateAs('user-1');
+    mockAuthorizeSessionWithBearer.mockResolvedValueOnce({
+      ok: true,
+      sessionToken: 'secret-only-the-opener-holds',
+      sessionId: 'sess-1',
     });
 
     const res = await requestJson(
@@ -254,45 +239,56 @@ describe('POST /auth/session/authorize-code/:authorizeCode', () => {
       'POST',
       '/auth/session/authorize-code/code-abc',
       {},
-      { Authorization: 'Bearer valid-bearer-token' }
+      { Authorization: 'Bearer valid-bearer-token' },
     );
 
     expect(res.status).toBe(200);
-    // Looked up by authorizeCode + pending, not by sessionToken.
-    expect(mockAuthSessionFindOne).toHaveBeenCalledWith({ authorizeCode: 'code-abc', status: 'pending' });
-    expect(mockCreateSession).toHaveBeenCalledWith(
-      authenticatedUserId,
-      expect.anything(),
-      expect.objectContaining({ deviceName: 'Acme Widgets App' })
+    expect(mockAuthorizeSessionWithBearer).toHaveBeenCalledWith(
+      expect.objectContaining({ authorizeCode: 'code-abc', authenticatedUserId: 'user-1' }),
     );
-    expect(authSession.status).toBe('authorized');
-    expect(authSession.save).toHaveBeenCalled();
-    // The waiting originator is woken on ITS secret sessionToken channel, which
-    // this caller never saw or transmitted.
     expect(mockEmitAuthSessionUpdate).toHaveBeenCalledWith(
-      'secret-token-only-the-opener-holds',
-      expect.objectContaining({ status: 'authorized', sessionId: 'new-sess' }),
+      'secret-only-the-opener-holds',
+      expect.objectContaining({ status: 'authorized', sessionId: 'sess-1' }),
     );
   });
 
-  it('returns 404 when the authorizeCode is unknown or already processed', async () => {
-    mockAuthMiddleware.mockImplementationOnce(
-      (req: { user?: unknown }, _res: unknown, next: () => void) => {
-        req.user = { _id: { toString: () => 'user-1' }, username: 'someone' };
-        next();
-      }
-    );
-    mockAuthSessionFindOne.mockResolvedValueOnce(null);
+  it('maps a 404 outcome (unknown/already-processed code) straight through', async () => {
+    authenticateAs('user-1');
+    mockAuthorizeSessionWithBearer.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      message: 'Auth session not found or already processed',
+    });
 
     const res = await requestJson(
       server,
       'POST',
       '/auth/session/authorize-code/unknown-code',
       {},
-      { Authorization: 'Bearer valid-bearer-token' }
+      { Authorization: 'Bearer valid-bearer-token' },
     );
 
     expect(res.status).toBe(404);
-    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(mockEmitAuthSessionUpdate).not.toHaveBeenCalled();
+  });
+
+  it('maps a 400 outcome (expired code) straight through', async () => {
+    authenticateAs('user-1');
+    mockAuthorizeSessionWithBearer.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      message: 'Auth session has expired',
+    });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/authorize-code/expired-code',
+      {},
+      { Authorization: 'Bearer valid-bearer-token' },
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockEmitAuthSessionUpdate).not.toHaveBeenCalled();
   });
 });
