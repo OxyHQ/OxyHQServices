@@ -1,0 +1,85 @@
+# Deploy {{APP_NAME}} backend to AWS ECS (Fargate, linux/arm64) via GitHub OIDC.
+#
+# Lockfile note: CI verifies lockfile sync with `bun install && git diff
+# --exit-code bun.lock` (NOT `--frozen-lockfile` — bun 1.3.14 can false-positive
+# on a perfectly-synced lockfile). Keep the bun version here aligned with the
+# Dockerfile's `FROM oven/bun:<ver>`.
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REGISTRY: 237343248947.dkr.ecr.us-west-2.amazonaws.com
+  APP: {{APP_SLUG}}
+  CLUSTER: oxy-cluster
+  DOCKERFILE: packages/backend/Dockerfile
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::237343248947:role/oxy-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync GitHub secrets -> SSM (GitHub is the source of truth)
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+          # Explicit backend runtime allowlist — do not sync unrelated CI tokens.
+          SSM_SECRET_ALLOWLIST: >-
+            MONGODB_URI REDIS_URL
+            OXY_SERVICE_API_KEY OXY_SERVICE_API_SECRET
+            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+        run: |
+          SHARED="AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY REDIS_URL"
+          echo "$SECRETS_JSON" | jq -r --arg allowlist "$SSM_SECRET_ALLOWLIST" '
+            ($allowlist | split(" ")) as $allowed
+            | to_entries[]
+            | select(.key as $k | $allowed | index($k))
+            | [.key,.value]|@tsv
+          ' | \
+          while IFS=$'\t' read -r k v; do
+            [ -z "$k" ] && continue
+            if [ -z "$v" ] || [ "$v" = "-" ]; then
+              echo "::warning::skip empty/placeholder secret $k; SSM unchanged"
+              continue
+            fi
+            case " $SHARED " in *" $k "*) path="/oxy/_shared/$k";; *) path="/oxy/$APP/$k";; esac
+            aws ssm put-parameter --name "$path" --value "$v" --type SecureString --overwrite >/dev/null && echo "synced -> $path"
+          done
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push (linux/arm64)
+        run: |
+          IMG=$ECR_REGISTRY/oxy/$APP
+          docker build -f "$DOCKERFILE" -t "$IMG:${{ github.sha }}" -t "$IMG:latest" .
+          docker push "$IMG:${{ github.sha }}"
+          docker push "$IMG:latest"
+
+      - name: Deploy to ECS (skipped until the service exists)
+        run: |
+          set -euo pipefail
+          STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" --query 'services[0].status' --output text 2>/dev/null || echo NONE)
+          if [ "$STATUS" != "ACTIVE" ]; then
+            echo "ECS service $APP not created yet — image is in ECR, skipping deploy"
+            exit 0
+          fi
+          aws ecs update-service --cluster "$CLUSTER" --service "$APP" --force-new-deployment >/dev/null
+          echo "Triggered new deployment for $APP"

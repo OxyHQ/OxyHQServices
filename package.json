@@ -14,6 +14,7 @@
     "packages/services",
     "packages/expo-splash",
     "packages/app-preset",
+    "packages/create-oxy-app",
     "packages/api",
     "packages/node",
     "packages/auth",

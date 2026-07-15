@@ -1,0 +1,92 @@
+# Nightly (and on scaffolder/preset changes) end-to-end smoke of create-oxy-app:
+# generate a full app, install, typecheck, build the backend, export web, and
+# prebuild native — catching drift against the live Oxy SDK + Expo SDK.
+name: scaffold-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *'
+  pull_request:
+    paths:
+      - 'packages/create-oxy-app/**'
+      - 'packages/app-preset/**'
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install monorepo deps
+        run: bun install
+
+      - name: Build the create-oxy-app CLI
+        run: bun run --cwd packages/create-oxy-app build
+
+      - name: Run the CLI unit tests
+        run: bun run --cwd packages/create-oxy-app test
+
+      - name: Scaffold a test app
+        run: |
+          node packages/create-oxy-app/dist/index.js "$RUNNER_TEMP/smoke-app" \
+            --yes --no-register --no-git --no-install \
+            --name "Smoke App" --slug smoke-app --scheme smokeapp \
+            --bundle-id com.example.smokeapp --domain api.smoke.example.com
+
+      - name: Install the generated app (+ local @oxyhq/app-preset)
+        working-directory: ${{ runner.temp }}/smoke-app
+        run: |
+          # @oxyhq/app-preset may be unpublished at HEAD. Point the override at
+          # the monorepo copy so resolution passes, then materialize it into
+          # node_modules (bun does not always link a `file:` dir override).
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const local = "file:" + process.env.GITHUB_WORKSPACE + "/packages/app-preset";
+            p.overrides["@oxyhq/app-preset"] = local;
+            p.resolutions["@oxyhq/app-preset"] = local;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+          '
+          bun install --ignore-scripts
+          rm -rf node_modules/@oxyhq/app-preset
+          cp -r "$GITHUB_WORKSPACE/packages/app-preset" node_modules/@oxyhq/app-preset
+          rm -rf node_modules/@oxyhq/app-preset/node_modules
+          bun run build:shared-types
+
+      - name: Lockfile is stable (no churn on re-install)
+        working-directory: ${{ runner.temp }}/smoke-app
+        run: |
+          cp bun.lock bun.lock.before
+          bun install --ignore-scripts
+          diff -q bun.lock.before bun.lock
+
+      - name: Typecheck the frontend
+        working-directory: ${{ runner.temp }}/smoke-app
+        run: bun run --cwd packages/frontend typecheck
+
+      - name: Build the backend
+        working-directory: ${{ runner.temp }}/smoke-app
+        run: bun run --cwd packages/backend build
+
+      - name: Export web
+        working-directory: ${{ runner.temp }}/smoke-app/packages/frontend
+        run: bunx expo export --platform web
+
+      - name: Prebuild android + assert shared identity wiring
+        working-directory: ${{ runner.temp }}/smoke-app/packages/frontend
+        run: |
+          bunx expo prebuild --platform android --no-install
+          grep -q 'android:sharedUserId="so.oxy.shared"' android/app/src/main/AndroidManifest.xml
+          grep -q 'so.oxy.shared.permission.READ_IDENTITY' android/app/src/main/AndroidManifest.xml
+          grep -q 'android.compileSdkVersion=36' android/gradle.properties
+
+      - name: Prebuild ios + assert keychain group
+        working-directory: ${{ runner.temp }}/smoke-app/packages/frontend
+        run: |
+          bunx expo prebuild --platform ios --no-install
+          grep -q 'group.so.oxy.shared' ios/*/*.entitlements

@@ -1,0 +1,89 @@
+/**
+ * Pinned dependency snapshot for scaffolded apps — a single known-good set that
+ * every generated monorepo starts from. Bump these deliberately (the nightly
+ * scaffold-smoke CI detects drift against the live Oxy SDK + Expo SDK).
+ *
+ * Keys are camelCase aliases; templates reference them as `{{v.<alias>}}` tokens
+ * (e.g. `"expo": "{{v.expo}}"`). The npm package a key maps to is documented
+ * inline where it is not obvious from the alias.
+ */
+export const VERSIONS = {
+  // --- Oxy SDK ---
+  oxyServices: '^20.0.2', // @oxyhq/services
+  oxyCore: '^10.2.0', // @oxyhq/core
+  oxyBloom: '^0.30.8', // @oxyhq/bloom
+  oxyContracts: '^0.14.1', // @oxyhq/contracts
+  oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
+
+  // --- Expo SDK 57 core ---
+  expo: '^57.0.4',
+  expoConstants: '~57.0.3',
+  expoFont: '~57.0.0',
+  expoImage: '~57.0.0',
+  expoLinking: '~57.0.2',
+  expoRouter: '~57.0.4',
+  expoSplashScreen: '~57.0.2',
+  expoStatusBar: '~57.0.0',
+  expoSystemUi: '~57.0.0',
+  expoWebBrowser: '~57.0.0',
+  expoBuildProperties: '~57.0.3',
+  expoVectorIcons: '^15.1.1', // @expo/vector-icons
+
+  // --- Oxy SDK UI optional peers (toast / haptics / avatar crop / QR sign-in) ---
+  expoHaptics: '~57.0.0',
+  expoImageManipulator: '~57.0.0',
+  reactNativeQrcodeSvg: '^6.3.15',
+  sonner: '^2.0.7', // web toast (Bloom toast.web)
+  sonnerNative: '^0.26.4', // native toast (Bloom toast.native)
+
+  // --- React / React Native (Expo SDK 57 pins) ---
+  react: '19.2.3',
+  reactDom: '19.2.3',
+  reactNative: '0.86.0',
+  reactNativeWeb: '~0.21.0',
+  reactTypes: '^19.2.17', // @types/react
+
+  // --- Native modules (Expo SDK 57 aligned) ---
+  asyncStorage: '2.2.0', // @react-native-async-storage/async-storage
+  gestureHandler: '~2.32.0', // react-native-gesture-handler
+  reanimated: '4.5.0', // react-native-reanimated
+  safeAreaContext: '~5.8.0', // react-native-safe-area-context
+  screens: '4.25.2', // react-native-screens
+  svg: '15.15.5', // react-native-svg
+  worklets: '0.10.0', // react-native-worklets
+  keyboardController: '~1.21.13', // react-native-keyboard-controller
+
+  // --- Styling (NativeWind 5 preview + Tailwind v4) ---
+  nativewind: '5.0.0-preview.3',
+  tailwindcss: '4.2.2',
+  reactNativeCss: '^3.0.6', // react-native-css (NativeWind 5 runtime)
+
+  // --- Data / realtime ---
+  reactQuery: '^5.101.0', // @tanstack/react-query
+  reactQueryPersist: '^5.101.0', // @tanstack/react-query-persist-client
+  queryAsyncStoragePersister: '^5.101.0', // @tanstack/query-async-storage-persister
+  socketIoClient: '^4.8.1', // socket.io-client
+  zustand: '^5.0.14',
+
+  // --- Babel ---
+  babelPresetExpo: '~57.0.2',
+  babelModuleResolver: '^5.0.3', // babel-plugin-module-resolver
+
+  // --- Tooling ---
+  typescript: '^5.9.3',
+  eslint: '^9.25.0',
+  eslintConfigExpo: '~57.0.0',
+  nodeTypes: '^20.0.0', // @types/node
+
+  // --- Backend (Express + Mongoose + Socket.IO) ---
+  express: '^4.22.1',
+  expressTypes: '^4.17.23', // @types/express
+  mongoose: '^8.22.1',
+  socketIo: '^4.8.1', // socket.io
+  dotenv: '^16.4.7',
+} as const;
+
+export type VersionKey = keyof typeof VERSIONS;
+
+/** Bun version pinned across CI + Dockerfiles for reproducible installs. */
+export const BUN_VERSION = '1.3.14';

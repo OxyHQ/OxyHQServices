@@ -1,0 +1,56 @@
+{
+  "name": "create-oxy-app",
+  "version": "0.1.0",
+  "description": "Scaffold a new Oxy ecosystem app — an Expo/React Native + Express monorepo wired to the Oxy SDK (@oxyhq/services, @oxyhq/app-preset) with the canonical provider stack, device-first auth, Bloom theming, and AWS deploy. Run with `bun create oxy-app` or `bunx create-oxy-app`.",
+  "type": "commonjs",
+  "bin": {
+    "create-oxy-app": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ],
+  "keywords": [
+    "oxyhq",
+    "expo",
+    "react-native",
+    "scaffold",
+    "create",
+    "monorepo",
+    "generator"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/create-oxy-app"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run clean && bun run build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "picocolors": "^1.1.1"
+  },
+  "optionalDependencies": {
+    "@oxyhq/core": "^10.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.9.2"
+  }
+}
