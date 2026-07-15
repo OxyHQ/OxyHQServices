@@ -313,6 +313,19 @@ describe('POST /webauthn/login/verify', () => {
     expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
+  it('rejects a non-string credential id (NoSQL operator injection) with 400 before any query runs', async () => {
+    const malicious = authenticationResponse();
+    // Attacker sends a Mongo operator object instead of the base64url id.
+    (malicious as { id: unknown }).id = { $ne: null };
+    const res = await request(server, 'POST', '/webauthn/login/verify', { response: malicious });
+    expect(res.status).toBe(400);
+    // The value must be rejected BEFORE it can reach a query — no credential
+    // lookup, no challenge burn, no session.
+    expect(mockCredFindOne).not.toHaveBeenCalled();
+    expect(mockChallengeFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
   it('rejects an expired/burned challenge with 401', async () => {
     mockChallengeFindOneAndUpdate.mockImplementation(() => leanValue(null));
     const res = await request(server, 'POST', '/webauthn/login/verify', { response: authenticationResponse() });

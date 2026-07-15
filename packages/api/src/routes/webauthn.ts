@@ -109,6 +109,20 @@ function readCeremonyResponse<T>(body: unknown): T {
 }
 
 /**
+ * Guard that a value pulled from the (Zod-unvalidated) browser ceremony response
+ * is a string before it reaches a MongoDB query. Browser response fields are
+ * attacker-controlled; without this a caller could pass an object such as
+ * `{ $ne: null }` and inject a Mongo query operator. Throwing here makes every
+ * value that reaches a query provably a plain string.
+ */
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string') {
+    throw new BadRequestError(`WebAuthn ${label} must be a string`);
+  }
+  return value;
+}
+
+/**
  * Decode the ceremony's `clientDataJSON` and return the origin (validated to be
  * an Oxy apex origin) plus the challenge the authenticator signed. The origin
  * gate is the WebAuthn `expectedOrigin` allow-set: `@simplewebauthn/server`'s
@@ -116,17 +130,22 @@ function readCeremonyResponse<T>(body: unknown): T {
  * validate the reported origin against `isOxyApexOrigin` here and then pass that
  * exact origin back in — the security boundary is this gate.
  */
-function decodeAndGuardClientData(clientDataJSON: string): { origin: string; challenge: string } {
+function decodeAndGuardClientData(clientDataJSON: unknown): { origin: string; challenge: string } {
+  const raw = requireString(clientDataJSON, 'clientDataJSON');
   let clientData: { origin: string; challenge: string };
   try {
-    clientData = decodeClientDataJSON(clientDataJSON);
+    clientData = decodeClientDataJSON(raw);
   } catch {
     throw new BadRequestError('Malformed WebAuthn clientDataJSON');
   }
-  if (!isOxyApexOrigin(clientData.origin)) {
+  // `clientData` is attacker-controlled JSON; both fields flow into Mongo queries
+  // (the origin gate below and the challenge burn), so pin them to strings first.
+  const origin = requireString(clientData.origin, 'ceremony origin');
+  const challenge = requireString(clientData.challenge, 'ceremony challenge');
+  if (!isOxyApexOrigin(origin)) {
     throw new BadRequestError('WebAuthn ceremony origin is not allowed');
   }
-  return { origin: clientData.origin, challenge: clientData.challenge };
+  return { origin, challenge };
 }
 
 /**
@@ -524,7 +543,10 @@ router.post(
     const rpID = getWebauthnRpId();
 
     // Resolve the credential by its PUBLIC base64url id (plain equality).
-    const credential = await WebauthnCredential.findOne({ credentialID: response.id });
+    // `response.id` is attacker-controlled and Zod-unvalidated; pin it to a
+    // string so an object like `{ $ne: null }` cannot inject a query operator.
+    const credentialId = requireString(response.id, 'credential id');
+    const credential = await WebauthnCredential.findOne({ credentialID: credentialId });
     if (!credential) {
       throw new UnauthorizedError('Unknown passkey');
     }
