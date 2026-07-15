@@ -1,27 +1,14 @@
 /**
- * `OxyAccountDialog` — the unified account switcher + sign-in surface.
+ * `OxyAccountDialog` — the Bloom `<Dialog>` chrome around `OxyAuthChooser`.
  *
- * These tests isolate the RN binding over the headless `AccountDialogController`
- * (mocked): the dialog renders the correct view from `snapshot.view`, taps a row
- * through `controller.switchTo`, and drives the sign-in actions. The controller's
- * own state machine + projection are unit-tested in `@oxyhq/core`.
+ * `OxyAuthChooser` (mocked here — its own behavior is unit-tested in
+ * `OxyAuthChooser.test.tsx`) owns every view's actual content; this file only
+ * covers what `OxyAccountDialog` itself is responsible for: the header
+ * title/subtitle per `snapshot.view`, and the back-button visibility.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import type { AccountDialogSnapshot, SwitchableAccount, User } from '@oxyhq/core';
-
-const makeUser = (id: string): User => ({ id, username: id, name: { displayName: id } } as unknown as User);
-
-const makeAccount = (
-  over: Partial<SwitchableAccount> & Pick<SwitchableAccount, 'accountId' | 'displayName'>,
-): SwitchableAccount => ({
-  isCurrent: false,
-  onDevice: true,
-  email: null,
-  color: null,
-  user: makeUser(over.accountId),
-  ...over,
-});
+import { render, screen, fireEvent } from '@testing-library/react';
+import type { AccountDialogSnapshot } from '@oxyhq/core';
 
 const makeSnapshot = (over?: Partial<AccountDialogSnapshot>): AccountDialogSnapshot => ({
   view: 'accounts',
@@ -31,24 +18,19 @@ const makeSnapshot = (over?: Partial<AccountDialogSnapshot>): AccountDialogSnaps
   error: null,
   switchingAccountId: null,
   signIn: { phase: 'idle', authorizeCode: null, qrPayload: null, expiresAt: null, error: null },
+  commonsAvailability: 'unknown',
   ...over,
 });
 
 let snapshot = makeSnapshot();
+const setView = jest.fn();
 const controller = {
   subscribe: (_l: () => void) => () => undefined,
   getSnapshot: () => snapshot,
-  switchTo: jest.fn(async () => undefined),
-  add: jest.fn(),
-  showQr: jest.fn(),
-  signInWithOxy: jest.fn(),
-  setView: jest.fn(),
-  cancelSignIn: jest.fn(),
+  setView,
 };
 
 const closeAccountDialog = jest.fn();
-const showBottomSheet = jest.fn();
-const invalidateQueries = jest.fn();
 
 jest.mock('../../src/ui/context/OxyContext', () => ({
   __esModule: true,
@@ -56,9 +38,6 @@ jest.mock('../../src/ui/context/OxyContext', () => ({
     accountDialogController: controller,
     isAccountDialogOpen: true,
     closeAccountDialog,
-    showBottomSheet,
-    logoutAll: jest.fn(async () => undefined),
-    refreshAccounts: jest.fn(async () => undefined),
   }),
 }));
 
@@ -67,97 +46,62 @@ jest.mock('../../src/ui/hooks/useI18n', () => ({
   useI18n: () => ({ t: () => '', locale: 'en' }),
 }));
 
-jest.mock('@tanstack/react-query', () => ({
-  __esModule: true,
-  useQueryClient: () => ({ invalidateQueries }),
-}));
-
-jest.mock('react-native-qrcode-svg', () => ({
-  __esModule: true,
-  default: ({ value }: { value: string }) =>
-    require('react').createElement('span', { 'data-testid': 'qrcode' }, value),
-}));
-
 jest.mock('@expo/vector-icons', () => ({ __esModule: true, MaterialCommunityIcons: () => null }));
 jest.mock('../../src/ui/components/logo/LogoIcon', () => ({ LogoIcon: () => null }));
+jest.mock('../../src/ui/components/OxyAuthChooser', () => ({
+  __esModule: true,
+  default: () => null,
+}));
 
 // eslint-disable-next-line import/first
 import OxyAccountDialog from '../../src/ui/components/OxyAccountDialog';
 
-describe('OxyAccountDialog', () => {
+describe('OxyAccountDialog — chrome', () => {
   beforeEach(() => {
     snapshot = makeSnapshot();
     jest.clearAllMocks();
   });
 
-  it('renders the account rows + add row in the accounts view', () => {
-    snapshot = makeSnapshot({
-      activeAccountId: 'a',
-      accounts: [
-        makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' }),
-        makeAccount({ accountId: 'b', displayName: 'Bob', sessionId: 's-b' }),
-      ],
-    });
-
+  it('shows the accounts title with no back button in the accounts view', () => {
     render(<OxyAccountDialog />);
 
-    expect(screen.getByText('Alice')).toBeTruthy();
-    expect(screen.getByText('Bob')).toBeTruthy();
-    // The add-account affordance renders its fallback label.
-    expect(screen.getByText('Add another account')).toBeTruthy();
+    expect(screen.getByText('Your accounts')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 
-  it('switches through controller.switchTo when a non-active row is tapped', async () => {
-    snapshot = makeSnapshot({
-      activeAccountId: 'a',
-      accounts: [
-        makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' }),
-        makeAccount({ accountId: 'b', displayName: 'Bob', sessionId: 's-b' }),
-      ],
-    });
-
+  it('shows the create-account title in the signup view', () => {
+    snapshot = makeSnapshot({ view: 'signup' });
     render(<OxyAccountDialog />);
-    fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
-    await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
-    expect(invalidateQueries).toHaveBeenCalled();
+    expect(screen.getByText('Create your account')).toBeTruthy();
   });
 
-  it('starts the device flow from the sign-in view', () => {
-    snapshot = makeSnapshot({ view: 'signin' });
-
+  it('shows a back button in the qr view', () => {
+    snapshot = makeSnapshot({ view: 'qr' });
     render(<OxyAccountDialog />);
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in with Oxy' }));
 
-    expect(controller.signInWithOxy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
-  it('surfaces snapshot.error as a banner in the accounts view (failed switch is not silent)', () => {
-    snapshot = makeSnapshot({
-      error: 'Cannot switch into a personal account',
-      activeAccountId: 'a',
-      accounts: [makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' })],
-    });
-
+  it('shows a back button in the signup view', () => {
+    snapshot = makeSnapshot({ view: 'signup' });
     render(<OxyAccountDialog />);
 
-    expect(screen.getByText('Cannot switch into a personal account')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
-  it('renders the QR payload while awaiting approval', () => {
-    snapshot = makeSnapshot({
-      view: 'qr',
-      signIn: {
-        phase: 'waiting',
-        authorizeCode: 'CODE',
-        qrPayload: 'oxycommons://approve?code=CODE',
-        expiresAt: Date.now() + 60_000,
-        error: null,
-      },
-    });
-
+  it('returns to the accounts view on back', () => {
+    snapshot = makeSnapshot({ view: 'qr' });
     render(<OxyAccountDialog />);
 
-    expect(screen.getByTestId('qrcode')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(setView).toHaveBeenCalledWith('accounts');
+  });
+
+  it('hides the back button in the sign-in entry with no accounts yet', () => {
+    snapshot = makeSnapshot({ view: 'add', accounts: [] });
+    render(<OxyAccountDialog />);
+
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });
 });

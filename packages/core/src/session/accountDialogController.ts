@@ -12,17 +12,23 @@
  *   - the unified account list (via {@link projectSwitchableAccounts}), fetched
  *     from `SessionClient` state ∪ `oxyServices.listAccounts()` and hydrated
  *     with `oxyServices.getUsersByIds()`;
- *   - the dialog `view` state machine (`accounts` | `signin` | `qr` | `add`);
+ *   - the dialog `view` state machine (`accounts` | `signin` | `qr` | `add` |
+ *     `signup`);
  *   - `switchTo` (the uniform switch: `SessionClient.switchAccount` for an
  *     account already on the device, `oxyServices.switchToAccount` to mint on
  *     first entry into a graph account — reusing the existing SDK primitives, no
  *     new switch path);
  *   - the "Sign in with Oxy" device flow (same-device shared-keychain via
  *     `oxyServices.signInWithSharedIdentity`, else the cross-device QR handoff
- *     via `startCommonsSignIn` → poll → `claimSessionByToken`).
+ *     via `startCommonsSignIn` → poll → `claimSessionByToken`);
+ *   - `commonsAvailability` — whether Commons is installed on this device
+ *     (native only, via the injected `canOpenApp` probe), so the QR view can
+ *     offer a "Get Commons" fallback instead of a same-device dead end.
  *
  * Sign-in is passkey (WebAuthn) or the Commons QR / shared-keychain handoff —
- * password, social login, and 2FA were removed ecosystem-wide.
+ * password, social login, and 2FA were removed ecosystem-wide. Account
+ * creation (`signup` view) is the same two identity backends: a passkey
+ * ceremony on web, or a Commons-created identity.
  */
 
 import type { OxyServices } from '../OxyServices';
@@ -40,7 +46,20 @@ import {
 import type { AccountNode } from '../mixins/OxyServices.accounts';
 
 /** The dialog's top-level view. */
-export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add';
+export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add' | 'signup';
+
+/**
+ * Whether Commons is installed on this device, as resolved by the injected
+ * `canOpenApp` probe:
+ *   - `'unknown'` — not yet probed, OR no probe was injected (web — there is
+ *     no API to ask a browser whether a custom URL scheme is registered, so
+ *     this stays `'unknown'` forever there and the QR view renders
+ *     unconditionally, no gating).
+ *   - `'checking'` — the probe is in flight.
+ *   - `'available'` / `'unavailable'` — the probe's resolved terminal answer
+ *     (native only). A probe error is treated as `'unavailable'` (fail-closed).
+ */
+export type CommonsAvailability = 'unknown' | 'checking' | 'available' | 'unavailable';
 
 /** Lifecycle phase of the "Sign in with Oxy" device flow. */
 export type SignInFlowPhase = 'idle' | 'starting' | 'waiting' | 'authorized' | 'error';
@@ -80,6 +99,8 @@ export interface AccountDialogSnapshot {
   switchingAccountId: string | null;
   /** The "Sign in with Oxy" device-flow state. */
   signIn: SignInFlowState;
+  /** Whether Commons is installed on this device. See {@link CommonsAvailability}. */
+  commonsAvailability: CommonsAvailability;
 }
 
 /** Construction options for {@link AccountDialogController}. */
@@ -217,6 +238,7 @@ export class AccountDialogController {
   private error: string | null = null;
   private switchingAccountId: string | null = null;
   private signIn: SignInFlowState = IDLE_SIGN_IN;
+  private commonsAvailability: CommonsAvailability = 'unknown';
 
   // --- Sign-in device-flow bookkeeping ---
   /** The secret device-flow token of the active QR flow (never surfaced). */
@@ -311,6 +333,11 @@ export class AccountDialogController {
     // bearer is already planted (warm start); when signed out (cold boot before
     // restore) it re-projects from device state and makes NO private call.
     void this.refresh();
+    // Eager, cached Commons-availability probe (native only — a no-op when no
+    // `canOpenApp` was injected). It's a cheap local OS check, so by the time a
+    // user actually opens the sign-in entry it has almost always resolved —
+    // `showQr`'s own lazy probe below is only the safety net for the rare race.
+    void this.resolveCommonsAvailability();
   }
 
   /**
@@ -399,6 +426,11 @@ export class AccountDialogController {
   /** Switch to the "add account" view (the sign-in entry chooser). */
   add(): void {
     this.setView('add');
+  }
+
+  /** Switch to the "create account" view (passkey / Commons signup entry). */
+  startSignup(): void {
+    this.setView('signup');
   }
 
   // =========================================================================
@@ -618,34 +650,65 @@ export class AccountDialogController {
       // connect, so it now runs at the slow fallback cadence.
       this.openAuthSessionSocket(handle.sessionToken);
       this.scheduleNextPoll(handle.sessionToken);
-      // Same-device convenience: if Commons is installed (native only — `canOpenApp`
-      // is undefined/false on web), deep-link straight into its approve screen with
-      // the same `oxycommons://approve?...` payload the QR encodes. The QR + polling
+      // Same-device convenience: if Commons is confirmed installed (native
+      // only — stays `'unknown'` on web, where this never opens anything),
+      // deep-link straight into its approve screen with the same
+      // `oxycommons://approve?...` payload the QR encodes. The QR + polling
       // stay live as the fallback, so a user who dismisses the app-open still
       // completes the sign-in by scanning.
-      void this.maybeOpenCommons(handle.qrPayload);
+      void this.deepLinkIntoCommonsIfAvailable(handle.qrPayload);
     } catch (error) {
       this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: errorMessage(error) });
     }
   }
 
   /**
-   * When a `canOpenApp` probe is injected and reports Commons installed, open the
-   * approve deep link via the injected `openUrl`. Best-effort and non-blocking: a
-   * probe/open failure is logged and swallowed — the QR/polling fallback remains.
+   * Resolve whether Commons is installed on this device via the injected
+   * `canOpenApp` probe, updating {@link commonsAvailability} as durable,
+   * observable snapshot state. Native only — a no-op when `canOpenApp` was
+   * not injected (web), where `commonsAvailability` stays `'unknown'` forever
+   * and the QR view renders unconditionally (no gating).
+   *
+   * Replaces the old `maybeOpenCommons` fire-and-forget probe, whose outcome
+   * was only ever reflected by whether Commons silently opened — a probe
+   * failure or "not installed" answer was swallowed into a debug log with no
+   * way for the UI to react. `commonsAvailability` fixes that.
    */
-  private async maybeOpenCommons(qrPayload: string): Promise<void> {
-    if (!this.canOpenApp || !this.openUrl) return;
+  private async resolveCommonsAvailability(): Promise<void> {
+    if (!this.canOpenApp) return;
+    this.commonsAvailability = 'checking';
+    this.emit();
+    let available = false;
     try {
-      if (await this.canOpenApp(COMMONS_APP_SCHEME)) {
-        this.openUrl(qrPayload);
-      }
+      available = await this.canOpenApp(COMMONS_APP_SCHEME);
     } catch (error) {
       logger.debug(
-        '[AccountDialogController] Commons deep-link probe failed (QR fallback active)',
+        '[AccountDialogController] Commons availability probe failed',
         { component: 'AccountDialogController' },
         error,
       );
+      available = false; // fail-closed — treat a probe error as "not installed"
+    }
+    this.commonsAvailability = available ? 'available' : 'unavailable';
+    this.emit();
+  }
+
+  /**
+   * When Commons is confirmed installed, deep-link straight into its approve
+   * screen via the injected `openUrl` with the same `oxycommons://approve?...`
+   * payload the QR encodes. Best-effort and non-blocking — the QR/polling
+   * fallback stays live regardless of the outcome here.
+   */
+  private async deepLinkIntoCommonsIfAvailable(qrPayload: string): Promise<void> {
+    if (!this.openUrl) return;
+    if (this.commonsAvailability === 'unknown' || this.commonsAvailability === 'checking') {
+      // The eager `start()` probe hasn't resolved yet (or was never run, e.g.
+      // `showQr` called without a prior `start()`) — resolve it now rather
+      // than skipping the deep link.
+      await this.resolveCommonsAvailability();
+    }
+    if (this.commonsAvailability === 'available') {
+      this.openUrl(qrPayload);
     }
   }
 
@@ -912,6 +975,7 @@ export class AccountDialogController {
       error: this.error,
       switchingAccountId: this.switchingAccountId,
       signIn: this.signIn,
+      commonsAvailability: this.commonsAvailability,
     };
   }
 
