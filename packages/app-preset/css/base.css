@@ -1,0 +1,32 @@
+/* @oxyhq/app-preset — Tailwind v4 + NativeWind base stylesheet.
+ *
+ * The shared CSS header every Oxy Expo app used to copy-paste: the Tailwind v4
+ * layer imports, NativeWind's theme, and Bloom's canonical design tokens
+ * (RADIUS scale, spacing, typography, color aliases — the single source of
+ * truth generated from `bloomThemeCss()`), plus the `@source` globs that scan
+ * the Oxy SDK packages for class names.
+ *
+ * Import it at the TOP of the app's global.css, then add the app-specific
+ * `@source` globs and `@theme` overrides below it (later rules win on overlap):
+ *
+ *   @import "@oxyhq/app-preset/base.css";
+ *
+ *   @source "./app/**\/*.{js,jsx,ts,tsx}";
+ *   @source "./components/**\/*.{js,jsx,ts,tsx}";
+ *
+ * The SDK `@source` globs below are RELATIVE TO THIS FILE's location. Published,
+ * this file lives at `node_modules/@oxyhq/app-preset/css/base.css`, so
+ * `../../services/lib` resolves to `node_modules/@oxyhq/services/lib` and
+ * `../../bloom/lib` to `node_modules/@oxyhq/bloom/lib` — @oxyhq/app-preset,
+ * @oxyhq/services and @oxyhq/bloom are siblings under `@oxyhq/`. The same two
+ * levels up land on `packages/` in the source monorepo, so the globs resolve in
+ * both layouts without each app guessing its own node_modules path. */
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+@import "nativewind/theme";
+@import "@oxyhq/bloom/design-tokens/theme.css";
+
+@source "../../services/lib/**/*.{js,jsx}";
+@source "../../bloom/lib/**/*.{js,jsx}";

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+lib/
+web-build/
+
+# Expo
+.expo/
+.expo-shared/
+*.orig.*
+expo-env.d.ts.bak
+
+# Native
+/ios/
+/android/
+
+# Env
+.env
+.env.local
+.env*.local
+
+# Logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Misc
+.DS_Store
+*.tsbuildinfo
+.turbo/

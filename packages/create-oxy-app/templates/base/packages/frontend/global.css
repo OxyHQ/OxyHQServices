@@ -4,10 +4,11 @@
 
 @source "./app/**/*.{js,jsx,ts,tsx}";
 @source "./components/**/*.{js,jsx,ts,tsx}";
+@source "./lib/**/*.{js,jsx,ts,tsx}";
 
-/* App base color tokens — registers the existing color KEYS so utilities like
-   `text-foreground` / `bg-background` emit at build time. BloomThemeProvider writes
-   the actual var values to document.documentElement at runtime. */
+/* App base color tokens — registers the color KEYS so utilities like
+   `bg-background` / `text-foreground` emit at build time. BloomThemeProvider
+   writes the real var values to the document at runtime. */
 @theme {
   --color-border: var(--border);
   --color-input: var(--input);
@@ -22,8 +23,8 @@
   --color-card: var(--card);
 }
 
-/* :root fallbacks so the build's color vars are non-empty and fonts resolve.
-   BloomThemeProvider (colors) and applyFontFaces (fonts) override at runtime. */
+/* :root fallbacks so the build's color vars are non-empty before the theme
+   provider hydrates. BloomThemeProvider overrides these at runtime. */
 @layer base {
   :root {
     --background: #ffffff;
@@ -37,8 +38,5 @@
     --ring: #5b3df5;
     --input: #e4e4e9;
     --border: #e4e4e9;
-    --bloom-font-sans: 'Inter', sans-serif;
-    --bloom-font-display: 'Inter', sans-serif;
-    --bloom-font-mono: monospace;
   }
 }
