@@ -1,14 +1,15 @@
 /**
  * VariantService image-variant config + resize coverage.
  *
- * Focus: the `w128` variant (128×128 webp, fit-inside) added to the
- * `imageVariants` config — named for its width, matching the existing
- * `w320`/`w640`/`w1280`/`w2048` size-based variants (this one shipped
- * briefly as `avatar` before being renamed to fit that convention, since
- * it's a generic small-image size, not avatar-specific). Because the config
- * is consumed by BOTH the upload-time `generateImageVariants` path and the
+ * Focus: the `w96`/`w128` variants (96×96 / 128×128 webp, fit-inside) in the
+ * `imageVariants` config — both named for their width, matching the existing
+ * `w320`/`w640`/`w1280`/`w2048` size-based variants (`w128` shipped briefly
+ * as `avatar` before being renamed to fit that convention, since it's a
+ * generic small-image size, not avatar-specific; `w96` is a smaller sibling
+ * for even-tinier renders, e.g. ~36px post avatars). Because the config is
+ * consumed by BOTH the upload-time `generateImageVariants` path and the
  * on-demand `ensureImageVariant` (CDN-read) path, exercising
- * `ensureImageVariant` proves the key is wired end to end: an unknown
+ * `ensureImageVariant` proves each key is wired end to end: an unknown
  * variant is rejected (config-lookup gate), and a known one downloads the
  * ORIGINAL object, runs the real Sharp resize, and uploads the resized
  * bytes.
@@ -135,6 +136,39 @@ describe('VariantService imageVariants — w128 variant', () => {
     expect(w128Bytes).toBeGreaterThan(0);
     expect(thumbBytes).toBeGreaterThan(0);
     expect(w128Bytes).toBeLessThan(thumbBytes);
+  });
+
+  it('generates a 96×96 webp for the w96 variant, smaller than w128', async () => {
+    const original = await makeSquarePng(512);
+
+    const w96S3 = makeFakeS3(original);
+    const w96 = await new VariantService(w96S3 as unknown as S3Service).ensureImageVariant(
+      makeFile(),
+      'w96',
+    );
+
+    expect(w96.type).toBe('w96');
+    expect(w96.width).toBe(96);
+    expect(w96.height).toBe(96);
+    expect(w96.metadata).toMatchObject({ format: 'webp', quality: 82 });
+
+    const uploaded = w96S3.uploads.find(u => u.key.endsWith('/w96.webp'));
+    expect(uploaded).toBeDefined();
+    const meta = await sharp(uploaded?.buffer).metadata();
+    expect(meta.format).toBe('webp');
+    expect(meta.width).toBe(96);
+    expect(meta.height).toBe(96);
+
+    const w128S3 = makeFakeS3(original);
+    const w128 = await new VariantService(w128S3 as unknown as S3Service).ensureImageVariant(
+      makeFile(),
+      'w128',
+    );
+    const w96Bytes = uploaded?.buffer.length ?? 0;
+    const w128Bytes = w128S3.uploads.find(u => u.key.endsWith('/w128.webp'))?.buffer.length ?? 0;
+    expect(w96Bytes).toBeGreaterThan(0);
+    expect(w128Bytes).toBeGreaterThan(0);
+    expect(w96Bytes).toBeLessThan(w128Bytes);
   });
 
   it('rejects a variant key that is not in the imageVariants config', async () => {
