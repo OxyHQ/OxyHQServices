@@ -41,7 +41,12 @@ export function isIdpHubOrigin(): boolean {
   }
 }
 
-function isLoopbackOrigin(origin: string): boolean {
+/**
+ * Whether an origin is a loopback / local-dev origin (`localhost`, `127.0.0.1`,
+ * or `[::1]` on any port, http or https). Local dev must never be bounced to a
+ * hosted IdP for cross-origin session restore.
+ */
+export function isLoopbackOrigin(origin: string): boolean {
   try {
     const parsed = new URL(origin);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {

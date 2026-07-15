@@ -558,6 +558,7 @@ export {
     buildIdpHubOrigin,
     buildHubSyncUrl,
     isIdpHubOrigin,
+    isLoopbackOrigin,
     isOfficialWebOrigin,
     isAllowedDeviceJoinOrigin,
     normalizeOfficialReturnOrigin,
