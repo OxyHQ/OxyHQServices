@@ -185,23 +185,53 @@ const DECOY_TRANSPORT_POOL: AuthenticatorTransportFuture[][] = [
 ];
 
 /**
- * A DETERMINISTIC decoy allow-credential for a username-first `login/options`
+ * Deterministic keystream over the server salt: HMAC(salt, `${message}|blk${n}`)
+ * concatenated across as many 32-byte SHA-256 blocks as `byteLength` needs. A single
+ * HMAC digest is only 32 bytes, but a realistic roaming-key credential id can reach
+ * ~64 bytes, so a decoy id that long must span more than one block. Every byte stays
+ * keyed on the server secret, so no decoy field is attacker-computable.
+ */
+function decoyKeystream(salt: string, message: string, byteLength: number): Buffer {
+  const blocks: Buffer[] = [];
+  for (let block = 0, produced = 0; produced < byteLength; block += 1) {
+    const digest = crypto.createHmac('sha256', salt).update(`${message}|blk${block}`).digest();
+    blocks.push(digest);
+    produced += digest.length;
+  }
+  return Buffer.concat(blocks).subarray(0, byteLength);
+}
+
+/**
+ * DETERMINISTIC decoy allow-credentials for a username-first `login/options`
  * request that does NOT resolve to an account with a passkey — i.e. the username
  * is unknown OR belongs to a real account that has no WebAuthn credential. Its
  * only job is anti-enumeration: the "no real credential" response must be
  * INDISTINGUISHABLE from the "here are your credential ids" response so an
  * unauthenticated caller cannot probe which usernames exist / have a passkey.
  *
- * - **Stable per username.** The id is `HMAC(DEVICE_ID_SALT, username)` — the SAME
- *   username always yields the SAME id across requests, exactly as a real user's
- *   credential ids are stable. A per-request-random decoy would itself be the tell
- *   (a real allow-list does not change between two polls of the same username).
- * - **Unforgeable.** Keying on the server-side salt (never a raw hash of the
- *   username) stops an attacker precomputing "the decoy id for X" and matching it
- *   against a response to classify fake vs real.
- * - **Natural shape.** Length (16–31 bytes → 22–42 base64url chars) and transports
- *   are derived from the same digest so they land within the spread of real
- *   authenticator credential ids/transports rather than at a fixed tell-tale size.
+ * - **Stable per username.** Each id derives from `HMAC(DEVICE_ID_SALT, …)` — the
+ *   SAME username always yields the SAME decoy across requests, exactly as a real
+ *   user's credential ids are stable. A per-request-random decoy (count, id, length,
+ *   or transports) would itself be the tell (a real allow-list does not change
+ *   between two polls of the same username).
+ * - **Unforgeable / fail-closed.** Keying on the server-side salt (never a raw hash
+ *   of the username) stops an attacker precomputing "the decoy for X" and matching
+ *   it against a response to classify fake vs real. If the salt is empty (misconfig)
+ *   the decoy would become attacker-computable, so this throws (500) rather than
+ *   silently emitting a computable decoy.
+ * - **Masked COUNT (1 or 2).** A fixed count-of-1 decoy made `count === 2` a clean
+ *   "this public username has ≥2 passkeys" posture oracle (a real account with two
+ *   passkeys returns two entries). The count is now a deterministic 1 or 2, so the
+ *   common 1–2-passkey case is indistinguishable between a decoy and a real
+ *   allow-list. RESIDUAL: a real account with ≥3 passkeys still exceeds the decoy
+ *   max of 2 — accepted, since that posture is rarer and account EXISTENCE is
+ *   already public (`GET /auth/lookup`); this closes the clean 1-vs-2 oracle, not
+ *   every conceivable posture signal.
+ * - **Natural shape.** Id length (16–64 bytes → 22–86 base64url chars, covering both
+ *   short platform passkeys and long roaming/hardware-key ids) and transports
+ *   (sometimes omitted, like real credentials that advertise none) are derived from
+ *   the same keystream so they land within the spread of real authenticator
+ *   credential ids/transports rather than at a fixed tell-tale size/shape.
  *
  * The paired challenge is bound by the caller to a throwaway ObjectId that maps to
  * no user, so no real assertion can ever satisfy it: `login/verify` then fails with
@@ -209,14 +239,37 @@ const DECOY_TRANSPORT_POOL: AuthenticatorTransportFuture[][] = [
  */
 function decoyAllowCredentials(
   normalizedUsername: string,
-): { id: string; transports: AuthenticatorTransportFuture[] }[] {
-  const salt = process.env.DEVICE_ID_SALT ?? '';
-  const digest = crypto.createHmac('sha256', salt).update(`webauthn-decoy|${normalizedUsername}`).digest();
-  // Realistic, stable-per-username credential-id length (16–31 bytes).
-  const idByteLength = 16 + (digest[0] % 16);
-  const id = digest.subarray(1, 1 + idByteLength).toString('base64url');
-  const transports = DECOY_TRANSPORT_POOL[digest[digest.length - 1] % DECOY_TRANSPORT_POOL.length];
-  return [{ id, transports }];
+): { id: string; transports?: AuthenticatorTransportFuture[] }[] {
+  const salt = process.env.DEVICE_ID_SALT;
+  // FAIL CLOSED. An empty salt makes every decoy attacker-computable, defeating the
+  // whole anti-enumeration point. Prod already fail-fasts on the salt at boot
+  // (`config/env.ts`); this is defense-in-depth so a misconfigured/empty salt can
+  // NEVER silently downgrade the decoy to a computable value — it 500s instead.
+  if (!salt) {
+    throw new InternalServerError('WebAuthn anti-enumeration is not configured');
+  }
+
+  // Deterministic COUNT of 1 or 2 (never always 1) — see the "Masked COUNT" note above.
+  const count = 1 + (decoyKeystream(salt, `webauthn-decoy|${normalizedUsername}`, 2)[1] % 2);
+
+  const credentials: { id: string; transports?: AuthenticatorTransportFuture[] }[] = [];
+  for (let index = 0; index < count; index += 1) {
+    // Key each decoy on its index so the ids differ (like a real account's do) while
+    // staying stable per (username, index) across polls. 66 bytes = 1 length byte +
+    // up to 64 id bytes + 1 transports-selector byte.
+    const material = decoyKeystream(salt, `webauthn-decoy|${normalizedUsername}|${index}`, 66);
+    const idByteLength = 16 + (material[0] % 49); // 16–64 bytes → 22–86 base64url chars
+    const id = material.subarray(1, 1 + idByteLength).toString('base64url');
+    const transportSelector = material[65];
+    // Omit transports ~1-in-4 deterministically so `[{ id }]` vs `[{ id, transports }]`
+    // is not a fake-vs-real tell (some real credentials advertise no transports).
+    if (transportSelector % 4 === 0) {
+      credentials.push({ id });
+    } else {
+      credentials.push({ id, transports: DECOY_TRANSPORT_POOL[transportSelector % DECOY_TRANSPORT_POOL.length] });
+    }
+  }
+  return credentials;
 }
 
 /**
