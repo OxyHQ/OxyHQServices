@@ -21,11 +21,6 @@ jest.mock('../../services/session.service', () => ({
   },
 }));
 
-jest.mock('../../services/anomalyDetection.service', () => ({
-  __esModule: true,
-  default: { checkForAnomalies: jest.fn() },
-}));
-
 jest.mock('../../services/securityActivityService', () => ({
   __esModule: true,
   default: {

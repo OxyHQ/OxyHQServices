@@ -20,6 +20,12 @@
  * Idempotent + DRY_RUN-gated (mirrors the other `migrate-*` scripts). NOTHING
  * that survives the cutover is deleted; re-running performs 0 writes.
  *
+ * Housekeeping (NOT done here): the `recoverycodes` collection is now orphaned —
+ * the `RecoveryCode` model and every recovery endpoint were deleted in Fase C.
+ * It holds only hashed, now-unusable codes and can be dropped manually later
+ * (`db.recoverycodes.drop()`); it is left in place so this migration touches
+ * only `users`.
+ *
  *   bun run packages/api/scripts/migrate-drop-legacy-auth.ts
  *   DRY_RUN=true  plan only (also runs the safety count)
  */
@@ -29,12 +35,11 @@ import { logger } from '../src/utils/logger';
 
 /** Auth-method types removed in Fase C. */
 const REMOVED_AUTH_TYPES = ['password', 'google', 'apple', 'github'] as const;
-/** Surviving auth-method types. */
-const KEPT_AUTH_TYPES = ['identity', 'webauthn'] as const;
 /**
- * If MORE than this many accounts would be locked out (only legacy auth methods,
- * no key and no passkey), STOP and report. The owner confirmed almost none
- * exist; a higher number means the assumption is wrong and needs a human.
+ * If MORE than this many accounts would be locked out (no usable sign-in left
+ * AFTER the migration strips their legacy credentials), STOP and report. The
+ * owner confirmed almost none exist; a higher number means the assumption is
+ * wrong and needs a human.
  */
 const LOCKOUT_HALT_THRESHOLD = 20;
 
@@ -44,38 +49,53 @@ async function migrate(): Promise<void> {
 
   const users = rawDb().collection('users');
 
-  // 1. Safety count — accounts whose ONLY auth methods are the removed legacy
-  //    types (at least one legacy method AND no identity/webauthn method).
-  const legacyOnlyFilter = {
-    authMethods: {
-      $elemMatch: { type: { $in: REMOVED_AUTH_TYPES } },
-      $not: { $elemMatch: { type: { $in: KEPT_AUTH_TYPES } } },
-    },
+  // 1. Safety count — POST-MIGRATION USABILITY, not just the shape of the
+  //    `authMethods[]` array. An account is locked out by this migration iff,
+  //    once its legacy credentials are stripped, it has NO usable sign-in left:
+  //      (a) no identity `publicKey` (a bare key still signs in via challenge),
+  //      (b) no `webauthn` passkey, AND
+  //      (c) it DID hold a legacy credential we are about to remove — either a
+  //          `password` field OR a removed-type `authMethods[]` entry.
+  //    Keying (c) off the `password` field (not only `authMethods`) is what
+  //    catches the pre-`authMethods` era: password-only users whose array was
+  //    never backfilled would otherwise slip past the halt and be $unset into a
+  //    permanent lockout.
+  const noPublicKey = {
+    $or: [{ publicKey: { $exists: false } }, { publicKey: null }, { publicKey: '' }],
   };
-  const legacyOnlyCount = await users.countDocuments(legacyOnlyFilter);
-
-  // Of those, the ones that also have no usable identity `publicKey` are the
-  // truly unrecoverable lock-outs (a bare `publicKey` still lets them sign in
-  // via the key challenge even without an `identity` authMethods row).
-  const trulyLockedOutCount = await users.countDocuments({
-    $and: [
-      legacyOnlyFilter,
-      { $or: [{ publicKey: { $exists: false } }, { publicKey: null }, { publicKey: '' }] },
+  const noPasskey = { authMethods: { $not: { $elemMatch: { type: 'webauthn' } } } };
+  const hadLegacyCredential = {
+    $or: [
+      { password: { $exists: true } },
+      { authMethods: { $elemMatch: { type: { $in: REMOVED_AUTH_TYPES } } } },
     ],
+  };
+  const lockedOutAfterFilter = { $and: [noPublicKey, noPasskey, hadLegacyCredential] };
+
+  const lockedOutAfter = await users.countDocuments(lockedOutAfterFilter);
+
+  // Breakdown (may overlap) so the operator can see WHERE the risk sits — the
+  // pre-authMethods `password`-field population vs. the authMethods-era one.
+  const lockedOutWithPasswordField = await users.countDocuments({
+    $and: [noPublicKey, noPasskey, { password: { $exists: true } }],
+  });
+  const lockedOutWithLegacyAuthMethods = await users.countDocuments({
+    $and: [noPublicKey, noPasskey, { authMethods: { $elemMatch: { type: { $in: REMOVED_AUTH_TYPES } } } }],
   });
 
-  logger.info('Fase C safety count', {
-    legacyOnlyAccounts: legacyOnlyCount,
-    trulyLockedOutAccounts: trulyLockedOutCount,
+  logger.info('Fase C safety count (post-migration lock-out)', {
+    lockedOutAfter,
+    breakdown: { lockedOutWithPasswordField, lockedOutWithLegacyAuthMethods },
     haltThreshold: LOCKOUT_HALT_THRESHOLD,
   });
 
-  if (legacyOnlyCount > LOCKOUT_HALT_THRESHOLD) {
+  if (lockedOutAfter > LOCKOUT_HALT_THRESHOLD) {
     logger.error(
-      'HALT — more legacy-only accounts than expected; NOT applying. ' +
-        'Review these accounts (they have only password/social auth, no key or passkey) ' +
-        'before proceeding.',
-      new Error(`legacyOnlyAccounts=${legacyOnlyCount} exceeds threshold ${LOCKOUT_HALT_THRESHOLD}`),
+      'HALT — more accounts would be locked out than expected; NOT applying. ' +
+        'These accounts have no identity key and no passkey, only a legacy ' +
+        'password/social credential this migration removes. Review them before ' +
+        'proceeding.',
+      new Error(`lockedOutAfter=${lockedOutAfter} exceeds threshold ${LOCKOUT_HALT_THRESHOLD}`),
       { component: 'migrate-drop-legacy-auth' },
     );
     return;
