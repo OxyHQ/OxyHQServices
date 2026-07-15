@@ -802,6 +802,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [oxyServices, queryClient],
   );
 
+  // Remove a passkey from the already-signed-in account by credential id. Not a
+  // ceremony — a plain unlink — so it needs no `isPasskeySupported` gate; it just
+  // refreshes the linked auth-methods list on success.
+  const removePasskey = useCallback(
+    async (credentialId: string): Promise<void> => {
+      await oxyServices.removePasskey(credentialId);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
+    },
+    [oxyServices, queryClient],
+  );
+
   // ── Cold boot ────────────────────────────────────────────────────────────
   // Device-first session restore via `runProviderColdBoot` (see boot/runProviderColdBoot.ts).
   const runColdBoot = useCallback(async (): Promise<void> => {
@@ -955,6 +966,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signInWithPasskey,
       registerWithPasskey,
       addPasskey,
+      removePasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
       logout,
@@ -1010,6 +1022,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       signInWithPasskey,
       registerWithPasskey,
       addPasskey,
+      removePasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
       logout,
@@ -1083,6 +1096,7 @@ const LOADING_STATE: OxyContextState = {
   signInWithPasskey: () => rejectMissingProvider<void>(),
   registerWithPasskey: () => rejectMissingProvider<void>(),
   addPasskey: () => rejectMissingProvider<void>(),
+  removePasskey: () => rejectMissingProvider<void>(),
   revokeSuspiciousSignIn: () => rejectMissingProvider<void>(),
   handleWebSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),

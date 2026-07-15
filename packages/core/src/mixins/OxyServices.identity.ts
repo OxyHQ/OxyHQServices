@@ -251,6 +251,32 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
     }
 
     /**
+     * Remove ONE passkey (WebAuthn credential) from the current account.
+     *
+     * Passkeys are per-credential, so unlike {@link unlinkAuthMethod} (which
+     * removes an auth method by type) this targets a specific credential id.
+     * The server refuses to remove the last remaining auth method (the account
+     * would become inaccessible) and deletes the stored `WebauthnCredential`.
+     *
+     * @param credentialId - The passkey's public credential id
+     *   (`AuthMethodEntry.credentialId`).
+     */
+    async removePasskey(credentialId: string): Promise<LinkAuthMethodResult> {
+      try {
+        const result = await this.makeRequest<LinkAuthMethodResult>(
+          'DELETE',
+          `/auth/link/webauthn/${encodeURIComponent(credentialId)}`,
+          undefined,
+          { cache: false },
+        );
+        this._invalidateIdentityCaches(this.getCurrentUserId());
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Sign a record with the on-device identity key, WITHOUT publishing it.
      * The subject is the current user's DID. NATIVE-ONLY (requires a stored
      * key). Use {@link publishRecord} to sign and store in one step.

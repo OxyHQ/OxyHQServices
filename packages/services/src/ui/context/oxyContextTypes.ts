@@ -75,6 +75,14 @@ export interface OxyContextState {
    */
   addPasskey: (params?: { deviceName?: string }) => Promise<void>;
 
+  /**
+   * Remove a passkey from the current account by its credential id
+   * (`AuthMethodEntry.credentialId`). Refreshes the linked auth-methods list on
+   * success. Works on any platform (it is a plain unlink, not a WebAuthn
+   * ceremony) but is only reachable from surfaces that list passkeys.
+   */
+  removePasskey: (credentialId: string) => Promise<void>;
+
   revokeSuspiciousSignIn: () => Promise<void>;
   handleWebSession: (session: SessionLoginResponse) => Promise<void>;
 

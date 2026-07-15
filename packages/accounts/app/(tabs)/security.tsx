@@ -14,6 +14,7 @@ import { SecurityActivitySection } from '@/components/security/security-activity
 import { useSecurityActivityItems } from '@/components/security/useSecurityActivityItems';
 import { SignInSection } from '@/components/security/sign-in-section';
 import { useSignInItems } from '@/components/security/useSignInItems';
+import { usePasskeyItems } from '@/components/security/usePasskeyItems';
 import { LanguageSection } from '@/components/security/language-section';
 import { DevicesSection } from '@/components/security/devices-section';
 import { useDeviceItems } from '@/components/security/useDeviceItems';
@@ -73,6 +74,10 @@ export default function SecurityScreen() {
         toggleBiometricLogin,
     });
 
+    // Passkey rows (web-only, Oxy RP origin) appended to "How you sign in".
+    // Returns [] on native / non-Oxy origins, so the spread below is a no-op there.
+    const passkeyItems = usePasskeyItems();
+
     const deviceItems = useDeviceItems({ devices });
 
     const { items: activeSessionsItems } = useActiveSessions({ sessions, logoutAll });
@@ -99,7 +104,7 @@ export default function SecurityScreen() {
                 isLoading={securityActivityLoading}
             />
 
-            <SignInSection items={signInItems} />
+            <SignInSection items={[...signInItems, ...passkeyItems]} />
 
             <LanguageSection />
 
