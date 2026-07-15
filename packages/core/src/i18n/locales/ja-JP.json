@@ -61,7 +61,8 @@
     "usernameAvailable": "利用可能",
     "usernameTaken": "このユーザー名は既に使用されています",
     "backToSignInLink": "すでにアカウントをお持ちですか？サインイン",
-    "notAvailableHere": "このアプリではまだアカウントを作成できません。Commonsでアイデンティティを作成するか、oxy.soにアクセスしてパスキーで登録してください。",
+    "hubExplainer": "安全なウィンドウでOxy IDを作成し、すぐに戻ってきてください。",
+    "continueInWindow": "新しいウィンドウで続ける",
     "welcome": {
       "title": "Oxyへようこそ！",
       "subtitle": "数ステップでアカウントを作成",

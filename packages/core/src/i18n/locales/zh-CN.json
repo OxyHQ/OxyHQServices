@@ -61,7 +61,8 @@
     "usernameAvailable": "可用",
     "usernameTaken": "该用户名已被占用",
     "backToSignInLink": "已有账户？登录",
-    "notAvailableHere": "此应用暂不支持创建账户——请使用 Commons 创建您的身份，或访问 oxy.so 使用通行密钥注册。",
+    "hubExplainer": "在安全窗口中创建您的 Oxy ID，然后立即返回。",
+    "continueInWindow": "在新窗口中继续",
     "welcome": {
       "title": "欢迎使用Oxy！",
       "subtitle": "只需几步即可创建您的账户",

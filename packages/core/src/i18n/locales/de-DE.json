@@ -61,7 +61,8 @@
     "usernameAvailable": "Verfügbar",
     "usernameTaken": "Dieser Benutzername ist bereits vergeben",
     "backToSignInLink": "Sie haben bereits ein Konto? Anmelden",
-    "notAvailableHere": "Die Kontoerstellung ist in dieser App noch nicht verfügbar – erstellen Sie Ihre Identität mit Commons oder besuchen Sie oxy.so, um sich mit einem Passkey zu registrieren.",
+    "hubExplainer": "Erstellen Sie Ihre Oxy-ID in einem sicheren Fenster und kehren Sie dann direkt zurück.",
+    "continueInWindow": "In einem neuen Fenster fortfahren",
     "welcome": {
       "title": "Willkommen bei Oxy!",
       "subtitle": "Erstellen Sie Ihr Konto in nur wenigen Schritten",

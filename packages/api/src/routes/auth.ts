@@ -1342,6 +1342,115 @@ router.post(
   }),
 );
 
+// Bearer approval keyed on the PUBLIC authorizeCode. Tight, like the
+// sibling authorize-signed limiter — a legitimate approval hits this once
+// per flow; the cap blunts brute force against the authorizeCode.
+const authSessionAuthorizeCodeLimiter = rateLimit({
+  prefix: 'rl:auth:session-authorize-code:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * POST /auth/session/authorize-code/:authorizeCode
+ *
+ * Bearer-authed sibling of `POST /session/authorize/:sessionToken`, keyed on
+ * the PUBLIC `authorizeCode` instead of the secret `sessionToken` — for an
+ * approver that authenticates via bearer token (e.g. a passkey ceremony) but,
+ * unlike the Oxy Accounts app, never holds the secret. This lets the caller
+ * carry ONLY the public code (safe in a URL); the secret `sessionToken` never
+ * has to leave the originating client. The authenticated principal (bearer)
+ * is the sole source of "who is authorising" — mirrors `/session/authorize`.
+ */
+router.post(
+  '/session/authorize-code/:authorizeCode',
+  authMiddleware,
+  authSessionAuthorizeCodeLimiter,
+  validate({ params: authorizeCodeParams, body: authorizeSessionBodySchema }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { authorizeCode } = req.params;
+    const { deviceName, deviceFingerprint } = req.body;
+
+    const authenticatedUser = req.user;
+    if (!authenticatedUser?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const authSession = await AuthSession.findOne({ authorizeCode, status: 'pending' });
+    if (!authSession) {
+      throw new NotFoundError('Auth session not found or already processed');
+    }
+
+    if (authSession.expiresAt < new Date()) {
+      authSession.status = 'expired';
+      await authSession.save();
+      throw new BadRequestError('Auth session has expired');
+    }
+
+    const authenticatedUserId = authenticatedUser._id.toString();
+
+    // Resolve the bound Application for the device-name label. The session
+    // can't exist without a valid applicationId; fall back to a generic label
+    // only if the app was hard-deleted between create and authorize.
+    const app = await Application.findById(authSession.applicationId);
+    const appLabel = app ? app.name : 'App';
+
+    // Create a new session for the third-party app, owned by the
+    // authenticated user identified via the bearer token. When the flow was
+    // started with a device binding (`deviceId` persisted at create time),
+    // pass it as the explicit deviceId so the session lands on the
+    // originating device.
+    const newSession = await sessionService.createSession(
+      authenticatedUserId,
+      req,
+      {
+        deviceName: deviceName || `${appLabel} App`,
+        deviceFingerprint,
+        ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
+      }
+    );
+
+    authSession.status = 'authorized';
+    if (authenticatedUser.publicKey) {
+      authSession.authorizedBy = authenticatedUser.publicKey;
+    }
+    authSession.authorizedUserId = authenticatedUser._id;
+    authSession.authorizedSessionId = newSession.sessionId;
+    await authSession.save();
+
+    logger.info('Auth session authorized (bearer, by code)', {
+      authorizeCode: authorizeCode.substring(0, 8) + '...',
+      userId: authenticatedUserId,
+      applicationId: authSession.applicationId.toString(),
+    });
+
+    // Notify the waiting originator on its secret sessionToken channel — the
+    // caller here only ever held the public authorizeCode.
+    emitAuthSessionUpdate(authSession.sessionToken, {
+      status: 'authorized',
+      sessionId: newSession.sessionId,
+      publicKey: authenticatedUser.publicKey,
+      userId: authenticatedUserId,
+      username: authenticatedUser.username,
+    });
+
+    // A1: a brand-new session was minted for this user — signal all of their
+    // other connected sockets (across devices/origins) to refetch. No device
+    // mutation happens here, so the revision hint is 0.
+    broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+
+    sendSuccess(res, {
+      success: true,
+      sessionId: newSession.sessionId,
+      user: {
+        id: authenticatedUserId,
+        username: authenticatedUser.username,
+        publicKey: authenticatedUser.publicKey,
+      },
+    });
+  }),
+);
+
 /**
  * POST /auth/session/deny/:authorizeCode
  *

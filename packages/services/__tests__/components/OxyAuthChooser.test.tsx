@@ -5,9 +5,11 @@
  * These tests isolate the RN binding over the headless `AccountDialogController`
  * (mocked): the chooser renders the correct view from `snapshot.view`, taps a row
  * through `controller.switchTo`, auto-starts "Sign in with Oxy" on web when the
- * sign-in entry is reached, and offers the passkey link only alongside the QR
- * view on a first-party Oxy origin. The controller's own state machine +
- * projection are unit-tested in `@oxyhq/core`.
+ * sign-in entry is reached, and offers the passkey link/CTA alongside the QR and
+ * signup views on EVERY web origin — direct on a first-party Oxy origin
+ * (`signInWithPasskey`/`registerWithPasskey`), routed through the auth.oxy.so
+ * hub popup elsewhere (`controller.startPasskeyHubSignIn`, b2). The
+ * controller's own state machine + projection are unit-tested in `@oxyhq/core`.
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -47,6 +49,7 @@ const controller = {
   startSignup: jest.fn(),
   showQr: jest.fn(),
   signInWithOxy: jest.fn(),
+  startPasskeyHubSignIn: jest.fn(),
   setView: jest.fn(),
   cancelSignIn: jest.fn(),
 };
@@ -242,13 +245,24 @@ describe('OxyAuthChooser', () => {
       await waitFor(() => expect(closeAccountDialog).not.toHaveBeenCalled()); // onComplete is not wired without a host
     });
 
-    it('hides the passkey link on a non-Oxy origin (b2 hub relay not shipped yet)', () => {
+    it('still offers the link on a non-Oxy origin, alongside the QR (b2 hub popup)', () => {
       isOxyRpOriginMock.mockReturnValue(false);
       snapshot = qrSnapshot();
       render(<OxyAuthChooser />);
 
-      expect(screen.queryByTestId('passkey-signin-link')).toBeNull();
       expect(screen.getByTestId('qrcode')).toBeTruthy();
+      expect(screen.getByTestId('passkey-signin-link')).toBeTruthy();
+    });
+
+    it('drives controller.startPasskeyHubSignIn (not the direct ceremony) on a non-Oxy origin', () => {
+      isOxyRpOriginMock.mockReturnValue(false);
+      snapshot = qrSnapshot();
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      expect(controller.startPasskeyHubSignIn).toHaveBeenCalledTimes(1);
+      expect(signInWithPasskey).not.toHaveBeenCalled();
     });
   });
 
@@ -269,12 +283,15 @@ describe('OxyAuthChooser', () => {
       await waitFor(() => expect(registerWithPasskey).toHaveBeenCalledWith({ username: 'newuser' }));
     });
 
-    it('shows an honest unavailable message on a non-Oxy web origin (no hub relay yet)', () => {
+    it('offers the auth.oxy.so hub popup (b2) on a non-Oxy web origin, instead of the direct passkey form', () => {
       isOxyRpOriginMock.mockReturnValue(false);
       snapshot = makeSnapshot({ view: 'signup' });
       render(<OxyAuthChooser />);
 
       expect(screen.queryByTestId('signup-username-input')).toBeNull();
+      const button = screen.getByRole('button', { name: 'Continue in a new window' });
+      fireEvent.click(button);
+      expect(controller.startPasskeyHubSignIn).toHaveBeenCalledTimes(1);
     });
 
     it('offers Commons identity creation on native', () => {

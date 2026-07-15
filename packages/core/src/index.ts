@@ -624,6 +624,7 @@ export type {
     AccountDialogSnapshot,
     AccountDialogView,
     CommonsAvailability,
+    PopupWindowHandle,
     SignInFlowPhase,
     SignInFlowState,
 } from './session/accountDialogController';

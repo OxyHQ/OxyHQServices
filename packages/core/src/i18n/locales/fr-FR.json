@@ -61,7 +61,8 @@
     "usernameAvailable": "Disponible",
     "usernameTaken": "Ce nom d'utilisateur est déjà pris",
     "backToSignInLink": "Vous avez déjà un compte ? Connectez-vous",
-    "notAvailableHere": "La création de compte n'est pas encore disponible dans cette app — créez votre identité avec Commons, ou rendez-vous sur oxy.so pour vous inscrire avec une clé d'accès.",
+    "hubExplainer": "Créez votre Oxy ID dans une fenêtre sécurisée, puis revenez directement.",
+    "continueInWindow": "Continuer dans une nouvelle fenêtre",
     "welcome": {
       "title": "Bienvenue sur Oxy !",
       "subtitle": "Créez votre compte en quelques étapes",

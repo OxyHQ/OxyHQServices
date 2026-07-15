@@ -32,6 +32,7 @@ import {
   notifyAccountDialogVisibility,
 } from '../navigation/accountDialogManager';
 import { redirectToAuthorize } from '../components/oauthNavigation';
+import { openPasskeyHubPopup } from '../components/passkeyHubPopup';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { runProviderColdBoot } from '../boot/runProviderColdBoot';
 import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
@@ -668,6 +669,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // controller short-circuits, so `redirectToAuthorize` never runs for the
       // `oxycommons://` payload.
       canOpenApp: isWebBrowser() ? undefined : (url) => Linking.canOpenURL(url),
+      // Web-only: lets `startPasskeyHubSignIn` open the auth.oxy.so passkey hub
+      // popup (b2) for a non-Oxy origin. `undefined` on native — there is no
+      // popup concept there, and off-origin passkey sign-in isn't reachable
+      // (Commons owns the native flow).
+      openPopup: isWebBrowser() ? openPasskeyHubPopup : undefined,
     });
   }
   const accountDialogController = accountDialogControllerRef.current;

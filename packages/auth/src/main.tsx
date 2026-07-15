@@ -14,6 +14,7 @@ import { LoginPage } from "@/src/pages/login"
 import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
 import { HubSyncPage } from "@/src/pages/hub-sync"
+import { HubPasskeyPage } from "@/src/pages/hub-passkey"
 import "@/app/globals.css"
 
 function ExternalRedirect({ url }: { url: string }) {
@@ -58,6 +59,7 @@ function App() {
                                 <Route path="/login" element={<LoginPage />} />
                                 <Route path="/signup" element={<SignUpPage />} />
                                 <Route path="/authorize" element={<AuthorizePage />} />
+                                <Route path="/hub-passkey" element={<HubPasskeyPage />} />
                                 <Route path="/auth/login" element={<LoginPage />} />
                                 <Route path="/auth/signup" element={<SignUpPage />} />
                                 <Route path="/auth/authorize" element={<AuthorizePage />} />
