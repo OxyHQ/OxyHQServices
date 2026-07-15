@@ -114,6 +114,26 @@ export const IDENTITY_SYNC_STORAGE_KEY = 'oxy_identity_synced';
  * The phrase itself is NEVER stored — only this acknowledgement flag.
  */
 export const RECOVERY_PHRASE_ACK_STORAGE_KEY = 'oxy_recovery_phrase_acknowledged';
+/**
+ * Storage key for the monotonic "this device finished Commons onboarding for the
+ * current identity" milestone.
+ *
+ * Set to `'true'` exactly once — when onboarding genuinely completes (a live
+ * server session whose user has a username). It is read on EVERY cold start so a
+ * RETURNING user who has a local identity routes straight to the vault even with
+ * ZERO network: the local keystore + this flag are the authority, and session
+ * restore/mint is a background concern that must never hide the local identity.
+ *
+ * Reset to `'false'` whenever a NEW identity is created or imported (see
+ * `useIdentity`), so the milestone can never leak across a delete → re-onboard on
+ * the same device. The identity-presence check in `useOnboardingStatus` gates
+ * BEFORE this flag anyway, so a stale `'true'` after deletion can never route a
+ * keyless device into the vault — the reset is belt-and-suspenders for the
+ * delete-then-import-on-the-same-device case.
+ *
+ * Offline-safe: a plain local secure-store read, never a network call.
+ */
+export const ONBOARDING_COMPLETE_STORAGE_KEY = 'oxy_onboarding_complete';
 
 /** Canonical serialized truthy value. Only this literal is treated as set. */
 const STORED_TRUE = 'true';
@@ -233,6 +253,32 @@ export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
   } catch (error) {
     console.error('[IdentityStore] Failed to read sync state', error);
     return false; // Not synced on error
+  }
+};
+
+/**
+ * Persist the monotonic onboarding-complete milestone (see
+ * {@link ONBOARDING_COMPLETE_STORAGE_KEY}).
+ */
+export const persistOnboardingComplete = async (complete: boolean): Promise<void> => {
+  try {
+    await storage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, complete ? STORED_TRUE : STORED_FALSE);
+  } catch (error) {
+    console.error('[IdentityStore] Failed to persist onboarding-complete flag', error);
+  }
+};
+
+/**
+ * Read the onboarding-complete milestone directly (offline-safe local read).
+ * Returns `false` by default — only `true` when explicitly stored as `'true'`.
+ */
+export const getOnboardingCompleteFromStorage = async (): Promise<boolean> => {
+  try {
+    const complete = await storage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY);
+    return complete === STORED_TRUE;
+  } catch (error) {
+    console.error('[IdentityStore] Failed to read onboarding-complete flag', error);
+    return false;
   }
 };
 

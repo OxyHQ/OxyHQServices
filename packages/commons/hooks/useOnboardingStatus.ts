@@ -1,7 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useOxy } from '@oxyhq/services';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyManager, logger } from '@oxyhq/core';
+import {
+  getOnboardingCompleteFromStorage,
+  persistOnboardingComplete,
+} from './identity/identityStore';
 
 export type OnboardingStatus = 'checking' | 'none' | 'in_progress' | 'complete';
 
@@ -23,12 +27,32 @@ export interface OnboardingState {
 export const ONBOARDING_IDENTITY_QUERY_KEY = ['onboarding', 'identity'] as const;
 
 /**
+ * React Query key for the LOCAL, offline-safe "onboarding complete" milestone
+ * (`getOnboardingCompleteFromStorage`). Read once per app session and shared by
+ * every consumer. Identity mutations (create / import) invalidate it so it
+ * re-reads exactly when the answer can change; genuine online completion writes
+ * it directly via `queryClient.setQueryData` below.
+ */
+export const ONBOARDING_COMPLETE_QUERY_KEY = ['onboarding', 'complete'] as const;
+
+/**
  * Centralized hook for managing onboarding state.
  *
- * Combines three signals into a single resolved status:
- *   - `KeyManager.hasIdentity()`: identity material in secure storage
+ * Combines four signals into a single resolved status:
+ *   - `KeyManager.hasIdentity()`: identity material in secure storage (LOCAL,
+ *     offline-safe — a returning user's identity is detected with no network)
+ *   - `getOnboardingCompleteFromStorage()`: the LOCAL, offline-safe milestone
+ *     that this device finished onboarding for the current identity
  *   - `isAuthenticated`: an active server session exists
  *   - `user.username`: the user has completed the username step
+ *
+ * LOCAL-FIRST / OFFLINE-SAFE ROUTING (identity-loss guard): identity presence is
+ * decided ONLY from the local keystore, and a returning user (local identity +
+ * local completion milestone) routes to the vault EVEN WITH ZERO NETWORK. A
+ * failed/absent session mint (offline, expired) can NEVER downgrade an existing
+ * identity into the "create identity" flow — the create path is reachable only
+ * when the local keystore genuinely has no identity. Session restore/mint is a
+ * strictly background concern.
  *
  * Used by:
  *   - `_layout.tsx` for routing decisions (`needsAuth`) and splash readiness
@@ -37,8 +61,9 @@ export const ONBOARDING_IDENTITY_QUERY_KEY = ['onboarding', 'identity'] as const
  *   - `create-identity.tsx` for flow initialization
  *   - `useOnboardingFlow.ts`
  *
- * The `KeyManager.hasIdentity()` probe is a SHARED React Query read
- * (`ONBOARDING_IDENTITY_QUERY_KEY`), so every consumer above shares ONE deduped
+ * The `KeyManager.hasIdentity()` probe and the onboarding-complete milestone are
+ * SHARED React Query reads (`ONBOARDING_IDENTITY_QUERY_KEY` /
+ * `ONBOARDING_COMPLETE_QUERY_KEY`), so every consumer above shares ONE deduped
  * result and one loading state — no per-component re-probe flashing.
  *
  * Correctness invariants:
@@ -59,6 +84,7 @@ export const ONBOARDING_IDENTITY_QUERY_KEY = ['onboarding', 'identity'] as const
  */
 export function useOnboardingStatus(): OnboardingState {
   const { user, isAuthenticated, isAuthResolved, isLoading: oxyLoading } = useOxy();
+  const queryClient = useQueryClient();
 
   const identityQuery = useQuery({
     queryKey: ONBOARDING_IDENTITY_QUERY_KEY,
@@ -87,6 +113,22 @@ export function useOnboardingStatus(): OnboardingState {
     retry: false,
   });
 
+  // The LOCAL, offline-safe "onboarding complete" milestone. This is the signal
+  // that lets a RETURNING user reach the vault with ZERO network: it is a plain
+  // secure-store read (never a network call), so an existing identity is never
+  // hidden behind a failed session mint. `getOnboardingCompleteFromStorage`
+  // catches its own storage errors (→ `false`), so no wrapper is needed here.
+  const completeQuery = useQuery({
+    queryKey: ONBOARDING_COMPLETE_QUERY_KEY,
+    queryFn: getOnboardingCompleteFromStorage,
+    // Mirror the identity probe: defer until the SDK provider settles, and never
+    // auto-refetch — the answer only moves on explicit identity mutations (which
+    // invalidate the key) or genuine completion (which sets the data directly).
+    enabled: !oxyLoading,
+    staleTime: Infinity,
+    retry: false,
+  });
+
   // Map React Query state onto the prior local-probe semantics:
   //   - `identityExists`: `boolean` once resolved, `null` while still unknown.
   //     React Query keeps the previous value across invalidation refetches, so
@@ -94,6 +136,24 @@ export function useOnboardingStatus(): OnboardingState {
   //   - `isResolving`: `true` only until the FIRST probe resolves.
   const identityExists: boolean | null = identityQuery.data ?? null;
   const isResolving = identityQuery.data === undefined;
+
+  // Once resolved this is a stable boolean; `undefined` only while the initial
+  // local read is in flight (mirrors `isResolving` above).
+  const onboardingComplete: boolean = completeQuery.data ?? false;
+  const isCompleteResolving = completeQuery.data === undefined;
+
+  // Persist the monotonic onboarding-complete milestone the moment onboarding
+  // genuinely completes ONLINE (a live session whose user has a username). This
+  // is what lets the NEXT cold start route a returning user to the vault with no
+  // network. Guarded on the cached flag so it writes at most once per identity;
+  // `setQueryData` reflects it immediately for the current session. Never clears
+  // it here — creation/import own the reset (see `useIdentity`).
+  useEffect(() => {
+    if (!isAuthenticated || !user?.username) return;
+    if (completeQuery.data === true) return;
+    void persistOnboardingComplete(true);
+    queryClient.setQueryData(ONBOARDING_COMPLETE_QUERY_KEY, true);
+  }, [isAuthenticated, user?.username, completeQuery.data, queryClient]);
 
   const status = useMemo<OnboardingStatus>(() => {
     // Genuinely unknown — still resolving the initial answer. `isAuthResolved`
@@ -104,7 +164,7 @@ export function useOnboardingStatus(): OnboardingState {
     // session will restore, so we stay `'checking'` (neutral backdrop) rather
     // than prematurely reporting `'in_progress'` and bouncing the user through
     // create-identity.
-    if (oxyLoading || !isAuthResolved || isResolving) {
+    if (oxyLoading || !isAuthResolved || isResolving || isCompleteResolving) {
       return 'checking';
     }
 
@@ -116,13 +176,38 @@ export function useOnboardingStatus(): OnboardingState {
       return user.username ? 'complete' : 'in_progress';
     }
 
+    // No local identity → genuinely a fresh device. This is the ONLY path to
+    // "create identity", and it is decided purely from the LOCAL keystore
+    // (`hasIdentity()`), never from a network call.
     if (!identityExists) {
       return 'none';
     }
 
-    // Identity exists locally but no active session — resume onboarding.
+    // Identity EXISTS locally but there is no live session (e.g. the device is
+    // OFFLINE, or the device session simply hasn't restored/minted yet). Decide
+    // from the LOCAL onboarding milestone — NEVER from the network:
+    //   - onboarding completed before on this device → this is a RETURNING user
+    //     whose session is merely absent. Route them to the vault; the
+    //     session restore/mint proceeds in the background and must not hide the
+    //     local identity. This is the offline-loss fix: a fully-onboarded user
+    //     with no connectivity reaches their vault, never the create flow.
+    //   - never completed → a first-time onboarding still in progress (identity
+    //     generated but username/sync not finished, e.g. an offline create) →
+    //     resume the wizard.
+    if (onboardingComplete) {
+      return 'complete';
+    }
     return 'in_progress';
-  }, [identityExists, isResolving, isAuthenticated, isAuthResolved, user, oxyLoading]);
+  }, [
+    identityExists,
+    isResolving,
+    isCompleteResolving,
+    onboardingComplete,
+    isAuthenticated,
+    isAuthResolved,
+    user,
+    oxyLoading,
+  ]);
 
   const needsAuth = useMemo(() => {
     // While the device-first cold boot is unresolved (`status === 'checking'`)
@@ -141,7 +226,7 @@ export function useOnboardingStatus(): OnboardingState {
   return {
     status,
     needsAuth,
-    isLoading: isResolving || oxyLoading || !isAuthResolved,
+    isLoading: isResolving || isCompleteResolving || oxyLoading || !isAuthResolved,
     // An active session implies identity exists — keep this in lockstep
     // with the `status` invariant above so consumers that gate on
     // `hasIdentity` (e.g. the redirect in `(auth)/index.tsx`) don't fall
