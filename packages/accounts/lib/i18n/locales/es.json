@@ -198,6 +198,21 @@
       "publicKeyAuth": "Autenticación por clave pública",
       "publicKeyAuthSubtitle": "Tu cuenta usa claves criptográficas para iniciar sesión de forma segura"
     },
+    "passkeys": {
+      "unnamed": "Llave de acceso",
+      "addedOn": "Añadida el {{date}}",
+      "addTitle": "Añadir una llave de acceso",
+      "addSubtitle": "Inicia sesión con tu huella, tu cara o el PIN del dispositivo",
+      "addSuccess": "Llave de acceso añadida",
+      "addCancelled": "Configuración de la llave de acceso cancelada",
+      "addFailed": "No se pudo añadir la llave de acceso",
+      "removeA11yLabel": "Eliminar llave de acceso",
+      "removeConfirmTitle": "¿Eliminar esta llave de acceso?",
+      "removeConfirmMessage": "Ya no podrás iniciar sesión con esta llave de acceso. Asegúrate de tener otra forma de iniciar sesión.",
+      "removeAction": "Eliminar",
+      "removeSuccess": "Llave de acceso eliminada",
+      "removeFailed": "No se pudo eliminar la llave de acceso"
+    },
     "recoveryWarning": {
       "title": "Sin copia de la frase de recuperación",
       "subtitle": "Si no has anotado tu frase de recuperación de 12 palabras, no podrás restaurar tu cuenta en otro dispositivo. Crea una copia cifrada o anota tu frase ahora.",
