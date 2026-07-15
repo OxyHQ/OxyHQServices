@@ -55,6 +55,8 @@ import { sweepNodeLiveness } from './services/nodeRegistry.service';
 import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
 import { NODE_LIVENESS_SWEEP_INTERVAL_MS } from './utils/nodes.constants';
 import didRoutes from './routes/did';
+import updatesManifestRoutes from './routes/updates';
+import updatesAdminRoutes from './routes/updatesAdmin';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
@@ -504,6 +506,15 @@ app.use("/assets", assetRoutes);
 // Public CDN origin for cloud.oxy.so/<id> (CloudFront OriginPath = /cdn). No
 // auth, no CSRF — serves ONLY public CDN-backed assets via 302; 404 otherwise.
 app.use("/cdn", cdnRoutes);
+// Oxy Updates (self-hosted expo-updates). The PUBLIC manifest endpoint has NO
+// auth and NO CSRF — devices fetch it with only expo-updates headers — so it is
+// mounted here, before the CSRF group, with its own limiter. The admin router
+// (bearer/service-token authenticated writes, no CSRF) shares the /updates/v1
+// base; Express falls through to it for any path the manifest router does not
+// own. `/updates/v1` is namespaced strictly under `/updates` so it never clashes
+// with the bare `/v1` alia-compat mount below.
+app.use("/updates/v1", updatesManifestRoutes);
+app.use("/updates/v1", updatesAdminRoutes);
 app.use("/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/search", searchRoutes);
 app.use("/profiles", csrfProtection, profilesRouter);

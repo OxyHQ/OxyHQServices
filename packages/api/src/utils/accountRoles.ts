@@ -47,6 +47,7 @@ export const APPLICATION_PERMISSIONS = [
   'billing:read',
   'billing:manage',
   'ownership:transfer',
+  'updates:manage',
 ] as const;
 
 export type ApplicationPermission = (typeof APPLICATION_PERMISSIONS)[number];
@@ -209,6 +210,7 @@ const APP_PERMISSIONS_BY_ROLE: Readonly<Record<AccountRole, readonly Application
     'webhooks:update',
     'usage:read',
     'billing:read',
+    'updates:manage',
   ],
   editor: [
     'app:read',
@@ -228,6 +230,7 @@ const APP_PERMISSIONS_BY_ROLE: Readonly<Record<AccountRole, readonly Application
     'webhooks:read',
     'webhooks:update',
     'usage:read',
+    'updates:manage',
   ],
   billing: ['app:read', 'billing:read', 'billing:manage', 'usage:read'],
   viewer: ['app:read', 'members:read', 'usage:read'],

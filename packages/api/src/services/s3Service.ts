@@ -437,6 +437,33 @@ export class S3Service {
   }
 
   /**
+   * HEAD an object to read its size + content type without downloading it.
+   * Returns null when the object does not exist. Unlike `getFileMetadata` (which
+   * issues a GET and streams the whole body), this is a cheap metadata-only probe
+   * suitable for verifying a large just-uploaded asset.
+   */
+  async headObject(key: string): Promise<{ size: number; contentType?: string } | null> {
+    try {
+      const command = new HeadObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+      });
+      const response = await this.s3Client.send(command);
+      return {
+        size: Number.parseInt(response.ContentLength?.toString() || '0', 10),
+        contentType: response.ContentType,
+      };
+    } catch (error: any) {
+      const name = error?.name || error?.Code || error?.code;
+      const status = error?.$metadata?.httpStatusCode;
+      if (name === 'NotFound' || name === 'NoSuchKey' || status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get file metadata
    */
   async getFileMetadata(key: string): Promise<FileInfo | null> {

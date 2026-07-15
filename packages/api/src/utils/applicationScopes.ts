@@ -32,6 +32,7 @@ export const APPLICATION_SCOPES = [
   'webhooks:receive',
   'chat:completions',
   'models:read',
+  'updates:publish',
   'federation:write',
   'signals:write',
   'reputation:write',
