@@ -9,7 +9,7 @@
  * deps-injection style `commitSessionFlow.test.ts` uses.
  */
 
-import type { LoginResult, LoginSessionResult } from '@oxyhq/contracts';
+import type { LoginSessionResult } from '@oxyhq/contracts';
 import {
   runPasskeyLogin,
   runPasskeyRegister,
@@ -45,7 +45,6 @@ const expectedCommitInput: CommitInput = {
   user: { id: SESSION_USER_ID, username: 'pkuser' },
 };
 
-const twoFactorResult: LoginResult = { twoFactorRequired: true, loginToken: 'lt_should_not_happen' };
 const linkResult: PasskeyRegisterVerifyResult = { success: true, message: 'Passkey added' };
 
 describe('runPasskeyLogin', () => {
@@ -119,19 +118,6 @@ describe('runPasskeyLogin', () => {
 
     await expect(runPasskeyLogin(deps)).rejects.toThrow(PASSKEY_UNSUPPORTED_MESSAGE);
     expect(deps.getLoginOptions).not.toHaveBeenCalled();
-    expect(deps.commit).not.toHaveBeenCalled();
-  });
-
-  it('refuses a 2FA arm (a passkey assertion is the strong factor) and never commits', async () => {
-    const order: string[] = [];
-    const deps = buildDeps(order, {
-      loginVerify: jest.fn(async () => {
-        order.push('loginVerify');
-        return twoFactorResult;
-      }),
-    });
-
-    await expect(runPasskeyLogin(deps)).rejects.toThrow(/second factor/i);
     expect(deps.commit).not.toHaveBeenCalled();
   });
 });

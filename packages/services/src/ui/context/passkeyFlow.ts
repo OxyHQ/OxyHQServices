@@ -67,8 +67,8 @@ export interface RunPasskeyLoginDeps {
  * the server scopes `allowCredentials` to that user's passkeys so a
  * non-discoverable hardware key (U2F/security key) can be selected. Either way:
  * request login options, run the authentication ceremony, verify, then commit
- * the session. A passkey assertion is itself the strong factor, so a 2FA arm
- * here is a protocol error.
+ * the session. A passkey assertion is itself the strong factor — sign-in always
+ * resolves to a completed session.
  */
 export async function runPasskeyLogin(deps: RunPasskeyLoginDeps): Promise<void> {
   if (!deps.isSupported()) {
@@ -81,9 +81,6 @@ export async function runPasskeyLogin(deps: RunPasskeyLoginDeps): Promise<void> 
     deviceFingerprint: deps.deviceFingerprint,
     deviceId: deps.deviceId,
   });
-  if ('twoFactorRequired' in result) {
-    throw new Error('Passkey sign-in unexpectedly required a second factor.');
-  }
   await deps.commit(toCommitInput(result));
 }
 
@@ -117,7 +114,7 @@ export async function runPasskeyRegister(deps: RunPasskeyRegisterDeps): Promise<
     deviceName: deps.deviceName,
   });
   // Only the signup session arm carries `sessionId`; the link branch
-  // (`{ success, message }`) and any 2FA arm do not.
+  // (`{ success, message }`) does not.
   if (!('sessionId' in result)) {
     throw new Error('Passkey registration did not establish a session.');
   }
