@@ -10,7 +10,7 @@ import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { loadNodeCrypto } from '@oxyhq/protocol';
 import { buildUrl } from '../utils/apiUtils';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { CACHE_TIMES } from './mixinHelpers';
 
 interface JwtPayload {

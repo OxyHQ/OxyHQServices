@@ -1,4 +1,7 @@
 import { loadAsyncStorage } from '@oxyhq/protocol';
+import { createLogger } from '../logger';
+
+const log = createLogger('DeviceManager');
 
 export interface DeviceFingerprint {
   userAgent: string;
@@ -55,7 +58,7 @@ export class DeviceManager {
           removeItem: storage.removeItem.bind(storage),
         };
       } catch (error) {
-        console.error('AsyncStorage not available in React Native:', error);
+        log.error('AsyncStorage not available in React Native', error);
         throw new Error('AsyncStorage is required in React Native environment');
       }
     } else {
@@ -112,7 +115,7 @@ export class DeviceManager {
       // Create new device info
       return await this.createNewDeviceInfo();
     } catch (error) {
-      console.error('Error getting device info:', error);
+      log.error('Error getting device info', error);
       return await this.createNewDeviceInfo();
     }
   }
@@ -140,7 +143,7 @@ export class DeviceManager {
       const storage = await this.getStorage();
       await storage.setItem(this.DEVICE_KEY, JSON.stringify(deviceInfo));
     } catch (error) {
-      console.error('Error saving device info:', error);
+      log.error('Error saving device info', error);
     }
   }
 
@@ -153,7 +156,7 @@ export class DeviceManager {
       deviceInfo.deviceName = deviceName;
       await this.saveDeviceInfo(deviceInfo);
     } catch (error) {
-      console.error('Error updating device name:', error);
+      log.error('Error updating device name', error);
     }
   }
 
@@ -165,7 +168,7 @@ export class DeviceManager {
       const storage = await this.getStorage();
       await storage.removeItem(this.DEVICE_KEY);
     } catch (error) {
-      console.error('Error clearing device info:', error);
+      log.error('Error clearing device info', error);
     }
   }
 

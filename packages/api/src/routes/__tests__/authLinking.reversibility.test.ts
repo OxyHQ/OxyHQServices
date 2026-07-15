@@ -30,6 +30,8 @@ interface MockUserDoc {
 
 let mockUserDoc: MockUserDoc;
 const mockInvalidate = jest.fn();
+const mockWacFindOne = jest.fn();
+const mockWacDeleteOne = jest.fn();
 
 function selectable(doc: unknown) {
   return {
@@ -61,6 +63,14 @@ jest.mock('../../utils/userCache', () => ({
 }));
 
 jest.mock('../../services/socialAuth.service', () => ({ __esModule: true, default: {} }));
+
+jest.mock('../../models/WebauthnCredential', () => ({
+  __esModule: true,
+  default: {
+    findOne: (...args: unknown[]) => mockWacFindOne(...args),
+    deleteOne: (...args: unknown[]) => mockWacDeleteOne(...args),
+  },
+}));
 
 import authLinkingRouter from '../authLinking';
 import SignatureService from '../../services/signature.service';
@@ -123,6 +133,8 @@ beforeEach(() => {
     authMethods: [{ type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') }],
     save: jest.fn().mockResolvedValue(undefined),
   };
+  mockWacFindOne.mockResolvedValue({ _id: 'wac-1', credentialID: 'passkey-1', userId: USER_ID });
+  mockWacDeleteOne.mockResolvedValue({ acknowledged: true, deletedCount: 1 });
 });
 
 describe('identity link/unlink reversibility', () => {
@@ -172,6 +184,53 @@ describe('identity link/unlink reversibility', () => {
     expect(res.status).toBe(400);
     expect(mockUserDoc.save).not.toHaveBeenCalled();
     expect(mockInvalidate).not.toHaveBeenCalled();
+  });
+});
+
+describe('DELETE /auth/link/webauthn/:credentialID (keep ≥1 auth method)', () => {
+  it('unlinks a passkey when other auth methods remain (removes row + credential + invalidates cache)', async () => {
+    // password + one passkey → two methods; unlinking the passkey is allowed.
+    mockUserDoc.authMethods = [
+      { type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1', name: 'Laptop' } },
+    ];
+
+    const res = await request(server, 'DELETE', '/auth/link/webauthn/passkey-1');
+
+    expect(res.status).toBe(200);
+    expect(mockUserDoc.authMethods.some((m) => m.type === 'webauthn')).toBe(false);
+    expect(mockUserDoc.save).toHaveBeenCalledTimes(1);
+    expect(mockWacDeleteOne).toHaveBeenCalledTimes(1);
+    expect(mockInvalidate).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('refuses to unlink the LAST auth method — a passkey-only account (no write, no delete)', async () => {
+    // The passkey is the ONLY auth method: no password, no publicKey, no social.
+    mockUserDoc.password = undefined;
+    mockUserDoc.publicKey = undefined;
+    mockUserDoc.authMethods = [
+      { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1', name: 'Laptop' } },
+    ];
+
+    const res = await request(server, 'DELETE', '/auth/link/webauthn/passkey-1');
+
+    expect(res.status).toBe(400);
+    expect(mockUserDoc.save).not.toHaveBeenCalled();
+    expect(mockWacDeleteOne).not.toHaveBeenCalled();
+    expect(mockInvalidate).not.toHaveBeenCalled();
+  });
+
+  it('rejects unlinking a passkey the account does not own (404-style 400)', async () => {
+    mockUserDoc.authMethods = [
+      { type: 'password', linkedAt: new Date('2026-01-01T00:00:00.000Z') },
+      { type: 'webauthn', linkedAt: new Date('2026-02-01T00:00:00.000Z'), metadata: { credentialID: 'passkey-1' } },
+    ];
+    mockWacFindOne.mockResolvedValue(null);
+
+    const res = await request(server, 'DELETE', '/auth/link/webauthn/passkey-1');
+
+    expect(res.status).toBe(400);
+    expect(mockUserDoc.save).not.toHaveBeenCalled();
   });
 });
 

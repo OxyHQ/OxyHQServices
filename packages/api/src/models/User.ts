@@ -64,12 +64,14 @@ export function isValidUserColor(value: unknown): boolean {
  * Users can have multiple auth methods (identity, password, social) linked to the same account.
  */
 export interface AuthMethod {
-  type: 'identity' | 'password' | 'google' | 'apple' | 'github';
+  type: 'identity' | 'password' | 'google' | 'apple' | 'github' | 'webauthn';
   linkedAt: Date;
   metadata?: {
     publicKey?: string;      // For identity type
     email?: string;          // For password/social types
     providerId?: string;     // For social types (Google ID, Apple ID, etc.)
+    credentialID?: string;   // For webauthn type — the passkey's base64url credential id
+    name?: string;           // For webauthn type — the passkey's user-facing label
   };
 }
 
@@ -487,7 +489,7 @@ const UserSchema: Schema = new Schema(
       type: [{
         type: {
           type: String,
-          enum: ['identity', 'password', 'google', 'apple', 'github'],
+          enum: ['identity', 'password', 'google', 'apple', 'github', 'webauthn'],
           required: true,
         },
         linkedAt: { type: Date, default: Date.now },
@@ -495,6 +497,8 @@ const UserSchema: Schema = new Schema(
           publicKey: { type: String },
           email: { type: String },
           providerId: { type: String },
+          credentialID: { type: String },
+          name: { type: String },
         },
       }],
       default: [],

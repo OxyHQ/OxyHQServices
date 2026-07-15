@@ -9,8 +9,7 @@ import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid } from '../utils/platform';
 import { type ExpoCryptoLike, type ExpoSecureStoreLike, isReactNative, isNodeJS, loadExpoCrypto, loadNodeCrypto, loadSecureStore, loadSharedIdentityBridge } from '@oxyhq/protocol';
-import { logger } from '../utils/loggerUtils';
-import { isDev } from '../shared/utils/debugUtils';
+import { isDev, logger } from '../logger';
 
 /**
  * Options for expo-secure-store calls made by KeyManager.

@@ -5,7 +5,7 @@ import { normalizeLocale, getPrimaryLanguage, getLanguageMetadata, getLanguageNa
 import type { SupportedLanguage } from '../utils/languageUtils';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { loadAsyncStorage } from '@oxyhq/protocol';
-import { isDev } from '../shared/utils/debugUtils';
+import { logger } from '../logger';
 
 /**
  * Cross-mixin surface consumed by the language methods. `getCurrentUser` is
@@ -48,7 +48,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
             removeItem: storage.removeItem.bind(storage),
           };
         } catch (error) {
-          console.error('AsyncStorage not available in React Native:', error);
+          logger.error('AsyncStorage not available in React Native', error, { component: 'OxyServices.language' });
           throw new Error('AsyncStorage is required in React Native environment');
         }
       } else {
@@ -103,9 +103,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
 
         return null;
       } catch (error) {
-        if (isDev()) {
-          console.warn('Failed to get current language:', error);
-        }
+        logger.warn('Failed to get current language', { component: 'OxyServices.language' }, error);
         return null;
       }
     }

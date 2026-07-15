@@ -1,9 +1,8 @@
-import { useAuth, useWebOxy } from "@oxyhq/auth"
+import { useAuth } from "@oxyhq/services"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export function AuthDemo() {
@@ -11,16 +10,13 @@ export function AuthDemo() {
     user,
     isAuthenticated,
     isLoading,
+    isReady,
+    canUsePrivateApi,
     error,
     signIn,
     signOut,
-    signInWithFedCM,
-    signInWithPopup,
-    signInWithRedirect,
-    isFedCMSupported,
-    activeSessionId,
+    oxyServices,
   } = useAuth()
-  const { oxyServices } = useWebOxy()
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -57,41 +53,23 @@ export function AuthDemo() {
         </CardContent>
       </Card>
 
-      {/* Sign In Methods */}
+      {/* Sign In */}
       <Card>
         <CardHeader>
-          <CardTitle>Sign In Methods</CardTitle>
+          <CardTitle>Sign In</CardTitle>
           <CardDescription>
-            All available authentication methods from @oxyhq/auth
+            Interactive sign-in opens the in-app Oxy account dialog (device-first, no redirect).
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">FedCM Support:</span>
-            <Badge variant={isFedCMSupported?.() ? "default" : "secondary"}>
-              {isFedCMSupported?.() ? "Supported" : "Not Supported"}
-            </Badge>
-          </div>
-          <Separator />
+        <CardContent>
           {isAuthenticated ? (
-            <Button variant="destructive" onClick={signOut} className="w-full">
+            <Button variant="destructive" onClick={() => void signOut()} className="w-full">
               Sign Out
             </Button>
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={signIn}>
-                Sign In (Auto)
-              </Button>
-              <Button variant="outline" onClick={signInWithFedCM} disabled={!isFedCMSupported}>
-                Sign In with FedCM
-              </Button>
-              <Button variant="outline" onClick={signInWithPopup}>
-                Sign In with Popup
-              </Button>
-              <Button variant="outline" onClick={() => signInWithRedirect?.()}>
-                Sign In with Redirect
-              </Button>
-            </div>
+            <Button onClick={() => void signIn()} className="w-full">
+              Sign in with Oxy
+            </Button>
           )}
         </CardContent>
       </Card>
@@ -111,7 +89,7 @@ export function AuthDemo() {
             <TabsContent value="state">
               <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
                 {JSON.stringify(
-                  { isAuthenticated, isLoading, error: error ? String(error) : null, activeSessionId },
+                  { isAuthenticated, isLoading, isReady, canUsePrivateApi, error: error ? String(error) : null },
                   null,
                   2
                 )}
@@ -133,13 +111,13 @@ export function AuthDemo() {
         </CardHeader>
         <CardContent>
           <pre className="overflow-auto rounded-md bg-muted p-4 text-xs">
-{`import { useAuth } from '@oxyhq/auth';
+{`import { useAuth } from '@oxyhq/services';
 
 function MyComponent() {
   const { user, isAuthenticated, signIn, signOut } = useAuth();
 
   if (!isAuthenticated) {
-    return <button onClick={signIn}>Sign In</button>;
+    return <button onClick={() => signIn()}>Sign In</button>;
   }
 
   return <p>Hello, {user.username}</p>;

@@ -54,3 +54,37 @@ export function isLoopbackOrigin(origin: string): boolean {
   }
   return LOOPBACK_ORIGIN_PATTERN.test(normalised);
 }
+
+/**
+ * True when `origin` belongs to the Oxy apex ecosystem — the `oxy.so` registrable
+ * domain (`oxy.so` itself or any `*.oxy.so` subdomain over any scheme/port) OR a
+ * loopback dev origin (see {@link isLoopbackOrigin}). This is the WebAuthn
+ * `expectedOrigin` allow-set: a passkey minted with `WEBAUTHN_RP_ID=oxy.so` may be
+ * used from any first-party Oxy web origin, and a `localhost` dev server may
+ * exercise the ceremony locally. Fails closed: any unparseable origin, or a host
+ * merely ending in the literal `oxy.so` without the dot boundary
+ * (`notoxy.so`, `evil-oxy.so`), returns `false`.
+ *
+ * @example
+ *   isOxyApexOrigin('https://accounts.oxy.so') // true
+ *   isOxyApexOrigin('https://oxy.so')          // true
+ *   isOxyApexOrigin('http://localhost:8081')   // true
+ *   isOxyApexOrigin('https://evil-oxy.so')     // false
+ *   isOxyApexOrigin('https://oxy.so.evil.com') // false
+ */
+export function isOxyApexOrigin(origin: string): boolean {
+  if (isLoopbackOrigin(origin)) {
+    return true;
+  }
+  const normalised = normaliseOrigin(origin);
+  if (normalised === null) {
+    return false;
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(normalised).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return hostname === 'oxy.so' || hostname.endsWith('.oxy.so');
+}
