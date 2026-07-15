@@ -62,7 +62,11 @@ export type AccountPermission =
   | 'credentials:revoke'
   | 'billing:read'
   | 'billing:manage'
-  | 'ownership:transfer';
+  | 'ownership:transfer'
+  // Application-scoped permission surfaced on an application's `callerMembership`
+  // (derived from the caller's account role). Gates the Updates surface, which
+  // the API guards with the same `updates:manage` permission.
+  | 'updates:manage';
 
 /** Roles assignable via invite/update — everything except `owner`. */
 export type AssignableAccountRole = Exclude<AccountRole, 'owner'>;
