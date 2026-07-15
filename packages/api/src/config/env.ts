@@ -287,6 +287,24 @@ export function isDevelopment(): boolean {
 }
 
 /**
+ * The WebAuthn Relying Party ID — the registrable domain a passkey is scoped to.
+ * Defaults to the Oxy apex `oxy.so` in production (so a single passkey works
+ * across every `*.oxy.so` first-party origin) and to `localhost` in development
+ * (matching a loopback dev server). Overridable via `WEBAUTHN_RP_ID`, mirroring
+ * the other domain-override envs (`FEDERATION_DOMAIN`, `DID_WEB_DOMAIN`) that are
+ * read inline at their call sites. The RP ID is a bare hostname — never a scheme,
+ * port, or path — so `verifyRegistrationResponse`/`verifyAuthenticationResponse`
+ * can match it against the ceremony's `rpIdHash`.
+ */
+export function getWebauthnRpId(): string {
+  const configured = process.env.WEBAUTHN_RP_ID?.trim();
+  if (configured) {
+    return configured;
+  }
+  return isDevelopment() ? 'localhost' : 'oxy.so';
+}
+
+/**
  * Get sanitized configuration for logging (without sensitive data)
  */
 export function getSanitizedConfig(): Record<string, string> {

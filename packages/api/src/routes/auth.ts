@@ -29,6 +29,7 @@ import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 import { broadcastSessionAccountsChanged } from '../utils/socket';
 import socialAuthRouter from './socialAuth';
+import webauthnRouter from './webauthn';
 import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
@@ -452,6 +453,22 @@ router.post(
  * POST /auth/social/github  - body: { code }
  */
 router.use('/social', socialAuthRouter);
+
+// ============================================
+// WebAuthn / Passkey Routes
+// ============================================
+
+/**
+ * POST /auth/webauthn/register/options  - begin passkey registration (link OR signup)
+ * POST /auth/webauthn/register/verify   - finish passkey registration
+ * POST /auth/webauthn/login/options     - begin passkey authentication
+ * POST /auth/webauthn/login/verify      - finish passkey authentication
+ *
+ * Each reads an OPTIONAL bearer (link when signed in, signup/usernameless
+ * otherwise). The verify handlers reuse the standard session mint and return the
+ * same AuthSuccess shape as POST /auth/verify.
+ */
+router.use('/webauthn', webauthnRouter);
 
 // ============================================
 // Public Key Authentication Routes

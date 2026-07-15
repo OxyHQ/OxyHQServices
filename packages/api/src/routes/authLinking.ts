@@ -18,7 +18,8 @@ import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { BadRequestError, ConflictError, UnauthorizedError } from '../utils/error.js';
 import { validate } from '../middleware/validate.js';
-import { linkAuthMethodSchema, unlinkTypeParams } from '../schemas/authLinking.schemas.js';
+import { linkAuthMethodSchema, unlinkTypeParams, unlinkWebauthnParams } from '../schemas/authLinking.schemas.js';
+import WebauthnCredential from '../models/WebauthnCredential.js';
 import socialAuthService from '../services/socialAuth.service.js';
 import type { SocialProfile } from '../services/socialAuth.service.js';
 import userCache from '../utils/userCache.js';
@@ -47,6 +48,26 @@ async function verifySocialLinkToken(type: SocialAuthMethodType, providerToken: 
   }
 
   return profile;
+}
+
+/**
+ * Count the account's distinct authentication methods: the identity key, a
+ * password, each linked social provider, AND each registered passkey. Used by
+ * the unlink guards to keep every account with at least ONE usable auth method
+ * (removing the last would lock the user out).
+ */
+function countAuthMethods(user: {
+  publicKey?: string | null;
+  password?: string | null;
+  authMethods?: Array<{ type: string }> | null;
+}): number {
+  let count = 0;
+  if (user.publicKey) count++;
+  if (user.password) count++;
+  const methods = user.authMethods ?? [];
+  count += methods.filter((m) => ['google', 'apple', 'github'].includes(m.type)).length;
+  count += methods.filter((m) => m.type === 'webauthn').length;
+  return count;
 }
 
 // All routes require authentication
@@ -263,6 +284,51 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
 }));
 
 /**
+ * DELETE /api/auth/link/webauthn/:credentialID
+ * Unlink ONE passkey (by its public credential id) from the current account.
+ * Passkeys are per-credential, so this needs the specific id rather than the
+ * generic per-type unlink. Removes the `authMethods[]` row AND the
+ * WebauthnCredential document, keeping at least one usable auth method overall.
+ *
+ * Registered BEFORE `DELETE /link/:type` so the two-segment webauthn path is not
+ * shadowed by the single-segment `:type` route.
+ */
+router.delete('/link/webauthn/:credentialID', validate({ params: unlinkWebauthnParams }), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new BadRequestError('User not authenticated');
+  }
+
+  const { credentialID } = req.params;
+
+  const user = await User.findById(userId).select('+password');
+  if (!user) {
+    throw new BadRequestError('User not found');
+  }
+
+  // The passkey must belong to the caller (its public id alone is not proof of
+  // ownership — scope the lookup by userId).
+  const credential = await WebauthnCredential.findOne({ credentialID, userId });
+  if (!credential) {
+    throw new BadRequestError('No such passkey is linked to this account');
+  }
+
+  // Removing the last remaining auth method would lock the account out.
+  if (countAuthMethods(user) <= 1) {
+    throw new BadRequestError('Cannot unlink last authentication method - account would become inaccessible');
+  }
+
+  user.authMethods = user.authMethods?.filter(
+    (m) => !(m.type === 'webauthn' && m.metadata?.credentialID === credentialID)
+  );
+  await user.save();
+  await WebauthnCredential.deleteOne({ _id: credential._id });
+  userCache.invalidate(userId.toString());
+
+  res.json({ success: true, message: 'Passkey unlinked successfully' });
+}));
+
+/**
  * DELETE /api/auth/link/:type
  * Unlink an authentication method from the current user account
  * Must keep at least one auth method
@@ -285,13 +351,7 @@ router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandle
   }
 
   // Count current auth methods
-  let methodCount = 0;
-  if (user.publicKey) methodCount++;
-  if (user.password) methodCount++;
-  const socialMethods = user.authMethods?.filter(m =>
-    ['google', 'apple', 'github'].includes(m.type)
-  ) || [];
-  methodCount += socialMethods.length;
+  const methodCount = countAuthMethods(user);
 
   if (methodCount <= 1) {
     throw new BadRequestError('Cannot unlink last authentication method - account would become inaccessible');
