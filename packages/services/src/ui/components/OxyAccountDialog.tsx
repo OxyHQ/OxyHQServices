@@ -168,7 +168,7 @@ function headerCopy(
     case 'qr':
       return {
         title: t('accountSwitcher.scanTitle') || 'Sign in with Oxy',
-        subtitle: t('accountSwitcher.scanSubtitle') || 'Scan with your phone, or use the identity on this device.',
+        subtitle: t('accountSwitcher.scanSubtitle') || 'Scan with Commons on your phone.',
       };
     case 'signup':
       return {

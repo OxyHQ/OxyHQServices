@@ -131,6 +131,23 @@ describe('OxyAuthChooser', () => {
     expect(screen.getByText('Add another account')).toBeTruthy();
   });
 
+  it('renders a blocked/failed switch error in the accounts view (carried in from fix/account-switch)', () => {
+    snapshot = makeSnapshot({ error: 'Could not switch accounts. Please try again.' });
+
+    render(<OxyAuthChooser />);
+
+    expect(screen.getByText('Could not switch accounts. Please try again.')).toBeTruthy();
+  });
+
+  it('renders the account-list error in the sign-in view too', () => {
+    isWebBrowserMock.mockReturnValue(false); // stay on signin, no auto-start to qr
+    snapshot = makeSnapshot({ view: 'signin', error: 'Something went wrong.' });
+
+    render(<OxyAuthChooser />);
+
+    expect(screen.getByText('Something went wrong.')).toBeTruthy();
+  });
+
   it('switches through controller.switchTo when a non-active row is tapped', async () => {
     snapshot = makeSnapshot({
       activeAccountId: 'a',

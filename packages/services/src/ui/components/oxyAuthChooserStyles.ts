@@ -120,6 +120,11 @@ export const authChooserStyles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
+  qrHeadline: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   errorText: {
     fontSize: 14,
     textAlign: 'center',

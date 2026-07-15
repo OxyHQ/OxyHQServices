@@ -20,19 +20,25 @@
  *    button behind a click. On NATIVE it stays button-driven (unchanged):
  *    primary "Sign in with Oxy", secondary "Scan a QR from another device".
  *    Both platforms get a footer entry into `signup`.
- *  - `signup` — account creation. Web on a first-party Oxy origin creates a
- *    passkey identity inline (username + `registerWithPasskey`); native
- *    deep-links into Commons' identity creation; anywhere else (a non-Oxy web
- *    origin, before the b2 hub-relay ships) shows an honest "not available
- *    here yet" message instead of a broken button.
- *  - `qr` — the cross-device Commons handoff. On a first-party Oxy origin
- *    this ALSO carries the "Use the identity on this device" passkey link —
- *    identity is ONE thing (Commons key or browser passkey, same Oxy ID), so
- *    there is no separate "sign in with a passkey" button anywhere in this
- *    file; the passkey path is always offered alongside the QR, never as a
- *    peer method the user has to choose between up front. Native additionally
- *    branches on `commonsAvailability`: when Commons isn't installed, this
- *    leads with a "Get Commons" CTA instead of a same-device dead-end QR.
+ *  - `signup` — account creation. Commons is ALWAYS the priority path (owner
+ *    mandate) and leads everywhere it appears: native shows only "Create your
+ *    identity in Commons" (or "Get Commons" first, if not installed); web on
+ *    a first-party Oxy origin leads with the SAME "Get Commons" CTA, with
+ *    inline passkey creation (username + `registerWithPasskey`) offered
+ *    UNDERNEATH as the de-emphasized "don't want to install anything"
+ *    alternative — never co-equal, never a competing button. Anywhere else (a
+ *    non-Oxy web origin, before the b2 hub-relay ships) shows an honest "not
+ *    available here yet" message instead of a broken button.
+ *  - `qr` — the cross-device Commons handoff, and the PRIMARY web sign-in
+ *    surface. On a first-party Oxy origin this ALSO carries a "No Commons?"
+ *    passkey link — identity is ONE thing (Commons key or browser passkey,
+ *    same Oxy ID), so there is no separate "sign in with a passkey" button
+ *    anywhere in this file, but passkey is explicitly the LIGHTWEIGHT
+ *    ALTERNATIVE for someone who doesn't want to install Commons, never
+ *    co-equal: same small-text-link subordination, same framing, wherever it
+ *    appears. Native additionally branches on `commonsAvailability`: when
+ *    Commons isn't installed, this leads with a "Get Commons" CTA instead of
+ *    a same-device dead-end QR.
  *
  * Per-account color re-theming uses Bloom's `APP_COLOR_PRESETS` + `BloomColorScope`
  * (same visual language auth.oxy.so uses). Base theming is `useTheme()` + a
@@ -309,6 +315,17 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
 // Accounts view
 // ---------------------------------------------------------------------------
 
+/**
+ * Inline error banner for `snapshot.error` (the account-list / switch-failure
+ * error — distinct from `snapshot.signIn.error`, which `QrView` already
+ * renders). `AccountsView` and `SignInView` previously swallowed it: a
+ * blocked/failed switch left the user with no feedback outside the QR view.
+ */
+const ErrorBanner: React.FC<{ error: string | null; theme: Theme }> = ({ error, theme }) => {
+  if (!error) return null;
+  return <Text style={[styles.errorText, { color: theme.colors.error, marginBottom: 8 }]}>{error}</Text>;
+};
+
 interface AccountsViewProps {
   snapshot: AccountDialogSnapshot;
   theme: Theme;
@@ -330,6 +347,7 @@ const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handler
 
   return (
     <View style={styles.rows}>
+      <ErrorBanner error={snapshot.error} theme={theme} />
       {snapshot.accounts.map((account) => (
         <AccountRow
           key={account.accountId}
@@ -451,6 +469,7 @@ const SignInView: React.FC<SignInViewProps> = ({
   onCreateAccount,
 }) => (
   <View style={styles.signInBlock}>
+    <ErrorBanner error={snapshot.error} theme={theme} />
     {snapshot.accounts.length > 0 ? (
       <View style={styles.rows}>
         {snapshot.accounts.map((account) => (
@@ -514,9 +533,13 @@ const SignInFooterLink: React.FC<{ theme: Theme; t: Translate; onPress: () => vo
 );
 
 // ---------------------------------------------------------------------------
-// QR view — the PRIMARY web sign-in surface. Also carries the "use the
-// identity on this device" passkey link (first-party Oxy origin only) and,
-// on native, the Commons-not-installed fallback.
+// QR view — the PRIMARY web sign-in surface, and the ONLY sign-in surface on
+// native. Commons is ALWAYS the priority path (owner mandate): the QR here
+// and the "Get Commons" CTA below are the leading content everywhere they
+// appear. The passkey link is explicitly the lightweight, de-emphasized
+// alternative for someone who doesn't want to install Commons — same visual
+// subordination (a small text link, never a button) and the same "No
+// Commons?" framing in its copy wherever it's offered.
 // ---------------------------------------------------------------------------
 
 interface QrViewProps {
@@ -558,7 +581,7 @@ const QrView: React.FC<QrViewProps> = ({
           <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>
             {passkeyPending
               ? t('accountSwitcher.passkeySigningIn') || 'Signing in…'
-              : t('accountSwitcher.useIdentityOnDevice') || 'Use the identity on this device'}
+              : t('accountSwitcher.useIdentityOnDevice') || 'No Commons? Use a passkey on this device instead'}
           </Text>
         </Pressable>
         {passkeyError ? (
@@ -624,11 +647,14 @@ const QrView: React.FC<QrViewProps> = ({
 
   return (
     <View style={styles.centeredBlock}>
+      <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
+        {t('accountSwitcher.qrHeadline') || 'Sign in with your Oxy identity'}
+      </Text>
       <View style={styles.qrPlate}>
         <QRCode value={signIn.qrPayload} size={QR_SIZE} backgroundColor={QR_PLATE_BG} color={QR_FOREGROUND} />
       </View>
       <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>
-        {t('accountSwitcher.scanWithOxy') || 'Scan with any Oxy app and approve.'}
+        {t('accountSwitcher.scanWithOxy') || 'Scan with Commons on your phone to continue.'}
       </Text>
       {passkeyLink}
       <SignUpFooterLink theme={theme} t={t} onPress={onCreateAccount} />
@@ -758,10 +784,34 @@ const SignUpView: React.FC<SignUpViewProps> = ({
     );
   }
 
-  // Web, first-party Oxy origin: passkey creation, right here.
+  // Web, first-party Oxy origin. Commons leads (owner mandate: it's ALWAYS
+  // the priority path, everywhere the two appear) with a "Get Commons" CTA;
+  // passkey creation is the de-emphasized alternative underneath for someone
+  // who doesn't want to install anything — secondary button, introduced by
+  // its own "No Commons?" framing, same subordination as the QR view's link.
   if (passkeyAvailable) {
     return (
       <View style={styles.signInBlock}>
+        <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
+          {t('signup.commonsHeadline') || 'Create your identity in Commons'}
+        </Text>
+        <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>
+          {t('signup.commonsExplainer') ||
+            'Commons is your full self-custody Oxy identity — one app, works everywhere.'}
+        </Text>
+        <Button
+          variant="primary"
+          onPress={() => void Linking.openURL(getCommonsAcquisitionUrl(Platform.OS))}
+          style={styles.primaryButton}
+        >
+          {t('accountSwitcher.getCommons') || 'Get Commons'}
+        </Button>
+
+        <Dividerish theme={theme} label={t('signin.or') || 'or'} />
+
+        <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>
+          {t('signup.passkeyAlternative') || "No Commons? Create a passkey on this device instead"}
+        </Text>
         <TextInput
           style={[styles.usernameInput, { borderColor: theme.colors.border, color: theme.colors.text }]}
           placeholder={t('signup.usernamePlaceholder') || 'Choose a username'}
@@ -781,20 +831,16 @@ const SignUpView: React.FC<SignUpViewProps> = ({
           <Text style={[styles.errorText, { color: theme.colors.error }]}>{createError}</Text>
         ) : null}
         <Button
-          variant="primary"
+          variant="secondary"
           onPress={() => void onCreateWithPasskey(username.trim())}
           disabled={!canSubmit}
-          style={styles.primaryButton}
+          style={styles.secondaryButton}
           testID="signup-create-button"
         >
           {createPending
             ? t('signup.creating') || 'Creating…'
             : t('signup.createAccount') || 'Create account'}
         </Button>
-        <Text style={[styles.mutedText, { color: theme.colors.textSecondary, marginTop: 12 }]}>
-          {t('signup.commonsExplainer') ||
-            'Prefer Commons? Open it on your phone, create your identity there, then come back and tap Sign in with Oxy.'}
-        </Text>
         <SignInFooterLink theme={theme} t={t} onPress={onBackToSignIn} />
       </View>
     );
