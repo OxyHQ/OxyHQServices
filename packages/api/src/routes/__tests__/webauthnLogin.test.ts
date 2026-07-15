@@ -30,6 +30,7 @@ let mockCredDoc: {
   counter: number;
   userId: string;
   transports?: string[];
+  userVerified?: boolean;
   lastUsedAt?: Date;
   save: jest.Mock;
 } | null;
@@ -205,6 +206,7 @@ beforeEach(() => {
     counter: 5,
     userId: USER_ID,
     transports: ['internal'],
+    userVerified: false,
     save: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -227,7 +229,7 @@ beforeEach(() => {
   mockFinalizeDeviceLogin.mockResolvedValue({ deviceSecret: 'device-secret-1' });
   mockLogSignIn.mockResolvedValue(undefined);
   mockLogSuspicious.mockResolvedValue(undefined);
-  mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 6 } });
+  mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 6, userVerified: true } });
 });
 
 interface AuthOptionsArg {
@@ -247,7 +249,7 @@ describe('POST /webauthn/login/options', () => {
     // The user's real credential id is surfaced so a non-discoverable hardware key
     // can be invoked by the browser.
     expect(opts.allowCredentials).toEqual([{ id: CRED_ID, transports: ['usb', 'nfc'] }]);
-    expect(opts.userVerification).toBe('required');
+    expect(opts.userVerification).toBe('preferred');
     // Challenge is bound to the resolved account (so verify can reject a foreign key).
     const stored = mockChallengeCreate.mock.calls[0][0] as { type: string; userId?: unknown };
     expect(stored.type).toBe('authentication');
@@ -335,13 +337,32 @@ describe('POST /webauthn/login/verify', () => {
     expect(res.body.user).toMatchObject({ id: USER_ID, username: 'loginuser' });
     // Counter advanced and persisted.
     expect(mockCredDoc?.counter).toBe(6);
+    // Assurance level refreshed from this ceremony (stored false → verified true).
+    expect(mockCredDoc?.userVerified).toBe(true);
+    expect(mockCredDoc?.save).toHaveBeenCalledTimes(1);
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    // Possession-only assertions are accepted — UV is not required at verify.
+    const verifyArg = mockVerifyAuthentication.mock.calls[0][0] as { requireUserVerification: boolean };
+    expect(verifyArg.requireUserVerification).toBe(false);
+  });
+
+  it('accepts a possession-only (userVerified:false) assertion and records the flag', async () => {
+    // A stored credential that had verified previously authenticates presence-only
+    // now (e.g. a U2F key with no PIN) → still succeeds, flag refreshed to false.
+    if (mockCredDoc) mockCredDoc.userVerified = true;
+    mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 6, userVerified: false } });
+
+    const res = await request(server, 'POST', '/webauthn/login/verify', { response: authenticationResponse() });
+
+    expect(res.status).toBe(200);
+    expect(mockCredDoc?.userVerified).toBe(false);
     expect(mockCredDoc?.save).toHaveBeenCalledTimes(1);
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
   });
 
   it('accepts a platform authenticator that never increments (newCounter === 0, stored 0)', async () => {
     if (mockCredDoc) mockCredDoc.counter = 0;
-    mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 0 } });
+    mockVerifyAuthentication.mockResolvedValue({ verified: true, authenticationInfo: { newCounter: 0, userVerified: true } });
 
     const res = await request(server, 'POST', '/webauthn/login/verify', { response: authenticationResponse() });
 

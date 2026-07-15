@@ -28,6 +28,7 @@ const NEW_USER_ID = '507f1f77bcf86cd7994390aa';
 let mockBearerUserId: string | null = null;
 let mockBurnResult: unknown = { _id: 'c1', challenge: REG_CHALLENGE, type: 'registration' };
 let mockCredCreateError: { code?: number } | null = null;
+let mockRegisterUserVerified = true;
 
 const mockChallengeCreate = jest.fn();
 const mockChallengeFindOneAndUpdate = jest.fn();
@@ -227,6 +228,7 @@ beforeEach(() => {
   mockBearerUserId = null;
   mockBurnResult = { _id: 'c1', challenge: REG_CHALLENGE, type: 'registration' };
   mockCredCreateError = null;
+  mockRegisterUserVerified = true;
 
   mockGenerateRegistration.mockResolvedValue({
     challenge: REG_CHALLENGE,
@@ -256,14 +258,15 @@ beforeEach(() => {
   });
   mockFinalizeDeviceLogin.mockResolvedValue({ deviceSecret: 'device-secret-1' });
   mockLogSignIn.mockResolvedValue(undefined);
-  mockVerifyRegistration.mockResolvedValue({
+  mockVerifyRegistration.mockImplementation(async () => ({
     verified: true,
     registrationInfo: {
       credential: { id: NEW_CRED_ID, publicKey: new Uint8Array([1, 2, 3, 4]), counter: 0, transports: ['internal'] },
       credentialDeviceType: 'multiDevice',
       credentialBackedUp: true,
+      userVerified: mockRegisterUserVerified,
     },
-  });
+  }));
 });
 
 describe('POST /webauthn/register/options', () => {
@@ -289,7 +292,7 @@ describe('POST /webauthn/register/options', () => {
     expect(res.status).toBe(400);
   });
 
-  it('offers residentKey:preferred + UV:required and does NOT pin authenticatorAttachment (roaming/hardware keys can enrol)', async () => {
+  it('offers residentKey:preferred + UV:preferred and does NOT pin authenticatorAttachment (roaming/hardware keys can enrol)', async () => {
     const res = await request(server, 'POST', '/webauthn/register/options', { username: 'freshuser' });
     expect(res.status).toBe(200);
     const opts = mockGenerateRegistration.mock.calls[0][0] as {
@@ -302,8 +305,9 @@ describe('POST /webauthn/register/options', () => {
     // `preferred` (not `required`) is what lets a Google Titan / roaming key with no
     // resident-key support still register a non-discoverable credential.
     expect(opts.authenticatorSelection.residentKey).toBe('preferred');
-    // UV stays mandatory (passwordless plan requires user verification).
-    expect(opts.authenticatorSelection.userVerification).toBe('required');
+    // UV is `preferred` (owner possession-credential policy): UV-capable keys still
+    // verify; a UV-incapable U2F key falls back to presence-only.
+    expect(opts.authenticatorSelection.userVerification).toBe('preferred');
     // Attachment is unpinned so both platform and cross-platform authenticators show.
     expect(opts.authenticatorSelection.authenticatorAttachment).toBeUndefined();
   });
@@ -328,11 +332,37 @@ describe('POST /webauthn/register/verify — signup branch', () => {
     // Account + credential were created; a webauthn authMethod was stamped.
     expect(mockUserSave).toHaveBeenCalledTimes(1);
     expect(mockCredCreate).toHaveBeenCalledTimes(1);
-    const credArg = mockCredCreate.mock.calls[0][0] as { credentialID: string; name: string; deviceType: string };
+    const credArg = mockCredCreate.mock.calls[0][0] as {
+      credentialID: string;
+      name: string;
+      deviceType: string;
+      userVerified: boolean;
+    };
     expect(credArg.credentialID).toBe(NEW_CRED_ID);
     expect(credArg.name).toBe('My Laptop');
+    // Assurance level captured at enrollment (this ceremony did real UV).
+    expect(credArg.userVerified).toBe(true);
     expect(mockNewUserDoc.authMethods).toHaveLength(1);
     expect((mockNewUserDoc.authMethods[0] as { type: string }).type).toBe('webauthn');
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    // Possession-only credentials are accepted — UV is not required at verify.
+    const verifyArg = mockVerifyRegistration.mock.calls[0][0] as { requireUserVerification: boolean };
+    expect(verifyArg.requireUserVerification).toBe(false);
+  });
+
+  it('records userVerified:false for a possession-only (no-UV) enrollment and still creates the account', async () => {
+    mockRegisterUserVerified = false;
+    const res = await request(server, 'POST', '/webauthn/register/verify', {
+      username: 'freshuser',
+      deviceName: 'Titan Key',
+      response: registrationResponse(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockCredCreate).toHaveBeenCalledTimes(1);
+    const credArg = mockCredCreate.mock.calls[0][0] as { userVerified: boolean };
+    // Presence-only assertion → recorded as an unverified (possession-only) credential.
+    expect(credArg.userVerified).toBe(false);
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
   });
 
@@ -386,6 +416,9 @@ describe('POST /webauthn/register/verify — linking branch', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(mockCredCreate).toHaveBeenCalledTimes(1);
+    // The linked credential records its enrollment assurance level.
+    const credArg = mockCredCreate.mock.calls[0][0] as { userVerified: boolean };
+    expect(credArg.userVerified).toBe(true);
     expect(linkDoc.authMethods).toHaveLength(1);
     expect((linkDoc.authMethods[0] as { type: string }).type).toBe('webauthn');
     expect(mockInvalidate).toHaveBeenCalledWith(LINK_USER_ID);
