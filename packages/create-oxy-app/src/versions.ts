@@ -9,8 +9,8 @@
  */
 export const VERSIONS = {
   // --- Oxy SDK ---
-  oxyServices: '^20.0.2', // @oxyhq/services
-  oxyCore: '^10.2.0', // @oxyhq/core
+  oxyServices: '^21.0.0', // @oxyhq/services
+  oxyCore: '^11.0.0', // @oxyhq/core
   oxyBloom: '^0.30.8', // @oxyhq/bloom
   oxyContracts: '^0.14.1', // @oxyhq/contracts
   oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
