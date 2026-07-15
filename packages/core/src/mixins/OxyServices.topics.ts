@@ -4,7 +4,7 @@
  * Provides methods for topic discovery and management
  */
 import type { OxyServicesBase } from '../OxyServices.base';
-import type { TopicData, TopicTranslation } from '../models/Topic';
+import type { TopicData, TopicListResult, TopicTranslation } from '../models/Topic';
 import { CACHE_TIMES } from './mixinHelpers';
 
 export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -22,10 +22,15 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
       try {
         const params: Record<string, string> = {};
         if (locale) params.locale = locale;
-        return await this.makeRequest('GET', '/topics/categories', params, {
-          cache: true,
-          cacheTTL: CACHE_TIMES.EXTRA_LONG,
-        });
+        // `GET /topics/categories` returns `{ categories: TopicData[] }` — the
+        // SDK's `unwrapResponse` only unwraps `{ data }`, so unwrap here.
+        const response = await this.makeRequest<{ categories: TopicData[] }>(
+          'GET',
+          '/topics/categories',
+          params,
+          { cache: true, cacheTTL: CACHE_TIMES.EXTRA_LONG }
+        );
+        return response.categories ?? [];
       } catch (error) {
         throw this.handleError(error);
       }
@@ -41,9 +46,14 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
       try {
         const params: Record<string, string | number> = { q: query };
         if (limit) params.limit = limit;
-        return await this.makeRequest('GET', '/topics/search', params, {
-          cache: false,
-        });
+        // `GET /topics/search` returns `{ topics: TopicData[] }` — unwrap it.
+        const response = await this.makeRequest<{ topics: TopicData[] }>(
+          'GET',
+          '/topics/search',
+          params,
+          { cache: false }
+        );
+        return response.topics ?? [];
       } catch (error) {
         throw this.handleError(error);
       }
@@ -52,7 +62,7 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
     /**
      * List topics with optional filters
      * @param options - Filter and pagination options
-     * @returns List of topics
+     * @returns Paginated topics envelope (`topics` plus `total`/`limit`/`offset`)
      */
     async listTopics(options?: {
       type?: string;
@@ -60,7 +70,7 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
       limit?: number;
       offset?: number;
       locale?: string;
-    }): Promise<TopicData[]> {
+    }): Promise<TopicListResult> {
       try {
         const params: Record<string, string | number> = {};
         if (options?.type) params.type = options.type;
@@ -68,10 +78,23 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
         if (options?.limit) params.limit = options.limit;
         if (options?.offset) params.offset = options.offset;
         if (options?.locale) params.locale = options.locale;
-        return await this.makeRequest('GET', '/topics', params, {
-          cache: true,
-          cacheTTL: CACHE_TIMES.SHORT,
-        });
+        // `GET /topics` returns `{ topics, total, limit, offset }`. The pagination
+        // fields matter to callers, so return the whole envelope (typed) rather
+        // than throwing them away.
+        const response = await this.makeRequest<Partial<TopicListResult>>(
+          'GET',
+          '/topics',
+          params,
+          { cache: true, cacheTTL: CACHE_TIMES.SHORT }
+        );
+        const requestedLimit = typeof params.limit === 'number' ? params.limit : 0;
+        const requestedOffset = typeof params.offset === 'number' ? params.offset : 0;
+        return {
+          topics: response.topics ?? [],
+          total: response.total ?? response.topics?.length ?? 0,
+          limit: response.limit ?? requestedLimit,
+          offset: response.offset ?? requestedOffset,
+        };
       } catch (error) {
         throw this.handleError(error);
       }
@@ -102,9 +125,16 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
       names: Array<{ name: string; type: string }>
     ): Promise<TopicData[]> {
       try {
-        return await this.makeRequest('POST', '/topics/resolve', { names }, {
-          cache: false,
-        });
+        // `POST /topics/resolve` returns `{ topics: Record<name, TopicData> }`
+        // (a name-keyed map, not an array). Unwrap and flatten to the resolved
+        // topics; each TopicData carries its own `name` for re-keying.
+        const response = await this.makeRequest<{ topics: Record<string, TopicData> }>(
+          'POST',
+          '/topics/resolve',
+          { names },
+          { cache: false }
+        );
+        return Object.values(response.topics ?? {});
       } catch (error) {
         throw this.handleError(error);
       }
