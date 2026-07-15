@@ -133,7 +133,11 @@ describe("HubPasskeyPage", () => {
         unmount()
     })
 
-    test("(a) the authorize POST only fires on the explicit 'Authorize' press, verified-origin case", async () => {
+    test("(a) the authorize POST only fires on the explicit 'Authorize' press, AFTER the mandatory acknowledgement — even for a verified origin", async () => {
+        // `originVerified` is derived from a client-suppliable Origin header on
+        // an unauthenticated endpoint — a non-browser caller can forge it to a
+        // trusted app's own origin, so the hub must never skip the
+        // acknowledgement gate just because the server reports it verified.
         const { container, unmount } = renderPage()
         await flush()
         act(() => {
@@ -142,10 +146,28 @@ describe("HubPasskeyPage", () => {
         await flush()
 
         const authorizeButton = findButton(container, /^authorize$/i)
+        const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement | null
         expect(authorizeButton).toBeDefined()
-        expect(authorizeButton?.disabled).toBe(false) // originVerified: true — no extra gate
+        expect(checkbox).toBeDefined()
+        expect(authorizeButton?.disabled).toBe(true) // un-defaulted — required even when originVerified
+        // Softer wording for the verified case — no "couldn't verify" alarm copy.
+        expect(container.textContent).not.toMatch(/couldn't verify where this request came from/i)
+        expect(container.textContent).toMatch(/i started this sign-in myself/i)
+
         act(() => {
             authorizeButton?.dispatchEvent(new (window.MouseEvent || Event)("click", { bubbles: true }))
+        })
+        await flush()
+        expect(globalThis.fetch).not.toHaveBeenCalled() // disabled button, click is a no-op
+
+        act(() => {
+            checkbox?.click()
+        })
+        await flush()
+        const enabledButton = findButton(container, /^authorize$/i)
+        expect(enabledButton?.disabled).toBe(false)
+        act(() => {
+            enabledButton?.dispatchEvent(new (window.MouseEvent || Event)("click", { bubbles: true }))
         })
         await flush()
 
@@ -179,6 +201,9 @@ describe("HubPasskeyPage", () => {
         const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement | null
         expect(checkbox).toBeDefined()
         expect(authorizeButton?.disabled).toBe(true) // un-defaulted — must NOT be pre-checked
+        // Stronger alarm copy for the unverified case (vs. the softer
+        // "I started this myself" wording used when originVerified is true).
+        expect(container.textContent).toMatch(/couldn't verify where this request came from/i)
 
         act(() => {
             authorizeButton?.dispatchEvent(new (window.MouseEvent || Event)("click", { bubbles: true }))

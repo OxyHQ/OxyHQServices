@@ -33,14 +33,20 @@ import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/aut
  * it only flags "ready to confirm," and a SEPARATE, mandatory "Authorize
  * sign-in to <App>?" screen (showing the resolved app identity + the
  * account that's about to be used) requires an explicit press before
- * `POST /auth/session/authorize-code/:code` (bearer-authed) ever fires. When
- * the app's origin could not be verified at session-creation time
- * (`approval.originVerified === false` — exactly the shape the attack above
- * takes, since neither a spoofed origin nor a self-registered third-party
- * app can pass `originVerified`), that screen additionally requires an
- * explicit, unchecked-by-default acknowledgement before "Authorize" enables
- * — modeled on the Commons approver's own non-suppressible anti-phishing
- * warning for the identical signal.
+ * `POST /auth/session/authorize-code/:code` (bearer-authed) ever fires.
+ *
+ * That screen ALWAYS requires an explicit, unchecked-by-default
+ * acknowledgement before "Authorize" enables — regardless of
+ * `approval.originVerified`. `originVerified` is derived server-side from
+ * the `Origin` header on the unauthenticated `session/create` call, which
+ * only a real BROWSER is forced to send honestly (CORS); a non-browser
+ * caller can forge it to a TRUSTED app's own registered origin and have it
+ * compute `true`. The hub is a same-browser popup with no way to verify the
+ * opener actually corresponds to that origin, so it can never be a
+ * checkbox-free lane — `originVerified` only changes the warning's wording
+ * (stronger alarm when `false`), never whether the acknowledgement is
+ * required. Modeled on the Commons approver's own non-suppressible
+ * anti-phishing warning for the same underlying signal.
  */
 export function HubPasskeyPage() {
     const [searchParams] = useSearchParams()
@@ -187,27 +193,37 @@ export function HubPasskeyPage() {
     }
 
     if (readyToConfirm) {
-        const canAuthorize = approval.originVerified || acknowledgedUnverified
+        // The acknowledgement is MANDATORY in every case, never gated on
+        // `approval.originVerified` alone: `originVerified` is derived from
+        // the `Origin` header on the unauthenticated `session/create` call,
+        // which only a real BROWSER is forced to send honestly (CORS) — a
+        // non-browser caller can forge it to a trusted app's own registered
+        // origin. The hub is a same-browser popup with no way to verify the
+        // opener actually corresponds to that origin, so every hub
+        // authorization is treated as unverified for consent purposes,
+        // regardless of what the server-computed signal says. `originVerified`
+        // still drives which warning copy renders (the unverified case gets
+        // the stronger alarm), but never whether a checkbox is required.
+        const canAuthorize = acknowledgedUnverified
         return (
             <AuthFormLayout>
                 <AuthFormHeader
                     title={`Authorize sign-in to ${approval.application.name}?`}
                     description={`Continuing as ${getAccountDisplayName(user)}.`}
                 />
-                {!approval.originVerified && (
-                    <label className="flex items-start gap-2 text-sm">
-                        <input
-                            type="checkbox"
-                            className="mt-1"
-                            checked={acknowledgedUnverified}
-                            onChange={(event) => setAcknowledgedUnverified(event.target.checked)}
-                        />
-                        <span>
-                            We couldn&apos;t verify where this request came from. I understand the risk and
-                            started this sign-in myself in {approval.application.name}.
-                        </span>
-                    </label>
-                )}
+                <label className="flex items-start gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={acknowledgedUnverified}
+                        onChange={(event) => setAcknowledgedUnverified(event.target.checked)}
+                    />
+                    <span>
+                        {approval.originVerified
+                            ? `I started this sign-in myself in ${approval.application.name}.`
+                            : `We couldn't verify where this request came from. I understand the risk and started this sign-in myself in ${approval.application.name}.`}
+                    </span>
+                </label>
                 {authorizeError && <p className="text-destructive text-sm">{authorizeError}</p>}
                 <Button disabled={!canAuthorize} onClick={handleAuthorizePress}>
                     Authorize
