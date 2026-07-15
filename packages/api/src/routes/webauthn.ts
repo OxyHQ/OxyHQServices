@@ -349,9 +349,13 @@ router.post(
         // serves via an explicit allow-list. `required` here is exactly what made a
         // Google Titan fail Chrome's "device can't be used with this site" gate.
         residentKey: 'preferred',
-        // Keep UV mandatory (the passwordless plan requires user verification): a key
-        // with no PIN/biometric legitimately cannot enrol — that is correct, not a bug.
-        userVerification: 'required',
+        // `preferred`, not `required` (owner possession-credential policy): a
+        // UV-capable authenticator (platform Face ID / Windows Hello, FIDO2-with-PIN)
+        // STILL performs user verification unchanged; only a UV-incapable key (a
+        // U2F/CTAP1 Titan with no PIN) falls back to presence-only. The assurance
+        // level of each ceremony is captured on the credential's `userVerified` flag
+        // (see register/verify) so a future step-up can gate on UV-backed credentials.
+        userVerification: 'preferred',
         // `authenticatorAttachment` is deliberately UNPINNED so both platform (Face ID /
         // Touch ID / Windows Hello) and cross-platform/roaming (USB-C / NFC security key)
         // authenticators are offered.
@@ -410,7 +414,10 @@ router.post(
         expectedChallenge: challenge,
         expectedOrigin: origin,
         expectedRPID: rpID,
-        requireUserVerification: true,
+        // Possession-only credentials are accepted (owner policy): a presence-only
+        // U2F/CTAP1 key would fail here if UV were required. The actual assurance
+        // level is recorded per-credential via `registrationInfo.userVerified`.
+        requireUserVerification: false,
       });
     } catch (error) {
       logger.warn('webauthn register verification threw', {
@@ -424,7 +431,7 @@ router.post(
       throw new BadRequestError('Passkey registration could not be verified');
     }
 
-    const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+    const { credential, credentialDeviceType, credentialBackedUp, userVerified } = verification.registrationInfo;
     const credentialName = envelope.deviceName?.trim() || DEFAULT_CREDENTIAL_NAME;
 
     if (bearerUserId) {
@@ -443,6 +450,7 @@ router.post(
           transports: credential.transports,
           deviceType: credentialDeviceType,
           backedUp: credentialBackedUp,
+          userVerified,
           name: credentialName,
         });
       } catch (error) {
@@ -501,6 +509,7 @@ router.post(
         transports: credential.transports,
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
+        userVerified,
         name: credentialName,
       });
     } catch (error) {
@@ -618,7 +627,11 @@ router.post(
     const options = await generateAuthenticationOptions({
       rpID,
       allowCredentials,
-      userVerification: 'required',
+      // `preferred` (owner possession-credential policy): UV-capable authenticators
+      // still verify; a UV-incapable U2F key authenticates presence-only. The
+      // ceremony's real assurance level is refreshed onto the credential's
+      // `userVerified` flag at verify time.
+      userVerification: 'preferred',
     });
 
     await WebauthnChallenge.create({
@@ -693,7 +706,9 @@ router.post(
         expectedChallenge: challenge,
         expectedOrigin: origin,
         expectedRPID: rpID,
-        requireUserVerification: true,
+        // Possession-only assertions are accepted (owner policy); the actual
+        // assurance level is refreshed onto `credential.userVerified` below.
+        requireUserVerification: false,
         credential: {
           id: credential.credentialID,
           publicKey: new Uint8Array(credential.credentialPublicKey),
@@ -713,7 +728,7 @@ router.post(
       throw new UnauthorizedError('Passkey authentication could not be verified');
     }
 
-    const { newCounter } = verification.authenticationInfo;
+    const { newCounter, userVerified } = verification.authenticationInfo;
     // Counter regression = replay/cloned authenticator. `newCounter === 0` is NOT
     // a regression: platform authenticators keep the counter at 0 and never
     // increment, so a stored 0 and a fresh 0 are legitimate.
@@ -737,6 +752,9 @@ router.post(
 
     credential.counter = newCounter;
     credential.lastUsedAt = new Date();
+    // Refresh the assurance level: a credential that enrolled UV-capable but
+    // authenticated presence-only (or vice versa) reflects its most recent ceremony.
+    credential.userVerified = userVerified;
     await credential.save();
 
     const user = await User.findById(owner);
