@@ -95,6 +95,7 @@ export {
     useRecentSecurityActivity,
     useInfiniteSecurityActivity,
 } from './ui/hooks/queries/useSecurityQueries';
+export { useAuthMethods } from './ui/hooks/queries/useAuthMethods';
 export {
     useUserSubscription,
     useUserPayments,
@@ -166,6 +167,7 @@ export {
     invalidateStorageQueries,
     invalidatePaymentsQueries,
     invalidateConnectedAppsQueries,
+    invalidateAuthMethodsQueries,
 } from './ui/hooks/queries/queryKeys';
 
 // Mutation status aggregator (for "Syncing..." indicators)
