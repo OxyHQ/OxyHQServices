@@ -250,6 +250,19 @@ export type {
 } from './deviceBoot';
 
 export {
+    // Schemas
+    rotateKeyChallengeResponseSchema,
+    rotateKeyCompleteRequestSchema,
+    rotateKeyCompleteResponseSchema,
+} from './keyRotation';
+
+export type {
+    RotateKeyChallengeResponse,
+    RotateKeyCompleteRequest,
+    RotateKeyCompleteResponse,
+} from './keyRotation';
+
+export {
     // Shared primitives
     updatePlatformSchema,
     updateStatusSchema,

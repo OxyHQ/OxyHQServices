@@ -459,6 +459,11 @@ const UserSchema: Schema = new Schema(
       unique: true,
       sparse: true,
       trim: true,
+      // Canonical secp256k1 keys are stored uncompressed + lowercased (see
+      // SignatureService.canonicalizePublicKey). `lowercase` guards the case
+      // dimension of the unique index so a re-cased duplicate cannot slip past
+      // it. Existing keys are already lowercase-uncompressed, so this is safe.
+      lowercase: true,
       select: true,
     },
     refreshToken: {

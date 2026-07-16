@@ -283,11 +283,15 @@ export class SessionController {
         });
       }
 
-      // Find and validate the challenge (read-only query with .lean() for performance)
+      // Find and validate the challenge (read-only query with .lean() for
+      // performance). Scoped to signin-purpose challenges (default, or legacy
+      // docs predating the `purpose` field) so a `rotate_key` challenge cannot be
+      // spent to mint a session.
       const authChallenge = await AuthChallenge.findOne({
         publicKey,
         challenge,
         used: false,
+        purpose: { $in: ['signin', null] },
         expiresAt: { $gt: new Date() }
       }).lean();
 

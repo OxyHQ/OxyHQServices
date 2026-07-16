@@ -9,6 +9,13 @@ import mongoose, { type Document, Schema } from "mongoose";
 export interface IAuthChallenge extends Document {
   publicKey: string;
   challenge: string;
+  /**
+   * What the challenge may be spent on. Additive (default `'signin'`) so
+   * existing signin flows are unaffected. Purpose-scoped consumers (e.g. key
+   * rotation, which requires `'rotate_key'`) filter on this so a challenge
+   * minted for one flow can never be redeemed by another.
+   */
+  purpose: string;
   expiresAt: Date;
   used: boolean;
   createdAt: Date;
@@ -24,6 +31,10 @@ const AuthChallengeSchema: Schema = new Schema(
       type: String,
       required: true,
       unique: true,
+    },
+    purpose: {
+      type: String,
+      default: 'signin',
     },
     expiresAt: {
       type: Date,

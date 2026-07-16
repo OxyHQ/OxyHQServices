@@ -237,6 +237,39 @@ describe('KeyManager atomicity & recoverability under flaky storage', () => {
     expect(KeyManager.derivePublicKey(m.get('oxy_identity_private_key') as string)).toBe(a);
   });
 
+  it('a failed primary write during the post-rotation importKeyPair leaves the OLD key recoverable from backup', async () => {
+    // b3 key rotation: the server has already swapped to the NEW key; the device
+    // now commits it via importKeyPair({overwrite:true}). If that write fails
+    // mid-overwrite, the OLD key MUST remain intact and recoverable — never a
+    // half-written new identity that can't be decrypted or backed up.
+    const oldPublic = await KeyManager.createIdentity();
+    const ss = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
+    const oldPriv = ss.__getStore__().get('oxy_identity_private_key');
+    resetCaches();
+
+    // The NEW rotated key material (generateKeyPair does NOT persist).
+    const rotated = await KeyManager.generateKeyPair();
+
+    // The new primary private write fails mid-commit.
+    ss.__failPlan__.failOp = 'set';
+    ss.__failPlan__.failKey = 'oxy_identity_private_key';
+    await expect(KeyManager.importKeyPair(rotated.privateKey, { overwrite: true })).rejects.toBeDefined();
+
+    // Recover from the simulated fault.
+    ss.__failPlan__.failKey = undefined;
+    ss.__failPlan__.failOp = undefined;
+    resetCaches();
+
+    // Primary is STILL the old identity (rolled back — never the new one).
+    expect(await KeyManager.hasIdentity()).toBe(true);
+    expect(await KeyManager.getPublicKey()).toBe(oldPublic);
+    const m = ss.__getStore__();
+    expect(m.get('oxy_identity_private_key')).toBe(oldPriv);
+    // And the backup still holds the OLD identity, so the user can recover it.
+    expect(m.get('oxy_identity_backup_private_key')).toBe(oldPriv);
+    expect(m.get('oxy_identity_backup_public_key')).toBe(oldPublic);
+  });
+
   it('restores a provably-absent primary from a valid backup', async () => {
     const original = await KeyManager.createIdentity();
     const ss = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;

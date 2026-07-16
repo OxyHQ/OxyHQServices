@@ -8,19 +8,31 @@
  * - Unlink an identity or an individual passkey (webauthn)
  */
 
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { User, buildAuthMethod } from '../models/User.js';
 import { authMiddleware, type AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { BadRequestError, ConflictError } from '../utils/error.js';
+import { BadRequestError, ConflictError, UnauthorizedError } from '../utils/error.js';
 import { validate } from '../middleware/validate.js';
 import { linkAuthMethodSchema, unlinkTypeParams, unlinkWebauthnParams } from '../schemas/authLinking.schemas.js';
 import WebauthnCredential from '../models/WebauthnCredential.js';
+import AuthChallenge from '../models/AuthChallenge.js';
+import Session from '../models/Session.js';
+import sessionService from '../services/session.service.js';
+import { rateLimit } from '../middleware/rateLimiter.js';
+import { hashedIpKey } from '../utils/ipKey.js';
+import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils.js';
 import userCache from '../utils/userCache.js';
 import { buildUserDid } from '../services/did.service.js';
 import { buildAuthMethodEntries } from '../utils/authMethodEntries.js';
-import { authMethodsResponseSchema } from '@oxyhq/contracts';
+import {
+  authMethodsResponseSchema,
+  rotateKeyChallengeResponseSchema,
+  rotateKeyCompleteRequestSchema,
+  rotateKeyCompleteResponseSchema,
+  type RotateKeyCompleteRequest,
+} from '@oxyhq/contracts';
 
 const router = Router();
 
@@ -38,6 +50,62 @@ function countAuthMethods(user: {
   const methods = user.authMethods ?? [];
   count += methods.filter((m) => m.type === 'webauthn').length;
   return count;
+}
+
+/** Rotation-challenge time-to-live (5 minutes), matching the signin challenge. */
+const ROTATE_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+/** Max age accepted for the client rotation signature (5 minutes). */
+const ROTATE_SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
+
+/** Per-authenticated-user rate-limit key (falls back to a hashed IP pre-auth). */
+function rotateKey(scope: string) {
+  return (req: Request): string => {
+    const userId = (req as AuthRequest).user?._id?.toString();
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
+  };
+}
+
+const rotateChallengeLimiter = rateLimit({
+  prefix: 'rl:identity:rotate:challenge:',
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Too many key-rotation requests. Please try again later.',
+  keyGenerator: rotateKey('identity:rotate:challenge'),
+});
+
+const rotateCompleteLimiter = rateLimit({
+  prefix: 'rl:identity:rotate:complete:',
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Too many key-rotation attempts. Please try again later.',
+  keyGenerator: rotateKey('identity:rotate:complete'),
+});
+
+/**
+ * Revoke every OTHER active session for the account, keeping the session that
+ * made this request signed in (mirrors the "logout all sessions" controller).
+ * Pushes a `sessions_removed` event so connected clients drop immediately.
+ *
+ * `emitSessionUpdate` is loaded DYNAMICALLY to avoid a load-time import cycle
+ * with `server.ts` (which imports this router).
+ */
+async function revokeOtherSessions(req: Request, userId: string): Promise<void> {
+  const token = extractTokenFromRequest(req);
+  const currentSessionId = token ? decodeToken(token)?.sessionId : undefined;
+
+  const filter: Record<string, unknown> = { userId, isActive: true, expiresAt: { $gt: new Date() } };
+  if (currentSessionId) filter.sessionId = { $ne: currentSessionId };
+
+  const others = await Session.find(filter).select('sessionId').lean();
+  const sessionIds = others.map((s) => s.sessionId);
+
+  await sessionService.deactivateAllUserSessions(userId, currentSessionId);
+
+  if (sessionIds.length > 0) {
+    const { emitSessionUpdate } = await import('../server.js');
+    emitSessionUpdate(userId, { type: 'sessions_removed', sessionIds });
+  }
 }
 
 // All routes require authentication
@@ -71,6 +139,200 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
     methods,
   });
 
+  res.json(response);
+}));
+
+/**
+ * POST /api/auth/rotate/challenge
+ * Mint a single-use `rotate_key` challenge for the current account. The client
+ * signs it with its CURRENT key to prove control before the swap.
+ *
+ * The challenge is bound to the account's current `publicKey` and carries
+ * `purpose: 'rotate_key'`, so a signin challenge (default purpose) can never be
+ * spent here and vice-versa.
+ */
+router.post('/rotate/challenge', rotateChallengeLimiter, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new BadRequestError('User not authenticated');
+  }
+
+  const oldPublicKey = req.user?.publicKey;
+  if (!oldPublicKey) {
+    throw new BadRequestError('No identity key is linked to this account — nothing to rotate.');
+  }
+
+  const challenge = SignatureService.generateChallenge();
+  const expiresAt = new Date(Date.now() + ROTATE_CHALLENGE_TTL_MS);
+
+  await AuthChallenge.create({
+    publicKey: oldPublicKey,
+    challenge,
+    purpose: 'rotate_key',
+    expiresAt,
+    used: false,
+  });
+
+  const response = rotateKeyChallengeResponseSchema.parse({
+    challenge,
+    expiresAt: expiresAt.toISOString(),
+  });
+  res.json(response);
+}));
+
+/**
+ * POST /api/auth/rotate/complete
+ * Atomically REPLACE the account's identity key with `newPublicKey`.
+ *
+ * Rotation is a single atomic swap — never a remove-then-add — so it never
+ * passes through a zero-auth-method state and is independent of the unlink
+ * guards. Because control of the CURRENT key is proven (from SecureStore OR a
+ * recovery-phrase re-derivation), even the LAST remaining credential can be
+ * replaced.
+ *
+ * Security invariants:
+ *  - `oldPublicKey` is ALWAYS derived from the authenticated user doc, NEVER
+ *    from the request (prevents proving control of key X but rotating key Y).
+ *  - control of the CURRENT key is proven (`signature`) AND possession of the
+ *    NEW key is proven (`newKeyProof`) — the latter stops an attacker rotating
+ *    their account to a re-encoding of a key they do not control.
+ *  - the incoming key is canonicalized (uncompressed, lowercased) before the
+ *    uniqueness check and the write, so two encodings of the same point cannot
+ *    coexist across accounts.
+ *  - the `rotate_key` challenge is burned ATOMICALLY (single-use); the timestamp
+ *    is checked BEFORE the burn so a stale request cannot self-burn a challenge.
+ *  - the array length of `authMethods` is never changed (the single identity
+ *    entry is replaced in place), so `countAuthMethods()` is never 0.
+ */
+router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKeyCompleteRequestSchema }), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userIdObj = req.user?._id;
+  if (!userIdObj) {
+    throw new BadRequestError('User not authenticated');
+  }
+  const userId = userIdObj.toString();
+
+  const { newPublicKey, challenge, signature, newKeyProof, timestamp, signOutEverywhere } = req.body as RotateKeyCompleteRequest;
+  const safeNewPublicKey = newPublicKey.trim();
+
+  // Defense-in-depth: bind the Mongo-query-bound `challenge` to a primitive
+  // string so a crafted object value can never inject query operators (e.g.
+  // `{$ne: null}`), independent of the upstream Zod validation. Mirrors the
+  // explicit string guards in POST /auth/link.
+  if (typeof challenge !== 'string') {
+    throw new BadRequestError('challenge must be a string');
+  }
+
+  // Load the authoritative user document (for the write AND the server-derived
+  // old key).
+  const user = await User.findById(userIdObj);
+  if (!user) {
+    throw new BadRequestError('User not found');
+  }
+
+  // 1. oldPublicKey is derived from the USER DOC — never client-supplied.
+  const oldPublicKey = user.publicKey;
+  if (!oldPublicKey) {
+    throw new BadRequestError('No identity key is linked to this account — nothing to rotate.');
+  }
+
+  // Structural guards on the incoming new key.
+  if (!SignatureService.isValidPublicKey(safeNewPublicKey)) {
+    throw new BadRequestError('newPublicKey is not a valid public key');
+  }
+
+  // Canonicalize BOTH keys (uncompressed, lowercased). The differ-check, the
+  // uniqueness query, and the write all operate on the canonical form so a
+  // re-encoded (compressed / re-cased) duplicate can never slip past them.
+  const canonicalNewPublicKey = SignatureService.canonicalizePublicKey(safeNewPublicKey);
+  const canonicalOldPublicKey = SignatureService.canonicalizePublicKey(oldPublicKey);
+  if (canonicalNewPublicKey === canonicalOldPublicKey) {
+    throw new BadRequestError('newPublicKey must differ from the current identity key');
+  }
+
+  // 2. Timestamp freshness (recent, not in the future) — BEFORE the burn, so a
+  //    stale-but-otherwise-valid request cannot consume its own challenge.
+  const age = Date.now() - timestamp;
+  if (age > ROTATE_SIGNATURE_MAX_AGE_MS || age < 0) {
+    throw new BadRequestError('Signature expired or invalid timestamp — please try again');
+  }
+
+  // 3. Atomically burn the rotate_key challenge (single-use, purpose-scoped,
+  //    bound to the account's CURRENT key). If nothing matches, the challenge
+  //    was never minted for rotation, was for a different key, is expired, or
+  //    was already consumed — reject in every case.
+  const burned = await AuthChallenge.findOneAndUpdate(
+    { challenge, publicKey: oldPublicKey, used: false, purpose: 'rotate_key', expiresAt: { $gt: new Date() } },
+    { $set: { used: true } },
+    { new: false },
+  );
+  if (!burned) {
+    throw new UnauthorizedError('Invalid or expired rotation challenge');
+  }
+
+  // 4. Verify the client signature proves control of the CURRENT key. The signed
+  //    bytes MUST match this reconstruction exactly (same key order).
+  const message = JSON.stringify({
+    action: 'rotate_key',
+    userId,
+    oldPublicKey,
+    newPublicKey: safeNewPublicKey,
+    challenge,
+    timestamp,
+  });
+  if (!SignatureService.verifySignature(message, signature, oldPublicKey)) {
+    throw new BadRequestError('Invalid signature — cannot verify control of the current key');
+  }
+
+  // 5. Verify proof-of-possession of the NEW key. Without this, an attacker
+  //    could rotate their OWN account to a re-encoding of a victim's key (read
+  //    from the public DID) — passing the uniqueness check but never controlling
+  //    the private key. Requiring the new key to sign closes that.
+  const newKeyMessage = JSON.stringify({
+    action: 'rotate_key_new',
+    userId,
+    newPublicKey: safeNewPublicKey,
+    challenge,
+    timestamp,
+  });
+  if (!SignatureService.verifySignature(newKeyMessage, newKeyProof, safeNewPublicKey)) {
+    throw new BadRequestError('Invalid new-key proof — cannot verify possession of the new key');
+  }
+
+  // 6. Reject if the (canonical) new key already belongs to another account.
+  const conflict = await User.findOne({ publicKey: canonicalNewPublicKey }).select('_id').lean();
+  if (conflict && conflict._id.toString() !== userId) {
+    throw new ConflictError('This identity is already linked to another account');
+  }
+
+  // 7. ATOMIC REPLACE: swap `publicKey` AND replace the single identity
+  //    `authMethods` entry in place, storing the CANONICAL key. The array length
+  //    is never changed, so the account never passes through
+  //    `countAuthMethods() === 0`. `user.save()` persists both fields in one
+  //    document update.
+  const methods = user.authMethods ?? [];
+  const hasIdentity = methods.some((m) => m.type === 'identity');
+  user.authMethods = hasIdentity
+    ? methods.map((m) =>
+        m.type === 'identity'
+          ? buildAuthMethod('identity', { ...m.metadata, publicKey: canonicalNewPublicKey })
+          : m,
+      )
+    : [...methods, buildAuthMethod('identity', { publicKey: canonicalNewPublicKey })];
+  user.publicKey = canonicalNewPublicKey;
+  await user.save();
+  userCache.invalidate(userId);
+
+  // 8. Optional: revoke every OTHER session (the rotating device stays signed
+  //    in) when the caller suspects the old key is compromised.
+  if (signOutEverywhere) {
+    await revokeOtherSessions(req, userId);
+  }
+
+  const response = rotateKeyCompleteResponseSchema.parse({
+    success: true,
+    publicKey: canonicalNewPublicKey,
+    message: 'Identity key rotated successfully',
+  });
   res.json(response);
 }));
 
