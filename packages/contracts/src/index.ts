@@ -263,6 +263,19 @@ export type {
 } from './keyRotation';
 
 export {
+    // Schemas — encrypted off-device identity backup (b3 Feature 1)
+    encryptedBackupEnvelopeSchema,
+    backupUploadRequestSchema,
+    backupStatusResponseSchema,
+} from './keyRecovery';
+
+export type {
+    EncryptedBackupEnvelope,
+    BackupUploadRequest,
+    BackupStatusResponse,
+} from './keyRecovery';
+
+export {
     // Shared primitives
     updatePlatformSchema,
     updateStatusSchema,

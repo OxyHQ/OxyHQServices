@@ -9,6 +9,7 @@
 
 import * as bip39 from 'bip39';
 import { KeyManager } from './keyManager';
+import { hkdfSha256 } from './kdf';
 
 /**
  * Convert Uint8Array or array-like to hexadecimal string
@@ -20,6 +21,43 @@ function toHex(data: Uint8Array | ArrayLike<number>): string {
   return Array.from(bytes)
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/** UTF-8 encode an ASCII label to bytes (for HKDF salt/info). */
+function utf8(label: string): Uint8Array {
+  return new TextEncoder().encode(label);
+}
+
+/**
+ * HKDF context tag for the encrypted-backup key schedule (b3 Feature 1). Used as
+ * the HKDF `salt`; distinct from any other Oxy key-derivation salt so the backup
+ * key schedule is independent. Versioned so a future scheme change is a new tag.
+ */
+export const BACKUP_KDF_SALT = 'oxy-identity-backup-v1';
+/** HKDF `info` label that derives the symmetric AEAD key from the seed. */
+export const BACKUP_KDF_ENCRYPTION_INFO = 'oxy-backup-encryption-key';
+/** HKDF `info` label that derives the (server-hashed) backup locator from the seed. */
+export const BACKUP_KDF_LOOKUP_INFO = 'oxy-backup-lookup-id';
+/** Byte length of both the derived backup key and the derived lookup id (256-bit). */
+export const BACKUP_MATERIAL_LENGTH = 32;
+
+/**
+ * The two pieces of key material derived from a recovery phrase for the
+ * encrypted off-device backup, kept strictly separate by HKDF domain separation.
+ */
+export interface BackupMaterial {
+  /**
+   * The 32-byte symmetric key handed to `encryptAead`/`decryptAead`. NEVER
+   * leaves the device — the server sees only ciphertext produced with it.
+   */
+  backupKey: Uint8Array;
+  /**
+   * The 256-bit backup locator, hex. Sent to the server, which stores ONLY
+   * `sha256(lookupId)` — so possession of this value (which itself requires the
+   * full seed to compute) is what locates a backup, and the server can never
+   * recompute it from what it stores.
+   */
+  lookupId: string;
 }
 
 export interface RecoveryPhraseResult {
@@ -164,6 +202,38 @@ export class RecoveryPhraseService {
     const seed = await bip39.mnemonicToSeed(normalizedPhrase);
     const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
     return toHex(seedSlice);
+  }
+
+  /**
+   * Derive the encrypted-backup key material from a recovery phrase (b3 Feature
+   * 1). PURE and additive — it does NOT touch the frozen phrase→privateKey
+   * derivation ({@link derivePrivateKeyFromPhrase} slices the first 32 seed
+   * bytes) and never reads or writes secure storage.
+   *
+   * Both outputs are derived from the FULL 64-byte BIP-39 seed via HKDF-SHA256
+   * with domain-separated `info` labels, so the domain separation is real: a
+   * device compromise that leaks only the raw 32-byte private key can compute
+   * NEITHER the backup key nor the lookup id (both need the whole seed). Locating
+   * AND decrypting a backup therefore requires the recovery phrase.
+   *
+   * @param phrase - The BIP-39 recovery phrase (validated + normalized here).
+   * @returns `{ backupKey, lookupId }` — the AEAD key (kept local) and the hex
+   *   locator (uploaded; server stores only its hash).
+   * @throws if the phrase is not a valid BIP-39 mnemonic.
+   */
+  static async deriveBackupMaterial(phrase: string): Promise<BackupMaterial> {
+    const normalizedPhrase = phrase.trim().toLowerCase();
+
+    if (!bip39.validateMnemonic(normalizedPhrase)) {
+      throw new Error('Invalid recovery phrase. Please check the words and try again.');
+    }
+
+    const seed = await bip39.mnemonicToSeed(normalizedPhrase);
+    const salt = utf8(BACKUP_KDF_SALT);
+    const backupKey = hkdfSha256(seed, salt, utf8(BACKUP_KDF_ENCRYPTION_INFO), BACKUP_MATERIAL_LENGTH);
+    const lookupId = toHex(hkdfSha256(seed, salt, utf8(BACKUP_KDF_LOOKUP_INFO), BACKUP_MATERIAL_LENGTH));
+
+    return { backupKey, lookupId };
   }
 
   /**
