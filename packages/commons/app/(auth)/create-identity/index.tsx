@@ -7,7 +7,7 @@ import { useColors } from '@/hooks/useColors';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { CreatingStep } from '@/components/auth/CreatingStep';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
-import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/errorUtils';
+import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { CREATING_PROGRESS_INTERVAL_MS, CREATING_FINAL_DELAY_MS } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
@@ -26,7 +26,7 @@ import { useIdentity } from '@/hooks/useIdentity';
 export default function CreateIdentityScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { isAuthenticated } = useOxy();
+  const { isAuthenticated, oxyServices } = useOxy();
   const { createIdentity, syncIdentity } = useIdentity();
   const { status, hasIdentity } = useOnboardingStatus();
   const { setAuthError, recoveryPhraseRef } = useAuthFlowContext();
@@ -101,18 +101,30 @@ export default function CreateIdentityScreen() {
         const offline = await checkIfOffline();
         if (!isMountedRef.current) return;
 
-        if (!isAuthenticated && !offline && syncIdentity) {
+        const hasSession = () => Boolean(oxyServices?.getAccessToken());
+        let sessionReady = isAuthenticated || hasSession();
+
+        if (!sessionReady && !offline && syncIdentity) {
           try {
             await syncIdentity();
+            sessionReady = hasSession();
           } catch (syncErr: unknown) {
-            if (!isNetworkOrTimeoutError(syncErr)) {
-              const errorMessage = extractAuthErrorMessage(syncErr);
-              setAuthError(errorMessage);
-              setCreateError(errorMessage);
-              hasNavigatedResumeRef.current = false;
-              return;
-            }
+            const errorMessage = extractAuthErrorMessage(syncErr);
+            setAuthError(errorMessage);
+            setCreateError(errorMessage);
+            hasNavigatedResumeRef.current = false;
+            return;
           }
+        }
+
+        // Online resume without a session: username would call authenticated APIs.
+        if (!sessionReady && !offline) {
+          const syncErrorMessage =
+            'Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.';
+          setAuthError(syncErrorMessage);
+          setCreateError(syncErrorMessage);
+          hasNavigatedResumeRef.current = false;
+          return;
         }
 
         if (!isMountedRef.current) return;
@@ -200,18 +212,29 @@ export default function CreateIdentityScreen() {
             const offline = await checkIfOffline();
             if (!isMountedRef.current) return;
 
-            if (!offline && syncIdentity) {
+            const hasSession = () => Boolean(oxyServices?.getAccessToken());
+            let sessionReady = isAuthenticated || hasSession();
+
+            if (!sessionReady && !offline && syncIdentity) {
               try {
                 await syncIdentity();
+                sessionReady = hasSession();
               } catch (syncErr: unknown) {
-                if (!isNetworkOrTimeoutError(syncErr)) {
-                  const syncErrorMessage = extractAuthErrorMessage(syncErr);
-                  setAuthError(syncErrorMessage);
-                  setCreateError(syncErrorMessage);
-                  return;
-                }
+                const syncErrorMessage = extractAuthErrorMessage(syncErr);
+                setAuthError(syncErrorMessage);
+                setCreateError(syncErrorMessage);
+                return;
               }
             }
+
+            if (!sessionReady && !offline) {
+              const syncErrorMessage =
+                'Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.';
+              setAuthError(syncErrorMessage);
+              setCreateError(syncErrorMessage);
+              return;
+            }
+
             router.replace('/(auth)/create-identity/username');
             return;
           }
@@ -238,6 +261,7 @@ export default function CreateIdentityScreen() {
     createIdentity,
     syncIdentity,
     isAuthenticated,
+    oxyServices,
     router,
     setAuthError,
     cleanupTimers,
