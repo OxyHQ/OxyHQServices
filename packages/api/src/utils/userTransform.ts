@@ -4,7 +4,7 @@
  */
 
 import { getUserLanguages } from '@oxyhq/core';
-import { formatUserNameResponse, type NameParts } from './displayName';
+import { formatUserNameResponse, type NameParts, type NameResponse } from './displayName';
 
 type StringableId = string | { toString(): string };
 
@@ -64,20 +64,87 @@ function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function toStringableId(value: unknown): StringableId | undefined {
-  if (typeof value === 'string') return value;
-  return isRecord(value) && typeof value.toString === 'function'
-    ? { toString: () => value.toString() }
-    : undefined;
+/**
+ * The minimal surface the shared identity base reads off a user document. Every
+ * field is `unknown` so ANY caller shape — a `Record<string, unknown>`, an
+ * `IUser` / `PublicUserDocument`, or a recommendation projection row — is
+ * structurally assignable with no cast.
+ */
+export interface UserIdentitySource {
+  _id?: unknown;
+  /**
+   * Present only on objects that already went through the User schema's
+   * toObject/toJSON transform, which deletes `_id` and folds the identifier into
+   * `id` (e.g. a keyless managed/org account).
+   */
+  id?: unknown;
+  name?: unknown;
+  username?: unknown;
+  avatar?: unknown;
+  publicKey?: unknown;
 }
 
-function toNameParts(value: unknown): NameParts | undefined {
-  if (!isRecord(value)) return undefined;
+/**
+ * The load-bearing identity fields every user-DTO serializer MUST agree on. `id`
+ * is `undefined` only when the source has no resolvable identifier — each caller
+ * decides whether that is a `null` return or a thrown error.
+ */
+export interface UserIdentityFields {
+  id: string | undefined;
+  name: NameResponse;
+  username: string | undefined;
+  avatar: string | undefined;
+}
+
+/**
+ * The SOLE definition of the DTO `id`: the stable Mongo ObjectId string, NEVER
+ * the `publicKey`. The whole social graph (`Post.oxyUserId`, follow edges,
+ * client follow-state maps) is keyed on `_id`, so flipping `id` to the publicKey
+ * once a user links a Commons identity makes author-feed/follow lookups miss —
+ * the bug this centralization prevents. Reads `_id` first, falling back to `id`
+ * for already-transformed (keyless) objects; returns `undefined` when neither
+ * yields a non-empty string.
+ */
+function resolveIdentityId(source: UserIdentitySource): string | undefined {
+  const rawId = source._id;
+  const fromObjectId = rawId == null ? '' : (rawId as { toString(): string }).toString();
+  const fallback = typeof source.id === 'string' ? source.id : '';
+  return fromObjectId || fallback || undefined;
+}
+
+/** Narrow a raw `name` value to the structured `NameParts` the composer reads. */
+function identityNameSource(name: unknown): NameParts | undefined {
+  return typeof name === 'object' && name !== null ? (name as NameParts) : undefined;
+}
+
+/**
+ * The SOLE definition of the derived public `isFederated` flag — an account is
+ * federated iff its `type` is `'federated'`. Shared by the public and
+ * recommendation serializers so the derivation cannot drift between them.
+ */
+export function deriveIsFederated(type: unknown): boolean {
+  return type === 'federated';
+}
+
+/**
+ * The single definer of the load-bearing identity fields (`id`, `name`,
+ * `username`, `avatar`) shared by every user-DTO serializer. Extracting this
+ * makes it structurally impossible for the three serializers
+ * (`formatUserResponse` here, `UserService.formatUserResponse`, and the
+ * recommendation `formatProfileResult`) to diverge on these fields again — the
+ * `id = publicKey || _id` class of bug. Each serializer keeps its own
+ * resource-specific tail; only these four fields come from here.
+ */
+export function userIdentityFields(source: UserIdentitySource): UserIdentityFields {
   return {
-    first: stringValue(value.first),
-    last: stringValue(value.last),
-    full: stringValue(value.full),
-    displayName: stringValue(value.displayName),
+    id: resolveIdentityId(source),
+    name: formatUserNameResponse({
+      name: identityNameSource(source.name),
+      username: stringValue(source.username),
+      publicKey: stringValue(source.publicKey),
+    }),
+    username: stringValue(source.username),
+    avatar: stringValue(source.avatar),
   };
 }
 
@@ -99,26 +166,19 @@ export function formatUserResponse(user: unknown) {
     return null;
   }
 
-  const rawId = toStringableId(user._id);
-  const userId = rawId?.toString();
-  if (!userId) {
+  const identity = userIdentityFields(user);
+  if (!identity.id) {
     return null;
   }
 
-  const name = formatUserNameResponse({
-    name: toNameParts(user.name),
-    username: stringValue(user.username),
-    publicKey: stringValue(user.publicKey),
-  });
-
   return {
-    id: userId,
+    id: identity.id,
     publicKey: stringValue(user.publicKey),
-    username: stringValue(user.username),
+    username: identity.username,
     email: stringValue(user.email),
-    avatar: stringValue(user.avatar),
+    avatar: identity.avatar,
     color: stringValue(user.color),
-    name,
+    name: identity.name,
     privacySettings: user.privacySettings,
     verified: booleanValue(user.verified),
     // Ordered account locales, PRIMARY first. `languages` is the ONLY language

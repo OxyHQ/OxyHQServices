@@ -37,7 +37,7 @@ import {
   type PublicUserDocument,
 } from '../utils/publicUserProjection';
 import Subscription from '../models/Subscription';
-import { formatUserNameResponse, type NameParts } from '../utils/displayName';
+import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
 import { normalizeLocale } from '@oxyhq/core';
 
 // Constants
@@ -1596,33 +1596,28 @@ export class UserService {
     stats?: UserStatistics,
     options: { includePrivateFields?: boolean } = {}
   ): PublicUserProfile {
-    // Handle both IUser (Mongoose document) and UserData (plain object).
-    // The DTO `id` is ALWAYS the stable Mongo ObjectId, never the publicKey. The
-    // social graph the whole ecosystem keys on (`Post.oxyUserId`, follow edges,
-    // client follow-state maps) is anchored on `_id`, so a key-anchored account
-    // (one that has a `publicKey`) MUST keep its public `id === _id` — flipping
-    // it to the publicKey makes author-feed/follow lookups miss (the bug this
-    // serializer used to cause once a user linked a Commons identity). Key
-    // identity stays available via the separate `publicKey`/`did` fields. The
-    // `id` fallback covers objects that already went through the User schema's
-    // toObject/toJSON transform, which deletes `_id` and folds the identifier
-    // into `id` (e.g. a keyless managed/org account).
-    const userAsIUser = user as IUser & { id?: string };
-    const userId = userAsIUser._id?.toString() || userAsIUser.id;
-    if (!userId) {
+    // The load-bearing identity fields (`id`, `name`, `username`, `avatar`) come
+    // from the SHARED `userIdentityFields` definer, so this serializer can never
+    // diverge from the public/self/recommendation serializers on them. In
+    // particular the DTO `id` is ALWAYS the stable Mongo ObjectId, never the
+    // publicKey: the social graph the whole ecosystem keys on (`Post.oxyUserId`,
+    // follow edges, client follow-state maps) is anchored on `_id`, so a
+    // key-anchored account keeps `id === _id` (flipping it to the publicKey once
+    // a user links a Commons identity makes author-feed/follow lookups miss). Key
+    // identity stays available via the separate `publicKey`/`did` fields, and the
+    // helper's `id` fallback covers already-transformed keyless managed/org
+    // objects (schema toObject deletes `_id` and folds the identifier into `id`).
+    const identity = userIdentityFields(user);
+    if (!identity.id) {
       throw new Error('User must have an _id');
     }
     const userAny = user as unknown as Record<string, unknown>;
 
     const response: PublicUserProfile = {
-      id: userId,
-      username: user.username,
-      name: formatUserNameResponse({
-        name: user.name as NameParts | undefined,
-        username: user.username,
-        publicKey: userAsIUser.publicKey,
-      }),
-      avatar: user.avatar,
+      id: identity.id,
+      username: identity.username,
+      name: identity.name,
+      avatar: identity.avatar,
       verified: userAny.verified as boolean | undefined,
       bio: userAny.bio as string | undefined,
       description: userAny.description as string | undefined,
@@ -1645,7 +1640,7 @@ export class UserService {
     if (userAny.federation) {
       response.federation = userAny.federation;
     }
-    response.isFederated = userAny.type === 'federated';
+    response.isFederated = deriveIsFederated(userAny.type);
     // Public, derived: whether this account participates in fediverse sharing.
     // Intentionally public (like isFederated) — the state is observable anyway
     // (the AP actor 404s when off). The rest of privacySettings stays private.

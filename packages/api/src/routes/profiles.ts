@@ -26,7 +26,8 @@ import Follow, { FollowType } from '../models/Follow';
 import User, { type IUser } from '../models/User';
 import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
-import { formatUserNameResponse, type NameParts } from '../utils/displayName';
+import { type NameParts } from '../utils/displayName';
+import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
 import { AppAffinityEdge } from '../models/AppAffinityEdge';
@@ -214,23 +215,24 @@ const userProfileProjectionStage = {
   },
 };
 
-function formatProfileResult(u: RecommendationRow) {
+export function formatProfileResult(u: RecommendationRow) {
+  // Load-bearing identity fields (`id`, `name`, `username`, `avatar`) come from
+  // the SHARED `userIdentityFields` definer so this recommendation serializer can
+  // never diverge from the public/self serializers on them — `id` is the stable
+  // `_id` string, never the publicKey.
+  const identity = userIdentityFields(u);
   return {
-    id: u._id,
-    username: u.username,
-    name: formatUserNameResponse({
-      name: typeof u.name === 'object' ? u.name : undefined,
-      username: u.username,
-      publicKey: u.publicKey,
-    }),
-    avatar: u.avatar,
+    id: identity.id,
+    username: identity.username,
+    name: identity.name,
+    avatar: identity.avatar,
     description: u.description,
     verified: u.verified === true,
     trustTier: u.reputationTier,
     mutualCount: u.mutualCount || 0,
     ...(typeof u.score === 'number' ? { score: u.score } : {}),
     ...(u.matchedSignals ? { matchedSignals: u.matchedSignals } : {}),
-    isFederated: u.type === 'federated',
+    isFederated: deriveIsFederated(u.type),
     isAgent: u.type === 'agent',
     isAutomated: u.type === 'automated',
     instance: u.federation?.domain,
