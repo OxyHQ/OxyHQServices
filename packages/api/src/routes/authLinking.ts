@@ -214,6 +214,14 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
   const { newPublicKey, challenge, signature, newKeyProof, timestamp, signOutEverywhere } = req.body as RotateKeyCompleteRequest;
   const safeNewPublicKey = newPublicKey.trim();
 
+  // Defense-in-depth: bind the Mongo-query-bound `challenge` to a primitive
+  // string so a crafted object value can never inject query operators (e.g.
+  // `{$ne: null}`), independent of the upstream Zod validation. Mirrors the
+  // explicit string guards in POST /auth/link.
+  if (typeof challenge !== 'string') {
+    throw new BadRequestError('challenge must be a string');
+  }
+
   // Load the authoritative user document (for the write AND the server-derived
   // old key).
   const user = await User.findById(userIdObj);
