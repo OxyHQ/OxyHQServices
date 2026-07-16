@@ -49,6 +49,10 @@ export type {
     ContactDiscoveryResponse,
 } from './mixins/OxyServices.contacts';
 export type {
+    InitDeviceTransferResult,
+    DeviceTransferOutcome,
+} from './mixins/OxyServices.deviceTransfer';
+export type {
     BulkFollowEntry,
     BulkFollowResult,
     BulkUnfollowEntry,
