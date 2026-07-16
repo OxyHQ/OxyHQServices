@@ -244,6 +244,17 @@ export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
 export type { RecoveryPhraseResult } from './crypto/recoveryPhrase';
 
+// Low-level crypto primitives (b3 Phase 0 — encrypted backup + device transfer)
+export { hkdfSha256 } from './crypto/kdf';
+export {
+    encryptAead,
+    decryptAead,
+    AEAD_KEY_LENGTH,
+    AEAD_NONCE_LENGTH,
+} from './crypto/aead';
+export type { AeadResult } from './crypto/aead';
+export { deriveSharedSecret } from './crypto/ecdh';
+
 // ---------------------------------------------------------------------------
 // Devices
 // ---------------------------------------------------------------------------
