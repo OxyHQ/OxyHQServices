@@ -31,6 +31,33 @@ import { extractErrorStatus } from '../utils/errorUtils';
  */
 const USERS_BY_IDS_CHUNK_SIZE = 100;
 
+/**
+ * Maximum number of ids sent per `POST /users/follow-status/bulk` request.
+ * Matches the server-side `MAX_BULK_FOLLOW` cap; larger inputs are split into
+ * multiple chunked calls whose result maps are merged.
+ */
+const FOLLOW_STATUS_CHUNK_SIZE = 200;
+
+/**
+ * Response of the single follow/unfollow toggle route
+ * (`POST /users/:id/follow` and `DELETE /users/:id/follow`). The route reports a
+ * status message, which side of the toggle was applied, and the post-write
+ * follower/following counts for the affected users.
+ */
+export interface FollowMutationResult {
+  /** Human-readable status message. */
+  message: string;
+  /** Which side of the toggle was applied, when reported by the route. */
+  action?: 'follow' | 'unfollow';
+  /** Post-write counts, when reported by the route. */
+  counts?: {
+    /** The target user's follower count after the write. */
+    followers: number;
+    /** The viewer's following count after the write. */
+    following: number;
+  };
+}
+
 /** Per-user outcome returned by `POST /users/follow/bulk`. */
 export interface BulkFollowEntry {
   /** The user ID that was processed. */
@@ -679,9 +706,9 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * UI (the "follow resets after navigating away and back" bug).
      * `clearCacheEntry` deletes every identity-scoped variant of the key.
      */
-    async followUser(userId: string): Promise<{ success: boolean; message: string }> {
+    async followUser(userId: string): Promise<FollowMutationResult> {
       try {
-        const result = await this.makeRequest<{ success: boolean; message: string }>('POST', `/users/${userId}/follow`, undefined, { cache: false });
+        const result = await this.makeRequest<FollowMutationResult>('POST', `/users/${userId}/follow`, undefined, { cache: false });
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
         // The follow changed the viewer's graph — bust the cached consolidated
         // `GET /users/me/graph` so the next read reflects the new following/
@@ -748,9 +775,9 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Unfollow a user
      */
-    async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
+    async unfollowUser(userId: string): Promise<FollowMutationResult> {
       try {
-        const result = await this.makeRequest<{ success: boolean; message: string }>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
+        const result = await this.makeRequest<FollowMutationResult>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
         // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
         // The unfollow changed the viewer's graph — bust the consolidated cache.
@@ -770,6 +797,57 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache
         });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Resolve the viewer's follow status for MANY users in one round-trip per
+     * chunk. Built for list UIs (a page of `FollowButton`s) that would otherwise
+     * fire one `getFollowStatus` per button (the classic N+1).
+     *
+     * Ids are deduplicated and validated (empty/blank ids dropped), split into
+     * chunks of {@link FOLLOW_STATUS_CHUNK_SIZE} (the server's bulk cap), and
+     * POSTed to `/users/follow-status/bulk` as `{ userIds }`. The per-chunk
+     * `{ statuses }` maps are merged into one `Record<string, boolean>` covering
+     * every requested id — ids the viewer does not follow come back `false`.
+     *
+     * Uncached (`{ cache: false }`): the UI store owns follow-status freshness
+     * and writes optimistically on every mutation, so an SDK cache here would
+     * serve a stale status right after a follow/unfollow. An empty/whitespace-
+     * only input resolves immediately with `{}` and performs no network call.
+     */
+    async getFollowStatuses(userIds: string[]): Promise<Record<string, boolean>> {
+      const uniqueIds = Array.from(
+        new Set(userIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)),
+      );
+      if (uniqueIds.length === 0) {
+        return {};
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueIds.length; i += FOLLOW_STATUS_CHUNK_SIZE) {
+        chunks.push(uniqueIds.slice(i, i + FOLLOW_STATUS_CHUNK_SIZE));
+      }
+
+      try {
+        const responses = await Promise.all(
+          chunks.map((chunk) =>
+            this.makeRequest<{ statuses: Record<string, boolean> }>(
+              'POST',
+              '/users/follow-status/bulk',
+              { userIds: chunk },
+              { cache: false },
+            ),
+          ),
+        );
+
+        const merged: Record<string, boolean> = {};
+        for (const response of responses) {
+          Object.assign(merged, response?.statuses ?? {});
+        }
+        return merged;
       } catch (error) {
         throw this.handleError(error);
       }

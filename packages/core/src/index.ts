@@ -53,6 +53,7 @@ export type {
     BulkFollowResult,
     BulkUnfollowEntry,
     BulkUnfollowResult,
+    FollowMutationResult,
     ViewerGraph,
 } from './mixins/OxyServices.user';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';

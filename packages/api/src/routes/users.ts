@@ -513,6 +513,54 @@ router.post(
 );
 
 /**
+ * POST /users/follow-status/bulk
+ *
+ * Resolve the authenticated viewer's follow status for MANY target users in a
+ * single request. Built for list UIs (a page of N FollowButtons) that would
+ * otherwise fire N `GET /users/:id/follow-status` calls — this collapses them
+ * into one round-trip served by a single indexed query.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `follow-status` as a `:userId` value.
+ *
+ * @body {string[]} userIds - Target user ids to check (max MAX_BULK_FOLLOW).
+ * @returns {{ statuses: Record<string, boolean> }} Every requested id mapped to
+ *   whether the viewer follows it; unknown/unfollowed ids are `false`.
+ */
+router.post(
+  '/follow-status/bulk',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const userIds = getUserIdsFromRequestBody(req.body);
+
+    if (!Array.isArray(userIds)) {
+      throw new BadRequestError('userIds must be an array');
+    }
+    if (userIds.length === 0) {
+      throw new BadRequestError('userIds must not be empty');
+    }
+    if (userIds.length > MAX_BULK_FOLLOW) {
+      throw new BadRequestError(`Cannot request more than ${MAX_BULK_FOLLOW} follow statuses at once`);
+    }
+
+    const statuses = await userService.getFollowingStatuses(currentUserId, userIds);
+
+    logger.debug('POST /users/follow-status/bulk', {
+      currentUserId,
+      requested: userIds.length,
+    });
+
+    sendSuccess(res, { statuses });
+  })
+);
+
+/**
  * POST /users/by-ids
  *
  * Batch-resolve PUBLIC user DTOs for up to 100 ids in a single round-trip.

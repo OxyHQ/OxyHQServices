@@ -1482,6 +1482,81 @@ export class UserService {
   }
 
   /**
+   * Batch follow-status resolution for the authenticated viewer.
+   *
+   * Returns a boolean for EVERY requested target id: `true` when the viewer
+   * follows that user, `false` otherwise. Structurally-invalid ids and ids the
+   * viewer does not follow both map to `false`. An anonymous viewer or an
+   * empty/all-invalid id set resolves to all-`false` with no query.
+   *
+   * Efficiency contract: at most ONE indexed `Follow.find` regardless of N —
+   * keyed on `(followerUserId, followType, followedId $in validIds)`, the same
+   * axis `isFollowing` uses. Built to replace N per-button
+   * `GET /users/:id/follow-status` requests with a single round-trip.
+   *
+   * @param currentUserId The authenticated viewer (follower) id.
+   * @param targetIds Candidate user ids to check (may contain duplicates or
+   *   invalid ids).
+   * @returns A map of every requested id → whether the viewer follows it.
+   */
+  async getFollowingStatuses(
+    currentUserId: string,
+    targetIds: string[]
+  ): Promise<Record<string, boolean>> {
+    // Dedupe requested ids preserving first-seen order; every requested id must
+    // appear in the result (default false), including invalid ones.
+    const seen = new Set<string>();
+    const requestedIds: string[] = [];
+    for (const rawId of targetIds) {
+      if (typeof rawId !== 'string') continue;
+      const id = rawId.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      requestedIds.push(id);
+    }
+
+    const statuses: Record<string, boolean> = {};
+    for (const id of requestedIds) {
+      statuses[id] = false;
+    }
+
+    // Anonymous viewer or nothing to check → all false, no query.
+    if (!currentUserId || requestedIds.length === 0) {
+      return statuses;
+    }
+
+    // Only structurally-valid ids may enter the `$in` query.
+    const validIds = requestedIds.filter((id) => Types.ObjectId.isValid(id));
+    if (validIds.length === 0) {
+      return statuses;
+    }
+
+    // ONE indexed query for the viewer's follows within the requested set.
+    const follows = await Follow.find({
+      followerUserId: currentUserId,
+      followType: FollowType.USER,
+      followedId: { $in: validIds },
+    })
+      .select('followedId')
+      .lean();
+
+    const followedIds = new Set<string>(
+      follows
+        .map((follow) => follow.followedId)
+        .filter((id): id is Types.ObjectId | string => id != null)
+        .map((id) => id.toString())
+    );
+
+    for (const id of validIds) {
+      if (followedIds.has(id)) {
+        statuses[id] = true;
+      }
+    }
+
+    return statuses;
+  }
+
+  /**
    * Batch-resolve PUBLIC user DTOs for a set of ids.
    *
    * Returns the SAME shape as `GET /users/:id` (`formatUserResponse`), including

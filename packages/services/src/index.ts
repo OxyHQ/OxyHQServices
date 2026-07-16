@@ -65,7 +65,7 @@ export {
 // ---------------------------------------------------------------------------
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 export { useFileDownloadUrl } from './ui/hooks/useFileDownloadUrl';
-export { useFollow, useFollowerCounts } from './ui/hooks/useFollow';
+export { useFollow, useFollowerCounts, useSeedFollowStatuses } from './ui/hooks/useFollow';
 export { useStorage } from './ui/hooks/useStorage';
 export type { UseStorageOptions, UseStorageResult } from './ui/hooks/useStorage';
 
