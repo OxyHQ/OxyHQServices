@@ -410,7 +410,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "12.2.0",
+      "version": "12.2.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
