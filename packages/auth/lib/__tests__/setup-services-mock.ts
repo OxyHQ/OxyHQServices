@@ -1,0 +1,49 @@
+/**
+ * Baseline `@oxyhq/services` mock for auth `bun test`.
+ *
+ * The real package pulls `react-native` at module load time, which bun cannot
+ * parse in a node test env. `mock.module` is process-global and last-writer-wins
+ * per test file — any per-file mock MUST include every export sibling suites
+ * import (notably `useSwitchableAccounts`), or later files that import
+ * `login-form.tsx` fall through to the real module and crash.
+ */
+import { mock } from "bun:test"
+import React from "react"
+
+export const defaultSwitchableAccounts = () => ({
+    isLoading: false,
+    currentSessionId: null,
+    accounts: [] as unknown[],
+})
+
+export const defaultUseOxyValue = {
+    handleWebSession: async () => undefined,
+    registerWithPasskey: async () => undefined,
+    openAccountDialog: () => undefined,
+    oxyServices: {
+        lookupUsername: async () => ({ username: "", name: {}, avatar: null, color: null }),
+    },
+    signInWithPassword: async () => ({ status: "ok" as const }),
+    signInWithPasskey: async () => undefined,
+    completeTwoFactorSignIn: async () => ({}),
+    revokeSuspiciousSignIn: async () => undefined,
+    switchToAccount: async () => undefined,
+}
+
+export function createServicesMock(
+    overrides: Partial<{
+        useOxy: () => Record<string, unknown>
+        useSwitchableAccounts: typeof defaultSwitchableAccounts
+        OxyAuthChooser: React.ComponentType<{ onComplete?: () => void }>
+    }> = {},
+) {
+    return {
+        useOxy: overrides.useOxy ?? (() => defaultUseOxyValue),
+        useSwitchableAccounts: overrides.useSwitchableAccounts ?? defaultSwitchableAccounts,
+        OxyAuthChooser:
+            overrides.OxyAuthChooser ??
+            (() => null as React.ReactElement | null),
+    }
+}
+
+mock.module("@oxyhq/services", () => createServicesMock())

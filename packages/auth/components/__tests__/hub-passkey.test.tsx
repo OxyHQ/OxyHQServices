@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 import React, { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { MemoryRouter } from "react-router-dom"
+import { createServicesMock, defaultSwitchableAccounts } from "@/lib/__tests__/setup-services-mock"
 
 const getCommonsApprovalInfo = mock(async () => ({
     application: { name: "Acme Widgets" },
@@ -45,25 +46,30 @@ const stableUser = { id: "u1", username: "nate", name: { displayName: "Nate" } }
 // `mock.module` is process-global in bun (last writer wins across files) —
 // expose the full surface this page consumes, mirroring the leak-safe
 // convention `login-form-passkey.test.tsx` established.
-mock.module("@oxyhq/services", () => ({
-    useOxy: () => ({
-        oxyServices: stableOxyServices,
-        accountDialogController: stableController,
-        user: stableUser,
-    }),
-    // Minimal stub: a single button that fires the SAME onComplete prop
-    // OxyAuthChooser fires on every completion path (ceremony, QR,
-    // active-account tap) — the real component's own paths are tested in
-    // @oxyhq/services.
-    OxyAuthChooser: ({ onComplete }: { onComplete?: () => void }) => {
-        chooserOnComplete = onComplete
-        return React.createElement(
-            "button",
-            { onClick: () => onComplete?.(), "data-testid": "complete-chooser" },
-            "complete (stub)",
-        )
-    },
-}))
+mock.module(
+    "@oxyhq/services",
+    () =>
+        createServicesMock({
+            useOxy: () => ({
+                oxyServices: stableOxyServices,
+                accountDialogController: stableController,
+                user: stableUser,
+            }),
+            useSwitchableAccounts: defaultSwitchableAccounts,
+            // Minimal stub: a single button that fires the SAME onComplete prop
+            // OxyAuthChooser fires on every completion path (ceremony, QR,
+            // active-account tap) — the real component's own paths are tested in
+            // @oxyhq/services.
+            OxyAuthChooser: ({ onComplete }: { onComplete?: () => void }) => {
+                chooserOnComplete = onComplete
+                return React.createElement(
+                    "button",
+                    { onClick: () => onComplete?.(), "data-testid": "complete-chooser" },
+                    "complete (stub)",
+                )
+            },
+        }),
+)
 
 const { HubPasskeyPage } = await import("@/src/pages/hub-passkey")
 
