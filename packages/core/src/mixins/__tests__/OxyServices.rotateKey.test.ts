@@ -19,19 +19,24 @@
 
 import type { DidDocument } from '@oxyhq/contracts';
 import * as protocol from '@oxyhq/protocol';
+import { ec as EC } from 'elliptic';
 import { OxyServices } from '../../OxyServices';
 import { KeyManager } from '../../crypto/keyManager';
 import { SignatureService } from '../../crypto/signatureService';
 import { RecoveryPhraseService } from '../../crypto/recoveryPhrase';
 import { setPlatformOS } from '../../utils/platform';
 
-const OLD_PUBLIC = 'oldpub-hex';
-const NEW_PUBLIC = 'newpub-hex';
+const ec = new EC('secp256k1');
+const oldKeyPair = ec.genKeyPair();
+const newKeyPair = ec.genKeyPair();
+const OLD_PUBLIC = oldKeyPair.getPublic('hex');
+const NEW_PUBLIC = newKeyPair.getPublic('hex');
+const NEW_PRIVATE = newKeyPair.getPrivate('hex');
 
 const pendingFixture = {
   phrase: 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima',
   words: ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', 'juliet', 'kilo', 'lima'],
-  privateKey: 'newpriv-hex',
+  privateKey: NEW_PRIVATE,
   publicKey: NEW_PUBLIC,
 };
 
@@ -94,7 +99,7 @@ describe('OxyServices.rotateKey', () => {
       const expectedMessage = JSON.stringify({
         action: 'rotate_key',
         userId: 'user-123',
-        oldPublicKey: OLD_PUBLIC,
+        oldPublicKey: KeyManager.canonicalPublicKey(OLD_PUBLIC),
         newPublicKey: NEW_PUBLIC,
         challenge: 'chal-1',
         timestamp: 1700000000000,
@@ -108,7 +113,7 @@ describe('OxyServices.rotateKey', () => {
         challenge: 'chal-1',
         timestamp: 1700000000000,
       });
-      expect(newKeySignSpy).toHaveBeenCalledWith(expectedNewKeyMessage, 'newpriv-hex');
+      expect(newKeySignSpy).toHaveBeenCalledWith(expectedNewKeyMessage, NEW_PRIVATE);
 
       expect(makeRequestSpy).toHaveBeenNthCalledWith(1, 'POST', '/auth/rotate/challenge', undefined, expect.objectContaining({ cache: false }));
       expect(makeRequestSpy).toHaveBeenNthCalledWith(
@@ -120,7 +125,7 @@ describe('OxyServices.rotateKey', () => {
       );
 
       // Persisted ONLY after the server confirmed the swap.
-      expect(importSpy).toHaveBeenCalledWith('newpriv-hex', { overwrite: true });
+      expect(importSpy).toHaveBeenCalledWith(NEW_PRIVATE, { overwrite: true });
       // DID + auth-method caches are swept.
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/u/user-123/did.json');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/auth/methods');
@@ -205,7 +210,7 @@ describe('OxyServices.rotateKey', () => {
       const message = JSON.stringify({
         action: 'rotate_key',
         userId: 'user-123',
-        oldPublicKey: current.publicKey,
+        oldPublicKey: KeyManager.canonicalPublicKey(current.publicKey),
         newPublicKey: next.publicKey,
         challenge: 'chal-x',
         timestamp: completeBody?.timestamp,
@@ -251,7 +256,7 @@ describe('OxyServices.rotateKey', () => {
       expect(result.newPublicKey).toBe(NEW_PUBLIC);
       expect(makeRequestSpy).toHaveBeenNthCalledWith(3, 'GET', '/u/user-123/did.json', undefined, expect.objectContaining({ cache: false }));
       // The swap landed server-side, so the new key is persisted locally.
-      expect(importSpy).toHaveBeenCalledWith('newpriv-hex', { overwrite: true });
+      expect(importSpy).toHaveBeenCalledWith(NEW_PRIVATE, { overwrite: true });
     });
 
     it('surfaces the error and does NOT persist locally when the DID shows the swap did not land', async () => {
