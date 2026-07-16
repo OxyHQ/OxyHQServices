@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "Crea el teu compte",
+    "subtitle": "Una identitat per a tot l'ecosistema.",
     "commonsHeadline": "Crea la teva identitat a Commons",
     "commonsExplainer": "Commons és la teva identitat d'Oxy amb autocustòdia completa: una app que funciona a tot arreu.",
     "createInCommons": "Crea la teva identitat a Commons",

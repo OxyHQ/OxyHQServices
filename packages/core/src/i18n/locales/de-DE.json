@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "Erstellen Sie Ihr Konto",
+    "subtitle": "Eine Identität für das gesamte Ökosystem.",
     "commonsHeadline": "Erstellen Sie Ihre Identität in Commons",
     "commonsExplainer": "Commons ist Ihre vollständig selbstverwaltete Oxy-Identität – eine App, überall einsetzbar.",
     "createInCommons": "Erstellen Sie Ihre Identität in Commons",

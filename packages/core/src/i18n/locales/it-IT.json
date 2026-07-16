@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "Crea il tuo account",
+    "subtitle": "Un'unica identità per tutto l'ecosistema.",
     "commonsHeadline": "Crea la tua identità in Commons",
     "commonsExplainer": "Commons è la tua identità Oxy in piena autocustodia: un'unica app, ovunque.",
     "createInCommons": "Crea la tua identità in Commons",

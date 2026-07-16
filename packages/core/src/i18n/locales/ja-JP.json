@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "アカウントを作成",
+    "subtitle": "エコシステム全体で使える1つのアイデンティティ。",
     "commonsHeadline": "Commonsであなたのアイデンティティを作成",
     "commonsExplainer": "Commonsは完全に自己管理できるあなたのOxy IDです。1つのアプリでどこでも使えます。",
     "createInCommons": "Commonsであなたのアイデンティティを作成",

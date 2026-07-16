@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "계정 만들기",
+    "subtitle": "생태계 전체를 위한 하나의 아이덴티티.",
     "commonsHeadline": "Commons에서 나의 아이덴티티 만들기",
     "commonsExplainer": "Commons는 완전한 자기 보관 방식의 Oxy 아이덴티티입니다. 하나의 앱으로 어디서나 사용하세요.",
     "createInCommons": "Commons에서 나의 아이덴티티 만들기",

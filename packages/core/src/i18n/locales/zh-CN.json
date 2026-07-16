@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "创建您的账户",
+    "subtitle": "一个身份，畅行整个生态系统。",
     "commonsHeadline": "在 Commons 中创建您的身份",
     "commonsExplainer": "Commons 是您完全自主保管的 Oxy 身份——一个应用，随处可用。",
     "createInCommons": "在 Commons 中创建您的身份",

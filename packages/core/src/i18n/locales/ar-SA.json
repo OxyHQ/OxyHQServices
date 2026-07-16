@@ -50,6 +50,8 @@
     }
   },
   "signup": {
+    "title": "أنشئ حسابك",
+    "subtitle": "هوية واحدة لكل النظام البيئي.",
     "commonsHeadline": "أنشئ هويتك في Commons",
     "commonsExplainer": "‏Commons هي هوية Oxy الخاصة بك بحفظ ذاتي كامل — تطبيق واحد يعمل في كل مكان.",
     "createInCommons": "أنشئ هويتك في Commons",
