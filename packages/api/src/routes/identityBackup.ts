@@ -19,15 +19,16 @@
  * carry ambient cookies, so this router is mounted without CSRF.
  */
 import { Router, type Request, type Response } from 'express';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
-import { ConflictError, NotFoundError, UnauthorizedError } from '../utils/error';
+import { ConflictError, NotFoundError, UnauthorizedError, BadRequestError } from '../utils/error';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
 import {
   backupUploadRequestSchema,
+  backupLookupIdSchema,
   type BackupUploadRequest,
   type BackupStatusResponse,
   type EncryptedBackupEnvelope,
@@ -185,8 +186,11 @@ router.get(
   '/:lookupId',
   publicRestoreLimiter,
   asyncHandler(async (req: Request, res: Response) => {
-    const rawLookupId = req.params.lookupId;
-    const doc = await IdentityBackup.findOne({ lookupIdHash: lookupIdHashOf(rawLookupId) }).lean();
+    const parsed = backupLookupIdSchema.safeParse(req.params.lookupId);
+    if (!parsed.success) {
+      throw new BadRequestError('Invalid backup locator');
+    }
+    const doc = await IdentityBackup.findOne({ lookupIdHash: lookupIdHashOf(parsed.data) }).lean();
     if (!doc) {
       throw new NotFoundError('Backup not found');
     }

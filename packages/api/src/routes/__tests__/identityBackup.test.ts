@@ -203,6 +203,12 @@ describe('POST /identity/backup', () => {
     expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('rejects a malformed lookupId (not 64 hex chars → 400)', async () => {
+    const res = await request('POST', '/identity/backup', uploadBody({ lookupId: 'not-hex' }));
+    expect(res.status).toBe(400);
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('returns 409 when the lookup hash collides with a different user', async () => {
     // Seed a DIFFERENT user's backup with the same locator hash.
     mockByUser.set('other-user', {
@@ -290,6 +296,12 @@ describe('GET /identity/backup/:lookupId (public restore)', () => {
     // pre-query short-circuit that could leak existence via timing.
     const lastFindOne = mockFindOne.mock.calls.at(-1)?.[0] as { lookupIdHash?: string };
     expect(lastFindOne.lookupIdHash).toBe(sha256Hex('d'.repeat(64)));
+  });
+
+  it('returns 400 for a malformed locator (wrong length / non-hex)', async () => {
+    const res = await request('GET', '/identity/backup/not-a-valid-locator');
+    expect(res.status).toBe(400);
+    expect(mockFindOne).not.toHaveBeenCalled();
   });
 
   it('does not leak whether a DIFFERENT user has a backup (only the exact locator matches)', async () => {

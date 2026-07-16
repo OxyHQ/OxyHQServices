@@ -264,6 +264,7 @@ export type {
 
 export {
     // Schemas — encrypted off-device identity backup (b3 Feature 1)
+    backupLookupIdSchema,
     encryptedBackupEnvelopeSchema,
     backupUploadRequestSchema,
     backupStatusResponseSchema,

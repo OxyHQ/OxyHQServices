@@ -29,6 +29,12 @@
  */
 import { z } from 'zod';
 
+/** 256-bit backup locator (32 bytes), lowercase/uppercase hex. */
+export const backupLookupIdSchema = z
+    .string()
+    .trim()
+    .regex(/^[0-9a-fA-F]{64}$/, 'lookupId must be 64 hex characters');
+
 /**
  * The stored, self-describing encrypted backup as it lives at rest and travels
  * on the public restore endpoint. Contains NO secret and NO locator: the
@@ -73,7 +79,7 @@ export const backupUploadRequestSchema = encryptedBackupEnvelopeSchema.extend({
      * with a domain-separated HKDF `info`. The server stores ONLY its sha256; a
      * DB dump therefore cannot recompute a locator to enumerate backups.
      */
-    lookupId: z.string().trim().min(1),
+    lookupId: backupLookupIdSchema,
 });
 
 export type BackupUploadRequest = z.infer<typeof backupUploadRequestSchema>;
