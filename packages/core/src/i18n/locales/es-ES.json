@@ -72,6 +72,9 @@
     "backToSignInLink": "¿Ya tienes cuenta? Inicia sesión",
     "hubExplainer": "Crea tu Oxy ID en una ventana segura y vuelve enseguida.",
     "continueInWindow": "Continuar en una ventana nueva",
+    "toasts": {
+      "passkeyCreateFailed": "No pudimos crear tu cuenta. Inténtalo de nuevo."
+    },
     "welcome": {
       "title": "¡Te damos la bienvenida a Oxy!",
       "subtitle": "Crea tu cuenta en pocos pasos",
@@ -572,6 +575,7 @@
     "toasts": {
       "switchSuccess": "¡Cuenta cambiada correctamente!",
       "switchFailed": "Hubo un problema al cambiar de cuenta. Inténtalo de nuevo.",
+      "passkeySignInFailed": "No se pudo iniciar sesión con la llave de acceso. Inténtalo de nuevo.",
       "removeSuccess": "¡Cuenta eliminada correctamente!",
       "removeFailed": "Hubo un problema al eliminar la cuenta. Inténtalo de nuevo.",
       "signOutAllSuccess": "¡Todas las cuentas cerradas correctamente!",

@@ -61,6 +61,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Button } from '@oxyhq/bloom/button';
+import { toast } from '@oxyhq/bloom';
 import { Text } from '@oxyhq/bloom/typography';
 import {
   useTheme,
@@ -154,44 +155,45 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
   const passkeyAvailable = passkeyMode !== 'none';
 
   const [signInPasskeyPending, setSignInPasskeyPending] = useState(false);
-  const [signInPasskeyError, setSignInPasskeyError] = useState<string | null>(null);
   const handleSignInWithPasskey = useCallback(async () => {
     if (signInPasskeyPending) return;
     setSignInPasskeyPending(true);
-    setSignInPasskeyError(null);
     try {
       await signInWithPasskey();
       onComplete?.();
     } catch (error) {
       // A cancelled/failed ceremony keeps the view open so the user can retry
-      // or fall back to the QR — surface a concise message, never swallow.
-      setSignInPasskeyError(
-        error instanceof Error && error.message ? error.message : 'Passkey sign-in failed.',
+      // or fall back to the QR — surface the reason as a toast (owner mandate:
+      // errors never render inline inside the dialog), never swallow.
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : t('accountSwitcher.toasts.passkeySignInFailed') || 'Passkey sign-in failed.',
       );
     } finally {
       setSignInPasskeyPending(false);
     }
-  }, [signInPasskeyPending, signInWithPasskey, onComplete]);
+  }, [signInPasskeyPending, signInWithPasskey, onComplete, t]);
 
   const [createPasskeyPending, setCreatePasskeyPending] = useState(false);
-  const [createPasskeyError, setCreatePasskeyError] = useState<string | null>(null);
   const handleCreateWithPasskey = useCallback(
     async (username: string) => {
       if (createPasskeyPending) return;
       setCreatePasskeyPending(true);
-      setCreatePasskeyError(null);
       try {
         await registerWithPasskey({ username });
         onComplete?.();
       } catch (error) {
-        setCreatePasskeyError(
-          error instanceof Error && error.message ? error.message : 'Account creation failed.',
+        toast.error(
+          error instanceof Error && error.message
+            ? error.message
+            : t('signup.toasts.passkeyCreateFailed') || 'Account creation failed.',
         );
       } finally {
         setCreatePasskeyPending(false);
       }
     },
-    [createPasskeyPending, registerWithPasskey, onComplete],
+    [createPasskeyPending, registerWithPasskey, onComplete, t],
   );
 
   // Bind the headless controller. `getSnapshot` returns a stable reference
@@ -234,20 +236,28 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
       setSwitching(true);
       try {
         await controller.switchTo(accountId);
-        // A switch succeeds unless the controller recorded an error. On success
-        // reload the app's account graph and drop cached account-scoped data so
-        // the new active identity re-fetches — the same side effects the
-        // context's own `switchToAccount` performs.
-        if (!controller.getSnapshot().error) {
-          void refreshAccounts();
-          queryClient.invalidateQueries();
-          onComplete?.();
+        // `switchTo` never throws — it records a failure on the controller's
+        // snapshot. Read it back at the point the switch settles and surface it
+        // as a toast (event-driven, at the failure site — NOT an inline banner
+        // and NOT a snapshot-reaction). On success reload the app's account
+        // graph and drop cached account-scoped data so the new active identity
+        // re-fetches — the same side effects the context's own
+        // `switchToAccount` performs.
+        if (controller.getSnapshot().error) {
+          toast.error(
+            t('accountSwitcher.toasts.switchFailed') ||
+              'There was a problem switching accounts. Please try again.',
+          );
+          return;
         }
+        void refreshAccounts();
+        queryClient.invalidateQueries();
+        onComplete?.();
       } finally {
         setSwitching(false);
       }
     },
-    [controller, switching, snapshot.activeAccountId, onComplete, refreshAccounts, queryClient],
+    [controller, switching, snapshot.activeAccountId, onComplete, refreshAccounts, queryClient, t],
   );
 
   const handleManage = useCallback(() => {
@@ -287,11 +297,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
             ? () => void handleSignInWithPasskey()
             : () => void controller.startPasskeyHubSignIn()
         }
-        // The hub-popup flow's pending/error state is `snapshot.signIn`
-        // (already rendered elsewhere in this view) — only the DIRECT ceremony
-        // uses this component-local pair.
+        // The hub-popup flow's pending state is `snapshot.signIn` (already
+        // rendered elsewhere in this view) — only the DIRECT ceremony uses this
+        // component-local pending flag. A ceremony FAILURE is surfaced as a
+        // toast by `handleSignInWithPasskey`, never inline.
         passkeyPending={passkeyMode === 'direct' ? signInPasskeyPending : false}
-        passkeyError={passkeyMode === 'direct' ? signInPasskeyError : null}
         onCreateAccount={() => controller.startSignup()}
       />
     );
@@ -307,7 +317,6 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
         passkeyMode={passkeyMode}
         onCreateWithPasskey={handleCreateWithPasskey}
         createPending={createPasskeyPending}
-        createError={createPasskeyError}
         onOpenHub={() => void controller.startPasskeyHubSignIn()}
         onBackToSignIn={() => controller.setView('signin')}
       />
@@ -331,22 +340,6 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
 // Accounts view
 // ---------------------------------------------------------------------------
 
-/**
- * Inline error banner for `snapshot.error` (the account-list / switch-failure
- * error — distinct from `snapshot.signIn.error`, which `QrView` already
- * renders). `AccountsView` and `SignInView` previously swallowed it: a
- * blocked/failed switch left the user with no feedback outside the QR view.
- */
-const ErrorBanner: React.FC<{ error: string | null; theme: Theme }> = ({ error, theme }) => {
-  if (!error) return null;
-  return (
-    <View style={[styles.errorBanner, { backgroundColor: theme.colors.negativeSubtle }]}>
-      <MaterialCommunityIcons name="alert-circle-outline" size={18} color={theme.colors.error} />
-      <Text style={[styles.errorBannerText, { color: theme.colors.error }]}>{error}</Text>
-    </View>
-  );
-};
-
 interface AccountsViewProps {
   snapshot: AccountDialogSnapshot;
   theme: Theme;
@@ -368,7 +361,6 @@ const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handler
 
   return (
     <View style={styles.rows}>
-      <ErrorBanner error={snapshot.error} theme={theme} />
       {snapshot.accounts.map((account) => (
         <AccountRow
           key={account.accountId}
@@ -490,7 +482,6 @@ const SignInView: React.FC<SignInViewProps> = ({
   onCreateAccount,
 }) => (
   <View style={styles.signInBlock}>
-    <ErrorBanner error={snapshot.error} theme={theme} />
     {snapshot.accounts.length > 0 ? (
       <View style={styles.rows}>
         {snapshot.accounts.map((account) => (
@@ -571,7 +562,6 @@ interface QrViewProps {
   passkeyAvailable: boolean;
   onSignInWithPasskey: () => void;
   passkeyPending: boolean;
-  passkeyError: string | null;
   onCreateAccount: () => void;
 }
 
@@ -583,32 +573,28 @@ const QrView: React.FC<QrViewProps> = ({
   passkeyAvailable,
   onSignInWithPasskey,
   passkeyPending,
-  passkeyError,
   onCreateAccount,
 }) => {
   const { signIn, commonsAvailability } = snapshot;
   const [showQrAnyway, setShowQrAnyway] = useState(false);
 
+  // A ceremony FAILURE is surfaced as a toast by `handleSignInWithPasskey` — the
+  // link itself never renders an inline error (owner mandate).
   const passkeyLink =
     passkeyAvailable && signIn.phase !== 'authorized' ? (
-      <>
-        <Pressable
-          onPress={onSignInWithPasskey}
-          disabled={passkeyPending}
-          accessibilityRole="button"
-          style={styles.footerLink}
-          testID="passkey-signin-link"
-        >
-          <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>
-            {passkeyPending
-              ? t('accountSwitcher.passkeySigningIn') || 'Signing in…'
-              : t('accountSwitcher.useIdentityOnDevice') || 'No Commons? Use a passkey on this device instead'}
-          </Text>
-        </Pressable>
-        {passkeyError ? (
-          <Text style={[styles.errorText, { color: theme.colors.error }]}>{passkeyError}</Text>
-        ) : null}
-      </>
+      <Pressable
+        onPress={onSignInWithPasskey}
+        disabled={passkeyPending}
+        accessibilityRole="button"
+        style={styles.footerLink}
+        testID="passkey-signin-link"
+      >
+        <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>
+          {passkeyPending
+            ? t('accountSwitcher.passkeySigningIn') || 'Signing in…'
+            : t('accountSwitcher.useIdentityOnDevice') || 'No Commons? Use a passkey on this device instead'}
+        </Text>
+      </Pressable>
     ) : null;
 
   // Native, Commons confirmed NOT installed: a same-device QR is a dead
@@ -690,7 +676,10 @@ const QrView: React.FC<QrViewProps> = ({
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken';
 
 /** Debounced username-availability check over the existing SDK method. */
-function useUsernameAvailability(oxyServices: OxyServices): {
+function useUsernameAvailability(
+  oxyServices: OxyServices,
+  t: Translate,
+): {
   status: UsernameStatus;
   check: (value: string) => void;
 } {
@@ -716,11 +705,16 @@ function useUsernameAvailability(oxyServices: OxyServices): {
           })
           .catch(() => {
             if (seq !== requestSeqRef.current) return;
-            setStatus('idle'); // network/error — don't block on a stale verdict
+            // Reset the (now stale) verdict rather than block on it, and surface
+            // the failure as a toast — never an inline error inside the dialog.
+            setStatus('idle');
+            toast.error(
+              t('accounts.create.username.checkFailed') || 'Could not check availability',
+            );
           });
       }, 400);
     },
-    [oxyServices],
+    [oxyServices, t],
   );
 
   return { status, check };
@@ -761,7 +755,6 @@ interface SignUpViewProps {
   passkeyMode: 'direct' | 'hub' | 'none';
   onCreateWithPasskey: (username: string) => Promise<void>;
   createPending: boolean;
-  createError: string | null;
   /** Open the auth.oxy.so hub popup (b2) — the 'hub' mode's only path. */
   onOpenHub: () => void;
   onBackToSignIn: () => void;
@@ -775,12 +768,11 @@ const SignUpView: React.FC<SignUpViewProps> = ({
   passkeyMode,
   onCreateWithPasskey,
   createPending,
-  createError,
   onOpenHub,
   onBackToSignIn,
 }) => {
   const [username, setUsername] = useState('');
-  const { status: usernameStatus, check: checkUsername } = useUsernameAvailability(oxyServices);
+  const { status: usernameStatus, check: checkUsername } = useUsernameAvailability(oxyServices, t);
   const canSubmit = username.trim().length >= 3 && usernameStatus === 'available' && !createPending;
 
   // Native — Commons owns identity creation. Mirrors the QR view's own
@@ -851,9 +843,6 @@ const SignUpView: React.FC<SignUpViewProps> = ({
           testID="signup-username-input"
         />
         <UsernameStatusText status={usernameStatus} theme={theme} t={t} />
-        {createError ? (
-          <Text style={[styles.errorText, { color: theme.colors.error }]}>{createError}</Text>
-        ) : null}
         <Button
           variant="secondary"
           onPress={() => void onCreateWithPasskey(username.trim())}
