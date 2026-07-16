@@ -66,8 +66,13 @@ export function decodeToken(token: string): TokenDecoded | null {
  */
 export function normalizeUser(user: any): NormalizedUser | null {
   if (!user) return null;
-  
-  const userId = user._id?.toString() || user.id?.toString();
+
+  const publicKey = user.publicKey?.toString();
+  const fromObjectId = user._id?.toString();
+  const fallbackId = user.id?.toString();
+  const userId =
+    fromObjectId ||
+    (fallbackId && fallbackId !== publicKey ? fallbackId : undefined);
   if (!userId) return null;
   
   const userObj = user.toObject ? user.toObject() : (typeof user === 'object' && user !== null ? user : {});

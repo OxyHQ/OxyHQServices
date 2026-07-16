@@ -109,7 +109,11 @@ function resolveIdentityId(source: UserIdentitySource): string | undefined {
   const rawId = source._id;
   const fromObjectId = rawId == null ? '' : (rawId as { toString(): string }).toString();
   const fallback = typeof source.id === 'string' ? source.id : '';
-  return fromObjectId || fallback || undefined;
+  const publicKey = typeof source.publicKey === 'string' ? source.publicKey : '';
+  // Reject legacy schema transforms that folded publicKey into `id` once `_id`
+  // was stripped — the social graph keys on ObjectId, never the key material.
+  const safeFallback = fallback && fallback === publicKey ? '' : fallback;
+  return fromObjectId || safeFallback || undefined;
 }
 
 /** Narrow a raw `name` value to the structured `NameParts` the composer reads. */

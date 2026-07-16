@@ -95,6 +95,19 @@ describe('shared identity base — all three user-DTO serializers agree', () => 
     expect(privateDto.avatar).toBe(publicDto.avatar);
     expect(privateDto.name).toEqual(publicDto.name);
   });
+
+  it('rejects legacy schema-transform ids that folded publicKey into id', () => {
+    const transformed = {
+      id: input.publicKey,
+      publicKey: input.publicKey,
+      username: input.username,
+      name: input.name,
+      avatar: input.avatar,
+    };
+
+    expect(userIdentityFields(transformed).id).toBeUndefined();
+    expect(formatUserResponse(transformed)).toBeNull();
+  });
 });
 
 describe('shared deriveIsFederated — the public and recommendation serializers agree', () => {

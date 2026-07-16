@@ -5,6 +5,7 @@ import { sanitizeSearchQuery } from '../utils/sanitize';
 import { validate } from '../middleware/validate';
 import { searchQuerySchema } from '../schemas/search.schemas';
 import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
+import { formatUserResponse } from '../utils/userTransform';
 
 const router = express.Router();
 
@@ -32,19 +33,18 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
           { 'name.first': searchQuery },
           { 'name.last': searchQuery },
           { description: searchQuery },
-          { location: searchQuery }
+          { 'locations.name': searchQuery },
+          { 'locations.address.city': searchQuery },
+          { 'locations.address.country': searchQuery },
         ]
       })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .skip(skip)
       .limit(limit);
 
-      results.users = users.map(user => ({
-        ...user.toObject(),
-        name: user.name || { first: '', last: '' },
-        description: user.description || '',
-        avatar: user.avatar || ''
-      }));
+      results.users = users
+        .map((user) => formatUserResponse(user))
+        .filter((user): user is NonNullable<typeof user> => user !== null);
       results.pagination.hasMore = users.length === limit;
     }
 

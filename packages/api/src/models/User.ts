@@ -799,8 +799,9 @@ UserSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey or fallback to _id
-    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    // DTO `id` is the stable Mongo ObjectId — NEVER the publicKey. Social graph
+    // edges, posts, and client follow maps all key on `_id`.
+    ret.id = ret._id?.toString() || ret.id;
     delete ret.password;
     delete ret._id;
     // Strip contact-discovery internals — these must never leak to clients.
@@ -813,8 +814,9 @@ UserSchema.set("toJSON", {
 UserSchema.set("toObject", {
   virtuals: true,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey or fallback to _id
-    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    // DTO `id` is the stable Mongo ObjectId — NEVER the publicKey. Social graph
+    // edges, posts, and client follow maps all key on `_id`.
+    ret.id = ret._id?.toString() || ret.id;
     delete ret.password;
     delete ret._id;
     // Strip contact-discovery internals — these must never leak to clients.
