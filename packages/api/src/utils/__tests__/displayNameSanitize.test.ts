@@ -1,7 +1,7 @@
+import { isValidDisplayName } from '@oxyhq/core';
 import {
   MAX_DISPLAY_NAME_LENGTH,
   cleanDisplayName,
-  isValidDisplayName,
 } from '../displayNameSanitize';
 
 // Every non-ASCII fixture is spelled out with explicit \u escapes so its exact
@@ -30,6 +30,15 @@ const THAI = 'กิ';
 const ARABIC_MARKS = 'مُحَمَد';
 const HEART = '❤'; // heavy black heart, General_Category So (symbol)
 const VS16 = '️'; // VARIATION SELECTOR-16, General_Category Mn (combining)
+// Batak letter (U+1BC5) — General_Category Lo (`\p{L}`), so it passed the old
+// all-scripts policy, but Batak is a Limited-Use script not on the allowlist.
+const BATAK = 'ᯅ'; // ᯅ
+// Extra allowlisted scripts for real-name coverage.
+const GREEK = 'Αριστοτέλης';
+const ARMENIAN = 'Արամ';
+const GEORGIAN = 'დავით';
+const CHEROKEE = 'ᏔᎳ';
+const KHMER = 'សុខ';
 
 describe('displayNameSanitize', () => {
   describe('cleanDisplayName — user-reported examples', () => {
@@ -38,12 +47,20 @@ describe('displayNameSanitize', () => {
       [`${RAMEE} ${EARTH_GROUND}`, RAMEE],
       ['Laura :bongoCat:', 'Laura'],
       [`nixCraft ${PENGUIN}`, 'nixCraft'],
+      [`Miguel de Icaza ${BATAK}`, 'Miguel de Icaza'],
     ])('cleans %p → %p', (input, expected) => {
       expect(cleanDisplayName(input)).toBe(expected);
     });
 
     it('returns empty string for an emoji-only name', () => {
       expect(cleanDisplayName(PENGUIN)).toBe('');
+    });
+
+    it('strips a non-allowlisted (Batak) letter that is nonetheless \\p{L}', () => {
+      // U+1BC5 is General_Category Lo, so the old `\p{L}` policy kept it; the
+      // curated script allowlist excludes Batak, so it is now stripped.
+      expect(BATAK).toHaveLength(1);
+      expect(cleanDisplayName(BATAK)).toBe('');
     });
   });
 
@@ -116,6 +133,16 @@ describe('displayNameSanitize', () => {
 
     it('preserves Arabic harakat attached to base letters', () => {
       expect(cleanDisplayName(ARABIC_MARKS)).toBe(ARABIC_MARKS);
+    });
+
+    it.each([
+      [GREEK, 'Greek'],
+      [ARMENIAN, 'Armenian'],
+      [GEORGIAN, 'Georgian'],
+      [CHEROKEE, 'Cherokee'],
+      [KHMER, 'Khmer'],
+    ])('keeps allowlisted-script name %p (%s) unchanged', (name) => {
+      expect(cleanDisplayName(name)).toBe(name);
     });
   });
 
@@ -225,6 +252,11 @@ describe('displayNameSanitize', () => {
       DEVANAGARI,
       THAI,
       ARABIC_MARKS,
+      GREEK,
+      ARMENIAN,
+      GEORGIAN,
+      CHEROKEE,
+      KHMER,
     ])('returns true for clean name %p', (name) => {
       expect(isValidDisplayName(name)).toBe(true);
     });
@@ -237,6 +269,8 @@ describe('displayNameSanitize', () => {
       ORPHAN_PAIR,
       TIBETAN_MARK,
       `${TIBETAN_MARK}Anna`,
+      BATAK,
+      `Miguel de Icaza ${BATAK}`,
     ])('returns false for dirty name %p', (name) => {
       expect(isValidDisplayName(name)).toBe(false);
     });

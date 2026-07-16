@@ -148,11 +148,38 @@ describe('Validation Utils', () => {
       expect(isValidDisplayName('')).toBe(true); // empty is valid; non-empty enforced elsewhere
     });
 
+    it.each([
+      ['Владимир', 'Cyrillic'],
+      ['مُحَمَد', 'Arabic with harakat'],
+      ['נתן', 'Hebrew'],
+      ['नमस्ते', 'Devanagari'],
+      ['김철수', 'Hangul'],
+      ['Αριστοτέλης', 'Greek'],
+      ['Արամ', 'Armenian'],
+      ['დავით', 'Georgian'],
+      ['สมชาย', 'Thai'],
+      ['ᏔᎳ', 'Cherokee'],
+      ['ᠮᠣᠩᠭᠣᠯ', 'Mongolian'],
+    ])('should return true for allowlisted-script real name %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
+    });
+
     it('should return false for emoji, symbols, digits, and punctuation', () => {
       expect(isValidDisplayName('nixCraft \u{1f427}')).toBe(false); // penguin emoji
       expect(isValidDisplayName('Agent007')).toBe(false);
       expect(isValidDisplayName('Jean-Luc')).toBe(false);
       expect(isValidDisplayName('J.R.')).toBe(false);
+    });
+
+    it.each([
+      ['ᯅ', 'Batak U+1BC5 (Limited-Use script)'],
+      ['ᚠ', 'Runic'],
+      ['Miguel de Icaza ᯅ', 'a Latin name with a trailing Batak letter'],
+    ])('should return false for non-allowlisted-script letter %p (%s)', (name) => {
+      // These characters are General_Category Lo (`\p{L}`), so the old
+      // all-scripts policy accepted them; the curated script allowlist rejects
+      // decorative / limited-use scripts a real name never uses.
+      expect(isValidDisplayName(name)).toBe(false);
     });
 
     it('should return false for control whitespace (tab/newline/CR)', () => {

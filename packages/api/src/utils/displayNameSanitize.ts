@@ -2,7 +2,10 @@
  * Display-name character policy.
  *
  * A clean display name is composed ONLY of:
- *   - letters of any script (`\p{L}`),
+ *   - letters from the curated ALLOWLIST of scripts real names use — NOT `\p{L}`
+ *     (letters of ANY script), which admits decorative / historic / limited-use
+ *     scripts whose characters are `\p{L}` yet never appear in a real name (e.g.
+ *     `ᯅ` U+1BC5 Batak, Runic, Deseret, dingbat letters),
  *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
  *     "é"),
  *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
@@ -11,16 +14,23 @@
  *   - the straight apostrophe (`'`, e.g. "O'Brien").
  *
  * Everything else is removed: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
- * digits, hyphens, dots, control whitespace (tab/newline/CR), and any other
- * punctuation.
+ * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
+ * non-allowlisted scripts, and any other punctuation.
+ *
+ * The character policy is NOT re-derived here: the allowlist and its patterns
+ * are the ONE source of truth in `@oxyhq/core` `validationUtils.ts`
+ * (`DISPLAY_NAME_DISALLOWED_SOURCE`, `DISPLAY_NAME_ORPHANED_MARK_SOURCE`). This
+ * module imports those sources and compiles the global-flag variants it needs to
+ * STRIP, so the strip path here and the core reject path (`isValidDisplayName`)
+ * can never drift.
  *
  * XSS reasoning
  * -------------
- * The allowed set `\p{L}\p{M}\p{Zs}'` explicitly EXCLUDES `<`, `>`, `&`, and `"`,
- * so the output of {@link cleanDisplayName} can never contain an HTML/XSS
- * vector — there is simply no character in the output that can open a tag, an
- * entity, or an attribute. The only special character that survives is the
- * straight apostrophe `'`, which is inert in text and JSON and is escaped by
+ * The allowed set never includes `<`, `>`, `&`, or `"`, so the output of
+ * {@link cleanDisplayName} can never contain an HTML/XSS vector — there is
+ * simply no character in the output that can open a tag, an entity, or an
+ * attribute. The only special character that survives is the straight
+ * apostrophe `'`, which is inert in text and JSON and is escaped by
  * React / React Native at render time. That is why federated write sites
  * replace `sanitizeHtml(...)` with `cleanDisplayName(...)` for the NAME field:
  * `sanitizeHtml` would turn `O'Brien` into `O&#x27;Brien` (which then renders
@@ -32,7 +42,11 @@
  * cap).
  */
 
-import { normalizeInlineText } from '@oxyhq/core';
+import {
+  DISPLAY_NAME_DISALLOWED_SOURCE,
+  DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+  normalizeInlineText,
+} from '@oxyhq/core';
 
 /** Maximum stored length of a display name, in code units after cleaning. */
 export const MAX_DISPLAY_NAME_LENGTH = 80;
@@ -41,15 +55,13 @@ export const MAX_DISPLAY_NAME_LENGTH = 80;
 const SHORTCODE_PATTERN = /:[A-Za-z0-9_+-]+:/g;
 
 /**
- * Matches any character NOT allowed in a display name (global, Unicode). The
- * whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the latter
- * would admit tab/newline/carriage return, which break layout and enable
+ * Matches any character NOT allowed in a display name (global, Unicode),
+ * compiled from the core allowlist source so it can never drift from the reject
+ * gate. The whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the
+ * latter would admit tab/newline/carriage return, which break layout and enable
  * multi-line spoofing.
  */
-const DISALLOWED_PATTERN = /[^\p{L}\p{M}\p{Zs}']/gu;
-
-/** Single test for the presence of a disallowed character (non-global). */
-const DISALLOWED_PROBE = /[^\p{L}\p{M}\p{Zs}']/u;
+const DISALLOWED_PATTERN = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'gu');
 
 /**
  * Matches a run of combining marks (`\p{M}`) that is NOT attached to a base
@@ -58,17 +70,15 @@ const DISALLOWED_PROBE = /[^\p{L}\p{M}\p{Zs}']/u;
  * or a position vacated by a stripped character). The whole orphaned run is
  * removed. A mark preceded by `\p{L}` (a base letter, e.g. the decomposed
  * accent in "Renée") or by another `\p{M}` (a multi-mark cluster) is KEPT
- * because the negative lookbehind fails at its position.
+ * because the negative lookbehind fails at its position. Compiled (global) from
+ * the same core source as the reject gate.
  *
  * This catches lone Tibetan/diacritic marks (e.g. U+0F18 in `"༘⋆"`) and the
  * trailing variation selector (U+FE0F) left behind after an emoji base such as
  * U+2764 (❤) is stripped, both of which would otherwise survive the
  * `\p{M}`-friendly policy as meaningless garbage.
  */
-const ORPHANED_MARK_PATTERN = /(?<![\p{L}\p{M}])\p{M}+/gu;
-
-/** Single test for the presence of an orphaned combining mark (non-global). */
-const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
+const ORPHANED_MARK_PATTERN = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'gu');
 
 /**
  * Produce a clean display name from arbitrary (possibly federated/untrusted)
@@ -106,25 +116,4 @@ export function cleanDisplayName(raw: string): string {
     return collapsed;
   }
   return collapsed.slice(0, MAX_DISPLAY_NAME_LENGTH).trim();
-}
-
-/**
- * Whether `raw` already satisfies the display-name policy, i.e. it contains no
- * disallowed characters AND no orphaned combining marks. Used to REJECT native
- * (signup / profile edit) names with a 400 rather than silently stripping them.
- *
- * This mirrors {@link cleanDisplayName}: a value that the cleaner would alter
- * (beyond whitespace collapsing) is invalid here. The orphaned-mark probe runs
- * on the NFC-normalized form so a legitimate decomposed accent (`e`+◌́) — which
- * the cleaner recomposes into `é` — is NOT rejected, while a lone, base-less
- * mark (e.g. `"༘"`) IS.
- *
- * The function only checks the character set; an empty or whitespace-only
- * string is considered valid (`true`). Call sites that require a non-empty name
- * enforce that separately.
- */
-export function isValidDisplayName(raw: string): boolean {
-  return (
-    !DISALLOWED_PROBE.test(raw) && !ORPHANED_MARK_PROBE.test(raw.normalize('NFC'))
-  );
 }

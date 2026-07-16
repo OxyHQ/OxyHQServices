@@ -43,7 +43,11 @@ export function isValidPassword(password: string): boolean {
  * Display-name character policy.
  *
  * A clean display name is composed ONLY of:
- *   - letters of any script (`\p{L}`),
+ *   - letters from a curated ALLOWLIST of scripts that real names use
+ *     ({@link DISPLAY_NAME_ALLOWED_SCRIPTS}) — NOT `\p{L}` (letters of ANY
+ *     script), which admits decorative / historic / limited-use scripts whose
+ *     characters are `\p{L}` yet never appear in a real name (e.g. `ᯅ` U+1BC5
+ *     Batak, Runic, Deseret, dingbat letters),
  *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
  *     "é"),
  *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
@@ -52,34 +56,71 @@ export function isValidPassword(password: string): boolean {
  *   - the straight apostrophe (`'`, e.g. "O'Brien").
  *
  * Everything else is rejected: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
- * digits, hyphens, dots, control whitespace (tab/newline/CR), and any other
- * punctuation. The allowed set `\p{L}\p{M}\p{Zs}'` explicitly EXCLUDES `<`, `>`,
- * `&`, and `"`, so a value that passes this predicate can never contain an
- * HTML/XSS vector.
+ * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
+ * non-allowlisted scripts, and any other punctuation. The allowed set never
+ * includes `<`, `>`, `&`, or `"`, so a value that passes this predicate can
+ * never contain an HTML/XSS vector.
  *
- * This is the SINGLE definition of the policy, shared between the API 400-gate
- * (`@oxyhq/api` `displayNameSanitize.ts`) and client-side inline validation
- * (the RN profile editor) so the two can never drift. It is platform-agnostic
+ * The allowlist is expressed with Unicode Script_Extensions (`\p{scx=…}`)
+ * escapes so a letter shared by several scripts (e.g. a Han ideograph used in
+ * both Chinese and Japanese) still matches. It is the set of scripts Unicode
+ * UTS #39 marks "Recommended" for general interchange / identifiers, plus
+ * Cherokee and Mongolian (both in real modern name use). "Common" script is
+ * deliberately EXCLUDED — that is where ASCII digits and general punctuation
+ * live, and this policy excludes those; the space separators, combining marks,
+ * and apostrophe a name needs are added back explicitly. Limited-use / excluded
+ * / historic scripts (Batak, Runic, Deseret, Adlam, …) are simply absent.
+ *
+ * This is the SINGLE definition of the policy: the character-class sources below
+ * are the ONE source of truth, shared between the API strip/gate
+ * (`@oxyhq/api` `displayNameSanitize.ts` builds its global-flag patterns from
+ * them) and client-side inline validation (the RN profile editor via
+ * {@link isValidDisplayName}) so the two can never drift. It is platform-agnostic
  * (no react/react-native/expo).
  */
 
 /**
- * Single test for the presence of a disallowed character (non-global). The
- * whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the latter
- * would admit tab/newline/carriage return, which break layout and enable
- * multi-line spoofing.
+ * The curated allowlist of Unicode scripts permitted in a display name, as a
+ * character-class body of Script_Extensions (`scx`) property escapes. Ordered by
+ * rough script family for readability; order has no semantic effect.
  */
-const DISALLOWED_PROBE = /[^\p{L}\p{M}\p{Zs}']/u;
+export const DISPLAY_NAME_ALLOWED_SCRIPTS =
+  '\\p{scx=Latin}\\p{scx=Greek}\\p{scx=Cyrillic}\\p{scx=Armenian}' +
+  '\\p{scx=Hebrew}\\p{scx=Arabic}\\p{scx=Thaana}\\p{scx=Devanagari}' +
+  '\\p{scx=Bengali}\\p{scx=Gurmukhi}\\p{scx=Gujarati}\\p{scx=Oriya}' +
+  '\\p{scx=Tamil}\\p{scx=Telugu}\\p{scx=Kannada}\\p{scx=Malayalam}' +
+  '\\p{scx=Sinhala}\\p{scx=Thai}\\p{scx=Lao}\\p{scx=Tibetan}' +
+  '\\p{scx=Myanmar}\\p{scx=Georgian}\\p{scx=Hangul}\\p{scx=Ethiopic}' +
+  '\\p{scx=Cherokee}\\p{scx=Khmer}\\p{scx=Mongolian}\\p{scx=Hiragana}' +
+  '\\p{scx=Katakana}\\p{scx=Bopomofo}\\p{scx=Han}';
 
 /**
- * Single test for the presence of an orphaned combining mark (non-global) — a
- * `\p{M}` not attached to a base letter (string start, whitespace, the
- * apostrophe, or a position vacated by a stripped character). A mark preceded by
- * `\p{L}` (a base letter, e.g. the decomposed accent in "Renée") or by another
- * `\p{M}` (a multi-mark cluster) is NOT matched because the negative lookbehind
- * fails at its position.
+ * Source of the disallowed-character pattern: the negation of the full allowed
+ * set (allowlisted scripts + combining marks `\p{M}` + space separators `\p{Zs}`
+ * + the straight apostrophe). Consumers compile this with the `u` flag (and `g`
+ * for a global strip). The whitespace class is `\p{Zs}` (space separators only),
+ * NOT `\s` — the latter would admit tab/newline/carriage return, which break
+ * layout and enable multi-line spoofing.
  */
-const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
+export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}\\p{M}\\p{Zs}']`;
+
+/**
+ * Source of the orphaned combining-mark pattern: a run of `\p{M}` NOT attached
+ * to a base letter (preceded by string start, whitespace, the apostrophe, or a
+ * position vacated by a stripped character). A mark preceded by `\p{L}` (a base
+ * letter, e.g. the decomposed accent in "Renée") or by another `\p{M}` (a
+ * multi-mark cluster) is NOT matched because the negative lookbehind fails at its
+ * position. Used both as a non-global probe (`.test`) and, with the `g` flag, to
+ * strip whole orphaned runs. The lookbehind intentionally still uses the broad
+ * `\p{L}` so that a mark riding on an allowlisted base letter is preserved.
+ */
+export const DISPLAY_NAME_ORPHANED_MARK_SOURCE = '(?<![\\p{L}\\p{M}])\\p{M}+';
+
+/** Non-global probe for the presence of a disallowed character. */
+const DISALLOWED_PROBE = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'u');
+
+/** Non-global probe for the presence of an orphaned combining mark. */
+const ORPHANED_MARK_PROBE = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'u');
 
 /**
  * Whether `raw` already satisfies the display-name policy, i.e. it contains no
