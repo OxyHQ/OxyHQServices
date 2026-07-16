@@ -9,6 +9,7 @@ import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesIdentityMixin } from './OxyServices.identity';
+import { OxyServicesIdentityBackupMixin } from './OxyServices.identityBackup';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
@@ -43,6 +44,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesIdentityMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesIdentityBackupMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLanguageMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
@@ -98,6 +100,9 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesUserMixin,
     // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping)
     OxyServicesIdentityMixin,
+    // Encrypted off-device identity backup (b3 Feature 1): store/restore an
+    // encrypted copy of the self-custody key, keyed off the recovery phrase.
+    OxyServicesIdentityBackupMixin,
     OxyServicesPrivacyMixin,
 
     // Feature mixins

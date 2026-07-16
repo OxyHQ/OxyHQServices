@@ -47,6 +47,7 @@ import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
+import identityBackupRoutes from './routes/identityBackup';
 import civicRoutes from './routes/civic';
 import nodeRoutes from './routes/nodes';
 import { sweepValidations } from './services/civic/validator.service';
@@ -563,6 +564,11 @@ app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 // csrfProtection — Bearer-authenticated service writes are exempt (no ambient
 // cookie credentials), per the bearer-write CSRF rule.
 app.use('/app-signals', appSignalsRouter);
+// Encrypted off-device identity backup (b3 Feature 1). Mixed private (bearer
+// upsert/status/delete) + public (restore-by-locator) routes; each gates its own
+// auth, so no csrfProtection (bearer-write CSRF rule + public GET). Mounted
+// BEFORE `/identity` so the more specific `/identity/backup` prefix wins.
+app.use('/identity/backup', identityBackupRoutes);
 // Self-sovereign identity layer: signed records + verified-domain badges.
 // Mixed public/private routes (each gates its own auth); writes are
 // Bearer-authenticated, so no csrfProtection (bearer-write CSRF rule).

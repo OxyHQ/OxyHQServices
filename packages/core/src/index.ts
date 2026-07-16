@@ -245,7 +245,7 @@ export type { KeyPair } from './crypto/keyManager';
 export { SignatureService } from './crypto/signatureService';
 export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
-export type { RecoveryPhraseResult, PendingIdentityResult } from './crypto/recoveryPhrase';
+export type { RecoveryPhraseResult, PendingIdentityResult, BackupMaterial } from './crypto/recoveryPhrase';
 
 // Low-level crypto primitives (b3 Phase 0 — encrypted backup + device transfer)
 export { hkdfSha256 } from './crypto/kdf';
