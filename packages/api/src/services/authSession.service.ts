@@ -133,10 +133,14 @@ export async function authorizeSessionWithSignedChallenge(
   const { authorizeCode, publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint, req } = options;
 
   // 1. Validate + cryptographically verify + atomically burn the challenge.
+  //    Scope to signin-purpose challenges (default, or legacy docs predating the
+  //    `purpose` field) so a `rotate_key` challenge can NOT be spent to mint a
+  //    session — the symmetric invariant to the rotate flow's purpose scoping.
   const authChallenge = await AuthChallenge.findOne({
     publicKey,
     challenge,
     used: false,
+    purpose: { $in: ['signin', null] },
     expiresAt: { $gt: new Date() },
   }).lean();
   if (!authChallenge) {

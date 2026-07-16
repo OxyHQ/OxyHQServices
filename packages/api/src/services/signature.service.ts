@@ -151,6 +151,22 @@ export class SignatureService {
   }
 
   /**
+   * Canonicalize a secp256k1 public key to ONE form: uncompressed, lowercased
+   * hex. `isValidPublicKey` accepts the same point in compressed (`02/03…`),
+   * uncompressed (`04…`), or any-case encodings, but the `User.publicKey` unique
+   * index and the conflict/lookup queries are raw-string/case-sensitive. Storing
+   * and comparing the canonical form makes those checks encoding-independent, so
+   * two encodings of the same point can never coexist across accounts.
+   *
+   * @param publicKey - The public key in any valid hex encoding.
+   * @returns The uncompressed, lowercased hex encoding of the same point.
+   * @throws if `publicKey` is not a valid secp256k1 public key.
+   */
+  static canonicalizePublicKey(publicKey: string): string {
+    return ec.keyFromPublic(publicKey, 'hex').getPublic(false, 'hex').toLowerCase();
+  }
+
+  /**
    * Get a shortened display version of a public key
    */
   static shortenPublicKey(publicKey: string): string {

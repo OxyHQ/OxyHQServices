@@ -40,6 +40,7 @@ import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { RecoveryPhraseService, type PendingIdentityResult } from '../crypto/recoveryPhrase';
 import { isWeb } from '../utils/platform';
+import { logger } from '../logger';
 import { CACHE_TIMES } from './mixinHelpers';
 
 /**
@@ -140,6 +141,13 @@ export interface RotateKeyResult {
   newPhrase: string;
   /** The recovery phrase split into its individual words. */
   words: string[];
+  /**
+   * Present (and `true`) only when the server rotated successfully but the new
+   * key could NOT be persisted on-device. The account key IS the new one
+   * server-side, so the user must re-import it from `newPhrase`; the caller
+   * should surface a recovery prompt. Omitted on full success.
+   */
+  localPersistFailed?: true;
 }
 
 /**
@@ -372,8 +380,11 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
           { cache: false },
         );
 
-        // 4. Sign the rotation proof with the OLD key. The signed bytes MUST match
-        //    the server's reconstruction exactly (this key order).
+        // 4. Sign the rotation proofs. The OLD key proves control of the key being
+        //    replaced; the NEW key proves possession of the key being rotated in
+        //    (so the server never accepts a re-encoding of a key the caller does
+        //    not control). Both signed byte strings MUST match the server's
+        //    reconstruction exactly (this key order).
         const timestamp = Date.now();
         const message = JSON.stringify({
           action: 'rotate_key',
@@ -384,6 +395,14 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
           timestamp,
         });
         const signature = await signWithOldKey(message);
+        const newKeyMessage = JSON.stringify({
+          action: 'rotate_key_new',
+          userId,
+          newPublicKey,
+          challenge,
+          timestamp,
+        });
+        const newKeyProof = await signMessage(newKeyMessage, pending.privateKey);
 
         // 5. Complete the rotation. On an AMBIGUOUS failure, reconcile against the
         //    DID before deciding the rotation failed.
@@ -396,6 +415,7 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
               newPublicKey,
               challenge,
               signature,
+              newKeyProof,
               timestamp,
               ...(options.signOutEverywhere ? { signOutEverywhere: true } : {}),
             },
@@ -419,13 +439,31 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
         //    atomic persist path (backs the previous key up first). Native-only —
         //    on web the key never lived in SecureStore, so there is nothing to
         //    persist locally.
+        //
+        //    If this local write fails the server key is ALREADY the new one, so
+        //    we must NOT throw and swallow the phrase — the caller needs it to
+        //    re-import the now-live key. Surface the result with
+        //    `localPersistFailed: true` (mirrors the pendingIdentity
+        //    show-phrase-first path, where the caller already holds the phrase).
+        let localPersistFailed = false;
         if (!isWeb()) {
-          await KeyManager.importKeyPair(pending.privateKey, { overwrite: true });
+          try {
+            await KeyManager.importKeyPair(pending.privateKey, { overwrite: true });
+          } catch (persistError) {
+            localPersistFailed = true;
+            logger.warn(
+              'Key rotated on the server but persisting the new key on-device failed; returning the new phrase so it can be re-imported.',
+              { component: 'OxyServices.identity', method: 'rotateKey' },
+              persistError,
+            );
+          }
         }
 
         this._invalidateIdentityCaches(userId);
 
-        return { newPublicKey, newPhrase: pending.phrase, words: pending.words };
+        return localPersistFailed
+          ? { newPublicKey, newPhrase: pending.phrase, words: pending.words, localPersistFailed: true }
+          : { newPublicKey, newPhrase: pending.phrase, words: pending.words };
       } catch (error) {
         throw this.handleError(error);
       }

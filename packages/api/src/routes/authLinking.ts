@@ -193,10 +193,14 @@ router.post('/rotate/challenge', rotateChallengeLimiter, asyncHandler(async (req
  * Security invariants:
  *  - `oldPublicKey` is ALWAYS derived from the authenticated user doc, NEVER
  *    from the request (prevents proving control of key X but rotating key Y).
- *  - the `rotate_key` challenge is burned ATOMICALLY (single-use) before the
- *    signature is trusted.
- *  - the signature is verified against the CURRENT key with the same primitive
- *    `POST /auth/link` uses.
+ *  - control of the CURRENT key is proven (`signature`) AND possession of the
+ *    NEW key is proven (`newKeyProof`) — the latter stops an attacker rotating
+ *    their account to a re-encoding of a key they do not control.
+ *  - the incoming key is canonicalized (uncompressed, lowercased) before the
+ *    uniqueness check and the write, so two encodings of the same point cannot
+ *    coexist across accounts.
+ *  - the `rotate_key` challenge is burned ATOMICALLY (single-use); the timestamp
+ *    is checked BEFORE the burn so a stale request cannot self-burn a challenge.
  *  - the array length of `authMethods` is never changed (the single identity
  *    entry is replaced in place), so `countAuthMethods()` is never 0.
  */
@@ -207,7 +211,7 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
   }
   const userId = userIdObj.toString();
 
-  const { newPublicKey, challenge, signature, timestamp, signOutEverywhere } = req.body as RotateKeyCompleteRequest;
+  const { newPublicKey, challenge, signature, newKeyProof, timestamp, signOutEverywhere } = req.body as RotateKeyCompleteRequest;
   const safeNewPublicKey = newPublicKey.trim();
 
   // Load the authoritative user document (for the write AND the server-derived
@@ -227,11 +231,24 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
   if (!SignatureService.isValidPublicKey(safeNewPublicKey)) {
     throw new BadRequestError('newPublicKey is not a valid public key');
   }
-  if (safeNewPublicKey.toLowerCase() === oldPublicKey.toLowerCase()) {
+
+  // Canonicalize BOTH keys (uncompressed, lowercased). The differ-check, the
+  // uniqueness query, and the write all operate on the canonical form so a
+  // re-encoded (compressed / re-cased) duplicate can never slip past them.
+  const canonicalNewPublicKey = SignatureService.canonicalizePublicKey(safeNewPublicKey);
+  const canonicalOldPublicKey = SignatureService.canonicalizePublicKey(oldPublicKey);
+  if (canonicalNewPublicKey === canonicalOldPublicKey) {
     throw new BadRequestError('newPublicKey must differ from the current identity key');
   }
 
-  // 2. Atomically burn the rotate_key challenge (single-use, purpose-scoped,
+  // 2. Timestamp freshness (recent, not in the future) — BEFORE the burn, so a
+  //    stale-but-otherwise-valid request cannot consume its own challenge.
+  const age = Date.now() - timestamp;
+  if (age > ROTATE_SIGNATURE_MAX_AGE_MS || age < 0) {
+    throw new BadRequestError('Signature expired or invalid timestamp — please try again');
+  }
+
+  // 3. Atomically burn the rotate_key challenge (single-use, purpose-scoped,
   //    bound to the account's CURRENT key). If nothing matches, the challenge
   //    was never minted for rotation, was for a different key, is expired, or
   //    was already consumed — reject in every case.
@@ -244,7 +261,7 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new UnauthorizedError('Invalid or expired rotation challenge');
   }
 
-  // 3. Verify the client signature proves control of the CURRENT key. The signed
+  // 4. Verify the client signature proves control of the CURRENT key. The signed
   //    bytes MUST match this reconstruction exactly (same key order).
   const message = JSON.stringify({
     action: 'rotate_key',
@@ -258,36 +275,46 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new BadRequestError('Invalid signature — cannot verify control of the current key');
   }
 
-  // Timestamp freshness (recent, not in the future).
-  const age = Date.now() - timestamp;
-  if (age > ROTATE_SIGNATURE_MAX_AGE_MS || age < 0) {
-    throw new BadRequestError('Signature expired or invalid timestamp — please try again');
+  // 5. Verify proof-of-possession of the NEW key. Without this, an attacker
+  //    could rotate their OWN account to a re-encoding of a victim's key (read
+  //    from the public DID) — passing the uniqueness check but never controlling
+  //    the private key. Requiring the new key to sign closes that.
+  const newKeyMessage = JSON.stringify({
+    action: 'rotate_key_new',
+    userId,
+    newPublicKey: safeNewPublicKey,
+    challenge,
+    timestamp,
+  });
+  if (!SignatureService.verifySignature(newKeyMessage, newKeyProof, safeNewPublicKey)) {
+    throw new BadRequestError('Invalid new-key proof — cannot verify possession of the new key');
   }
 
-  // 4. Reject if the new key already belongs to another account.
-  const conflict = await User.findOne({ publicKey: safeNewPublicKey }).select('_id').lean();
+  // 6. Reject if the (canonical) new key already belongs to another account.
+  const conflict = await User.findOne({ publicKey: canonicalNewPublicKey }).select('_id').lean();
   if (conflict && conflict._id.toString() !== userId) {
     throw new ConflictError('This identity is already linked to another account');
   }
 
-  // 5. ATOMIC REPLACE: swap `publicKey` AND replace the single identity
-  //    `authMethods` entry in place. The array length is never changed, so the
-  //    account never passes through `countAuthMethods() === 0`. `user.save()`
-  //    persists both fields in one document update.
+  // 7. ATOMIC REPLACE: swap `publicKey` AND replace the single identity
+  //    `authMethods` entry in place, storing the CANONICAL key. The array length
+  //    is never changed, so the account never passes through
+  //    `countAuthMethods() === 0`. `user.save()` persists both fields in one
+  //    document update.
   const methods = user.authMethods ?? [];
   const hasIdentity = methods.some((m) => m.type === 'identity');
   user.authMethods = hasIdentity
     ? methods.map((m) =>
         m.type === 'identity'
-          ? buildAuthMethod('identity', { ...m.metadata, publicKey: safeNewPublicKey })
+          ? buildAuthMethod('identity', { ...m.metadata, publicKey: canonicalNewPublicKey })
           : m,
       )
-    : [...methods, buildAuthMethod('identity', { publicKey: safeNewPublicKey })];
-  user.publicKey = safeNewPublicKey;
+    : [...methods, buildAuthMethod('identity', { publicKey: canonicalNewPublicKey })];
+  user.publicKey = canonicalNewPublicKey;
   await user.save();
   userCache.invalidate(userId);
 
-  // 6. Optional: revoke every OTHER session (the rotating device stays signed
+  // 8. Optional: revoke every OTHER session (the rotating device stays signed
   //    in) when the caller suspects the old key is compromised.
   if (signOutEverywhere) {
     await revokeOtherSessions(req, userId);
@@ -295,7 +322,7 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
 
   const response = rotateKeyCompleteResponseSchema.parse({
     success: true,
-    publicKey: safeNewPublicKey,
+    publicKey: canonicalNewPublicKey,
     message: 'Identity key rotated successfully',
   });
   res.json(response);

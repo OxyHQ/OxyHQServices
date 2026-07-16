@@ -39,9 +39,15 @@ export type RotateKeyChallengeResponse = z.infer<typeof rotateKeyChallengeRespon
 /**
  * Request body of `POST /auth/rotate/complete`.
  *
- * The client signs the canonical bytes
- * `JSON.stringify({ action: 'rotate_key', userId, oldPublicKey, newPublicKey,
- * challenge, timestamp })` with the CURRENT (old) key.
+ * Two proofs are required:
+ *  - `signature` — the CURRENT (old) key signs
+ *    `JSON.stringify({ action: 'rotate_key', userId, oldPublicKey, newPublicKey,
+ *    challenge, timestamp })` (proves control of the key being replaced).
+ *  - `newKeyProof` — the NEW key signs
+ *    `JSON.stringify({ action: 'rotate_key_new', userId, newPublicKey, challenge,
+ *    timestamp })` (proof-of-possession of the key being rotated IN; prevents an
+ *    attacker rotating their account to a re-encoding of someone else's key they
+ *    do not control).
  *
  * The request carries ONLY `newPublicKey` — `oldPublicKey` and `userId` are
  * derived server-side from the authenticated user document (never
@@ -52,6 +58,8 @@ export const rotateKeyCompleteRequestSchema = z.object({
     newPublicKey: z.string().trim().min(1),
     challenge: z.string().trim().min(1),
     signature: z.string().trim().min(1),
+    /** Proof-of-possession: the NEW key signs the rotate_key_new payload. */
+    newKeyProof: z.string().trim().min(1),
     timestamp: z.number(),
     /**
      * When true, all OTHER active sessions for the account are revoked after a
