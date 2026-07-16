@@ -23,6 +23,7 @@ jobs:
               - 'packages/accounts/**'
               - 'packages/core/**'
               - 'packages/services/**'
+              - 'packages/contracts/**'
             auth:
               - 'packages/auth/**'
               - 'packages/core/**'
@@ -32,10 +33,12 @@ jobs:
               - 'packages/inbox/**'
               - 'packages/core/**'
               - 'packages/services/**'
+              - 'packages/contracts/**'
             console:
               - 'packages/console/**'
               - 'packages/core/**'
               - 'packages/services/**'
+              - 'packages/contracts/**'
 
   deploy-auth:
     needs: detect-changes
