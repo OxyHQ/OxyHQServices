@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { CenteredState } from '@/components/ui';
+import { CenteredState } from '@/components/ui/centered-state';
 import { ActivityRow } from '@/components/reputation/ActivityRow';
 import type { ReputationTransaction } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';

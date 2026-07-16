@@ -3,7 +3,7 @@ import { View, StyleSheet, Pressable } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { CircleIconBadge } from '@/components/ui';
+import { CircleIconBadge } from '@/components/ui/circle-icon-badge';
 import { withAlpha } from '@/utils/color';
 import type { MaterialCommunityIconName } from '@/types/icons';
 

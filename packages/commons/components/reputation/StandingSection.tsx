@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { CivicBadge } from '@/components/civic/CivicBadge';
-import { StatColumns, type StatColumn } from '@/components/ui';
+import { StatColumns, type StatColumn } from '@/components/ui/stat-columns';
 import { CompositionBar, type CompositionCategory } from '@oxyhq/bloom/composition-bar';
 import { CategoryRow } from '@/components/reputation/CategoryRow';
 import {

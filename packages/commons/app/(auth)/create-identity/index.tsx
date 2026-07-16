@@ -108,6 +108,9 @@ export default function CreateIdentityScreen() {
             if (!isNetworkOrTimeoutError(syncErr)) {
               const errorMessage = extractAuthErrorMessage(syncErr);
               setAuthError(errorMessage);
+              setCreateError(errorMessage);
+              hasNavigatedResumeRef.current = false;
+              return;
             }
           }
         }
@@ -191,6 +194,8 @@ export default function CreateIdentityScreen() {
                 if (!isNetworkOrTimeoutError(syncErr)) {
                   const syncErrorMessage = extractAuthErrorMessage(syncErr);
                   setAuthError(syncErrorMessage);
+                  setCreateError(syncErrorMessage);
+                  return;
                 }
               }
             }

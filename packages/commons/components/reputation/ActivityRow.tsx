@@ -3,7 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { CircleIconBadge } from '@/components/ui';
+import { CircleIconBadge } from '@/components/ui/circle-icon-badge';
 import { withAlpha } from '@/utils/color';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { describeReputationAction, formatPointsDelta } from '@/lib/civic/reputation-activity';

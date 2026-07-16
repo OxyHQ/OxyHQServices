@@ -35,6 +35,12 @@ module.exports = {
       '<rootDir>/__mocks__/async-storage.ts',
     '^@oxyhq/services$': '<rootDir>/__mocks__/oxyhq-services.ts',
     '^@oxyhq/bloom/theme$': '<rootDir>/__mocks__/bloom-theme.ts',
+    '^@oxyhq/bloom/composition-bar$': '<rootDir>/__mocks__/bloom-composition-bar.tsx',
+    '^react-native-reanimated$': '<rootDir>/__mocks__/react-native-reanimated.ts',
+    '^react-native-keyboard-controller$':
+      '<rootDir>/__mocks__/react-native-keyboard-controller.ts',
+    '^react-native-safe-area-context$':
+      '<rootDir>/__mocks__/react-native-safe-area-context.ts',
     '^@expo/vector-icons$': '<rootDir>/__mocks__/expo-vector-icons.tsx',
     '^@shopify/react-native-skia$': '<rootDir>/__mocks__/react-native-skia.tsx',
     '^expo-router$': '<rootDir>/__mocks__/expo-router.tsx',

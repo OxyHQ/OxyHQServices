@@ -39,7 +39,7 @@ export default function CreateIdentityUsernameScreen() {
   const colors = useColors();
   const { oxyServices, user } = useOxy();
   const { isOffline } = useNetworkStatus();
-  const { usernameRef } = useAuthFlowContext();
+  const { usernameRef, error: authFlowError, setAuthError } = useAuthFlowContext();
   const updateProfile = useUpdateProfile();
 
   const backgroundColor = colors.background;
@@ -52,7 +52,15 @@ export default function CreateIdentityUsernameScreen() {
   const [username, setUsername] = useState<string>(
     () => user?.username || usernameRef.current || generateSuggestedUsername(),
   );
-  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(() => authFlowError);
+
+  // Surface any sync error stashed by the create-identity resume path.
+  useEffect(() => {
+    if (authFlowError) {
+      setUpdateError(authFlowError);
+      setAuthError(null);
+    }
+  }, [authFlowError, setAuthError]);
 
   // Keep the ref in sync so other steps (e.g. import-identity recovery) can
   // observe what the user typed if they back-navigate.
