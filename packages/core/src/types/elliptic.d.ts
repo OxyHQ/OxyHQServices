@@ -1,12 +1,20 @@
 declare module 'elliptic' {
+  export interface BN {
+    toArray(endian?: 'be' | 'le', length?: number): number[];
+    toString(base?: number): string;
+  }
+
   export interface KeyPair {
     getPrivate(enc?: 'hex' | 'array' | 'bn'): string | number[] | any;
-    getPublic(enc?: 'hex'): string;
-    getPublic(enc?: 'array'): number[];
+    getPublic(): Point;
+    getPublic(enc: 'hex'): string;
+    getPublic(enc: 'array'): number[];
     getPublic(compressed: boolean, enc?: 'hex'): string;
     getPublic(compressed: boolean, enc?: 'array'): number[];
     sign(msg: string | number[]): Signature;
     verify(msg: string | number[], signature: Signature | string | { r: string | number[]; s: string | number[] }): boolean;
+    /** ECDH: derive the shared point's x-coordinate against another party's public point. */
+    derive(pub: Point): BN;
   }
 
   export interface Signature {
