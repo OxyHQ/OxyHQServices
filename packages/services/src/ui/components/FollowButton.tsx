@@ -60,7 +60,7 @@ const isMultiMode = (props: FollowButtonProps): props is MultiFollowButtonProps 
 const FollowButtonInner = memo(function FollowButtonInner({
   userId,
   oxyServices,
-  initiallyFollowing = false,
+  initiallyFollowing,
   size = 'medium',
   onFollowChange,
   style,
@@ -73,18 +73,19 @@ const FollowButtonInner = memo(function FollowButtonInner({
 
   const {
     isFollowing,
+    isKnown,
     isLoading,
     toggleFollow,
-    setFollowStatus,
-    fetchStatus,
-  } = useFollowForButton(userId, oxyServices);
+    resolveStatus,
+  } = useFollowForButton(userId, oxyServices, initiallyFollowing);
 
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event?.preventDefault) {
       event.preventDefault();
       event.stopPropagation?.();
     }
-    if (disabled || isLoading) return;
+    // Ignore presses while a mutation is in flight or the status is still unknown.
+    if (disabled || isLoading || !isKnown) return;
 
     try {
       await toggleFollow();
@@ -93,38 +94,39 @@ const FollowButtonInner = memo(function FollowButtonInner({
       const error = err instanceof Error ? err : new Error(String(err));
       toast.error(error.message || 'Failed to update follow status');
     }
-  }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
+  }, [disabled, isLoading, isKnown, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
 
+  // Enqueue a batched status fetch ONLY when the status is genuinely unknown
+  // (not seeded from `initiallyFollowing`, not already resolved). All buttons
+  // that enqueue in the same commit coalesce into a single bulk request; known/
+  // seeded ids never fetch. Once resolved, `isKnown` flips true and this no-ops.
   useEffect(() => {
-    if (userId && !isFollowing && initiallyFollowing) {
-      setFollowStatus(initiallyFollowing);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, initiallyFollowing]);
+    if (!isKnown) resolveStatus();
+  }, [isKnown, resolveStatus]);
 
-  useEffect(() => {
-    if (userId) fetchStatus();
-  }, [userId, fetchStatus]);
-
-  const showSpinner = showLoadingState && isLoading;
+  // While the status is genuinely unknown (being resolved), present a NEUTRAL,
+  // non-interactive state rather than a definitive "Follow".
+  const isBusy = isLoading || !isKnown;
+  const showFollowing = isKnown && isFollowing;
+  const showSpinner = showLoadingState && isBusy;
 
   return (
     <Button
-      variant={isFollowing ? 'secondary' : 'primary'}
+      variant={showFollowing ? 'secondary' : 'primary'}
       size={size}
       onPress={() => { void handlePress(); }}
-      disabled={disabled || isLoading}
+      disabled={disabled || isBusy}
       style={style}
       textStyle={textStyle}
       icon={showSpinner ? (
         <Loading
           variant="inline"
           size="small"
-          color={isFollowing ? colors.text : colors.primaryForeground}
+          color={showFollowing ? colors.text : colors.primaryForeground}
         />
       ) : undefined}
     >
-      {showSpinner ? undefined : (isFollowing ? 'Following' : 'Follow')}
+      {showSpinner ? undefined : (isKnown ? (isFollowing ? 'Following' : 'Follow') : undefined)}
     </Button>
   );
 });

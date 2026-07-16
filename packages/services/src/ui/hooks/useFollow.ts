@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
@@ -110,7 +110,7 @@ export const useFollow = (userId?: string | string[]) => {
   const fetchStatus = useCallback(async () => {
     if (!isSingleUser || !userId) throw new Error('fetchStatus is only available for single user mode');
     if (!canUsePrivateApi) return;
-    await useFollowStore.getState().fetchFollowStatus(userId, oxyServices);
+    useFollowStore.getState().resolveFollowStatuses([userId], oxyServices);
   }, [isSingleUser, userId, canUsePrivateApi, oxyServices]);
 
   const clearError = useCallback(() => {
@@ -170,13 +170,14 @@ export const useFollow = (userId?: string | string[]) => {
 
   const fetchStatusForUser = useCallback(async (targetUserId: string) => {
     if (!canUsePrivateApi) return;
-    await useFollowStore.getState().fetchFollowStatus(targetUserId, oxyServices);
+    useFollowStore.getState().resolveFollowStatuses([targetUserId], oxyServices);
   }, [canUsePrivateApi, oxyServices]);
 
+  // Resolve EVERY member's status in ONE micro-batched bulk call (never N
+  // single requests). Ids already known/seeded are skipped by the resolver.
   const fetchAllStatuses = useCallback(async () => {
     if (!canUsePrivateApi) return;
-    const store = useFollowStore.getState();
-    await Promise.all(userIds.map(uid => store.fetchFollowStatus(uid, oxyServices)));
+    useFollowStore.getState().resolveFollowStatuses(userIds, oxyServices);
   }, [canUsePrivateApi, userIds, oxyServices]);
 
   // Bulk follow — follows ALL users in ONE network call (never unfollows).
@@ -242,9 +243,31 @@ export const useFollow = (userId?: string | string[]) => {
  * - Only subscribes to the specific user's follow and loading state
  * - Returns only what FollowButton needs (no counts, no multi-user)
  */
-export const useFollowForButton = (userId: string, oxyServices: OxyServices) => {
+export const useFollowForButton = (userId: string, oxyServices: OxyServices, initiallyFollowing?: boolean) => {
+  // Seed the store synchronously on the FIRST render (before paint) when the
+  // caller provided a definite `initiallyFollowing` and the store has no entry
+  // yet. This makes the first paint show the correct label (no post-mount
+  // "Follow → Following" correction) and marks the id KNOWN so the batched
+  // resolver skips it. An OMITTED `initiallyFollowing` leaves the id UNKNOWN,
+  // so the batched resolver fetches its real status. The useState lazy
+  // initializer runs exactly once per mount; `setFollowStatuses` is
+  // seed-only-if-absent, so it never clobbers a live value.
+  useState(() => {
+    if (initiallyFollowing === undefined) return null;
+    const store = useFollowStore.getState();
+    if (!Object.prototype.hasOwnProperty.call(store.followingUsers, userId)) {
+      store.setFollowStatuses({ [userId]: initiallyFollowing });
+    }
+    return null;
+  });
+
   const isFollowing = useFollowStore(
     useCallback((s) => s.followingUsers[userId] ?? false, [userId])
+  );
+  // Tri-state: a present key (seeded or fetched) is a DEFINITE status; a missing
+  // key is UNKNOWN. The button renders a neutral/disabled state while unknown.
+  const isKnown = useFollowStore(
+    useCallback((s) => Object.prototype.hasOwnProperty.call(s.followingUsers, userId), [userId])
   );
   const isLoading = useFollowStore(
     useCallback((s) => s.loadingUsers[userId] ?? false, [userId])
@@ -258,8 +281,12 @@ export const useFollowForButton = (userId: string, oxyServices: OxyServices) => 
     await useFollowStore.getState().toggleFollowUser(userId, oxyServices, currentlyFollowing);
   }, [userId, oxyServices]);
 
-  const fetchStatus = useCallback(async () => {
-    await useFollowStore.getState().fetchFollowStatus(userId, oxyServices);
+  // Enqueue this id into the micro-batched resolver — every button that enqueues
+  // in the same tick coalesces into ONE bulk `getFollowStatuses` call. Known /
+  // seeded / in-flight ids are skipped by the resolver, so this is a no-op for
+  // them.
+  const resolveStatus = useCallback(() => {
+    useFollowStore.getState().resolveFollowStatuses([userId], oxyServices);
   }, [userId, oxyServices]);
 
   const setFollowStatus = useCallback((following: boolean) => {
@@ -272,14 +299,29 @@ export const useFollowForButton = (userId: string, oxyServices: OxyServices) => 
 
   return {
     isFollowing,
+    isKnown,
     isLoading,
     error,
     toggleFollow,
-    fetchStatus,
+    resolveStatus,
     setFollowStatus,
     clearError,
   };
 };
+
+/**
+ * useSeedFollowStatuses — returns a stable callback that bulk-seeds follow
+ * statuses into the store (seed-only-if-absent; never clobbers a live value).
+ *
+ * Wire this at the app root to seed from `oxyServices.getViewerGraph()
+ * .followingIds` (map each followed id → `true`) so a page of `FollowButton`s
+ * paints the correct label on first render with ZERO follow-status network
+ * calls — the batched resolver then skips every seeded id.
+ */
+export const useSeedFollowStatuses = () =>
+  useCallback((statuses: Record<string, boolean>) => {
+    useFollowStore.getState().setFollowStatuses(statuses);
+  }, []);
 
 // Convenience hook for just follower counts
 export const useFollowerCounts = (userId: string) => {

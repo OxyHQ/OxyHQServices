@@ -32,7 +32,7 @@ export { default as ProfileButton } from './components/ProfileButton';
 // Context + hooks
 export { useOxy } from './context/OxyContext';
 export { useAuth } from './hooks/useAuth';
-export { useFollow } from './hooks/useFollow';
+export { useFollow, useSeedFollowStatuses } from './hooks/useFollow';
 export { useStorage } from './hooks/useStorage';
 export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';
 
