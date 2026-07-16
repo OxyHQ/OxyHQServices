@@ -238,10 +238,11 @@ function signRotation(params: {
   challenge: string;
   timestamp: number;
 }): string {
+  const canonicalOldPublicKey = SignatureService.canonicalizePublicKey(params.oldPublicKey);
   const message = JSON.stringify({
     action: 'rotate_key',
     userId: USER_ID,
-    oldPublicKey: params.oldPublicKey,
+    oldPublicKey: canonicalOldPublicKey,
     newPublicKey: params.newPublicKey,
     challenge: params.challenge,
     timestamp: params.timestamp,
@@ -441,6 +442,26 @@ describe('security invariant — oldPublicKey is server-derived', () => {
     expect(mockUserDoc.save).not.toHaveBeenCalled();
     expect(mockInvalidate).not.toHaveBeenCalled();
     expect(mockUserDoc.publicKey).toBe(oldPublicKey);
+    // Invalid signature must NOT burn the challenge — the caller can retry.
+    expect(mockChallengeStore.get(challenge)?.used).toBe(false);
+  });
+
+  it('rotates when the account stores a compressed identity key but the client signs with the uncompressed form', async () => {
+    const compressedOld = oldKeyPair.getPublic(true, 'hex');
+    mockUserDoc.publicKey = compressedOld;
+    mockUserDoc.authMethods = [
+      { type: 'identity', linkedAt: new Date('2026-01-01T00:00:00.000Z'), metadata: { publicKey: compressedOld } },
+    ];
+
+    const newKeyPair = ec.genKeyPair();
+    const challenge = await mintRotateChallenge();
+    const timestamp = Date.now();
+    const body = buildCompleteBody({ oldPrivateKey, newKeyPair, oldPublicKey, challenge, timestamp });
+
+    const res = await request(server, 'POST', '/auth/rotate/complete', body);
+
+    expect(res.status).toBe(200);
+    expect(mockUserDoc.publicKey).toBe(newKeyPair.getPublic(false, 'hex').toLowerCase());
   });
 });
 

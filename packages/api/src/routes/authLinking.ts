@@ -157,7 +157,10 @@ router.post('/rotate/challenge', rotateChallengeLimiter, asyncHandler(async (req
     throw new BadRequestError('User not authenticated');
   }
 
-  const oldPublicKey = req.user?.publicKey;
+  // Bind the challenge to the authoritative user doc (not the JWT/cache
+  // snapshot) so mint + complete always agree on the account's current key.
+  const user = await User.findById(userId).select('publicKey').lean();
+  const oldPublicKey = user?.publicKey;
   if (!oldPublicKey) {
     throw new BadRequestError('No identity key is linked to this account — nothing to rotate.');
   }
@@ -256,25 +259,13 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new BadRequestError('Signature expired or invalid timestamp — please try again');
   }
 
-  // 3. Atomically burn the rotate_key challenge (single-use, purpose-scoped,
-  //    bound to the account's CURRENT key). If nothing matches, the challenge
-  //    was never minted for rotation, was for a different key, is expired, or
-  //    was already consumed — reject in every case.
-  const burned = await AuthChallenge.findOneAndUpdate(
-    { challenge, publicKey: oldPublicKey, used: false, purpose: 'rotate_key', expiresAt: { $gt: new Date() } },
-    { $set: { used: true } },
-    { new: false },
-  );
-  if (!burned) {
-    throw new UnauthorizedError('Invalid or expired rotation challenge');
-  }
-
-  // 4. Verify the client signature proves control of the CURRENT key. The signed
-  //    bytes MUST match this reconstruction exactly (same key order).
+  // 3. Verify the client signature proves control of the CURRENT key BEFORE
+  //    burning the challenge (mirrors signin verifyChallenge). The signed bytes
+  //    use the canonical old key so compressed/legacy encodings still match.
   const message = JSON.stringify({
     action: 'rotate_key',
     userId,
-    oldPublicKey,
+    oldPublicKey: canonicalOldPublicKey,
     newPublicKey: safeNewPublicKey,
     challenge,
     timestamp,
@@ -283,7 +274,7 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new BadRequestError('Invalid signature — cannot verify control of the current key');
   }
 
-  // 5. Verify proof-of-possession of the NEW key. Without this, an attacker
+  // 4. Verify proof-of-possession of the NEW key. Without this, an attacker
   //    could rotate their OWN account to a re-encoding of a victim's key (read
   //    from the public DID) — passing the uniqueness check but never controlling
   //    the private key. Requiring the new key to sign closes that.
@@ -298,10 +289,23 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new BadRequestError('Invalid new-key proof — cannot verify possession of the new key');
   }
 
-  // 6. Reject if the (canonical) new key already belongs to another account.
+  // 5. Reject if the (canonical) new key already belongs to another account.
   const conflict = await User.findOne({ publicKey: canonicalNewPublicKey }).select('_id').lean();
   if (conflict && conflict._id.toString() !== userId) {
     throw new ConflictError('This identity is already linked to another account');
+  }
+
+  // 6. Atomically burn the rotate_key challenge (single-use, purpose-scoped,
+  //    bound to the account's CURRENT key). If nothing matches, the challenge
+  //    was never minted for rotation, was for a different key, is expired, or
+  //    was already consumed — reject in every case.
+  const burned = await AuthChallenge.findOneAndUpdate(
+    { challenge, publicKey: oldPublicKey, used: false, purpose: 'rotate_key', expiresAt: { $gt: new Date() } },
+    { $set: { used: true } },
+    { new: false },
+  );
+  if (!burned) {
+    throw new UnauthorizedError('Invalid or expired rotation challenge');
   }
 
   // 7. ATOMIC REPLACE: swap `publicKey` AND replace the single identity

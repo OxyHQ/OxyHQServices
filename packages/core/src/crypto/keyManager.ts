@@ -1465,6 +1465,14 @@ export class KeyManager {
   }
 
   /**
+   * Normalize a public key to uncompressed, lowercased hex. Used when building
+   * signed rotation payloads so legacy compressed/cased encodings still verify.
+   */
+  static canonicalPublicKey(publicKey: string): string {
+    return ec.keyFromPublic(publicKey, 'hex').getPublic(false, 'hex').toLowerCase();
+  }
+
+  /**
    * Validate that a string is a valid public key
    *
    * Returns false on parse errors (invalid input is the expected fail mode here).

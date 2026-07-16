@@ -384,12 +384,14 @@ export function OxyServicesIdentityMixin<T extends typeof OxyServicesBase>(Base:
         //    replaced; the NEW key proves possession of the key being rotated in
         //    (so the server never accepts a re-encoding of a key the caller does
         //    not control). Both signed byte strings MUST match the server's
-        //    reconstruction exactly (this key order).
+        //    reconstruction exactly (this key order). The old key is canonicalized
+        //    so legacy compressed encodings in Mongo still verify.
         const timestamp = Date.now();
+        const canonicalOldPublicKey = KeyManager.canonicalPublicKey(oldPublicKey);
         const message = JSON.stringify({
           action: 'rotate_key',
           userId,
-          oldPublicKey,
+          oldPublicKey: canonicalOldPublicKey,
           newPublicKey,
           challenge,
           timestamp,
