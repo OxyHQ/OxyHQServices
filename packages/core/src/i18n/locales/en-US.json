@@ -72,6 +72,9 @@
     "backToSignInLink": "Already have an account? Sign in",
     "hubExplainer": "Create your Oxy ID in a secure window, then come right back.",
     "continueInWindow": "Continue in a new window",
+    "toasts": {
+      "passkeyCreateFailed": "We couldn't create your account. Please try again."
+    },
     "welcome": {
       "title": "Welcome to Oxy!",
       "subtitle": "Let's create your account in just a few steps",
@@ -374,6 +377,7 @@
     "toasts": {
       "switchSuccess": "Account switched successfully!",
       "switchFailed": "There was a problem switching accounts. Please try again.",
+      "passkeySignInFailed": "Passkey sign-in failed. Please try again.",
       "removeSuccess": "Account removed successfully!",
       "removeFailed": "There was a problem removing the account. Please try again.",
       "signOutAllSuccess": "All accounts signed out successfully!",

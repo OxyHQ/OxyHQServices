@@ -10,9 +10,17 @@
  * (`signInWithPasskey`/`registerWithPasskey`), routed through the auth.oxy.so
  * hub popup elsewhere (`controller.startPasskeyHubSignIn`, b2). The
  * controller's own state machine + projection are unit-tested in `@oxyhq/core`.
+ *
+ * Error-surfacing contract (owner mandate: NO error renders inline inside the
+ * dialog): every failure — account-switch, passkey sign-in ceremony, passkey
+ * account creation, username-availability check — fires a Bloom `toast.error(...)`
+ * at the point of failure and paints NO inline banner/text. The `toast` here is
+ * the shared `@oxyhq/bloom` jest.fn mock; the removed inline `ErrorBanner` is
+ * asserted absent.
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { toast } from '@oxyhq/bloom';
 import type { AccountDialogSnapshot, SwitchableAccount, User } from '@oxyhq/core';
 
 const makeUser = (id: string): User => ({ id, username: id, name: { displayName: id } } as unknown as User);
@@ -134,21 +142,45 @@ describe('OxyAuthChooser', () => {
     expect(screen.getByText('Add another account')).toBeTruthy();
   });
 
-  it('renders a blocked/failed switch error in the accounts view (carried in from fix/account-switch)', () => {
-    snapshot = makeSnapshot({ error: 'Could not switch accounts. Please try again.' });
+  it('toasts a failed account switch instead of rendering an inline banner', async () => {
+    snapshot = makeSnapshot({
+      activeAccountId: 'a',
+      accounts: [
+        makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' }),
+        makeAccount({ accountId: 'b', displayName: 'Bob', sessionId: 's-b' }),
+      ],
+    });
+    // `switchTo` never throws — it records the failure on the controller's
+    // snapshot, which the chooser reads back at the point the switch settles.
+    controller.switchTo.mockImplementationOnce(async () => {
+      snapshot = makeSnapshot({ ...snapshot, error: 'Account switch did not return a valid session' });
+    });
 
     render(<OxyAuthChooser />);
+    fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
-    expect(screen.getByText('Could not switch accounts. Please try again.')).toBeTruthy();
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'There was a problem switching accounts. Please try again.',
+      ),
+    );
+    // The failure is a toast — never inline text (neither the friendly copy nor
+    // the raw controller error string is painted in the dialog body), and the
+    // success side effects never run.
+    expect(screen.queryByText('There was a problem switching accounts. Please try again.')).toBeNull();
+    expect(screen.queryByText('Account switch did not return a valid session')).toBeNull();
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it('renders the account-list error in the sign-in view too', () => {
+  it('does not render an inline error banner in the accounts or sign-in views (errors go to toasts)', () => {
     isWebBrowserMock.mockReturnValue(false); // stay on signin, no auto-start to qr
     snapshot = makeSnapshot({ view: 'signin', error: 'Something went wrong.' });
 
     render(<OxyAuthChooser />);
 
-    expect(screen.getByText('Something went wrong.')).toBeTruthy();
+    // A `snapshot.error` no longer paints an inline banner anywhere — the
+    // account-switch failure it represents is surfaced as a toast at the call site.
+    expect(screen.queryByText('Something went wrong.')).toBeNull();
   });
 
   it('switches through controller.switchTo when a non-active row is tapped', async () => {
@@ -165,6 +197,8 @@ describe('OxyAuthChooser', () => {
 
     await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
     expect(invalidateQueries).toHaveBeenCalled();
+    // A successful switch fires no error toast.
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('auto-starts the device flow on web the instant the sign-in entry is reached — no click needed', () => {
@@ -245,6 +279,20 @@ describe('OxyAuthChooser', () => {
       await waitFor(() => expect(closeAccountDialog).not.toHaveBeenCalled()); // onComplete is not wired without a host
     });
 
+    it('toasts the ceremony error (never inline) when the direct passkey sign-in fails', async () => {
+      signInWithPasskey.mockRejectedValueOnce(new Error('The passkey request was cancelled.'));
+      snapshot = qrSnapshot();
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('The passkey request was cancelled.'),
+      );
+      // The QR view keeps its own state; the failure never renders inline.
+      expect(screen.queryByText('The passkey request was cancelled.')).toBeNull();
+    });
+
     it('still offers the link on a non-Oxy origin, alongside the QR (b2 hub popup)', () => {
       isOxyRpOriginMock.mockReturnValue(false);
       snapshot = qrSnapshot();
@@ -281,6 +329,38 @@ describe('OxyAuthChooser', () => {
 
       fireEvent.click(screen.getByTestId('signup-create-button'));
       await waitFor(() => expect(registerWithPasskey).toHaveBeenCalledWith({ username: 'newuser' }));
+    });
+
+    it('toasts (never inline) when the username-availability check fails', async () => {
+      checkUsernameAvailability.mockRejectedValueOnce(new Error('network'));
+      snapshot = makeSnapshot({ view: 'signup' });
+      render(<OxyAuthChooser />);
+
+      fireEvent.change(screen.getByTestId('signup-username-input'), { target: { value: 'newuser' } });
+
+      await waitFor(
+        () => expect(toast.error).toHaveBeenCalledWith('Could not check availability'),
+        { timeout: 1000 },
+      );
+      // The availability indicator (checking/available/taken) stays inline; only
+      // the network ERROR moves to a toast — no inline error text is painted.
+      expect(screen.queryByText('Could not check availability')).toBeNull();
+    });
+
+    it('toasts when passkey account creation fails (after the username resolves available)', async () => {
+      registerWithPasskey.mockRejectedValueOnce(new Error('Passkey attestation rejected.'));
+      snapshot = makeSnapshot({ view: 'signup' });
+      render(<OxyAuthChooser />);
+
+      fireEvent.change(screen.getByTestId('signup-username-input'), { target: { value: 'newuser' } });
+      await waitFor(
+        () => expect((screen.getByTestId('signup-create-button') as HTMLButtonElement).disabled).toBe(false),
+        { timeout: 1000 },
+      );
+
+      fireEvent.click(screen.getByTestId('signup-create-button'));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Passkey attestation rejected.'));
     });
 
     it('offers the auth.oxy.so hub popup (b2) on a non-Oxy web origin, instead of the direct passkey form', () => {
