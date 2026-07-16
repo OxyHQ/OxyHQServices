@@ -70,6 +70,20 @@ jest.mock('../../models/WebauthnCredential', () => ({
   },
 }));
 
+// authLinking imports the session service + Session model (for the key-rotation
+// `signOutEverywhere` path); stub them so the real modules — which crash at load
+// under the global mongoose mock (`SessionSchema.methods` is undefined) — are
+// never evaluated. These reversibility tests never exercise rotation.
+jest.mock('../../services/session.service', () => ({
+  __esModule: true,
+  default: { deactivateAllUserSessions: jest.fn() },
+}));
+
+jest.mock('../../models/Session', () => ({
+  __esModule: true,
+  default: { find: jest.fn() },
+}));
+
 import authLinkingRouter from '../authLinking';
 import SignatureService from '../../services/signature.service';
 import { buildDidDocument, buildUserDid, OXY_DID } from '../../services/did.service';

@@ -28,6 +28,21 @@ export interface RecoveryPhraseResult {
   publicKey: string;
 }
 
+/**
+ * A freshly-derived identity that has NOT been persisted to secure storage.
+ *
+ * Unlike {@link RecoveryPhraseResult} this also exposes the `privateKey`, because
+ * the caller must be able to sign with (or later persist) the material itself —
+ * the whole point of a "pending" identity is that nothing is committed until an
+ * external step (e.g. a server-confirmed key rotation) succeeds.
+ */
+export interface PendingIdentityResult {
+  phrase: string;
+  words: string[];
+  privateKey: string;
+  publicKey: string;
+}
+
 export interface GenerateIdentityOptions {
   /**
    * Pass `true` to allow overwriting an existing on-device identity.
@@ -101,6 +116,54 @@ export class RecoveryPhraseService {
       words: mnemonic.split(' '),
       publicKey,
     };
+  }
+
+  /**
+   * Derive a brand-new identity + recovery phrase WITHOUT persisting anything.
+   *
+   * Pure: same derivation as {@link generateIdentityWithRecovery} (128-bit
+   * mnemonic → seed → first 32 bytes as the secp256k1 private key) but it stops
+   * BEFORE `KeyManager.importKeyPair`, so no on-device identity is touched. The
+   * caller decides if/when to commit the material (e.g. only after a server
+   * confirms a key rotation). Works on web too — it never reads or writes secure
+   * storage.
+   *
+   * The 12-word `phrase` MUST be shown to the user before the identity is
+   * committed anywhere — if it is lost the account becomes unrecoverable.
+   */
+  static async derivePendingIdentity(): Promise<PendingIdentityResult> {
+    const mnemonic = bip39.generateMnemonic(128);
+    const seed = await bip39.mnemonicToSeed(mnemonic);
+    const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
+    const privateKey = toHex(seedSlice);
+    const publicKey = KeyManager.derivePublicKey(privateKey);
+
+    return {
+      phrase: mnemonic,
+      words: mnemonic.split(' '),
+      privateKey,
+      publicKey,
+    };
+  }
+
+  /**
+   * Derive the private key from a recovery phrase WITHOUT storing it.
+   *
+   * The private-key counterpart of {@link derivePublicKeyFromPhrase}. Used to
+   * re-derive a key in memory (e.g. to sign a rotation proof with the current
+   * key when the device has no SecureStore copy). Never persists — the returned
+   * material lives only in the caller's memory.
+   */
+  static async derivePrivateKeyFromPhrase(phrase: string): Promise<string> {
+    const normalizedPhrase = phrase.trim().toLowerCase();
+
+    if (!bip39.validateMnemonic(normalizedPhrase)) {
+      throw new Error('Invalid recovery phrase');
+    }
+
+    const seed = await bip39.mnemonicToSeed(normalizedPhrase);
+    const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
+    return toHex(seedSlice);
   }
 
   /**
