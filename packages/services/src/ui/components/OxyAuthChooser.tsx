@@ -210,6 +210,30 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const { view } = snapshot;
 
+  // Sign-in device-flow failures land on `snapshot.signIn` asynchronously (poll /
+  // socket / popup cancel). Toast at the controller notification site — never an
+  // inline banner in the QR view (owner mandate, same contract as account-switch).
+  useEffect(() => {
+    if (!controller) return;
+    let lastToastedSignInError: string | null = null;
+    const maybeToastSignInError = () => {
+      const { signIn } = controller.getSnapshot();
+      if (signIn.phase === 'error' && signIn.error && signIn.error !== lastToastedSignInError) {
+        lastToastedSignInError = signIn.error;
+        toast.error(
+          signIn.error ||
+            t('accountSwitcher.toasts.signInFailed') ||
+            'Sign-in failed. Please try again.',
+        );
+      }
+      if (signIn.phase !== 'error') {
+        lastToastedSignInError = null;
+      }
+    };
+    maybeToastSignInError();
+    return controller.subscribe(maybeToastSignInError);
+  }, [controller, t]);
+
   // Web: "Sign in with Oxy" auto-starts the instant the sign-in entry is
   // reached — no button tap needed. `signInWithOxy()` tries the shared
   // keychain first (silently, native-only) then falls to the QR handoff,
@@ -626,11 +650,10 @@ const QrView: React.FC<QrViewProps> = ({
   }
 
   if (signIn.phase === 'error') {
+    // The failure reason is toasted by the controller subscription above — no
+    // inline error copy here (owner mandate).
     return (
       <View style={styles.centeredBlock}>
-        <Text style={[styles.errorText, { color: theme.colors.error }]}>
-          {signIn.error || 'Sign-in failed. Please try again.'}
-        </Text>
         <Button variant="secondary" onPress={onRetry} style={styles.secondaryButton}>
           {t('common.actions.tryAgain') || 'Try again'}
         </Button>

@@ -125,10 +125,6 @@ export const authChooserStyles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  errorText: {
-    fontSize: 14,
-    textAlign: 'center',
-  },
   qrPlate: {
     padding: 16,
     borderRadius: 16,

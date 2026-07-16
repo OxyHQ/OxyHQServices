@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { BrowserRouter } from "react-router-dom"
+import { MemoryRouter } from "react-router-dom"
 
 const signInWithPasskey = mock(async () => undefined)
 
@@ -43,9 +43,9 @@ function renderForm(): { container: HTMLDivElement; unmount: () => void } {
     const root: Root = createRoot(container)
     act(() => {
         root.render(
-            <BrowserRouter>
+            <MemoryRouter>
                 <LoginForm />
-            </BrowserRouter>,
+            </MemoryRouter>,
         )
     })
     return {

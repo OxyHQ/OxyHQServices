@@ -575,6 +575,7 @@
     "toasts": {
       "switchSuccess": "¡Cuenta cambiada correctamente!",
       "switchFailed": "Hubo un problema al cambiar de cuenta. Inténtalo de nuevo.",
+      "signInFailed": "No se pudo iniciar sesión. Inténtalo de nuevo.",
       "passkeySignInFailed": "No se pudo iniciar sesión con la llave de acceso. Inténtalo de nuevo.",
       "removeSuccess": "¡Cuenta eliminada correctamente!",
       "removeFailed": "Hubo un problema al eliminar la cuenta. Inténtalo de nuevo.",

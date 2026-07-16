@@ -231,22 +231,43 @@ describe('OxyAuthChooser', () => {
     expect(controller.signInWithOxy).not.toHaveBeenCalled();
   });
 
-  it('renders the QR payload while awaiting approval', () => {
-    snapshot = makeSnapshot({
-      view: 'qr',
-      signIn: {
-        phase: 'waiting',
-        authorizeCode: 'CODE',
-        qrPayload: 'oxycommons://approve?code=CODE',
-        expiresAt: Date.now() + 60_000,
-        error: null,
-      },
+    it('renders the QR payload while awaiting approval', () => {
+      snapshot = makeSnapshot({
+        view: 'qr',
+        signIn: {
+          phase: 'waiting',
+          authorizeCode: 'CODE',
+          qrPayload: 'oxycommons://approve?code=CODE',
+          expiresAt: Date.now() + 60_000,
+          error: null,
+        },
+      });
+
+      render(<OxyAuthChooser />);
+
+      expect(screen.getByTestId('qrcode')).toBeTruthy();
     });
 
-    render(<OxyAuthChooser />);
+    it('toasts a sign-in device-flow failure instead of rendering inline error copy', async () => {
+      snapshot = makeSnapshot({
+        view: 'qr',
+        signIn: {
+          phase: 'error',
+          authorizeCode: null,
+          qrPayload: null,
+          expiresAt: null,
+          error: 'Sign-in was cancelled.',
+        },
+      });
 
-    expect(screen.getByTestId('qrcode')).toBeTruthy();
-  });
+      render(<OxyAuthChooser />);
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Sign-in was cancelled.'),
+      );
+      expect(screen.queryByText('Sign-in was cancelled.')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    });
 
   describe('passkey link on the QR view', () => {
     const qrSnapshot = (): AccountDialogSnapshot =>

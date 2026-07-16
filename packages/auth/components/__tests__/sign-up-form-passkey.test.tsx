@@ -8,7 +8,7 @@
 import { beforeEach, afterEach, describe, expect, mock, test } from "bun:test"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { BrowserRouter } from "react-router-dom"
+import { MemoryRouter } from "react-router-dom"
 
 const registerWithPasskey = mock(async (_params: { username: string }) => undefined)
 
@@ -56,9 +56,9 @@ function renderForm(): { container: HTMLDivElement; unmount: () => void } {
     const root: Root = createRoot(container)
     act(() => {
         root.render(
-            <BrowserRouter>
+            <MemoryRouter>
                 <SignUpForm redirectUri="https://app.example.com/cb" clientId="oxy_dk_test" />
-            </BrowserRouter>,
+            </MemoryRouter>,
         )
     })
     return {
