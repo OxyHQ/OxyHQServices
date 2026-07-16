@@ -206,10 +206,10 @@ export const useIdentity = (): UseIdentityResult => {
             }
           }
 
+          const user = await signIn(publicKey);
+
           setSynced(true);
           await persistIdentitySyncState(true);
-
-          const user = await signIn(publicKey);
 
           // Commons is the ONLY app that writes the cross-app shared identity
           // slot other Oxy apps read for silent "Sign in with Oxy". Mirror it
@@ -266,6 +266,7 @@ export const useIdentity = (): UseIdentityResult => {
   const importIdentity = useCallback(
     async (phrase: string): Promise<{ synced: boolean }> => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
+      if (!signIn) throw new Error('signIn not available');
 
       // Serialize concurrent imports for the same reasons as createIdentity.
       if (inFlightImportIdentity) {
@@ -306,6 +307,8 @@ export const useIdentity = (): UseIdentityResult => {
             }
           }
 
+          await signIn(publicKey);
+
           setSynced(true);
           await persistIdentitySyncState(true);
 
@@ -343,7 +346,7 @@ export const useIdentity = (): UseIdentityResult => {
         inFlightImportIdentity = null;
       }
     },
-    [oxyServices, setSynced, queryClient],
+    [oxyServices, signIn, setSynced, queryClient],
   );
 
   const hasIdentity = useCallback(() => KeyManager.hasIdentity(), []);

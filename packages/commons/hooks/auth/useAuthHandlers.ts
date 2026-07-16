@@ -111,7 +111,7 @@ export function useAuthHandlers({
    * 
    * Updates the auth store and navigates to home screen on success
    */
-  const handleSignIn = useCallback(async () => {
+  const completeSignIn = useCallback(async (options?: { navigateOnSuccess?: boolean }): Promise<boolean> => {
     setSigningIn(true);
     setAuthError(null);
 
@@ -124,7 +124,7 @@ export function useAuthHandlers({
     if (!publicKey) {
       setAuthError('No identity found on this device.');
       setSigningIn(false);
-      return;
+      return false;
     }
 
     // Retry logic for sign-in
@@ -154,7 +154,7 @@ export function useAuthHandlers({
     if (!signInSuccess) {
       setAuthError(extractAuthErrorMessage(lastError, 'Failed to sign in. Please try again.'));
       setSigningIn(false);
-      return;
+      return false;
     }
 
     // Wait for auth state to be confirmed
@@ -191,9 +191,17 @@ export function useAuthHandlers({
     // Use requestAnimationFrame to ensure state updates are applied before navigation
     await new Promise(resolve => requestAnimationFrame(resolve));
 
-    // Navigate to the post-auth tab shell - use push as per Expo Router standard
-    router.push('/(tabs)/(id)');
+    if (options?.navigateOnSuccess !== false) {
+      // Navigate to the post-auth tab shell - use push as per Expo Router standard
+      router.push('/(tabs)/(id)');
+    }
+
+    return true;
   }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
+
+  const handleSignIn = useCallback(async () => {
+    await completeSignIn({ navigateOnSuccess: true });
+  }, [completeSignIn]);
 
   /**
    * Handle notification permission request and complete onboarding
@@ -201,8 +209,10 @@ export function useAuthHandlers({
    */
   const handleRequestNotifications = useCallback(async () => {
     if (!isAuthenticated) {
-      setAuthError('Please sign in first');
-      return;
+      const signedIn = await completeSignIn({ navigateOnSuccess: false });
+      if (!signedIn || !useAuthStore.getState().isAuthenticated) {
+        return;
+      }
     }
 
     if (isExpoGo()) {
@@ -230,7 +240,7 @@ export function useAuthHandlers({
     } finally {
       setIsRequestingNotifications(false);
     }
-  }, [isAuthenticated, router, setAuthError]);
+  }, [isAuthenticated, router, setAuthError, completeSignIn]);
 
   return {
     handleSignIn,

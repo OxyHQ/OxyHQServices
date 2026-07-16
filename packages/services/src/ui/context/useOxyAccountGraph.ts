@@ -4,6 +4,7 @@ import type { OxyServices, AccountNode, CreateAccountInput, AccountDialogControl
 import { logger as loggerUtil } from '@oxyhq/core';
 import { useAuthStore } from '../stores/authStore';
 import { isUnauthorizedStatus } from './oxyContextHelpers';
+import { resetSessionScopedStores } from '../stores/resetSessionScopedStores';
 import type { CommitInput } from './oxyContextTypes';
 
 interface UseOxyAccountGraphParams {
@@ -61,6 +62,7 @@ export function useOxyAccountGraph({
   }, [isAuthenticated, initialized, tokenReady, refreshAccounts, accountDialogControllerRef]);
 
   const runPostAccountSwitchSideEffects = useCallback(async (): Promise<void> => {
+    resetSessionScopedStores();
     await refreshAccounts();
     queryClient.invalidateQueries();
   }, [refreshAccounts, queryClient]);

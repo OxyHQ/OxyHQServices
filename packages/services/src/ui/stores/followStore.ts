@@ -65,6 +65,16 @@ let pendingIds = new Set<string>();
 let pendingServices: OxyServices | null = null;
 let flushScheduled = false;
 const inFlightIds = new Set<string>();
+let batchGeneration = 0;
+
+/** Clears module-level micro-batch coordination state (test + sign-out hooks). */
+export const resetFollowBatchState = (): void => {
+  pendingIds = new Set<string>();
+  pendingServices = null;
+  flushScheduled = false;
+  inFlightIds.clear();
+  batchGeneration += 1;
+};
 
 export const useFollowStore = create<FollowState>((set, get) => ({
   followingUsers: {},
@@ -95,15 +105,18 @@ export const useFollowStore = create<FollowState>((set, get) => ({
   clearFollowError: (userId: string) => set((state) => ({
     errors: { ...state.errors, [userId]: null },
   })),
-  resetFollowState: () => set({
-    followingUsers: {},
-    loadingUsers: {},
-    fetchingUsers: {},
-    errors: {},
-    followerCounts: {},
-    followingCounts: {},
-    loadingCounts: {},
-  }),
+  resetFollowState: () => {
+    resetFollowBatchState();
+    set({
+      followingUsers: {},
+      loadingUsers: {},
+      fetchingUsers: {},
+      errors: {},
+      followerCounts: {},
+      followingCounts: {},
+      loadingCounts: {},
+    });
+  },
   resolveFollowStatuses: (userIds: string[], oxyServices: OxyServices) => {
     const { followingUsers } = get();
     let enqueuedAny = false;
@@ -134,6 +147,7 @@ export const useFollowStore = create<FollowState>((set, get) => ({
       pendingServices = null;
       if (ids.length === 0 || !services) return;
 
+      const generation = batchGeneration;
       for (const id of ids) inFlightIds.add(id);
       set((state) => {
         const fetchingUsers = { ...state.fetchingUsers };
@@ -144,6 +158,7 @@ export const useFollowStore = create<FollowState>((set, get) => ({
       void services
         .getFollowStatuses(ids)
         .then((statuses) => {
+          if (generation !== batchGeneration) return;
           set((state) => {
             const followingUsersNext = { ...state.followingUsers };
             const fetchingUsers = { ...state.fetchingUsers };
@@ -159,6 +174,7 @@ export const useFollowStore = create<FollowState>((set, get) => ({
           });
         })
         .catch((error: unknown) => {
+          if (generation !== batchGeneration) return;
           const message = (error instanceof Error ? error.message : null) || 'Failed to fetch follow status';
           set((state) => {
             const fetchingUsers = { ...state.fetchingUsers };

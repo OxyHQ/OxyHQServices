@@ -14,6 +14,7 @@ import { Types } from 'mongoose';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { readBoundedBody } from '../services/linkPreview/boundedBody';
 import User from '../models/User';
+import IdentityBackup from '../models/IdentityBackup';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
@@ -1414,6 +1415,9 @@ router.delete(
 
     // Delete all email data (mailboxes, messages, S3 attachments)
     await emailService.deleteAllUserData(userId);
+
+    // Drop any encrypted off-device identity backup for this account.
+    await IdentityBackup.deleteOne({ userId });
 
     // Delete the user account
     await User.findByIdAndDelete(userId);

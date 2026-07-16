@@ -151,3 +151,28 @@ describe('toggleFollowUser (optimistic)', () => {
     expect(Object.prototype.hasOwnProperty.call(useFollowStore.getState().followingUsers, 'u1')).toBe(false);
   });
 });
+
+describe('resetFollowState', () => {
+  it('clears store data and in-flight micro-batch coordination', async () => {
+    const { mock, services } = makeServices();
+    let resolveBatch: ((value: Record<string, boolean>) => void) | undefined;
+    mock.getFollowStatuses.mockImplementation(
+      () => new Promise<Record<string, boolean>>((resolve) => { resolveBatch = resolve; }),
+    );
+
+    const store = useFollowStore.getState();
+    store.resolveFollowStatuses(['u1'], services);
+    store.setFollowingStatus('u2', true);
+
+    store.resetFollowState();
+
+    expect(useFollowStore.getState().followingUsers).toEqual({});
+    expect(useFollowStore.getState().fetchingUsers).toEqual({});
+
+    resolveBatch?.({ u1: true });
+    await flush();
+
+    // A late batch must not repopulate a store that was reset.
+    expect(useFollowStore.getState().followingUsers).toEqual({});
+  });
+});
