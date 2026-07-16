@@ -897,7 +897,7 @@ export function AuthorizePage() {
           <OxyConsentScreen
             application={{
               name: application.name,
-              iconUrl: application.icon,
+              iconUrl: application.icon ? getAvatarUrl(application.icon) : undefined,
               websiteUrl: application.websiteUrl,
               privacyPolicyUrl: application.privacyPolicyUrl,
               termsUrl: application.termsUrl,

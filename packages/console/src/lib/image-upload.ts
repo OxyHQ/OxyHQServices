@@ -109,3 +109,14 @@ export async function uploadPublicImage(
   }
   return stripSensitiveImageUrlQueryParams(oxyServices.getFileDownloadUrl(response.file.id));
 }
+
+/** Resolve a stored file id (or absolute URL) to a renderable image URL. */
+export function resolveStoredImageUrl(
+  oxyServices: OxyServices,
+  fileId: string | undefined | null,
+  variant: 'thumb' | 'full' = 'thumb',
+): string | undefined {
+  if (!fileId) return undefined;
+  if (fileId.startsWith('http')) return fileId;
+  return oxyServices.getFileDownloadUrl(fileId, variant);
+}

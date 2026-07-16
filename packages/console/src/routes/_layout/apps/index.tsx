@@ -33,6 +33,8 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useApplications, useCreateApplication } from '@/hooks/use-applications';
+import { useAuth } from '@oxyhq/services';
+import { resolveStoredImageUrl } from '@/lib/image-upload';
 
 export const Route = createFileRoute('/_layout/apps/')({
   component: AppsPage,
@@ -47,6 +49,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function AppsPage() {
   const navigate = useNavigate();
+  const { oxyServices } = useAuth();
   const { data: applications = [], isLoading } = useApplications();
   const createApplicationMutation = useCreateApplication();
 
@@ -151,7 +154,13 @@ function AppsPage() {
                   >
                     <div className="flex flex-1 items-start gap-3">
                       <Avatar size="default" className="mt-0.5 rounded-lg after:rounded-lg">
-                        {app.icon && <AvatarImage src={app.icon} alt={app.name} className="rounded-lg" />}
+                        {app.icon && (
+                          <AvatarImage
+                            src={resolveStoredImageUrl(oxyServices, app.icon)}
+                            alt={app.name}
+                            className="rounded-lg"
+                          />
+                        )}
                         <AvatarFallback className="rounded-lg uppercase">
                           {app.name.charAt(0)}
                         </AvatarFallback>

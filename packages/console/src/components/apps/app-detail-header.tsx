@@ -3,6 +3,8 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { ArrowLeft01Icon, RocketIcon, Settings01Icon } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useAuth } from '@oxyhq/services';
+import { resolveStoredImageUrl } from '@/lib/image-upload';
 import type { Application, CallerAccess } from '@/hooks/use-applications';
 
 /** The two top-level sections of an application. */
@@ -22,6 +24,7 @@ interface AppDetailHeaderProps {
  * would only 403.
  */
 export function AppDetailHeader({ application, access, active }: AppDetailHeaderProps) {
+  const { oxyServices } = useAuth();
   const showUpdates = access.can('updates:manage');
 
   return (
@@ -36,7 +39,11 @@ export function AppDetailHeader({ application, access, active }: AppDetailHeader
       <div className="flex items-center gap-3">
         <Avatar size="lg" className="rounded-lg after:rounded-lg">
           {application.icon && (
-            <AvatarImage src={application.icon} alt={application.name} className="rounded-lg" />
+            <AvatarImage
+              src={resolveStoredImageUrl(oxyServices, application.icon)}
+              alt={application.name}
+              className="rounded-lg"
+            />
           )}
           <AvatarFallback className="rounded-lg text-lg uppercase">
             {application.name.charAt(0)}

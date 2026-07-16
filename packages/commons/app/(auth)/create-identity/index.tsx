@@ -164,6 +164,19 @@ export default function CreateIdentityScreen() {
           // from this ref and clear it after acknowledgement.
           recoveryPhraseRef.current = result.recoveryPhrase;
 
+          // Online but server sync failed: do not advance to recovery phrase —
+          // username would call authenticated APIs with no session.
+          if (!offline && !result.synced) {
+            if (!isMountedRef.current) return;
+            const syncErrorMessage =
+              'Your identity was created on this device, but we could not connect it to your account. Check your connection and try again.';
+            setAuthError(syncErrorMessage);
+            setCreateError(syncErrorMessage);
+            hasStartedCreateRef.current = false;
+            setCreatingProgress(0);
+            return;
+          }
+
           await new Promise(resolve => setTimeout(resolve, CREATING_FINAL_DELAY_MS));
 
           if (!isMountedRef.current) return;
