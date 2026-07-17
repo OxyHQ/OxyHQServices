@@ -19,11 +19,13 @@ import {
   signRequestSchema,
   federationFollowSchema,
   federationActorGoneSchema,
+  federationActorDeleteSchema,
   type PublicKeyParams,
   type PublicKeyQuery,
   type SignRequestBody,
   type FederationFollowBody,
   type FederationActorGoneBody,
+  type FederationActorDeleteBody,
 } from '../schemas/federation.schemas';
 
 const router = Router();
@@ -293,6 +295,66 @@ router.post(
       oxyUserId,
       accountStatus: 'archived',
       alreadyArchived,
+    });
+  }),
+);
+
+/**
+ * POST /federation/actor-delete
+ *
+ * HARD-DELETES a dead remote fediverse identity and purges its Oxy follow-graph
+ * edges. Mention calls this after an actor is permanently removed upstream (HTTP
+ * 410 Gone for a deleted/spam account) to erase the ghost identity and its
+ * social-graph residue from Oxy entirely — the irreversible counterpart to
+ * `actor-gone` (which only archives, keeping the row).
+ *
+ * ANTI-FOOTGUN: only a `type:'federated'` user may be deleted here. The route
+ * loads the user and rejects a non-federated target with 409 BEFORE any
+ * destructive write; `userService.deleteFederatedActor` additionally re-asserts
+ * `type:'federated'` on the terminal `User.deleteOne` filter, so a real
+ * account can never be hard-deleted through this bridge even under a race.
+ *
+ * Idempotent: an already-deleted (or never-known) id is a 200 no-op with
+ * `deleted:false` — NOT a 404 — so a retried delete after a partial success
+ * always converges.
+ */
+router.post(
+  '/actor-delete',
+  serviceAuthMiddleware,
+  validate({ body: federationActorDeleteSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertFederationScope(req);
+
+    const { oxyUserId } = req.body as FederationActorDeleteBody;
+
+    const user = await User.findById(oxyUserId).select('type').lean();
+    // Idempotent: an unknown (or already-deleted) actor is a 200 no-op so a
+    // retried delete converges instead of erroring.
+    if (!user) {
+      return sendSuccess(res, {
+        oxyUserId,
+        deleted: false,
+        followEdgesRemoved: 0,
+      });
+    }
+    // HARD GUARD: never hard-delete a local/agent/automated account through this
+    // service bridge — only a dead remote fediverse actor.
+    if (user.type !== 'federated') {
+      throw new ConflictError('user is not a federated actor and cannot be deleted');
+    }
+
+    const { followEdgesRemoved } = await userService.deleteFederatedActor(oxyUserId);
+    logger.info('federation/actor-delete: hard-deleted dead federated actor', {
+      oxyUserId,
+      followEdgesRemoved,
+      appId: req.serviceApp?.appId,
+      credentialId: req.serviceApp?.credentialId,
+    });
+
+    return sendSuccess(res, {
+      oxyUserId,
+      deleted: true,
+      followEdgesRemoved,
     });
   }),
 );

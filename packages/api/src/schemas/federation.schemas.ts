@@ -100,8 +100,25 @@ export const federationActorGoneSchema = z.object({
   oxyUserId: objectIdSchema,
 });
 
+/**
+ * POST /federation/actor-delete
+ *
+ * HARD-DELETES a dead remote fediverse identity and purges its Oxy follow-graph
+ * edges. Mention calls this after a federated actor has been permanently removed
+ * upstream (HTTP 410 Gone for a spam/deleted account) to erase the ghost
+ * identity and its social-graph residue from Oxy entirely — the irreversible
+ * counterpart to `actor-gone` (which only archives). `oxyUserId` is the
+ * (federated) actor's Oxy user id; the route enforces that it resolves to a
+ * `type:'federated'` user before any destructive write, and the delete filter
+ * re-asserts `type:'federated'` atomically so a real account can never be hit.
+ */
+export const federationActorDeleteSchema = z.object({
+  oxyUserId: objectIdSchema,
+});
+
 export type PublicKeyParams = z.infer<typeof publicKeyParamsSchema>;
 export type PublicKeyQuery = z.infer<typeof publicKeyQuerySchema>;
 export type SignRequestBody = z.infer<typeof signRequestSchema>;
 export type FederationFollowBody = z.infer<typeof federationFollowSchema>;
 export type FederationActorGoneBody = z.infer<typeof federationActorGoneSchema>;
+export type FederationActorDeleteBody = z.infer<typeof federationActorDeleteSchema>;
