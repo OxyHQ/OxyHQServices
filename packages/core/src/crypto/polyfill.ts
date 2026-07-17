@@ -4,14 +4,26 @@
  * Ensures Buffer and crypto.getRandomValues are available
  * across all platforms (Node.js, Browser, React Native).
  *
- * - Browser/Node.js: Uses native crypto
- * - React Native: Uses expo-crypto (statically imported via the
- *   per-platform `platform/crypto` module in `@oxyhq/protocol` — see that
- *   file's doc-comment for how platform routing works).
+ * Guard order when installing a `getRandomValues` shim (see bottom of file and
+ * {@link cryptoPolyfill}):
+ *
+ *   1. A REAL `globalThis.crypto.getRandomValues` — used as-is (browser, Node
+ *      >= 20, modern Hermes). The shim below is only installed when the host is
+ *      missing it, so this branch is the install-time gate.
+ *   2. Node — backed by the built-in `node:crypto` module (`webcrypto`, else
+ *      `randomFillSync`). This is what a Node runtime WITHOUT a global WebCrypto
+ *      (Node 18 script entrypoints, some embedded hosts) falls back to.
+ *   3. React Native — `expo-crypto.getRandomBytes` (statically imported via the
+ *      per-platform `platform/crypto` module in `@oxyhq/protocol`).
+ *
+ * Historically step (2) delegated to `@oxyhq/protocol`'s RN-only
+ * `getRandomBytesRN`, which THROWS on Node — so any Node host lacking a global
+ * WebCrypto crashed here instead of getting randomness. It is now a proper
+ * Node-backed implementation.
  */
 
 import { Buffer } from 'buffer';
-import { getRandomBytesRN } from '@oxyhq/protocol';
+import { getRandomBytesRN, isNodeJS } from '@oxyhq/protocol';
 
 const getGlobalObject = (): typeof globalThis => {
   if (typeof globalThis !== 'undefined') return globalThis;
@@ -32,25 +44,89 @@ type CryptoLike = {
   getRandomValues: <T extends ArrayBufferView>(array: T) => T;
 };
 
+/** Minimal structural shape of the parts of `node:crypto` this polyfill uses. */
+interface NodeCryptoLike {
+  webcrypto?: {
+    getRandomValues?: <T extends ArrayBufferView>(array: T) => T;
+  };
+  randomFillSync?: <T extends ArrayBufferView>(buffer: T) => T;
+}
+
 /**
- * Synchronous random-bytes shim. On RN, this delegates to
- * `expo-crypto.getRandomBytes` (statically imported by the RN variant of
- * `@oxyhq/protocol`'s `platform/crypto`, so available without any async
- * warm-up). On Node /
- * browser, this throws — but is never called there because both platforms
- * already provide `globalThis.crypto.getRandomValues` natively.
+ * Lazily-resolved `node:crypto` module, cached after the first attempt.
+ * `undefined` = not tried yet; `null` = tried and unavailable (non-Node host).
  */
-function getRandomBytesSync(byteCount: number): Uint8Array {
-  // `getRandomBytesRN` throws on non-RN platforms. That's fine: this
-  // function is only ever called as a fallback when the native
-  // `globalThis.crypto.getRandomValues` is missing, which on a normal
-  // Node/browser host never happens.
-  return getRandomBytesRN(byteCount);
+let cachedNodeCrypto: NodeCryptoLike | null | undefined;
+
+/**
+ * Synchronously load `node:crypto` on a Node runtime, or `null` elsewhere.
+ *
+ * Uses a guarded, Node-only `require`. Every runtime that actually reaches this
+ * branch has a working CommonJS `require`: `@oxyhq/core` publishes no
+ * `"type": "module"`, so Node loads it as CommonJS and the `require` free
+ * variable is present. Browsers never reach here (they own `globalThis.crypto`,
+ * so this polyfill is never installed) and React Native takes the
+ * `getRandomBytesRN` branch — so the `node:crypto` reference is dead code in
+ * those bundles, and Expo's Metro resolver shims `node:*` builtins, keeping
+ * web/native bundles green.
+ */
+function loadNodeCryptoSync(): NodeCryptoLike | null {
+  if (cachedNodeCrypto !== undefined) {
+    return cachedNodeCrypto;
+  }
+  if (typeof require !== 'function') {
+    cachedNodeCrypto = null;
+    return cachedNodeCrypto;
+  }
+  try {
+    cachedNodeCrypto = require('node:crypto') as NodeCryptoLike;
+  } catch {
+    // No Node crypto (unexpected on a real Node host) — degrade to the next
+    // mechanism rather than crash.
+    cachedNodeCrypto = null;
+  }
+  return cachedNodeCrypto;
+}
+
+/**
+ * Fill `array` with cryptographically-secure random bytes from `node:crypto`.
+ * Prefers `webcrypto.getRandomValues`; falls back to `randomFillSync`. Returns
+ * `false` when Node crypto is unavailable so the caller can try the next
+ * mechanism.
+ */
+function fillFromNodeCrypto(array: ArrayBufferView): boolean {
+  const nodeCrypto = loadNodeCryptoSync();
+  if (!nodeCrypto) {
+    return false;
+  }
+  const webcrypto = nodeCrypto.webcrypto;
+  if (webcrypto && typeof webcrypto.getRandomValues === 'function') {
+    try {
+      webcrypto.getRandomValues(array);
+      return true;
+    } catch {
+      // `webcrypto.getRandomValues` rejects non-integer views (Float*Array,
+      // DataView); fall through to `randomFillSync`, which accepts any view.
+    }
+  }
+  if (typeof nodeCrypto.randomFillSync === 'function') {
+    nodeCrypto.randomFillSync(array);
+    return true;
+  }
+  return false;
 }
 
 const cryptoPolyfill: CryptoLike = {
   getRandomValues<T extends ArrayBufferView>(array: T): T {
-    const bytes = getRandomBytesSync(array.byteLength);
+    // Node: back the CSPRNG with `node:crypto`. This is the path that matters on
+    // Node runtimes shipping WITHOUT a global WebCrypto — where delegating to
+    // the RN-only expo-crypto stub would throw.
+    if (isNodeJS() && fillFromNodeCrypto(array)) {
+      return array;
+    }
+    // React Native (and any non-Node host without WebCrypto): synchronous
+    // expo-crypto via @oxyhq/protocol's RN `platform/crypto` variant.
+    const bytes = getRandomBytesRN(array.byteLength);
     const uint8View = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
     uint8View.set(bytes);
     return array;
