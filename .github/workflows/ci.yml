@@ -137,6 +137,70 @@ jobs:
         run: bun run build
         working-directory: ./packages/api
 
+  # Contracts package tests (Jest — no MongoDB)
+  contracts-test:
+    name: Contracts Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: bun run test
+        working-directory: ./packages/contracts
+
+  # Core SDK tests (Jest — build contracts + protocol first)
+  core-test:
+    name: Core Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+      - run: bun run test
+        working-directory: ./packages/core
+
+  # Services SDK tests (Jest — build workspace deps first)
+  services-test:
+    name: Services Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+          bun run --filter @oxyhq/core build
+      - run: bun run test
+        working-directory: ./packages/services
+
+  # Auth IdP tests (bun test — NOT jest)
+  auth-test:
+    name: Auth Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+          bun run --filter @oxyhq/core build
+          bun run --filter @oxyhq/services build
+      - run: bun run test
+        working-directory: ./packages/auth
+
   # Security audit
   security-audit:
     name: Security Audit

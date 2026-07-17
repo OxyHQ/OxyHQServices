@@ -5,9 +5,15 @@ name: Deploy to AWS
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    paths:
+      - 'packages/api/**'
+      - 'packages/core/**'
+      - 'packages/contracts/**'
+      - 'packages/protocol/**'
+      - 'Dockerfile'
+      - 'bun.lock'
+      - 'package.json'
+      - '.github/workflows/deploy-aws.yml'
   workflow_dispatch:
 
 permissions:
