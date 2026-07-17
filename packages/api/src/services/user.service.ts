@@ -1465,6 +1465,118 @@ export class UserService {
   }
 
   /**
+   * HARD-DELETE a dead federated actor and purge its entire follow graph.
+   *
+   * This is the irreversible teardown behind `POST /federation/actor-delete`:
+   * when a remote fediverse account is permanently gone (410) the caller purges
+   * the corresponding Oxy identity AND every social-graph edge it left behind.
+   *
+   * CALLER CONTRACT: the route MUST have already loaded the user and confirmed
+   * `type === 'federated'` before calling this — this method performs
+   * destructive writes and only re-asserts the guard atomically on the final
+   * `User.deleteOne` (filter `{ _id, type: 'federated' }`), never on the graph
+   * purge. It must never be called for a local/agent/automated account.
+   *
+   * ORDER (each step safe to retry / idempotent):
+   *  1. Snapshot the counterparties on both sides of the graph BEFORE deleting
+   *     edges, so we know exactly whose denormalized counts to repair.
+   *  2. Delete every `Follow` edge touching this user in either direction (any
+   *     followType — user/hashtag/topic follows the actor authored are all dead).
+   *  3. Decrement the counterparties' denormalized `_count`, with the SAME
+   *     per-field semantics `unfollowUser` uses — a user this actor followed
+   *     loses one `followers`; a user who followed this actor loses one
+   *     `following` — batched into two updates regardless of edge count.
+   *  4. Delete any `Block` rows in either direction.
+   *  5. Invalidate this actor's user cache and the cached graph of every
+   *     counterparty (mutuals are symmetric), mirroring `unfollowUser`.
+   *  6. Delete the `User` document, re-asserting `type: 'federated'` atomically.
+   *
+   * @param oxyUserId The federated actor's Oxy user id.
+   * @returns The number of follow-graph edges removed.
+   */
+  async deleteFederatedActor(
+    oxyUserId: string
+  ): Promise<{ followEdgesRemoved: number }> {
+    // 1. Snapshot counterparties on both sides BEFORE removing any edge.
+    //    Outbound: users THIS actor follows (they each lose one follower).
+    //    Inbound:  users who follow THIS actor (they each lose one following).
+    const [outboundEdges, inboundEdges] = await Promise.all([
+      Follow.find({ followerUserId: oxyUserId, followType: FollowType.USER })
+        .select('followedId')
+        .lean(),
+      Follow.find({ followedId: oxyUserId, followType: FollowType.USER })
+        .select('followerUserId')
+        .lean(),
+    ]);
+
+    const followedCounterpartyIds = outboundEdges
+      .map((edge) => edge.followedId)
+      .filter((id): id is Types.ObjectId | string => id != null)
+      .map((id) => id.toString());
+    const followerCounterpartyIds = inboundEdges
+      .map((edge) => edge.followerUserId)
+      .filter((id): id is Types.ObjectId => id != null)
+      .map((id) => id.toString());
+
+    // 2. Remove every follow edge touching this actor, in either direction.
+    const { deletedCount } = await Follow.deleteMany({
+      $or: [{ followerUserId: oxyUserId }, { followedId: oxyUserId }],
+    });
+    const followEdgesRemoved = deletedCount ?? 0;
+
+    // 3. Repair the counterparties' denormalized counts. Each counterparty is
+    //    distinct per direction (the unique compound index guarantees a given
+    //    edge exists at most once), so `updateMany` decrements each exactly
+    //    once. The two updates touch different fields, so a bidirectional
+    //    counterparty is correctly decremented on both.
+    const countUpdates: Promise<unknown>[] = [];
+    if (followedCounterpartyIds.length > 0) {
+      countUpdates.push(
+        User.updateMany(
+          { _id: { $in: followedCounterpartyIds } },
+          { $inc: { '_count.followers': -1 } }
+        )
+      );
+    }
+    if (followerCounterpartyIds.length > 0) {
+      countUpdates.push(
+        User.updateMany(
+          { _id: { $in: followerCounterpartyIds } },
+          { $inc: { '_count.following': -1 } }
+        )
+      );
+    }
+    if (countUpdates.length > 0) {
+      await Promise.all(countUpdates);
+    }
+
+    // 4. Remove any blocks in either direction.
+    await Block.deleteMany({
+      $or: [{ userId: oxyUserId }, { blockedId: oxyUserId }],
+    });
+
+    // 5. Invalidate this actor's user cache plus the cached graph of every
+    //    counterparty (and the actor itself) — the same invalidation
+    //    `unfollowUser` performs, batched.
+    userCache.invalidate(oxyUserId);
+    const graphIdsToInvalidate = new Set<string>([
+      oxyUserId,
+      ...followedCounterpartyIds,
+      ...followerCounterpartyIds,
+    ]);
+    await Promise.all(
+      Array.from(graphIdsToInvalidate, (id) => graphCache.invalidate(id))
+    );
+
+    // 6. Delete the user document. The `type: 'federated'` filter re-asserts the
+    //    guard atomically so a concurrent type flip can never delete a real
+    //    account through this path.
+    await User.deleteOne({ _id: oxyUserId, type: 'federated' });
+
+    return { followEdgesRemoved };
+  }
+
+  /**
    * Check if current user is following target user
    */
   async isFollowing(
