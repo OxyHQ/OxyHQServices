@@ -1,0 +1,107 @@
+{
+  "name": "@oxyhq/federation",
+  "version": "0.1.0",
+  "description": "Oxy Federation — the app-agnostic ActivityPub identity + follow engine substrate: the network-connector contract, normalized cross-network DTOs, and (in later phases) HTTP signatures, actor resolution, webfinger/actor/inbox routers, and delivery transport. Domain-parameterized so every Oxy app backend federates under its own domain.",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "node": [
+        "dist/types/node/index.d.ts"
+      ]
+    }
+  },
+  "source": "src/index.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/types/node/index.d.ts",
+        "default": "./dist/esm/node/index.js"
+      },
+      "require": {
+        "types": "./dist/types/node/index.d.ts",
+        "default": "./dist/cjs/node/index.js"
+      },
+      "default": "./dist/esm/node/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "oxyhq",
+    "federation",
+    "activitypub",
+    "webfinger",
+    "fediverse",
+    "connector"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/federation"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "bun run build:cjs && bun run build:esm && bun run build:types",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "typescript": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "prepublishOnly": "bun run clean && bun run build",
+    "release": "rm -rf dist && bun run build && release-it"
+  },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/federation@${version}",
+      "tagAnnotation": "Release @oxyhq/federation@${version}",
+      "commitMessage": "chore(federation): release @oxyhq/federation@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/federation@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
+  },
+  "peerDependencies": {
+    "express": "^4.18.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.20.1",
+    "release-it": "^19.0.6",
+    "typescript": "^5.9.2"
+  }
+}

@@ -10,6 +10,7 @@
   "workspaces": [
     "packages/contracts",
     "packages/protocol",
+    "packages/federation",
     "packages/core",
     "packages/services",
     "packages/expo-splash",
@@ -34,6 +35,7 @@
     "test": "turbo run test",
     "clean": "turbo run clean",
     "protocol:build": "bun run --filter @oxyhq/protocol build",
+    "federation:build": "bun run --filter @oxyhq/federation build",
     "core:build": "bun run --filter @oxyhq/core build",
     "services:build": "bun run --filter @oxyhq/services build",
     "services:dev": "bun run --filter @oxyhq/services dev",
