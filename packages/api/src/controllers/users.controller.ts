@@ -38,8 +38,14 @@ export class UsersController {
       // POST /federation/actor-gone, plus archived org/project accounts) so
       // they never surface as 0-post ghost search hits. Only `archived` is
       // filtered — active accounts (the default) all still match.
+      // Also exclude users in the punitive `restricted` reputation tier
+      // (lifetime total < 0 OR abuseScore >= threshold). `reputationTier` is
+      // absent until `recalculateBalance` first runs, and Mongo treats a missing
+      // field as NOT equal to 'restricted', so untiered/new users still match —
+      // only actively-restricted users are hidden.
       const users = await User.find({
         accountStatus: { $ne: 'archived' },
+        reputationTier: { $ne: 'restricted' },
         $or: [
           { username: { $regex: sanitizedQuery, $options: 'i' } },
           { 'name.first': { $regex: sanitizedQuery, $options: 'i' } },

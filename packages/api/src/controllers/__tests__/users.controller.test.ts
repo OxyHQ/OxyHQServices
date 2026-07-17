@@ -82,6 +82,8 @@ describe('UsersController', () => {
         // Archived accounts (e.g. dead federated actors marked gone) are
         // excluded from search so they never surface as ghost hits.
         accountStatus: { $ne: 'archived' },
+        // Users in the punitive `restricted` reputation tier are excluded too.
+        reputationTier: { $ne: 'restricted' },
         $or: [
           { username: { $regex: 'test', $options: 'i' } },
           { 'name.first': { $regex: 'test', $options: 'i' } },
@@ -118,6 +120,81 @@ describe('UsersController', () => {
       // (the default) still match.
       const filter = mockFind.mock.calls[0]?.[0] as { accountStatus?: unknown };
       expect(filter.accountStatus).toEqual({ $ne: 'archived' });
+    });
+
+    it('excludes restricted-tier users from the search filter', async () => {
+      mockRequest.body = { query: 'test' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // Users in the punitive `restricted` reputation tier (lifetime total < 0
+      // OR abuseScore >= threshold) are hidden from people search alongside
+      // archived accounts. `{ $ne: 'restricted' }` still matches docs whose
+      // `reputationTier` is absent (untiered/new users), so no live user hides.
+      const filter = mockFind.mock.calls[0]?.[0] as { reputationTier?: unknown };
+      expect(filter.reputationTier).toEqual({ $ne: 'restricted' });
+    });
+
+    it('hides restricted OR archived users while an active untiered user shows', async () => {
+      mockRequest.body = { query: 'match' };
+
+      // A candidate pool exercising every axis: a restricted user, an archived
+      // user, a non-punitive `trusted` user, and an untiered active user.
+      const pool = [
+        { username: 'clean_match', accountStatus: 'active' as const },
+        { username: 'trusted_match', accountStatus: 'active' as const, reputationTier: 'trusted' as const },
+        { username: 'archived_match', accountStatus: 'archived' as const, reputationTier: 'trusted' as const },
+        { username: 'restricted_match', accountStatus: 'active' as const, reputationTier: 'restricted' as const },
+      ];
+
+      // Faithfully evaluate the controller's `{ $ne }` gates against the pool —
+      // a missing field is NOT equal to the excluded value (Mongo semantics), so
+      // the untiered user survives.
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockImplementation(() => {
+          const filter = mockFind.mock.calls[0]?.[0] as {
+            accountStatus?: { $ne?: string };
+            reputationTier?: { $ne?: string };
+          };
+          const acctNe = filter.accountStatus?.$ne;
+          const tierNe = filter.reputationTier?.$ne;
+          return Promise.resolve(
+            pool.filter(
+              (u) =>
+                u.accountStatus !== acctNe &&
+                (u as { reputationTier?: string }).reputationTier !== tierNe
+            )
+          );
+        }),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      const responseJson = mockResponse.json as jest.Mock;
+      const returned = responseJson.mock.calls[0]?.[0]?.data as Array<{ username: string }>;
+      const usernames = returned.map((u) => u.username);
+      expect(usernames).toContain('clean_match');
+      expect(usernames).toContain('trusted_match');
+      expect(usernames).not.toContain('archived_match');
+      expect(usernames).not.toContain('restricted_match');
     });
 
     it('never projects the searched users\' email addresses', async () => {

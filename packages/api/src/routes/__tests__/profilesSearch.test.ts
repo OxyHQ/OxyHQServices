@@ -80,6 +80,7 @@ interface PoolUser {
   name?: { first?: string; last?: string };
   description?: string;
   accountStatus?: string;
+  reputationTier?: string;
   type?: string;
 }
 
@@ -117,13 +118,20 @@ function requestJson(server: http.Server, path: string): Promise<JsonResponse> {
 }
 
 /**
- * Faithfully evaluate the route's search `$match` (an `accountStatus` $ne gate
- * plus a `$or` of field regexes) against a candidate pool, mirroring MongoDB's
- * semantics for the exact operators the filter uses.
+ * Faithfully evaluate the route's search `$match` (an `accountStatus` $ne gate,
+ * a `reputationTier` $ne gate, plus a `$or` of field regexes) against a
+ * candidate pool, mirroring MongoDB's semantics for the exact operators the
+ * filter uses — crucially, `{ $ne: X }` MATCHES a document whose field is
+ * ABSENT (Mongo treats a missing field as not-equal), so an untiered user with
+ * no `reputationTier` still surfaces.
  */
 function matchesSearchFilter(user: PoolUser, filter: Record<string, unknown>): boolean {
   const acct = filter.accountStatus as { $ne?: string } | undefined;
   if (acct && typeof acct.$ne === 'string' && user.accountStatus === acct.$ne) {
+    return false;
+  }
+  const tier = filter.reputationTier as { $ne?: string } | undefined;
+  if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
     return false;
   }
   const or = filter.$or as Array<Record<string, RegExp>> | undefined;
@@ -153,6 +161,8 @@ function aggregateSearch(pool: PoolUser[]): (pipeline: unknown) => Promise<unkno
 
 const activeLocal = new Types.ObjectId();
 const archivedActor = new Types.ObjectId();
+const restrictedActor = new Types.ObjectId();
+const trustedActor = new Types.ObjectId();
 
 let server: http.Server;
 
@@ -186,6 +196,16 @@ describe('GET /profiles/search archived exclusion', () => {
     expect(pipeline[0].$match?.accountStatus).toEqual({ $ne: 'archived' });
   });
 
+  it('adds reputationTier: { $ne: "restricted" } to the aggregation $match', async () => {
+    mockUserAggregate.mockImplementation(aggregateSearch([]));
+
+    const res = await requestJson(server, '/profiles/search?query=test');
+    expect(res.status).toBe(200);
+
+    const pipeline = mockUserAggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
+    expect(pipeline[0].$match?.reputationTier).toEqual({ $ne: 'restricted' });
+  });
+
   it('filters archived accounts while surfacing active matches', async () => {
     const pool: PoolUser[] = [
       { _id: activeLocal, username: 'active_match', accountStatus: 'active' },
@@ -199,6 +219,63 @@ describe('GET /profiles/search archived exclusion', () => {
     const ids = (res.body.data ?? []).map((p) => String(p.id));
     expect(ids).toContain(activeLocal.toString());
     expect(ids).not.toContain(archivedActor.toString());
+  });
+
+  it('filters restricted-tier users while surfacing trusted and untiered matches', async () => {
+    const pool: PoolUser[] = [
+      // Active + no reputationTier (absent field) — must still surface.
+      { _id: activeLocal, username: 'untiered_match', accountStatus: 'active' },
+      // Active + explicit non-punitive tier — must still surface.
+      { _id: trustedActor, username: 'trusted_match', accountStatus: 'active', reputationTier: 'trusted' },
+      // Active but punitive `restricted` tier — must be hidden.
+      { _id: restrictedActor, username: 'restricted_match', accountStatus: 'active', reputationTier: 'restricted' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).toContain(activeLocal.toString());
+    expect(ids).toContain(trustedActor.toString());
+    expect(ids).not.toContain(restrictedActor.toString());
+  });
+
+  it('hides a restricted OR archived user while an active untiered user shows', async () => {
+    const pool: PoolUser[] = [
+      // Active, no tier — the only row that should survive both gates.
+      { _id: activeLocal, username: 'clean_match', accountStatus: 'active' },
+      // Archived (any tier) — hidden by the accountStatus gate.
+      { _id: archivedActor, username: 'archived_match', accountStatus: 'archived', reputationTier: 'trusted' },
+      // Restricted (active) — hidden by the reputationTier gate.
+      { _id: restrictedActor, username: 'restricted_match', accountStatus: 'active', reputationTier: 'restricted' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).toEqual([activeLocal.toString()]);
+  });
+
+  it('does NOT prepend a federated actor that resolves as restricted', async () => {
+    mockUserAggregate.mockImplementation(aggregateSearch([]));
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: restrictedActor,
+      username: 'abuser@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+      reputationTier: 'restricted',
+    });
+
+    const res = await requestJson(server, '/profiles/search?query=abuser@remote.example');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).not.toContain(restrictedActor.toString());
+    expect(res.body.data).toHaveLength(0);
   });
 
   it('does NOT prepend a federated actor that resolves as archived', async () => {

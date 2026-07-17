@@ -433,6 +433,13 @@ router.get(
       // is excluded — every legitimately-active account (accountStatus defaults
       // to 'active') still matches, so no live user is hidden.
       accountStatus: { $ne: 'archived' },
+      // Exclude users in the punitive `restricted` reputation tier (lifetime
+      // reputation total < 0 OR abuseScore >= threshold) — the negative tier is
+      // hidden from people search just like archived accounts. `reputationTier`
+      // is optional/absent until `recalculateBalance` first runs, and Mongo
+      // treats a missing field as NOT equal to 'restricted', so untiered/new
+      // users still surface — only actively-restricted users are hidden.
+      reputationTier: { $ne: 'restricted' },
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
@@ -467,10 +474,14 @@ router.get(
 
     // If federation resolved a user not already in DB results, prepend it.
     // `resolveAndUpsert` returns the cached row for a known federated actor,
-    // which can be an ARCHIVED (dead / 410-Gone) account — never let that
-    // prepend re-introduce an actor the `accountStatus` $match above just
-    // excluded.
-    if (federatedUser && federatedUser.accountStatus !== 'archived') {
+    // which can be an ARCHIVED (dead / 410-Gone) account or a `restricted`
+    // (negative-reputation) actor — never let that prepend re-introduce an actor
+    // the `accountStatus` / `reputationTier` $match above just excluded.
+    if (
+      federatedUser &&
+      federatedUser.accountStatus !== 'archived' &&
+      federatedUser.reputationTier !== 'restricted'
+    ) {
       const fedId = federatedUser._id?.toString();
       const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
       if (!alreadyIncluded) {
