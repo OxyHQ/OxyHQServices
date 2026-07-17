@@ -1,14 +1,15 @@
 /**
  * POST /federation/follow — service-credential follow bridge.
  *
- * A FEDERATED (fediverse) actor that follows/unfollows a LOCAL user over
- * ActivityPub is mirrored into the Oxy follow graph by Mention's backend through
- * this route. The suite walks the trust boundary and the idempotency guarantees:
+ * A FEDERATED (fediverse) actor that follows/unfollows another user — a LOCAL
+ * account OR another federated actor — over ActivityPub is mirrored into the Oxy
+ * follow graph by Mention's backend through this route. The suite walks the
+ * trust boundary and the idempotency guarantees:
  *
  *  - missing federation:write scope                        → 403
  *  - follower is not a `type:'federated'` user             → 403 (anti-impersonation)
  *  - unknown follower / unknown target                     → 404
- *  - target is federated (not a local user)                → 403
+ *  - federated follower → federated target                 → 200 (fed↔fed edge)
  *  - repeated follow moves the counters ±1 exactly once    → idempotent
  *  - repeated unfollow never drives the counters negative  → idempotent
  *  - self-follow is rejected at the service primitive
@@ -319,9 +320,9 @@ describe('POST /federation/follow', () => {
     expect(mockFollowCreate).not.toHaveBeenCalled();
   });
 
-  it('rejects when the target is itself a federated user', async () => {
-    seedUser(FEDERATED_ID, 'federated');
-    seedUser(OTHER_ID, 'federated');
+  it('records a federated → federated follow edge (fed↔fed)', async () => {
+    const follower = seedUser(FEDERATED_ID, 'federated');
+    const target = seedUser(OTHER_ID, 'federated');
 
     const res = await requestJson(server, 'POST', '/federation/follow', {
       followerUserId: FEDERATED_ID,
@@ -329,9 +330,35 @@ describe('POST /federation/follow', () => {
       action: 'follow',
     });
 
-    expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/local \(non-federated\) user/i);
-    expect(mockFollowCreate).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.body.data?.created).toBe(true);
+    // The follower's own graph moves ±1; a federated target is now a valid edge.
+    expect(res.body.data?.counts).toEqual({ followers: 1, following: 1 });
+    expect(target._count.followers).toBe(1);
+    expect(follower._count.following).toBe(1);
+    expect(mockFollowCreate).toHaveBeenCalledTimes(1);
+    expect(followEdges.size).toBe(1);
+  });
+
+  it('removes a federated → federated follow edge on unfollow (fed↔fed)', async () => {
+    const follower = seedUser(FEDERATED_ID, 'federated');
+    const target = seedUser(OTHER_ID, 'federated');
+    followEdges.add(edgeKey(FEDERATED_ID, 'user', OTHER_ID));
+    target._count.followers = 1;
+    follower._count.following = 1;
+
+    const res = await requestJson(server, 'POST', '/federation/follow', {
+      followerUserId: FEDERATED_ID,
+      targetUserId: OTHER_ID,
+      action: 'unfollow',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data?.removed).toBe(true);
+    expect(res.body.data?.counts).toEqual({ followers: 0, following: 0 });
+    expect(target._count.followers).toBe(0);
+    expect(follower._count.following).toBe(0);
+    expect(followEdges.size).toBe(0);
   });
 
   it('rejects when the follower is archived', async () => {

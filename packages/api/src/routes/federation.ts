@@ -192,7 +192,11 @@ router.post(
  * ANTI-IMPERSONATION: `followerUserId` MUST resolve to a `type:'federated'`
  * user. A service credential must never be able to move a LOCAL user's follow
  * graph — only the user themselves (via their own session) may do that. The
- * target must be a real, non-federated (local) user.
+ * target may be a local user (a remote actor following a local account) OR
+ * another federated actor (a federated↔federated edge Mention records on the
+ * remote follower's behalf): because the follower is always a federated actor
+ * under a scoped credential, only that federated actor's OWN graph ever moves,
+ * so no local user's follow can be fabricated either way.
  */
 router.post(
   '/follow',
@@ -223,10 +227,6 @@ router.post(
     }
     if (target.accountStatus === 'archived') {
       throw new ConflictError('target is archived');
-    }
-    // A federated actor may only follow a local user through this bridge.
-    if (target.type === 'federated') {
-      throw new ForbiddenError('target must be a local (non-federated) user');
     }
 
     if (action === 'follow') {
