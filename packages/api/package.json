@@ -47,9 +47,9 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1087.0",
-    "@aws-sdk/lib-storage": "3.1076.0",
-    "@aws-sdk/s3-request-presigner": "^3.1087.0",
+    "@aws-sdk/client-s3": "^3.1089.0",
+    "@aws-sdk/lib-storage": "3.1089.0",
+    "@aws-sdk/s3-request-presigner": "^3.1089.0",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
     "@oxyhq/protocol": "workspace:*",
@@ -70,7 +70,7 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "axios": "^1.18.1",
-    "bullmq": "^5.80.4",
+    "bullmq": "^5.80.5",
     "cheerio": "^1.1.2",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
