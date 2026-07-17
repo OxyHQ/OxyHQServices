@@ -765,7 +765,11 @@ router.get(
 
     const user = await userService.getUserById(userId);
 
-    if (!user || user.accountStatus === 'archived') {
+    if (
+      !user ||
+      user.accountStatus === 'archived' ||
+      user.reputationTier === 'restricted'
+    ) {
       throw new NotFoundError('User not found');
     }
 

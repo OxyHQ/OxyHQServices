@@ -16,7 +16,7 @@
  * the client falls back to the handle.
  */
 
-import { formatUserResponse } from '../userTransform';
+import { formatUserResponse, toThemePreference } from '../userTransform';
 import {
   userResponseSchema,
   safeParseContract,
@@ -151,5 +151,32 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(formatUserResponse(null)).toBeNull();
     expect(formatUserResponse(undefined)).toBeNull();
     expect(formatUserResponse({ _id: { toString: () => '' } })).toBeNull();
+  });
+});
+
+describe('toThemePreference', () => {
+  it('returns a valid preference when mode and colorPreset are present', () => {
+    expect(toThemePreference({ mode: 'dark', colorPreset: 'blue' })).toEqual({
+      mode: 'dark',
+      colorPreset: 'blue',
+    });
+  });
+
+  it('accepts all supported modes', () => {
+    for (const mode of ['light', 'dark', 'system'] as const) {
+      expect(toThemePreference({ mode, colorPreset: 'green' })).toEqual({
+        mode,
+        colorPreset: 'green',
+      });
+    }
+  });
+
+  it('returns undefined for partial or invalid stored values', () => {
+    expect(toThemePreference({})).toBeUndefined();
+    expect(toThemePreference({ mode: 'dark' })).toBeUndefined();
+    expect(toThemePreference({ colorPreset: 'blue' })).toBeUndefined();
+    expect(toThemePreference({ mode: 'auto', colorPreset: 'blue' })).toBeUndefined();
+    expect(toThemePreference({ mode: 'dark', colorPreset: '' })).toBeUndefined();
+    expect(toThemePreference(null)).toBeUndefined();
   });
 });
