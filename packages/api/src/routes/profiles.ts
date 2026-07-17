@@ -422,8 +422,13 @@ router.get(
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
-    // Sanitize search query to prevent regex injection
-    const sanitizedQuery = query.trim().substring(0, 100);
+    // Sanitize search query to prevent regex injection. A single leading `@` is
+    // stripped first so a handle-style query matches the STORED username: an
+    // atproto handle `@adamrbjack.bsky.social` finds the stored
+    // `adamrbjack.bsky.social@bsky.social`, and a Mastodon `@user@host` matches
+    // the stored `user@host`. Only ONE leading `@` is removed — a mid-string `@`
+    // (the `user@host` separator) is preserved, so the regex still requires it.
+    const sanitizedQuery = query.trim().replace(/^@/, '').substring(0, 100);
     const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
     const searchFilter = {
@@ -528,11 +533,21 @@ router.get(
 /**
  * GET /profiles/resolve
  *
- * Resolve a fediverse handle (e.g. @user@mastodon.social) to an Oxy user profile.
- * Performs WebFinger discovery, fetches the ActivityPub actor, and upserts as a
- * federated user. Returns cached results if resolved within the last 24 hours.
+ * Resolve a handle (e.g. @user@mastodon.social) to an Oxy user profile.
  *
- * @query {string} handle - Fediverse handle (e.g. "@user@domain" or "user@domain")
+ * LOCAL-FIRST: a handle that already maps to a known Oxy user is resolved
+ * directly from the DB — no network round-trip. This is essential for atproto
+ * (Bluesky) actors whose `user@bsky.social` username oxy-api's WebFinger can
+ * never resolve: the user already exists, so remote discovery must NOT run (it
+ * would fail and yield a false "Profile not found"). The local lookup runs
+ * regardless of `isFediverseHandle` because a stored `user@domain` username is a
+ * valid lookup key even when the strict handle-format check would reject it.
+ *
+ * Only when NO local user exists do we fall through to WebFinger/ActivityPub
+ * discovery (`resolveAndUpsert`) — genuine discovery of an unknown handle, which
+ * is where the `isFediverseHandle` format validation still applies.
+ *
+ * @query {string} handle - Handle (e.g. "@user@domain" or "user@domain")
  * @returns {User | null} Resolved user profile or null
  */
 router.get(
@@ -540,7 +555,32 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const handle = (req.query.handle as string || '').trim();
 
-    if (!handle || !isFediverseHandle(handle)) {
+    if (!handle) {
+      throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
+    }
+
+    // Local-first: resolve an already-known user by exact username.
+    const localUser = await User.findOne({ username: handle })
+      .select('-password -refreshToken')
+      .lean({ virtuals: true });
+
+    if (localUser) {
+      // A known user is never handed to remote discovery. Archived (dead /
+      // 410-Gone) and `restricted`-tier accounts resolve to null — the same gate
+      // people search applies, and consistent with the archived→null behavior of
+      // the discovery path below.
+      if (localUser.accountStatus === 'archived' || localUser.reputationTier === 'restricted') {
+        return sendSuccess(res, null);
+      }
+      const stats = await userService.getUserStats(localUser._id.toString());
+      const response = userService.formatUserResponse(localUser, stats);
+      logger.debug('GET /profiles/resolve (local)', { handle });
+      return sendSuccess(res, response);
+    }
+
+    // No local user → genuine discovery of an unknown handle. Enforce the strict
+    // fediverse-handle format only now, then WebFinger/ActivityPub resolve+upsert.
+    if (!isFediverseHandle(handle)) {
       throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
     }
 

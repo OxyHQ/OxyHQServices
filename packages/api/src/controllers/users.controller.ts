@@ -30,8 +30,15 @@ export class UsersController {
         throw new BadRequestError('Search query is required and must be a non-empty string');
       }
 
+      // Strip a single leading `@` (and trim) BEFORE sanitizing so a handle-style
+      // query matches the STORED username: an atproto handle
+      // `@adamrbjack.bsky.social` finds `adamrbjack.bsky.social@bsky.social`, and
+      // a Mastodon `@user@host` matches `user@host`. Only ONE leading `@` is
+      // removed — a mid-string `@` (the `user@host` separator) is preserved.
+      const strippedQuery = query.trim().replace(/^@/, '');
+
       // Sanitize search query (length limit + HTML escaping)
-      const sanitizedQuery = sanitizeSearchQuery(query);
+      const sanitizedQuery = sanitizeSearchQuery(strippedQuery);
 
       // Search for users where username or name matches the query.
       // Exclude archived accounts (dead federated actors marked gone via
