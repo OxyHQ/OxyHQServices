@@ -21,6 +21,24 @@
  * knowledge of any app's post shape.
  */
 
+/**
+ * HTTP Signatures (draft-cavage) — the pure sign/verify crypto every Oxy app's
+ * ActivityPub federation shares. Private-key custody is injected; the key never
+ * enters this package.
+ */
+export {
+  signRequest,
+  verifyHttpSignature,
+  HTTP_SIGNATURE_ALGORITHM,
+  DEFAULT_SIGNED_CONTENT_TYPE,
+  type HttpSignatureSigner,
+  type SignRequestOptions,
+  type VerifyHttpRequest,
+  type VerifyHttpResult,
+  type FetchPublicKey,
+  type VerifyHttpSignatureOptions,
+} from './httpSignature';
+
 /** Supported external networks. */
 export type NetworkId = 'activitypub' | 'atproto';
 

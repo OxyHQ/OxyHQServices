@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/federation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Oxy Federation — the app-agnostic ActivityPub identity + follow engine substrate: the network-connector contract, normalized cross-network DTOs, and (in later phases) HTTP signatures, actor resolution, webfinger/actor/inbox routers, and delivery transport. Domain-parameterized so every Oxy app backend federates under its own domain.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
