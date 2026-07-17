@@ -12,6 +12,26 @@
 export const FEDERATED_RECOMMENDATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const NON_EMPTY_STRING: Record<string, unknown> = { $type: 'string', $ne: '' };
 
+/** Mongo match fragment shared by every people-discovery surface. */
+export const discoverableUserMongoMatch = {
+  accountStatus: { $ne: 'archived' as const },
+  reputationTier: { $ne: 'restricted' as const },
+};
+
+/**
+ * Whether a hydrated user document may appear on people-discovery surfaces
+ * (search, profiles, graph seeds, ActivityPub actor lookup, etc.).
+ */
+export function isDiscoverableUser(
+  user: { accountStatus?: string; reputationTier?: string } | null | undefined,
+): boolean {
+  return (
+    !!user &&
+    user.accountStatus !== 'archived' &&
+    user.reputationTier !== 'restricted'
+  );
+}
+
 export function federatedRecommendationEligibilityMatch(
   minResolvedAt: Date,
   prefix = '',
@@ -113,8 +133,8 @@ export function eligibleUserMatch(minResolvedAt: Date, prefix = ''): { $and: Rec
       // accounts, and punitive `restricted` reputation tier must never surface
       // in discovery pipelines. `{ $ne: 'restricted' }` still matches docs whose
       // `reputationTier` is absent (untiered/new users).
-      { [field('accountStatus')]: { $ne: 'archived' } },
-      { [field('reputationTier')]: { $ne: 'restricted' } },
+      { [field('accountStatus')]: discoverableUserMongoMatch.accountStatus },
+      { [field('reputationTier')]: discoverableUserMongoMatch.reputationTier },
     ],
   };
 }

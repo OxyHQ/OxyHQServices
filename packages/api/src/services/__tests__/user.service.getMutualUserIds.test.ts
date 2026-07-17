@@ -42,8 +42,13 @@ const followQuery = {
 };
 const mockFollowFind = jest.fn(() => followQuery);
 const mockFollowCountDocuments = jest.fn();
+const mockUserFindLean = jest.fn();
 
-const mockUserFind = jest.fn();
+const mockUserFind = jest.fn(() => ({
+  select: jest.fn(() => ({
+    lean: mockUserFindLean,
+  })),
+}));
 
 jest.mock('../../models/Follow', () => ({
   __esModule: true,
@@ -110,6 +115,8 @@ describe('UserService.getMutualUserIds', () => {
       // 2) of those, the ones who follow the viewer back
       .mockResolvedValueOnce([{ followerUserId: v1 }]);
 
+    mockUserFindLean.mockResolvedValueOnce([{ _id: v1 }]);
+
     const result = await new UserService().getMutualUserIds(viewerId, { limit: 50 });
 
     // Two-step Follow query, self-directed (target === viewer), ids only.
@@ -124,11 +131,30 @@ describe('UserService.getMutualUserIds', () => {
       followerUserId: { $in: [v1, v2] },
     });
 
-    // Lean, ids-only: no hydration and no count query.
+    // Lean, ids-only: eligibility filter drops archived/restricted mutuals.
     expect(mockFollowCountDocuments).not.toHaveBeenCalled();
-    expect(mockUserFind).not.toHaveBeenCalled();
+    expect(mockUserFind).toHaveBeenCalledTimes(1);
 
     expect(result).toEqual([v1.toString()]);
+  });
+
+  it('drops archived or restricted mutuals after the follow intersection', async () => {
+    const viewerId = new Types.ObjectId().toHexString();
+    const eligible = new Types.ObjectId();
+    const restricted = new Types.ObjectId();
+
+    mockFollowLean
+      .mockResolvedValueOnce([{ followedId: eligible }, { followedId: restricted }])
+      .mockResolvedValueOnce([
+        { followerUserId: eligible },
+        { followerUserId: restricted },
+      ]);
+
+    mockUserFindLean.mockResolvedValueOnce([{ _id: eligible }]);
+
+    const result = await new UserService().getMutualUserIds(viewerId, { limit: 50 });
+
+    expect(result).toEqual([eligible.toString()]);
   });
 
   it('returns empty for an anonymous viewer without querying the database', async () => {
@@ -170,6 +196,8 @@ describe('UserService.getMutualUserIds', () => {
     mockFollowLean
       .mockResolvedValueOnce([{ followedId: v1 }])
       .mockResolvedValueOnce([{ followerUserId: v1 }]);
+
+    mockUserFindLean.mockResolvedValueOnce([{ _id: v1 }]);
 
     await new UserService().getMutualUserIds(viewerId, { limit: MAX_MUTUAL_IDS * 10 });
 

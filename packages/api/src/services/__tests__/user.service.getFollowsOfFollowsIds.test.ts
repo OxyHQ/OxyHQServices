@@ -103,7 +103,10 @@ interface AggregatePipelineStage {
     followerUserId?: { $in?: Types.ObjectId[] };
     followType?: string;
     followedId?: { $nin?: Types.ObjectId[] };
+    'user.accountStatus'?: { $ne?: string };
+    'user.reputationTier'?: { $ne?: string };
   };
+  $lookup?: { from?: string };
   $limit?: number;
 }
 
@@ -218,5 +221,10 @@ describe('UserService.getFollowsOfFollowsIds', () => {
     const pipeline = mockFollowAggregate.mock.calls[0][0] as AggregatePipelineStage[];
     const limitStage = pipeline.find((stage) => stage.$limit !== undefined);
     expect(limitStage?.$limit).toBe(MAX_FOLLOWS_OF_FOLLOWS_IDS);
+
+    const eligibilityStage = pipeline.find(
+      (stage) => stage.$match?.['user.reputationTier']?.$ne === 'restricted',
+    );
+    expect(eligibilityStage).toBeDefined();
   });
 });

@@ -2,27 +2,11 @@
  * UserService.getViewerGraph — the viewer's OWN social graph in one payload.
  *
  * `getViewerGraph` consolidates three per-viewer reads into a single call:
- *   - `followingIds` — the accounts the viewer follows (one bounded Follow query)
+ *   - `followingIds` — the accounts the viewer follows (eligibility-filtered aggregate)
  *   - `mutualIds`    — the subset who follow back, REUSING `getMutualUserIds`
- *     (its own two-step Follow query)
  *   - `blockedIds`   — the accounts the viewer has blocked (`Block.find({ userId })`)
- *
- * These tests cover the outcomes the `GET /users/me/graph` route relies on:
- *   - a populated viewer → the three lists, ids-only, from the parallel reads
- *   - no viewer (anonymous / service token w/o user) → all-empty, zero DB queries
- *   - the following and blocked scans are bounded by their caps
- *
- * Mirrors the `getMutualUserIds` harness: restore the real `mongoose` (the global
- * setup mocks it wholesale, stripping `Types`) and mock the models as chainable
- * query builders. `Follow.find` is shared across the following + mutual queries,
- * so `lean()` results are sequenced by invocation order:
- *   1) graph following  2) mutuals: viewer-following  3) mutuals: follow-back.
  */
 
-// The global jest.setup.cjs mocks `mongoose` wholesale, which strips `Types`
-// (and therefore `Types.ObjectId`). This suite only needs the real `Types`
-// helper — the models themselves are mocked below — so restore the actual
-// mongoose module.
 jest.mock('mongoose', () => {
   const actual = jest.requireActual('mongoose');
   return { __esModule: true, ...actual, default: actual };
@@ -31,8 +15,6 @@ jest.mock('mongoose', () => {
 import { Types } from 'mongoose';
 import { MAX_FOLLOWING_IDS, MAX_BLOCKED_IDS } from '../../utils/recommendationWeights';
 
-// Chainable Follow query builder: select/limit/skip/sort return the builder,
-// lean() is the terminal awaited result (sequenced per find() call).
 const mockFollowLean = jest.fn();
 const followQuery = {
   select: jest.fn(() => followQuery),
@@ -42,8 +24,8 @@ const followQuery = {
   lean: mockFollowLean,
 };
 const mockFollowFind = jest.fn(() => followQuery);
+const mockFollowAggregate = jest.fn();
 
-// Chainable Block query builder (blocked-ids read).
 const mockBlockLean = jest.fn();
 const blockQuery = {
   select: jest.fn(() => blockQuery),
@@ -52,12 +34,18 @@ const blockQuery = {
 };
 const mockBlockFind = jest.fn(() => blockQuery);
 
-const mockUserFind = jest.fn();
+const mockUserFindLean = jest.fn();
+const mockUserFind = jest.fn(() => ({
+  select: jest.fn(() => ({
+    lean: mockUserFindLean,
+  })),
+}));
 
 jest.mock('../../models/Follow', () => ({
   __esModule: true,
   default: {
     find: mockFollowFind,
+    aggregate: mockFollowAggregate,
   },
   FollowType: {
     USER: 'user',
@@ -99,9 +87,6 @@ jest.mock('../../utils/userCache', () => ({
   default: {},
 }));
 
-// getViewerGraph never touches the cache (only the write paths do), but
-// user.service imports it at module load — stub it so the suite never reaches
-// the Redis config layer.
 jest.mock('../../utils/graphCache', () => ({
   __esModule: true,
   default: {
@@ -126,18 +111,19 @@ describe('UserService.getViewerGraph', () => {
   it('returns following, mutual, and blocked ids from the parallel reads', async () => {
     const viewerId = new Types.ObjectId().toHexString();
 
-    const f1 = new Types.ObjectId(); // followed AND follows back → mutual
-    const f2 = new Types.ObjectId(); // followed only
-    const b1 = new Types.ObjectId(); // blocked
+    const f1 = new Types.ObjectId();
+    const f2 = new Types.ObjectId();
+    const b1 = new Types.ObjectId();
+
+    mockFollowAggregate
+      .mockResolvedValueOnce([{ total: 2 }])
+      .mockResolvedValueOnce([{ userId: f1 }, { userId: f2 }]);
 
     mockFollowLean
-      // 1) graph: the viewer's following set
       .mockResolvedValueOnce([{ followedId: f1 }, { followedId: f2 }])
-      // 2) mutuals: the viewer's following set (getMutualUserIds' first query)
-      .mockResolvedValueOnce([{ followedId: f1 }, { followedId: f2 }])
-      // 3) mutuals: of those, the ones who follow the viewer back
       .mockResolvedValueOnce([{ followerUserId: f1 }]);
 
+    mockUserFindLean.mockResolvedValueOnce([{ _id: f1 }]);
     mockBlockLean.mockResolvedValueOnce([{ blockedId: b1 }]);
 
     const result = await new UserService().getViewerGraph(viewerId);
@@ -148,9 +134,8 @@ describe('UserService.getViewerGraph', () => {
       blockedIds: [b1.toString()],
     });
 
-    // Blocked read is scoped to the viewer, ids-only, and never hydrates users.
     expect(mockBlockFind).toHaveBeenCalledWith({ userId: viewerId });
-    expect(mockUserFind).not.toHaveBeenCalled();
+    expect(mockFollowAggregate).toHaveBeenCalledTimes(2);
   });
 
   it('returns an all-empty graph for an anonymous viewer without querying the database', async () => {
@@ -158,15 +143,18 @@ describe('UserService.getViewerGraph', () => {
 
     expect(result).toEqual({ followingIds: [], mutualIds: [], blockedIds: [] });
     expect(mockFollowFind).not.toHaveBeenCalled();
+    expect(mockFollowAggregate).not.toHaveBeenCalled();
     expect(mockBlockFind).not.toHaveBeenCalled();
   });
 
   it('bounds the following and blocked scans by their caps', async () => {
     const viewerId = new Types.ObjectId().toHexString();
+    const f1 = new Types.ObjectId();
 
-    mockFollowLean
-      .mockResolvedValueOnce([]) // graph following
-      .mockResolvedValueOnce([]); // mutuals following (short-circuits before back query)
+    mockFollowAggregate
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ userId: f1 }]);
+    mockFollowLean.mockResolvedValueOnce([]);
     mockBlockLean.mockResolvedValueOnce([]);
 
     await new UserService().getViewerGraph(viewerId, {
@@ -174,9 +162,8 @@ describe('UserService.getViewerGraph', () => {
       blockedLimit: MAX_BLOCKED_IDS * 10,
     });
 
-    // The graph following scan (first Follow.find) is clamped to the cap.
-    expect(followQuery.limit).toHaveBeenNthCalledWith(1, MAX_FOLLOWING_IDS);
-    // The blocked scan is clamped to the cap.
+    const pagePipeline = mockFollowAggregate.mock.calls[1]?.[0] as Array<{ $limit?: number }>;
+    expect(pagePipeline?.find((stage) => stage.$limit !== undefined)?.$limit).toBe(MAX_FOLLOWING_IDS);
     expect(blockQuery.limit).toHaveBeenCalledWith(MAX_BLOCKED_IDS);
   });
 });

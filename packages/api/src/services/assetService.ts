@@ -1230,7 +1230,6 @@ export class AssetService {
    */
   private async notifyLinks(file: IFile, event: 'visibility_changed' | 'deleted', details: Record<string, any>): Promise<void> {
     try {
-      const axios = (await import('axios')).default;
       const notifyPromises = file.links
         .filter(l => l.webhookUrl)
         .map(async (link) => {
@@ -1250,9 +1249,20 @@ export class AssetService {
           };
 
           try {
-            await axios.post(url, payload, { timeout: 5000 });
-            logger.info('Webhook delivered', { url, fileId: file._id, event });
+            const result = await safeFetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              headersTimeoutMs: 5000,
+              maxRedirects: 0,
+            });
+            result.response.resume();
+            logger.info('Webhook delivered', { url, fileId: file._id, event, status: result.status });
           } catch (err) {
+            if (err instanceof SsrfRejection) {
+              logger.warn('Blocked SSRF webhook target', { url, fileId: file._id, event, reason: err.message });
+              return;
+            }
             logger.warn('Failed to deliver webhook', { url, fileId: file._id, event, error: err instanceof Error ? err.message : String(err) });
           }
         });

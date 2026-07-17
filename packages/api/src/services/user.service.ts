@@ -50,6 +50,7 @@ import {
   MAX_BLOCKED_IDS,
 } from '../utils/recommendationWeights';
 import graphCache from '../utils/graphCache';
+import { discoverableUserMongoMatch } from '../utils/profileQuery';
 
 interface UserWithCount {
   _count?: {
@@ -105,8 +106,8 @@ async function paginateActiveFollowUserIds(
     { $unwind: '$user' },
     {
       $match: {
-        'user.accountStatus': { $ne: 'archived' },
-        'user.reputationTier': { $ne: 'restricted' },
+        'user.accountStatus': discoverableUserMongoMatch.accountStatus,
+        'user.reputationTier': discoverableUserMongoMatch.reputationTier,
       },
     },
   ];
@@ -132,6 +133,23 @@ async function paginateActiveFollowUserIds(
     total,
     userIds: pageRows.map((row) => row.userId.toString()),
   };
+}
+
+/** Drop archived/restricted ids while preserving the caller's ordering. */
+async function filterDiscoverableUserIds(userIds: string[]): Promise<string[]> {
+  if (userIds.length === 0) {
+    return [];
+  }
+
+  const rows = await User.find({
+    _id: { $in: userIds.map((id) => new Types.ObjectId(id)) },
+    ...discoverableUserMongoMatch,
+  })
+    .select('_id')
+    .lean();
+
+  const eligible = new Set(rows.map((row) => row._id.toString()));
+  return userIds.filter((id) => eligible.has(id));
 }
 
 /**
@@ -794,10 +812,12 @@ export class UserService {
       .sort({ createdAt: -1 })
       .lean();
 
-    return mutualFollows
-      .map((follow) => follow.followerUserId)
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
-      .map((id) => id.toString());
+    return filterDiscoverableUserIds(
+      mutualFollows
+        .map((follow) => follow.followerUserId)
+        .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+        .map((id) => id.toString()),
+    );
   }
 
   /**
@@ -848,23 +868,14 @@ export class UserService {
       MAX_BLOCKED_IDS
     );
 
-    const [followingIds, mutualIds, blockedIds] = await Promise.all([
-      // Following — same query/shape as getUserFollowing, ids-only and bounded,
-      // most-recently-established first so the cap keeps the current follows.
-      Follow.find({
-        followerUserId: viewerId,
-        followType: FollowType.USER,
-      })
-        .select('followedId')
-        .sort({ createdAt: -1 })
-        .limit(followingLimit)
-        .lean()
-        .then((follows) =>
-          follows
-            .map((follow) => follow.followedId)
-            .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
-            .map((id) => id.toString())
-        ),
+    const [followingPage, mutualIds, blockedIds] = await Promise.all([
+      // Following — same eligibility filter as getUserFollowing, ids-only.
+      paginateActiveFollowUserIds(
+        { followerUserId: new Types.ObjectId(viewerId), followType: FollowType.USER },
+        'followedId',
+        followingLimit,
+        0,
+      ).then((page) => page.userIds),
 
       // Mutuals — reuse the canonical bidirectional intersection so there is a
       // single source of truth for "mutual" semantics and caps.
@@ -884,7 +895,7 @@ export class UserService {
         ),
     ]);
 
-    return { followingIds, mutualIds, blockedIds };
+    return { followingIds: followingPage, mutualIds, blockedIds };
   }
 
   /**
@@ -966,6 +977,21 @@ export class UserService {
           _id: '$followedId',
           followerCount: { $sum: 1 },
           lastFollowedAt: { $max: '$createdAt' },
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $match: {
+          'user.accountStatus': discoverableUserMongoMatch.accountStatus,
+          'user.reputationTier': discoverableUserMongoMatch.reputationTier,
         },
       },
       { $sort: { followerCount: -1, lastFollowedAt: -1 } },

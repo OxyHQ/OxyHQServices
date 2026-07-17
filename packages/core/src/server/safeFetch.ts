@@ -390,6 +390,8 @@ export interface SafeFetchOptions {
   method?: string;
   /** Extra request headers. A `User-Agent` is added if none is provided. */
   headers?: Record<string, string>;
+  /** Request body for POST/PUT/PATCH. */
+  body?: string | Buffer;
   /**
    * Maximum number of redirects to follow (each re-validated). Defaults to
    * {@link MAX_REDIRECTS}. Set to `0` to disallow redirects.
@@ -475,6 +477,7 @@ function fetchOnce(
   options: https.RequestOptions,
   isHttps: boolean,
   headersTimeoutMs: number,
+  body?: string | Buffer,
 ): Promise<IncomingMessage> {
   return new Promise<IncomingMessage>((resolve, reject) => {
     const transport = isHttps ? https : http;
@@ -484,7 +487,7 @@ function fetchOnce(
       req.destroy(new UpstreamError('upstream headers timeout'));
     });
     req.on('error', (err) => reject(err));
-    req.end();
+    req.end(body);
   });
 }
 
@@ -506,6 +509,7 @@ export async function safeFetch(
   const {
     method = 'GET',
     headers: callerHeaders,
+    body,
     maxRedirects = MAX_REDIRECTS,
     headersTimeoutMs = UPSTREAM_HEADERS_TIMEOUT_MS,
     signal,
@@ -548,6 +552,7 @@ export async function safeFetch(
       requestOptions,
       target.protocol === 'https:',
       headersTimeoutMs,
+      body,
     );
 
     const status = response.statusCode ?? 0;

@@ -1,4 +1,4 @@
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../profileQuery';
+import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser } from '../profileQuery';
 
 describe('eligibleUserMatch', () => {
   const minResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
@@ -37,5 +37,19 @@ describe('eligibleUserMatch', () => {
         { 'user.reputationTier': { $ne: 'restricted' } },
       ]),
     );
+  });
+});
+
+describe('isDiscoverableUser', () => {
+  it('accepts active users without a reputation tier', () => {
+    expect(isDiscoverableUser({ accountStatus: 'active' })).toBe(true);
+  });
+
+  it('rejects archived accounts', () => {
+    expect(isDiscoverableUser({ accountStatus: 'archived' })).toBe(false);
+  });
+
+  it('rejects restricted-tier accounts', () => {
+    expect(isDiscoverableUser({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
   });
 });
