@@ -159,6 +159,26 @@ describe('refreshPersistedSession — arm 1 (device-secret mint)', () => {
     expect(await store.load()).toEqual(STORED);
     expect(signInWithSharedIdentity).not.toHaveBeenCalled();
   });
+
+  it('KEEPS the store on an UNRECOGNIZED 401 (proxy / middleware / deploy-window) — never wipes the credential on an ambiguous 401', async () => {
+    const store = createMemoryAuthStateStore();
+    await store.save(STORED);
+    const signInWithSharedIdentity = jest.fn(async () => null);
+    const { oxy } = makeOxy({
+      mintFromDeviceSecret: async () => {
+        // A 401 whose body is NEITHER `invalid_device_secret` NOR `no_active_session`
+        // — an auth-layer / proxy / starting-instance 401 common during a deploy
+        // window. It is NOT proof the secret diverged, so the durable device
+        // credential must survive (treated as transient) and a later attempt self-heals.
+        throw Object.assign(new Error('Unauthorized'), { status: 401 });
+      },
+      signInWithSharedIdentity,
+    });
+
+    expect(await refreshPersistedSession({ oxy, store, allowSharedKeyFallback: true })).toBeNull();
+    expect(await store.load()).toEqual(STORED);
+    expect(signInWithSharedIdentity).not.toHaveBeenCalled();
+  });
 });
 
 describe('refreshPersistedSession — arm 2 (native shared-key fallback)', () => {

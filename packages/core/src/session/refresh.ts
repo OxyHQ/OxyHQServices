@@ -136,9 +136,18 @@ export async function refreshDeviceSecretArm(deps: {
         // Structural read (not `instanceof Error`): the thrown value can be a
         // plain ApiError-shaped object or come from another realm.
         const message = (error as { message?: unknown })?.message;
-        return typeof message === 'string' && message.includes('no_active_session')
-          ? { status: 'no-session' }
-          : { status: 'invalid-secret' };
+        const body = typeof message === 'string' ? message : '';
+        // ONLY the server's explicit `invalid_device_secret` proves the presented
+        // secret is bad and may clear the durable device credential. `no_active_session`
+        // is an authoritative signed-out. ANY OTHER 401 — a middleware/CSRF/proxy 401,
+        // an ALB/starting-instance 401, a CORS error page, etc., all common during a
+        // deploy/restart window — is NOT proof the secret diverged: treat it as
+        // transient and KEEP the credential so a later attempt self-heals. Wiping the
+        // credential on an ambiguous 401 is what logged users out on every deploy,
+        // ecosystem-wide.
+        if (body.includes('invalid_device_secret')) return { status: 'invalid-secret' };
+        if (body.includes('no_active_session')) return { status: 'no-session' };
+        return { status: 'transient' };
       }
       return { status: 'transient' };
     }
