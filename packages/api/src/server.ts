@@ -615,7 +615,7 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
 
     // Per-user actor
     const user = await User.findOne({ username: username.toLowerCase() }).lean() as unknown as IUser | null;
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user || user.accountStatus === 'archived') return res.status(404).json({ error: 'User not found' });
 
     const actor = await getUserActor(user);
     if (!actor) return res.status(500).json({ error: 'Failed to build actor' });
@@ -667,7 +667,7 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
     if (domain !== AP_DOMAIN) return res.status(404).json({ error: 'Domain not served here' });
 
     const user = await User.findOne({ username: username.toLowerCase() }).lean();
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user || user.accountStatus === 'archived') return res.status(404).json({ error: 'User not found' });
 
     res.setHeader('Content-Type', 'application/jrd+json');
     res.setHeader('Cache-Control', 'max-age=3600');

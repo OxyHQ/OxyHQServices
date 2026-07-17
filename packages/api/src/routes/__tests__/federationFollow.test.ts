@@ -36,6 +36,7 @@ type UserType = 'local' | 'federated' | 'agent' | 'automated';
 interface StoreUser {
   _id: string;
   type: UserType;
+  accountStatus: string;
   _count: { followers: number; following: number };
 }
 
@@ -46,8 +47,8 @@ function edgeKey(followerUserId: string, followType: string, followedId: string)
   return `${followerUserId}:${followType}:${followedId}`;
 }
 
-function seedUser(id: string, type: UserType): StoreUser {
-  const user: StoreUser = { _id: id, type, _count: { followers: 0, following: 0 } };
+function seedUser(id: string, type: UserType, accountStatus = 'active'): StoreUser {
+  const user: StoreUser = { _id: id, type, accountStatus, _count: { followers: 0, following: 0 } };
   users.set(id, user);
   return user;
 }
@@ -330,6 +331,36 @@ describe('POST /federation/follow', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/local \(non-federated\) user/i);
+    expect(mockFollowCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the follower is archived', async () => {
+    seedUser(FEDERATED_ID, 'federated', 'archived');
+    seedUser(LOCAL_ID, 'local');
+
+    const res = await requestJson(server, 'POST', '/federation/follow', {
+      followerUserId: FEDERATED_ID,
+      targetUserId: LOCAL_ID,
+      action: 'follow',
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/follower is archived/i);
+    expect(mockFollowCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the target is archived', async () => {
+    seedUser(FEDERATED_ID, 'federated');
+    seedUser(LOCAL_ID, 'local', 'archived');
+
+    const res = await requestJson(server, 'POST', '/federation/follow', {
+      followerUserId: FEDERATED_ID,
+      targetUserId: LOCAL_ID,
+      action: 'follow',
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/target is archived/i);
     expect(mockFollowCreate).not.toHaveBeenCalled();
   });
 

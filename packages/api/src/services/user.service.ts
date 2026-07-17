@@ -78,6 +78,56 @@ interface FollowsOfFollowsRow {
   lastFollowedAt: Date;
 }
 
+type FollowUserEdgeField = 'followerUserId' | 'followedId';
+
+/**
+ * Paginate follow edges whose counterparty user is not archived. Counts and pages
+ * on visible users only so `total` / `hasMore` stay accurate after archived
+ * federated tombstones are filtered out of discovery lists.
+ */
+async function paginateActiveFollowUserIds(
+  match: Record<string, unknown>,
+  userIdField: FollowUserEdgeField,
+  limit: number,
+  offset: number,
+): Promise<{ userIds: string[]; total: number }> {
+  const joinedStages = [
+    { $match: match },
+    {
+      $lookup: {
+        from: 'users',
+        localField: userIdField,
+        foreignField: '_id',
+        as: 'user',
+      },
+    },
+    { $unwind: '$user' },
+    { $match: { 'user.accountStatus': { $ne: 'archived' } } },
+  ];
+
+  const countRows = await Follow.aggregate<{ total: number }>([
+    ...joinedStages,
+    { $count: 'total' },
+  ]);
+  const total = countRows[0]?.total ?? 0;
+  if (total === 0) {
+    return { userIds: [], total: 0 };
+  }
+
+  const pageRows = await Follow.aggregate<{ userId: Types.ObjectId }>([
+    ...joinedStages,
+    { $sort: { createdAt: -1 } },
+    { $skip: offset },
+    { $limit: limit },
+    { $project: { _id: 0, userId: `$${userIdField}` } },
+  ]);
+
+  return {
+    total,
+    userIds: pageRows.map((row) => row.userId.toString()),
+  };
+}
+
 /**
  * Per-target outcome of a bulk follow operation.
  * - `success: true, alreadyFollowing: false`  → newly followed
@@ -494,32 +544,16 @@ export class UserService {
     );
     const offset = params.offset || 0;
 
-    const total = await Follow.countDocuments({
-      followedId: userId,
-      followType: FollowType.USER,
-    });
-
-    // Get follow relationships
-    const follows = await Follow.find({
-      followedId: userId,
-      followType: FollowType.USER,
-    })
-      .select('followerUserId')
-      .limit(limit)
-      .skip(offset)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Extract user IDs
-    const followerIds = follows
-      .map((follow) => follow.followerUserId)
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
-      .map((id) => id.toString());
+    const { userIds: followerIds, total } = await paginateActiveFollowUserIds(
+      { followedId: new Types.ObjectId(userId), followType: FollowType.USER },
+      'followerUserId',
+      limit,
+      offset,
+    );
 
     // Fetch users directly (returns plain objects, not Mongoose documents)
     const followers = await User.find({
-      _id: { $in: followerIds },
-      accountStatus: { $ne: 'archived' },
+      _id: { $in: followerIds.map((id) => new Types.ObjectId(id)) },
     })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<PublicUserDocument[]>()
@@ -556,32 +590,16 @@ export class UserService {
     );
     const offset = params.offset || 0;
 
-    const total = await Follow.countDocuments({
-      followerUserId: userId,
-      followType: FollowType.USER,
-    });
-
-    // Get follow relationships
-    const follows = await Follow.find({
-      followerUserId: userId,
-      followType: FollowType.USER,
-    })
-      .select('followedId')
-      .limit(limit)
-      .skip(offset)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Extract user IDs
-    const followingIds = follows
-      .map((follow) => follow.followedId)
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
-      .map((id) => id.toString());
+    const { userIds: followingIds, total } = await paginateActiveFollowUserIds(
+      { followerUserId: new Types.ObjectId(userId), followType: FollowType.USER },
+      'followedId',
+      limit,
+      offset,
+    );
 
     // Fetch users directly (returns plain objects, not Mongoose documents)
     const following = await User.find({
-      _id: { $in: followingIds },
-      accountStatus: { $ne: 'archived' },
+      _id: { $in: followingIds.map((id) => new Types.ObjectId(id)) },
     })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<PublicUserDocument[]>()
@@ -671,26 +689,19 @@ export class UserService {
       followerUserId: { $in: followingIds },
     };
 
-    const total = await Follow.countDocuments(mutualFilter);
+    const { userIds: mutualIds, total } = await paginateActiveFollowUserIds(
+      mutualFilter,
+      'followerUserId',
+      limit,
+      offset,
+    );
     if (total === 0) {
       return empty();
     }
 
-    const mutualFollows = await Follow.find(mutualFilter)
-      .select('followerUserId')
-      .limit(limit)
-      .skip(offset)
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const mutualIds = mutualFollows
-      .map((follow) => follow.followerUserId)
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
-      .map((id) => id.toString());
-
     // Fetch users directly (returns plain objects, not Mongoose documents)
     const mutuals = await User.find({
-      _id: { $in: mutualIds },
+      _id: { $in: mutualIds.map((id) => new Types.ObjectId(id)) },
     })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<PublicUserDocument[]>()
@@ -1702,7 +1713,10 @@ export class UserService {
     // (schema virtual) which `formatUserNameResponse` consumes. The typed lean
     // generic yields plain `IUser` objects so `formatUserResponse` (which reads
     // `publicKey`, `type`, `federation`, etc.) sees the full profile shape.
-    const users = await User.find({ _id: { $in: objectIds } })
+    const users = await User.find({
+      _id: { $in: objectIds },
+      accountStatus: { $ne: 'archived' },
+    })
       .select('-password -refreshToken')
       .lean<IUser[]>({ virtuals: true });
 

@@ -32,6 +32,7 @@ const followQuery = {
 };
 const mockFollowFind = jest.fn(() => followQuery);
 const mockFollowCountDocuments = jest.fn();
+const mockFollowAggregate = jest.fn();
 
 const mockUserExec = jest.fn();
 const mockUserSelect = jest.fn(() => userQuery);
@@ -47,6 +48,7 @@ jest.mock('../../models/Follow', () => ({
   default: {
     find: mockFollowFind,
     countDocuments: mockFollowCountDocuments,
+    aggregate: (...args: unknown[]) => mockFollowAggregate(...args),
   },
   FollowType: {
     USER: 'user',
@@ -115,8 +117,9 @@ describe('public user row projection (followers / following / mutuals)', () => {
     const targetId = new Types.ObjectId().toHexString();
     const followerId = new Types.ObjectId();
 
-    mockFollowCountDocuments.mockResolvedValueOnce(1);
-    mockFollowLean.mockResolvedValueOnce([{ followerUserId: followerId }]);
+    mockFollowAggregate
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ userId: followerId }]);
     mockUserExec.mockResolvedValueOnce([federatedUserDoc(followerId)]);
 
     const result = await new UserService().getUserFollowers(targetId, { limit: 50, offset: 0 });
@@ -138,8 +141,9 @@ describe('public user row projection (followers / following / mutuals)', () => {
     const viewerId = new Types.ObjectId().toHexString();
     const followedId = new Types.ObjectId();
 
-    mockFollowCountDocuments.mockResolvedValueOnce(1);
-    mockFollowLean.mockResolvedValueOnce([{ followedId }]);
+    mockFollowAggregate
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ userId: followedId }]);
     mockUserExec.mockResolvedValueOnce([federatedUserDoc(followedId)]);
 
     const result = await new UserService().getUserFollowing(viewerId, { limit: 50, offset: 0 });
@@ -158,10 +162,10 @@ describe('public user row projection (followers / following / mutuals)', () => {
     const targetId = new Types.ObjectId().toHexString();
     const mutualId = new Types.ObjectId();
 
-    mockFollowLean
-      .mockResolvedValueOnce([{ followedId: mutualId }])
-      .mockResolvedValueOnce([{ followerUserId: mutualId }]);
-    mockFollowCountDocuments.mockResolvedValueOnce(1);
+    mockFollowLean.mockResolvedValueOnce([{ followedId: mutualId }]);
+    mockFollowAggregate
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ userId: mutualId }]);
     mockUserExec.mockResolvedValueOnce([federatedUserDoc(mutualId)]);
 
     const result = await new UserService().getUserMutuals(viewerId, targetId, {

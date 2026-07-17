@@ -764,7 +764,7 @@ router.get(
 
     const user = await userService.getUserById(userId);
 
-    if (!user) {
+    if (!user || user.accountStatus === 'archived') {
       throw new NotFoundError('User not found');
     }
 

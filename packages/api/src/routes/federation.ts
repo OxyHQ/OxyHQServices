@@ -204,8 +204,8 @@ router.post(
     const { followerUserId, targetUserId, action } = req.body as FederationFollowBody;
 
     const [follower, target] = await Promise.all([
-      User.findById(followerUserId).select('type').lean(),
-      User.findById(targetUserId).select('type').lean(),
+      User.findById(followerUserId).select('type accountStatus').lean(),
+      User.findById(targetUserId).select('type accountStatus').lean(),
     ]);
 
     if (!follower) {
@@ -215,8 +215,14 @@ router.post(
     if (follower.type !== 'federated') {
       throw new ForbiddenError('follower must be a federated user');
     }
+    if (follower.accountStatus === 'archived') {
+      throw new ConflictError('follower is archived');
+    }
     if (!target) {
       throw new NotFoundError('target user not found');
+    }
+    if (target.accountStatus === 'archived') {
+      throw new ConflictError('target is archived');
     }
     // A federated actor may only follow a local user through this bridge.
     if (target.type === 'federated') {

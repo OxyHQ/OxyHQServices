@@ -39,6 +39,7 @@ const followQuery = {
 };
 const mockFollowFind = jest.fn(() => followQuery);
 const mockFollowCountDocuments = jest.fn();
+const mockFollowAggregate = jest.fn();
 
 // Chainable User query builder: select/lean return the builder, exec() is the
 // terminal awaited result.
@@ -55,6 +56,7 @@ jest.mock('../../models/Follow', () => ({
   default: {
     find: mockFollowFind,
     countDocuments: mockFollowCountDocuments,
+    aggregate: (...args: unknown[]) => mockFollowAggregate(...args),
   },
   FollowType: {
     USER: 'user',
@@ -113,10 +115,11 @@ describe('UserService.getUserMutuals', () => {
 
     mockFollowLean
       // 1) viewer's following set
-      .mockResolvedValueOnce([{ followedId: v1 }, { followedId: v2 }])
-      // 2) target's followers that are in V (most-recent first)
-      .mockResolvedValueOnce([{ followerUserId: mutual }]);
-    mockFollowCountDocuments.mockResolvedValueOnce(1);
+      .mockResolvedValueOnce([{ followedId: v1 }, { followedId: v2 }]);
+    mockFollowAggregate
+      // 2) visible mutual count + page
+      .mockResolvedValueOnce([{ total: 1 }])
+      .mockResolvedValueOnce([{ userId: mutual }]);
     mockUserExec.mockResolvedValueOnce([
       {
         _id: mutual,
@@ -132,22 +135,12 @@ describe('UserService.getUserMutuals', () => {
       offset: 0,
     });
 
-    // The mutual-overlap filter targets the target's followers restricted to V.
-    expect(mockFollowFind).toHaveBeenCalledTimes(2);
-    expect(mockFollowFind).toHaveBeenNthCalledWith(1, {
+    expect(mockFollowFind).toHaveBeenCalledTimes(1);
+    expect(mockFollowFind).toHaveBeenCalledWith({
       followerUserId: viewerId,
       followType: 'user',
     });
-    expect(mockFollowFind).toHaveBeenNthCalledWith(2, {
-      followedId: targetId,
-      followType: 'user',
-      followerUserId: { $in: [v1, v2] },
-    });
-    expect(mockFollowCountDocuments).toHaveBeenCalledWith({
-      followedId: targetId,
-      followType: 'user',
-      followerUserId: { $in: [v1, v2] },
-    });
+    expect(mockFollowAggregate).toHaveBeenCalledTimes(2);
 
     expect(result.total).toBe(1);
     expect(result.hasMore).toBe(false);
@@ -213,7 +206,7 @@ describe('UserService.getUserMutuals', () => {
     const v1 = new Types.ObjectId();
 
     mockFollowLean.mockResolvedValueOnce([{ followedId: v1 }]);
-    mockFollowCountDocuments.mockResolvedValueOnce(0);
+    mockFollowAggregate.mockResolvedValueOnce([]);
 
     const result = await new UserService().getUserMutuals(viewerId, targetId, {
       limit: 50,
@@ -222,7 +215,7 @@ describe('UserService.getUserMutuals', () => {
 
     expect(result).toEqual({ data: [], total: 0, hasMore: false, limit: 50, offset: 0 });
     expect(mockFollowFind).toHaveBeenCalledTimes(1);
-    expect(mockFollowCountDocuments).toHaveBeenCalledTimes(1);
+    expect(mockFollowAggregate).toHaveBeenCalledTimes(1);
     expect(mockUserFind).not.toHaveBeenCalled();
   });
 });
