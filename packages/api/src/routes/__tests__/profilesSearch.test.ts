@@ -487,6 +487,28 @@ describe('GET /profiles/resolve local-first', () => {
     expect(mockResolveAndUpsert).not.toHaveBeenCalled();
   });
 
+  it('lowercases a mixed-case federated handle before the local username lookup', async () => {
+    const known: PoolUser = {
+      _id: activeLocal,
+      username: 'alice@mastodon.social',
+      accountStatus: 'active',
+      type: 'federated',
+    };
+    mockUserFindOne.mockImplementation((query: { username?: string }) => {
+      expect(query.username).toBe('alice@mastodon.social');
+      return findOneQuery(known);
+    });
+    mockIsFediverseHandle.mockReturnValue(true);
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('Alice@Mastodon.Social')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data?.id).toBe(activeLocal.toString());
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
+  });
+
   it('returns null for a restricted user resolved via discovery', async () => {
     mockIsFediverseHandle.mockReturnValue(true);
     mockResolveAndUpsert.mockResolvedValue({

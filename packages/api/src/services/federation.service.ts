@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import type { IncomingMessage } from 'http';
 import mongoose from 'mongoose';
+import { signRequest } from '@oxyhq/federation';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import User, { type IUser, type AccountKind } from '../models/User';
 import { AssetService } from './assetService';
@@ -111,7 +112,7 @@ const FEDERATION_MAX_JSON_BYTES = 2 * 1024 * 1024;
  */
 async function safeFederationFetch(
   rawUrl: string,
-  options: { headers?: Record<string, string>; timeoutMs?: number } = {},
+  options: { headers?: Record<string, string>; timeoutMs?: number; maxRedirects?: number } = {},
 ): Promise<SafeFetchResult | null> {
   let protocol: string;
   try {
@@ -131,6 +132,7 @@ async function safeFederationFetch(
       headers: options.headers,
       headersTimeoutMs: options.timeoutMs ?? FEDERATION_FETCH_TIMEOUT_MS,
       signal: AbortSignal.timeout(options.timeoutMs ?? FEDERATION_FETCH_TIMEOUT_MS),
+      maxRedirects: options.maxRedirects,
     });
   } catch (err) {
     if (err instanceof SsrfRejection) {
@@ -414,56 +416,76 @@ export async function signWithKeyId(keyId: string, signingString: string): Promi
 }
 
 /**
- * Build HTTP Signature headers per draft-cavage-http-signatures-12.
- */
-function signRequest(
-  privateKeyPem: string,
-  keyId: string,
-  method: string,
-  url: string,
-): Record<string, string> {
-  const parsedUrl = new URL(url);
-  const date = new Date().toUTCString();
-  const signedHeaderNames = ['(request-target)', 'host', 'date'];
-  const signingString = [
-    `(request-target): ${method.toLowerCase()} ${parsedUrl.pathname}`,
-    `host: ${parsedUrl.host}`,
-    `date: ${date}`,
-  ].join('\n');
-
-  const signer = crypto.createSign('sha256');
-  signer.update(signingString);
-  signer.end();
-  const signature = signer.sign(privateKeyPem, 'base64');
-
-  return {
-    Host: parsedUrl.host,
-    Date: date,
-    Signature: [
-      `keyId="${keyId}"`,
-      'algorithm="rsa-sha256"',
-      `headers="${signedHeaderNames.join(' ')}"`,
-      `signature="${signature}"`,
-    ].join(','),
-  };
-}
-
-/**
  * Fetch a URL with HTTP Signature authentication.
  * Required by servers that enforce authorized fetch (e.g., Threads).
+ *
+ * Follows redirects manually (bounded) and re-signs each hop — an HTTP
+ * signature is bound to the `(request-target)` / `host` of one specific URL.
+ * `safeFetch` cannot do this when it follows redirects internally.
  */
+const SIGNED_FETCH_MAX_REDIRECTS = 3;
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+
 async function signedFetch(url: string, accept: string): Promise<SafeFetchResult | null> {
   const keyPair = await getInstanceKeyPair();
-  const sigHeaders = signRequest(keyPair.privateKeyPem, keyPair.keyId, 'GET', url);
+  const signWithInstanceKey = async (_keyId: string, signingString: string): Promise<string> => {
+    const signer = crypto.createSign('sha256');
+    signer.update(signingString);
+    signer.end();
+    return signer.sign(keyPair.privateKeyPem, 'base64');
+  };
 
-  return safeFederationFetch(url, {
-    headers: {
-      Accept: accept,
-      'User-Agent': USER_AGENT,
-      ...sigHeaders,
-    },
-    timeoutMs: FEDERATION_FETCH_TIMEOUT_MS,
-  });
+  const fetchFollowingRedirects = async (initialUrl: string, signed: boolean): Promise<SafeFetchResult | null> => {
+    let currentUrl = initialUrl;
+    for (let hop = 0; hop <= SIGNED_FETCH_MAX_REDIRECTS; hop++) {
+      const sigHeaders = signed
+        ? await signRequest(signWithInstanceKey, keyPair.keyId, 'GET', currentUrl)
+        : {};
+      const res = await safeFederationFetch(currentUrl, {
+        headers: {
+          Accept: accept,
+          'User-Agent': USER_AGENT,
+          ...sigHeaders,
+        },
+        timeoutMs: FEDERATION_FETCH_TIMEOUT_MS,
+        maxRedirects: 0,
+      });
+      if (!res) return null;
+      if (!REDIRECT_STATUS_CODES.has(res.status)) {
+        return res;
+      }
+      const location = res.headers.location;
+      if (hop === SIGNED_FETCH_MAX_REDIRECTS || !location) {
+        return res;
+      }
+      res.response.destroy();
+      try {
+        currentUrl = new URL(location, currentUrl).toString();
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const res = await fetchFollowingRedirects(url, true);
+  if (!res) return null;
+
+  // Remote 5xx with a signature often means the server could not verify our keyId;
+  // retry unsigned for public resources (same fallback as @oxyhq/federation/node).
+  if (res.status >= 500) {
+    logger.info(`[Federation] signedFetch got ${res.status} for ${url}, retrying unsigned`);
+    res.response.destroy();
+    return fetchFollowingRedirects(url, false);
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    logger.warn(
+      `[Federation] signedFetch got ${res.status} for ${url} — remote rejected our HTTP signature`,
+    );
+  }
+
+  return res;
 }
 
 /**

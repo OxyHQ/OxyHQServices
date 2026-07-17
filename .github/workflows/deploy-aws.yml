@@ -10,6 +10,7 @@ on:
       - 'packages/core/**'
       - 'packages/contracts/**'
       - 'packages/protocol/**'
+      - 'packages/federation/**'
       - 'Dockerfile'
       - 'bun.lock'
       - 'package.json'

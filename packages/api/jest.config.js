@@ -22,6 +22,8 @@ module.exports = {
     // from source so api tests do not depend on a prior core build.
     '^@oxyhq/core/server$': '<rootDir>/../core/src/server/index.ts',
     '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
+    '^@oxyhq/federation$': '<rootDir>/../federation/src/index.ts',
+    '^@oxyhq/federation/node$': '<rootDir>/../federation/src/node/index.ts',
     // NodeNext source uses `.js` extensions on relative imports of TS files
     // (e.g. `import { Topic } from '../models/Topic.js'`). ts-jest resolves
     // these inside source, but jest's own resolver (used by `jest.mock(...)`

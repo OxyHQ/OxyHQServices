@@ -571,14 +571,18 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     // Normalize handle input: trim, strip optional `acct:` prefix, and remove a
     // single leading `@` so `@user@host` matches the stored `user@host` username.
-    const handle = (req.query.handle as string || '')
+    const rawHandle = (req.query.handle as string || '')
       .trim()
       .replace(/^acct:/i, '')
       .replace(/^@/, '');
 
-    if (!handle) {
+    if (!rawHandle) {
       throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
     }
+
+    // Federated handles are stored lowercased; normalize before the local lookup
+    // so mixed-case queries hit the local-first fast path (same as /username/:username).
+    const handle = isFediverseHandle(rawHandle) ? rawHandle.toLowerCase() : rawHandle;
 
     // Local-first: resolve an already-known user by exact username.
     const localUser = await User.findOne({ username: handle })

@@ -193,6 +193,23 @@ jobs:
       - run: bun run test
         working-directory: ./packages/core
 
+  # Node package tests (Jest — build workspace deps first)
+  node-test:
+    name: Node Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+          bun run --filter @oxyhq/core build
+      - run: bun run test
+        working-directory: ./packages/node
+
   # Services SDK tests (Jest — build workspace deps first)
   services-test:
     name: Services Tests
