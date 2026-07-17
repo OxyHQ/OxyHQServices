@@ -220,6 +220,71 @@ describe('UsersController', () => {
       expect(projection.split(' ')).not.toContain('email');
     });
 
+    it('strips a single leading @ so a Bluesky handle matches the stored username', async () => {
+      // The stored atproto username has no leading @; the client query does.
+      mockRequest.body = { query: '@adamrbjack.bsky.social@bsky.social' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // `sanitizeSearchQuery` is mocked as identity, so the `$regex` value is the
+      // stripped query — the leading @ is gone, matching the stored username.
+      const filter = mockFind.mock.calls[0]?.[0] as { $or?: Array<{ username?: { $regex?: string } }> };
+      expect(filter.$or?.[0]?.username?.$regex).toBe('adamrbjack.bsky.social@bsky.social');
+    });
+
+    it('strips only the leading @ — a Mastodon @user@host matches user@host', async () => {
+      mockRequest.body = { query: '@user@mastodon.social' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // One leading @ removed; the mid-string @ (the user@host separator) stays.
+      const filter = mockFind.mock.calls[0]?.[0] as { $or?: Array<{ username?: { $regex?: string } }> };
+      expect(filter.$or?.[0]?.username?.$regex).toBe('user@mastodon.social');
+    });
+
+    it('does NOT strip a mid-string @ when there is no leading @', async () => {
+      mockRequest.body = { query: 'user@mastodon.social' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // A query with no leading @ is unchanged — the internal @ is preserved.
+      const filter = mockFind.mock.calls[0]?.[0] as { $or?: Array<{ username?: { $regex?: string } }> };
+      expect(filter.$or?.[0]?.username?.$regex).toBe('user@mastodon.social');
+    });
+
     it('should throw InternalServerError on database errors', async () => {
       mockRequest.body = { query: 'test' };
 

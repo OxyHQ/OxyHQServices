@@ -26,9 +26,11 @@ jest.mock('mongoose', () => jest.requireActual('mongoose'));
 import { Types } from 'mongoose';
 
 const mockUserAggregate = jest.fn();
+const mockUserFindOne = jest.fn();
 const mockFollowAggregate = jest.fn();
 const mockResolveAndUpsert = jest.fn();
 const mockIsFediverseHandle = jest.fn();
+const mockGetUserStats = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -42,7 +44,7 @@ jest.mock('../../middleware/validate', () => ({
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {
-    getUserStats: jest.fn(),
+    getUserStats: (...args: unknown[]) => mockGetUserStats(...args),
     // Minimal serializer: the route only asserts identity passes through.
     formatUserResponse: (profile: { _id: Types.ObjectId; username?: string }) => ({
       id: profile._id.toString(),
@@ -68,6 +70,7 @@ jest.mock('../../models/User', () => ({
   __esModule: true,
   default: {
     aggregate: (...args: unknown[]) => mockUserAggregate(...args),
+    findOne: (...args: unknown[]) => mockUserFindOne(...args),
   },
 }));
 
@@ -89,12 +92,12 @@ interface ProfileResult {
   username?: string;
 }
 
-interface JsonResponse {
+interface JsonResponse<T = ProfileResult[]> {
   status: number;
-  body: { error?: string; message?: string; data?: ProfileResult[] };
+  body: { error?: string; message?: string; data?: T };
 }
 
-function requestJson(server: http.Server, path: string): Promise<JsonResponse> {
+function requestJson<T = ProfileResult[]>(server: http.Server, path: string): Promise<JsonResponse<T>> {
   const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -183,7 +186,26 @@ beforeEach(() => {
   // Follower/following count aggregations return empty for every test.
   mockFollowAggregate.mockResolvedValue([]);
   mockIsFediverseHandle.mockReturnValue(false);
+  mockGetUserStats.mockResolvedValue({ followers: 0, following: 0 });
+  // Default: no local user (the resolve tests override per-case).
+  mockUserFindOne.mockReturnValue(findOneQuery(null));
 });
+
+/**
+ * A chainable stub matching `User.findOne(...).select(...).lean({ virtuals })`
+ * as the `/profiles/resolve` local-first lookup calls it.
+ */
+function findOneQuery(user: PoolUser | null): {
+  select: jest.Mock;
+  lean: jest.Mock;
+} {
+  const query = {
+    select: jest.fn(),
+    lean: jest.fn().mockResolvedValue(user),
+  };
+  query.select.mockReturnValue(query);
+  return query;
+}
 
 describe('GET /profiles/search archived exclusion', () => {
   it('adds accountStatus: { $ne: "archived" } to the aggregation $match', async () => {
@@ -311,5 +333,137 @@ describe('GET /profiles/search archived exclusion', () => {
 
     const ids = (res.body.data ?? []).map((p) => String(p.id));
     expect(ids).toContain(activeLocal.toString());
+  });
+});
+
+/**
+ * BUG A — a leading `@` on a people-search query must be stripped BEFORE the
+ * regex is built, otherwise the literal `@` never matches the STORED username.
+ * The mocked `User.aggregate` evaluates the route's ACTUAL compiled regex against
+ * the pool, so these assertions exercise the real strip + escape, not a stub.
+ */
+describe('GET /profiles/search leading-@ handling', () => {
+  it('strips a single leading @ so a Bluesky handle matches the stored username', async () => {
+    // Stored atproto username has NO leading @; the query the client sends does.
+    const pool: PoolUser[] = [
+      { _id: activeLocal, username: 'adamrbjack.bsky.social@bsky.social', accountStatus: 'active' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(
+      server,
+      `/profiles/search?query=${encodeURIComponent('@adamrbjack.bsky.social@bsky.social')}`
+    );
+    expect(res.status).toBe(200);
+
+    const usernames = (res.body.data ?? []).map((p) => p.username);
+    expect(usernames).toContain('adamrbjack.bsky.social@bsky.social');
+  });
+
+  it('strips only the leading @ — a mid-string @ (user@host) is preserved', async () => {
+    const userAtHost = new Types.ObjectId();
+    const userNoAt = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      // Should match: `@user@host.example` → stripped to `user@host.example`.
+      { _id: userAtHost, username: 'user@host.example', accountStatus: 'active' },
+      // Must NOT match: only surfaces if the mid-string @ were also stripped.
+      { _id: userNoAt, username: 'userhost.example', accountStatus: 'active' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(
+      server,
+      `/profiles/search?query=${encodeURIComponent('@user@host.example')}`
+    );
+    expect(res.status).toBe(200);
+
+    const usernames = (res.body.data ?? []).map((p) => p.username);
+    expect(usernames).toContain('user@host.example');
+    expect(usernames).not.toContain('userhost.example');
+  });
+});
+
+/**
+ * BUG B — `/profiles/resolve` must be LOCAL-FIRST: a handle that already maps to
+ * a known Oxy user resolves straight from the DB (crucial for atproto/Bluesky
+ * actors whose `user@bsky.social` username oxy-api's WebFinger can never
+ * resolve). Only an UNKNOWN handle falls through to `resolveAndUpsert`.
+ */
+describe('GET /profiles/resolve local-first', () => {
+  it('resolves an existing federated user by exact username WITHOUT WebFinger', async () => {
+    const known: PoolUser = {
+      _id: activeLocal,
+      username: 'adamrbjack.bsky.social@bsky.social',
+      accountStatus: 'active',
+      type: 'federated',
+    };
+    mockUserFindOne.mockReturnValue(findOneQuery(known));
+    // Prove the local lookup runs regardless of the strict handle-format check.
+    mockIsFediverseHandle.mockReturnValue(false);
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('adamrbjack.bsky.social@bsky.social')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data?.id).toBe(activeLocal.toString());
+    expect(res.body.data?.username).toBe('adamrbjack.bsky.social@bsky.social');
+
+    // The exact handle is used as the username lookup key…
+    expect(mockUserFindOne).toHaveBeenCalledWith({ username: 'adamrbjack.bsky.social@bsky.social' });
+    // …and remote discovery is never invoked for a known user.
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
+  });
+
+  it('returns null for an archived local match without WebFinger', async () => {
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({ _id: archivedActor, username: 'gone@remote.example', accountStatus: 'archived' })
+    );
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('gone@remote.example')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeNull();
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
+  });
+
+  it('returns null for a restricted-tier local match without WebFinger', async () => {
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({
+        _id: restrictedActor,
+        username: 'abuser@remote.example',
+        accountStatus: 'active',
+        reputationTier: 'restricted',
+      })
+    );
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('abuser@remote.example')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeNull();
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
+  });
+
+  it('falls through to resolveAndUpsert for an unknown handle', async () => {
+    // No local user (default findOne → null); it is a valid fediverse handle.
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: activeLocal,
+      username: 'newuser@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+    });
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('newuser@remote.example')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data?.id).toBe(activeLocal.toString());
+    expect(mockResolveAndUpsert).toHaveBeenCalledWith('newuser@remote.example');
   });
 });
