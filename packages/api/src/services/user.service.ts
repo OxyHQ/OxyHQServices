@@ -13,7 +13,6 @@ import { Types } from 'mongoose';
 import userCache from '../utils/userCache';
 import securityActivityService from './securityActivityService';
 import { sanitizeProfileUpdate } from '../utils/sanitize';
-import { isValidDisplayName } from '../utils/displayNameSanitize';
 import {
   normalizeLinks,
   normalizeLinksMetadata,
@@ -38,7 +37,7 @@ import {
 } from '../utils/publicUserProjection';
 import Subscription from '../models/Subscription';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
-import { normalizeLocale } from '@oxyhq/core';
+import { isValidDisplayName, normalizeLocale } from '@oxyhq/core';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
