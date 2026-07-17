@@ -696,15 +696,57 @@ class ReputationService {
     limit: number,
     offset: number
   ): Promise<{ items: IReputationBalance[]; total: number }> {
-    const [items, total] = await Promise.all([
-      ReputationBalance.find({})
-        .sort({ total: -1 })
-        .skip(offset)
-        .limit(limit)
-        .populate('userId', 'username name avatar publicKey _id'),
-      ReputationBalance.countDocuments({}),
+    const eligibleUserStages = [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $match: {
+          'user.accountStatus': { $ne: 'archived' },
+          'user.reputationTier': { $ne: 'restricted' },
+        },
+      },
+    ] as const;
+
+    const [rows, countRows] = await Promise.all([
+      ReputationBalance.aggregate([
+        ...eligibleUserStages,
+        { $sort: { total: -1 } },
+        { $skip: offset },
+        { $limit: limit },
+        {
+          $project: {
+            total: 1,
+            positive: 1,
+            negative: 1,
+            breakdown: 1,
+            trustTier: 1,
+            influence: 1,
+            reliability: 1,
+            lastTransactionId: 1,
+            recalculatedAt: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            userId: {
+              _id: '$user._id',
+              username: '$user.username',
+              name: '$user.name',
+              avatar: '$user.avatar',
+              publicKey: '$user.publicKey',
+            },
+          },
+        },
+      ]),
+      ReputationBalance.aggregate([...eligibleUserStages, { $count: 'total' }]),
     ]);
-    return { items, total };
+
+    return { items: rows as IReputationBalance[], total: countRows[0]?.total ?? 0 };
   }
 
   /** Paginated ledger for a user, newest first. */

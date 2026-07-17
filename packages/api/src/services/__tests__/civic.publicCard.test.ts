@@ -144,6 +144,20 @@ describe('buildSignedPublicCard', () => {
     expect(await buildSignedPublicCard(USER_ID)).toBeNull();
   });
 
+  it('returns null for an archived user', async () => {
+    mockUserFindById.mockReturnValue({
+      select: () => ({ lean: async () => userDoc({ accountStatus: 'archived' }) }),
+    });
+    expect(await buildSignedPublicCard(USER_ID)).toBeNull();
+  });
+
+  it('returns null for a restricted-tier user', async () => {
+    mockUserFindById.mockReturnValue({
+      select: () => ({ lean: async () => userDoc({ reputationTier: 'restricted' }) }),
+    });
+    expect(await buildSignedPublicCard(USER_ID)).toBeNull();
+  });
+
   it('still returns a card (attestation null) when the Oxy key is unconfigured', async () => {
     delete process.env.OXY_PRIVATE_KEY;
     delete process.env.OXY_PUBLIC_KEY;

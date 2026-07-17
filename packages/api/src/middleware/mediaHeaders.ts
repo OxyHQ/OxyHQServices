@@ -35,8 +35,6 @@ export const CACHE_DURATION = {
   IMMUTABLE: 31536000,
   /** For user-specific or frequently updated files (1 hour) */
   PRIVATE: 3600,
-  /** For OPTIONS preflight requests (24 hours) */
-  PREFLIGHT: 86400,
   /** For development/testing (no cache) */
   NO_CACHE: 0,
 } as const;
@@ -74,15 +72,11 @@ export function mediaHeadersMiddleware(
   
   // Support range requests for video/audio streaming
   res.setHeader('Accept-Ranges', MEDIA_ACCEPT_RANGES);
-  
-  // Handle preflight OPTIONS requests
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Cache-Control', `public, max-age=${CACHE_DURATION.PREFLIGHT}`);
-    res.setHeader('Vary', 'Origin');
-    res.status(204).end();
-    return;
-  }
-  
+
+  // OPTIONS preflight is owned exclusively by the global CORS middleware
+  // (`config/cors.ts`). Do not answer or cache preflights here — a
+  // `Cache-Control: public` on a bad preflight was the stale-CORS failure mode
+  // fixed in #658.
   next();
 }
 

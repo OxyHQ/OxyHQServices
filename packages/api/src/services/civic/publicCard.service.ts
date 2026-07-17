@@ -59,9 +59,13 @@ function signCard(card: PublicCard): ExportAttestation | null {
  */
 export async function buildSignedPublicCard(userId: string): Promise<SignedPublicCard | null> {
   const user = await User.findById(userId)
-    .select('username name avatar publicKey verified verifiedDomains')
+    .select('username name avatar publicKey verified verifiedDomains accountStatus reputationTier')
     .lean();
-  if (!user) {
+  if (
+    !user ||
+    user.accountStatus === 'archived' ||
+    user.reputationTier === 'restricted'
+  ) {
     return null;
   }
 
