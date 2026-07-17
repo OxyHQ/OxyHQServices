@@ -39,6 +39,37 @@ export {
   type VerifyHttpSignatureOptions,
 } from './httpSignature';
 
+/**
+ * Domain-parameterized ActivityPub URL builders — each app instantiates them once
+ * with its own `FEDERATION_DOMAIN` so every actor stays `@user@its-own-domain`.
+ */
+export { createUrlBuilders, type UrlBuilders } from './urls';
+
+/**
+ * The shared JSON-LD `@context` (load-bearing term declarations) and the
+ * ActivityPub URI helpers (actor-uri extraction + the per-instance domain policy:
+ * blocked-domain check + local-post-id extraction).
+ */
+export { AP_CONTEXT } from './apContext';
+export {
+  extractActorUriFromActivityId,
+  createDomainPolicy,
+  type DomainPolicy,
+  type DomainPolicyConfig,
+} from './apUri';
+
+/**
+ * The single builder of a LOCAL user's ActivityPub `Person` actor document —
+ * byte-identical across apps, with media resolution injected.
+ */
+export {
+  createLocalActorBuilder,
+  type LocalActorBuilder,
+  type LocalActorBuilderConfig,
+  type BuildLocalActorParams,
+  type ActorMediaResolver,
+} from './actorObject';
+
 /** Supported external networks. */
 export type NetworkId = 'activitypub' | 'atproto';
 

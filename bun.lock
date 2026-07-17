@@ -494,7 +494,10 @@
     },
     "packages/federation": {
       "name": "@oxyhq/federation",
-      "version": "0.2.0",
+      "version": "0.3.0",
+      "dependencies": {
+        "@oxyhq/core": "workspace:^",
+      },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
         "@types/express": "^4.17.21",
