@@ -43,7 +43,7 @@ export {
  * Domain-parameterized ActivityPub URL builders — each app instantiates them once
  * with its own `FEDERATION_DOMAIN` so every actor stays `@user@its-own-domain`.
  */
-export { createUrlBuilders, type UrlBuilders } from './urls';
+export { createUrlBuilders, normalizeActorUsername, type UrlBuilders } from './urls';
 
 /**
  * The shared JSON-LD `@context` (load-bearing term declarations) and the

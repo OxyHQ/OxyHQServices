@@ -351,7 +351,8 @@ async function getInstanceKeyPair(domain: string = AP_DOMAIN): Promise<KeyPairDo
  * own actor endpoints and managed accounts.
  */
 export async function getUserKeyPair(username: string, domain: string = AP_DOMAIN): Promise<KeyPairDoc> {
-  return getOrCreateKeyPair(composeUserKeyId(username, domain));
+  const normalizedUsername = username.trim().toLowerCase();
+  return getOrCreateKeyPair(composeUserKeyId(normalizedUsername, domain));
 }
 
 /**

@@ -52,3 +52,8 @@ export function createUrlBuilders(domain: string, actorDomain: string = domain):
     sharedInbox: () => `https://${domain}/ap/inbox`,
   };
 }
+
+/** Normalize a local actor username from a path segment or WebFinger acct local-part. */
+export function normalizeActorUsername(username: string): string {
+  return username.trim().toLowerCase();
+}

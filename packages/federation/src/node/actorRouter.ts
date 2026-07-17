@@ -24,6 +24,7 @@ import type { User } from '@oxyhq/core';
 import { AP_CONTEXT } from '../apContext';
 import { verifyHttpSignature } from '../httpSignature';
 import type { UrlBuilders } from '../urls';
+import { normalizeActorUsername } from '../urls';
 import type { LocalActorBuilder } from '../actorObject';
 
 /** Page size for the paginated followers/following collections (mirrors the outbox). */
@@ -112,7 +113,8 @@ export interface ActorRouterConfig {
 /** Extract the `:username` param safely as a string. */
 function getUsername(req: Request): string {
   const val = req.params.username;
-  return typeof val === 'string' ? val : Array.isArray(val) ? val[0] : String(val);
+  const raw = typeof val === 'string' ? val : Array.isArray(val) ? val[0] : String(val);
+  return normalizeActorUsername(raw);
 }
 
 /**

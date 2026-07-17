@@ -216,6 +216,24 @@ describe('sendAccept', () => {
     expect(rig.deliveredBodies).toHaveLength(0);
     expect(rig.enqueued).toHaveLength(0);
   });
+
+  it('delivers Accept to sharedInboxUrl when inboxUrl is absent', async () => {
+    const remote = 'https://remote.example/users/bob';
+    const rig = makeRig({
+      actorsByUri: {
+        [remote]: {
+          _id: 'A',
+          uri: remote,
+          sharedInboxUrl: 'https://remote.example/shared-inbox',
+        },
+      },
+    });
+
+    await rig.service.sendAccept('u-alice', 'alice', 'https://remote.example/follows/1', remote);
+
+    expect(rig.deliveredBodies).toHaveLength(1);
+    expect(rig.deliveredBodies[0].url).toBe('https://remote.example/shared-inbox');
+  });
 });
 
 describe('sendUndoFollow', () => {

@@ -112,6 +112,15 @@ describe('webfinger router', () => {
     expect(res.body.links[0]).toEqual({ rel: 'self', type: 'application/activity+json', href: urls.actor('alice') });
   });
 
+  it('normalizes mixed-case acct local-parts before resolve', async () => {
+    const resolveUser = jest.fn(async (username: string) => (username === 'alice' ? { _id: 'u-alice' } : null));
+    const app = makeWebfingerApp({ resolveUser });
+    const res = await request(app).get('/.well-known/webfinger').query({ resource: 'acct:Alice@mention.earth' });
+    expect(res.status).toBe(200);
+    expect(resolveUser).toHaveBeenCalledWith('alice');
+    expect(res.body.subject).toBe('acct:alice@mention.earth');
+  });
+
   it('404s an unknown domain', async () => {
     const res = await request(makeWebfingerApp()).get('/.well-known/webfinger').query({ resource: 'acct:alice@other.example' });
     expect(res.status).toBe(404);

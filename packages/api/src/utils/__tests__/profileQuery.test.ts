@@ -1,4 +1,4 @@
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser } from '../profileQuery';
+import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser, isFederatableUser } from '../profileQuery';
 
 describe('eligibleUserMatch', () => {
   const minResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
@@ -51,5 +51,37 @@ describe('isDiscoverableUser', () => {
 
   it('rejects restricted-tier accounts', () => {
     expect(isDiscoverableUser({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
+  });
+});
+
+describe('isFederatableUser', () => {
+  it('accepts discoverable users with sharing enabled or unset', () => {
+    expect(isFederatableUser({ accountStatus: 'active' })).toBe(true);
+    expect(isFederatableUser({ accountStatus: 'active', privacySettings: { fediverseSharing: true } })).toBe(true);
+  });
+
+  it('rejects users who opted out of fediverse sharing', () => {
+    expect(
+      isFederatableUser({
+        accountStatus: 'active',
+        privacySettings: { fediverseSharing: false },
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects archived and restricted users regardless of sharing', () => {
+    expect(
+      isFederatableUser({
+        accountStatus: 'archived',
+        privacySettings: { fediverseSharing: true },
+      }),
+    ).toBe(false);
+    expect(
+      isFederatableUser({
+        accountStatus: 'active',
+        reputationTier: 'restricted',
+        privacySettings: { fediverseSharing: true },
+      }),
+    ).toBe(false);
   });
 });

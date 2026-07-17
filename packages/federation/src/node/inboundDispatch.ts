@@ -17,6 +17,8 @@
  * `handleReject`.
  */
 
+import { normalizeActorUsername } from '../urls';
+
 /**
  * Thrown when a federated follow is about to be bridged but the FOLLOWER actor
  * has not yet resolved to an Oxy user (`oxyUserId` missing) — e.g. Oxy was
@@ -177,7 +179,7 @@ export function createInboundDispatcher(config: InboundDispatcherConfig): Inboun
     // Extract username from our actor URL
     const match = targetActorUri.match(/\/ap\/users\/([^/]+)$/);
     if (!match) return;
-    const username = match[1];
+    const username = normalizeActorUsername(match[1]);
 
     // Resolve the Oxy user to get a real user ID
     const user = await config.identity.resolveUserByUsername(username);
@@ -241,7 +243,7 @@ export function createInboundDispatcher(config: InboundDispatcherConfig): Inboun
     const match = targetActorUri?.match(/\/ap\/users\/([^/]+)$/);
     let localUserId: string | undefined;
     if (match) {
-      const user = await config.identity.resolveUserByUsername(match[1]);
+      const user = await config.identity.resolveUserByUsername(normalizeActorUsername(match[1]));
       if (user) localUserId = String(user._id || user.id);
     }
 

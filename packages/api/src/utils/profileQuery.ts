@@ -32,6 +32,24 @@ export function isDiscoverableUser(
   );
 }
 
+/**
+ * Whether a user may be discovered via ActivityPub (actor GET, WebFinger).
+ * Extends {@link isDiscoverableUser} with the explicit `fediverseSharing` opt-out.
+ */
+export function isFederatableUser(
+  user:
+    | {
+        accountStatus?: string;
+        reputationTier?: string;
+        privacySettings?: { fediverseSharing?: boolean };
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!user || !isDiscoverableUser(user)) return false;
+  return user.privacySettings?.fediverseSharing !== false;
+}
+
 export function federatedRecommendationEligibilityMatch(
   minResolvedAt: Date,
   prefix = '',

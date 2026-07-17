@@ -80,7 +80,7 @@ import { resolveSocketIdentity } from './utils/socketAuth';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
-import { isDiscoverableUser } from './utils/profileQuery';
+import { isFederatableUser } from './utils/profileQuery';
 import { errorHandler } from './middleware/errorHandler';
 import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
@@ -583,7 +583,7 @@ app.use('/civic', civicRoutes);
 app.use('/nodes', nodeRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
-import { getInstanceActor, getUserActor } from './services/federation.service';
+import { getInstanceActor, getUserActor, isOwnFederationDomain } from './services/federation.service';
 import federationRoutes from './routes/federation';
 
 // Federation domain constant — used by nodeinfo, webfinger, and actor endpoints
@@ -616,7 +616,7 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
 
     // Per-user actor
     const user = await User.findOne({ username: username.toLowerCase() }).lean() as unknown as IUser | null;
-    if (!user || !isDiscoverableUser(user)) return res.status(404).json({ error: 'User not found' });
+    if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
     const actor = await getUserActor(user);
     if (!actor) return res.status(500).json({ error: 'Failed to build actor' });
@@ -645,7 +645,7 @@ app.get('/.well-known/nodeinfo', (_req: any, res: Response) => {
 app.get('/nodeinfo/2.0', (_req: any, res: Response) => {
   res.json({
     version: '2.0',
-    software: { name: 'mention', version: '2.0.0' },
+    software: { name: 'oxy', version: '2.0.0' },
     protocols: ['activitypub'],
     usage: { users: { total: 1, activeMonth: 1, activeHalfyear: 1 }, localPosts: 0 },
     openRegistrations: false,
@@ -662,28 +662,28 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
     const atIndex = acct.indexOf('@');
     if (atIndex === -1) return res.status(400).json({ error: 'Invalid acct format' });
 
-    const username = acct.substring(0, atIndex);
+    const canonicalUsername = acct.substring(0, atIndex).trim().toLowerCase();
     const domain = acct.substring(atIndex + 1);
 
-    if (domain !== AP_DOMAIN) return res.status(404).json({ error: 'Domain not served here' });
+    if (!isOwnFederationDomain(domain)) return res.status(404).json({ error: 'Domain not served here' });
 
-    const user = await User.findOne({ username: username.toLowerCase() }).lean();
-    if (!user || !isDiscoverableUser(user)) return res.status(404).json({ error: 'User not found' });
+    const user = await User.findOne({ username: canonicalUsername }).lean();
+    if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
     res.setHeader('Content-Type', 'application/jrd+json');
     res.setHeader('Cache-Control', 'max-age=3600');
     return res.json({
-      subject: `acct:${username}@${AP_DOMAIN}`,
+      subject: `acct:${canonicalUsername}@${AP_DOMAIN}`,
       links: [
         {
           rel: 'self',
           type: 'application/activity+json',
-          href: `https://${AP_DOMAIN}/ap/users/${username}`,
+          href: `https://${AP_DOMAIN}/ap/users/${canonicalUsername}`,
         },
         {
           rel: 'http://webfinger.net/rel/profile-page',
           type: 'text/html',
-          href: `https://${AP_DOMAIN}/@${username}`,
+          href: `https://${AP_DOMAIN}/@${canonicalUsername}`,
         },
       ],
     });

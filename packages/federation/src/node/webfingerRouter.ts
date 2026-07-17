@@ -14,6 +14,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import type { UrlBuilders } from '../urls';
+import { normalizeActorUsername } from '../urls';
 
 /** 1 hour, in seconds — the WebFinger JRD cache TTL + response `max-age`. */
 const WEBFINGER_CACHE_TTL = 3600;
@@ -88,7 +89,7 @@ export function createWebfingerRouter(config: WebfingerRouterConfig): Router {
       return res.status(400).json({ error: 'Invalid acct format' });
     }
 
-    const username = acct.substring(0, atIndex);
+    const username = normalizeActorUsername(acct.substring(0, atIndex));
     const acctDomain = acct.substring(atIndex + 1);
 
     if (acctDomain.toLowerCase() !== domain.toLowerCase()) {

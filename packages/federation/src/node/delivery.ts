@@ -572,10 +572,11 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     const actor = await config.store.findActorByUri(remoteActorUri);
     if (!actor) return;
     // `inboxUrl` is schema-optional (atproto actors have none); an AP actor we
-    // are sending Accept(Follow) to always has one. Guard so the absent case is
-    // a logged no-op instead of delivering to `undefined`.
-    if (!actor.inboxUrl) {
-      logger.warn(`[FedSync] cannot send Accept(Follow) to ${remoteActorUri}: actor has no inboxUrl`);
+    // are sending Accept(Follow) to always has one. When neither inbox is known the
+    // local follow is already removed — just skip the outbound delivery.
+    const targetInbox = actor.sharedInboxUrl ?? actor.inboxUrl;
+    if (!targetInbox) {
+      logger.warn(`[FedSync] cannot send Accept(Follow) to ${remoteActorUri}: actor has no inbox`);
       return;
     }
 
@@ -594,9 +595,9 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
       },
     };
 
-    const delivered = await deliverActivity(activity, actor.inboxUrl, localOxyUserId, localUsername);
+    const delivered = await deliverActivity(activity, targetInbox, localOxyUserId, localUsername);
     if (!delivered) {
-      await queueDelivery(activity, actor.inboxUrl, localOxyUserId);
+      await queueDelivery(activity, targetInbox, localOxyUserId);
     }
   }
 
