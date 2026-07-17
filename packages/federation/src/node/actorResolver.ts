@@ -35,11 +35,11 @@ const ACTOR_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
 /** The AP content type asked for on signed actor/collection fetches. */
 const AP_CONTENT_TYPE = 'application/activity+json';
 
-/** The `type` values a WebFinger `self` link must carry to point at an AP actor. */
-const AP_ACCEPT_TYPES = [
-  'application/activity+json',
-  'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-];
+function isApActorContentType(type: string | undefined): boolean {
+  if (!type) return false;
+  const base = type.split(';')[0]?.trim().toLowerCase();
+  return base === 'application/activity+json' || base === 'application/ld+json';
+}
 
 /** The minimal fields the resolver reads off / writes to a stored actor record. */
 export interface FederatedActorRecordBase {
@@ -249,7 +249,7 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
       const data = await this.config.fetchWebFinger(url);
       if (!data) return null;
       const link = data.links?.find(
-        (l) => l.rel === 'self' && l.type && AP_ACCEPT_TYPES.includes(l.type),
+        (l) => l.rel === 'self' && isApActorContentType(l.type),
       );
       return link?.href || null;
     } catch (err) {
@@ -479,7 +479,7 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
             oxyUserId: fedActor.oxyUserId ?? undefined,
           };
           const oxyId = await this.config.identity.resolveExternalUser(normalized, { forceAvatarRefresh });
-          if (oxyId && fedActor.oxyUserId !== oxyId) {
+          if (oxyId && fedActor.oxyUserId !== oxyId && fedActor._id != null) {
             await this.config.store.setActorOxyUserId(fedActor._id, oxyId);
           }
         } catch (resolveErr) {

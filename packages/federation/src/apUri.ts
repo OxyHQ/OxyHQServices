@@ -11,6 +11,12 @@
 /** Path segments that typically separate an actor path from a post ID in ActivityPub URIs. */
 const POST_PATH_SEGMENTS = new Set(['statuses', 'posts', 'notes', 'objects', 'activities']);
 
+/** Lowercase a host and strip a leading `www.` so `mention.earth` and `www.mention.earth` match. */
+function canonicalDomainHost(domain: string): string {
+  const d = domain.trim().toLowerCase();
+  return d.startsWith('www.') ? d.slice(4) : d;
+}
+
 /**
  * Given an ActivityPub activity/object ID (URL), extract the actor URI by
  * trimming everything from the first recognised post-path segment onward.
@@ -71,18 +77,18 @@ export interface DomainPolicy {
  */
 export function createDomainPolicy(config: DomainPolicyConfig): DomainPolicy {
   const localDomains = new Set([
-    config.domain.toLowerCase(),
-    (config.actorDomain ?? config.domain).toLowerCase(),
+    canonicalDomainHost(config.domain),
+    canonicalDomainHost(config.actorDomain ?? config.domain),
   ]);
-  const identityApex = config.identityApex?.toLowerCase();
+  const identityApex = config.identityApex ? canonicalDomainHost(config.identityApex) : undefined;
   const blocked = new Set<string>();
   for (const d of config.blockedDomains ?? []) {
-    blocked.add(d.toLowerCase());
+    blocked.add(canonicalDomainHost(d));
   }
 
   return {
     isBlockedDomain(domain: string): boolean {
-      const d = domain.toLowerCase();
+      const d = canonicalDomainHost(domain);
       return localDomains.has(d) || (identityApex !== undefined && d === identityApex) || blocked.has(d);
     },
     extractLocalPostId(objectUri: string): string | null {
@@ -92,7 +98,7 @@ export function createDomainPolicy(config: DomainPolicyConfig): DomainPolicy {
       } catch {
         return null;
       }
-      if (!localDomains.has(parsed.host.toLowerCase())) return null;
+      if (!localDomains.has(canonicalDomainHost(parsed.host))) return null;
       const match = parsed.pathname.match(/^\/ap\/users\/[^/]+\/posts\/([^/]+)\/?$/);
       return match ? match[1] : null;
     },

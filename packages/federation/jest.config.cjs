@@ -2,9 +2,8 @@
  * Jest config for @oxyhq/federation.
  *
  * The `.` entry is pure types (the connector contract + normalized DTOs) with no
- * runtime dependencies, so the suite is currently empty — `test` runs with
- * `--passWithNoTests`. Behavioural unit tests land alongside the engine code in
- * later phases (HTTP signatures, actor resolution, delivery).
+ * runtime dependencies on other workspace packages. Behavioural unit tests live
+ * alongside the engine code (HTTP signatures, actor resolution, delivery).
  *
  * @type {import('jest').Config}
  */

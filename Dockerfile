@@ -48,8 +48,8 @@ COPY packages/api/ packages/api/
 # @oxyhq/core/server — safeFetch etc.), then api.
 RUN bun run --filter @oxyhq/contracts build
 RUN bun run --filter @oxyhq/protocol build
-RUN bun run --filter @oxyhq/federation build
 RUN bun run --filter @oxyhq/core build
+RUN bun run --filter @oxyhq/federation build
 RUN bun run --filter @oxyhq/api build
 
 # ── Production image ──────────────────────────────────────────────

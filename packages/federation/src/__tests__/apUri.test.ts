@@ -9,6 +9,7 @@ const policy = createDomainPolicy({
 describe('createDomainPolicy.isBlockedDomain', () => {
   it('blocks our own federation domain and the Oxy identity apex (case-insensitively)', () => {
     expect(policy.isBlockedDomain('mention.earth')).toBe(true);
+    expect(policy.isBlockedDomain('www.mention.earth')).toBe(true);
     expect(policy.isBlockedDomain('oxy.so')).toBe(true);
     expect(policy.isBlockedDomain('OXY.SO')).toBe(true);
   });

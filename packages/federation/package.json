@@ -66,7 +66,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "bun run build:cjs && bun run build:esm && bun run build:types",
+    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/protocol build && bun run --filter @oxyhq/core build && bun run build:cjs && bun run build:esm && bun run build:types",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
     "build:types": "tsc -p tsconfig.types.json",

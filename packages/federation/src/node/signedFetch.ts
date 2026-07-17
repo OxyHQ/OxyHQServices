@@ -119,34 +119,35 @@ export function createSignedFetch(config: CreateSignedFetchConfig): SignedFetch 
     const fetchFollowingRedirects = async (
       initialUrl: string,
       signed: boolean,
-    ): Promise<Response> => {
+    ): Promise<{ res: Response; finalUrl: string }> => {
       let currentUrl = initialUrl;
       for (let hop = 0; hop <= SIGNED_FETCH_MAX_REDIRECTS; hop++) {
         const res = await fetchOnce(currentUrl, signed);
         if (!REDIRECT_STATUS_CODES.has(res.status)) {
-          return res;
+          return { res, finalUrl: currentUrl };
         }
         // The caller asked to handle redirects itself (stricter per-hop policy).
         if (manualRedirect) {
-          return res;
+          return { res, finalUrl: currentUrl };
         }
         const location = res.headers.get('location');
         if (hop === SIGNED_FETCH_MAX_REDIRECTS || !location) {
-          return res;
+          return { res, finalUrl: currentUrl };
         }
         currentUrl = new URL(location, currentUrl).toString();
       }
       throw new Error('redirect loop exhausted');
     };
 
-    const res = await fetchFollowingRedirects(url, true);
+    const { res, finalUrl } = await fetchFollowingRedirects(url, true);
 
     // If the remote server returns a 5xx (e.g. it can't resolve our keyId to
     // verify the signature), retry without the signature as a fallback for public
-    // resources.
+    // resources. Retry from the post-redirect URL so we don't restart a chain that
+    // already landed on the failing hop.
     if (res.status >= 500) {
-      config.logger?.info(`[FedSync] signedFetch got ${res.status} for ${url}, retrying unsigned`);
-      return fetchFollowingRedirects(url, false);
+      config.logger?.info(`[FedSync] signedFetch got ${res.status} for ${finalUrl}, retrying unsigned`);
+      return fetchFollowingRedirects(finalUrl, false).then(({ res: unsignedRes }) => unsignedRes);
     }
 
     // A 401/403 on a signed request means the remote rejected OUR signature (e.g.
