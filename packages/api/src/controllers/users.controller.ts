@@ -33,8 +33,13 @@ export class UsersController {
       // Sanitize search query (length limit + HTML escaping)
       const sanitizedQuery = sanitizeSearchQuery(query);
 
-      // Search for users where username or name matches the query
+      // Search for users where username or name matches the query.
+      // Exclude archived accounts (dead federated actors marked gone via
+      // POST /federation/actor-gone, plus archived org/project accounts) so
+      // they never surface as 0-post ghost search hits. Only `archived` is
+      // filtered — active accounts (the default) all still match.
       const users = await User.find({
+        accountStatus: { $ne: 'archived' },
         $or: [
           { username: { $regex: sanitizedQuery, $options: 'i' } },
           { 'name.first': { $regex: sanitizedQuery, $options: 'i' } },

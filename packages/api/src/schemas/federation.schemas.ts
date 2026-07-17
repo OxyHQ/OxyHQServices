@@ -86,7 +86,22 @@ export const federationFollowSchema = z.object({
   action: z.enum(['follow', 'unfollow']),
 });
 
+/**
+ * POST /federation/actor-gone
+ *
+ * Marks a dead remote fediverse identity gone. Mention is the only component
+ * that talks to the remote fediverse; when it gets an HTTP 410 Gone for an
+ * actor it calls this to archive the corresponding Oxy user so the identity
+ * leaves discovery/search surfaces. `oxyUserId` is the (federated) actor's Oxy
+ * user id; the route enforces that it resolves to a `type:'federated'` user
+ * before archiving (a local/agent/automated account is never archivable here).
+ */
+export const federationActorGoneSchema = z.object({
+  oxyUserId: objectIdSchema,
+});
+
 export type PublicKeyParams = z.infer<typeof publicKeyParamsSchema>;
 export type PublicKeyQuery = z.infer<typeof publicKeyQuerySchema>;
 export type SignRequestBody = z.infer<typeof signRequestSchema>;
 export type FederationFollowBody = z.infer<typeof federationFollowSchema>;
+export type FederationActorGoneBody = z.infer<typeof federationActorGoneSchema>;
