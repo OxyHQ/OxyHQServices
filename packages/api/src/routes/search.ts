@@ -21,7 +21,10 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
     const { query, type = "all", page, limit } = req.query as unknown as ValidatedSearchQuery;
     const skip = (page - 1) * limit;
 
-    const sanitized = sanitizeSearchQuery((query as string) || '');
+    // Strip a single leading `@` before sanitizing so handle-style queries match
+    // stored usernames (same rule as GET /profiles/search and POST /users/search).
+    const stripped = ((query as string) || '').trim().replace(/^@/, '');
+    const sanitized = sanitizeSearchQuery(stripped);
     const searchQuery = { $regex: sanitized, $options: "i" };
 
     const results: {

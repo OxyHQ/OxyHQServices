@@ -183,3 +183,29 @@ describe('GET /search archived exclusion', () => {
     expect(ids).not.toContain(restrictedUser.toString());
   });
 });
+
+describe('GET /search leading-@ handling', () => {
+  it('strips a single leading @ so a Bluesky handle matches the stored username', async () => {
+    const pool: PoolUser[] = [
+      { _id: activeUser, username: 'adamrbjack.bsky.social@bsky.social', accountStatus: 'active' },
+    ];
+
+    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
+      const matched = pool.filter((user) => matchesFindFilter(user, filter));
+      return {
+        select: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(
+          matched.map((user) => ({ _id: user._id, username: user.username })),
+        ),
+      };
+    });
+
+    const res = await requestJson(
+      server,
+      `/?query=${encodeURIComponent('@adamrbjack.bsky.social@bsky.social')}&type=users`,
+    );
+    expect(res.status).toBe(200);
+    expect((res.body.users ?? []).map((user) => user.id)).toContain(activeUser.toString());
+  });
+});

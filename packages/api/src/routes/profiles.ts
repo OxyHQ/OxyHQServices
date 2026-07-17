@@ -553,7 +553,12 @@ router.get(
 router.get(
   '/resolve',
   asyncHandler(async (req: Request, res: Response) => {
-    const handle = (req.query.handle as string || '').trim();
+    // Normalize handle input: trim, strip optional `acct:` prefix, and remove a
+    // single leading `@` so `@user@host` matches the stored `user@host` username.
+    const handle = (req.query.handle as string || '')
+      .trim()
+      .replace(/^acct:/i, '')
+      .replace(/^@/, '');
 
     if (!handle) {
       throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
@@ -585,7 +590,7 @@ router.get(
     }
 
     const user = await federationService.resolveAndUpsert(handle);
-    if (!user || user.accountStatus === 'archived') {
+    if (!user || user.accountStatus === 'archived' || user.reputationTier === 'restricted') {
       return sendSuccess(res, null);
     }
 

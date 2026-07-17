@@ -466,4 +466,42 @@ describe('GET /profiles/resolve local-first', () => {
     expect(res.body.data?.id).toBe(activeLocal.toString());
     expect(mockResolveAndUpsert).toHaveBeenCalledWith('newuser@remote.example');
   });
+
+  it('strips a single leading @ before the local username lookup', async () => {
+    const known: PoolUser = {
+      _id: activeLocal,
+      username: 'adamrbjack.bsky.social@bsky.social',
+      accountStatus: 'active',
+      type: 'federated',
+    };
+    mockUserFindOne.mockReturnValue(findOneQuery(known));
+    mockIsFediverseHandle.mockReturnValue(false);
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('@adamrbjack.bsky.social@bsky.social')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data?.id).toBe(activeLocal.toString());
+    expect(mockUserFindOne).toHaveBeenCalledWith({ username: 'adamrbjack.bsky.social@bsky.social' });
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
+  });
+
+  it('returns null for a restricted user resolved via discovery', async () => {
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: restrictedActor,
+      username: 'abuser@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+      reputationTier: 'restricted',
+    });
+
+    const res = await requestJson<ProfileResult | null>(
+      server,
+      `/profiles/resolve?handle=${encodeURIComponent('abuser@remote.example')}`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data).toBeNull();
+  });
 });
