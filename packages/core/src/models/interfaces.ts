@@ -1,4 +1,9 @@
-import type { OrganizationCategory, UserNameResponse } from '@oxyhq/contracts';
+import type {
+  OrganizationCategory,
+  UserNameResponse,
+  UserRelationship,
+  ThemePreference,
+} from '@oxyhq/contracts';
 
 export interface OxyConfig {
   baseURL: string;
@@ -163,6 +168,20 @@ export interface User {
   notificationPreferences?: NotificationPreferences;
   // General app-wide user preferences. Updated via `PUT /users/me`.
   userPreferences?: UserPreferences;
+  /**
+   * Portable theme preference (mode + Bloom color-preset key). Rides the
+   * self/session payload so it is present on the current-user DTO at cold boot
+   * (`useAuth().user.themePreference`) with no extra fetch. Absent until the
+   * user sets it. Updated via `updateThemePreference` / `updateProfile`.
+   */
+  themePreference?: ThemePreference;
+  /**
+   * The authenticated viewer's relationship to THIS profile. Populated ONLY on
+   * single-profile fetches (`getProfileByUsername` / `getUserById`) when the
+   * request is authenticated; absent for anonymous requests, self-views, and
+   * bulk fetches — so `undefined` means "unknown", not "not following".
+   */
+  relationship?: UserRelationship;
   [key: string]: unknown;
 }
 

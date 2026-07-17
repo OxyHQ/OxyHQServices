@@ -758,8 +758,9 @@ router.get(
  */
 router.get(
   '/:userId',
+  optionalUserOrServiceAuth,
   resolveUserId,
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { userId } = req.params;
 
     const user = await userService.getUserById(userId);
@@ -773,6 +774,15 @@ router.get(
 
     // Format response with stats
     const response = userService.formatUserResponse(user, stats);
+
+    // Viewer-relative relationship: computed in the SAME handler (no second
+    // round-trip) from the Follow model when the request is authenticated.
+    // `userId` is already resolved to the canonical ObjectId by `resolveUserId`.
+    // OMITTED for anonymous requests and for a self-view.
+    const viewerId = resolveViewerId(req);
+    if (viewerId && viewerId !== userId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, userId);
+    }
 
     logger.debug('GET /users/:userId', { userId });
     sendSuccess(res, response);

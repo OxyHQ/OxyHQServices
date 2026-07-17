@@ -345,8 +345,9 @@ const parseExcludeTypesQuery = (excludeTypesRaw: unknown): string[] => {
  */
 router.get(
   '/username/:username',
+  optionalUserOrServiceAuth,
   validate({ params: usernameParams }),
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const raw = req.params.username;
 
     // Federated handles (user@domain) are looked up as-is;
@@ -393,6 +394,17 @@ router.get(
 
     // Format response with stats
     const response = userService.formatUserResponse(user, stats);
+
+    // Viewer-relative relationship: computed in the SAME handler (no second
+    // round-trip) from the Follow model when the request is authenticated.
+    // OMITTED for anonymous requests and for a self-view (no follow edge to a
+    // profile you are viewing as yourself), so consumers can distinguish
+    // "unknown" from "known, not following".
+    const viewerId = resolveViewerId(req);
+    const targetId = user._id.toString();
+    if (viewerId && viewerId !== targetId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+    }
 
     logger.debug('GET /profiles/username/:username', { username });
     sendSuccess(res, response);

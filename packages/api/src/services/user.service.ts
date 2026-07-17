@@ -36,8 +36,9 @@ import {
   type PublicUserDocument,
 } from '../utils/publicUserProjection';
 import Subscription from '../models/Subscription';
-import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
+import { userIdentityFields, deriveIsFederated, toThemePreference } from '../utils/userTransform';
 import { isValidDisplayName, normalizeLocale } from '@oxyhq/core';
+import type { UserRelationship } from '@oxyhq/contracts';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
@@ -339,6 +340,7 @@ export class UserService {
       'accountExpiresAfterInactivityDays',
       'notificationPreferences',
       'userPreferences',
+      'themePreference',
     ] as const;
 
     // Reject invalid native display names (letters/spaces/apostrophe only).
@@ -417,6 +419,30 @@ export class UserService {
           }
         }
         (filteredUpdates as Record<string, unknown>).languages = normalizedLocales;
+        continue;
+      }
+
+      // Portable theme preference — validate the shape at the boundary and
+      // persist EXACTLY `{ mode, colorPreset }` (trimmed preset), rejecting an
+      // unknown mode or an empty preset with a structured 400.
+      if (key === 'themePreference') {
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+          throw new BadRequestError('themePreference must be an object', {
+            field: 'themePreference',
+          });
+        }
+        const { mode, colorPreset } = value as Record<string, unknown>;
+        if (mode !== 'light' && mode !== 'dark' && mode !== 'system') {
+          throw new BadRequestError('themePreference.mode must be one of: light, dark, system', {
+            field: 'themePreference',
+          });
+        }
+        if (typeof colorPreset !== 'string' || colorPreset.trim().length === 0) {
+          throw new BadRequestError('themePreference.colorPreset must be a non-empty string', {
+            field: 'themePreference',
+          });
+        }
+        filteredUpdates.themePreference = { mode, colorPreset: colorPreset.trim() };
         continue;
       }
 
@@ -1638,6 +1664,55 @@ export class UserService {
   }
 
   /**
+   * Resolve the authenticated viewer's relationship to a target profile in ONE
+   * indexed query.
+   *
+   * Returns both directional flags: `isFollowing` (viewer → target) and
+   * `followsYou` (target → viewer). Both edges are read with a single
+   * `Follow.find` whose two `$or` branches each hit the unique
+   * `{ followerUserId, followType, followedId }` index as a point lookup — so
+   * this stays O(1) index work, not a scan, and adds no round-trip to the
+   * profile fetch that already loads the target document.
+   *
+   * The caller is responsible for skipping this on a self-view (`viewerId ===
+   * targetId`) and for omitting the field entirely on anonymous requests — this
+   * method assumes two distinct, structurally-valid ids.
+   *
+   * @param viewerId The authenticated viewer's user id.
+   * @param targetId The fetched profile's user id.
+   * @returns `{ isFollowing, followsYou }`.
+   */
+  async getViewerRelationship(
+    viewerId: string,
+    targetId: string
+  ): Promise<UserRelationship> {
+    const edges = await Follow.find({
+      followType: FollowType.USER,
+      $or: [
+        { followerUserId: viewerId, followedId: targetId },
+        { followerUserId: targetId, followedId: viewerId },
+      ],
+    })
+      .select('followerUserId followedId')
+      .lean();
+
+    let isFollowing = false;
+    let followsYou = false;
+    for (const edge of edges) {
+      const follower = edge.followerUserId?.toString();
+      const followed = edge.followedId?.toString();
+      if (follower === viewerId && followed === targetId) {
+        isFollowing = true;
+      }
+      if (follower === targetId && followed === viewerId) {
+        followsYou = true;
+      }
+    }
+
+    return { isFollowing, followsYou };
+  }
+
+  /**
    * Batch follow-status resolution for the authenticated viewer.
    *
    * Returns a boolean for EVERY requested target id: `true` when the viewer
@@ -1867,6 +1942,15 @@ export class UserService {
       response.phone = userAny.phone as string | undefined;
       response.address = userAny.address as string | undefined;
       response.birthday = userAny.birthday as string | undefined;
+      // Portable theme preference — a personal setting, so it rides ONLY the
+      // self payload (`GET /users/me`, `PUT /users/me`), which is what cold boot
+      // loads. Gated with the other private fields so it never leaks onto other
+      // users' public profile fetches. Omitted when unset (consumers keep their
+      // own default).
+      const themePreference = toThemePreference(userAny.themePreference);
+      if (themePreference) {
+        response.themePreference = themePreference;
+      }
     }
 
     if (userAny.type) {

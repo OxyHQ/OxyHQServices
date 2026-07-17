@@ -355,6 +355,14 @@ export interface IUser extends Document {
     reduceMotion?: boolean;
     timezone?: string;
   };
+  // Portable theme preference (mode + Bloom color-preset KEY). Distinct from the
+  // mode-only `userPreferences.theme`: it carries the color preset Bloom needs to
+  // fully theme. Rides the self/session payload so every Oxy app themes at cold
+  // boot with no extra round-trip. Absent until the user sets it.
+  themePreference?: {
+    mode: 'light' | 'dark' | 'system';
+    colorPreset: string;
+  };
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -774,6 +782,18 @@ const UserSchema: Schema = new Schema(
       },
       reduceMotion: { type: Boolean, default: false },
       timezone: { type: String, default: '' },
+    },
+    // Portable theme preference (mode + Bloom color-preset key). Persisted via
+    // `PUT /users/me`; rides the self/session payload so every Oxy app themes at
+    // cold boot with no extra network call. Deliberately NO default — the whole
+    // subdoc stays absent until the user chooses a theme, so consumers fall back
+    // to their own default until then.
+    themePreference: {
+      mode: {
+        type: String,
+        enum: ['light', 'dark', 'system'],
+      },
+      colorPreset: { type: String },
     },
   },
   {

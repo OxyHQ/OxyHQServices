@@ -24,6 +24,8 @@ export type {
 export {
     // Schemas
     userNameSchema,
+    userRelationshipSchema,
+    themePreferenceSchema,
     userResponseSchema,
     userProfileUpdateSchema,
     currentUserResponseSchema,
@@ -36,6 +38,8 @@ export {
 
 export type {
     UserNameResponse,
+    UserRelationship,
+    ThemePreference,
     UserResponse,
     UserProfileUpdate,
     CurrentUserResponseContract,

@@ -75,6 +75,45 @@ export const userNameSchema: z.ZodType<UserNameResponse> = z
     .passthrough();
 
 /**
+ * The authenticated viewer's relationship to a fetched profile.
+ *
+ * Rides the SINGLE-profile fetch (profile-by-username / profile-by-id) so
+ * consumers get follow state without a second round-trip. Present ONLY when the
+ * request is authenticated (the viewer id is known) — OMITTED entirely for
+ * anonymous requests, so a consumer can distinguish "unknown" (field absent)
+ * from "known, not following" (`isFollowing: false`).
+ */
+export interface UserRelationship {
+    /** The viewer follows this profile (viewer → target). */
+    isFollowing: boolean;
+    /** This profile follows the viewer (target → viewer). */
+    followsYou: boolean;
+}
+
+export const userRelationshipSchema: z.ZodType<UserRelationship> = z.object({
+    isFollowing: z.boolean(),
+    followsYou: z.boolean(),
+});
+
+/**
+ * Portable per-account theme preference, applied across every Oxy app.
+ *
+ * Persisted on the Oxy user document and projected onto the self/session
+ * payload the SDK already loads during cold boot, so Bloom can theme on first
+ * paint with ZERO extra network call. `colorPreset` is a Bloom preset KEY
+ * (e.g. `"blue"`) — never raw colors.
+ */
+export interface ThemePreference {
+    mode: 'light' | 'dark' | 'system';
+    colorPreset: string;
+}
+
+export const themePreferenceSchema: z.ZodType<ThemePreference> = z.object({
+    mode: z.enum(['light', 'dark', 'system']),
+    colorPreset: z.string(),
+});
+
+/**
  * The canonical user object emitted by `formatUserResponse`.
  *
  * `id` is present on formatted user DTOs. `name.displayName` is OPTIONAL on the
@@ -132,6 +171,19 @@ export const userResponseSchema = z
          * Absent on personal, project, and bot accounts.
          */
         organizationCategory: organizationCategorySchema.optional(),
+        /**
+         * The authenticated viewer's relationship to this profile. Present ONLY
+         * on single-profile fetches (`GET /profiles/username/:username`,
+         * `GET /users/:userId`) when the request is authenticated; OMITTED for
+         * anonymous requests and for the bulk `POST /users/by-ids` fan-out.
+         */
+        relationship: userRelationshipSchema.optional(),
+        /**
+         * Portable theme preference. Rides the self/session payload (cold boot),
+         * so it is present on the current-user DTO (`GET /users/me`,
+         * `GET /session/user/:sessionId`) and absent until the user sets it.
+         */
+        themePreference: themePreferenceSchema.optional(),
     })
     .passthrough();
 
@@ -177,6 +229,11 @@ export const userProfileUpdateSchema = z
         notificationPreferences: z.record(z.unknown()).optional(),
         userPreferences: z.record(z.unknown()).optional(),
         privacySettings: z.record(z.unknown()).optional(),
+        /**
+         * Portable theme preference. Written through the same `PUT /users/me`
+         * settings-update path as `languages`/`userPreferences`.
+         */
+        themePreference: themePreferenceSchema.optional(),
     })
     .passthrough();
 

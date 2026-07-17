@@ -15,6 +15,7 @@ import type {
   UserProfileUpdate,
   RecommendationRequest,
   RecommendationItem,
+  ThemePreference,
 } from '@oxyhq/contracts';
 import { recommendationRequestSchema } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
@@ -626,6 +627,20 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       preferences: Partial<UserPreferences>
     ): Promise<User> {
       return this.updateProfile({ userPreferences: preferences });
+    }
+
+    /**
+     * Update the authenticated user's portable theme preference (light/dark/
+     * system + Bloom color-preset key). Persisted on the User document via the
+     * SAME `PUT /users/me` settings path as the other preferences — same cache
+     * invalidation — so the next cold boot serves it on the self/session payload
+     * with no extra network call. The full object is written (both `mode` and
+     * `colorPreset` are required by the API).
+     */
+    async updateThemePreference(
+      themePreference: ThemePreference
+    ): Promise<User> {
+      return this.updateProfile({ themePreference });
     }
 
     /**

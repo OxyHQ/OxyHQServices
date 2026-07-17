@@ -4,6 +4,7 @@
  */
 
 import { getUserLanguages } from '@oxyhq/core';
+import type { ThemePreference } from '@oxyhq/contracts';
 import { formatUserNameResponse, type NameParts, type NameResponse } from './displayName';
 
 type StringableId = string | { toString(): string };
@@ -26,6 +27,7 @@ export type UserLike = {
   links?: unknown;
   linksMetadata?: unknown;
   verifiedDomains?: unknown;
+  themePreference?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 } | null | undefined;
@@ -54,6 +56,29 @@ function toVerifiedDomains(value: unknown): VerifiedDomainDto[] | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Coerce a stored `themePreference` subdoc into the wire {@link ThemePreference}.
+ *
+ * Returns `undefined` unless BOTH a valid `mode` and a string `colorPreset` are
+ * present — an empty/partial Mongoose nested path (`{}`) serializes as absent
+ * rather than an invalid `{}`, so consumers keep their own default theme until
+ * the user actually chooses one. Shared by both the canonical
+ * `formatUserResponse` here and `UserService.formatUserResponse` so the two
+ * serializers cannot drift on the shape.
+ */
+export function toThemePreference(value: unknown): ThemePreference | undefined {
+  if (!isRecord(value)) return undefined;
+  const { mode, colorPreset } = value;
+  if (
+    (mode === 'light' || mode === 'dark' || mode === 'system') &&
+    typeof colorPreset === 'string' &&
+    colorPreset.length > 0
+  ) {
+    return { mode, colorPreset };
+  }
+  return undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -199,6 +224,9 @@ export function formatUserResponse(user: unknown) {
     linksMetadata: Array.isArray(user.linksMetadata) ? user.linksMetadata : undefined,
     verifiedDomains: toVerifiedDomains(user.verifiedDomains),
     organizationCategory: stringValue(user.organizationCategory),
+    // Portable theme preference — rides this self/session payload (login, device
+    // sessions, getUserBySession) so account switches carry the theme too.
+    themePreference: toThemePreference(user.themePreference),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
