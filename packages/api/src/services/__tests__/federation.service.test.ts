@@ -138,6 +138,7 @@ interface CachedUser {
   username: string;
   avatar?: string;
   updatedAt: Date;
+  accountStatus?: string;
   federation?: { actorUri?: string; domain?: string };
 }
 
@@ -232,6 +233,22 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
     expect(result).toBe(cached);
     expect(mockAssetFileContentExists).toHaveBeenCalledWith('stored-file-id');
+    expect(webfingerSpy).not.toHaveBeenCalled();
+    expect(actorSpy).not.toHaveBeenCalled();
+    expect(avatarSpy).not.toHaveBeenCalled();
+    expect(mockUserUpdateOne).not.toHaveBeenCalled();
+    expect(mockCacheInvalidate).not.toHaveBeenCalled();
+  });
+
+  it('returns an archived cached user without scheduling background refresh', async () => {
+    const fx = nextFixture();
+    const cached = cachedUser(fx, STALE_AGE_MS, { accountStatus: 'archived' });
+    mockFindOneReturning(cached);
+
+    const result = await federationService.resolveAndUpsert(fx.handle);
+    await flushMicrotasks();
+
+    expect(result).toBe(cached);
     expect(webfingerSpy).not.toHaveBeenCalled();
     expect(actorSpy).not.toHaveBeenCalled();
     expect(avatarSpy).not.toHaveBeenCalled();

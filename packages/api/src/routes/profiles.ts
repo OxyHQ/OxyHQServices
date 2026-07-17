@@ -380,7 +380,7 @@ router.get(
       }
     }
 
-    if (!user) {
+    if (!user || user.accountStatus === 'archived') {
       throw new NotFoundError('Profile not found');
     }
 
@@ -534,7 +534,7 @@ router.get(
     }
 
     const user = await federationService.resolveAndUpsert(handle);
-    if (!user) {
+    if (!user || user.accountStatus === 'archived') {
       return sendSuccess(res, null);
     }
 

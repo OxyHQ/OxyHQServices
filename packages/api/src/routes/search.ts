@@ -24,10 +24,14 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
     const sanitized = sanitizeSearchQuery((query as string) || '');
     const searchQuery = { $regex: sanitized, $options: "i" };
 
-    const results: any = { users: [], pagination: { page, limit, hasMore: false } };
+    const results: {
+      users: NonNullable<ReturnType<typeof formatUserResponse>>[];
+      pagination: { page: number; limit: number; hasMore: boolean };
+    } = { users: [], pagination: { page, limit, hasMore: false } };
 
     if (type === "all" || type === "users") {
       const users = await User.find({
+        accountStatus: { $ne: 'archived' },
         $or: [
           { username: searchQuery },
           { 'name.first': searchQuery },

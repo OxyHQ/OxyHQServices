@@ -519,6 +519,7 @@ export class UserService {
     // Fetch users directly (returns plain objects, not Mongoose documents)
     const followers = await User.find({
       _id: { $in: followerIds },
+      accountStatus: { $ne: 'archived' },
     })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<PublicUserDocument[]>()
@@ -580,6 +581,7 @@ export class UserService {
     // Fetch users directly (returns plain objects, not Mongoose documents)
     const following = await User.find({
       _id: { $in: followingIds },
+      accountStatus: { $ne: 'archived' },
     })
       .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<PublicUserDocument[]>()

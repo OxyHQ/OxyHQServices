@@ -102,11 +102,16 @@ export function nonSensitiveAccountMatch(prefix = ''): Record<string, unknown> {
  *   (e.g. follower-ranked rows looked up from the Follow collection).
  */
 export function eligibleUserMatch(minResolvedAt: Date, prefix = ''): { $and: Record<string, unknown>[] } {
+  const field = (name: string) => `${prefix}${name}`;
+
   return {
     $and: [
       federatedRecommendationEligibilityMatch(minResolvedAt, prefix),
       profileQualityMatch(prefix),
       nonSensitiveAccountMatch(prefix),
+      // Dead federated actors (POST /federation/actor-gone) and archived
+      // org/project accounts must never surface in discovery pipelines.
+      { [field('accountStatus')]: { $ne: 'archived' } },
     ],
   };
 }

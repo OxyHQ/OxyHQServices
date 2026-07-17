@@ -1072,6 +1072,12 @@ class FederationService {
       .lean({ virtuals: true }) as IUser | null;
 
     if (existing) {
+      // Archived actors (410-Gone tombstones) stay cached for follow-graph /
+      // audit continuity but must not be refreshed or re-surfaced as live.
+      if (existing.accountStatus === 'archived') {
+        return existing;
+      }
+
       // We have a row — never block the caller on remote I/O. Decide whether a
       // background refresh is warranted: either the record is stale, or its
       // avatar is still a raw http URL (e.g. set by PUT /users/resolve) that
@@ -1171,6 +1177,10 @@ class FederationService {
    * rejection or crash the process.
    */
   private scheduleBackgroundRefresh(existing: IUser, handle: string): void {
+    if (existing.accountStatus === 'archived') {
+      return;
+    }
+
     const key = existing.federation?.actorUri || handle.toLowerCase();
 
     if (_refreshInFlight.has(key)) return;
@@ -1343,6 +1353,10 @@ class FederationService {
    * @param handle   - The lowercased handle, used to re-WebFinger if no actorUri.
    */
   private async refreshFederatedUser(existing: IUser, handle: string): Promise<void> {
+    if (existing.accountStatus === 'archived') {
+      return;
+    }
+
     const userId = existing._id.toString();
     try {
       // Resolve the actor URI: reuse the stored one, else re-WebFinger.
