@@ -22,21 +22,25 @@ jobs:
             accounts:
               - 'packages/accounts/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             auth:
               - 'packages/auth/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             inbox:
               - 'packages/inbox/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             console:
               - 'packages/console/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
 
