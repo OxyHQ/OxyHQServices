@@ -406,6 +406,12 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     const mongoFallback: Array<DeliveryQueueJob & { nextAttemptAt: Date }> = [];
 
     for (const inbox of inboxes) {
+      const guard = await config.assertSafeInboxUrl(inbox);
+      if (!guard.ok) {
+        logger.warn(`[FedDeliver] not queueing unsafe inbox URL ${inbox}: ${guard.reason}`);
+        continue;
+      }
+
       const enqueued = await config.transport
         .enqueueDelivery({ activityJson: activity, targetInbox: inbox, senderOxyUserId })
         .catch((err) => {

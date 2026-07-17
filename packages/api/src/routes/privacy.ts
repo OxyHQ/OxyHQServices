@@ -10,9 +10,8 @@ import { resolveUserIdToObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
 import blockCache from '../utils/blockCache';
 import graphCache from '../utils/graphCache';
-import { z } from "zod";
 import { validate } from '../middleware/validate';
-import { privacyUserIdParams, targetIdParams } from '../schemas/privacy.schemas';
+import { privacyUserIdParams, targetIdParams, privacySettingsSchema } from '../schemas/privacy.schemas';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -22,30 +21,6 @@ interface AuthenticatedRequest extends Request {
 
 const router = express.Router();
 router.use(authMiddleware);
-
-const privacySettingsSchema = z.object({
-  isPrivateAccount: z.boolean().optional(),
-  hideOnlineStatus: z.boolean().optional(),
-  hideLastSeen: z.boolean().optional(),
-  profileVisibility: z.boolean().optional(),
-  loginAlerts: z.boolean().optional(),
-  blockScreenshots: z.boolean().optional(),
-      login: z.boolean().optional(),
-  biometricLogin: z.boolean().optional(),
-  showActivity: z.boolean().optional(),
-  allowTagging: z.boolean().optional(),
-  allowMentions: z.boolean().optional(),
-  hideReadReceipts: z.boolean().optional(),
-  allowDirectMessages: z.boolean().optional(),
-  dataSharing: z.boolean().optional(),
-  locationSharing: z.boolean().optional(),
-  analyticsSharing: z.boolean().optional(),
-  sensitiveContent: z.boolean().optional(),
-  autoFilter: z.boolean().optional(),
-  muteKeywords: z.boolean().optional(),
-  discoverableByEmail: z.boolean().optional(),
-  discoverableByPhone: z.boolean().optional(),
-});
 
 // Get privacy settings (own settings only)
 const getPrivacySettings = asyncHandler(async (req: Request, res: Response) => {

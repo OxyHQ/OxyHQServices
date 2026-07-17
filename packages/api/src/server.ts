@@ -81,6 +81,7 @@ import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from '.
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
 import { isFederatableUser } from './utils/profileQuery';
+import { exactCaseInsensitiveUsernameRegex } from './utils/resolveUserIdentifier';
 import { errorHandler } from './middleware/errorHandler';
 import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
@@ -615,7 +616,7 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
     }
 
     // Per-user actor
-    const user = await User.findOne({ username: username.toLowerCase() }).lean() as unknown as IUser | null;
+    const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(username) }).lean() as unknown as IUser | null;
     if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
     const actor = await getUserActor(user);
@@ -667,7 +668,7 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 
     if (!isOwnFederationDomain(domain)) return res.status(404).json({ error: 'Domain not served here' });
 
-    const user = await User.findOne({ username: canonicalUsername }).lean();
+    const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(canonicalUsername) }).lean();
     if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
     res.setHeader('Content-Type', 'application/jrd+json');

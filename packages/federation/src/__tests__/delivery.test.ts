@@ -35,6 +35,7 @@ function makeRig(overrides: {
   enqueueReturns?: boolean;
   federationEnabled?: boolean;
   sharingEnabled?: boolean;
+  assertSafeInboxUrl?: DeliveryServiceConfig<StoredActor>['assertSafeInboxUrl'];
 } = {}) {
   const deliveredBodies: Array<{ url: string; body: string }> = [];
   const enqueued: DeliveryQueueJob[] = [];
@@ -60,7 +61,7 @@ function makeRig(overrides: {
       // 202 Accepted — success path (response body destroyed, never read).
       return { response: Readable.from([]) as unknown as DeliverSingleHopResult['response'], status: 202 };
     },
-    assertSafeInboxUrl: async () => ({ ok: true }),
+    assertSafeInboxUrl: overrides.assertSafeInboxUrl ?? (async () => ({ ok: true })),
     transport: {
       enqueueDelivery: async (job) => {
         enqueued.push(job);
@@ -307,6 +308,29 @@ describe('deliverToFollowers', () => {
     await rig.service.deliverToFollowers({ id: 'act1', type: 'Create' }, 'u-alice', 'alice');
     expect(rig.enqueued).toHaveLength(0);
     expect(rig.fallbackInserts).toHaveLength(0);
+  });
+
+  it('skips unsafe inbox URLs instead of enqueueing or falling back', async () => {
+    const unsafeGuard = jest.fn(async (url: string) =>
+      url.includes('unsafe')
+        ? { ok: false as const, reason: 'blocked' }
+        : { ok: true as const },
+    );
+    const rig = makeRig({
+      followerActorUris: ['a', 'b'],
+      followerInboxes: {
+        a: { inboxUrl: 'https://unsafe.example/inbox' },
+        b: { inboxUrl: 'https://safe.example/inbox' },
+      },
+      enqueueReturns: false,
+      assertSafeInboxUrl: unsafeGuard,
+    });
+
+    await rig.service.deliverToFollowers({ id: 'act1', type: 'Create' }, 'u-alice', 'alice');
+
+    expect(unsafeGuard).toHaveBeenCalledTimes(2);
+    expect(rig.enqueued.map((j) => j.targetInbox)).toEqual(['https://safe.example/inbox']);
+    expect(rig.fallbackInserts.map((j) => j.targetInbox)).toEqual(['https://safe.example/inbox']);
   });
 });
 

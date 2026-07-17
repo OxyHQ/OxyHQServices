@@ -27,4 +27,7 @@ export interface IPrivacySettings {
     sensitiveContent: boolean;
     autoFilter: boolean;
     muteKeywords: boolean;
+    discoverableByEmail?: boolean;
+    discoverableByPhone?: boolean;
+    fediverseSharing?: boolean;
 }

@@ -652,7 +652,9 @@ async function resolveActorAvatarUrl(avatar: unknown): Promise<string | undefine
  */
 export async function getUserActor(user: IUser, domain: string = AP_DOMAIN): Promise<Record<string, unknown> | null> {
   if (!user?.username) return null;
-  const username = user.username.split('@')[0]; // strip @domain if present
+  // Canonicalize before key lookup and actor URL assembly so `id`/`publicKey.owner`
+  // always match `publicKey.id` (getUserKeyPair lowercases internally).
+  const username = user.username.split('@')[0].trim().toLowerCase();
   const keyPair = await getUserKeyPair(username, domain);
 
   // An ActivityPub actor's `name` field requires a non-empty string. The API no

@@ -16,7 +16,10 @@
     }
   },
   "source": "src/index.ts",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/esm/crypto/polyfill.js",
+    "./dist/cjs/crypto/polyfill.js"
+  ],
   "publishConfig": {
     "access": "public"
   },

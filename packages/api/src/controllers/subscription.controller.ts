@@ -121,6 +121,11 @@ export const cancelSubscription = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "Subscription not found" });
     }
 
+    await User.findByIdAndUpdate(userId, {
+      $set: { 'privacySettings.analyticsSharing': false },
+    });
+    userCache.invalidate(userId);
+
     res.json(subscription);
   } catch (error) {
     if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
