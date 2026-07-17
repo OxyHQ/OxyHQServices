@@ -79,6 +79,9 @@ describe('UsersController', () => {
       );
 
       expect(mockFind).toHaveBeenCalledWith({
+        // Archived accounts (e.g. dead federated actors marked gone) are
+        // excluded from search so they never surface as ghost hits.
+        accountStatus: { $ne: 'archived' },
         $or: [
           { username: { $regex: 'test', $options: 'i' } },
           { 'name.first': { $regex: 'test', $options: 'i' } },
@@ -91,6 +94,30 @@ describe('UsersController', () => {
       expect(mockQuery.select).toHaveBeenCalledWith(PUBLIC_USER_PROFILE_SELECT);
       expect(mockQuery.limit).toHaveBeenCalledWith(5);
       expect(mockQuery.lean).toHaveBeenCalled();
+    });
+
+    it('excludes archived accounts from the search filter', async () => {
+      mockRequest.body = { query: 'test' };
+
+      const mockQuery = {
+        select: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([]),
+      };
+      mockFind.mockReturnValue(mockQuery);
+
+      await usersController.searchUsers(
+        mockRequest as Request,
+        mockResponse as Response,
+        mockNext
+      );
+
+      // Dead federated actors (marked gone via POST /federation/actor-gone) and
+      // archived org/project accounts are filtered so they never appear as
+      // 0-post ghost search hits. Only `archived` is excluded — active accounts
+      // (the default) still match.
+      const filter = mockFind.mock.calls[0]?.[0] as { accountStatus?: unknown };
+      expect(filter.accountStatus).toEqual({ $ne: 'archived' });
     });
 
     it('never projects the searched users\' email addresses', async () => {

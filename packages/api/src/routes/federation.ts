@@ -2,10 +2,11 @@ import { Router, type Response } from 'express';
 import { serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
-import { ForbiddenError, NotFoundError } from '../utils/error';
+import { ForbiddenError, NotFoundError, ConflictError } from '../utils/error';
 import { logger } from '../utils/logger';
 import Application from '../models/Application';
 import User from '../models/User';
+import userCache from '../utils/userCache';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import {
   getUserPublicKey,
@@ -17,10 +18,12 @@ import {
   publicKeyQuerySchema,
   signRequestSchema,
   federationFollowSchema,
+  federationActorGoneSchema,
   type PublicKeyParams,
   type PublicKeyQuery,
   type SignRequestBody,
   type FederationFollowBody,
+  type FederationActorGoneBody,
 } from '../schemas/federation.schemas';
 
 const router = Router();
@@ -225,6 +228,72 @@ router.post(
 
     const { removed, counts } = await userService.unfollowUser(followerUserId, targetUserId);
     return sendSuccess(res, { removed, counts });
+  }),
+);
+
+/**
+ * POST /federation/actor-gone
+ *
+ * Marks a dead remote fediverse identity gone. Mention is the only component
+ * that talks to the remote fediverse; when it receives an HTTP 410 Gone for an
+ * actor (the remote Mastodon/Bluesky account was deleted) it calls this to
+ * archive the corresponding Oxy user, so the dead identity leaves Oxy's
+ * discovery/search surfaces instead of lingering as a 0-post ghost profile.
+ *
+ * SAFETY: the user document is NEVER hard-deleted — archival mirrors
+ * `accountService.archiveAccount` (set `accountStatus: 'archived'`, invalidate
+ * the user cache), so Oxy keeps the archived identity and Mention keeps its
+ * FederatedActor tombstone; the follow-graph edges survive intact.
+ *
+ * ANTI-FOOTGUN: only a `type:'federated'` user may be archived here. Archiving a
+ * local/agent/automated account would silently disable a real account, so a
+ * non-federated target is rejected with 409 and never written.
+ *
+ * Idempotent: an already-archived actor returns 200 with `alreadyArchived:true`
+ * and performs no write.
+ */
+router.post(
+  '/actor-gone',
+  serviceAuthMiddleware,
+  validate({ body: federationActorGoneSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertFederationScope(req);
+
+    const { oxyUserId } = req.body as FederationActorGoneBody;
+
+    const user = await User.findById(oxyUserId).select('type accountStatus').lean();
+    if (!user) {
+      throw new NotFoundError('user not found');
+    }
+    // HARD GUARD: never archive a local/agent/automated account through this
+    // service bridge — only a dead remote fediverse actor.
+    if (user.type !== 'federated') {
+      throw new ConflictError('user is not a federated actor and cannot be archived');
+    }
+
+    // Idempotent: an already-archived actor is a no-op 200.
+    const alreadyArchived = user.accountStatus === 'archived';
+    if (!alreadyArchived) {
+      // Whitelist the single field; the `type:'federated'` filter re-asserts the
+      // guard atomically so a concurrent type change can never let the write
+      // touch a non-federated account.
+      await User.updateOne(
+        { _id: oxyUserId, type: 'federated' },
+        { $set: { accountStatus: 'archived' } },
+      );
+      userCache.invalidate(oxyUserId);
+      logger.info('federation/actor-gone: archived dead federated actor', {
+        oxyUserId,
+        appId: req.serviceApp?.appId,
+        credentialId: req.serviceApp?.credentialId,
+      });
+    }
+
+    return sendSuccess(res, {
+      oxyUserId,
+      accountStatus: 'archived',
+      alreadyArchived,
+    });
   }),
 );
 

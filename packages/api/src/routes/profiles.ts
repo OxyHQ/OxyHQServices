@@ -427,6 +427,12 @@ router.get(
     const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
     const searchFilter = {
+      // Exclude archived accounts (e.g. dead federated actors marked gone via
+      // POST /federation/actor-gone, or archived org/project accounts) so
+      // 0-post ghost profiles never surface in people search. Only `archived`
+      // is excluded — every legitimately-active account (accountStatus defaults
+      // to 'active') still matches, so no live user is hidden.
+      accountStatus: { $ne: 'archived' },
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
@@ -459,8 +465,12 @@ router.get(
     const profiles = dbResult.profiles ?? [];
     const total = dbResult.totalCount?.[0]?.count ?? 0;
 
-    // If federation resolved a user not already in DB results, prepend it
-    if (federatedUser) {
+    // If federation resolved a user not already in DB results, prepend it.
+    // `resolveAndUpsert` returns the cached row for a known federated actor,
+    // which can be an ARCHIVED (dead / 410-Gone) account — never let that
+    // prepend re-introduce an actor the `accountStatus` $match above just
+    // excluded.
+    if (federatedUser && federatedUser.accountStatus !== 'archived') {
       const fedId = federatedUser._id?.toString();
       const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
       if (!alreadyIncluded) {
