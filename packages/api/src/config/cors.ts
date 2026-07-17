@@ -97,9 +97,11 @@ export function createCorsMiddleware() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin;
 
+    let originAllowed = false;
     if (origin) {
       const decision = getCorsDecision(origin);
       if (decision.allow) {
+        originAllowed = true;
         res.setHeader('Access-Control-Allow-Origin', origin);
         if (decision.credentials) {
           res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -113,7 +115,18 @@ export function createCorsMiddleware() {
     res.setHeader('Vary', 'Origin');
 
     if (req.method === 'OPTIONS') {
-      res.setHeader('Cache-Control', `public, max-age=${PREFLIGHT_MAX_AGE}`);
+      // A preflight is a per-Origin, security-sensitive response and must NEVER be
+      // stored by a shared/HTTP cache. Previously we sent `Cache-Control: public,
+      // max-age=86400` unconditionally — so a preflight that resolved to NO
+      // `Access-Control-Allow-Origin` (e.g. during a deploy/restart window before
+      // the origin registry seeded) was cached `public` for a day and re-served to
+      // every later request, breaking CORS long after the server recovered. Use the
+      // browser's dedicated per-origin preflight cache (`Access-Control-Max-Age`),
+      // and ONLY when the origin was actually allowed (ACAO present).
+      res.setHeader('Cache-Control', 'no-store');
+      if (originAllowed) {
+        res.setHeader('Access-Control-Max-Age', String(PREFLIGHT_MAX_AGE));
+      }
       res.status(204).end();
       return;
     }
