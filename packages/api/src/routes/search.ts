@@ -32,6 +32,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
     if (type === "all" || type === "users") {
       const users = await User.find({
         accountStatus: { $ne: 'archived' },
+        reputationTier: { $ne: 'restricted' },
         $or: [
           { username: searchQuery },
           { 'name.first': searchQuery },

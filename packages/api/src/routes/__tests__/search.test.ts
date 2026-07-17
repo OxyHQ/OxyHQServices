@@ -34,6 +34,7 @@ interface PoolUser {
   _id: Types.ObjectId;
   username?: string;
   accountStatus?: string;
+  reputationTier?: string;
 }
 
 function requestJson(server: http.Server, path: string): Promise<{ status: number; body: { users?: Array<{ id: string }> } }> {
@@ -64,6 +65,10 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
   if (acct && typeof acct.$ne === 'string' && user.accountStatus === acct.$ne) {
     return false;
   }
+  const tier = filter.reputationTier as { $ne?: string } | undefined;
+  if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
+    return false;
+  }
   const or = filter.$or as Array<Record<string, unknown>> | undefined;
   if (!Array.isArray(or)) return true;
   return or.some((clause) => {
@@ -83,6 +88,7 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
 
 const activeUser = new Types.ObjectId();
 const archivedUser = new Types.ObjectId();
+const restrictedUser = new Types.ObjectId();
 
 let server: http.Server;
 
@@ -115,6 +121,7 @@ describe('GET /search archived exclusion', () => {
 
     const filter = mockUserFind.mock.calls[0][0] as Record<string, unknown>;
     expect(filter.accountStatus).toEqual({ $ne: 'archived' });
+    expect(filter.reputationTier).toEqual({ $ne: 'restricted' });
   });
 
   it('filters archived accounts while surfacing active matches', async () => {
@@ -144,5 +151,35 @@ describe('GET /search archived exclusion', () => {
     const ids = (res.body.users ?? []).map((user) => String(user.id));
     expect(ids).toContain(activeUser.toString());
     expect(ids).not.toContain(archivedUser.toString());
+  });
+
+  it('filters restricted-tier accounts while surfacing active and untiered matches', async () => {
+    const pool: PoolUser[] = [
+      { _id: activeUser, username: 'active_match', accountStatus: 'active' },
+      { _id: restrictedUser, username: 'restricted_match', accountStatus: 'active', reputationTier: 'restricted' },
+    ];
+
+    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
+      const matched = pool.filter((user) => matchesFindFilter(user, filter));
+      return {
+        select: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(
+          matched.map((user) => ({
+            _id: user._id,
+            username: user.username,
+            accountStatus: user.accountStatus,
+            reputationTier: user.reputationTier,
+          })),
+        ),
+      };
+    });
+
+    const res = await requestJson(server, '/?query=match&type=users');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.users ?? []).map((user) => String(user.id));
+    expect(ids).toContain(activeUser.toString());
+    expect(ids).not.toContain(restrictedUser.toString());
   });
 });

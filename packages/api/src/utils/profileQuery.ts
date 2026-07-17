@@ -109,9 +109,12 @@ export function eligibleUserMatch(minResolvedAt: Date, prefix = ''): { $and: Rec
       federatedRecommendationEligibilityMatch(minResolvedAt, prefix),
       profileQualityMatch(prefix),
       nonSensitiveAccountMatch(prefix),
-      // Dead federated actors (POST /federation/actor-gone) and archived
-      // org/project accounts must never surface in discovery pipelines.
+      // Dead federated actors (POST /federation/actor-gone), archived org/project
+      // accounts, and punitive `restricted` reputation tier must never surface
+      // in discovery pipelines. `{ $ne: 'restricted' }` still matches docs whose
+      // `reputationTier` is absent (untiered/new users).
       { [field('accountStatus')]: { $ne: 'archived' } },
+      { [field('reputationTier')]: { $ne: 'restricted' } },
     ],
   };
 }

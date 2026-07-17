@@ -81,9 +81,10 @@ interface FollowsOfFollowsRow {
 type FollowUserEdgeField = 'followerUserId' | 'followedId';
 
 /**
- * Paginate follow edges whose counterparty user is not archived. Counts and pages
- * on visible users only so `total` / `hasMore` stay accurate after archived
- * federated tombstones are filtered out of discovery lists.
+ * Paginate follow edges whose counterparty user is not archived or in the
+ * punitive `restricted` reputation tier. Counts and pages on visible users
+ * only so `total` / `hasMore` stay accurate after tombstoned/restricted
+ * accounts are filtered out of discovery lists.
  */
 async function paginateActiveFollowUserIds(
   match: Record<string, unknown>,
@@ -102,7 +103,12 @@ async function paginateActiveFollowUserIds(
       },
     },
     { $unwind: '$user' },
-    { $match: { 'user.accountStatus': { $ne: 'archived' } } },
+    {
+      $match: {
+        'user.accountStatus': { $ne: 'archived' },
+        'user.reputationTier': { $ne: 'restricted' },
+      },
+    },
   ];
 
   const countRows = await Follow.aggregate<{ total: number }>([
@@ -1716,6 +1722,7 @@ export class UserService {
     const users = await User.find({
       _id: { $in: objectIds },
       accountStatus: { $ne: 'archived' },
+      reputationTier: { $ne: 'restricted' },
     })
       .select('-password -refreshToken')
       .lean<IUser[]>({ virtuals: true });

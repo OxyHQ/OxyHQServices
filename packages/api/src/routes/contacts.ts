@@ -238,6 +238,7 @@ router.post(
               // they're on Oxy.
               _id: { $ne: req.user.id },
               accountStatus: { $ne: 'archived' },
+              reputationTier: { $ne: 'restricted' },
               // Federated/agent/automated accounts are not meant to surface
               // in a personal contact-sync flow.
               type: { $in: ['local', null] },
@@ -256,6 +257,7 @@ router.post(
               hashedPhone: { $in: uniquePhoneHashes },
               _id: { $ne: req.user.id },
               accountStatus: { $ne: 'archived' },
+              reputationTier: { $ne: 'restricted' },
               type: { $in: ['local', null] },
               // Contact discovery is opt-in. Without this gate, deterministic
               // phone hashes can be used as an account-enumeration oracle.
