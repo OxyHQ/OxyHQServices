@@ -118,7 +118,8 @@
     "passkeySigningIn": "A iniciar sessão…",
     "getCommons": "Obter o Commons",
     "commonsNotInstalled": "Não tem o Commons? Obtenha a app para iniciar sessão com o seu Oxy ID.",
-    "showQrAnyway": "Tenho o Commons noutro dispositivo"
+    "showQrAnyway": "Tenho o Commons noutro dispositivo",
+    "switchWhileSignedInAs": "Mudar de conta, com sessão iniciada como {{name}}"
   },
   "common": {
     "actions": {

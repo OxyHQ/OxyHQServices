@@ -211,8 +211,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     // `state.hovered || state.focused`. Only web ever sets these, so on native
     // the row renders statically.
     const active = hovered || focused;
-    const accountLabel = t('accountSwitcher.switchWhileSignedInAs', { name: displayName })
-        || `Switch account, signed in as ${displayName}`;
+    const accountLabel = t('accountSwitcher.switchWhileSignedInAs', { name: displayName });
 
     // Web-only pointer/focus handlers. RN-Web forwards `onHoverIn`/`onHoverOut`
     // to the underlying element; native Pressable ignores them harmlessly, but

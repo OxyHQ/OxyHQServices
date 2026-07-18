@@ -118,7 +118,8 @@
     "passkeySigningIn": "サインインしています…",
     "getCommons": "Commonsを入手",
     "commonsNotInstalled": "Commonsがありませんか？アプリを入手してOxy IDでサインインしましょう。",
-    "showQrAnyway": "別のデバイスにCommonsがあります"
+    "showQrAnyway": "別のデバイスにCommonsがあります",
+    "switchWhileSignedInAs": "アカウントを切り替え（{{name}} としてログイン中）"
   },
   "common": {
     "actions": {
