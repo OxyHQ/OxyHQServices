@@ -35,6 +35,7 @@ interface PoolUser {
   username?: string;
   accountStatus?: string;
   reputationTier?: string;
+  privacySettings?: { isPrivateAccount?: boolean };
 }
 
 function requestJson(server: http.Server, path: string): Promise<{ status: number; body: { users?: Array<{ id: string }> } }> {
@@ -67,6 +68,10 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
   }
   const tier = filter.reputationTier as { $ne?: string } | undefined;
   if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
+    return false;
+  }
+  const privateGate = filter['privacySettings.isPrivateAccount'] as { $ne?: boolean } | undefined;
+  if (privateGate && privateGate.$ne === true && user.privacySettings?.isPrivateAccount === true) {
     return false;
   }
   const or = filter.$or as Array<Record<string, unknown>> | undefined;
@@ -111,6 +116,7 @@ describe('GET /search archived exclusion', () => {
   it('adds accountStatus: { $ne: "archived" } to the User.find filter', async () => {
     const chain = {
       select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
     };
@@ -122,6 +128,7 @@ describe('GET /search archived exclusion', () => {
     const filter = mockUserFind.mock.calls[0][0] as Record<string, unknown>;
     expect(filter.accountStatus).toEqual({ $ne: 'archived' });
     expect(filter.reputationTier).toEqual({ $ne: 'restricted' });
+    expect(filter['privacySettings.isPrivateAccount']).toEqual({ $ne: true });
   });
 
   it('filters archived accounts while surfacing active matches', async () => {
@@ -134,6 +141,7 @@ describe('GET /search archived exclusion', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({
@@ -163,6 +171,7 @@ describe('GET /search archived exclusion', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({
@@ -194,6 +203,7 @@ describe('GET /search leading-@ handling', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({ _id: user._id, username: user.username })),

@@ -29,7 +29,11 @@ import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.sc
 import { type NameParts } from '../utils/displayName';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
+import {
+  eligibleUserMatch,
+  FEDERATED_RECOMMENDATION_MAX_AGE_MS,
+  peopleSearchMongoMatch,
+} from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
 import { AppAffinityEdge } from '../models/AppAffinityEdge';
 import { Application } from '../models/Application';
@@ -451,19 +455,7 @@ router.get(
     const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
     const searchFilter = {
-      // Exclude archived accounts (e.g. dead federated actors marked gone via
-      // POST /federation/actor-gone, or archived org/project accounts) so
-      // 0-post ghost profiles never surface in people search. Only `archived`
-      // is excluded — every legitimately-active account (accountStatus defaults
-      // to 'active') still matches, so no live user is hidden.
-      accountStatus: { $ne: 'archived' },
-      // Exclude users in the punitive `restricted` reputation tier (lifetime
-      // reputation total < 0 OR abuseScore >= threshold) — the negative tier is
-      // hidden from people search just like archived accounts. `reputationTier`
-      // is optional/absent until `recalculateBalance` first runs, and Mongo
-      // treats a missing field as NOT equal to 'restricted', so untiered/new
-      // users still surface — only actively-restricted users are hidden.
-      reputationTier: { $ne: 'restricted' },
+      ...peopleSearchMongoMatch,
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
@@ -514,13 +506,13 @@ router.get(
     ]);
 
     const profiles = dbResult.profiles ?? [];
-    const total = dbResult.totalCount?.[0]?.count ?? 0;
+    let total = dbResult.totalCount?.[0]?.count ?? 0;
 
     // If federation resolved a user not already in DB results, prepend it.
     // `resolveAndUpsert` returns the cached row for a known federated actor,
-    // which can be an ARCHIVED (dead / 410-Gone) account or a `restricted`
-    // (negative-reputation) actor — never let that prepend re-introduce an actor
-    // the `accountStatus` / `reputationTier` $match above just excluded.
+    // which can be an ARCHIVED (dead / 410-Gone) account, a `restricted`
+    // (negative-reputation) actor, or a private account — never let that prepend
+    // re-introduce an actor the `peopleSearchMongoMatch` $match above excluded.
     //
     // This is a DELIBERATE exception to the native-first ordering applied above:
     // the caller typed an EXACT fediverse handle (`user@host`), so the resolved
@@ -529,13 +521,20 @@ router.get(
     if (
       federatedUser &&
       federatedUser.accountStatus !== 'archived' &&
-      federatedUser.reputationTier !== 'restricted'
+      federatedUser.reputationTier !== 'restricted' &&
+      federatedUser.privacySettings?.isPrivateAccount !== true
     ) {
       const fedId = federatedUser._id?.toString();
       const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
       if (!alreadyIncluded) {
         profiles.unshift(federatedUser as SearchProfileDocument);
+        total += 1;
       }
+    }
+
+    // Prepend can push the page over `limit`; trim so clients never see limit+1.
+    if (profiles.length > parsedLimit) {
+      profiles.length = parsedLimit;
     }
 
     // Batch-fetch follower/following stats for all profiles at once (avoids N+1)

@@ -26,6 +26,7 @@ import {
 } from '../config/email.config';
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
+import userCache from '../utils/userCache';
 import { v4 as uuidv4 } from 'uuid';
 import { Reminder } from '../models/Reminder';
 import { Contact } from '../models/Contact';
@@ -2247,6 +2248,7 @@ class EmailService {
     if (settings.autoForwardKeepCopy !== undefined) update.autoForwardKeepCopy = settings.autoForwardKeepCopy;
 
     await User.findByIdAndUpdate(userId, { $set: update });
+    userCache.invalidate(userId);
   }
 
   // ─── Subscriptions ──────────────────────────────────────────────

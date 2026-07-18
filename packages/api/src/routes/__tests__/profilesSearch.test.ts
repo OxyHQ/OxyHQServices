@@ -87,6 +87,7 @@ interface PoolUser {
   reputationTier?: string;
   type?: string;
   reputationRankWeight?: number;
+  privacySettings?: { isPrivateAccount?: boolean };
 }
 
 interface ProfileResult {
@@ -137,6 +138,10 @@ function matchesSearchFilter(user: PoolUser, filter: Record<string, unknown>): b
   }
   const tier = filter.reputationTier as { $ne?: string } | undefined;
   if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
+    return false;
+  }
+  const privateGate = filter['privacySettings.isPrivateAccount'] as { $ne?: boolean } | undefined;
+  if (privateGate && privateGate.$ne === true && user.privacySettings?.isPrivateAccount === true) {
     return false;
   }
   const or = filter.$or as Array<Record<string, RegExp>> | undefined;
@@ -288,6 +293,37 @@ describe('GET /profiles/search archived exclusion', () => {
     expect(pipeline[0].$match?.reputationTier).toEqual({ $ne: 'restricted' });
   });
 
+  it('adds privacySettings.isPrivateAccount: { $ne: true } to the aggregation $match', async () => {
+    mockUserAggregate.mockImplementation(aggregateSearch([]));
+
+    const res = await requestJson(server, '/profiles/search?query=test');
+    expect(res.status).toBe(200);
+
+    const pipeline = mockUserAggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
+    expect(pipeline[0].$match?.['privacySettings.isPrivateAccount']).toEqual({ $ne: true });
+  });
+
+  it('filters private accounts while surfacing public matches', async () => {
+    const privateUser = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: activeLocal, username: 'public_match', accountStatus: 'active' },
+      {
+        _id: privateUser,
+        username: 'private_match',
+        accountStatus: 'active',
+        privacySettings: { isPrivateAccount: true },
+      },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).toContain(activeLocal.toString());
+    expect(ids).not.toContain(privateUser.toString());
+  });
+
   it('filters archived accounts while surfacing active matches', async () => {
     const pool: PoolUser[] = [
       { _id: activeLocal, username: 'active_match', accountStatus: 'active' },
@@ -393,6 +429,27 @@ describe('GET /profiles/search archived exclusion', () => {
 
     const ids = (res.body.data ?? []).map((p) => String(p.id));
     expect(ids).toContain(activeLocal.toString());
+  });
+
+  it('does not return more than limit rows when a federated actor is prepended', async () => {
+    const dbOnly = new Types.ObjectId();
+    const fedPrepend = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: dbOnly, username: 'fed@remote.example', accountStatus: 'active' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: fedPrepend,
+      username: 'fed@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+    });
+
+    const res = await requestJson(server, '/profiles/search?query=fed@remote.example&limit=1');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect((res.body as { pagination?: { total?: number } }).pagination?.total).toBe(2);
   });
 });
 

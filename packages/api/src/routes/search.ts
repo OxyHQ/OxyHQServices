@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { sanitizeSearchQuery } from '../utils/sanitize';
+import { peopleSearchMongoMatch } from '../utils/profileQuery';
 import { validate } from '../middleware/validate';
 import { searchQuerySchema } from '../schemas/search.schemas';
 import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
@@ -34,8 +35,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
 
     if (type === "all" || type === "users") {
       const users = await User.find({
-        accountStatus: { $ne: 'archived' },
-        reputationTier: { $ne: 'restricted' },
+        ...peopleSearchMongoMatch,
         $or: [
           { username: searchQuery },
           { 'name.first': searchQuery },
@@ -47,6 +47,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
         ]
       })
       .select(PUBLIC_USER_PROFILE_SELECT)
+      .sort({ _id: 1 })
       .skip(skip)
       .limit(limit);
 
