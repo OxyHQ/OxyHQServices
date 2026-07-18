@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, Text, type LayoutChangeEvent } from 'react-native';
+import { View, Text, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
 
 export interface JustifiedPhotoGridProps {
@@ -37,15 +37,22 @@ const JustifiedPhotoGrid: React.FC<JustifiedPhotoGridProps> = ({
     maxRowHeight = 300,
     dateFormatLocale = 'en-US',
 }) => {
-    // Responsive width measurement if not explicitly provided
+    // Responsive width measurement if not explicitly provided. Never gate the
+    // whole grid on measurement — onLayout is unreliable on web (same class of
+    // bug fixed in PhotoPickerSection). Fall back to window width until measured.
+    const { width: windowWidth } = useWindowDimensions();
     const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
-    const effectiveWidth = explicitWidth ?? measuredWidth ?? 0; // 0 until measured
+    const resolvedExplicitWidth =
+        explicitWidth != null && explicitWidth > 0 ? explicitWidth : null;
+    const resolvedMeasuredWidth =
+        measuredWidth != null && measuredWidth > 0 ? measuredWidth : null;
+    const effectiveWidth = resolvedExplicitWidth ?? resolvedMeasuredWidth ?? windowWidth;
 
     const onLayoutContainer = useCallback((e: LayoutChangeEvent) => {
-        if (explicitWidth) return; // ignore if controlled
+        if (resolvedExplicitWidth != null) return; // ignore if controlled
         const w = e.nativeEvent.layout.width;
         setMeasuredWidth(prev => (prev === w ? prev : w));
-    }, [explicitWidth]);
+    }, [resolvedExplicitWidth]);
     // Ensure dimensions are loaded for displayed photos
     useEffect(() => {
         loadPhotoDimensions(photos);
@@ -72,11 +79,8 @@ const JustifiedPhotoGrid: React.FC<JustifiedPhotoGridProps> = ({
 
     return (
         <View style={{ width: '100%' }} onLayout={onLayoutContainer}>
-            {/* If width not yet known (uncontrolled), avoid rendering to prevent layout jump */}
-            {effectiveWidth === 0 && !explicitWidth ? null : (
-                <>
-                    {sortedDates.map((date: string) => {
-                        const dayPhotos = photosByDate[date];
+            {sortedDates.map((date: string) => {
+                const dayPhotos = photosByDate[date];
                         // createJustifiedRows should build rows such that the "ideal" height (availableWidth / totalAspect) stays within min/max.
                         // We pass the effective container width.
                         const dateWidth = dateWidths[date] ?? effectiveWidth; // fallback to overall width until measured
@@ -148,8 +152,6 @@ const JustifiedPhotoGrid: React.FC<JustifiedPhotoGridProps> = ({
                             </View>
                         );
                     })}
-                </>
-            )}
         </View>
     );
 };

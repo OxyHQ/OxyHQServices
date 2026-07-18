@@ -4,6 +4,7 @@ import { RecoveryPhraseService, IdentityAlreadyExistsError } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
+import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
@@ -57,8 +58,17 @@ export default function ImportIdentityPhraseScreen() {
     setIsLoading(true);
 
     try {
+      const offline = await checkIfOffline();
       const result = await importIdentity(phrase);
-      const wasOffline = !result.synced;
+
+      // Online but server sync failed: do not advance — username would call
+      // authenticated APIs with no session (same guard as create-identity).
+      if (!offline && !result.synced) {
+        setAuthError(
+          'Your identity was imported on this device, but we could not connect it to your account. Check your connection and try again.',
+        );
+        return;
+      }
 
       // The user just typed the phrase by hand, so they unambiguously
       // already have it written down somewhere. Mark it as acknowledged
@@ -66,8 +76,8 @@ export default function ImportIdentityPhraseScreen() {
       // already possess.
       setRecoveryPhraseAcknowledgedPersisted(true);
 
-      // Check if offline - if so, skip username step
-      if (wasOffline) {
+      // Offline: skip username (deferred until reconnect). Online: choose username.
+      if (offline) {
         router.replace('/(auth)/import-identity/notifications');
       } else {
         router.replace('/(auth)/import-identity/username');

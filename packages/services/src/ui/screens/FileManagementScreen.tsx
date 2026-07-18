@@ -12,6 +12,7 @@ import {
     Animated,
     Easing,
     AccessibilityInfo,
+    useWindowDimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
@@ -100,7 +101,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     goBack,
     navigate,
     userId,
-    containerWidth = 400, // Fallback for when not provided by the router
+    containerWidth,
     selectMode = false,
     multiSelect = false,
     onSelect,
@@ -126,8 +127,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const visibilityChangeDialog = useDialogControl();
     const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: string; name: string } | null>(null);
     const files = useFiles();
-    // Ensure containerWidth is a number (TypeScript guard)
-    const safeContainerWidth: number = typeof containerWidth === 'number' ? containerWidth : 400;
+    const { width: windowWidth } = useWindowDimensions();
+    // Prefer an explicit sheet width from the router; fall back to the window
+    // so photo grids never size against a hardcoded 400px default.
+    const safeContainerWidth: number =
+        typeof containerWidth === 'number' && containerWidth > 0
+            ? containerWidth
+            : windowWidth;
     const uploading = useUploadingStore();
     const uploadProgress = useUploadAggregateProgress();
     const deleting = useDeletingStore();
