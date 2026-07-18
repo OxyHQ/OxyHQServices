@@ -8,6 +8,8 @@ import {
   SignatureService,
   IdentityAlreadyExistsError,
   IdentityPersistError,
+  IdentityUnavailableError,
+  readIdentityMarker,
 } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
@@ -15,7 +17,7 @@ import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromSto
 import { syncIdentityWithServer } from './identity/syncService';
 import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
-import { isAlreadyRegisteredError } from './identity/errorUtils';
+import { isAlreadyRegisteredError, isIdentityPreflightRefusal, IdentityMayExistError } from './identity/errorUtils';
 import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from './useOnboardingStatus';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
@@ -145,16 +147,34 @@ export const useIdentity = (): UseIdentityResult => {
       }
 
       const run = async (): Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> => {
-        // Pre-flight: if a complete identity already exists on this device,
-        // we MUST NOT overwrite it without explicit user consent (a written
-        // recovery phrase). Surface a typed error so the caller can route
-        // to the "you already have an identity, sign in or destroy it" UI
-        // instead of silently clobbering.
-        const existingPublicKey = await KeyManager.getPublicKey();
-        if (existingPublicKey) {
-          // Caller is expected to handle this — typically by routing to
-          // sign-in or to a confirmation screen.
-          throw new IdentityAlreadyExistsError(existingPublicKey);
+        // Pre-flight interlock (four independent locks against silently
+        // overwriting a real identity). Use a DIRECT, cache-bypassing verdict —
+        // never the poisoned in-memory cache the old `getPublicKey()` preflight
+        // trusted:
+        //   - `present`     → a healthy identity exists → resume/sign-in UX.
+        //   - `unavailable` → storage is unreadable (locked keychain) → REFUSE;
+        //                     a locked keystore is not a blank device.
+        //   - `lost`        → keys gone but a marker records a prior identity →
+        //                     REFUSE and route to recovery, never overwrite.
+        //   - `absent`      → additionally re-check the independent marker store
+        //                     in case one landed concurrently (fourth lock).
+        const status = await KeyManager.getIdentityStatus({ bypassCache: true });
+        if (status.state === 'present') {
+          // Caller routes this to sign-in or a confirmation screen.
+          throw new IdentityAlreadyExistsError(status.publicKey);
+        }
+        if (status.state === 'unavailable') {
+          throw new IdentityUnavailableError(
+            'Cannot create an identity while identity storage is unavailable.',
+            status.cause,
+          );
+        }
+        if (status.state === 'lost') {
+          throw new IdentityMayExistError(status.marker.publicKey);
+        }
+        const concurrentMarker = await readIdentityMarker();
+        if (concurrentMarker) {
+          throw new IdentityMayExistError(concurrentMarker.publicKey);
         }
 
         let words: string[];
@@ -245,7 +265,11 @@ export const useIdentity = (): UseIdentityResult => {
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
         return result;
       } catch (error) {
-        if (!(error instanceof IdentityAlreadyExistsError)) {
+        // The typed preflight refusals (already-exists / may-exist / storage-
+        // unavailable) are NOT hard failures — the caller maps them to the
+        // resume / recovery / retry UX. Only genuinely unexpected errors get the
+        // generic "Failed to create identity" toast.
+        if (!isIdentityPreflightRefusal(error)) {
           handleAuthError(error, {
             defaultMessage: 'Failed to create identity',
             code: REGISTER_ERROR_CODE,
@@ -274,14 +298,27 @@ export const useIdentity = (): UseIdentityResult => {
       }
 
       const run = async (): Promise<{ synced: boolean }> => {
-        // If we already have an identity that does NOT match this phrase,
-        // refuse to overwrite without an explicit confirmation handled
-        // upstream. KeyManager.importKeyPair will also enforce this, but
-        // checking first gives us a clearer error.
-        const existingPublicKey = await KeyManager.getPublicKey();
+        // Pre-flight interlock via a DIRECT, cache-bypassing verdict. Importing
+        // is intentionally a recovery path, so the SAME-identity case is always
+        // allowed; we only refuse when overwriting would clobber a DIFFERENT,
+        // still-recoverable identity. `KeyManager.importKeyPair` enforces the
+        // authoritative atomic guard too — this just yields clearer errors.
         const incomingPublicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
-        if (existingPublicKey && existingPublicKey !== incomingPublicKey) {
-          throw new IdentityAlreadyExistsError(existingPublicKey);
+        const status = await KeyManager.getIdentityStatus({ bypassCache: true });
+        if (status.state === 'unavailable') {
+          throw new IdentityUnavailableError(
+            'Cannot import an identity while identity storage is unavailable.',
+            status.cause,
+          );
+        }
+        if (status.state === 'present' && status.publicKey !== incomingPublicKey) {
+          throw new IdentityAlreadyExistsError(status.publicKey);
+        }
+        if (status.state === 'lost' && status.marker.publicKey !== incomingPublicKey) {
+          // A DIFFERENT identity is recoverable here — importing this phrase
+          // would overwrite it. Refuse; recovering the marked account (or an
+          // explicit "different identity" confirmation) is the correct path.
+          throw new IdentityMayExistError(status.marker.publicKey);
         }
 
         const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
@@ -333,7 +370,10 @@ export const useIdentity = (): UseIdentityResult => {
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
         return result;
       } catch (error) {
-        if (!(error instanceof IdentityAlreadyExistsError) && !(error instanceof IdentityPersistError)) {
+        // Typed preflight refusals (already-exists / may-exist / unavailable)
+        // and the atomic-write persist error carry their own UX; only genuinely
+        // unexpected errors get the generic "Failed to import identity" toast.
+        if (!isIdentityPreflightRefusal(error) && !(error instanceof IdentityPersistError)) {
           handleAuthError(error, {
             defaultMessage: 'Failed to import identity',
             code: REGISTER_ERROR_CODE,
@@ -349,6 +389,11 @@ export const useIdentity = (): UseIdentityResult => {
     [oxyServices, signIn, setSynced, queryClient],
   );
 
+  // Thin passthroughs. Both now THROW `IdentityUnavailableError` when storage is
+  // locked/unreadable (rather than the old `false`/`null`); callers must treat a
+  // throw as "cannot determine", never as "no identity". `hasIdentity` still
+  // returns `false` for a genuine absence and `getPublicKey` still returns `null`
+  // for a genuine absence.
   const hasIdentity = useCallback(() => KeyManager.hasIdentity(), []);
   const getPublicKey = useCallback(() => KeyManager.getPublicKey(), []);
 

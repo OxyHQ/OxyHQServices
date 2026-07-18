@@ -1761,5 +1761,20 @@
   "settings": {
     "title": "Ajustes",
     "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta."
+  },
+  "recovery": {
+    "attemptingTitle": "Restaurando tu identidad",
+    "attemptingBody": "Comprobando las copias protegidas de este dispositivo…",
+    "restoredTitle": "Identidad restaurada",
+    "restoredBody": "Todo listo, volviendo a la app.",
+    "failedTitle": "No pudimos restaurarla automáticamente",
+    "failedBody": "Tu identidad ({{key}}) está protegida en este dispositivo pero no se pudo leer desde una copia. Introduce tu frase de recuperación para restaurarla, o empieza de nuevo.",
+    "lockedTitle": "Identidad protegida",
+    "lockedBody": "Tu identidad está a salvo, pero el almacén seguro no se pudo leer ahora mismo. Inténtalo de nuevo.",
+    "enterPhrase": "Introducir frase de recuperación",
+    "startOver": "Empezar de nuevo",
+    "startOverConfirmTitle": "¿Empezar de nuevo?",
+    "startOverConfirmBody": "Esto borra permanentemente la identidad protegida de este dispositivo. Sin tu frase de recuperación de 12 palabras, tu cuenta será irrecuperable.",
+    "startOverConfirmCta": "Borrar y empezar de nuevo"
   }
 }

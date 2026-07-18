@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
-import { IdentityAlreadyExistsError } from '@oxyhq/core';
+import { IdentityAlreadyExistsError, IdentityUnavailableError } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
 import { CreatingStep } from '@/components/auth/CreatingStep';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
@@ -88,6 +89,19 @@ export default function CreateIdentityScreen() {
   useEffect(() => {
     // Wait for status to be determined
     if (status === 'checking') return;
+
+    // A lost or unreadable identity must NEVER run the create flow — route to
+    // the recovery ladder / retry surface instead. (Reachable via a race where
+    // the cached verdict was `none` but a direct read later found a prior
+    // identity, or storage locked mid-flow.)
+    if (status === 'recovery') {
+      router.replace('/(auth)/recover-identity');
+      return;
+    }
+    if (status === 'unavailable') {
+      router.replace('/(auth)');
+      return;
+    }
 
     // If identity already exists (e.g., user resumed after closing the
     // app mid-onboarding), sync and route to username. We DO NOT route
@@ -208,6 +222,19 @@ export default function CreateIdentityScreen() {
           // user lands here with a half-completed onboarding (identity
           // exists but no username yet). Convert it into "resume" UX
           // instead of treating it as a hard error.
+          // A marker-backed refusal means an identity IS (or may be) present but
+          // its keys aren't usable → route to the recovery ladder, never surface
+          // "creation failed". A storage-unavailable refusal → the retry surface
+          // on the (auth) index (a locked keychain is not a blank device).
+          if (err instanceof IdentityMayExistError) {
+            router.replace('/(auth)/recover-identity');
+            return;
+          }
+          if (err instanceof IdentityUnavailableError) {
+            router.replace('/(auth)');
+            return;
+          }
+
           if (err instanceof IdentityAlreadyExistsError) {
             const offline = await checkIfOffline();
             if (!isMountedRef.current) return;
@@ -269,9 +296,11 @@ export default function CreateIdentityScreen() {
     retryNonce,
   ]);
 
-  // While onboarding status is still resolving on this screen's own mount,
-  // render a neutral backdrop instead of the "generating keys" copy.
-  if (status === 'checking') {
+  // Render a neutral backdrop (not the "generating keys" copy) while the status
+  // is still resolving OR while the effect above is redirecting a
+  // recovery/unavailable state off this screen — the create flow must never
+  // appear for a lost or unreadable identity.
+  if (status === 'checking' || status === 'recovery' || status === 'unavailable') {
     return <View style={{ flex: 1, backgroundColor }} />;
   }
 

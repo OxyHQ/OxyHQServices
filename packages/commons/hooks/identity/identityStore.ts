@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Platform } from 'react-native';
+import { readIdentityMarker, updateIdentityMarker } from '@oxyhq/core';
 
 /**
  * Minimal async key/value storage surface used by the identity store.
@@ -257,10 +258,13 @@ export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
 };
 
 /**
- * Persist the monotonic onboarding-complete milestone (see
- * {@link ONBOARDING_COMPLETE_STORAGE_KEY}).
+ * The SINGLE place the onboarding-complete flag is written to SecureStore — its
+ * one canonical storage location. `persistOnboardingComplete` (which ALSO mirrors
+ * into the identity marker) and the marker-derived self-heal in
+ * `getOnboardingCompleteFromStorage` both funnel through here so the flag's home
+ * is defined once.
  */
-export const persistOnboardingComplete = async (complete: boolean): Promise<void> => {
+const writeOnboardingCompleteFlag = async (complete: boolean): Promise<void> => {
   try {
     await storage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, complete ? STORED_TRUE : STORED_FALSE);
   } catch (error) {
@@ -269,17 +273,51 @@ export const persistOnboardingComplete = async (complete: boolean): Promise<void
 };
 
 /**
+ * Persist the monotonic onboarding-complete milestone (see
+ * {@link ONBOARDING_COMPLETE_STORAGE_KEY}).
+ *
+ * Writes the SecureStore flag AND mirrors the value into the AndroidKeyStore-
+ * independent identity marker (`{ onboardingComplete }`). The mirror is what
+ * lets a milestone survive a SecureStore reset that leaves the marker
+ * (AsyncStorage) intact — see {@link getOnboardingCompleteFromStorage}.
+ * `updateIdentityMarker` fails open and is a no-op when no marker exists yet
+ * (a pre-identity device has nothing to mirror), so this can never throw or
+ * spuriously create a marker.
+ */
+export const persistOnboardingComplete = async (complete: boolean): Promise<void> => {
+  await writeOnboardingCompleteFlag(complete);
+  await updateIdentityMarker({ onboardingComplete: complete });
+};
+
+/**
  * Read the onboarding-complete milestone directly (offline-safe local read).
  * Returns `false` by default — only `true` when explicitly stored as `'true'`.
+ *
+ * ROBUSTNESS: the SecureStore flag can be lost independently of the identity
+ * (e.g. a keystore reset that wipes SecureStore but not AsyncStorage). When the
+ * flag is missing/false we fall back to the identity marker's mirrored
+ * `onboardingComplete`; if the marker says onboarding DID complete, we self-heal
+ * the SecureStore flag (fire-and-forget) so subsequent reads are fast and the
+ * flag and marker reconverge. A lost flag alone can therefore no longer re-route
+ * a fully-onboarded identity back into the wizard.
  */
 export const getOnboardingCompleteFromStorage = async (): Promise<boolean> => {
+  let flag: string | null = null;
   try {
-    const complete = await storage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY);
-    return complete === STORED_TRUE;
+    flag = await storage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY);
   } catch (error) {
     console.error('[IdentityStore] Failed to read onboarding-complete flag', error);
-    return false;
   }
+  if (flag === STORED_TRUE) {
+    return true;
+  }
+
+  const marker = await readIdentityMarker();
+  if (marker?.onboardingComplete === true) {
+    void writeOnboardingCompleteFlag(true);
+    return true;
+  }
+  return false;
 };
 
 /**
