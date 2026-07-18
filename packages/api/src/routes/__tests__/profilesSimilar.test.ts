@@ -52,6 +52,7 @@ jest.mock('../../services/user.service', () => ({
   userService: {
     getUserStats: jest.fn(),
     formatUserResponse: jest.fn(),
+    getUserById: jest.fn(),
   },
 }));
 jest.mock('../../services/federation.service', () => ({
@@ -82,6 +83,9 @@ jest.mock('../../models/User', () => ({
 
 import profilesRouter from '../profiles';
 import { errorHandler } from '../../middleware/errorHandler';
+import { userService } from '../../services/user.service';
+
+const mockGetUserById = userService.getUserById as jest.MockedFunction<typeof userService.getUserById>;
 
 interface ProfileResult {
   id: unknown;
@@ -253,6 +257,11 @@ afterAll((done) => {
 beforeEach(() => {
   jest.clearAllMocks();
   currentUserId = caller.toHexString();
+  mockGetUserById.mockResolvedValue({
+    _id: target,
+    accountStatus: 'active',
+    privacySettings: { isPrivateAccount: false },
+  } as never);
 
   // The route loads targetFollowers + currentFollowing in that order. The
   // target-followers load is now bounded:
@@ -376,5 +385,46 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
         'user.federation.unavailableAt': { $exists: false },
       })
     );
+  });
+
+  it('returns 404 for an archived target without querying the follower graph', async () => {
+    mockGetUserById.mockResolvedValueOnce({
+      _id: target,
+      accountStatus: 'archived',
+    } as never);
+
+    const res = await requestJson(server, `/profiles/${target.toHexString()}/similar?limit=10`);
+
+    expect(res.status).toBe(404);
+    expect(mockFollowFind).not.toHaveBeenCalled();
+    expect(mockFollowAggregate).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for a restricted target without querying the follower graph', async () => {
+    mockGetUserById.mockResolvedValueOnce({
+      _id: target,
+      accountStatus: 'active',
+      reputationTier: 'restricted',
+    } as never);
+
+    const res = await requestJson(server, `/profiles/${target.toHexString()}/similar?limit=10`);
+
+    expect(res.status).toBe(404);
+    expect(mockFollowFind).not.toHaveBeenCalled();
+    expect(mockFollowAggregate).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for a private-account target without querying the follower graph', async () => {
+    mockGetUserById.mockResolvedValueOnce({
+      _id: target,
+      accountStatus: 'active',
+      privacySettings: { isPrivateAccount: true },
+    } as never);
+
+    const res = await requestJson(server, `/profiles/${target.toHexString()}/similar?limit=10`);
+
+    expect(res.status).toBe(404);
+    expect(mockFollowFind).not.toHaveBeenCalled();
+    expect(mockFollowAggregate).not.toHaveBeenCalled();
   });
 });

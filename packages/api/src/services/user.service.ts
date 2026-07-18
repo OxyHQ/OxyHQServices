@@ -1116,6 +1116,8 @@ export class UserService {
         graphCache.invalidate(followerId),
         graphCache.invalidate(targetId),
       ]);
+      userCache.invalidate(followerId);
+      userCache.invalidate(targetId);
     }
 
     const counts = await this.readFollowCounts(targetId, followerId);
@@ -1166,6 +1168,8 @@ export class UserService {
         graphCache.invalidate(followerId),
         graphCache.invalidate(targetId),
       ]);
+      userCache.invalidate(followerId);
+      userCache.invalidate(targetId);
     }
 
     const counts = await this.readFollowCounts(targetId, followerId);
@@ -1371,6 +1375,10 @@ export class UserService {
         graphCache.invalidate(currentUserId),
         ...newlyFollowedIds.map((id) => graphCache.invalidate(id)),
       ]);
+      userCache.invalidate(currentUserId);
+      for (const id of newlyFollowedIds) {
+        userCache.invalidate(id);
+      }
     }
 
     const newlyFollowedSet = new Set<string>(newlyFollowedIds);
@@ -1509,6 +1517,10 @@ export class UserService {
           graphCache.invalidate(currentUserId),
           ...actuallyRemovedIds.map((id) => graphCache.invalidate(id)),
         ]);
+        userCache.invalidate(currentUserId);
+        for (const id of actuallyRemovedIds) {
+          userCache.invalidate(id);
+        }
       }
     }
 

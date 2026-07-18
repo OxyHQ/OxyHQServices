@@ -56,7 +56,9 @@ jest.mock('../../utils/logger', () => ({
 
 jest.mock('../../utils/userCache', () => ({
   __esModule: true,
-  default: {},
+  default: {
+    invalidate: jest.fn(),
+  },
 }));
 
 jest.mock('../securityActivityService', () => ({
@@ -65,6 +67,9 @@ jest.mock('../securityActivityService', () => ({
 }));
 
 import { UserService } from '../user.service';
+import userCache from '../../utils/userCache';
+
+const mockUserCacheInvalidate = userCache.invalidate as jest.MockedFunction<typeof userCache.invalidate>;
 
 describe('UserService.bulkUnfollow', () => {
   beforeEach(() => {
@@ -105,6 +110,9 @@ describe('UserService.bulkUnfollow', () => {
       { userId: targetDeleted.toHexString(), success: true, wasFollowing: true },
       { userId: targetRaced.toHexString(), success: true, wasFollowing: false },
     ]);
+    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(currentUserId);
+    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(targetDeleted.toHexString());
+    expect(mockUserCacheInvalidate).not.toHaveBeenCalledWith(targetRaced.toHexString());
   });
 
   it('does not decrement counters when all observed follows were already removed by a race', async () => {
@@ -118,6 +126,7 @@ describe('UserService.bulkUnfollow', () => {
 
     expect(mockUserUpdateMany).not.toHaveBeenCalled();
     expect(mockUserFindByIdAndUpdate).not.toHaveBeenCalled();
+    expect(mockUserCacheInvalidate).not.toHaveBeenCalled();
     expect(result).toEqual({
       results: [{ userId: targetId.toHexString(), success: true, wasFollowing: false }],
       unfollowedCount: 0,

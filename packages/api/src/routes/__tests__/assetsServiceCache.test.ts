@@ -863,6 +863,52 @@ describe('POST /assets/service/by-sha256', () => {
     expect(Object.keys(bySha[SHA_PUBLIC]).sort()).toEqual(['id', 'mime', 'sha256', 'size', 'status', 'url']);
   });
 
+  it('does not 500 the batch when one hash CDN resolution throws', async () => {
+    grantFilesReadOnce();
+    const publicFile = {
+      _id: { toString: () => CACHE_FILE_ID },
+      sha256: SHA_PUBLIC,
+      mime: 'image/png',
+      size: 1234,
+      status: 'active',
+      visibility: 'public',
+    };
+    const brokenFile = {
+      _id: { toString: () => USER_FILE_ID },
+      sha256: SHA_PRIVATE,
+      mime: 'image/jpeg',
+      size: 5678,
+      status: 'active',
+      visibility: 'public',
+    };
+    mockFindActiveFilesBySha256.mockResolvedValueOnce([publicFile, brokenFile]);
+    mockGetPublicCdnUrl.mockImplementation(async (file: { sha256?: string }) => {
+      if (file.sha256 === SHA_PRIVATE) {
+        throw new Error('Failed to download buffer from S3: NoSuchKey');
+      }
+      return CDN_URL;
+    });
+
+    const res = await postBySha([SHA_PUBLIC, SHA_PRIVATE]);
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as AssetMetadataBySha[];
+    expect(data).toHaveLength(2);
+
+    const bySha = Object.fromEntries(data.map((d) => [d.sha256, d]));
+    expect(bySha[SHA_PUBLIC].url).toBe(CDN_URL);
+    expect(bySha[SHA_PRIVATE].url).toBeUndefined();
+    expect(bySha[SHA_PRIVATE]).toEqual(
+      expect.objectContaining({
+        sha256: SHA_PRIVATE,
+        id: USER_FILE_ID,
+        mime: 'image/jpeg',
+        size: 5678,
+        status: 'active',
+      })
+    );
+  });
+
   it('omits unknown hashes (no whole-batch 404)', async () => {
     grantFilesReadOnce();
     // Only one of the two requested hashes resolves to a live file.

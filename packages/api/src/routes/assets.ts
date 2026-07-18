@@ -1095,7 +1095,18 @@ router.post(
     // bytes, owner ids, storage keys, links, or variants.
     const data = await Promise.all(
       files.map(async (file) => {
-        const url = await assetService.getPublicCdnUrl(file);
+        let url: string | null = null;
+        try {
+          url = await assetService.getPublicCdnUrl(file);
+        } catch (error) {
+          // A transient S3/variant error on one hash must not 500 the whole
+          // batch — omit `url` and keep metadata (mirrors batch-access).
+          logger.warn('service/by-sha256: CDN resolution failed; omitting url', {
+            sha256: file.sha256,
+            fileId: file._id.toString(),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         const media = serviceAssetMetadataFields(file);
         return {
           sha256: file.sha256,
