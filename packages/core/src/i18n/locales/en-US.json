@@ -1339,6 +1339,8 @@
       "creditCard": "Credit Card",
       "enterCardSecurely": "Enter your card details securely",
       "acceptedCards": "We accept Visa, Mastercard, and more",
+      "cardNumber": "Card number",
+      "expiry": "Expiry",
       "readyToProcess": "Ready to process payment...",
       "payWithWallet": "Pay with your in-app wallet",
       "balance": "Balance: {{balance}}",
@@ -1591,6 +1593,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "Granted {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -1653,6 +1656,12 @@
         "description": "A programmatic account with service credentials"
       }
     },
+    "organizationCategory": {
+      "agency": "Real estate agency",
+      "cooperative": "Housing cooperative",
+      "landlord": "Landlord / property manager",
+      "other": "Other organization"
+    },
     "create": {
       "title": "Create account",
       "subtitle": "Create an account you control. It will have its own profile, members, and apps.",
@@ -1669,6 +1678,9 @@
         "tooShort": "Username must be at least 3 characters",
         "invalidChars": "Only letters, numbers, hyphens, and underscores",
         "checkFailed": "Could not check availability"
+      },
+      "organizationCategory": {
+        "label": "Organization type"
       },
       "toasts": {
         "success": "Account created",

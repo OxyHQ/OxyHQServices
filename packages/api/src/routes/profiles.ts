@@ -28,7 +28,12 @@ import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 import { type NameParts } from '../utils/displayName';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
+import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
+import {
+  eligibleUserMatch,
+  FEDERATED_RECOMMENDATION_MAX_AGE_MS,
+  peopleSearchMongoMatch,
+} from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
 import { AppAffinityEdge } from '../models/AppAffinityEdge';
 import { Application } from '../models/Application';
@@ -367,7 +372,9 @@ router.get(
       throw new BadRequestError(`Username must be no more than ${MAX_USERNAME_LENGTH} characters`);
     }
 
-    let user = await User.findOne({ username })
+    let user = await User.findOne(
+      isFedHandle ? { username } : { username: exactCaseInsensitiveUsernameRegex(username) },
+    )
       .select('-password -refreshToken')
       .lean({ virtuals: true });
 
@@ -448,19 +455,7 @@ router.get(
     const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
     const searchFilter = {
-      // Exclude archived accounts (e.g. dead federated actors marked gone via
-      // POST /federation/actor-gone, or archived org/project accounts) so
-      // 0-post ghost profiles never surface in people search. Only `archived`
-      // is excluded — every legitimately-active account (accountStatus defaults
-      // to 'active') still matches, so no live user is hidden.
-      accountStatus: { $ne: 'archived' },
-      // Exclude users in the punitive `restricted` reputation tier (lifetime
-      // reputation total < 0 OR abuseScore >= threshold) — the negative tier is
-      // hidden from people search just like archived accounts. `reputationTier`
-      // is optional/absent until `recalculateBalance` first runs, and Mongo
-      // treats a missing field as NOT equal to 'restricted', so untiered/new
-      // users still surface — only actively-restricted users are hidden.
-      reputationTier: { $ne: 'restricted' },
+      ...peopleSearchMongoMatch,
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
@@ -477,9 +472,29 @@ router.get(
         {
           $facet: {
             profiles: [
+              // Order the WHOLE match set BEFORE paging so offset pagination is
+              // deterministic (the client's infinite scroll must never see a row
+              // duplicated or skipped across pages):
+              //   1. NATIVE (Oxy local/agent/etc.) before FEDERATED — federated
+              //      is `type === 'federated'`; everything else ranks first.
+              //   2. Most-reputable first — `reputationRankWeight` is the
+              //      denormalized reputation rank (defaults to INFLUENCE_MIN, so
+              //      the $ifNull only guards rows predating the field).
+              //   3. `_id` ascending as the FINAL tiebreaker — `_id` is unique, so
+              //      this makes the total order strict and pagination stable.
+              // The sort precedes $skip/$limit, so it orders the full match set,
+              // not just the page. The two sort-only fields are stripped by the
+              // $project below so they never leak into the DTO.
+              {
+                $addFields: {
+                  _nativePriority: { $cond: [{ $eq: ['$type', 'federated'] }, 1, 0] },
+                  _reputationRank: { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
+                },
+              },
+              { $sort: { _nativePriority: 1, _reputationRank: -1, _id: 1 } },
               { $skip: parsedOffset },
               { $limit: parsedLimit },
-              { $project: { password: 0, refreshToken: 0 } },
+              { $project: { password: 0, refreshToken: 0, _nativePriority: 0, _reputationRank: 0 } },
             ],
             totalCount: [{ $count: 'count' }],
           },
@@ -491,23 +506,35 @@ router.get(
     ]);
 
     const profiles = dbResult.profiles ?? [];
-    const total = dbResult.totalCount?.[0]?.count ?? 0;
+    let total = dbResult.totalCount?.[0]?.count ?? 0;
 
     // If federation resolved a user not already in DB results, prepend it.
     // `resolveAndUpsert` returns the cached row for a known federated actor,
-    // which can be an ARCHIVED (dead / 410-Gone) account or a `restricted`
-    // (negative-reputation) actor — never let that prepend re-introduce an actor
-    // the `accountStatus` / `reputationTier` $match above just excluded.
+    // which can be an ARCHIVED (dead / 410-Gone) account, a `restricted`
+    // (negative-reputation) actor, or a private account — never let that prepend
+    // re-introduce an actor the `peopleSearchMongoMatch` $match above excluded.
+    //
+    // This is a DELIBERATE exception to the native-first ordering applied above:
+    // the caller typed an EXACT fediverse handle (`user@host`), so the resolved
+    // remote actor is the single most-relevant hit and belongs at the front even
+    // though it is federated. The rest of the page keeps native-first order.
     if (
       federatedUser &&
       federatedUser.accountStatus !== 'archived' &&
-      federatedUser.reputationTier !== 'restricted'
+      federatedUser.reputationTier !== 'restricted' &&
+      federatedUser.privacySettings?.isPrivateAccount !== true
     ) {
       const fedId = federatedUser._id?.toString();
       const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
       if (!alreadyIncluded) {
         profiles.unshift(federatedUser as SearchProfileDocument);
+        total += 1;
       }
+    }
+
+    // Prepend can push the page over `limit`; trim so clients never see limit+1.
+    if (profiles.length > parsedLimit) {
+      profiles.length = parsedLimit;
     }
 
     // Batch-fetch follower/following stats for all profiles at once (avoids N+1)
@@ -568,7 +595,8 @@ router.get(
  */
 router.get(
   '/resolve',
-  asyncHandler(async (req: Request, res: Response) => {
+  optionalUserOrServiceAuth,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     // Normalize handle input: trim, strip optional `acct:` prefix, and remove a
     // single leading `@` so `@user@host` matches the stored `user@host` username.
     const rawHandle = (req.query.handle as string || '')
@@ -599,6 +627,21 @@ router.get(
       }
       const stats = await userService.getUserStats(localUser._id.toString());
       const response = userService.formatUserResponse(localUser, stats);
+
+      // Viewer-relative relationship: same in-handler computation as the two
+      // sibling single-profile routes (/profiles/username/:username and
+      // /users/:userId). A federated actor that bridged into the Oxy graph via an
+      // inbound follow IS a known Oxy row here, so `getViewerRelationship`
+      // returns real follow edges — this is what lets "Follows you" render on a
+      // federated profile fetched through resolve. OMITTED for anonymous requests
+      // and for a self-view, so consumers can distinguish "unknown" from "known,
+      // not following".
+      const viewerId = resolveViewerId(req);
+      const targetId = localUser._id.toString();
+      if (viewerId && viewerId !== targetId) {
+        response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+      }
+
       logger.debug('GET /profiles/resolve (local)', { handle });
       return sendSuccess(res, response);
     }
@@ -616,6 +659,17 @@ router.get(
 
     const stats = await userService.getUserStats(user._id.toString());
     const response = userService.formatUserResponse(user, stats);
+
+    // Same viewer-relative relationship as the local branch above. A
+    // freshly-discovered actor is now a known Oxy row (`resolveAndUpsert`
+    // persisted it), so its id is canonical; a brand-new actor simply has no
+    // follow edges yet (`isFollowing`/`followsYou` both false). OMITTED for
+    // anonymous requests and for a self-view.
+    const viewerId = resolveViewerId(req);
+    const targetId = user._id.toString();
+    if (viewerId && viewerId !== targetId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+    }
 
     logger.debug('GET /profiles/resolve', { handle });
     sendSuccess(res, response);
@@ -719,9 +773,15 @@ router.get(
         },
         { $unwind: '$user' },
         // Hold co-follower candidates to the same discovery eligibility bar as
-        // the recommendations surface: drop incomplete shell/QA profiles and
-        // stale/unavailable federated actors before they reach the response.
-        { $match: eligibleUserMatch(minFederatedResolvedAt, 'user.') },
+        // the recommendations surface: drop incomplete shell/QA profiles,
+        // private accounts, and stale/unavailable federated actors before they
+        // reach the response.
+        {
+          $match: {
+            'user.privacySettings.isPrivateAccount': { $ne: true },
+            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
+          },
+        },
         ...followCountLookupStages,
         profileProjectionStage,
       ]);
@@ -1235,6 +1295,17 @@ async function buildRecommendationsScored(
   });
 
   // Sort by score desc, stable by _id; page with skip/limit.
+  //
+  // NO native-first tier is injected here — unlike people search (`GET
+  // /profiles/search`), this scored "who to follow" path already MODELS
+  // federation and is already deterministic: federated candidates are surfaced
+  // only through real graph/app signals (mutual overlap, endorsements, affinity,
+  // boosts — never a blanket regex), stale federated actors are aged out by
+  // `minFederatedResolvedAt`, and `excludeTypes` can drop them entirely. Forcing
+  // native-above-federated regardless of score would contradict the explicit
+  // product intent of this surface (a weighted composite recommendation), so we
+  // keep the composite score and let `_id` provide the stable pagination
+  // tiebreaker instead.
   scored.sort((a, b) => {
     if (b.row.score !== a.row.score) return b.row.score - a.row.score;
     return a.row._id.toHexString().localeCompare(b.row._id.toHexString());

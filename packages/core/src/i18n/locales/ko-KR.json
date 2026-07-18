@@ -221,6 +221,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "{{relative}}에 부여됨",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {

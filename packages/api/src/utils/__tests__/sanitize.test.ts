@@ -252,8 +252,12 @@ describe('sanitize utilities', () => {
       expect(sanitizeSearchQuery('abcdef', 3)).toBe('abc');
     });
 
-    it('escapes HTML in query', () => {
-      expect(sanitizeSearchQuery('<script>')).toBe('&lt;script&gt;');
+    it('escapes regex metacharacters', () => {
+      expect(sanitizeSearchQuery('a+b*c?')).toBe('a\\+b\\*c\\?');
+    });
+
+    it('preserves apostrophes and ampersands for name search', () => {
+      expect(sanitizeSearchQuery("O'Brien & co")).toBe("O'Brien & co");
     });
   });
 });

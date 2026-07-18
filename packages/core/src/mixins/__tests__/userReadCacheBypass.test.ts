@@ -117,5 +117,13 @@ describe('getUserById / getProfileByUsername cache bypass', () => {
       expect((fresh as unknown as { bio: string }).bio).toBe('new');
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+
+    it('URL-encodes the username in the request path', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'fed-1', username: 'alice@mastodon.social' }));
+      await oxy.getProfileByUsername('alice@mastodon.social');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url] = fetchMock.mock.calls[0] as [string];
+      expect(url).toContain('/profiles/username/alice%40mastodon.social');
+    });
   });
 });

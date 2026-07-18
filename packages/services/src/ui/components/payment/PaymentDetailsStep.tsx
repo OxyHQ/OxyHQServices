@@ -90,7 +90,7 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                                 <TextField>
                                     <TextFieldInput
                                         floatingLabel
-                                        label={t('payment.details.cardNumber') || 'Card number'}
+                                        label={t('payment.details.cardNumber')}
                                         value={cardDetails.number}
                                         onChangeText={text => {
                                             const formatted = text.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
@@ -108,7 +108,7 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                                         <TextField>
                                             <TextFieldInput
                                                 floatingLabel
-                                                label={t('payment.details.expiry') || 'Expiry'}
+                                                label={t('payment.details.expiry')}
                                                 value={cardDetails.expiry}
                                                 onChangeText={text => {
                                                     const formatted = text.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2');

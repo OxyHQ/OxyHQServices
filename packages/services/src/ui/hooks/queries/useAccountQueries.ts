@@ -145,14 +145,26 @@ function parseUpdatedAt(value: unknown): number | null {
 }
 
 /**
- * Get user by ID
+ * Get user by ID (identity-by-id).
+ *
+ * Keyed on the viewer-INDEPENDENT `queryKeys.users.detail(id)`: this hook is
+ * the card-identity workhorse (name, avatar, username, verified) and does NOT
+ * read the viewer-relative `relationship` field. Keeping the key
+ * viewer-independent lets external by-id identity seeders / precache layers
+ * (e.g. Mention's card enrichment) that all write `queryKeys.users.detail(id)`
+ * share a single cache entry — a viewer-scoped key would dead-end every seed
+ * and cause avatar/name flashes plus N+1 fetches.
+ *
+ * A viewer-scoped, relationship-aware by-id PROFILE fetch is intentionally NOT
+ * this hook — it would be a separate future `useUserProfileById` keyed on
+ * `queryKeys.users.detailForViewer(id, viewerId)`. No current consumer reads
+ * `relationship` from a by-id fetch (only the username path does).
  */
 export const useUserById = (userId: string | null, options?: { enabled?: boolean }) => {
-  const { oxyServices, user } = useOxy();
-  const viewerId = user?.id ?? '';
+  const { oxyServices } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.users.detailForViewer(userId || '', viewerId),
+    queryKey: queryKeys.users.detail(userId || ''),
     queryFn: async () => {
       if (!userId) {
         throw new Error('User ID is required');
@@ -188,7 +200,10 @@ export const useUserByUsername = (username: string | null, options?: { enabled?:
       if (!username) {
         throw new Error('Username is required');
       }
-      return await oxyServices.getProfileByUsername(username);
+      // Match queryKeys.users.byUsername normalization so the cache key and
+      // the API request agree (case-insensitive local handles).
+      const normalizedUsername = username.trim().toLowerCase();
+      return await oxyServices.getProfileByUsername(normalizedUsername);
     },
     enabled: (options?.enabled !== false) && !!username,
     staleTime: 5 * 60 * 1000,

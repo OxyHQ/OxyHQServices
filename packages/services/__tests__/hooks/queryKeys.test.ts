@@ -80,6 +80,13 @@ describe('queryKeys.users', () => {
     ]);
   });
 
+  it('byUsername() normalizes username casing/whitespace so seeders agree by construction', () => {
+    const canonical = queryKeys.users.byUsername('alice', 'viewer-2');
+    expect(queryKeys.users.byUsername('Alice', 'viewer-2')).toEqual(canonical);
+    expect(queryKeys.users.byUsername('ALICE', 'viewer-2')).toEqual(canonical);
+    expect(queryKeys.users.byUsername('  Alice  ', 'viewer-2')).toEqual(canonical);
+  });
+
   it('list() includes the supplied userIds', () => {
     expect(queryKeys.users.list(['a', 'b'])).toEqual(['users', 'list', ['a', 'b']]);
   });

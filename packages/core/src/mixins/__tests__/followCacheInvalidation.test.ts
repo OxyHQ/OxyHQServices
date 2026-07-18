@@ -147,12 +147,17 @@ describe('follow-status cache invalidation', () => {
 
   it('invalidates the exact logical follow-status key on a single follow', async () => {
     const clearSpy = jest.spyOn(oxy, 'clearCacheEntry');
+    const clearPrefixSpy = jest.spyOn(oxy, 'clearCacheByPrefix');
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, message: 'ok' }));
 
     await oxy.followUser('target-3');
 
     expect(clearSpy).toHaveBeenCalledWith('GET:/users/target-3/follow-status');
+    expect(clearSpy).toHaveBeenCalledWith('GET:/users/target-3');
+    expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/profiles/username/');
+    expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/profiles/resolve');
     clearSpy.mockRestore();
+    clearPrefixSpy.mockRestore();
   });
 
   it('does not invalidate or call the network when bulk follow gets an empty list', async () => {

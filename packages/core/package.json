@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "12.5.2",
+  "version": "12.5.4",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -91,12 +91,12 @@
     "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rm -rf dist",
-    "generate:display-name-policy": "node scripts/generateDisplayNamePolicyRanges.mjs",
     "typescript": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "lint": "biome lint --error-on-warnings ./src",
     "prepublishOnly": "bun run clean && bun run build",
-    "release": "rm -rf dist && bun run build && release-it"
+    "release": "rm -rf dist && bun run build && release-it",
+    "generate:display-name-policy": "node scripts/generateDisplayNamePolicyRanges.mjs"
   },
   "release-it": {
     "git": {

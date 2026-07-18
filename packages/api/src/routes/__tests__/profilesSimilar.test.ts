@@ -131,6 +131,10 @@ interface UserDoc {
   description?: string;
   verified?: boolean;
   type?: string;
+  accountStatus?: string;
+  reputationTier?: string;
+  isSensitive?: boolean;
+  privacySettings?: { isPrivateAccount?: boolean };
   federation?: {
     actorUri?: string;
     domain?: string;
@@ -150,6 +154,11 @@ function isNonEmptyString(value: unknown): boolean {
  * exact `$and`/`$or`/`$type`/`$gte`/`$exists` operators the gate uses.
  */
 function passesEligibilityGate(user: UserDoc, minResolvedAt: Date): boolean {
+  if (user.privacySettings?.isPrivateAccount === true) return false;
+  if (user.accountStatus === 'archived') return false;
+  if (user.reputationTier === 'restricted') return false;
+  if (user.isSensitive === true) return false;
+
   // profile-quality bar: non-empty username AND at least one curated signal.
   if (!isNonEmptyString(user.username)) return false;
   const hasCuratedSignal =
@@ -225,6 +234,7 @@ const completeProfile = new Types.ObjectId(); // username + avatar — passes
 const shellProfile = new Types.ObjectId();    // username only, no signal — filtered
 const freshFederated = new Types.ObjectId();   // fresh, available — passes
 const staleFederated = new Types.ObjectId();   // resolved too long ago — filtered
+const privateProfile = new Types.ObjectId(); // opted out of discovery — filtered
 
 let server: http.Server;
 
@@ -289,6 +299,12 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
           lastResolvedAt: new Date(now - 40 * 24 * 60 * 60 * 1000), // 40 days ago — stale
         },
       },
+      {
+        _id: privateProfile,
+        username: 'private',
+        avatar: 'private-avatar',
+        privacySettings: { isPrivateAccount: true },
+      },
     ];
 
     mockFollowAggregate.mockImplementation(aggregateSimilar(pool));
@@ -302,6 +318,7 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
     expect(returnedIds).toContain(freshFederated.toString());  // fresh federated passes
     expect(returnedIds).not.toContain(shellProfile.toString());  // shell filtered
     expect(returnedIds).not.toContain(staleFederated.toString()); // stale federated filtered
+    expect(returnedIds).not.toContain(privateProfile.toString()); // private account filtered
   });
 
   it('adds the eligibility/quality $match after the $unwind, before the follow-count lookups', async () => {
@@ -331,7 +348,10 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
     // non-empty `user.username`.
     const gateMatch = pipeline[gateIndex].$match as {
       $and: Array<Record<string, unknown>>;
+      'user.privacySettings.isPrivateAccount'?: { $ne?: boolean };
     };
+    expect(gateMatch['user.privacySettings.isPrivateAccount']).toEqual({ $ne: true });
+
     const usernameClause = gateMatch.$and.find(
       (c) => c['user.username'] !== undefined
     );

@@ -24,6 +24,7 @@ import type { AddressInfo } from 'net';
 // profiles route relies on. Restore the REAL mongoose.
 jest.mock('mongoose', () => jest.requireActual('mongoose'));
 import { Types } from 'mongoose';
+import { INFLUENCE_MIN } from '../../utils/reputation.constants';
 
 const mockUserAggregate = jest.fn();
 const mockUserFindOne = jest.fn();
@@ -85,6 +86,8 @@ interface PoolUser {
   accountStatus?: string;
   reputationTier?: string;
   type?: string;
+  reputationRankWeight?: number;
+  privacySettings?: { isPrivateAccount?: boolean };
 }
 
 interface ProfileResult {
@@ -137,6 +140,10 @@ function matchesSearchFilter(user: PoolUser, filter: Record<string, unknown>): b
   if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
     return false;
   }
+  const privateGate = filter['privacySettings.isPrivateAccount'] as { $ne?: boolean } | undefined;
+  if (privateGate && privateGate.$ne === true && user.privacySettings?.isPrivateAccount === true) {
+    return false;
+  }
   const or = filter.$or as Array<Record<string, RegExp>> | undefined;
   if (!Array.isArray(or)) return true;
   return or.some((clause) => {
@@ -159,6 +166,64 @@ function aggregateSearch(pool: PoolUser[]): (pipeline: unknown) => Promise<unkno
     return Promise.resolve([
       { profiles: matched, totalCount: [{ count: matched.length }] },
     ]);
+  };
+}
+
+/**
+ * The comparable value for a `$sort` key, mirroring the route's `$addFields`:
+ *   `_nativePriority` — 1 for federated, 0 otherwise (native-first);
+ *   `_reputationRank` — `reputationRankWeight ?? INFLUENCE_MIN`;
+ *   `_id`            — the ObjectId hex (unique final tiebreaker).
+ */
+function sortKeyValue(user: PoolUser, key: string): number | string {
+  if (key === '_nativePriority') return user.type === 'federated' ? 1 : 0;
+  if (key === '_reputationRank') {
+    return typeof user.reputationRankWeight === 'number' ? user.reputationRankWeight : INFLUENCE_MIN;
+  }
+  if (key === '_id') return user._id.toString();
+  return 0;
+}
+
+/**
+ * Faithful `User.aggregate` for the people-search `$facet`: filters the pool by
+ * the stage-0 `$match`, then applies the `profiles` sub-pipeline's `$sort`,
+ * `$skip` and `$limit` in order — so the assertions exercise the route's REAL
+ * sort spec + paging math, not a stub. `totalCount` reflects the FULL match set
+ * (before paging), exactly as the route's `$facet` computes it.
+ */
+function aggregateSearchPaged(pool: PoolUser[]): (pipeline: unknown) => Promise<unknown[]> {
+  return (pipeline: unknown) => {
+    const stages = pipeline as Array<{
+      $match?: Record<string, unknown>;
+      $facet?: { profiles?: Array<Record<string, unknown>> };
+    }>;
+    const matchStage = stages[0]?.$match ?? {};
+    const matched = pool.filter((u) => matchesSearchFilter(u, matchStage));
+
+    const profilesPipeline = stages.find((s) => s.$facet)?.$facet?.profiles ?? [];
+    const sortSpec = profilesPipeline.find((s) => '$sort' in s)?.$sort as
+      | Record<string, 1 | -1>
+      | undefined;
+    const skip = (profilesPipeline.find((s) => '$skip' in s)?.$skip as number | undefined) ?? 0;
+    const limit =
+      (profilesPipeline.find((s) => '$limit' in s)?.$limit as number | undefined) ?? matched.length;
+
+    const ordered = sortSpec
+      ? [...matched].sort((a, b) => {
+          for (const [key, dir] of Object.entries(sortSpec)) {
+            const av = sortKeyValue(a, key);
+            const bv = sortKeyValue(b, key);
+            let cmp = 0;
+            if (typeof av === 'string' && typeof bv === 'string') cmp = av.localeCompare(bv);
+            else cmp = (av as number) - (bv as number);
+            if (cmp !== 0) return dir === -1 ? -cmp : cmp;
+          }
+          return 0;
+        })
+      : matched;
+
+    const paged = ordered.slice(skip, skip + limit);
+    return Promise.resolve([{ profiles: paged, totalCount: [{ count: matched.length }] }]);
   };
 }
 
@@ -226,6 +291,37 @@ describe('GET /profiles/search archived exclusion', () => {
 
     const pipeline = mockUserAggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
     expect(pipeline[0].$match?.reputationTier).toEqual({ $ne: 'restricted' });
+  });
+
+  it('adds privacySettings.isPrivateAccount: { $ne: true } to the aggregation $match', async () => {
+    mockUserAggregate.mockImplementation(aggregateSearch([]));
+
+    const res = await requestJson(server, '/profiles/search?query=test');
+    expect(res.status).toBe(200);
+
+    const pipeline = mockUserAggregate.mock.calls[0][0] as Array<{ $match?: Record<string, unknown> }>;
+    expect(pipeline[0].$match?.['privacySettings.isPrivateAccount']).toEqual({ $ne: true });
+  });
+
+  it('filters private accounts while surfacing public matches', async () => {
+    const privateUser = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: activeLocal, username: 'public_match', accountStatus: 'active' },
+      {
+        _id: privateUser,
+        username: 'private_match',
+        accountStatus: 'active',
+        privacySettings: { isPrivateAccount: true },
+      },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).toContain(activeLocal.toString());
+    expect(ids).not.toContain(privateUser.toString());
   });
 
   it('filters archived accounts while surfacing active matches', async () => {
@@ -333,6 +429,180 @@ describe('GET /profiles/search archived exclusion', () => {
 
     const ids = (res.body.data ?? []).map((p) => String(p.id));
     expect(ids).toContain(activeLocal.toString());
+  });
+
+  it('does not return more than limit rows when a federated actor is prepended', async () => {
+    const dbOnly = new Types.ObjectId();
+    const fedPrepend = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: dbOnly, username: 'fed@remote.example', accountStatus: 'active' },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: fedPrepend,
+      username: 'fed@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+    });
+
+    const res = await requestJson(server, '/profiles/search?query=fed@remote.example&limit=1');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect((res.body as { pagination?: { total?: number } }).pagination?.total).toBe(2);
+  });
+});
+
+/**
+ * Native-first, deterministic ordering. People search must return Oxy NATIVE
+ * users (local/agent/etc.) before FEDERATED ones and page with a strict total
+ * order (`_nativePriority` → `reputationRankWeight` desc → `_id`) so the client's
+ * infinite scroll never sees a duplicated or skipped row across offset pages.
+ * The mocked `User.aggregate` faithfully applies the route's OWN `$facet.profiles`
+ * `$sort`/`$skip`/`$limit`, so these assertions verify the real sort spec.
+ */
+describe('GET /profiles/search native-first ordering + pagination stability', () => {
+  it('emits a $facet.profiles $sort that is native-first and _id-final, before $skip/$limit', async () => {
+    mockUserAggregate.mockImplementation(aggregateSearchPaged([]));
+
+    const res = await requestJson(server, '/profiles/search?query=test');
+    expect(res.status).toBe(200);
+
+    const pipeline = mockUserAggregate.mock.calls[0][0] as Array<{
+      $facet?: { profiles?: Array<Record<string, unknown>> };
+    }>;
+    const profilesPipeline = pipeline.find((s) => s.$facet)?.$facet?.profiles ?? [];
+    const sortStage = profilesPipeline.find((s) => '$sort' in s)?.$sort as Record<string, number>;
+
+    const sortKeys = Object.keys(sortStage);
+    // Native/federated tier is the PRIMARY sort key (ascending: 0 native, 1 fed).
+    expect(sortKeys[0]).toBe('_nativePriority');
+    expect(sortStage._nativePriority).toBe(1);
+    // `_id` is the FINAL tiebreaker (ascending) → strict total order.
+    expect(sortKeys[sortKeys.length - 1]).toBe('_id');
+    expect(sortStage._id).toBe(1);
+
+    // The sort orders the WHOLE match set — it precedes $skip and $limit.
+    const sortIdx = profilesPipeline.findIndex((s) => '$sort' in s);
+    const skipIdx = profilesPipeline.findIndex((s) => '$skip' in s);
+    const limitIdx = profilesPipeline.findIndex((s) => '$limit' in s);
+    expect(sortIdx).toBeGreaterThanOrEqual(0);
+    expect(sortIdx).toBeLessThan(skipIdx);
+    expect(sortIdx).toBeLessThan(limitIdx);
+  });
+
+  it('orders NATIVE users before FEDERATED, regardless of reputation rank', async () => {
+    const nativeHigh = new Types.ObjectId();
+    const nativeLow = new Types.ObjectId();
+    const fedHigh = new Types.ObjectId();
+    const fedLow = new Types.ObjectId();
+    // Input order is deliberately shuffled; the route's $sort must reorder it.
+    const pool: PoolUser[] = [
+      { _id: fedHigh, username: 'fed_high_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 9 },
+      { _id: nativeLow, username: 'native_low_match', accountStatus: 'active', reputationRankWeight: 1 },
+      { _id: fedLow, username: 'fed_low_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 2 },
+      { _id: nativeHigh, username: 'native_high_match', accountStatus: 'active', type: 'agent', reputationRankWeight: 5 },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match&limit=10&offset=0');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    // Natives first (an `agent` is native), ranked by reputation desc within each
+    // tier; the highest-rep federated (9) still ranks BELOW every native.
+    expect(ids).toEqual([
+      nativeHigh.toString(),
+      nativeLow.toString(),
+      fedHigh.toString(),
+      fedLow.toString(),
+    ]);
+  });
+
+  it('is STABLE across two offset pages — no duplicate, no skipped row', async () => {
+    // Two natives + two federated, all with EQUAL reputation rank, so within a
+    // tier the ONLY separator is the `_id` final tiebreaker. Without it, the page
+    // boundary could duplicate or drop a row.
+    const nativeA = new Types.ObjectId();
+    const nativeB = new Types.ObjectId();
+    const fedA = new Types.ObjectId();
+    const fedB = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: fedB, username: 'p_fedb_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 1 },
+      { _id: nativeB, username: 'p_natb_match', accountStatus: 'active', reputationRankWeight: 1 },
+      { _id: fedA, username: 'p_feda_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 1 },
+      { _id: nativeA, username: 'p_nata_match', accountStatus: 'active', reputationRankWeight: 1 },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+
+    // Expected global order: natives (by _id asc) then federated (by _id asc).
+    const natives = [nativeA.toString(), nativeB.toString()].sort();
+    const feds = [fedA.toString(), fedB.toString()].sort();
+    const expectedFullOrder = [...natives, ...feds];
+
+    const page1 = await requestJson(server, '/profiles/search?query=match&limit=2&offset=0');
+    const page2 = await requestJson(server, '/profiles/search?query=match&limit=2&offset=2');
+    expect(page1.status).toBe(200);
+    expect(page2.status).toBe(200);
+
+    const ids1 = (page1.body.data ?? []).map((p) => String(p.id));
+    const ids2 = (page2.body.data ?? []).map((p) => String(p.id));
+
+    // Page 1 = both natives, page 2 = both federated (native-first holds across
+    // the page boundary).
+    expect(ids1).toEqual(expectedFullOrder.slice(0, 2));
+    expect(ids2).toEqual(expectedFullOrder.slice(2, 4));
+    // No row appears on both pages (no duplication)…
+    expect(ids1.filter((id) => ids2.includes(id))).toHaveLength(0);
+    // …and the two pages together cover every match with nothing skipped.
+    expect([...ids1, ...ids2].sort()).toEqual([...expectedFullOrder].sort());
+  });
+
+  it('keeps the archived/restricted exclusion under native-first ordering', async () => {
+    const nativeOk = new Types.ObjectId();
+    const fedOk = new Types.ObjectId();
+    const archived = new Types.ObjectId();
+    const restricted = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: fedOk, username: 'ok_fed_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 3 },
+      { _id: archived, username: 'archived_match', accountStatus: 'archived', reputationRankWeight: 9 },
+      { _id: nativeOk, username: 'ok_native_match', accountStatus: 'active', reputationRankWeight: 1 },
+      { _id: restricted, username: 'restricted_match', accountStatus: 'active', reputationTier: 'restricted', reputationRankWeight: 9 },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+
+    const res = await requestJson(server, '/profiles/search?query=match&limit=10&offset=0');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    // Archived + restricted are gone even though both had higher rep; the native
+    // survivor still precedes the federated survivor.
+    expect(ids).toEqual([nativeOk.toString(), fedOk.toString()]);
+  });
+
+  it('prepends an exact-handle federated match at the FRONT, natives following', async () => {
+    const fedExact = new Types.ObjectId();
+    const nativeMatch = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      { _id: nativeMatch, username: 'alive_native', accountStatus: 'active', reputationRankWeight: 5 },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: fedExact,
+      username: 'alive@remote.example',
+      type: 'federated',
+      accountStatus: 'active',
+    });
+
+    const res = await requestJson(server, '/profiles/search?query=alive');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    // Documented exception: the exact fediverse-handle hit is prepended ahead of
+    // the native-first block (the caller typed that precise handle).
+    expect(ids[0]).toBe(fedExact.toString());
+    expect(ids).toContain(nativeMatch.toString());
   });
 });
 

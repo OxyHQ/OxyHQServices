@@ -221,6 +221,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "已于 {{relative}} 授权",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {

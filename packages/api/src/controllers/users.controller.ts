@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
 import { sanitizeSearchQuery } from '../utils/sanitize';
+import { peopleSearchMongoMatch } from '../utils/profileQuery';
 import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
 
 export class UsersController {
@@ -37,22 +38,12 @@ export class UsersController {
       // removed — a mid-string `@` (the `user@host` separator) is preserved.
       const strippedQuery = query.trim().replace(/^@/, '');
 
-      // Sanitize search query (length limit + HTML escaping)
+      // Sanitize search query (length limit + regex escaping)
       const sanitizedQuery = sanitizeSearchQuery(strippedQuery);
 
       // Search for users where username or name matches the query.
-      // Exclude archived accounts (dead federated actors marked gone via
-      // POST /federation/actor-gone, plus archived org/project accounts) so
-      // they never surface as 0-post ghost search hits. Only `archived` is
-      // filtered — active accounts (the default) all still match.
-      // Also exclude users in the punitive `restricted` reputation tier
-      // (lifetime total < 0 OR abuseScore >= threshold). `reputationTier` is
-      // absent until `recalculateBalance` first runs, and Mongo treats a missing
-      // field as NOT equal to 'restricted', so untiered/new users still match —
-      // only actively-restricted users are hidden.
       const users = await User.find({
-        accountStatus: { $ne: 'archived' },
-        reputationTier: { $ne: 'restricted' },
+        ...peopleSearchMongoMatch,
         $or: [
           { username: { $regex: sanitizedQuery, $options: 'i' } },
           { 'name.first': { $regex: sanitizedQuery, $options: 'i' } },

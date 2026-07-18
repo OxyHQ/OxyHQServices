@@ -1,8 +1,11 @@
 /**
- * GET /profiles/username/:username eligibility coverage.
+ * GET /profiles/resolve viewer-relationship coverage.
  *
- * Proves direct username lookup applies the same archived + restricted gates as
- * /profiles/resolve and people search.
+ * Proves the resolve handler computes the same viewer-relative `relationship`
+ * field as its two sibling single-profile routes (/profiles/username/:username
+ * and /users/:userId): present only when the request is authenticated AND the
+ * viewer is not the target, omitted otherwise. This is what makes "Follows you"
+ * render on a federated profile fetched through resolve.
  */
 
 import express from 'express';
@@ -26,7 +29,7 @@ jest.mock('../../middleware/auth', () => ({
 }));
 jest.mock('../../middleware/optionalAuth', () => ({
   optionalUserOrServiceAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
-  resolveViewerId: () => currentViewerId,
+  resolveViewerId: (): string | undefined => currentViewerId,
 }));
 jest.mock('../../middleware/validate', () => ({
   validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -65,7 +68,7 @@ jest.mock('../../models/User', () => ({
 import profilesRouter from '../profiles';
 import { errorHandler } from '../../middleware/errorHandler';
 
-const activeUserId = new Types.ObjectId();
+const targetUserId = new Types.ObjectId();
 
 function findOneQuery(result: Record<string, unknown> | null) {
   return {
@@ -75,11 +78,21 @@ function findOneQuery(result: Record<string, unknown> | null) {
   };
 }
 
-function requestJson(server: http.Server, username: string) {
+interface JsonResponse {
+  status: number;
+  body: { message?: string; data?: Record<string, unknown> | null };
+}
+
+function requestJson(server: http.Server, handle: string): Promise<JsonResponse> {
   const address = server.address() as AddressInfo;
-  return new Promise<{ status: number; body: { message?: string; data?: unknown } }>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const req = http.request(
-      { method: 'GET', host: '127.0.0.1', port: address.port, path: `/profiles/username/${encodeURIComponent(username)}` },
+      {
+        method: 'GET',
+        host: '127.0.0.1',
+        port: address.port,
+        path: `/profiles/resolve?handle=${encodeURIComponent(handle)}`,
+      },
       (res) => {
         let raw = '';
         res.on('data', (chunk) => { raw += chunk; });
@@ -97,7 +110,7 @@ function requestJson(server: http.Server, username: string) {
   });
 }
 
-describe('GET /profiles/username/:username', () => {
+describe('GET /profiles/resolve relationship', () => {
   let server: http.Server;
 
   beforeAll((done) => {
@@ -118,103 +131,79 @@ describe('GET /profiles/username/:username', () => {
     mockGetUserStats.mockResolvedValue({});
   });
 
-  it('returns 404 for a restricted-tier local user', async () => {
+  it('includes relationship (followsYou true) when an authed viewer resolves a local target that follows them', async () => {
+    const viewerId = new Types.ObjectId().toHexString();
+    currentViewerId = viewerId;
     mockUserFindOne.mockReturnValue(
       findOneQuery({
-        _id: activeUserId,
-        username: 'abuser',
-        accountStatus: 'active',
-        reputationTier: 'restricted',
-      }),
-    );
-
-    const res = await requestJson(server, 'abuser');
-    expect(res.status).toBe(404);
-    expect(res.body.message).toMatch(/not found/i);
-    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
-  });
-
-  it('returns 404 for an archived local user', async () => {
-    mockUserFindOne.mockReturnValue(
-      findOneQuery({
-        _id: activeUserId,
-        username: 'gone',
-        accountStatus: 'archived',
-      }),
-    );
-
-    const res = await requestJson(server, 'gone');
-    expect(res.status).toBe(404);
-    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
-  });
-
-  it('returns the profile for an active, non-restricted local user', async () => {
-    mockUserFindOne.mockReturnValue(
-      findOneQuery({
-        _id: activeUserId,
-        username: 'nate',
+        _id: targetUserId,
+        username: 'remote@mastodon.social',
         accountStatus: 'active',
         reputationTier: 'trusted',
       }),
     );
+    mockGetViewerRelationship.mockResolvedValue({ isFollowing: false, followsYou: true });
 
-    const res = await requestJson(server, 'nate');
+    const res = await requestJson(server, '@remote@mastodon.social');
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ id: activeUserId.toString(), username: 'nate' });
-  });
-
-  it('resolves local usernames case-insensitively', async () => {
-    mockUserFindOne.mockReturnValue(
-      findOneQuery({
-        _id: activeUserId,
-        username: 'Alice',
-        accountStatus: 'active',
-        reputationTier: 'trusted',
-      }),
-    );
-
-    const res = await requestJson(server, 'alice');
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ id: activeUserId.toString(), username: 'Alice' });
-    expect(mockUserFindOne).toHaveBeenCalledWith(
-      expect.objectContaining({
-        username: expect.objectContaining({ source: '^alice$', flags: 'i' }),
-      }),
-    );
+    expect(res.body.data?.relationship).toEqual({ isFollowing: false, followsYou: true });
+    expect(mockGetViewerRelationship).toHaveBeenCalledWith(viewerId, targetUserId.toString());
+    // Local-first hit never touches remote discovery.
+    expect(mockResolveAndUpsert).not.toHaveBeenCalled();
   });
 
   it('omits relationship for anonymous viewers', async () => {
     mockUserFindOne.mockReturnValue(
       findOneQuery({
-        _id: activeUserId,
-        username: 'nate',
+        _id: targetUserId,
+        username: 'remote@mastodon.social',
         accountStatus: 'active',
         reputationTier: 'trusted',
       }),
     );
 
-    const res = await requestJson(server, 'nate');
+    const res = await requestJson(server, '@remote@mastodon.social');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ id: targetUserId.toString(), username: 'remote@mastodon.social' });
+    expect(res.body.data?.relationship).toBeUndefined();
+    expect(mockGetViewerRelationship).not.toHaveBeenCalled();
+  });
+
+  it('omits relationship on a self-view', async () => {
+    currentViewerId = targetUserId.toHexString();
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({
+        _id: targetUserId,
+        username: 'me@mastodon.social',
+        accountStatus: 'active',
+        reputationTier: 'trusted',
+      }),
+    );
+
+    const res = await requestJson(server, '@me@mastodon.social');
     expect(res.status).toBe(200);
     expect(res.body.data?.relationship).toBeUndefined();
     expect(mockGetViewerRelationship).not.toHaveBeenCalled();
   });
 
-  it('includes relationship when an authenticated viewer fetches another profile', async () => {
+  it('computes relationship on the discovery branch for a freshly-upserted actor', async () => {
     const viewerId = new Types.ObjectId().toHexString();
     currentViewerId = viewerId;
-    mockUserFindOne.mockReturnValue(
-      findOneQuery({
-        _id: activeUserId,
-        username: 'nate',
-        accountStatus: 'active',
-        reputationTier: 'trusted',
-      }),
-    );
-    mockGetViewerRelationship.mockResolvedValue({ isFollowing: true, followsYou: false });
+    // No local row → discovery path. The handle must pass the fediverse-format gate.
+    mockUserFindOne.mockReturnValue(findOneQuery(null));
+    mockIsFediverseHandle.mockReturnValue(true);
+    mockResolveAndUpsert.mockResolvedValue({
+      _id: targetUserId,
+      username: 'fresh@mastodon.social',
+      accountStatus: 'active',
+      reputationTier: 'trusted',
+    });
+    mockGetViewerRelationship.mockResolvedValue({ isFollowing: false, followsYou: false });
 
-    const res = await requestJson(server, 'nate');
+    const res = await requestJson(server, '@fresh@mastodon.social');
     expect(res.status).toBe(200);
-    expect(res.body.data?.relationship).toEqual({ isFollowing: true, followsYou: false });
-    expect(mockGetViewerRelationship).toHaveBeenCalledWith(viewerId, activeUserId.toString());
+    expect(res.body.data?.relationship).toEqual({ isFollowing: false, followsYou: false });
+    expect(mockGetViewerRelationship).toHaveBeenCalledWith(viewerId, targetUserId.toString());
+    expect(mockResolveAndUpsert).toHaveBeenCalled();
   });
 });

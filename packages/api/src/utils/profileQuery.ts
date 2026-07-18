@@ -19,6 +19,17 @@ export const discoverableUserMongoMatch = {
 };
 
 /**
+ * Mongo `$match` fragment for username/name people-search surfaces
+ * (`GET /profiles/search`, `GET /search`, `POST /users/search`).
+ * Extends {@link discoverableUserMongoMatch} with the private-account opt-out
+ * used by recommendations (`privacySettings.isPrivateAccount`).
+ */
+export const peopleSearchMongoMatch = {
+  ...discoverableUserMongoMatch,
+  'privacySettings.isPrivateAccount': { $ne: true as const },
+};
+
+/**
  * Whether a hydrated user document may appear on people-discovery surfaces
  * (search, profiles, graph seeds, ActivityPub actor lookup, etc.).
  */

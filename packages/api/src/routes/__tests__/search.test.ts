@@ -35,6 +35,7 @@ interface PoolUser {
   username?: string;
   accountStatus?: string;
   reputationTier?: string;
+  privacySettings?: { isPrivateAccount?: boolean };
 }
 
 function requestJson(server: http.Server, path: string): Promise<{ status: number; body: { users?: Array<{ id: string }> } }> {
@@ -69,6 +70,10 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
   if (tier && typeof tier.$ne === 'string' && user.reputationTier === tier.$ne) {
     return false;
   }
+  const privateGate = filter['privacySettings.isPrivateAccount'] as { $ne?: boolean } | undefined;
+  if (privateGate && privateGate.$ne === true && user.privacySettings?.isPrivateAccount === true) {
+    return false;
+  }
   const or = filter.$or as Array<Record<string, unknown>> | undefined;
   if (!Array.isArray(or)) return true;
   return or.some((clause) => {
@@ -89,6 +94,7 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
 const activeUser = new Types.ObjectId();
 const archivedUser = new Types.ObjectId();
 const restrictedUser = new Types.ObjectId();
+const privateUser = new Types.ObjectId();
 
 let server: http.Server;
 
@@ -111,6 +117,7 @@ describe('GET /search archived exclusion', () => {
   it('adds accountStatus: { $ne: "archived" } to the User.find filter', async () => {
     const chain = {
       select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
     };
@@ -122,6 +129,7 @@ describe('GET /search archived exclusion', () => {
     const filter = mockUserFind.mock.calls[0][0] as Record<string, unknown>;
     expect(filter.accountStatus).toEqual({ $ne: 'archived' });
     expect(filter.reputationTier).toEqual({ $ne: 'restricted' });
+    expect(filter['privacySettings.isPrivateAccount']).toEqual({ $ne: true });
   });
 
   it('filters archived accounts while surfacing active matches', async () => {
@@ -134,6 +142,7 @@ describe('GET /search archived exclusion', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({
@@ -163,6 +172,7 @@ describe('GET /search archived exclusion', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({
@@ -182,6 +192,42 @@ describe('GET /search archived exclusion', () => {
     expect(ids).toContain(activeUser.toString());
     expect(ids).not.toContain(restrictedUser.toString());
   });
+
+  it('filters private accounts while surfacing public matches', async () => {
+    const pool: PoolUser[] = [
+      { _id: activeUser, username: 'public_match', accountStatus: 'active' },
+      {
+        _id: privateUser,
+        username: 'private_match',
+        accountStatus: 'active',
+        privacySettings: { isPrivateAccount: true },
+      },
+    ];
+
+    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
+      const matched = pool.filter((user) => matchesFindFilter(user, filter));
+      return {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(
+          matched.map((user) => ({
+            _id: user._id,
+            username: user.username,
+            accountStatus: user.accountStatus,
+            privacySettings: user.privacySettings,
+          })),
+        ),
+      };
+    });
+
+    const res = await requestJson(server, '/?query=match&type=users');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.users ?? []).map((user) => String(user.id));
+    expect(ids).toContain(activeUser.toString());
+    expect(ids).not.toContain(privateUser.toString());
+  });
 });
 
 describe('GET /search leading-@ handling', () => {
@@ -194,6 +240,7 @@ describe('GET /search leading-@ handling', () => {
       const matched = pool.filter((user) => matchesFindFilter(user, filter));
       return {
         select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockResolvedValue(
           matched.map((user) => ({ _id: user._id, username: user.username })),
