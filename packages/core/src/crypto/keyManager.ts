@@ -10,6 +10,7 @@ import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid } from '../utils/platform';
 import { type ExpoCryptoLike, type ExpoSecureStoreLike, isReactNative, isNodeJS, loadExpoCrypto, loadNodeCrypto, loadSecureStore, loadSharedIdentityBridge } from '@oxyhq/protocol';
 import { isDev, logger } from '../logger';
+import { hkdfSha256 } from './kdf';
 
 /**
  * Options for expo-secure-store calls made by KeyManager.
@@ -78,6 +79,28 @@ export class IdentityPersistError extends Error {
 }
 
 const ec = new EC('secp256k1');
+
+/**
+ * HKDF salt that domain-separates every identity-scoped seed produced by
+ * {@link KeyManager.deriveScopedSeed}. Versioned so a future scheme change is a
+ * new, non-colliding tag. The per-app domain (e.g. Oxy Pay's FairCoin wallet)
+ * is carried by the caller's `info` string, not this salt.
+ */
+const SCOPED_SEED_KDF_SALT = 'oxy-identity-scoped-seed-v1';
+
+/** UTF-8 encode an ASCII label to bytes (HKDF salt/info). */
+function utf8ToBytes(label: string): Uint8Array {
+  return new TextEncoder().encode(label);
+}
+
+/** Decode a hex string to bytes. Inverse of {@link uint8ArrayToHex}. */
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
 
 const STORAGE_KEYS = {
   PRIVATE_KEY: 'oxy_identity_private_key',
@@ -1557,6 +1580,38 @@ export class KeyManager {
       }
       return false;
     }
+  }
+
+  /**
+   * Derive a 32-byte, domain-separated seed from the on-device Oxy identity
+   * private key via HKDF-SHA256, WITHOUT ever exposing the raw private key.
+   *
+   * The domain separation is carried by `info` (e.g. `"oxypay/faircoin/v1"`),
+   * so distinct apps/purposes get independent seeds from the same identity.
+   * The output is HKDF keying material, never the private key itself — a
+   * consumer (e.g. Oxy Pay's FairCoin HD wallet) can feed it straight into
+   * `HDKey.fromMasterSeed` and never touches the identity key.
+   *
+   * Key source (native only): prefers the shared ecosystem identity written to
+   * `group.so.oxy.shared` (what a Relying Party like Oxy Pay reads), then falls
+   * back to this device's primary identity (Commons/Accounts). Both reproduce
+   * from the user's Oxy recovery phrase, so the derived seed is recoverable.
+   *
+   * @param info Context/domain-binding label (distinct labels → independent seeds).
+   * @returns 32 bytes of derived keying material, or `null` on web / when no
+   *          identity key is available on this device.
+   */
+  static async deriveScopedSeed(info: string): Promise<Uint8Array | null> {
+    if (isWebPlatform()) {
+      return null;
+    }
+    const privateKey =
+      (await KeyManager.getSharedPrivateKey()) ?? (await KeyManager.getPrivateKey());
+    if (!privateKey) {
+      return null;
+    }
+    const ikm = hexToBytes(KeyManager.canonicalPrivateKey(privateKey));
+    return hkdfSha256(ikm, utf8ToBytes(SCOPED_SEED_KDF_SALT), utf8ToBytes(info), 32);
   }
 
   /**
