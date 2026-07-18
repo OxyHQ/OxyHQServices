@@ -444,6 +444,40 @@ describe('POST /assets/batch-access — variant-aware, scoped, per-file', () => 
     expect(mockGetFileUrl).toHaveBeenCalledWith(PRIVATE_FILE_ID, 'thumb', 600, expect.any(Object));
   });
 
+  it('does not 500 the batch when one file throws resolving its URL — falls back to the origin stream URL', async () => {
+    mockGetFilesByIds.mockResolvedValue([PUBLIC_FILE, { ...PRIVATE_FILE, mime: 'image/jpeg' }]);
+    // The public tile's CDN resolution throws (e.g. on-demand variant
+    // generation hits a missing S3 original → NoSuchKey). The whole batch must
+    // still 200 and the throwing file stays allowed with an origin fallback URL.
+    mockGetFileUrl.mockImplementation((fileId: string) => {
+      if (fileId === PUBLIC_FILE_ID) {
+        return Promise.reject(
+          new Error('Failed to download buffer from S3: NoSuchKey: The specified key does not exist.'),
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    const res = await postJson(server, '/assets/batch-access', {
+      files: [
+        { fileId: PUBLIC_FILE_ID, variant: 'thumb' },
+        { fileId: PRIVATE_FILE_ID, variant: 'thumb' },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const { results } = JSON.parse(res.body).data;
+
+    // The throwing file is still allowed and gets an our-origin stream URL.
+    const broken = results[PUBLIC_FILE_ID];
+    expect(broken.allowed).toBe(true);
+    expect(new URL(broken.url).pathname).toBe(`/assets/${PUBLIC_FILE_ID}/stream`);
+
+    // The other tile resolves normally in the same batch.
+    expect(results[PRIVATE_FILE_ID].allowed).toBe(true);
+    expect(new URL(results[PRIVATE_FILE_ID].url).pathname).toBe(`/assets/${PRIVATE_FILE_ID}/stream`);
+  });
+
   it('rejects a batch over the 100-file cap with 400', async () => {
     const files = Array.from({ length: 101 }, (_v, i) => ({
       fileId: `64c00000000000000000${String(1000 + i)}`,

@@ -1884,7 +1884,22 @@ router.post('/batch-access', authMiddleware, validate({ body: batchAccessSchema 
     // Otherwise our own origin stream URL (never a raw S3 URL); a non-public
     // asset gets a SCOPED media token bound to THIS file id + the authenticated
     // caller, so a token minted for file A can never open file B.
-    const cdnUrl = await assetService.getFileUrl(fileId, variant, expiry, file);
+    //
+    // Resolving the CDN URL can trigger on-demand variant generation, which
+    // downloads the original object from S3. A missing/misplaced S3 object
+    // throws (NoSuchKey) — that must NOT reject the whole batch (the caller is
+    // allowed to see this file). Fall back to the origin stream URL, whose
+    // route serves the bytes or a placeholder rendition for a missing object.
+    let cdnUrl: string | null = null;
+    try {
+      cdnUrl = await assetService.getFileUrl(fileId, variant, expiry, file);
+    } catch (error) {
+      logger.warn('batch-access: CDN resolution failed; falling back to origin stream URL', {
+        fileId,
+        variant,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     const mediaToken = cdnUrl || file.visibility === 'public' || !user?._id
       ? undefined
       : signMediaToken(fileId, user._id);
