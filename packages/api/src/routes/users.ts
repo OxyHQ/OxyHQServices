@@ -81,7 +81,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 import { PAGINATION } from '../utils/constants';
 import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
-import { isDiscoverableUser } from '../utils/profileQuery';
+import { isPublicGraphTarget } from '../utils/profileQuery';
 
 // Initialize router and controller
 const router = Router();
@@ -96,10 +96,10 @@ const usersController = new UsersController();
  * Accepts both ObjectId strings and publicKey strings
  * Stores the resolved ObjectId back in req.params.userId
  */
-/** 404 when the target user is archived or restricted — same gate as GET /users/:userId. */
+/** 404 when the target user is archived, restricted, or private — same gate as /similar. */
 async function assertDiscoverableTargetUser(userId: string): Promise<void> {
   const user = await userService.getUserById(userId);
-  if (!isDiscoverableUser(user)) {
+  if (!isPublicGraphTarget(user)) {
     throw new NotFoundError('User not found');
   }
 }

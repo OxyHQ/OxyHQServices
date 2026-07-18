@@ -31,7 +31,7 @@ export const peopleSearchMongoMatch = {
 
 /**
  * Whether a hydrated user document may appear on people-discovery surfaces
- * (search, profiles, graph seeds, ActivityPub actor lookup, etc.).
+ * (ActivityPub actor lookup, profile shells, etc.).
  */
 export function isDiscoverableUser(
   user: { accountStatus?: string; reputationTier?: string } | null | undefined,
@@ -41,6 +41,24 @@ export function isDiscoverableUser(
     user.accountStatus !== 'archived' &&
     user.reputationTier !== 'restricted'
   );
+}
+
+/**
+ * Whether a user may seed or expose a social-graph discovery surface
+ * (`GET /users/:userId/{followers,following,mutuals}`, `/profiles/:userId/similar`).
+ * Extends {@link isDiscoverableUser} with the private-account opt-out.
+ */
+export function isPublicGraphTarget(
+  user:
+    | {
+        accountStatus?: string;
+        reputationTier?: string;
+        privacySettings?: { isPrivateAccount?: boolean };
+      }
+    | null
+    | undefined,
+): boolean {
+  return isDiscoverableUser(user) && user?.privacySettings?.isPrivateAccount !== true;
 }
 
 /**

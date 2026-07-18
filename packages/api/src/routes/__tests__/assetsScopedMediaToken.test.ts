@@ -273,6 +273,25 @@ describe('GET /assets/:id/url — scoped media token minting', () => {
     // No token is minted on the denial path.
     expect(res.body).not.toContain('mt=');
   });
+
+  it('does not 500 when CDN resolution throws — falls back to the origin stream URL', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: PUBLIC_FILE_ID,
+      visibility: 'public',
+      storageKey: 'public/content/2026/06/aa/pub.png',
+      variants: [],
+    });
+    mockGetFileUrl.mockRejectedValue(
+      new Error('Failed to download buffer from S3: NoSuchKey: The specified key does not exist.'),
+    );
+
+    const res = await request(server, `/assets/${PUBLIC_FILE_ID}/url`);
+    expect(res.status).toBe(200);
+
+    const { url } = JSON.parse(res.body).data;
+    expect(new URL(url).pathname).toBe(`/assets/${PUBLIC_FILE_ID}/stream`);
+    expect(url).not.toContain('cloud.oxy.so');
+  });
 });
 
 describe('GET /assets/:id/stream — scoped media token acceptance', () => {

@@ -1374,7 +1374,16 @@ router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: 
   // which can carry neither a bearer nor a cookie — renders for this authorized
   // viewer. Public-but-not-yet-CDN-prefixed assets are readable anonymously, so
   // they get no token.
-  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  let cdnUrl: string | null = null;
+  try {
+    cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  } catch (error) {
+    logger.warn('asset URL: CDN resolution failed; falling back to origin stream URL', {
+      fileId,
+      variant: variantType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const mediaToken = cdnUrl || file.visibility === 'public'
     ? undefined
     : signMediaToken(fileId, user._id);
@@ -1698,7 +1707,16 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
   // asset needs a freshly-scoped media token on the redirect target so the
   // follow-up stream request (which also carries no bearer/cookie) renders for
   // this authorized viewer.
-  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  let cdnUrl: string | null = null;
+  try {
+    cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  } catch (error) {
+    logger.warn('asset download: CDN resolution failed; falling back to origin stream URL', {
+      fileId,
+      variant: variantType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const mediaToken = cdnUrl || file.visibility === 'public' || !userId
     ? undefined
     : signMediaToken(fileId, userId);

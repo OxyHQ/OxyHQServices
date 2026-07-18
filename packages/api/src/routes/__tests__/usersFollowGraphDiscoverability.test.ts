@@ -1,8 +1,8 @@
 /**
  * GET /users/:userId/{followers,following,mutuals} — discoverability gate.
  *
- * Archived and restricted-tier targets must 404 on the social-graph endpoints,
- * matching GET /users/:userId.
+ * Archived, restricted-tier, and private-account targets must 404 on the
+ * social-graph endpoints, matching GET /profiles/:userId/similar.
  */
 
 import express from 'express';
@@ -152,6 +152,21 @@ describe.each([
     const res = await getJson(server, `/users/${TARGET}${suffix}`);
 
     expect(res.status).toBe(404);
+    expect(graphMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for a private-account target', async () => {
+    mockGetUserById.mockResolvedValueOnce({
+      _id: TARGET,
+      accountStatus: 'active',
+      reputationTier: 'trusted',
+      privacySettings: { isPrivateAccount: true },
+    });
+
+    const res = await getJson(server, `/users/${TARGET}${suffix}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toMatch(/not found/i);
     expect(graphMock).not.toHaveBeenCalled();
   });
 });

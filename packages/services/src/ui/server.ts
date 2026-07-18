@@ -21,7 +21,7 @@ export const LogoText = noopComponent;
 export const FollowButton = noopComponent;
 export const OxyPayButton = noopComponent;
 export const FontLoader = noopComponent;
-export const setupFonts = () => {};
+export const setupFonts = async (): Promise<boolean> => true;
 
 // Context
 export const useOxy = noopHook;

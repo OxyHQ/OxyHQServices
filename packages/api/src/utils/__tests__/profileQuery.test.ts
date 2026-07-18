@@ -1,4 +1,4 @@
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser, isFederatableUser } from '../profileQuery';
+import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser, isFederatableUser, isPublicGraphTarget } from '../profileQuery';
 
 describe('eligibleUserMatch', () => {
   const minResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
@@ -51,6 +51,27 @@ describe('isDiscoverableUser', () => {
 
   it('rejects restricted-tier accounts', () => {
     expect(isDiscoverableUser({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
+  });
+});
+
+describe('isPublicGraphTarget', () => {
+  it('accepts discoverable users without a private-account flag', () => {
+    expect(isPublicGraphTarget({ accountStatus: 'active', reputationTier: 'trusted' })).toBe(true);
+  });
+
+  it('rejects private accounts', () => {
+    expect(
+      isPublicGraphTarget({
+        accountStatus: 'active',
+        reputationTier: 'trusted',
+        privacySettings: { isPrivateAccount: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects archived and restricted users', () => {
+    expect(isPublicGraphTarget({ accountStatus: 'archived' })).toBe(false);
+    expect(isPublicGraphTarget({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
   });
 });
 

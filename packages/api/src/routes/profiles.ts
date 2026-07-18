@@ -32,7 +32,7 @@ import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifie
 import {
   eligibleUserMatch,
   FEDERATED_RECOMMENDATION_MAX_AGE_MS,
-  isDiscoverableUser,
+  isPublicGraphTarget,
   peopleSearchMongoMatch,
 } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
@@ -708,10 +708,7 @@ router.get(
     // Same target gate as GET /users/:userId/{followers,following,mutuals}:
     // archived/restricted/private accounts must not seed a discovery surface.
     const targetUser = await userService.getUserById(targetUserId);
-    if (
-      !isDiscoverableUser(targetUser) ||
-      targetUser?.privacySettings?.isPrivateAccount === true
-    ) {
+    if (!isPublicGraphTarget(targetUser)) {
       throw new NotFoundError('User not found');
     }
 
