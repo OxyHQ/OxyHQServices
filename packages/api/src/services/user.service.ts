@@ -52,6 +52,7 @@ import {
   MAX_BLOCKED_IDS,
 } from '../utils/recommendationWeights';
 import graphCache from '../utils/graphCache';
+import blockCache, { restrictCache } from '../utils/blockCache';
 import { discoverableUserMongoMatch } from '../utils/profileQuery';
 
 interface UserWithCount {
@@ -1560,7 +1561,8 @@ export class UserService {
    *  3. Decrement counterparties' denormalized `_count` (same semantics as
    *     `unfollowUser`).
    *  4. Delete `Block` and `Restricted` rows in either direction.
-   *  5. Invalidate this user's cache and every counterparty's graph cache.
+   *  5. Invalidate block/restrict verdict caches for this user.
+   *  6. Invalidate this user's cache and every counterparty's graph cache.
    */
   async purgeUserSocialGraph(
     userId: string
@@ -1618,6 +1620,8 @@ export class UserService {
       }),
     ]);
 
+    blockCache.invalidateUser(userId);
+    restrictCache.invalidateUser(userId);
     userCache.invalidate(userId);
     const graphIdsToInvalidate = new Set<string>([
       userId,

@@ -83,9 +83,8 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp is not too old
-    const now = Date.now();
-    if (now - timestamp > CHALLENGE_TTL_MS) {
+    const age = Date.now() - timestamp;
+    if (age > CHALLENGE_TTL_MS || age < 0) {
       return false;
     }
 
@@ -103,9 +102,8 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    const age = Date.now() - timestamp;
+    if (age > MAX_SIGNATURE_AGE_MS || age < 0) {
       return false;
     }
 
@@ -123,9 +121,8 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    const age = Date.now() - timestamp;
+    if (age > MAX_SIGNATURE_AGE_MS || age < 0) {
       return false;
     }
 
