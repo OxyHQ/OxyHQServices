@@ -51,11 +51,14 @@ export const OWN_FEDERATION_DOMAINS: ReadonlySet<string> = new Set(
 
 /**
  * True when `domain` is one of Oxy's own federation domains (case-insensitive).
+ * Strips a leading `www.` so `www.oxy.so` matches the apex entry.
  * Callers short-circuit resolution for own-domain handles (return null / reject
  * 400) so they never mint a `type:'federated'` shadow row.
  */
 export function isOwnFederationDomain(domain: string): boolean {
-  return OWN_FEDERATION_DOMAINS.has(domain.trim().toLowerCase());
+  const normalized = domain.trim().toLowerCase();
+  const canonical = normalized.startsWith('www.') ? normalized.slice(4) : normalized;
+  return OWN_FEDERATION_DOMAINS.has(canonical);
 }
 
 /**

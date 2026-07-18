@@ -22,7 +22,6 @@ export type AttestErrorCode =
   | 'pair_cooldown'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
-  | 'excluded_shared_ip'
   | 'self_attestation'
   | 'bad_signature'
   | 'subject_not_found'
@@ -38,7 +37,6 @@ export type VouchErrorCode =
   | 'voucher_below_threshold'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
-  | 'excluded_shared_ip'
   | 'subject_not_found'
   | 'generic';
 
@@ -82,7 +80,6 @@ const ATTEST_REASONS: readonly Exclude<AttestErrorCode, 'generic' | 'subject_not
   'pair_cooldown',
   'excluded_graph_neighbor',
   'excluded_shared_device',
-  'excluded_shared_ip',
   'self_attestation',
   'bad_signature',
 ];
@@ -98,7 +95,6 @@ const VOUCH_REASONS: readonly Exclude<VouchErrorCode, 'generic' | 'subject_not_f
   'already_vouched',
   'excluded_graph_neighbor',
   'excluded_shared_device',
-  'excluded_shared_ip',
 ];
 
 function messageOf(error: unknown): string {

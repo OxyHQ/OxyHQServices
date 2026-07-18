@@ -643,14 +643,20 @@ app.get('/.well-known/nodeinfo', (_req: any, res: Response) => {
   });
 });
 
-app.get('/nodeinfo/2.0', (_req: any, res: Response) => {
-  res.json({
-    version: '2.0',
-    software: { name: 'oxy', version: '2.0.0' },
-    protocols: ['activitypub'],
-    usage: { users: { total: 1, activeMonth: 1, activeHalfyear: 1 }, localPosts: 0 },
-    openRegistrations: false,
-  });
+app.get('/nodeinfo/2.0', async (_req: any, res: Response) => {
+  try {
+    const total = await User.countDocuments({ accountStatus: { $ne: 'archived' } });
+    res.json({
+      version: '2.0',
+      software: { name: 'oxy', version: '2.0.0' },
+      protocols: ['activitypub'],
+      usage: { users: { total, activeMonth: total, activeHalfyear: total }, localPosts: 0 },
+      openRegistrations: false,
+    });
+  } catch (err) {
+    logger.error({ err }, 'NodeInfo 2.0 failed');
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // WebFinger endpoint

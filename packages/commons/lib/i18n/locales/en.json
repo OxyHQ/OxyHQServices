@@ -1405,7 +1405,6 @@
         "pair_cooldown": "You've already confirmed this person recently. Try again later.",
         "excluded_graph_neighbor": "You're too closely connected to confirm this person.",
         "excluded_shared_device": "This phone is tied to their account, so it can't confirm them.",
-        "excluded_shared_ip": "Both phones are on the same network — for anti-fraud, a confirmation needs the two phones on different networks (e.g. put this one on mobile data).",
         "self_attestation": "You can't confirm your own identity. Sign in with a different account to confirm someone else.",
         "bad_signature": "Your identity key couldn't be verified. Open Commons and finish setting up your identity, then try again.",
         "subject_not_found": "We couldn't find that person's identity.",
@@ -1505,7 +1504,6 @@
         "voucher_below_threshold": "Your own trust isn't high enough to vouch yet. Build more reputation first.",
         "excluded_graph_neighbor": "You're too closely connected to vouch for this person.",
         "excluded_shared_device": "This account shares a device with yours, so you can't vouch for it.",
-        "excluded_shared_ip": "This account shares a network with yours, so you can't vouch for it.",
         "subject_not_found": "We couldn't find this person's account.",
         "generic": "We couldn't record your vouch. Please try again."
       }
