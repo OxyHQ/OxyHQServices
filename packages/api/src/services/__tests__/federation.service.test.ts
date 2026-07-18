@@ -107,7 +107,7 @@ jest.mock('@oxyhq/core/server', () => ({
 }));
 
 import { Readable } from 'stream';
-import { federationService } from '../federation.service';
+import { federationService, isOwnFederationDomain } from '../federation.service';
 
 /**
  * Build a fake SafeFetchResult whose `.response` is a real Node Readable stream
@@ -822,5 +822,39 @@ describe('FederationService SSRF guards', () => {
     expect(result).toEqual({ fileId: null, etag: undefined, lastModified: undefined, notModified: false });
     expect(mockSafeFetch).toHaveBeenCalledTimes(1);
     expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('isOwnFederationDomain', () => {
+  it('accepts the apex domain case-insensitively', () => {
+    expect(isOwnFederationDomain('oxy.so')).toBe(true);
+    expect(isOwnFederationDomain('OXY.SO')).toBe(true);
+  });
+
+  it('accepts a leading www. alias of the apex domain', () => {
+    expect(isOwnFederationDomain('www.oxy.so')).toBe(true);
+    expect(isOwnFederationDomain('WWW.OXY.SO')).toBe(true);
+  });
+
+  it('rejects unrelated domains', () => {
+    expect(isOwnFederationDomain('mastodon.social')).toBe(false);
+    expect(isOwnFederationDomain('www.mastodon.social')).toBe(false);
+  });
+});
+
+describe('isOwnFederationDomain', () => {
+  it('accepts the apex domain case-insensitively', () => {
+    expect(isOwnFederationDomain('oxy.so')).toBe(true);
+    expect(isOwnFederationDomain('OXY.SO')).toBe(true);
+  });
+
+  it('accepts a leading www. alias of the apex domain', () => {
+    expect(isOwnFederationDomain('www.oxy.so')).toBe(true);
+    expect(isOwnFederationDomain('WWW.OXY.SO')).toBe(true);
+  });
+
+  it('rejects unrelated domains', () => {
+    expect(isOwnFederationDomain('mastodon.social')).toBe(false);
+    expect(isOwnFederationDomain('www.mastodon.social')).toBe(false);
   });
 });
