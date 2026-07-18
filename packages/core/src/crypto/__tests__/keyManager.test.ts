@@ -24,25 +24,16 @@
 import { setPlatformOS } from '../../utils/platform';
 
 // Mock expo-secure-store BEFORE importing KeyManager so the lazy import
-// inside keyManager picks up our in-memory implementation.
+// inside keyManager picks up our in-memory implementation. The shared mock keys
+// entries by `(keychainService ?? 'default') + ' ' + key` so the v2 slot layout
+// (primary service `oxy_identity`, backup service `oxy_identity_backup`) is
+// modeled faithfully.
 jest.mock(
   'expo-secure-store',
   () => {
-    const store = new Map<string, string>();
-    return {
-      __esModule: true,
-      WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
-      WHEN_UNLOCKED: 'WHEN_UNLOCKED',
-      setItemAsync: jest.fn(async (key: string, value: string) => {
-        store.set(key, value);
-      }),
-      getItemAsync: jest.fn(async (key: string) => store.get(key) ?? null),
-      deleteItemAsync: jest.fn(async (key: string) => {
-        store.delete(key);
-      }),
-      __resetStore__: () => store.clear(),
-      __getStore__: () => store,
-    };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createSecureStoreMock } = require('./identityMocks');
+    return createSecureStoreMock();
   },
   { virtual: true },
 );
@@ -72,33 +63,44 @@ jest.mock(
 // Node's built-in `crypto`, not `expo-*`. For the test suite to exercise the
 // RN code paths, we override only the platform loaders to delegate to the
 // virtual `expo-*` modules registered above, keeping every other protocol
-// export (canonical bytes, signing, the platform predicates) real.
-jest.mock('@oxyhq/protocol', () => ({
-  __esModule: true,
-  ...jest.requireActual('@oxyhq/protocol'),
-  loadExpoCrypto: async () => {
+// export (canonical bytes, signing, the platform predicates) real. AsyncStorage
+// is a real in-memory map so the identity marker + advisory migration flag work.
+jest.mock('@oxyhq/protocol', () => {
+  const actual = jest.requireActual('@oxyhq/protocol');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createAsyncStorageMock } = require('./identityMocks');
+  const asyncStorage = createAsyncStorageMock();
+  return {
+    __esModule: true,
+    ...actual,
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-crypto');
-  },
-  loadSecureStore: async () => {
+    loadExpoCrypto: async () => require('expo-crypto'),
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-secure-store');
-  },
-  loadAsyncStorage: async () => {
-    // Tests don't currently exercise AsyncStorage paths; return a stub
-    // shaped like the real module so accidental calls fail loudly.
-    return { default: { getItem: async () => null, setItem: async () => undefined, removeItem: async () => undefined } };
-  },
-  loadNodeCrypto: async () => {
+    loadSecureStore: async () => require('expo-secure-store'),
+    loadAsyncStorage: async () => ({ default: asyncStorage }),
+    loadSharedIdentityBridge: async () => null,
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('crypto');
-  },
-  getRandomBytesRN: (n: number) => {
+    loadNodeCrypto: async () => require('crypto'),
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const crypto = require('expo-crypto');
-    return crypto.getRandomBytes(n);
-  },
-}));
+    getRandomBytesRN: (n: number) => require('expo-crypto').getRandomBytes(n),
+  };
+});
+
+// v2 slot key names + keychain services (must match keyManager.ts).
+const PRIMARY_SVC = 'oxy_identity';
+const BACKUP_SVC = 'oxy_identity_backup';
+const V2_PRIV = 'oxy_identity_private_key_v2';
+const V2_PUB = 'oxy_identity_public_key_v2';
+const V2_BPRIV = 'oxy_identity_backup_private_key_v2';
+const V2_BPUB = 'oxy_identity_backup_public_key_v2';
+const V2_BTS = 'oxy_identity_backup_timestamp_v2';
+
+interface SecureStoreTestHandle {
+  __resetStore__: () => void;
+  __getRaw__: (key: string, service?: string) => string | null;
+  __setRaw__: (key: string, value: string, service?: string) => void;
+  __deleteRaw__: (key: string, service?: string) => void;
+}
 
 describe('KeyManager safety invariants', () => {
   let KeyManager: typeof import('../keyManager').KeyManager;
@@ -123,13 +125,22 @@ describe('KeyManager safety invariants', () => {
     const km = await import('../keyManager');
     KeyManager = km.KeyManager;
     IdentityAlreadyExistsError = km.IdentityAlreadyExistsError;
-    // Invalidate caches between tests.
-    (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedPublicKey = null;
-    (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedHasIdentity = null;
+    resetCaches();
 
     const rp = await import('../recoveryPhrase');
     RecoveryPhraseService = rp.RecoveryPhraseService;
   });
+
+  const resetCaches = () => {
+    const km = KeyManager as unknown as {
+      cachedPublicKey: unknown;
+      cachedHasIdentity: unknown;
+      cachedPublicKeyResolved: unknown;
+    };
+    km.cachedPublicKey = null;
+    km.cachedHasIdentity = null;
+    km.cachedPublicKeyResolved = false;
+  };
 
   describe('createIdentity', () => {
     it('persists a complete identity with backup on first call', async () => {
@@ -138,14 +149,11 @@ describe('KeyManager safety invariants', () => {
 
       expect(await KeyManager.hasIdentity()).toBe(true);
       expect(await KeyManager.verifyIdentityIntegrity()).toBe(true);
-      // Backup was written as part of the atomic persist
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      const m = store.__getStore__();
-      expect(m.get('oxy_identity_backup_private_key')).toBeTruthy();
-      expect(m.get('oxy_identity_backup_public_key')).toBeTruthy();
-      expect(m.get('oxy_identity_backup_timestamp')).toBeTruthy();
+      // Backup was written to the isolated v2 backup slot as part of the atomic persist
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
+      expect(store.__getRaw__(V2_BPRIV, BACKUP_SVC)).toBeTruthy();
+      expect(store.__getRaw__(V2_BPUB, BACKUP_SVC)).toBeTruthy();
+      expect(store.__getRaw__(V2_BTS, BACKUP_SVC)).toBeTruthy();
     });
 
     it('refuses to overwrite an existing identity without explicit consent', async () => {
@@ -193,27 +201,20 @@ describe('KeyManager safety invariants', () => {
     });
 
     it('returns false when only the private key was written (partial state)', async () => {
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      const m = store.__getStore__();
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
       // Simulate a half-written identity: private without public
-      m.set('oxy_identity_private_key', 'a'.repeat(64));
+      store.__setRaw__(V2_PRIV, 'a'.repeat(64), PRIMARY_SVC);
       // Invalidate cache so the next call re-reads
-      (KeyManager as unknown as { cachedHasIdentity: unknown }).cachedHasIdentity = null;
+      resetCaches();
       expect(await KeyManager.hasIdentity()).toBe(false);
     });
 
     it('returns false when the stored public key does not derive from the private key', async () => {
       await KeyManager.createIdentity();
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      const m = store.__getStore__();
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
       // Tamper with the stored public key
-      m.set('oxy_identity_public_key', '04' + 'b'.repeat(128));
-      (KeyManager as unknown as { cachedHasIdentity: unknown; cachedPublicKey: unknown }).cachedHasIdentity = null;
-      (KeyManager as unknown as { cachedHasIdentity: unknown; cachedPublicKey: unknown }).cachedPublicKey = null;
+      store.__setRaw__(V2_PUB, '04' + 'b'.repeat(128), PRIMARY_SVC);
+      resetCaches();
       expect(await KeyManager.hasIdentity()).toBe(false);
     });
   });
@@ -226,11 +227,9 @@ describe('KeyManager safety invariants', () => {
 
     it('returns false when the stored keys do not match', async () => {
       await KeyManager.createIdentity();
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      store.__getStore__().set('oxy_identity_public_key', '04' + 'c'.repeat(128));
-      (KeyManager as unknown as { cachedPublicKey: unknown }).cachedPublicKey = null;
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
+      store.__setRaw__(V2_PUB, '04' + 'c'.repeat(128), PRIMARY_SVC);
+      resetCaches();
       expect(await KeyManager.verifyIdentityIntegrity()).toBe(false);
     });
   });
@@ -246,40 +245,31 @@ describe('KeyManager safety invariants', () => {
 
     it('refuses to restore if the backup public key does not match a still-present (broken) primary', async () => {
       await KeyManager.createIdentity();
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      const m = store.__getStore__();
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
       // Corrupt the primary public key (so integrity fails), but leave the
       // broken primary in place. The backup will not match.
-      m.set('oxy_identity_public_key', '04' + 'd'.repeat(128));
+      store.__setRaw__(V2_PUB, '04' + 'd'.repeat(128), PRIMARY_SVC);
       // Tamper with the backup too — write a backup from a completely
       // different identity.
       const otherPair = await KeyManager.generateKeyPair();
-      m.set('oxy_identity_backup_private_key', otherPair.privateKey);
-      m.set('oxy_identity_backup_public_key', otherPair.publicKey);
-
-      (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedPublicKey = null;
-      (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedHasIdentity = null;
+      store.__setRaw__(V2_BPRIV, otherPair.privateKey, BACKUP_SVC);
+      store.__setRaw__(V2_BPUB, otherPair.publicKey, BACKUP_SVC);
+      resetCaches();
 
       const restored = await KeyManager.restoreIdentityFromBackup();
       expect(restored).toBe(false);
       // The (corrupted) primary public key should be unchanged, not the
       // attacker-backup public key.
-      expect(m.get('oxy_identity_public_key')).not.toBe(otherPair.publicKey);
+      expect(store.__getRaw__(V2_PUB, PRIMARY_SVC)).not.toBe(otherPair.publicKey);
     });
 
     it('restores a missing primary from a valid backup', async () => {
       const original = await KeyManager.createIdentity();
-      const store = (await import('expo-secure-store' as string)) as unknown as {
-        __getStore__: () => Map<string, string>;
-      };
-      const m = store.__getStore__();
+      const store = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
       // Wipe primary only
-      m.delete('oxy_identity_private_key');
-      m.delete('oxy_identity_public_key');
-      (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedPublicKey = null;
-      (KeyManager as unknown as { cachedPublicKey: unknown; cachedHasIdentity: unknown }).cachedHasIdentity = null;
+      store.__deleteRaw__(V2_PRIV, PRIMARY_SVC);
+      store.__deleteRaw__(V2_PUB, PRIMARY_SVC);
+      resetCaches();
 
       const restored = await KeyManager.restoreIdentityFromBackup();
       expect(restored).toBe(true);

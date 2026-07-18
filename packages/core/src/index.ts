@@ -245,8 +245,14 @@ export {
     KeyManager,
     IdentityAlreadyExistsError,
     IdentityPersistError,
+    IdentityUnavailableError,
 } from './crypto/keyManager';
-export type { KeyPair } from './crypto/keyManager';
+export type { KeyPair, IdentityStatus, IdentityRecoveryResult } from './crypto/keyManager';
+export {
+    readIdentityMarker,
+    updateIdentityMarker,
+} from './crypto/identityMarker';
+export type { IdentityMarker } from './crypto/identityMarker';
 export { SignatureService } from './crypto/signatureService';
 export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
