@@ -681,6 +681,7 @@
         "@biomejs/biome": "^1.9.4",
         "@commitlint/cli": "^17.6.5",
         "@commitlint/config-conventional": "^17.6.5",
+        "@expo/vector-icons": "^15.0.3",
         "@oxyhq/core": "workspace:*",
         "@react-native-async-storage/async-storage": "^2.0.0",
         "@react-native-community/netinfo": "^11.4.1",
@@ -753,7 +754,6 @@
         "zustand": "^5.0.0",
       },
       "optionalPeers": [
-        "@expo/vector-icons",
         "@tanstack/query-sync-storage-persister",
         "@types/react",
         "@types/react-native",
@@ -765,7 +765,6 @@
         "expo-modules-core",
         "nativewind",
         "react-native-keyboard-controller",
-        "react-native-qrcode-svg",
       ],
     },
     "packages/ship": {

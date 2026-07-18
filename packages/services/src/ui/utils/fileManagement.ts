@@ -1,5 +1,7 @@
+import type { Ionicons } from '@expo/vector-icons';
 import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
+import type { ComponentProps } from 'react';
 import { Platform } from 'react-native';
 import { toast } from '@oxyhq/bloom';
 import type { RouteName } from '../navigation/routes';
@@ -54,7 +56,7 @@ export function formatFileSize(bytes: number): string {
 /**
  * Get icon name for file based on content type
  */
-export function getFileIcon(contentType: string): string {
+export function getFileIcon(contentType: string): ComponentProps<typeof Ionicons>['name'] {
     if (contentType.startsWith('image/')) return 'image';
     if (contentType.startsWith('video/')) return 'videocam';
     if (contentType.startsWith('audio/')) return 'musical-notes';

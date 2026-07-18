@@ -70,7 +70,7 @@ const UploadPreviewContent: React.FC<{
                             ) : (
                                 <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: colors.backgroundSecondary }]}>
                                     <Ionicons
-                                        name={getFileIcon(pendingFile.type) as React.ComponentProps<typeof Ionicons>['name']}
+                                        name={getFileIcon(pendingFile.type)}
                                         size={32}
                                         color={colors.primary}
                                     />

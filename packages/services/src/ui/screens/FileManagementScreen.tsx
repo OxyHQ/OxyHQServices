@@ -919,7 +919,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     style={[fileManagementStyles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
                                 >
                                     <Ionicons
-                                        name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
+                                        name={getFileIcon(file.contentType)}
                                         size={32}
                                         color={colors.primary}
                                     />
@@ -934,7 +934,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         ) : (
                             <View style={fileManagementStyles.fileIconContainer}>
                                 <Ionicons
-                                    name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
+                                    name={getFileIcon(file.contentType)}
                                     size={32}
                                     color={colors.primary}
                                 />
