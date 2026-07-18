@@ -12,6 +12,7 @@ import {
     Animated,
     Easing,
     AccessibilityInfo,
+    Platform,
     useWindowDimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
@@ -1184,7 +1185,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     toValue: 1,
                     duration: 2000,
                     easing: Easing.linear,
-                    useNativeDriver: true,
+                    // Web has no native animated module; forcing the native
+                    // driver there warns and falls back to JS. The shimmer only
+                    // drives a transform, so JS-driving it on web is fine.
+                    useNativeDriver: Platform.OS !== 'web',
                 })
             );
             shimmer.start();

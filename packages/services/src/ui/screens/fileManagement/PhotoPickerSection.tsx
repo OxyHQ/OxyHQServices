@@ -252,7 +252,10 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
         </>
     );
 
-    if (reduceMotion) {
+    // Reanimated layout `entering` animations don't load on web (no worklets
+    // babel plugin in the RN-Web build) — they warn and no-op. So on web (and
+    // when reduce-motion is set) render the plain cell with no entering stagger.
+    if (reduceMotion || Platform.OS === 'web') {
         return (
             <TouchableOpacity
                 activeOpacity={0.85}
