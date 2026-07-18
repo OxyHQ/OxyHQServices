@@ -1455,6 +1455,10 @@ router.delete(
     await sessionService.deactivateAllUserSessions(userId);
     await deviceSessionService.purgeAccountFromAllDevices(userId);
 
+    // Remove follow edges, blocks, restrictions, and repair counterparty counts
+    // before deleting the user document (mirrors federation actor-delete).
+    await userService.purgeUserSocialGraph(userId);
+
     // Delete the user account
     await User.findByIdAndDelete(userId);
 

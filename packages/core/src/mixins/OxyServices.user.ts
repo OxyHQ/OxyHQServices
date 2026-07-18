@@ -606,6 +606,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const result = await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
+        this.clearCacheByPrefix('GET:/session/user/');
+        this.clearCacheByPrefix('GET:/users/me');
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheEntry(`GET:/users/${id}`);
         this.clearCacheEntry(`GET:/privacy/${id}/privacy`);
         return result;
       } catch (error) {

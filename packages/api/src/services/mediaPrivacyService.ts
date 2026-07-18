@@ -5,7 +5,7 @@ import Restricted from '../models/Restricted';
 import { logger } from '../utils/logger';
 import type { MediaAccessContext, MediaAccessResult } from '../types/mediaPrivacy.types';
 import mongoose from 'mongoose';
-import blockCache from '../utils/blockCache';
+import blockCache, { restrictCache } from '../utils/blockCache';
 import userCache from '../utils/userCache';
 
 export class MediaPrivacyService {
@@ -40,6 +40,11 @@ export class MediaPrivacyService {
         const isBlocked = await this.isUserBlocked(ownerId, viewerUserId);
         if (isBlocked) {
           return { allowed: false, reason: 'blocked' };
+        }
+
+        const isRestricted = await this.isUserRestricted(ownerId, viewerUserId);
+        if (isRestricted) {
+          return { allowed: false, reason: 'restricted' };
         }
       }
 
@@ -108,6 +113,31 @@ export class MediaPrivacyService {
     const isBlocked = !!(block || reverseBlock);
     blockCache.set(ownerId, viewerId, isBlocked);
     return isBlocked;
+  }
+
+  /**
+   * Restrict is asymmetric: when the media owner has restricted the viewer,
+   * the viewer cannot access the owner's media (unlike block, which is mutual).
+   */
+  private async isUserRestricted(ownerId: string, viewerId: string): Promise<boolean> {
+    const objectIdRegex = /^[0-9a-f]{24}$/i;
+    if (!objectIdRegex.test(ownerId) || !objectIdRegex.test(viewerId)) {
+      return false;
+    }
+
+    const cached = restrictCache.get(ownerId, viewerId);
+    if (cached !== null) {
+      return cached;
+    }
+
+    const restriction = await Restricted.findOne({
+      userId: ownerId,
+      restrictedId: viewerId,
+    }).lean();
+
+    const isRestricted = !!restriction;
+    restrictCache.set(ownerId, viewerId, isRestricted);
+    return isRestricted;
   }
 
   /**

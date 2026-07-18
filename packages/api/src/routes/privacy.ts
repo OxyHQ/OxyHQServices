@@ -8,7 +8,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
-import blockCache from '../utils/blockCache';
+import blockCache, { restrictCache } from '../utils/blockCache';
 import graphCache from '../utils/graphCache';
 import { validate } from '../middleware/validate';
 import { privacyUserIdParams, targetIdParams, privacySettingsSchema } from '../schemas/privacy.schemas';
@@ -144,6 +144,10 @@ const createUserActionHandler = <T extends Document>(
         graphCache.invalidate(authUser.id),
         graphCache.invalidate(targetId),
       ]);
+    } else if (fieldName === 'restrictedId') {
+      // Restrict is asymmetric: only the restricter's media is hidden from the
+      // restricted user, so bust the single (owner, viewer) cache key.
+      restrictCache.invalidate(authUser.id, targetId);
     }
 
     res.json({ message: `User ${actionName === 'block' ? 'blocked' : 'restricted'} successfully` });
@@ -185,6 +189,8 @@ const createUserRemoveHandler = <T extends Document>(
         graphCache.invalidate(authUser.id),
         graphCache.invalidate(targetId),
       ]);
+    } else if (fieldName === 'restrictedId') {
+      restrictCache.invalidate(authUser.id, targetId);
     }
 
     res.json({ message: `User ${actionName === 'unblock' ? 'unblocked' : 'unrestricted'} successfully` });

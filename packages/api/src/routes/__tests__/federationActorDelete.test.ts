@@ -203,6 +203,10 @@ const mockBlockDeleteMany = jest.fn(
   }
 );
 
+const mockRestrictedDeleteMany = jest.fn(
+  async (): Promise<{ deletedCount: number }> => ({ deletedCount: 0 })
+);
+
 const mockUserCacheInvalidate = jest.fn();
 const mockGraphCacheInvalidate = jest.fn(() => Promise.resolve());
 
@@ -229,6 +233,12 @@ jest.mock('../../models/Block', () => ({
   default: {
     deleteMany: (...args: [{ $or?: Array<Record<string, unknown>> }]) =>
       mockBlockDeleteMany(...args),
+  },
+}));
+jest.mock('../../models/Restricted', () => ({
+  __esModule: true,
+  default: {
+    deleteMany: (...args: unknown[]) => mockRestrictedDeleteMany(...args),
   },
 }));
 jest.mock('../../utils/userCache', () => ({

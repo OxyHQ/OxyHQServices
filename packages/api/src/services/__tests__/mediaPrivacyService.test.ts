@@ -1,4 +1,5 @@
 const mockBlockFindOne = jest.fn();
+const mockRestrictedFindOne = jest.fn();
 
 jest.mock('../../models/Block', () => ({
   __esModule: true,
@@ -15,7 +16,9 @@ jest.mock('../../models/User', () => ({
 
 jest.mock('../../models/Restricted', () => ({
   __esModule: true,
-  default: {},
+  default: {
+    findOne: (...args: unknown[]) => mockRestrictedFindOne(...args),
+  },
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -27,6 +30,10 @@ jest.mock('../../utils/logger', () => ({
 jest.mock('../../utils/blockCache', () => ({
   __esModule: true,
   default: {
+    get: jest.fn(() => null),
+    set: jest.fn(),
+  },
+  restrictCache: {
     get: jest.fn(() => null),
     set: jest.fn(),
   },
@@ -56,6 +63,7 @@ describe('MediaPrivacyService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockBlockFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    mockRestrictedFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
   });
 
   it('denies authenticated blocked viewers before allowing public files without context', async () => {
@@ -73,6 +81,42 @@ describe('MediaPrivacyService', () => {
 
     expect(result).toEqual({ allowed: false, reason: 'blocked' });
     expect(mockBlockFindOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('denies authenticated restricted viewers before allowing public files without context', async () => {
+    const ownerId = '0123456789abcdef01234567';
+    const viewerId = 'fedcba987654321001234567';
+    mockRestrictedFindOne.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValue({ userId: ownerId, restrictedId: viewerId }),
+    });
+
+    const result = await new MediaPrivacyService().checkMediaAccess(
+      createFile(ownerId),
+      viewerId
+    );
+
+    expect(result).toEqual({ allowed: false, reason: 'restricted' });
+    expect(mockRestrictedFindOne).toHaveBeenCalledWith({
+      userId: ownerId,
+      restrictedId: viewerId,
+    });
+    expect(mockBlockFindOne).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not deny viewers the owner has not restricted (asymmetric)', async () => {
+    const ownerId = '0123456789abcdef01234567';
+    const viewerId = 'fedcba987654321001234567';
+
+    const result = await new MediaPrivacyService().checkMediaAccess(
+      createFile(ownerId),
+      viewerId
+    );
+
+    expect(result).toEqual({ allowed: true, isPublic: true });
+    expect(mockRestrictedFindOne).toHaveBeenCalledWith({
+      userId: ownerId,
+      restrictedId: viewerId,
+    });
   });
 
   it('still allows unauthenticated public files without context without querying blocks', async () => {

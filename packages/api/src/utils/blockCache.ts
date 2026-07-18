@@ -151,5 +151,7 @@ class BlockCache {
 }
 
 const blockCache = new BlockCache();
+const restrictCache = new BlockCache();
+export { restrictCache };
 export default blockCache;
 
