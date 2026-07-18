@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, type LayoutChangeEvent } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
-// Using plain React Native styles (nativewind not installed in this repo)
 
 export interface JustifiedPhotoGridProps {
     photos: FileMetadata[];

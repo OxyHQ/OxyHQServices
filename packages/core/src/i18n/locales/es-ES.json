@@ -1449,6 +1449,13 @@
       "emptyTitle": "Aún no hay fotos",
       "emptySubtitle": "Sube desde tu dispositivo para empezar"
     },
+    "details": {
+      "title": "Detalles del archivo",
+      "download": "Descargar",
+      "type": "Tipo",
+      "uploaded": "Subido",
+      "description": "Descripción"
+    },
     "a11y": {
       "viewAll": "Mostrar todos los archivos",
       "viewPhotos": "Mostrar solo fotos",

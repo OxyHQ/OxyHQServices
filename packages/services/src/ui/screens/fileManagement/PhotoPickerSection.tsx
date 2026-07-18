@@ -352,6 +352,8 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     // Only mount the grid once a real container width is known, so columns /
     // tile size derive from the sheet width instead of a placeholder.
     const gridReady = gridWidth > 0 && cellSize > 0;
+    const atSelectionLimit =
+        multiSelect && maxSelection != null && selectedIds.size >= maxSelection;
 
     const handleCellPress = useCallback(
         (photo: FileMetadata) => {
@@ -405,7 +407,11 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                     marginBottom={gutter}
                     isSelected={isSelected}
                     selectionIndex={selIndex}
-                    dim={multiSelect && hasAnySelection && !isSelected}
+                    dim={
+                        multiSelect
+                        && !isSelected
+                        && (hasAnySelection || atSelectionLimit)
+                    }
                     primaryColor={primaryColor}
                     thumbUrl={getThumbUrl(item)}
                     enterIndex={index}
@@ -418,7 +424,8 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
         },
         [
             selectedIds, selectionOrder, columns, cellSize, gutter, multiSelect, hasAnySelection,
-            primaryColor, getThumbUrl, reduceMotion, handleCellPress, handleCellLongPress, t,
+            atSelectionLimit, primaryColor, getThumbUrl, reduceMotion, handleCellPress,
+            handleCellLongPress, t,
         ],
     );
 
@@ -487,8 +494,14 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             </TouchableOpacity>
                         )}
                     </View>
+                ) : !gridReady ? (
+                    <View className="flex-1 items-center justify-center pt-[88px]">
+                        <ActivityIndicator size="large" color="#FFFFFF" />
+                        <Text className="text-white text-[14px] mt-space-12 opacity-70">
+                            {t('fileManagement.loadingPhotoLayout')}
+                        </Text>
+                    </View>
                 ) : (
-                    gridReady && (
                         <FlatList
                             key={`cols-${columns}`}
                             data={photos}
@@ -514,7 +527,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             initialNumToRender={Math.max(12, columns * 6)}
                             windowSize={9}
                         />
-                    )
                 )}
 
                 {/* Translucent black header. The bottom sheet already sits below

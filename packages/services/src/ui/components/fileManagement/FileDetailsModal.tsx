@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { FileMetadata } from '@oxyhq/core';
+import { useI18n } from '../../hooks/useI18n';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 
 interface FileDetailsModalProps {
@@ -23,6 +24,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
     isOwner,
     onClose,
 }) => {
+    const { t } = useI18n();
     const { colors } = useTheme();
 
     if (!file) return null;
@@ -30,29 +32,29 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
     const actions = isOwner
         ? [
               {
-                  label: 'Download',
+                  label: t('fileManagement.details.download'),
                   onPress: () => onDownload(file.id, file.filename),
               },
               {
-                  label: 'Delete',
+                  label: t('common.actions.delete'),
                   color: 'destructive' as const,
                   onPress: () => onDelete(file.id, file.filename),
               },
-              { label: 'Cancel', color: 'cancel' as const },
+              { label: t('common.cancel'), color: 'cancel' as const },
           ]
         : [
               {
-                  label: 'Download',
+                  label: t('fileManagement.details.download'),
                   onPress: () => onDownload(file.id, file.filename),
               },
-              { label: 'Cancel', color: 'cancel' as const },
+              { label: t('common.cancel'), color: 'cancel' as const },
           ];
 
     return (
         <Dialog
             control={control}
             onClose={onClose}
-            label="File Details"
+            label={t('fileManagement.details.title')}
             actions={actions}
         >
             <View className="bg-secondary border-border p-[18px] rounded-[14px] border items-center">
@@ -71,7 +73,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
                 <View className="w-full mb-space-32">
                     <View className="flex-row justify-between items-start mb-space-12 flex-wrap">
                         <Text className="text-text-secondary text-[16px] font-medium flex-1 min-w-[100px]">
-                            Size:
+                            {t('fileManagement.size')}:
                         </Text>
                         <Text className="text-text text-[16px] flex-[2] text-right">
                             {formatFileSize(file.length)}
@@ -80,7 +82,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
 
                     <View className="flex-row justify-between items-start mb-space-12 flex-wrap">
                         <Text className="text-text-secondary text-[16px] font-medium flex-1 min-w-[100px]">
-                            Type:
+                            {t('fileManagement.details.type')}:
                         </Text>
                         <Text className="text-text text-[16px] flex-[2] text-right">
                             {file.contentType}
@@ -89,7 +91,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
 
                     <View className="flex-row justify-between items-start mb-space-12 flex-wrap">
                         <Text className="text-text-secondary text-[16px] font-medium flex-1 min-w-[100px]">
-                            Uploaded:
+                            {t('fileManagement.details.uploaded')}:
                         </Text>
                         <Text className="text-text text-[16px] flex-[2] text-right">
                             {new Date(file.uploadDate).toLocaleString()}
@@ -99,7 +101,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
                     {file.metadata?.description && (
                         <View className="flex-row justify-between items-start mb-space-12 flex-wrap">
                             <Text className="text-text-secondary text-[16px] font-medium flex-1 min-w-[100px]">
-                                Description:
+                                {t('fileManagement.details.description')}:
                             </Text>
                             <Text className="text-text text-[16px] flex-[2] text-right">
                                 {file.metadata.description}
