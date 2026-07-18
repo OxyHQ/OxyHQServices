@@ -29,6 +29,9 @@
  *     marked stale — it is already managed).
  *   - Nested objects (`name`, `_count`, `relationship`) merge field-by-field, so
  *     a partial `name`/`_count`/`relationship` never replaces a fuller one.
+ *   - `relationship` is written ONLY under the viewer-scoped by-username key —
+ *     the viewer-independent by-id key never stores it (prevents one viewer's
+ *     follow state from leaking into every other viewer's identity cache).
  *   - Anti-degradation: a good `username` / `name.displayName` / `avatar` is
  *     never overwritten by a degraded/empty one (empty username, the
  *     `'Unknown user'` ghost-author sentinel, `null` avatar).
@@ -184,8 +187,17 @@ function mergeRelationship(
 /**
  * Merge a (normalized) incoming user over an existing cache entry: keep every
  * existing field, override only with the meaningful fields of `incoming`.
+ *
+ * When `includeRelationship` is false (the viewer-independent by-id key), the
+ * viewer-relative `relationship` field is never read, written, or preserved —
+ * only the by-username key carries it (`useUserByUsername`).
  */
-function mergeUsers(existing: CachedUser, incoming: CachedUser): CachedUser {
+function mergeUsers(
+  existing: CachedUser,
+  incoming: CachedUser,
+  options?: { includeRelationship?: boolean },
+): CachedUser {
+  const includeRelationship = options?.includeRelationship ?? true;
   const merged: CachedUser = { ...existing };
   for (const [key, value] of Object.entries(incoming)) {
     if (key === 'name' || key === '_count' || key === 'relationship') continue;
@@ -199,8 +211,12 @@ function mergeUsers(existing: CachedUser, incoming: CachedUser): CachedUser {
   if (name !== undefined) merged.name = name;
   const count = mergeCount(existing._count, incoming._count);
   if (count !== undefined) merged._count = count;
-  const relationship = mergeRelationship(existing.relationship, incoming.relationship);
-  if (relationship !== undefined) merged.relationship = relationship;
+  if (includeRelationship) {
+    const relationship = mergeRelationship(existing.relationship, incoming.relationship);
+    if (relationship !== undefined) merged.relationship = relationship;
+  } else {
+    delete merged.relationship;
+  }
   return merged;
 }
 
@@ -209,17 +225,20 @@ function upsertOneKey(
   queryClient: QueryClient,
   key: readonly unknown[],
   incoming: CachedUser,
+  options: { includeRelationship: boolean },
 ): void {
+  const mergeOpts = { includeRelationship: options.includeRelationship };
   const existing = queryClient.getQueryData<CacheableUser>(key);
   if (existing === undefined) {
     // Cold slot: seed the full incoming object, STALE, so react-query refetches
     // the full authoritative profile (relationship, counts, createdAt, …).
-    queryClient.setQueryData<CachedUser>(key, incoming, { updatedAt: 0 });
+    const seeded = mergeUsers({ id: incoming.id }, incoming, mergeOpts);
+    queryClient.setQueryData<CachedUser>(key, seeded, { updatedAt: 0 });
     return;
   }
   // Existing entry: merge and leave its freshness lifecycle untouched. The
   // existing entry is keyed by `incoming.id`, so use it as the fallback id.
-  const merged = mergeUsers(toCachedUser(existing, incoming.id), incoming);
+  const merged = mergeUsers(toCachedUser(existing, incoming.id), incoming, mergeOpts);
   const dataUpdatedAt = queryClient.getQueryState(key)?.dataUpdatedAt ?? 0;
   queryClient.setQueryData<CachedUser>(key, merged, { updatedAt: dataUpdatedAt });
 }
@@ -253,8 +272,12 @@ export function upsertCachedUser(
   const incoming = normalizeIncoming(user);
   if (!incoming) return;
 
-  // By-id identity entry (read by `useUserById`). Not viewer-scoped.
-  upsertOneKey(queryClient, queryKeys.users.detail(incoming.id), incoming);
+  // By-id identity entry (read by `useUserById`). Not viewer-scoped — never store
+  // the viewer-relative `relationship` here or one viewer's follow state leaks
+  // into every other viewer's by-id cache entry.
+  upsertOneKey(queryClient, queryKeys.users.detail(incoming.id), incoming, {
+    includeRelationship: false,
+  });
 
   const username = incoming.username;
   if (typeof username === 'string' && username.trim() !== '') {
@@ -263,7 +286,7 @@ export function upsertCachedUser(
     // the key through the SAME helper the hook uses so username normalization
     // (`trim().toLowerCase()`) matches byte-for-byte.
     const key = queryKeys.users.byUsername(username, resolveViewerId(viewerId));
-    upsertOneKey(queryClient, key, incoming);
+    upsertOneKey(queryClient, key, incoming, { includeRelationship: true });
   }
 }
 

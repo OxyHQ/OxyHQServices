@@ -268,6 +268,35 @@ describe('upsertCachedUser — keys & viewer scoping', () => {
     expect(readByUsername(qc, 'alice', 'viewerB')).toBeUndefined();
   });
 
+  it('never stores viewer-relative relationship on the viewer-independent by-id key', () => {
+    const qc = makeClient();
+    upsertCachedUser(
+      qc,
+      { id: 'u1', username: 'alice', relationship: { isFollowing: true, followsYou: true } },
+      'viewerA',
+    );
+
+    expect(readById(qc, 'u1')?.relationship).toBeUndefined();
+    expect(readByUsername(qc, 'alice', 'viewerA')?.relationship).toEqual({
+      isFollowing: true,
+      followsYou: true,
+    });
+  });
+
+  it('strips a stale relationship from an existing by-id entry on merge', () => {
+    const qc = makeClient();
+    qc.setQueryData(queryKeys.users.detail('u1'), {
+      id: 'u1',
+      username: 'alice',
+      relationship: { isFollowing: true, followsYou: true },
+    });
+
+    upsertCachedUser(qc, { id: 'u1', username: 'alice', avatar: 'file_a' }, 'viewerA');
+
+    expect(readById(qc, 'u1')?.relationship).toBeUndefined();
+    expect(readById(qc, 'u1')?.avatar).toBe('file_a');
+  });
+
   it('is case-insensitive on username (byUsername normalization)', () => {
     const qc = makeClient();
     upsertCachedUser(qc, { id: 'u1', username: 'AlIcE' }, 'v1');
