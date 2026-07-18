@@ -170,6 +170,14 @@ export {
     invalidateAuthMethodsQueries,
 } from './ui/hooks/queries/queryKeys';
 
+// Canonical user-cache upsert. MERGE-upserts a (possibly partial) user into the
+// SDK's user query cache under both keys it owns (by-id + viewer-scoped
+// by-username). Consumers route ALL cache seeds (feed / list / search / profile
+// hydration) through this so a sparse source can never strip a field an
+// authoritative fetch already stored.
+export { upsertCachedUser, upsertCachedUsers } from './ui/hooks/queries/userCache';
+export type { CacheableUser } from './ui/hooks/queries/userCache';
+
 // Mutation status aggregator (for "Syncing..." indicators)
 export { useMutationStatus } from './ui/hooks/useMutationStatus';
 export type { MutationStatus } from './ui/hooks/useMutationStatus';
