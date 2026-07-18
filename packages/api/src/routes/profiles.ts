@@ -568,7 +568,8 @@ router.get(
  */
 router.get(
   '/resolve',
-  asyncHandler(async (req: Request, res: Response) => {
+  optionalUserOrServiceAuth,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     // Normalize handle input: trim, strip optional `acct:` prefix, and remove a
     // single leading `@` so `@user@host` matches the stored `user@host` username.
     const rawHandle = (req.query.handle as string || '')
@@ -599,6 +600,21 @@ router.get(
       }
       const stats = await userService.getUserStats(localUser._id.toString());
       const response = userService.formatUserResponse(localUser, stats);
+
+      // Viewer-relative relationship: same in-handler computation as the two
+      // sibling single-profile routes (/profiles/username/:username and
+      // /users/:userId). A federated actor that bridged into the Oxy graph via an
+      // inbound follow IS a known Oxy row here, so `getViewerRelationship`
+      // returns real follow edges — this is what lets "Follows you" render on a
+      // federated profile fetched through resolve. OMITTED for anonymous requests
+      // and for a self-view, so consumers can distinguish "unknown" from "known,
+      // not following".
+      const viewerId = resolveViewerId(req);
+      const targetId = localUser._id.toString();
+      if (viewerId && viewerId !== targetId) {
+        response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+      }
+
       logger.debug('GET /profiles/resolve (local)', { handle });
       return sendSuccess(res, response);
     }
@@ -616,6 +632,17 @@ router.get(
 
     const stats = await userService.getUserStats(user._id.toString());
     const response = userService.formatUserResponse(user, stats);
+
+    // Same viewer-relative relationship as the local branch above. A
+    // freshly-discovered actor is now a known Oxy row (`resolveAndUpsert`
+    // persisted it), so its id is canonical; a brand-new actor simply has no
+    // follow edges yet (`isFollowing`/`followsYou` both false). OMITTED for
+    // anonymous requests and for a self-view.
+    const viewerId = resolveViewerId(req);
+    const targetId = user._id.toString();
+    if (viewerId && viewerId !== targetId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+    }
 
     logger.debug('GET /profiles/resolve', { handle });
     sendSuccess(res, response);
