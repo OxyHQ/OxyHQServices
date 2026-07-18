@@ -12,6 +12,8 @@ const schemaInstance = {
   post: jest.fn(),
   virtual: jest.fn(() => ({ get: jest.fn() })),
   index: jest.fn(),
+  methods: {},
+  statics: {},
 };
 const Schema = jest.fn(() => schemaInstance);
 Schema.Types = { ObjectId };
