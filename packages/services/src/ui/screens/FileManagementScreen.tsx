@@ -360,7 +360,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // ONE batch per page (not N per-tile) and cached by React Query. Uploads
     // default to private, so the synchronous public-CDN URL would 404 for
     // every private thumbnail.
-    const resolvedThumbUrls = useResolvedFileUrls(oxyServices, filteredFiles);
+    const resolvedThumbUrls = useResolvedFileUrls(oxyServices, filteredFiles, user?.id);
 
     // Image source for a grid tile: the resolved private-safe URL for a
     // persisted file, or the locally-picked preview for an in-flight optimistic

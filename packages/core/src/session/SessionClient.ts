@@ -210,6 +210,7 @@ export class SessionClient {
     ) {
       return false;
     }
+    const previousState = this.state;
     this.state = next;
     // Plant the sync-supplied active token (it is for `next.activeAccountId`)
     // now — before the notify below — so the bearer matches the new active
@@ -244,8 +245,10 @@ export class SessionClient {
 
     if (needsMintBeforeNotify) {
       void transport.ensureActiveToken(next).then(finishApply).catch((error) => {
-        logger.warn('[SessionClient] ensureActiveToken failed', { component: 'SessionClient' }, error);
-        finishApply();
+        logger.warn('[SessionClient] ensureActiveToken failed — reverting session state', { component: 'SessionClient' }, error);
+        // Do NOT notify under a mismatched bearer. Revert to the last applied
+        // state so subscribers keep observing the account whose token is planted.
+        this.state = previousState ?? null;
       });
     } else {
       if (transport) {

@@ -116,7 +116,7 @@ jest.mock('../../models/User', () => ({
 
 import assetsRouter from '../assets';
 import { errorHandler } from '../../middleware/errorHandler';
-import { verifyMediaToken, signMediaToken } from '../../utils/mediaToken';
+import { verifyMediaToken, signMediaToken, MEDIA_TOKEN_TTL_SECONDS } from '../../utils/mediaToken';
 
 interface RawResponse {
   status: number;
@@ -233,6 +233,17 @@ describe('GET /assets/:id/url — scoped media token minting', () => {
     expect(verifyMediaToken(mt as string, PRIVATE_FILE_ID)).toBe(VIEWER_ID);
     // … and CANNOT be replayed against another asset.
     expect(verifyMediaToken(mt as string, OTHER_FILE_ID)).toBeUndefined();
+  });
+
+  it('reports the media-token TTL (not the requested signed-url expiry) for private assets', async () => {
+    mockGetFile.mockResolvedValue(PRIVATE_FILE);
+    mockGetFileUrl.mockResolvedValue(null);
+
+    const res = await request(server, `/assets/${PRIVATE_FILE_ID}/url?expiresIn=3600`);
+    expect(res.status).toBe(200);
+
+    const { expiresIn } = JSON.parse(res.body).data;
+    expect(expiresIn).toBe(MEDIA_TOKEN_TTL_SECONDS);
   });
 
   it('returns a clean CDN url with NO token for a public asset', async () => {

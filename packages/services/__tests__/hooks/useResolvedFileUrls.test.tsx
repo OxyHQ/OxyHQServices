@@ -118,7 +118,7 @@ describe('useResolvedFileUrls', () => {
       makeFile({ id: 'temp-9-0-z', contentType: 'image/png', metadata: { uploading: true } }),
     ];
 
-    const { result } = renderHook(() => useResolvedFileUrls(oxyServices, files), {
+    const { result } = renderHook(() => useResolvedFileUrls(oxyServices, files, 'viewer-a'), {
       wrapper: makeWrapper(queryClient),
     });
 
@@ -170,11 +170,41 @@ describe('useResolvedFileUrls', () => {
       makeFile({ id: 'deniedImg', contentType: 'image/png' }),
     ];
 
-    const { result } = renderHook(() => useResolvedFileUrls(oxyServices, files), {
+    const { result } = renderHook(() => useResolvedFileUrls(oxyServices, files, 'viewer-a'), {
       wrapper: makeWrapper(queryClient),
     });
 
     await waitFor(() => expect(result.current.get('okImg')).toBeDefined());
     expect(result.current.get('deniedImg')).toBeUndefined();
+  });
+
+  it('scopes the React Query cache to the active viewer id', async () => {
+    const getFileDownloadUrls = jest
+      .fn()
+      .mockResolvedValueOnce({
+        privImg: 'https://api.oxy.so/assets/privImg/stream?variant=thumb&mt=token-a',
+      })
+      .mockResolvedValueOnce({
+        privImg: 'https://api.oxy.so/assets/privImg/stream?variant=thumb&mt=token-b',
+      });
+    const oxyServices: AssetUrlBatchResolver = { getFileDownloadUrls };
+    const files: FileMetadata[] = [makeFile({ id: 'privImg', contentType: 'image/png' })];
+
+    const { result, rerender } = renderHook(
+      ({ viewerId }: { viewerId: string }) => useResolvedFileUrls(oxyServices, files, viewerId),
+      {
+        wrapper: makeWrapper(queryClient),
+        initialProps: { viewerId: 'viewer-a' },
+      },
+    );
+
+    await waitFor(() => expect(result.current.get('privImg')).toBeDefined());
+    expect(result.current.get('privImg')).toContain('mt=token-a');
+
+    rerender({ viewerId: 'viewer-b' });
+
+    await waitFor(() => expect(getFileDownloadUrls).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.get('privImg')).toContain('mt=token-b'));
+    expect(result.current.get('privImg')).not.toContain('mt=token-a');
   });
 });

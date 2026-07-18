@@ -1449,6 +1449,13 @@
       "emptyTitle": "No photos yet",
       "emptySubtitle": "Upload from your device to get started"
     },
+    "details": {
+      "title": "File Details",
+      "download": "Download",
+      "type": "Type",
+      "uploaded": "Uploaded",
+      "description": "Description"
+    },
     "a11y": {
       "viewAll": "Show all files",
       "viewPhotos": "Show photos only",

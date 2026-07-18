@@ -225,7 +225,7 @@ export function createAvatarPickerHandler(config: AvatarPickerConfig): () => voi
             afterSelect: 'none', // Don't navigate away - stay on current screen
             onSelect: async (file: FileMetadata) => {
                 if (!file.contentType.startsWith('image/')) {
-                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
+                    toast.error(t('editProfile.toasts.selectImage'));
                     return;
                 }
                 
@@ -241,9 +241,11 @@ export function createAvatarPickerHandler(config: AvatarPickerConfig): () => voi
                     // Update user using TanStack Query mutation
                     await updateProfileMutation.mutateAsync({ avatar: file.id });
                     
-                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+                    toast.success(t('editProfile.toasts.avatarUpdated'));
                 } catch (e: unknown) {
-                    toast.error((e instanceof Error ? e.message : null) || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                    toast.error(
+                        e instanceof Error ? e.message : t('editProfile.toasts.updateAvatarFailed'),
+                    );
                 }
             }
         });

@@ -353,3 +353,24 @@ export type {
     WebauthnRegisterVerifyRequest,
     WebauthnLoginVerifyRequest,
 } from './webauthn';
+
+export {
+    // Schemas
+    devicePairingStatusSchema,
+    deviceTransferInitRequestSchema,
+    deviceTransferInitResponseSchema,
+    deviceTransferInfoResponseSchema,
+    deviceTransferApproveRequestSchema,
+    deviceTransferApproveResponseSchema,
+    deviceTransferDenyResponseSchema,
+} from './devicePairing';
+
+export type {
+    DevicePairingStatus,
+    DeviceTransferInitRequest,
+    DeviceTransferInitResponse,
+    DeviceTransferInfoResponse,
+    DeviceTransferApproveRequest,
+    DeviceTransferApproveResponse,
+    DeviceTransferDenyResponse,
+} from './devicePairing';

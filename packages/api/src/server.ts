@@ -48,6 +48,7 @@ import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
 import identityBackupRoutes from './routes/identityBackup';
+import deviceTransferRoutes from './routes/deviceTransfer';
 import civicRoutes from './routes/civic';
 import nodeRoutes from './routes/nodes';
 import { sweepValidations } from './services/civic/validator.service';
@@ -293,6 +294,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 // Used for cross-app authentication via QR code
 // ============================================
 import { initAuthSessionNamespace } from './utils/authSessionSocket';
+import { initDevicePairNamespace } from './utils/devicePairSocket';
 
 const authSessionNamespace = io.of('/auth-session');
 authSessionNamespace.use(createSocketRateLimiter(20, 10_000)); // Stricter: 20 events per 10s
@@ -323,6 +325,41 @@ authSessionNamespace.on('connection', (socket) => {
   
   socket.on('disconnect', () => {
     logger.debug('Auth session socket disconnected', { socketId: socket.id });
+  });
+});
+
+// ============================================
+// Device-Pair Socket Namespace (Unauthenticated)
+// Used for device-to-device identity transfer ("add a device"). The waiting new
+// device joins room `devicepair:<pairingId>`; the server pushes a lightweight
+// status signal when the old device approves/denies. No key material flows over
+// this socket — the transferred bytes are E2E-encrypted regardless.
+// ============================================
+const devicePairNamespace = io.of('/device-pair');
+devicePairNamespace.use(createSocketRateLimiter(20, 10_000)); // Stricter: 20 events per 10s
+initDevicePairNamespace(devicePairNamespace);
+
+devicePairNamespace.on('connection', (socket) => {
+  logger.debug('Device-pair socket connected', { socketId: socket.id });
+
+  socket.on('join', (pairingId: string) => {
+    if (!pairingId || typeof pairingId !== 'string' || pairingId.length < 8) {
+      socket.emit('error', { message: 'Invalid pairing id' });
+      return;
+    }
+    const room = `devicepair:${pairingId}`;
+    socket.join(room);
+    logger.debug('Client joined device-pair room', { socketId: socket.id, room });
+    socket.emit('joined', { pairingId });
+  });
+
+  socket.on('leave', (pairingId: string) => {
+    if (!pairingId || typeof pairingId !== 'string') return;
+    socket.leave(`devicepair:${pairingId}`);
+  });
+
+  socket.on('disconnect', () => {
+    logger.debug('Device-pair socket disconnected', { socketId: socket.id });
   });
 });
 
@@ -571,6 +608,11 @@ app.use('/app-signals', appSignalsRouter);
 // auth, so no csrfProtection (bearer-write CSRF rule + public GET). Mounted
 // BEFORE `/identity` so the more specific `/identity/backup` prefix wins.
 app.use('/identity/backup', identityBackupRoutes);
+// Device-to-device identity transfer ("add a device"). Mounted BEFORE `/identity`
+// so its specific prefix wins over the identity router. Public init/info/deny +
+// bearer+signature approve; the relay is E2E-encrypted (no CSRF — no ambient
+// cookie credentials, per the bearer-write CSRF rule).
+app.use('/identity/device-transfer', deviceTransferRoutes);
 // Self-sovereign identity layer: signed records + verified-domain badges.
 // Mixed public/private routes (each gates its own auth); writes are
 // Bearer-authenticated, so no csrfProtection (bearer-write CSRF rule).
