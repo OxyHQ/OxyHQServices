@@ -114,7 +114,7 @@ export interface PhotoPickerViewProps {
     hasMore: boolean;
     loadingMore: boolean;
     reduceMotion: boolean;
-    getThumbUrl: (file: FileMetadata, variant?: string) => string;
+    getThumbUrl: (file: FileMetadata) => string | undefined;
     primaryColor: string;
     isOwner: boolean;
     onTogglePhoto: (photo: FileMetadata) => void;
@@ -143,7 +143,7 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
     selectionIndex: number; // 1-based for badge; 0 if not selected
     dim: boolean; // any selection exists and this cell is not selected
     primaryColor: string;
-    thumbUrl: string;
+    thumbUrl: string | undefined;
     enterIndex: number;
     reduceMotion: boolean;
     onPress: () => void;
@@ -399,7 +399,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                     selectionIndex={selIndex}
                     dim={multiSelect && hasAnySelection && !isSelected}
                     primaryColor={primaryColor}
-                    thumbUrl={getThumbUrl(item, 'thumb')}
+                    thumbUrl={getThumbUrl(item)}
                     enterIndex={index}
                     reduceMotion={reduceMotion}
                     onPress={() => handleCellPress(item)}

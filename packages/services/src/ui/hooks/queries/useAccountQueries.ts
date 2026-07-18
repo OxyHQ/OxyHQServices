@@ -50,6 +50,15 @@ export const useUserProfiles = (sessionIds: string[], options?: { enabled?: bool
 /**
  * Get current authenticated user.
  *
+ * Hydrates from `GET /users/me` (the bearer identifies the session) rather than
+ * `GET /session/user/:activeSessionId`. Post zero-cookie cutover the bearer is
+ * the single source of session truth, so keying the CURRENT user off a session
+ * id in the URL was a second, independently-updated source that could disagree
+ * with the bearer during an account switch — the request fired under the
+ * previous account's token against the new account's session id and 404'd. The
+ * query KEY stays scoped to the active account so the cache re-scopes (and
+ * refetches) on a switch; only the URL stopped carrying a session id.
+ *
  * The store-mirror effect must NOT overwrite the in-memory user while a
  * write mutation is in flight — otherwise a stale background refetch
  * landing between optimistic update and server-confirmed update would
@@ -67,10 +76,7 @@ export const useCurrentUser = (options?: { enabled?: boolean }) => {
   const query = useQuery({
     queryKey: queryKeys.accounts.current(activeSessionId),
     queryFn: async () => {
-      if (!activeSessionId) {
-        throw new Error('No active session');
-      }
-      return await oxyServices.getUserBySession(activeSessionId);
+      return await oxyServices.getCurrentUser();
     },
     enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 1 * 60 * 1000, // 1 minute for current user

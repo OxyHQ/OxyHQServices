@@ -59,7 +59,7 @@ interface FakeServices {
   requestChallenge: jest.Mock;
   verifyChallenge: jest.Mock;
   setTokens: jest.Mock;
-  getUserBySession: jest.Mock;
+  getCurrentUser: jest.Mock;
   logoutSession: jest.Mock;
 }
 
@@ -80,7 +80,10 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
     user: { id: 'user-1', username: 'alice' },
   })),
   setTokens: jest.fn(),
-  getUserBySession: jest.fn(async (): Promise<User> => ({
+  // `performSignIn` hydrates the full user from the bearer (`GET /users/me`)
+  // now that `verifyChallenge` has planted the access token — not from a
+  // session-id URL. `getCurrentUser` takes no args and returns the bearer's user.
+  getCurrentUser: jest.fn(async (): Promise<User> => ({
     id: 'user-1',
     username: 'alice',
     privacySettings: {},
@@ -229,8 +232,9 @@ describe('useAuthOperations.signIn — online flow', () => {
     // in @oxyhq/core's auth mixin tests), so the consumer no longer touches
     // `setTokens` directly...
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
-    // ...and critically must not depend on any legacy session-id token fetch.
-    expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
+    // ...and hydrates the user from the bearer (`GET /users/me`), NOT a
+    // session-id URL that could disagree with the planted token.
+    expect(helpers.oxyServices.getCurrentUser).toHaveBeenCalled();
     // The response carried the zero-cookie device credential, so the durable blob
     // was persisted for a redirect-less reload restore.
     expect(helpers.store.save).toHaveBeenCalledWith(
@@ -304,7 +308,7 @@ describe('useAuthOperations.signIn — online flow', () => {
     });
 
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
-    expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
+    expect(helpers.oxyServices.getCurrentUser).toHaveBeenCalled();
     // No rotating refresh token in the response → nothing durable to persist.
     expect(helpers.store.save).not.toHaveBeenCalled();
     expect(signedInUser?.id).toBe('user-1');
@@ -376,7 +380,7 @@ describe('useAuthOperations.signIn — requestChallenge failures', () => {
     ).rejects.toThrow('Network request failed');
 
     expect(helpers.oxyServices.verifyChallenge).not.toHaveBeenCalled();
-    expect(helpers.oxyServices.getUserBySession).not.toHaveBeenCalled();
+    expect(helpers.oxyServices.getCurrentUser).not.toHaveBeenCalled();
     expect(helpers.setActiveSessionId).not.toHaveBeenCalled();
     expect(helpers.loginSuccess).not.toHaveBeenCalled();
     expect(helpers.onAuthStateChange).not.toHaveBeenCalled();

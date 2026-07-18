@@ -517,6 +517,26 @@ export interface AssetUrlResponse {
   expiresIn: number;
 }
 
+/**
+ * Per-file result of `POST /assets/batch-access`. `allowed` is authoritative:
+ * when `false` the entry carries an `error` string (e.g. `'Access denied'`,
+ * `'File not found'`) and no `url`. When `true`, `url` is a caller-scoped,
+ * `<img src>`-ready URL — the public CDN form for a public asset or an
+ * API-origin stream URL carrying a short-lived media token for a private one.
+ */
+export interface BatchFileAccessEntry {
+  allowed: boolean;
+  url?: string;
+  visibility?: FileVisibility;
+  mime?: string;
+  error?: string;
+}
+
+/** Envelope returned by `POST /assets/batch-access`, keyed by file id. */
+export interface BatchFileAccessResponse {
+  results: Record<string, BatchFileAccessEntry>;
+}
+
 export interface AssetDeleteSummary {
   fileId: string;
   wouldDelete: boolean;

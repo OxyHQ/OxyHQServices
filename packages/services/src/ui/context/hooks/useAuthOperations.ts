@@ -170,8 +170,11 @@ export const useAuthOperations = ({
         logger?.('Failed to register sign-in into device session set', registrationError);
       }
 
-      // Get full user data
-      fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
+      // Hydrate the full user from the bearer (`GET /users/me`) — `verifyChallenge`
+      // has already planted the access token for this session, so the bearer IS
+      // the session identity. Avoids a second, session-id-keyed source of truth
+      // (`GET /session/user/:sessionId`) that can disagree with the bearer.
+      fullUser = await oxyServices.getCurrentUser();
 
       // Fetch device sessions
       let allDeviceSessions: ClientSession[] = [];

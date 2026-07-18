@@ -5,12 +5,14 @@ import { createTokenTransport } from '../tokenTransport';
 // The device-first transport no longer owns a private mint single-flight: it
 // routes through the ONE shared `oxyServices.httpService.refreshAccessToken(...)`
 // the scheduler/preflight/401 use, so concurrent lanes can never double-rotate
-// the device secret. These tests exercise the transport's own no-op / error /
-// swallow contract around that single call.
+// the device secret. It short-circuits ONLY when the planted bearer already
+// identifies the state's active account — a bearer for a DIFFERENT account (an
+// account switch) must still mint the new account's token. These tests exercise
+// that account-match contract and the transport's error/swallow behavior.
 
-function fakeOxy(accessToken: string | null, refreshAccessToken = jest.fn(async () => 'minted-token')) {
+function fakeOxy(currentUserId: string | null, refreshAccessToken = jest.fn(async () => 'minted-token')) {
   return {
-    getAccessToken: jest.fn().mockReturnValue(accessToken),
+    getCurrentUserId: jest.fn().mockReturnValue(currentUserId),
     httpService: { refreshAccessToken },
   };
 }
@@ -24,9 +26,9 @@ const state: DeviceSessionState = {
 };
 
 describe('createTokenTransport', () => {
-  test('no-ops when a token is already present', async () => {
+  test('no-ops when the planted bearer already belongs to the active account', async () => {
     const refreshAccessToken = jest.fn(async () => 'minted-token');
-    const oxy = fakeOxy('tok', refreshAccessToken);
+    const oxy = fakeOxy('a1', refreshAccessToken);
     const transport = createTokenTransport(oxy as never);
 
     await transport.ensureActiveToken(state);
@@ -34,7 +36,20 @@ describe('createTokenTransport', () => {
     expect(refreshAccessToken).not.toHaveBeenCalled();
   });
 
-  test('mints via the shared httpService.refreshAccessToken single-flight when no token is present', async () => {
+  test('mints when the planted bearer belongs to a DIFFERENT account (account switch)', async () => {
+    // The core account-switch 404 fix: a bearer for the PREVIOUS account must
+    // NOT short-circuit — it must mint the new active account's token.
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy('previous-account', refreshAccessToken);
+    const transport = createTokenTransport(oxy as never);
+
+    await transport.ensureActiveToken(state);
+
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).toHaveBeenCalledWith('preflight');
+  });
+
+  test('mints via the shared httpService.refreshAccessToken single-flight when no bearer is present', async () => {
     const refreshAccessToken = jest.fn(async () => 'minted-token');
     const oxy = fakeOxy(null, refreshAccessToken);
     const transport = createTokenTransport(oxy as never);
@@ -91,10 +106,10 @@ describe('createTokenTransport', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
   });
 
-  test('treats a throwing getAccessToken as no-token and still mints', async () => {
+  test('treats a throwing bearer-account check as a mismatch and still mints', async () => {
     const refreshAccessToken = jest.fn(async () => 'minted-token');
     const oxy = fakeOxy(null, refreshAccessToken);
-    oxy.getAccessToken.mockImplementation(() => {
+    oxy.getCurrentUserId.mockImplementation(() => {
       throw new Error('storage unavailable');
     });
     const transport = createTokenTransport(oxy as never);
@@ -103,7 +118,7 @@ describe('createTokenTransport', () => {
     await expect(transport.ensureActiveToken(state)).resolves.toBeUndefined();
 
     expect(warnSpy).toHaveBeenCalledWith(
-      'ensureActiveToken: getAccessToken threw',
+      'ensureActiveToken: bearer-account check threw',
       { component: 'TokenTransport' },
       expect.any(Error),
     );

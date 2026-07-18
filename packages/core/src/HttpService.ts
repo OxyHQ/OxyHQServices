@@ -21,6 +21,7 @@ import { jwtDecode } from 'jwt-decode';
 import { isNative, getPlatformOS } from './utils/platform';
 import { isReactNative } from '@oxyhq/protocol';
 import { computeIdentityTag, fnv1a32 } from './utils/cacheKey';
+import { redactUrlQuery } from './utils/redactUrl';
 import type { OxyConfig } from './models/interfaces';
 import type { DeviceSecretMintOutcome } from './session/refresh';
 
@@ -405,7 +406,9 @@ export class HttpService {
       const cached = this.cache.get(cacheKey) as T | null;
       if (cached !== null) {
         this.requestMetrics.cacheHits++;
-        this.logger.debug('Cache hit:', url);
+        // Redact the query string: an asset stream URL passed here carries a
+        // scoped `mt=` media token that must never reach a log sink.
+        this.logger.debug('Cache hit:', redactUrlQuery(url));
         return cached;
       }
       this.requestMetrics.cacheMisses++;

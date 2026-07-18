@@ -13,6 +13,57 @@ export class OxyAuthenticationError extends Error {
   }
 }
 
+/**
+ * Thrown when an asset's authorized download URL cannot be resolved.
+ *
+ * `getFileDownloadUrlAsync` asks the API for a URL that is valid for the
+ * CALLER and the asset's actual visibility. When that resolution fails there is
+ * no honest fallback: the public CDN origin only serves `public` assets, so
+ * handing back `https://cloud.oxy.so/<id>` for an unresolved asset produces a
+ * hard 404 at render time and hides the real failure from the caller. This
+ * error surfaces the failure instead.
+ *
+ * The message and fields deliberately carry only the asset id, the requested
+ * variant and the HTTP status — never the resolved URL, which embeds a scoped
+ * media token.
+ *
+ * ## `status` lets a caller decide whether a CDN fallback is safe
+ *
+ * Core itself never falls back to the public CDN builder, because it has no
+ * knowledge of the asset's visibility and that URL is a guaranteed 404 for a
+ * private asset. A CALLER that knows an asset is public MAY choose to fall back
+ * to `getFileDownloadUrl(id, variant)` — but only for a TRANSIENT failure, not
+ * a definitive denial:
+ *   - `status` 401/403/404 → definitive: the asset is private/denied/missing.
+ *     Never CDN-fall-back — it will 404.
+ *   - `status` undefined (network error) or 5xx → transient: resolution itself
+ *     failed. If the caller independently knows the asset is public, a CDN
+ *     fallback is defensible best-effort.
+ */
+export class AssetUrlResolutionError extends Error {
+  public readonly code = 'ASSET_URL_UNRESOLVED';
+  public readonly fileId: string;
+  public readonly variant?: string;
+  public readonly status?: number;
+  /**
+   * The underlying transport/API failure, when there was one. Declared on the
+   * class rather than relying on `Error.cause` because this package targets
+   * ES2020, where `cause` is not part of the `Error` type.
+   */
+  public readonly cause?: unknown;
+
+  constructor(fileId: string, variant: string | undefined, status: number | undefined, cause?: unknown) {
+    const variantSuffix = variant ? ` (variant "${variant}")` : '';
+    const statusSuffix = typeof status === 'number' ? ` — status ${status}` : '';
+    super(`Could not resolve a download URL for asset "${fileId}"${variantSuffix}${statusSuffix}`);
+    this.name = 'AssetUrlResolutionError';
+    this.fileId = fileId;
+    this.variant = variant;
+    this.status = status;
+    this.cause = cause;
+  }
+}
+
 export class OxyAuthenticationTimeoutError extends OxyAuthenticationError {
   constructor(operationName: string, timeoutMs: number) {
     super(

@@ -1,8 +1,10 @@
-import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor, ServiceAssetMetadata, ServiceAssetMetadataBySha } from '../models/interfaces';
+import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, BatchFileAccessResponse, RNFileDescriptor, ServiceAssetMetadata, ServiceAssetMetadataBySha } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { isReactNative } from '@oxyhq/protocol';
 import { logger } from '../logger';
+import { AssetUrlResolutionError } from '../OxyServices.errors';
 import { extractErrorStatus } from '../utils/errorUtils';
+import { redactUrlQuery } from '../utils/redactUrl';
 
 /**
  * Maximum number of ids sent per `POST /assets/service/by-ids` request. Matches
@@ -26,6 +28,40 @@ const SERVICE_ASSET_METADATA_BY_SHA_CHUNK_SIZE = 100;
  * never 400s an otherwise-valid chunk on the server.
  */
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
+
+/**
+ * Conservative lower bound (10 min) the SDK assumes for the lifetime of the
+ * scoped media token (`mt`) the API embeds in the stream URL it returns for a
+ * private asset. The SDK never mints or inspects that token; this constant
+ * exists only so the SDK's own URL cache can be sized safely BELOW the token's
+ * real lifetime.
+ *
+ * The API currently mints tokens for 900s (`MEDIA_TOKEN_TTL_SECONDS` in
+ * `packages/api/src/utils/mediaToken.ts`). Core deliberately assumes a shorter
+ * 10-min floor rather than copying 15: core and the API are separate packages,
+ * so core cannot observe a server-side TTL change at runtime. Under-assuming the
+ * lifetime only ever shortens the cache (more refetches, never a dead URL), so
+ * it stays correct even if the server lowers its TTL toward this floor. The
+ * {@link ASSET_URL_CACHE_LIFETIME_FRACTION} discount is applied on top.
+ */
+const ASSET_MEDIA_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Fraction of a resolved URL's remaining lifetime the SDK is willing to keep it
+ * cached for. A resolved URL stops working the moment its media token expires,
+ * so caching it for its full nominal lifetime guarantees a window in which the
+ * cache hands out an already-dead URL (clock skew, time spent in the render
+ * pipeline, an image request queued behind others). Half the lifetime leaves a
+ * margin at least as large as the entry's own age.
+ */
+const ASSET_URL_CACHE_LIFETIME_FRACTION = 0.5;
+
+/**
+ * Fallback URL lifetime, in seconds, assumed when the caller does not request
+ * an explicit `expiresIn`. Mirrors the API's default signed-URL expiry; the
+ * effective value is still clamped by {@link ASSET_MEDIA_TOKEN_TTL_MS}.
+ */
+const DEFAULT_ASSET_URL_EXPIRES_IN_SECONDS = 3600;
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -61,14 +97,33 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Build a synchronous, `<img src>`-ready file URL from an Oxy asset id.
+     * Build a synchronous, `<img src>`-ready URL for a **PUBLIC** Oxy asset.
      *
-     * This method must never embed the caller's general access token in the
-     * returned URL. The URL is commonly rendered into DOM attributes, browser
-     * network panels, caches, and logs. Public asset URLs use the clean CDN
-     * origin; callers that need authorized/private access should use
-     * {@link getFileDownloadUrlAsync}, which asks the API for a scoped download
-     * URL instead of exposing the in-memory bearer token in a query string.
+     * ## Contract — read before calling
+     *
+     * This is a pure string builder. It performs no network call and therefore
+     * has **no knowledge of the asset's visibility**. It always produces the
+     * public form: `${cloudURL}/<id>[?variant=…]`, which the CDN serves from
+     * the public media origin only.
+     *
+     * Consequently:
+     *  - Call it ONLY when the asset is known to be `public` — e.g. avatars and
+     *    profile banners, which {@link uploadAvatar} / {@link uploadProfileBanner}
+     *    upload with `visibility: 'public'`.
+     *  - For an asset that may be `private` or `unlisted` — anything uploaded
+     *    through the generic {@link assetUpload} path, whose server-side default
+     *    is private — this URL resolves to a hard **404**. Use
+     *    {@link getFileDownloadUrlAsync}, which asks the API for a URL scoped to
+     *    the current caller.
+     *  - It must never guess visibility, and must never embed the caller's
+     *    bearer token: the returned string is rendered into DOM attributes,
+     *    browser network panels, HTTP caches, and logs.
+     *
+     * Passing `expiresIn` switches to the API-origin stream form
+     * (`${baseURL}/assets/<id>/stream?…`) WITHOUT any credential. That form
+     * still only serves what an unauthenticated request may see — it is not a
+     * synchronous private-asset path, and none exists: authorization for a
+     * private asset requires the round-trip in {@link getFileDownloadUrlAsync}.
      */
     getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
       // Never embed the in-memory bearer token: this URL is rendered into DOM
@@ -91,21 +146,46 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get file download URL asynchronously (returns signed URL directly from CDN)
+     * Resolve an asset id to a URL that is valid for the CURRENT caller,
+     * whatever the asset's visibility.
+     *
+     * Asks the API (`GET /assets/:id/url`) rather than guessing: a `public`
+     * asset resolves to the CDN form, while a `private`/`unlisted` asset the
+     * caller may read resolves to an API-origin stream URL carrying a scoped,
+     * short-lived media token. The returned URL is passed through **unchanged**
+     * — the SDK never rewrites, re-signs, or strips it.
+     *
+     * ## Failure behaviour — no CDN fallback
+     *
+     * Throws {@link AssetUrlResolutionError} when the API returns no URL or the
+     * request fails (including 401/403/404). It deliberately does NOT fall back
+     * to {@link getFileDownloadUrl}: that builder only produces the public CDN
+     * form, so falling back would hand the caller a URL that renders as a hard
+     * 404 for every private asset and would silently swallow the real failure.
+     * A caller that knows an asset is public should call the synchronous
+     * builder directly instead of relying on a fallback here.
+     *
+     * The resolved URL is cached per identity for well under the media token's
+     * lifetime — see {@link getAssetUrlCacheTTL}.
      */
     async getFileDownloadUrlAsync(fileId: string, variant?: string, expiresIn?: number): Promise<string> {
+      let url: string | null;
       try {
-        const url = await this.fetchAssetDownloadUrl(
+        url = await this.fetchAssetDownloadUrl(
           fileId,
           variant,
           this.getAssetUrlCacheTTL(expiresIn),
           expiresIn
         );
-
-        return url || this.getFileDownloadUrl(fileId, variant, expiresIn);
-      } catch (error) {
-        return this.getFileDownloadUrl(fileId, variant, expiresIn);
+      } catch (error: unknown) {
+        throw new AssetUrlResolutionError(fileId, variant, extractErrorStatus(error), error);
       }
+
+      if (!url) {
+        throw new AssetUrlResolutionError(fileId, variant, undefined);
+      }
+
+      return url;
     }
 
     /**
@@ -180,13 +260,39 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get batch access to multiple files
+     * Resolve access + a caller-scoped URL for many assets — each with its OWN
+     * requested variant — in ONE round trip via `POST /assets/batch-access`.
+     *
+     * `requests` is a per-file `{ fileId, variant? }` list (a `variant` of
+     * `undefined` asks for the original). `options.expiresIn` sets the requested
+     * media-token / signed-URL lifetime (seconds); `options.context` is the
+     * server-side access-check context. Entries with a blank `fileId` are
+     * dropped and exact `(fileId, variant)` duplicates are collapsed before the
+     * request; an empty effective list performs no network call.
+     *
+     * The server caps the batch at 100 entries — callers that page beyond that
+     * must chunk. Returns the raw per-file envelope (see
+     * {@link BatchFileAccessResponse}); most callers want {@link getFileDownloadUrls},
+     * which flattens it to just the usable URLs.
      */
-    async getBatchFileAccess(fileIds: string[], context?: string): Promise<Record<string, any>> {
+    async getBatchFileAccess(
+      requests: Array<{ fileId: string; variant?: string }>,
+      options?: { expiresIn?: number; context?: string },
+    ): Promise<BatchFileAccessResponse> {
+      const files = dedupeFileAccessRequests(requests);
+      if (files.length === 0) {
+        return { results: {} };
+      }
+
+      const body: { files: Array<{ fileId: string; variant?: string }>; expiresIn?: number; context?: string } = {
+        files,
+      };
+      if (typeof options?.expiresIn === 'number') body.expiresIn = options.expiresIn;
+      if (typeof options?.context === 'string') body.context = options.context;
+
       try {
-        return await this.makeRequest('POST', '/assets/batch-access', { 
-          fileIds, 
-          context 
+        return await this.makeRequest<BatchFileAccessResponse>('POST', '/assets/batch-access', body, {
+          cache: false,
         });
       } catch (error) {
         throw this.handleError(error);
@@ -194,13 +300,30 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get download URLs for multiple files efficiently
+     * Resolve many assets — each with its OWN variant — to caller-scoped,
+     * `<img src>`-ready URLs in one round trip. The batch counterpart of
+     * {@link getFileDownloadUrlAsync}, built to resolve a whole grid page at once.
+     *
+     * `requests` is a per-file `{ fileId, variant? }` list (e.g. `poster` for a
+     * video, `thumb` for an image); the per-file variant RULE lives in the
+     * caller — core just forwards what it is given. `options.expiresIn` /
+     * `options.context` are passed through to the endpoint.
+     *
+     * Each returned URL is the API's own scoped form, passed through unchanged:
+     * the public CDN URL for a public asset, or an API-origin
+     * `/assets/:id/stream?…&mt=<media token>` URL for a private asset the caller
+     * may read. Ids the caller cannot access (or that do not exist) are simply
+     * OMITTED from the returned map — there is NO public-CDN fallback, so a grid
+     * never renders a known-404 URL. Callers detect a miss by the absent key
+     * (the map never contains an empty-string value). Keyed by `fileId`.
      */
-    async getFileDownloadUrls(fileIds: string[], context?: string): Promise<Record<string, string>> {
-      const response: any = await this.getBatchFileAccess(fileIds, context);
+    async getFileDownloadUrls(
+      requests: Array<{ fileId: string; variant?: string }>,
+      options?: { expiresIn?: number; context?: string },
+    ): Promise<Record<string, string>> {
+      const response = await this.getBatchFileAccess(requests, options);
       const urls: Record<string, string> = {};
-      const results = response.results || {};
-      for (const [id, result] of Object.entries(results as Record<string, any>)) {
+      for (const [id, result] of Object.entries(response.results ?? {})) {
         if (result.allowed && result.url) {
           urls[id] = result.url;
         }
@@ -614,9 +737,21 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     }
 
-    public getAssetUrlCacheTTL(expiresIn?: number) {
-      const desiredTtlMs = (expiresIn ?? 3600) * 1000;
-      return Math.min(desiredTtlMs, 10 * 60 * 1000);
+    /**
+     * How long a resolved asset URL may stay in the SDK's GET cache, in ms.
+     *
+     * A resolved private-asset URL dies the instant its scoped media token
+     * expires (~{@link ASSET_MEDIA_TOKEN_TTL_MS}). Caching it for its full
+     * nominal lifetime would leave a window where the cache serves an
+     * already-dead URL (clock skew, render-pipeline latency, an image request
+     * queued behind others). So the TTL is (a) never longer than the token's
+     * lifetime and (b) discounted to {@link ASSET_URL_CACHE_LIFETIME_FRACTION}
+     * of that bound — comfortably below the token TTL by construction.
+     */
+    public getAssetUrlCacheTTL(expiresIn?: number): number {
+      const requestedLifetimeMs = (expiresIn ?? DEFAULT_ASSET_URL_EXPIRES_IN_SECONDS) * 1000;
+      const boundedLifetimeMs = Math.min(requestedLifetimeMs, ASSET_MEDIA_TOKEN_TTL_MS);
+      return Math.floor(boundedLifetimeMs * ASSET_URL_CACHE_LIFETIME_FRACTION);
     }
 
     public async fetchAssetDownloadUrl(
@@ -635,7 +770,10 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         Object.keys(params).length ? params : undefined,
         {
           cache: true,
-          cacheTTL: cacheTTL ?? 10 * 60 * 1000,
+          // Cap the cached URL well below the media token's lifetime. The
+          // response body is a scoped, expiring URL; over-caching it serves a
+          // dead URL after the token expires (see getAssetUrlCacheTTL).
+          cacheTTL: cacheTTL ?? this.getAssetUrlCacheTTL(expiresIn),
         }
       );
 
@@ -654,6 +792,32 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       return type === 'text' ? response.text() : response.blob();
     }
   };
+}
+
+/**
+ * Normalize the per-file batch-access request list: drop entries with a blank
+ * `fileId` and collapse exact `(fileId, variant)` duplicates (first occurrence
+ * wins, preserving order). Two entries for the SAME `fileId` with DIFFERENT
+ * variants are intentionally kept — but note the response is keyed by `fileId`,
+ * so a caller that needs two variants of one file must issue separate calls.
+ */
+function dedupeFileAccessRequests(
+  requests: Array<{ fileId: string; variant?: string }>,
+): Array<{ fileId: string; variant?: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ fileId: string; variant?: string }> = [];
+  for (const req of requests) {
+    if (typeof req?.fileId !== 'string' || req.fileId.trim().length === 0) {
+      continue;
+    }
+    const key = `${req.fileId}\u0000${req.variant ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(req.variant === undefined ? { fileId: req.fileId } : { fileId: req.fileId, variant: req.variant });
+  }
+  return out;
 }
 
 /**

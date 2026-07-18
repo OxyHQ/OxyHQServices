@@ -7,6 +7,7 @@ import {
   type DeviceSessionState,
 } from '@oxyhq/contracts';
 import { logger } from '../logger';
+import { computeIdentityTag } from '../utils/cacheKey';
 import { getSocketIO } from './socketLoader';
 import type { MinimalSocket, SocketIOFactory } from './socketLoader';
 
@@ -172,8 +173,25 @@ export class SessionClient {
     }
   }
 
-  /** Validate + last-writer-wins by revision. Returns true if applied. */
-  protected applyState(raw: unknown, origin: SessionStateOrigin = 'push'): boolean {
+  /**
+   * Validate + last-writer-wins by revision. Returns true if applied.
+   *
+   * `activeToken` (sync path only) is the server-issued access token for
+   * `raw.activeAccountId`. When present and the state is applied, it is planted
+   * BEFORE any subscriber is notified so the bearer already belongs to the new
+   * active account — the local switch/bootstrap path then needs no redundant
+   * device-secret mint. Push-origin applies carry no token and rely on the
+   * mint-before-notify gate below.
+   *
+   * ORDERING INVARIANT: a subscriber must NEVER observe a newly-active account
+   * while the planted bearer still identifies the PREVIOUS one — otherwise a
+   * `useCurrentUser`-style refetch fires under the wrong account's token (the
+   * account-switch 404 race). So when a transport is available and the planted
+   * bearer does not already belong to `next.activeAccountId`, minting is awaited
+   * BEFORE `notify()`. This covers EVERY notify source (a switch push, a
+   * cross-device push, a cold mint), not just the initial "no bearer yet" case.
+   */
+  protected applyState(raw: unknown, origin: SessionStateOrigin = 'push', activeToken?: string): boolean {
     const next = safeParseContract(deviceSessionStateSchema, raw);
     if (!next) {
       logger.warn('[SessionClient] discarded invalid session state');
@@ -193,9 +211,25 @@ export class SessionClient {
       return false;
     }
     this.state = next;
+    // Plant the sync-supplied active token (it is for `next.activeAccountId`)
+    // now — before the notify below — so the bearer matches the new active
+    // account when subscribers observe it. Guarded on difference to avoid a
+    // redundant token-change notification on an unchanged token (bootstrap
+    // restate).
+    if (activeToken && next.activeAccountId !== null && activeToken !== this.host.getAccessToken()) {
+      this.host.setTokens(activeToken);
+    }
     const transport = this.options.transport;
+    const activeAccountId = next.activeAccountId;
+    // Mint before notifying when the bearer does not already belong to the new
+    // active account: no bearer at all, an opaque bearer, OR a bearer for a
+    // DIFFERENT account. `computeIdentityTag` yields the token's `userId`/`id`
+    // for a real JWT (comparable to the account id) and a non-account sentinel
+    // otherwise, so a mismatch always resolves to "mint".
     const needsMintBeforeNotify =
-      transport != null && next.accounts.length > 0 && !this.host.getAccessToken();
+      transport != null &&
+      next.accounts.length > 0 &&
+      (activeAccountId === null || computeIdentityTag(this.host.getAccessToken()) !== activeAccountId);
 
     const finishApply = (): void => {
       this.notify();
@@ -251,9 +285,23 @@ export class SessionClient {
     }
     // A `sync` is always the response to a direct REST call this client made
     // (bootstrap / switch / signOut / add) → a `request`-origin, authoritative
-    // verdict.
-    this.applyState(sync.state, 'request');
-    if (sync.activeToken && this.state && sync.state.activeAccountId === this.state.activeAccountId) {
+    // verdict. Hand the active token to `applyState`: in the applied path it is
+    // planted BEFORE notify (bearer matches the new active account when
+    // subscribers observe it, and no redundant device-secret mint is triggered).
+    const applied = this.applyState(sync.state, 'request', sync.activeToken?.accessToken);
+    // Equal-revision restate (this revision was already applied by a preceding
+    // socket push): `applyState` no-ops without planting, but the token still
+    // needs planting. Guard on the sync's active account STILL being the current
+    // active account so a stale response cannot adopt a token for an account a
+    // newer state already switched away from.
+    if (
+      !applied &&
+      sync.activeToken &&
+      this.state &&
+      sync.state.activeAccountId !== null &&
+      sync.state.activeAccountId === this.state.activeAccountId &&
+      sync.activeToken.accessToken !== this.host.getAccessToken()
+    ) {
       this.host.setTokens(sync.activeToken.accessToken);
     }
   }

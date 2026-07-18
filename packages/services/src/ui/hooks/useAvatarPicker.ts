@@ -100,11 +100,19 @@ export function useAvatarPicker({
   );
 
   /**
-   * After the user picks a file in the FileManagement sheet, route to the
-   * crop screen with the file's download URL as the source image.
+   * After the user picks a file in the FileManagement sheet, resolve a working
+   * source URL and route to the crop screen.
+   *
+   * The picked file is usually PRIVATE, so the synchronous
+   * `getFileDownloadUrl` (public CDN origin) would 404 and the crop screen's
+   * `Image.getSize` would fail silently. We resolve the authenticated URL via
+   * `assetGetUrl` (which throws on failure — unlike `getFileDownloadUrlAsync`,
+   * which swallows errors and falls back to the broken public URL) so a
+   * failure surfaces a real user-facing error instead of a blank crop canvas.
+   * No variant is requested — cropping needs the original.
    */
   const handleFilePicked = useCallback(
-    (file: FileMetadata) => {
+    async (file: FileMetadata) => {
       if (!file.contentType?.startsWith('image/')) {
         toast.error(
           translate(currentLanguage ?? undefined, 'editProfile.toasts.selectImage') ||
@@ -113,10 +121,22 @@ export function useAvatarPicker({
         return;
       }
 
-      // Use the public download URL of the picked file as the crop source.
-      // The OxyServices file URL endpoints accept image variants, but for
-      // cropping we want the original — passing no variant returns it.
-      const sourceUri = oxyServices.getFileDownloadUrl(file.id);
+      let sourceUri: string;
+      try {
+        const resolved = await oxyServices.assetGetUrl(file.id);
+        if (!resolved?.url) {
+          throw new Error('No download URL returned for the selected image');
+        }
+        sourceUri = resolved.url;
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : undefined;
+        toast.error(
+          message ||
+            translate(currentLanguage ?? undefined, 'editProfile.toasts.cropMeasureFailed') ||
+            'Could not load the selected image',
+        );
+        return;
+      }
 
       showBottomSheet({
         screen: 'AvatarCrop',

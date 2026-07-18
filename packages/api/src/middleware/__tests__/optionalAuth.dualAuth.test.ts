@@ -20,8 +20,15 @@
 // The global mongoose mock (jest.setup.cjs) omits `Types`, which optionalAuth's
 // resolveViewerId uses (`Types.ObjectId.isValid`). Restore the REAL mongoose.
 jest.mock('mongoose', () => jest.requireActual('mongoose'));
+// The global jest.setup.cjs stubs `jsonwebtoken` (sign → fixed string, verify →
+// fixed payload). The scoped-media-token tests below mint and verify REAL tokens
+// (HS256 over a key derived from ACCESS_TOKEN_SECRET), so restore the genuine
+// module for this suite.
+jest.mock('jsonwebtoken', () => jest.requireActual('jsonwebtoken'));
 import { Types } from 'mongoose';
 import type { Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { signMediaToken } from '../../utils/mediaToken';
 
 const mockVerifyServiceToken = jest.fn();
 jest.mock('../serviceToken', () => ({
@@ -30,21 +37,19 @@ jest.mock('../serviceToken', () => ({
 }));
 
 const mockAuthNonBlocking = jest.fn();
-const mockValidateSessionToken = jest.fn();
-const mockDecodeToken = jest.fn();
 // Fully mock authUtils (rather than requireActual) so loading optionalAuth does
 // NOT pull in the real session.service → Session model chain, which the global
 // mongoose mock cannot construct. We provide only the members optionalAuth
-// consumes: a pure bearer extractor, non-blocking authenticator, and session validator.
+// consumes: a pure bearer extractor and the non-blocking authenticator. The
+// scoped media token is verified by the REAL `utils/mediaToken` (pure crypto),
+// so no mock is needed for it.
 jest.mock('../authUtils', () => ({
   __esModule: true,
-  decodeToken: (...args: unknown[]) => mockDecodeToken(...args),
   extractTokenFromRequest: (req: { headers: Record<string, string | undefined> }): string | undefined => {
     const auth = req.headers.authorization;
     return auth && auth.startsWith('Bearer ') ? auth.substring(7) : undefined;
   },
   authenticateRequestNonBlocking: (...args: unknown[]) => mockAuthNonBlocking(...args),
-  validateSessionToken: (...args: unknown[]) => mockValidateSessionToken(...args),
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -79,10 +84,6 @@ beforeEach(() => {
   mockVerifyServiceToken.mockReset();
   mockAuthNonBlocking.mockReset();
   mockAuthNonBlocking.mockResolvedValue({ user: null, source: null });
-  mockValidateSessionToken.mockReset();
-  mockValidateSessionToken.mockResolvedValue(null);
-  mockDecodeToken.mockReset();
-  mockDecodeToken.mockReturnValue(null);
 });
 
 describe('optionalUserOrServiceAuth', () => {
@@ -191,20 +192,30 @@ describe('resolveViewerId', () => {
 
 /**
  * getMediaViewerUserId — resolves the viewer for `<img src>`/`<a download>`
- * media URLs that cannot carry an Authorization header but DO carry an
- * SDK-issued access token in `?token=`. Query tokens must validate through the
- * normal session-token path so expiry, sessionId, and active-session checks are
- * enforced.
+ * media URLs that cannot carry an Authorization header OR a cookie, but DO carry
+ * a SCOPED media token in `?mt=`. The token is pinned to a single file id
+ * (`fid`) and must match the route param (`req.params.id`), so a token minted
+ * for asset A cannot open asset B; expired/foreign/malformed tokens resolve to
+ * anonymous.
  */
-describe('getMediaViewerUserId (private media owner-from-query-token)', () => {
+describe('getMediaViewerUserId (private media owner-from-scoped-media-token)', () => {
   const SECRET = 'test-access-secret';
+  const FILE_A = '64c0000000000000000000a1';
+  const FILE_B = '64c0000000000000000000b2';
+  const OWNER = 'owner-123';
   let prevSecret: string | undefined;
 
   function makeMediaReq(
     query: Record<string, unknown>,
+    fileId: string,
     user?: { _id: string },
   ): OptionalUserOrServiceRequest {
-    return { headers: {}, query, user } as unknown as OptionalUserOrServiceRequest;
+    return {
+      headers: {},
+      query,
+      params: { id: fileId },
+      user,
+    } as unknown as OptionalUserOrServiceRequest;
   }
 
   beforeAll(() => {
@@ -220,69 +231,67 @@ describe('getMediaViewerUserId (private media owner-from-query-token)', () => {
     }
   });
 
-  it('prefers the authenticated session user and ignores the query token', async () => {
-    mockValidateSessionToken.mockResolvedValue({ _id: 'attacker' });
-    const req = makeMediaReq({ token: 'valid-attacker-token' }, { _id: 'session-owner' });
-    await expect(getMediaViewerUserId(req)).resolves.toBe('session-owner');
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('prefers the authenticated session user and ignores the media token', () => {
+    const mt = signMediaToken(FILE_A, 'attacker');
+    const req = makeMediaReq({ mt }, FILE_A, { _id: 'session-owner' });
+    expect(getMediaViewerUserId(req)).toBe('session-owner');
   });
 
-  it('resolves the owner from an active access-session ?token= when no session user is present', async () => {
-    mockDecodeToken.mockReturnValue({ type: 'access', sessionId: 'session-123', userId: 'owner-123' });
-    mockValidateSessionToken.mockResolvedValue({ _id: 'owner-123' });
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'active-access-token' }))).resolves.toBe('owner-123');
-    expect(mockDecodeToken).toHaveBeenCalledWith('active-access-token');
-    expect(mockValidateSessionToken).toHaveBeenCalledWith('active-access-token');
+  it('resolves the viewer from a valid scoped media token bound to this asset', () => {
+    const mt = signMediaToken(FILE_A, OWNER);
+    expect(getMediaViewerUserId(makeMediaReq({ mt }, FILE_A))).toBe(OWNER);
   });
 
-  it('returns undefined for an expired access token instead of ignoring expiration', async () => {
-    mockValidateSessionToken.mockResolvedValue(null);
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'expired-access-token' }))).resolves.toBeUndefined();
-    expect(mockDecodeToken).toHaveBeenCalledWith('expired-access-token');
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('returns undefined for a media token minted for a DIFFERENT asset', () => {
+    // Token authorizes FILE_B; the request is for FILE_A → must not resolve.
+    const mt = signMediaToken(FILE_B, OWNER);
+    expect(getMediaViewerUserId(makeMediaReq({ mt }, FILE_A))).toBeUndefined();
   });
 
-  it('returns undefined for a 2FA challenge JWT that is not an access session', async () => {
-    mockValidateSessionToken.mockResolvedValue(null);
-    await expect(getMediaViewerUserId(makeMediaReq({ token: '2fa-challenge-login-token' }))).resolves.toBeUndefined();
-    expect(mockDecodeToken).toHaveBeenCalledWith('2fa-challenge-login-token');
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('returns undefined for an access/session JWT presented in ?mt= (wrong token family)', () => {
+    // An access-token-shaped JWT signed with ACCESS_TOKEN_SECRET does NOT verify
+    // under the derived media key, so it can never act as a media credential.
+    const accessLike = jwt.sign(
+      { type: 'access', sessionId: 's1', userId: OWNER },
+      SECRET,
+      { expiresIn: 3600 },
+    );
+    expect(getMediaViewerUserId(makeMediaReq({ mt: accessLike }, FILE_A))).toBeUndefined();
   });
 
-  it('returns undefined for a JWT without type access even when it has a userId', async () => {
-    mockDecodeToken.mockReturnValue({ userId: 'owner-123', purpose: '2fa_challenge' });
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'non-access-token' }))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('returns undefined for an expired media token', () => {
+    // Mint a real token, then advance the clock past its 10-minute TTL so
+    // `jwt.verify`'s expiry check rejects it — no reaching into the private key
+    // derivation.
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      const mt = signMediaToken(FILE_A, OWNER);
+      jest.setSystemTime(new Date('2026-01-01T00:20:00Z'));
+      expect(getMediaViewerUserId(makeMediaReq({ mt }, FILE_A))).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
-  it('returns undefined for an access JWT without a sessionId', async () => {
-    mockDecodeToken.mockReturnValue({ type: 'access', userId: 'owner-123' });
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'no-session-token' }))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('returns undefined for a garbage / malformed token', () => {
+    expect(getMediaViewerUserId(makeMediaReq({ mt: 'not-a-jwt' }, FILE_A))).toBeUndefined();
   });
 
-  it('returns undefined for a revoked/logged-out session token', async () => {
-    mockDecodeToken.mockReturnValue({ type: 'access', sessionId: 'session-123', userId: 'owner-123' });
-    mockValidateSessionToken.mockResolvedValue(null);
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'revoked-session-token' }))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).toHaveBeenCalledWith('revoked-session-token');
+  it('returns undefined when neither a media token nor a session user is present', () => {
+    expect(getMediaViewerUserId(makeMediaReq({}, FILE_A))).toBeUndefined();
   });
 
-  it('returns undefined for a garbage / malformed token', async () => {
-    mockDecodeToken.mockReturnValue(null);
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'not-a-jwt' }))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+  it('returns undefined when the route has no file id param', () => {
+    const mt = signMediaToken(FILE_A, OWNER);
+    const req = { headers: {}, query: { mt }, params: {} } as unknown as OptionalUserOrServiceRequest;
+    expect(getMediaViewerUserId(req)).toBeUndefined();
   });
 
-  it('returns undefined when no token and no session user are present', async () => {
-    await expect(getMediaViewerUserId(makeMediaReq({}))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
-  });
-
-  it('returns undefined when ACCESS_TOKEN_SECRET is not configured', async () => {
+  it('returns undefined when ACCESS_TOKEN_SECRET is not configured', () => {
+    const mt = signMediaToken(FILE_A, OWNER);
     delete process.env.ACCESS_TOKEN_SECRET;
-    await expect(getMediaViewerUserId(makeMediaReq({ token: 'active-access-token' }))).resolves.toBeUndefined();
-    expect(mockValidateSessionToken).not.toHaveBeenCalled();
+    expect(getMediaViewerUserId(makeMediaReq({ mt }, FILE_A))).toBeUndefined();
     process.env.ACCESS_TOKEN_SECRET = SECRET;
   });
 });

@@ -1,6 +1,5 @@
 import type { Ionicons } from '@expo/vector-icons';
 import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
-import { File as ExpoFile } from 'expo-file-system';
 import type { ComponentProps } from 'react';
 import { Platform } from 'react-native';
 import { toast } from '@oxyhq/bloom';
@@ -142,50 +141,6 @@ export async function convertDocumentPickerAssetToFile(
         console.error('Error converting document to file:', error);
         throw error;
     }
-}
-
-/**
- * Helper to safely request a thumbnail variant only for image mime types.
- * Prevents backend warnings: "Variant thumb not supported for mime application/pdf".
- * 
- * @param file - File metadata
- * @param variant - Variant type (default: 'thumb')
- * @param getFileDownloadUrl - Function to get download URL from oxyServices
- */
-export function getSafeDownloadUrl(
-    file: FileMetadata,
-    variant: string,
-    getFileDownloadUrl: (fileId: string, variant?: string) => string
-): string {
-    const isImage = file.contentType.startsWith('image/');
-    const isVideo = file.contentType.startsWith('video/');
-
-    // Prefer explicit variant key if variants metadata present
-    if (file.variants && file.variants.length > 0) {
-        // For videos, try 'poster' regardless of requested variant
-        if (isVideo) {
-            const poster = file.variants.find(v => v.type === 'poster');
-            if (poster) return getFileDownloadUrl(file.id, 'poster');
-        }
-        if (isImage) {
-            const desired = file.variants.find(v => v.type === variant);
-            if (desired) return getFileDownloadUrl(file.id, variant);
-        }
-    }
-
-    if (isImage) {
-        return getFileDownloadUrl(file.id, variant);
-    }
-    if (isVideo) {
-        // Fallback to poster if backend supports implicit generation
-        try {
-            return getFileDownloadUrl(file.id, 'poster');
-        } catch {
-            return getFileDownloadUrl(file.id);
-        }
-    }
-    // Other mime types: no variant
-    return getFileDownloadUrl(file.id);
 }
 
 /**

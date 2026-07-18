@@ -16,6 +16,17 @@ import {
     loadDocumentPicker,
 } from '../shared';
 
+/**
+ * Optimistic-entry metadata. `uploading` flags the placeholder so no asset URL
+ * is ever built from its client-minted `temp-…` id; `localPreviewUri` lets the
+ * grid render the locally-picked image while the real upload is in flight (a
+ * bare guard would leave an empty tile). See `useResolvedFileUrls`.
+ */
+type OptimisticFileMetadata = NonNullable<FileMetadata['metadata']> & {
+    uploading?: boolean;
+    localPreviewUri?: string;
+};
+
 /** Dependencies threaded into the upload-state hook from the orchestrator. */
 export interface UseFileUploadStateParams {
     targetUserId?: string;
@@ -121,6 +132,15 @@ export const useFileUploadState = ({
                         continue;
                     }
 
+                    // Preserve the locally-picked uri so the optimistic tile
+                    // shows the real image (not an empty placeholder) while the
+                    // upload is in flight. Never an asset URL — the id is a
+                    // client-minted `temp-…`.
+                    const previewUri = candidateUri(raw);
+                    const optimisticMetadata: OptimisticFileMetadata = {
+                        uploading: true,
+                        ...(previewUri ? { localPreviewUri: previewUri } : {}),
+                    };
                     const optimisticFile: FileMetadata = {
                         id: optimisticId,
                         filename: fileName,
@@ -128,7 +148,7 @@ export const useFileUploadState = ({
                         length: fileSize,
                         chunkSize: 0,
                         uploadDate: new Date().toISOString(),
-                        metadata: { uploading: true },
+                        metadata: optimisticMetadata,
                         variants: [],
                     };
                     useFileStore.getState().addFile(optimisticFile, { prepend: true });
@@ -158,8 +178,12 @@ export const useFileUploadState = ({
                         uploadedFiles.push(merged);
                         successCount++;
                     } else {
-                        // Fallback: will reconcile on later list refresh
-                        useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as Partial<FileMetadata>['metadata'] });
+                        // Upload succeeded but the API returned no file payload,
+                        // so we cannot build a real entry. Drop the optimistic
+                        // placeholder instead of stranding a `temp-…` id (which
+                        // would leak into asset URLs); the scheduled silent
+                        // reconcile below re-fetches the persisted record.
+                        useFileStore.getState().removeFile(optimisticId);
                         if (__DEV__) {
                             console.warn('Upload completed but no file data returned:', { fileName, result });
                         }

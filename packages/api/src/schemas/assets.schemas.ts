@@ -27,10 +27,30 @@ export const deleteAssetQuerySchema = z.object({
   force: z.enum(['true', 'false']).optional(),
 });
 
+// Maximum number of per-file requests accepted by POST /assets/batch-access in
+// a single call. A file-manager grid page is ~40 tiles; callers that page beyond
+// this chunk client-side.
+export const MAX_BATCH_ACCESS_FILES = 100;
+
 // POST /assets/batch-access
+//
+// Per-file `{ fileId, variant? }` requests (variant omitted = original) so a
+// grid can resolve each tile's own rendition (`thumb`/`poster`/…) in ONE round
+// trip. Top-level `expiresIn` (seconds) sizes the minted media-token / signed-URL
+// lifetime; `context` is the access-check context string (`app:entityType:entityId`,
+// or a bare label like `file-manager` which carries no entity gate).
 export const batchAccessSchema = z.object({
-  fileIds: z.array(z.string().min(1)).min(1).max(100),
-  context: z.any().optional(),
+  files: z
+    .array(
+      z.object({
+        fileId: z.string().trim().min(1),
+        variant: z.string().trim().min(1).optional(),
+      }),
+    )
+    .min(1, 'files must not be empty')
+    .max(MAX_BATCH_ACCESS_FILES, `Cannot request more than ${MAX_BATCH_ACCESS_FILES} files at once`),
+  expiresIn: z.number().int().positive().optional(),
+  context: z.string().optional(),
 });
 
 // Maximum number of ids accepted by POST /assets/service/by-ids in a single

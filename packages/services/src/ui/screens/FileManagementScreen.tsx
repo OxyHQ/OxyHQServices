@@ -28,8 +28,8 @@ import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
     formatFileSize,
     getFileIcon,
-    getSafeDownloadUrl,
 } from '../utils/fileManagement';
+import { useResolvedFileUrls, fileThumbSource } from '../hooks/useResolvedFileUrls';
 import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
@@ -356,12 +356,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         onClose?.();
     }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices, linkContext]);
 
-    // Helper to safely request a thumbnail variant only for image mime types.
-    const getSafeDownloadUrlCallback = useCallback(
-        (file: FileMetadata, variant = 'thumb') => {
-            return getSafeDownloadUrl(file, variant, (fileId: string, variant?: string) => oxyServices.getFileDownloadUrl(fileId, variant));
-        },
-        [oxyServices]
+    // Private-safe thumbnail URLs for the currently-shown files, resolved in
+    // ONE batch per page (not N per-tile) and cached by React Query. Uploads
+    // default to private, so the synchronous public-CDN URL would 404 for
+    // every private thumbnail.
+    const resolvedThumbUrls = useResolvedFileUrls(oxyServices, filteredFiles);
+
+    // Image source for a grid tile: the resolved private-safe URL for a
+    // persisted file, or the locally-picked preview for an in-flight optimistic
+    // entry. Never builds an asset URL from a `temp-…`/uploading id.
+    const thumbSourceFor = useCallback(
+        (file: FileMetadata): string | undefined => fileThumbSource(file, resolvedThumbUrls),
+        [resolvedThumbUrls],
     );
 
     const bloomTheme = useTheme();
@@ -480,7 +486,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
-                        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
+                        const downloadUrl = thumbSourceFor(photo);
+                        // URL not resolved yet — skip (do NOT record fallback
+                        // dims) so this photo is re-measured once its private-safe
+                        // URL resolves. Measuring the broken public URL is exactly
+                        // the bug we are fixing.
+                        if (!downloadUrl) {
+                            return;
+                        }
 
                         // Unified approach using Image.getSize (works on all platforms)
                         await new Promise<void>((resolve) => {
@@ -515,7 +528,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } finally {
             setLoadingDimensions(false);
         }
-    }, [getSafeDownloadUrlCallback, photoDimensions]);
+    }, [thumbSourceFor, photoDimensions]);
+
+    // Re-measure photo dimensions when their private-safe URLs resolve. The
+    // justified grid's own trigger fires on the photo SET, not on URL
+    // availability, so newly-resolved private tiles would otherwise keep their
+    // skipped (unmeasured) state and render with fallback geometry.
+    useEffect(() => {
+        if (viewMode !== 'photos') return;
+        const photos = filteredFiles.filter((file) => file.contentType.startsWith('image/'));
+        if (photos.length > 0) {
+            loadPhotoDimensions(photos);
+        }
+    }, [resolvedThumbUrls, viewMode, filteredFiles, loadPhotoDimensions]);
 
     // Create justified rows from photos with responsive algorithm
     const createJustifiedRows = useCallback((photos: FileMetadata[], containerWidth: number) => {
@@ -646,9 +671,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // Unified download function - works on all platforms
     const handleFileDownload = async (fileId: string, filename: string) => {
         try {
-            // Try to use the download URL with a simple approach
-            // On web, this creates a download link. On mobile, it opens the URL.
-            const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
+            // Resolve an authenticated, private-safe URL. The synchronous
+            // `getFileDownloadUrl` yields the public CDN origin, which 404s for
+            // private assets (the default visibility).
+            const downloadUrl = await oxyServices.getFileDownloadUrlAsync(fileId);
 
             // For web platforms, use link download
             if (typeof window !== 'undefined' && window.document) {
@@ -715,8 +741,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         file.contentType.includes('pdf') ||
                         file.contentType.startsWith('video/') ||
                         file.contentType.startsWith('audio/')) {
-                        // For images, PDFs, videos, and audio, we'll use the URL directly
-                        const downloadUrl = oxyServices.getFileDownloadUrl(file.id);
+                        // For images, PDFs, videos, and audio, we render the URL
+                        // directly. Resolve the authenticated, private-safe URL —
+                        // the synchronous public-CDN URL 404s for private assets.
+                        const downloadUrl = await oxyServices.getFileDownloadUrlAsync(file.id);
                         setFileContent(downloadUrl);
                     } else {
                         // For text files, get the content using authenticated request
@@ -755,7 +783,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
+        const downloadUrl = thumbSourceFor(photo);
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -803,10 +831,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices, safeContainerWidth, selectMode, selectedIds, colors.primary, colors.text]);
+    }, [thumbSourceFor, safeContainerWidth, selectMode, selectedIds, colors.primary, colors.text]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
+        const downloadUrl = thumbSourceFor(photo);
 
         return (
             <TouchableOpacity
@@ -843,7 +871,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices, selectMode, selectedIds, multiSelect, colors.primary, colors.text]);
+    }, [thumbSourceFor, selectMode, selectedIds, multiSelect, colors.primary, colors.text]);
 
     // Run initial load once per targetUserId change to avoid accidental loops
     const lastLoadedFor = useRef<string | undefined>(undefined);
@@ -879,7 +907,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <View style={fileManagementStyles.filePreview}>
                                 {isImage && (
                                     <ExpoImage
-                                        source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                        source={{ uri: thumbSourceFor(file) }}
                                         style={fileManagementStyles.previewImage}
                                         contentFit="cover"
                                         transition={120}
@@ -899,7 +927,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 {isVideo && (
                                     <View style={fileManagementStyles.videoPreviewWrapper}>
                                         <ExpoImage
-                                            source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                            source={{ uri: thumbSourceFor(file) }}
                                             style={fileManagementStyles.videoPosterImage}
                                             contentFit="cover"
                                             transition={120}
@@ -1016,7 +1044,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden' }}>
                             <ExpoImage
-                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                source={{ uri: thumbSourceFor(file) }}
                                 style={{ width: 36, height: 36 }}
                                 contentFit="cover"
                                 transition={120}
@@ -1032,7 +1060,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000000', position: 'relative' }}>
                             <ExpoImage
-                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                source={{ uri: thumbSourceFor(file) }}
                                 style={{ width: 36, height: 36 }}
                                 contentFit="cover"
                                 transition={120}
@@ -1102,7 +1130,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ) : undefined,
             };
         });
-    }, [filteredFiles, theme, deleting, handleFileDownload, confirmFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
+    }, [filteredFiles, theme, deleting, handleFileDownload, confirmFileDelete, handleFileOpen, thumbSourceFor, selectMode, selectedIds]);
 
     // Scroll to selected file after selection
     useEffect(() => {
@@ -1191,7 +1219,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [lastSelectedFileId]);
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
+        const downloadUrl = thumbSourceFor(photo);
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -1570,7 +1598,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     hasMore={paging.hasMore}
                     loadingMore={paging.loadingMore}
                     reduceMotion={reduceMotion}
-                    getThumbUrl={getSafeDownloadUrlCallback}
+                    getThumbUrl={thumbSourceFor}
                     primaryColor={colors.primary}
                     isOwner={isOwner}
                     onTogglePhoto={toggleSelect}
