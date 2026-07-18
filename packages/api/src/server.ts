@@ -654,7 +654,7 @@ app.get('/nodeinfo/2.0', async (_req: any, res: Response) => {
       openRegistrations: false,
     });
   } catch (err) {
-    logger.error({ err }, 'NodeInfo 2.0 failed');
+    logger.error('NodeInfo 2.0 failed', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
