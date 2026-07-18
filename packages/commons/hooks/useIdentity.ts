@@ -385,16 +385,6 @@ export const useIdentity = (): UseIdentityResult => {
             if (!backedUp) {
               console.warn('[useIdentity] Failed to refresh on-device identity backup');
             }
-
-            // Existing users (healthy primary identity but no shared slot yet
-            // — e.g. created before shared-identity write-through shipped):
-            // mirror it into the cross-app shared slot once, on the next
-            // Commons open, so silent "Sign in with Oxy" works for apps
-            // installed later. Native-only (this effect early-returns on web);
-            // idempotent + error-swallowing.
-            if (!(await KeyManager.hasSharedIdentity())) {
-              await KeyManager.migrateToSharedIdentity();
-            }
           }
         } else {
           // No identity in primary storage — see if the on-device backup

@@ -3,7 +3,7 @@ import { Stack, router } from 'expo-router';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
@@ -21,6 +21,7 @@ configureReanimatedLogger({
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, useOxy } from '@oxyhq/services';
+import { KeyManager, logger } from '@oxyhq/core';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -133,6 +134,53 @@ export function ErrorBoundary(props: { error: Error; retry: () => void }) {
 
 function RootLayoutInner() {
   const { themeMode } = useThemeMode();
+
+  // Cross-app shared-identity backfill (native only, one-shot per launch).
+  //
+  // Commons is the ONLY app that writes the cross-app shared-identity slot
+  // other Oxy apps read for silent "Sign in with Oxy" (and e.g. a reader
+  // app's local wallet-seed derivation). For users whose identity predates
+  // that write-through, the slot stays empty until it is backfilled once via
+  // `KeyManager.migrateToSharedIdentity()`. This used to run only when
+  // `useIdentity()` happened to mount on one of a handful of screens (see
+  // `hooks/useIdentity.ts`) — hoisted here, at the true app root, so it runs
+  // unconditionally on EVERY launch regardless of which screen a deep link
+  // lands on. Fire-and-forget: never awaited on the render path, never blocks
+  // the splash hand-off below.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const backfillSharedIdentity = async () => {
+      try {
+        // The migration reads the PRIMARY identity, so it must only run once
+        // one is confirmed present — a brand-new, pre-onboarding user has
+        // nothing to migrate yet.
+        if (!(await KeyManager.hasIdentity())) return;
+        if (await KeyManager.hasSharedIdentity()) return;
+
+        const migrated = await KeyManager.migrateToSharedIdentity();
+        if (!migrated) {
+          // We already confirmed a primary identity exists and the shared
+          // slot was empty, so `false` here means the write itself failed
+          // (e.g. `OxyIdentityStore.write` threw) — not "hasn't run yet".
+          // Surfaced distinctly so a real write failure is greppable in
+          // production instead of looking identical to an unattempted
+          // backfill.
+          logger.error(
+            '[commons] shared-identity boot backfill: migrateToSharedIdentity returned false for a confirmed primary identity',
+            undefined,
+            { component: 'RootLayout' },
+          );
+        }
+      } catch (error) {
+        logger.error('[commons] shared-identity boot backfill threw unexpectedly', error, {
+          component: 'RootLayout',
+        });
+      }
+    };
+
+    void backfillSharedIdentity();
+  }, []);
 
   // `AppStackContent` is rendered UNCONDITIONALLY — the held native OS splash
   // covers the RN view until `AppStackContent` hides it once the app is ready.
