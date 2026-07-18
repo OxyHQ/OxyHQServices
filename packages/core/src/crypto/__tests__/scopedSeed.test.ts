@@ -98,10 +98,21 @@ describe('KeyManager.deriveScopedSeed', () => {
     // here would not be observed by the already-imported `KeyManager`. Reset
     // again and re-import both from the same fresh module graph so the
     // platform flip actually reaches the KeyManager instance under test.
+    //
+    // `jest.resetModules()` also re-runs the virtual `expo-secure-store`
+    // mock factory, handing this fresh KeyManager a brand-new empty
+    // in-memory store — the identity `beforeEach` imported lives only in the
+    // pre-reset store instance. Without re-storing an identity here, a
+    // `null` result would be ambiguous between the web gate and the
+    // no-identity fallback. Re-import the identity on THIS fresh instance
+    // (while still native — `importSharedIdentity` itself is native-gated
+    // and throws on web) BEFORE flipping to web, so the later `null` can
+    // only be explained by the web gate, not a missing identity.
     jest.resetModules();
     const platform = await import('../../utils/platform');
-    platform.setPlatformOS('web');
     const km = await import('../keyManager');
+    await km.KeyManager.importSharedIdentity(FIXED_PRIV);
+    platform.setPlatformOS('web');
     expect(await km.KeyManager.deriveScopedSeed('oxypay/faircoin/v1')).toBeNull();
   });
 
