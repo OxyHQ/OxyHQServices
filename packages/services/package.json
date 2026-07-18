@@ -134,7 +134,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@commitlint/cli": "^17.6.5",
-    "@commitlint/config-conventional": "^17.6.5",
+    "@commitlint/config-conventional": "^21.2.0",
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/core": "workspace:*",
     "@react-native-async-storage/async-storage": "^2.0.0",
