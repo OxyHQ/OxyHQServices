@@ -213,6 +213,7 @@ interface StubCredential {
   publicKey: string;
   applicationId: { toString: () => string };
   type: string;
+  environment: string;
   status: string;
   secretHash?: string;
   scopes: string[];
@@ -227,6 +228,7 @@ function stubCredential(overrides: Partial<StubCredential> = {}): StubCredential
     publicKey: API_KEY,
     applicationId: { toString: () => APP_ID },
     type: 'service',
+    environment: 'production',
     status: 'active',
     secretHash: SECRET_HASH,
     scopes: ['user:read'],
@@ -258,6 +260,9 @@ function decodeServiceJwt(token: string): {
   appName?: string;
   credentialId?: string;
   scopes?: string[];
+  environment?: string;
+  iss?: string;
+  aud?: string | string[];
 } {
   return jwt.verify(token, process.env.ACCESS_TOKEN_SECRET as string) as {
     type?: string;
@@ -265,6 +270,9 @@ function decodeServiceJwt(token: string): {
     appName?: string;
     credentialId?: string;
     scopes?: string[];
+    environment?: string;
+    iss?: string;
+    aud?: string | string[];
   };
 }
 
@@ -510,5 +518,20 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     expect(res.status).toBe(200);
     const claims = decodeServiceJwt(res.body.data?.token as string);
     expect(claims.scopes).toEqual(['user:read', 'files:write']);
+  });
+
+  it('embeds the credential environment and iss/aud claims in the minted JWT', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ environment: 'development' }));
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt(res.body.data?.token as string);
+    expect(claims.environment).toBe('development');
+    expect(claims.iss).toBe('oxy-auth');
+    expect(claims.aud).toBe('oxy-api');
   });
 });

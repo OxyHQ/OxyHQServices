@@ -12,6 +12,7 @@ import { loadNodeCrypto } from '@oxyhq/protocol';
 import { buildUrl } from '../utils/apiUtils';
 import { logger } from '../logger';
 import { CACHE_TIMES } from './mixinHelpers';
+import { OXY_SERVICE_ENVIRONMENTS, type OxyServiceEnvironment } from '../utils/oxyServiceEnvironment';
 
 interface JwtPayload {
   exp?: number;
@@ -25,6 +26,7 @@ interface JwtPayload {
   scopes?: string[];
   aud?: string | string[];
   iss?: string;
+  environment?: string;
   [key: string]: unknown;
 }
 
@@ -57,6 +59,8 @@ export interface ServiceApp {
   scopes: string[];
   /** The credentialId of the specific service credential that minted this token. */
   credentialId: string;
+  /** Test/live isolation (F2.0): which `ApplicationCredential.environment` minted this token. */
+  environment: OxyServiceEnvironment;
 }
 
 /**
@@ -92,6 +96,13 @@ class ServiceTokenClaimError extends Error {
     super(message);
     this.name = 'ServiceTokenClaimError';
   }
+}
+
+function isOxyServiceEnvironment(value: unknown): value is OxyServiceEnvironment {
+  return (
+    typeof value === 'string' &&
+    (OXY_SERVICE_ENVIRONMENTS as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -459,7 +470,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             // Validate required service token fields
             const appId = decoded.appId;
             const credentialId = decoded.credentialId;
-            if (!appId || typeof credentialId !== 'string' || credentialId.length === 0) {
+            const environment = decoded.environment;
+            if (
+              !appId ||
+              typeof credentialId !== 'string' ||
+              credentialId.length === 0 ||
+              !isOxyServiceEnvironment(environment)
+            ) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
@@ -513,6 +530,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               appName: decoded.appName || 'unknown',
               credentialId,
               scopes: Array.isArray(decoded.scopes) ? decoded.scopes : [],
+              environment,
             };
 
             if (debug) {

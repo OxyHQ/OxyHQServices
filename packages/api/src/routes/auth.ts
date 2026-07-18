@@ -2421,7 +2421,13 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // `appId` claim is the Application `_id` (UNCHANGED claim name — see contract
   // §5). `credentialId` is the specific ApplicationCredential `_id` that minted
   // this token, so downstream can attribute calls to a credential (e.g. for
-  // post-rotation revocation).
+  // post-rotation revocation). `environment` (F2.0) mirrors the minting
+  // credential's own `ApplicationCredential.environment` so downstream services
+  // (e.g. the Oxy Pay Gateway) can enforce test/live isolation without a second
+  // DB lookup. `issuer`/`audience` MUST match what `@oxyhq/core`'s `oxy.auth()`
+  // / `oxy.serviceAuth()` verifies against (`OXY_JWT_ISSUER`/`OXY_JWT_AUDIENCE`
+  // in `OxyServices.utility.ts`) — omitting them left every real service token
+  // unverifiable by any external consumer of the SDK.
   //
   // SCOPE AUTHORITY: the effective scopes are the credential's requested scopes
   // INTERSECTED with the application's granted scopes — a credential can never
@@ -2439,9 +2445,10 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
       appName: app.name,
       credentialId: credential._id.toString(),
       scopes,
+      environment: credential.environment,
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: SERVICE_TOKEN_EXPIRY }
+    { expiresIn: SERVICE_TOKEN_EXPIRY, issuer: 'oxy-auth', audience: 'oxy-api' }
   );
 
   // Update lastUsedAt on the credential and the application.

@@ -22,6 +22,7 @@ export {
   getRequiredOxyUserId,
   isOxyAuthenticated,
   requireOxyAuth,
+  OXY_SERVICE_ENVIRONMENTS,
 } from './auth';
 export type {
   OxyAuthenticatedRequest,
@@ -30,6 +31,7 @@ export type {
   OxyRequestUser,
   OxyServiceActingAsContext,
   OxyServiceAppContext,
+  OxyServiceEnvironment,
 } from './auth';
 export { createOxyRateLimit } from './rateLimit';
 export type { OxyRateLimitOptions } from './rateLimit';
