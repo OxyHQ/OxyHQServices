@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   isRequiredString,
   isRequiredNumber,
@@ -8,6 +10,9 @@ import {
   isValidUsername,
   isValidPassword,
   isValidDisplayName,
+  DISPLAY_NAME_ALLOWED_SCRIPTS,
+  DISPLAY_NAME_DISALLOWED_SOURCE,
+  DISPLAY_NAME_ORPHANED_MARK_SOURCE,
   isValidUUID,
   isValidDate,
   isValidFileSize,
@@ -176,15 +181,15 @@ describe('Validation Utils', () => {
       ['ᚠ', 'Runic'],
       ['Miguel de Icaza ᯅ', 'a Latin name with a trailing Batak letter'],
     ])('should return false for non-allowlisted-script letter %p (%s)', (name) => {
-      // These characters are General_Category Lo (`\p{L}`), so the old
+      // These characters are General_Category Lo (letters), so the old
       // all-scripts policy accepted them; the curated script allowlist rejects
       // decorative / limited-use scripts a real name never uses.
       expect(isValidDisplayName(name)).toBe(false);
     });
 
     it('should return false for control whitespace (tab/newline/CR)', () => {
-      // \p{Zs} (space separators only) rejects layout-breaking / multi-line
-      // spoofing whitespace that \s would have admitted.
+      // Space separators only (General_Category Zs) rejects layout-breaking /
+      // multi-line spoofing whitespace that \s would have admitted.
       expect(isValidDisplayName('Ada\tLovelace')).toBe(false);
       expect(isValidDisplayName('Ada\nLovelace')).toBe(false);
       expect(isValidDisplayName('Ada\rLovelace')).toBe(false);
@@ -193,6 +198,104 @@ describe('Validation Utils', () => {
     it('should return true for Unicode space separators', () => {
       expect(isValidDisplayName('Ada Lovelace')).toBe(true); // NBSP
       expect(isValidDisplayName('山田　太郎')).toBe(true); // ideographic space
+    });
+  });
+
+  // Hermes (React Native) has Unicode property escapes compiled OUT: any such
+  // escape (Script_Extensions "scx=…" or General_Category classes) in a `u`-flag
+  // regex throws "Invalid RegExp: Invalid property name" at module load and
+  // crashes every Oxy RN/Expo app at boot. The display-name policy therefore
+  // ships explicit code-point RANGES instead. This block guards that invariant
+  // AND proves the range regexes behave identically.
+  describe('display-name policy is property-escape-free (Hermes safety)', () => {
+    const PROPERTY_ESCAPE = /\\[pP]\{/;
+
+    it('exposes runtime regex sources that contain NO Unicode property escape', () => {
+      expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_ALLOWED_SCRIPTS)).toBe(false);
+      expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_DISALLOWED_SOURCE)).toBe(false);
+      expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_ORPHANED_MARK_SOURCE)).toBe(false);
+    });
+
+    it('only uses code-point escapes (\\x / \\u) in the class bodies', () => {
+      // regexpu-core lowers the property escapes to `\x…` / `\u…` / `\u{…}`
+      // code-point escapes. Every backslash-escape in the runtime sources must
+      // be one of those forms — never a property escape.
+      const escapeLeads = new Set<string>();
+      for (const src of [DISPLAY_NAME_DISALLOWED_SOURCE, DISPLAY_NAME_ORPHANED_MARK_SOURCE]) {
+        for (const [, lead] of src.matchAll(/\\(.)/g)) {
+          escapeLeads.add(lead);
+        }
+      }
+      expect([...escapeLeads].sort()).toEqual(['u', 'x']);
+    });
+
+    it('the shipped (non-test) policy source files contain NO property escape', () => {
+      const utilsDir = join(__dirname, '..');
+      for (const file of [
+        'validationUtils.ts',
+        'displayNamePolicyRanges.generated.ts',
+        'textNormalization.ts',
+      ]) {
+        const contents = readFileSync(join(utilsDir, file), 'utf8');
+        expect(PROPERTY_ESCAPE.test(contents)).toBe(false);
+      }
+    });
+
+    // Build the actual regexes exactly as production does (range-only sources +
+    // `u` flag + lookbehind — the shape Hermes must accept) and assert the full
+    // policy behaves as before across scripts, marks, and rejections.
+    const disallowed = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'u');
+    const orphaned = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'u');
+    const passesPolicy = (raw: string) =>
+      !disallowed.test(raw) && !orphaned.test(raw.normalize('NFC'));
+
+    it('constructs the `u`-flag regexes without throwing', () => {
+      expect(() => new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'u')).not.toThrow();
+      expect(() => new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'u')).not.toThrow();
+      // Global variants are what @oxyhq/api compiles for the strip path.
+      expect(() => new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'gu')).not.toThrow();
+      expect(() => new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'gu')).not.toThrow();
+    });
+
+    it.each([
+      ["Renée O'Brien", 'Latin with decomposed accent + apostrophe'],
+      ['Ada Lovelace', 'ASCII Latin'],
+      ['山田太郎', 'Han'],
+      ['田中\u{20000}', 'Han incl. astral CJK Extension B'],
+      ['Владимир', 'Cyrillic'],
+      ['مُحَمَد', 'Arabic with harakat (combining marks on base letters)'],
+      ['נתן', 'Hebrew'],
+      ['नमस्ते', 'Devanagari'],
+      ['김철수', 'Hangul'],
+      ['Αριστοτέλης', 'Greek'],
+      ['ᏔᎳ', 'Cherokee'],
+      ['ᠮᠣᠩᠭᠣᠯ', 'Mongolian'],
+    ])('range regexes ACCEPT allowlisted %p (%s)', (name) => {
+      expect(passesPolicy(name)).toBe(true);
+      // Parity with the public predicate.
+      expect(isValidDisplayName(name)).toBe(true);
+    });
+
+    it.each([
+      ['nixCraft \u{1f427}', 'emoji (astral)'],
+      ['Agent007', 'digit'],
+      ['Jean-Luc', 'hyphen'],
+      ['J.R.', 'dot'],
+      ['ᯅ', 'Batak (non-allowlisted script)'],
+      ['ᚠ', 'Runic (non-allowlisted script)'],
+      ['Ada\tLovelace', 'tab (control whitespace)'],
+      ['Ada\nLovelace', 'newline (control whitespace)'],
+      ['Ada\rLovelace', 'carriage return (control whitespace)'],
+    ])('range regexes REJECT %p (%s)', (name) => {
+      expect(passesPolicy(name)).toBe(false);
+      expect(isValidDisplayName(name)).toBe(false);
+    });
+
+    it('rejects an orphaned combining mark not riding a base letter', () => {
+      expect(passesPolicy('༘⋆')).toBe(false); // lone Tibetan mark + star
+      expect(orphaned.test('༘')).toBe(true); // bare mark at string start
+      // A decomposed accent recomposes under NFC and rides its base letter.
+      expect(orphaned.test('é'.normalize('NFC'))).toBe(false);
     });
   });
 

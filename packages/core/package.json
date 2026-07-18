@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "12.5.1",
+  "version": "12.5.2",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -91,6 +91,7 @@
     "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rm -rf dist",
+    "generate:display-name-policy": "node scripts/generateDisplayNamePolicyRanges.mjs",
     "typescript": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "lint": "biome lint --error-on-warnings ./src",
@@ -157,6 +158,7 @@
     "expo-secure-store": "~56.0.4",
     "express": "^4.22.2",
     "express-rate-limit": "^7.5.0",
+    "regexpu-core": "^6.4.0",
     "release-it": "^19.0.6",
     "typescript": "^5.9.2"
   }

@@ -52,11 +52,16 @@ const ANY_WHITESPACE_RUN = /\s+/g;
  * SEPARATOR (U+2028) / PARAGRAPH SEPARATOR (U+2029), which are mandatory breaks
  * in Unicode and a well-known hazard in JSON/JS payloads. CRLF must be matched
  * before the lone `\r` alternative or it would yield two breaks. The separators
- * are matched by Unicode property (`\p{Zl}` = U+2028, `\p{Zp}` = U+2029) rather
- * than as literals: a literal U+2028/U+2029 is a LineTerminator and cannot appear
- * inside a regex literal at all.
+ * are matched by their code-point ESCAPES (`\u2028` = LINE SEPARATOR, `\u2029` =
+ * PARAGRAPH SEPARATOR) rather than by their Unicode Line_Separator /
+ * Paragraph_Separator property escapes: React Native's Hermes engine ships with
+ * Unicode property escapes compiled OUT and rejects those subcategory property
+ * names with "Invalid RegExp: Invalid property name", whereas the `\uXXXX`
+ * escapes are exactly equivalent (each property covers exactly its one code
+ * point), engine-portable, and drop the now-unneeded `u` flag. (A literal
+ * U+2028/U+2029 is itself a LineTerminator and cannot appear in a regex literal.)
  */
-const LINE_BREAK_FORMS = /\r\n|\r|\p{Zl}|\p{Zp}/gu;
+const LINE_BREAK_FORMS = /\r\n|\r|\u2028|\u2029/g;
 
 /**
  * A run of HORIZONTAL whitespace: any whitespace that is not a line break.
