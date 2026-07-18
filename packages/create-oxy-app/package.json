@@ -30,7 +30,7 @@
     "directory": "packages/create-oxy-app"
   },
   "author": "OxyHQ",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "homepage": "https://oxy.so",
   "engines": {
     "node": ">=18.0.0"

@@ -1405,7 +1405,6 @@
         "pair_cooldown": "Ya confirmaste a esta persona hace poco. Inténtalo más tarde.",
         "excluded_graph_neighbor": "Estás demasiado conectado para confirmar a esta persona.",
         "excluded_shared_device": "Este móvil está vinculado a su cuenta, así que no puede confirmarla.",
-        "excluded_shared_ip": "Los dos móviles están en la misma red — por antifraude, una confirmación necesita los móviles en redes distintas (p. ej. pon este con datos móviles).",
         "self_attestation": "No puedes confirmar tu propia identidad. Inicia sesión con otra cuenta para confirmar a otra persona.",
         "bad_signature": "No se pudo verificar tu clave de identidad. Abre Commons y termina de configurar tu identidad, luego inténtalo de nuevo.",
         "subject_not_found": "No encontramos la identidad de esa persona.",
@@ -1505,7 +1504,6 @@
         "voucher_below_threshold": "Tu propia confianza aún no es suficiente para avalar. Genera más reputación primero.",
         "excluded_graph_neighbor": "Estás demasiado conectado para avalar a esta persona.",
         "excluded_shared_device": "Esta cuenta comparte dispositivo con la tuya, así que no puedes avalarla.",
-        "excluded_shared_ip": "Esta cuenta comparte red con la tuya, así que no puedes avalarla.",
         "subject_not_found": "No pudimos encontrar la cuenta de esta persona.",
         "generic": "No pudimos registrar tu aval. Inténtalo de nuevo."
       }

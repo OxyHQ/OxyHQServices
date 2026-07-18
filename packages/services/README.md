@@ -815,4 +815,4 @@ Comprehensive documentation is available in the `/docs` directory:
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Foundation, Inc. See the [LICENSE](LICENSE) file for details.

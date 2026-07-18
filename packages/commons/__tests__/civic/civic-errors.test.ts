@@ -13,7 +13,6 @@ describe('attestErrorCode', () => {
     ['Attestation rejected: pair_cooldown', 'pair_cooldown'],
     ['Attestation rejected: excluded_graph_neighbor', 'excluded_graph_neighbor'],
     ['Attestation rejected: excluded_shared_device', 'excluded_shared_device'],
-    ['Attestation rejected: excluded_shared_ip', 'excluded_shared_ip'],
     ['Attestation rejected: self_attestation', 'self_attestation'],
     ['Attestation rejected: bad_signature', 'bad_signature'],
     ['Attestation subject not found', 'subject_not_found'],
@@ -52,7 +51,6 @@ describe('vouchErrorCode', () => {
     ['Vouch rejected: voucher_below_threshold', 'voucher_below_threshold'],
     ['Vouch rejected: excluded_graph_neighbor', 'excluded_graph_neighbor'],
     ['Vouch rejected: excluded_shared_device', 'excluded_shared_device'],
-    ['Vouch rejected: excluded_shared_ip', 'excluded_shared_ip'],
   ])('maps "%s" → %s', (message, code) => {
     expect(vouchErrorCode(new Error(message))).toBe(code);
   });

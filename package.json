@@ -80,7 +80,7 @@
     "services"
   ],
   "author": "OxyHQ",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "overrides": {
     "ioredis": "5.11.1",
     "send": "0.19.1",

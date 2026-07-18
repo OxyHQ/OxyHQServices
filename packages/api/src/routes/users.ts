@@ -81,6 +81,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 import { PAGINATION } from '../utils/constants';
 import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
+import { isDiscoverableUser } from '../utils/profileQuery';
 
 // Initialize router and controller
 const router = Router();
@@ -95,6 +96,14 @@ const usersController = new UsersController();
  * Accepts both ObjectId strings and publicKey strings
  * Stores the resolved ObjectId back in req.params.userId
  */
+/** 404 when the target user is archived or restricted — same gate as GET /users/:userId. */
+async function assertDiscoverableTargetUser(userId: string): Promise<void> {
+  const user = await userService.getUserById(userId);
+  if (!isDiscoverableUser(user)) {
+    throw new NotFoundError('User not found');
+  }
+}
+
 const resolveUserId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
@@ -816,6 +825,8 @@ router.get(
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
+    await assertDiscoverableTargetUser(userId);
+
     const result = await userService.getUserFollowers(userId, {
       limit: parsedLimit,
       offset: parsedOffset,
@@ -854,6 +865,8 @@ router.get(
       ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+
+    await assertDiscoverableTargetUser(userId);
 
     const result = await userService.getUserFollowing(userId, {
       limit: parsedLimit,
@@ -907,6 +920,8 @@ router.get(
       ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+
+    await assertDiscoverableTargetUser(userId);
 
     const result = await userService.getUserMutuals(viewerId, userId, {
       limit: parsedLimit,
