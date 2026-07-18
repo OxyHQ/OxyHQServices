@@ -1,9 +1,14 @@
 /**
- * Viewer-scoped query keys for single-profile fetches.
+ * Query-key scoping for single-profile fetches.
  *
- * `getUserById` / `getProfileByUsername` embed a viewer-relative `relationship`
- * when authenticated. React Query keys must include the active viewer id so an
- * anonymous cold-boot entry does not freeze once the session resolves.
+ * `useUserByUsername` embeds a viewer-relative `relationship` when
+ * authenticated, so its key includes the active viewer id — an anonymous
+ * cold-boot entry must not freeze once the session resolves.
+ *
+ * `useUserById` is the opposite by design: it is the card-identity workhorse
+ * (name/avatar/username) and keys on the viewer-INDEPENDENT
+ * `queryKeys.users.detail(id)` so external by-id identity seeders / precache
+ * layers share one cache entry. It must NEVER be viewer-scoped.
  */
 
 import type { ReactNode } from 'react';
@@ -54,7 +59,7 @@ const makeWrapper = (queryClient: QueryClient) =>
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   };
 
-describe('useUserById viewer scope', () => {
+describe('useUserById identity (viewer-independent)', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -67,15 +72,20 @@ describe('useUserById viewer scope', () => {
     };
   });
 
-  it('refetches when the viewer session resolves', async () => {
+  it('keys on queryKeys.users.detail(id) and does NOT re-scope when the viewer resolves', async () => {
     const { result, rerender } = renderHook(() => useUserById('target-1'), {
       wrapper: makeWrapper(queryClient),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockState.oxyServices.getUserById).toHaveBeenCalledTimes(1);
-    expect(result.current.data?.relationship).toBeUndefined();
 
+    // The identity entry lives at the viewer-INDEPENDENT key.
+    expect(queryClient.getQueryData(queryKeys.users.detail('target-1'))).toEqual(ANON_PROFILE);
+
+    // Viewer session lands (~5-25s later). Swapping the mock proves that even
+    // if the API would now return a viewer-relative payload, the shared
+    // identity entry is reused: no new fetch, no viewer-scoped cache entry.
     mockState = {
       oxyServices: {
         ...makeServices(),
@@ -85,14 +95,17 @@ describe('useUserById viewer scope', () => {
     };
     rerender();
 
-    await waitFor(() => expect(result.current.data?.relationship?.followsYou).toBe(true));
-    expect(mockState.oxyServices.getUserById).toHaveBeenCalledTimes(1);
-    expect(queryClient.getQueryData(queryKeys.users.detailForViewer('target-1', ''))).toEqual(
-      ANON_PROFILE,
-    );
-    expect(queryClient.getQueryData(queryKeys.users.detailForViewer('target-1', 'viewer-1'))).toEqual(
-      AUTH_PROFILE,
-    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockState.oxyServices.getUserById).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual(ANON_PROFILE);
+
+    // The key never became viewer-scoped, so no detailForViewer entry exists.
+    expect(
+      queryClient.getQueryData(queryKeys.users.detailForViewer('target-1', 'viewer-1')),
+    ).toBeUndefined();
+    expect(
+      queryClient.getQueryData(queryKeys.users.detailForViewer('target-1', '')),
+    ).toBeUndefined();
   });
 });
 

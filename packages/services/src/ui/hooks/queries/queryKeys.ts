@@ -34,9 +34,20 @@ export const queryKeys = {
     /** Viewer-scoped single-profile fetch by user id (`relationship` is viewer-relative). */
     detailForViewer: (userId: string, viewerId: string) =>
       [...queryKeys.users.details(), userId, 'viewer', viewerId] as const,
-    /** Viewer-scoped single-profile fetch by username (`relationship` is viewer-relative). */
+    /**
+     * Viewer-scoped single-profile fetch by username (`relationship` is
+     * viewer-relative). Username is normalized to `trim().toLowerCase()` here
+     * so the hook key and any external seeder (e.g. Mention's precache) agree
+     * by construction — normalize once, never at call sites.
+     */
     byUsername: (username: string, viewerId: string) =>
-      [...queryKeys.users.details(), 'username', username, 'viewer', viewerId] as const,
+      [
+        ...queryKeys.users.details(),
+        'username',
+        username.trim().toLowerCase(),
+        'viewer',
+        viewerId,
+      ] as const,
     profile: (sessionId: string) => [...queryKeys.users.details(), sessionId, 'profile'] as const,
   },
 
