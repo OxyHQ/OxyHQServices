@@ -151,14 +151,61 @@ export interface PhotoPickerViewProps {
  * Apple Photos pattern: when any cell is selected, *non-selected* siblings
  * fade to 0.6 opacity to focus attention on the active selection.
  */
-const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
+/**
+ * Shared cell chrome (image, dim, badge). Ring border is injected by the
+ * static vs animated wrappers so web never touches Reanimated worklets.
+ */
+function PhotoPickerCellContent(props: {
+    photo: FileMetadata;
+    dim: boolean;
+    isSelected: boolean;
+    selectionIndex: number;
+    primaryColor: string;
+    thumbUrl: string | undefined;
+    ring: React.ReactNode;
+}) {
+    const {
+        photo, dim, isSelected, selectionIndex, primaryColor, thumbUrl, ring,
+    } = props;
+
+    return (
+        <>
+            <View
+                className={`flex-1 rounded-radius-8 overflow-hidden bg-[#111111]${dim ? ' opacity-60' : ''}`}
+            >
+                <ExpoImage
+                    source={{ uri: thumbUrl }}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit="cover"
+                    transition={120}
+                    cachePolicy="memory-disk"
+                    accessibilityLabel={photo.filename}
+                />
+            </View>
+            {ring}
+            {isSelected && (
+                <View
+                    pointerEvents="none"
+                    className="absolute top-1.5 right-1.5 min-w-[22px] h-[22px] px-1.5 rounded-full items-center justify-center"
+                    style={{ backgroundColor: primaryColor }}
+                >
+                    <Text className="text-white text-[12px] font-bold leading-[14px]">
+                        {selectionIndex > 0 ? String(selectionIndex) : ''}
+                    </Text>
+                </View>
+            )}
+        </>
+    );
+}
+
+type PhotoPickerCellProps = {
     photo: FileMetadata;
     size: number;
     marginRight: number;
     marginBottom: number;
     isSelected: boolean;
-    selectionIndex: number; // 1-based for badge; 0 if not selected
-    dim: boolean; // any selection exists and this cell is not selected
+    selectionIndex: number;
+    dim: boolean;
     primaryColor: string;
     thumbUrl: string | undefined;
     enterIndex: number;
@@ -166,21 +213,64 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
     onPress: () => void;
     onLongPress: () => void;
     a11yLabel: string;
-}) {
+};
+
+const PhotoPickerCellStatic = React.memo(function PhotoPickerCellStatic(props: PhotoPickerCellProps) {
+    const {
+        photo, size, marginRight, marginBottom, isSelected, selectionIndex,
+        dim, primaryColor, thumbUrl, onPress, onLongPress, a11yLabel,
+    } = props;
+
+    const cellWrapperStyle = {
+        width: size,
+        height: size,
+        marginRight,
+        marginBottom,
+    };
+
+    const ring = isSelected ? (
+        <View
+            pointerEvents="none"
+            className="absolute inset-0 rounded-radius-8 border-[3px]"
+            style={{ borderColor: primaryColor }}
+        />
+    ) : null;
+
+    return (
+        <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={onPress}
+            onLongPress={onLongPress}
+            className="relative"
+            style={cellWrapperStyle}
+            accessibilityRole="button"
+            accessibilityLabel={a11yLabel}
+            accessibilityState={{ selected: isSelected }}
+        >
+            <PhotoPickerCellContent
+                photo={photo}
+                dim={dim}
+                isSelected={isSelected}
+                selectionIndex={selectionIndex}
+                primaryColor={primaryColor}
+                thumbUrl={thumbUrl}
+                ring={ring}
+            />
+        </TouchableOpacity>
+    );
+});
+
+const PhotoPickerCellAnimated = React.memo(function PhotoPickerCellAnimated(props: PhotoPickerCellProps) {
     const {
         photo, size, marginRight, marginBottom, isSelected, selectionIndex,
         dim, primaryColor, thumbUrl, enterIndex, reduceMotion, onPress,
         onLongPress, a11yLabel,
     } = props;
 
-    // Cap the cumulative stagger at ~800ms total so the very long grid does
-    // not keep fading in late tiles. Beyond ~53 tiles the delay maxes out.
     const STAGGER_PER_CELL_MS = 15;
     const MAX_TOTAL_STAGGER_MS = 800;
     const delay = Math.min(enterIndex * STAGGER_PER_CELL_MS, MAX_TOTAL_STAGGER_MS);
 
-    // Selection ring pulse animation: 1.0 → 1.05 → 1.0 on transition to
-    // selected. Plays at most once per selection change; reduce-motion skips.
     const ringScale = useSharedValue(1);
     const prevSelected = useRef(isSelected);
     useEffect(() => {
@@ -204,8 +294,6 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
         transform: [{ scale: ringScale.value }],
     }));
 
-    // Per-tile pixel geometry is derived from the measured grid width, so it
-    // stays an inline `style` — NativeWind cannot express a runtime pixel size.
     const cellWrapperStyle = {
         width: size,
         height: size,
@@ -213,49 +301,15 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
         marginBottom,
     };
 
-    const inner = (
-        <>
-            <View
-                className={`flex-1 rounded-radius-8 overflow-hidden bg-[#111111]${dim ? ' opacity-60' : ''}`}
-            >
-                <ExpoImage
-                    source={{ uri: thumbUrl }}
-                    // expo-image is a third-party component (no NativeWind
-                    // className remap), so fill via inline style.
-                    style={{ width: '100%', height: '100%' }}
-                    contentFit="cover"
-                    transition={120}
-                    cachePolicy="memory-disk"
-                    accessibilityLabel={photo.filename}
-                />
-            </View>
-            {isSelected && (
-                <Reanimated.View
-                    pointerEvents="none"
-                    className="absolute inset-0 rounded-radius-8 border-[3px]"
-                    // borderColor is the theme primary (dynamic); the animated
-                    // scale transform must ride on `style` too.
-                    style={[{ borderColor: primaryColor }, ringAnimatedStyle]}
-                />
-            )}
-            {isSelected && (
-                <View
-                    pointerEvents="none"
-                    className="absolute top-1.5 right-1.5 min-w-[22px] h-[22px] px-1.5 rounded-full items-center justify-center"
-                    style={{ backgroundColor: primaryColor }}
-                >
-                    <Text className="text-white text-[12px] font-bold leading-[14px]">
-                        {selectionIndex > 0 ? String(selectionIndex) : ''}
-                    </Text>
-                </View>
-            )}
-        </>
-    );
+    const ring = isSelected ? (
+        <Reanimated.View
+            pointerEvents="none"
+            className="absolute inset-0 rounded-radius-8 border-[3px]"
+            style={[{ borderColor: primaryColor }, ringAnimatedStyle]}
+        />
+    ) : null;
 
-    // Reanimated layout `entering` animations don't load on web (no worklets
-    // babel plugin in the RN-Web build) — they warn and no-op. So on web (and
-    // when reduce-motion is set) render the plain cell with no entering stagger.
-    if (reduceMotion || Platform.OS === 'web') {
+    if (reduceMotion) {
         return (
             <TouchableOpacity
                 activeOpacity={0.85}
@@ -267,7 +321,15 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
                 accessibilityLabel={a11yLabel}
                 accessibilityState={{ selected: isSelected }}
             >
-                {inner}
+                <PhotoPickerCellContent
+                    photo={photo}
+                    dim={dim}
+                    isSelected={isSelected}
+                    selectionIndex={selectionIndex}
+                    primaryColor={primaryColor}
+                    thumbUrl={thumbUrl}
+                    ring={ring}
+                />
             </TouchableOpacity>
         );
     }
@@ -287,10 +349,25 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
                 accessibilityLabel={a11yLabel}
                 accessibilityState={{ selected: isSelected }}
             >
-                {inner}
+                <PhotoPickerCellContent
+                    photo={photo}
+                    dim={dim}
+                    isSelected={isSelected}
+                    selectionIndex={selectionIndex}
+                    primaryColor={primaryColor}
+                    thumbUrl={thumbUrl}
+                    ring={ring}
+                />
             </TouchableOpacity>
         </Reanimated.View>
     );
+});
+
+const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCellProps) {
+    if (Platform.OS === 'web') {
+        return <PhotoPickerCellStatic {...props} />;
+    }
+    return <PhotoPickerCellAnimated {...props} />;
 });
 
 const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({

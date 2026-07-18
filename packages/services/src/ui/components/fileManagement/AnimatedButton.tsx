@@ -10,6 +10,7 @@ interface AnimatedButtonProps {
   primaryColor: string;
   textColor: string;
   style: Record<string, unknown>;
+  accessibilityLabel: string;
 }
 
 /**
@@ -23,6 +24,7 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
   primaryColor,
   textColor,
   style,
+  accessibilityLabel,
 }) => {
   const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
@@ -41,7 +43,13 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
   });
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected: isSelected }}
+    >
       <Animated.View style={[style, { backgroundColor }]}>
         <Animated.View>
           <MaterialCommunityIcons

@@ -40,6 +40,7 @@ import { useFileUploadState } from './fileManagement/hooks/useFileUploadState';
 import PhotoPickerView from './fileManagement/PhotoPickerSection';
 import FileListSection, { type FileListItem } from './fileManagement/FileListSection';
 import UploadBar from './fileManagement/UploadBar';
+import { AnimatedButton } from '../components/fileManagement/AnimatedButton';
 
 // Genuinely-inline-only styles: `viewModeButton` is spread into an Animated.View
 // style array (interpolated backgroundColor), and the photo tiles are
@@ -57,60 +58,6 @@ const screenStyles = StyleSheet.create({
     photoImage: { width: '100%', height: '100%', borderRadius: 8 },
     justifiedPhotoImage: { width: '100%', height: '100%', borderRadius: 6 },
 });
-
-// Animated button component for smooth transitions
-const AnimatedButton: React.FC<{
-    isSelected: boolean;
-    onPress: () => void;
-    icon: string;
-    primaryColor: string;
-    textColor: string;
-    style: Record<string, unknown>;
-    accessibilityLabel: string;
-}> = ({ isSelected, onPress, icon, primaryColor, textColor, style, accessibilityLabel }) => {
-    const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
-
-    useEffect(() => {
-        Animated.timing(animatedValue, {
-            toValue: isSelected ? 1 : 0,
-            duration: 200,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: false,
-        }).start();
-    }, [isSelected, animatedValue]);
-
-    const backgroundColor = animatedValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['transparent', primaryColor],
-    });
-
-    return (
-        <TouchableOpacity
-            onPress={onPress}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={accessibilityLabel}
-            accessibilityState={{ selected: isSelected }}
-        >
-            <Animated.View
-                style={[
-                    style,
-                    {
-                        backgroundColor,
-                    },
-                ]}
-            >
-                <Animated.View>
-                    <MaterialCommunityIcons
-                        name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
-                        size={16}
-                        color={isSelected ? '#FFFFFF' : textColor}
-                    />
-                </Animated.View>
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
