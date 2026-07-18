@@ -110,4 +110,4 @@ bun run test
 
 ## License
 
-MIT -- OxyHQ
+AGPL-3.0-only -- The Oxy Foundation, Inc. See the [LICENSE](LICENSE) file for details.
