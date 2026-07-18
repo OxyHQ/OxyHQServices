@@ -31,7 +31,7 @@ export const MAX_IMAGE_UPLOAD_LABEL = '2 MB';
 /** Visibility used for uploaded logos/avatars — public so they render unauthenticated. */
 const PUBLIC_VISIBILITY = 'public' as const;
 
-const SENSITIVE_URL_QUERY_PARAMS = new Set(['token', 'access_token', 'authorization']);
+const SENSITIVE_URL_QUERY_PARAMS = new Set(['token', 'access_token', 'authorization', 'mt']);
 
 /**
  * Strip credentials from URLs before persisting image metadata.

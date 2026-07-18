@@ -24,7 +24,7 @@ import {
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
-import { MEDIA_TOKEN_QUERY_PARAM, signMediaToken } from '../utils/mediaToken';
+import { MEDIA_TOKEN_QUERY_PARAM, MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../utils/mediaToken';
 import { FEDERATION_CACHE_MAX_BYTES, USER_MEDIA_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 import User from '../models/User';
 import { isValidObjectId } from '../utils/validation';
@@ -1380,7 +1380,7 @@ router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: 
   sendSuccess(res, {
     url,
     variant: variantType,
-    expiresIn: expiry
+    expiresIn: mediaToken ? MEDIA_TOKEN_TTL_SECONDS : expiry,
   });
 }));
 

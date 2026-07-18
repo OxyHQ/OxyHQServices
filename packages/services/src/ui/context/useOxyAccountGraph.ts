@@ -5,6 +5,7 @@ import { logger as loggerUtil } from '@oxyhq/core';
 import { useAuthStore } from '../stores/authStore';
 import { isUnauthorizedStatus } from './oxyContextHelpers';
 import { resetSessionScopedStores } from '../stores/resetSessionScopedStores';
+import { ASSET_DOWNLOAD_URLS_QUERY_KEY } from '../hooks/useResolvedFileUrls';
 import type { CommitInput } from './oxyContextTypes';
 
 interface UseOxyAccountGraphParams {
@@ -63,6 +64,10 @@ export function useOxyAccountGraph({
 
   const runPostAccountSwitchSideEffects = useCallback(async (): Promise<void> => {
     resetSessionScopedStores();
+    // Scoped media tokens are per-viewer — drop any cached URLs immediately so
+    // `keepPreviousData`-style placeholders cannot flash the prior account's
+    // private thumbnails while the new bearer mint lands.
+    queryClient.removeQueries({ queryKey: [ASSET_DOWNLOAD_URLS_QUERY_KEY] });
     await refreshAccounts();
     queryClient.invalidateQueries();
   }, [refreshAccounts, queryClient]);

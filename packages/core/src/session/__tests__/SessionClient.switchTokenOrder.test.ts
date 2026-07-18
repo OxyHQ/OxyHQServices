@@ -128,4 +128,43 @@ describe('SessionClient — no notify under a mismatched bearer on an account sw
     c.apply(stateWith(3, 'b1'));
     expect(seen).toEqual(['b1']);
   });
+
+  it('reverts state and does not notify when minting fails on an account switch', async () => {
+    let planted: string | null = jwtFor('a1');
+    const host: SessionClientHost = {
+      makeRequest: jest.fn(),
+      getBaseURL: () => 'http://test.invalid',
+      getAccessToken: () => planted,
+      getDeviceCredential: () => null,
+      onTokensChanged: () => () => undefined,
+      setTokens: (token) => {
+        planted = token;
+      },
+      getCurrentAccountId: () => null,
+    };
+
+    const transport: TokenTransport = {
+      ensureActiveToken: jest.fn(async () => {
+        await Promise.resolve();
+        throw new Error('mint failed');
+      }),
+    };
+
+    const c = new TestClient(host, { transport });
+    const seen: Array<string | null> = [];
+    c.subscribe((s) => seen.push(s?.activeAccountId ?? null));
+
+    c.apply(stateWith(1, 'a1'));
+    expect(seen).toEqual(['a1']);
+
+    c.apply(stateWith(2, 'b1'));
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+
+    // Still on A — no notify under A's bearer for B's active account.
+    expect(seen).toEqual(['a1']);
+    expect(c.getState()?.activeAccountId).toBe('a1');
+    expect(computeIdentityTag(host.getAccessToken())).toBe('a1');
+  });
 });

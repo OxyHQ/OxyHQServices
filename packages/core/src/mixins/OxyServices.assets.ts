@@ -649,7 +649,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         
         return await this.makeRequest<AssetUrlResponse>('GET', `/assets/${fileId}/url`, params, {
           cache: true,
-          cacheTTL: 10 * 60 * 1000,
+          cacheTTL: this.getAssetUrlCacheTTL(expiresIn),
         });
       } catch (error) {
         throw this.handleError(error);

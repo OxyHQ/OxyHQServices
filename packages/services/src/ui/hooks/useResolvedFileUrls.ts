@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { FileMetadata } from '@oxyhq/core';
 
 /**
@@ -48,6 +48,9 @@ const ASSET_URL_STALE_MS = 5 * 60 * 1000; // 5 minutes
 const ASSET_URL_GC_MS = 30 * 60 * 1000;
 /** Server-side batch cap for `POST /assets/batch-access` — chunk beyond this. */
 const BATCH_CAP = 100;
+
+/** React Query prefix — scoped media URLs must never leak across accounts. */
+export const ASSET_DOWNLOAD_URLS_QUERY_KEY = 'assetDownloadUrls' as const;
 
 /**
  * True when a file is an optimistic placeholder that has not been persisted by
@@ -104,7 +107,10 @@ export function fileThumbSource(
 export function useResolvedFileUrls(
   oxyServices: AssetUrlBatchResolver,
   files: FileMetadata[],
+  /** Active viewer account id — media tokens are minted per user; must be in the query key. */
+  viewerId?: string | null,
 ): ReadonlyMap<string, string> {
+  const viewerKey = viewerId ?? '';
   const requests = useMemo(() => {
     const list: Array<{ fileId: string; variant?: string }> = [];
     for (const file of files) {
@@ -125,13 +131,19 @@ export function useResolvedFileUrls(
   );
 
   const query = useQuery({
-    queryKey: ['assetDownloadUrls', signature],
-    enabled: requests.length > 0,
+    queryKey: [ASSET_DOWNLOAD_URLS_QUERY_KEY, viewerKey, signature],
+    enabled: requests.length > 0 && viewerKey.length > 0,
     staleTime: ASSET_URL_STALE_MS,
     gcTime: ASSET_URL_GC_MS,
-    // Keep previously-resolved URLs on screen while a grown set re-resolves,
-    // so scrolling never blanks already-loaded tiles.
-    placeholderData: keepPreviousData,
+    // Keep previously-resolved URLs on screen while the SAME viewer's file set
+    // grows (pagination), but never carry another account's scoped media tokens
+    // across a switch — `keepPreviousData` alone would do that.
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousData || !previousQuery) return undefined;
+      const prevViewer = previousQuery.queryKey[1];
+      if (prevViewer !== viewerKey) return undefined;
+      return previousData;
+    },
     queryFn: async (): Promise<Record<string, string>> => {
       const merged: Record<string, string> = {};
       for (let i = 0; i < requests.length; i += BATCH_CAP) {
