@@ -69,7 +69,17 @@ export type SignedFetch = (url: string, accept: string, init?: RequestInit) => P
 
 function requestInitHeaders(init: RequestInit): Record<string, string> {
   if (!init.headers) return {};
-  if (init.headers instanceof Headers) return Object.fromEntries(init.headers.entries());
+  if (init.headers instanceof Headers) {
+    // `Headers.forEach` is typed on the base `DOM` lib, whereas
+    // `Headers.entries()` requires `DOM.Iterable` — which this package's build
+    // tsconfig deliberately omits (isomorphic node/web split). `forEach` keeps
+    // the flatten build-safe under every lib config (Docker + local).
+    const flattened: Record<string, string> = {};
+    init.headers.forEach((value, key) => {
+      flattened[key] = value;
+    });
+    return flattened;
+  }
   if (Array.isArray(init.headers)) return Object.fromEntries(init.headers);
   return init.headers as Record<string, string>;
 }
