@@ -480,9 +480,29 @@ router.get(
         {
           $facet: {
             profiles: [
+              // Order the WHOLE match set BEFORE paging so offset pagination is
+              // deterministic (the client's infinite scroll must never see a row
+              // duplicated or skipped across pages):
+              //   1. NATIVE (Oxy local/agent/etc.) before FEDERATED — federated
+              //      is `type === 'federated'`; everything else ranks first.
+              //   2. Most-reputable first — `reputationRankWeight` is the
+              //      denormalized reputation rank (defaults to INFLUENCE_MIN, so
+              //      the $ifNull only guards rows predating the field).
+              //   3. `_id` ascending as the FINAL tiebreaker — `_id` is unique, so
+              //      this makes the total order strict and pagination stable.
+              // The sort precedes $skip/$limit, so it orders the full match set,
+              // not just the page. The two sort-only fields are stripped by the
+              // $project below so they never leak into the DTO.
+              {
+                $addFields: {
+                  _nativePriority: { $cond: [{ $eq: ['$type', 'federated'] }, 1, 0] },
+                  _reputationRank: { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
+                },
+              },
+              { $sort: { _nativePriority: 1, _reputationRank: -1, _id: 1 } },
               { $skip: parsedOffset },
               { $limit: parsedLimit },
-              { $project: { password: 0, refreshToken: 0 } },
+              { $project: { password: 0, refreshToken: 0, _nativePriority: 0, _reputationRank: 0 } },
             ],
             totalCount: [{ $count: 'count' }],
           },
@@ -501,6 +521,11 @@ router.get(
     // which can be an ARCHIVED (dead / 410-Gone) account or a `restricted`
     // (negative-reputation) actor — never let that prepend re-introduce an actor
     // the `accountStatus` / `reputationTier` $match above just excluded.
+    //
+    // This is a DELIBERATE exception to the native-first ordering applied above:
+    // the caller typed an EXACT fediverse handle (`user@host`), so the resolved
+    // remote actor is the single most-relevant hit and belongs at the front even
+    // though it is federated. The rest of the page keeps native-first order.
     if (
       federatedUser &&
       federatedUser.accountStatus !== 'archived' &&
@@ -1265,6 +1290,17 @@ async function buildRecommendationsScored(
   });
 
   // Sort by score desc, stable by _id; page with skip/limit.
+  //
+  // NO native-first tier is injected here — unlike people search (`GET
+  // /profiles/search`), this scored "who to follow" path already MODELS
+  // federation and is already deterministic: federated candidates are surfaced
+  // only through real graph/app signals (mutual overlap, endorsements, affinity,
+  // boosts — never a blanket regex), stale federated actors are aged out by
+  // `minFederatedResolvedAt`, and `excludeTypes` can drop them entirely. Forcing
+  // native-above-federated regardless of score would contradict the explicit
+  // product intent of this surface (a weighted composite recommendation), so we
+  // keep the composite score and let `_id` provide the stable pagination
+  // tiebreaker instead.
   scored.sort((a, b) => {
     if (b.row.score !== a.row.score) return b.row.score - a.row.score;
     return a.row._id.toHexString().localeCompare(b.row._id.toHexString());
