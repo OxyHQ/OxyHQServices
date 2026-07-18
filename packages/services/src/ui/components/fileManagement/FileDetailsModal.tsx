@@ -59,7 +59,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
             <View className="bg-secondary border-border" style={fileManagementStyles.fileDetailCard}>
                 <View style={fileManagementStyles.fileDetailIcon}>
                     <Ionicons
-                        name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
+                        name={getFileIcon(file.contentType)}
                         size={64}
                         color={colors.primary}
                     />
