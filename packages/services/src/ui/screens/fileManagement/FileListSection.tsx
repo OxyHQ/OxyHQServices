@@ -11,7 +11,6 @@ import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import type { useTheme } from '@oxyhq/bloom/theme';
-import { fileManagementStyles } from '../../components/fileManagement/styles';
 
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
@@ -63,8 +62,8 @@ const FileListSection: React.FC<FileListSectionProps> = ({
     return (
         <ScrollView
             ref={scrollViewRef}
-            style={fileManagementStyles.scrollView}
-            contentContainerStyle={fileManagementStyles.scrollContainer}
+            className="flex-1"
+            contentContainerClassName="px-space-12 pt-0 pb-space-12"
             refreshControl={
                 <RefreshControl
                     refreshing={refreshing}
@@ -82,18 +81,19 @@ const FileListSection: React.FC<FileListSectionProps> = ({
             scrollEventThrottle={250}
         >
             {filteredFiles.length === 0 && searchQuery.length > 0 ? (
-                <View style={fileManagementStyles.emptyState}>
+                <View className="items-center py-10 px-space-24">
                     <Ionicons name="search" size={64} color={colors.textTertiary} />
-                    <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.noResults.title')}</Text>
-                    <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
+                    <Text className="text-[24px] font-bold mt-space-16 mb-space-8" style={{ color: colors.text }}>{t('fileManagement.noResults.title')}</Text>
+                    <Text className="text-[16px] text-center leading-[24px] mb-space-32" style={{ color: colors.textSecondary }}>
                         {t('fileManagement.noResults.description', { query: searchQuery })}
                     </Text>
                     <TouchableOpacity
-                        style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
+                        className="flex-row items-center px-space-24 py-space-12 rounded-[24px] gap-space-8"
+                        style={{ backgroundColor: colors.primary }}
                         onPress={onClearSearch}
                     >
                         <Ionicons name="refresh" size={20} color="#FFFFFF" />
-                        <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.clearSearch')}</Text>
+                        <Text className="text-white text-[16px] font-semibold">{t('fileManagement.clearSearch')}</Text>
                     </TouchableOpacity>
                 </View>
             ) : filteredFiles.length === 0 ? renderEmptyState() : (
@@ -112,9 +112,9 @@ const FileListSection: React.FC<FileListSectionProps> = ({
                         ))}
                     </SettingsListGroup>
                     {paging.loadingMore && (
-                        <View style={fileManagementStyles.loadingMoreBar}>
+                        <View className="flex-row items-center justify-center py-space-12 gap-space-8">
                             <ActivityIndicator size="small" color={colors.primary} />
-                            <Text style={[fileManagementStyles.loadingMoreText, { color: colors.text }]}>{t('fileManagement.loadingMore')}</Text>
+                            <Text className="text-[13px] font-medium" style={{ color: colors.text }}>{t('fileManagement.loadingMore')}</Text>
                         </View>
                     )}
                 </>

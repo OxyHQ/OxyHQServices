@@ -7,6 +7,7 @@ import {
     RefreshControl,
     FlatList,
     Platform,
+    useWindowDimensions,
     type LayoutChangeEvent,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
@@ -314,20 +315,27 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     onConfirm,
     t,
 }) => {
-    // Measure the grid CONTAINER (the bottom-sheet content width), NOT the
-    // device screen. On wide viewports the sheet is centered/narrower than the
-    // screen, so screen-width tile math overflows. The measured wrapper carries
-    // ONLY a `style` (no `className`) because RN-Web does not fire `onLayout`
-    // for `className`'d nodes.
+    // Grid sizing width. We PREFER the measured grid-container width (the
+    // bottom-sheet content width) so tiles size to the sheet, not the device
+    // screen — on wide viewports the sheet is centered/narrower than the screen.
+    // But we must NEVER gate the whole grid on that measurement: `onLayout` is
+    // unreliable on web (react-native-css can suppress it), and a grid that only
+    // renders after a measurement can stay blank forever. So we fall back to the
+    // window width until a real measurement arrives — the grid ALWAYS renders,
+    // then snaps to the sheet width once `onLayout` reports it. The measured
+    // wrapper carries ONLY a `style` (no `className`) to maximise the chance
+    // `onLayout` fires on web.
+    const { width: windowWidth } = useWindowDimensions();
     const [gridWidth, setGridWidth] = useState(0);
     const onRootLayout = useCallback((e: LayoutChangeEvent) => {
         const w = Math.round(e.nativeEvent.layout.width);
         setGridWidth((prev) => (prev === w ? prev : w));
     }, []);
 
+    const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
     const { columns, cellSize, gutter } = useMemo(
-        () => computePhotoGridLayout(gridWidth),
-        [gridWidth],
+        () => computePhotoGridLayout(effectiveWidth),
+        [effectiveWidth],
     );
 
     // Map selectedIds → 1-based selection order for the badge. We freeze a
@@ -345,13 +353,9 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     const hasAnySelection = selectedIds.size > 0;
 
     // Compact icon-only upload pill on narrow sheets; full pill otherwise.
-    // Defaults to the full label until the sheet width has been measured.
-    const showUploadLabel = gridWidth === 0 || gridWidth >= 360;
+    const showUploadLabel = effectiveWidth >= 360;
 
     const isEmpty = photos.length === 0;
-    // Only mount the grid once a real container width is known, so columns /
-    // tile size derive from the sheet width instead of a placeholder.
-    const gridReady = gridWidth > 0 && cellSize > 0;
     const atSelectionLimit =
         multiSelect && maxSelection != null && selectedIds.size >= maxSelection;
 
@@ -493,13 +497,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                                 )}
                             </TouchableOpacity>
                         )}
-                    </View>
-                ) : !gridReady ? (
-                    <View className="flex-1 items-center justify-center pt-[88px]">
-                        <ActivityIndicator size="large" color="#FFFFFF" />
-                        <Text className="text-white text-[14px] mt-space-12 opacity-70">
-                            {t('fileManagement.loadingPhotoLayout')}
-                        </Text>
                     </View>
                 ) : (
                         <FlatList
