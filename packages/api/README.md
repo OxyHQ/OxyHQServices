@@ -297,4 +297,4 @@ Response:
 
 ## License
 
-This project is part of the OxyServices ecosystem.
+This project is part of the OxyServices ecosystem and is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Foundation, Inc. See the [LICENSE](../../LICENSE) file for details.

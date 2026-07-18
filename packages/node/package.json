@@ -21,7 +21,7 @@
     "self-sovereign-identity"
   ],
   "author": "OxyHQ",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=20.0.0"
   },

@@ -2,6 +2,13 @@
  * Validation utilities for common data validation patterns
  */
 
+import {
+  DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES,
+  DISPLAY_NAME_COMBINING_MARKS_RANGES,
+  DISPLAY_NAME_SPACE_SEPARATORS_RANGES,
+  DISPLAY_NAME_LETTERS_RANGES,
+} from './displayNamePolicyRanges.generated';
+
 /**
  * Email validation regex
  */
@@ -44,15 +51,16 @@ export function isValidPassword(password: string): boolean {
  *
  * A clean display name is composed ONLY of:
  *   - letters from a curated ALLOWLIST of scripts that real names use
- *     ({@link DISPLAY_NAME_ALLOWED_SCRIPTS}) — NOT `\p{L}` (letters of ANY
- *     script), which admits decorative / historic / limited-use scripts whose
- *     characters are `\p{L}` yet never appear in a real name (e.g. `ᯅ` U+1BC5
- *     Batak, Runic, Deseret, dingbat letters),
- *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
- *     "é"),
- *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
- *     space, …) — but NOT control whitespace such as tab, newline, or carriage
- *     return, which would break layout or enable multi-line spoofing,
+ *     ({@link DISPLAY_NAME_ALLOWED_SCRIPTS}) — NOT every letter (General_Category
+ *     L of ANY script), which admits decorative / historic / limited-use scripts
+ *     whose characters are letters yet never appear in a real name (e.g. `ᯅ`
+ *     U+1BC5 Batak, Runic, Deseret, dingbat letters),
+ *   - combining marks / accents (General_Category M, e.g. the acute accent in a
+ *     decomposed "é"),
+ *   - Unicode space separators (General_Category Zs: the ASCII space, NBSP,
+ *     ideographic space, …) — but NOT control whitespace such as tab, newline,
+ *     or carriage return, which would break layout or enable multi-line
+ *     spoofing,
  *   - the straight apostrophe (`'`, e.g. "O'Brien").
  *
  * Everything else is rejected: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
@@ -61,15 +69,26 @@ export function isValidPassword(password: string): boolean {
  * includes `<`, `>`, `&`, or `"`, so a value that passes this predicate can
  * never contain an HTML/XSS vector.
  *
- * The allowlist is expressed with Unicode Script_Extensions (`\p{scx=…}`)
- * escapes so a letter shared by several scripts (e.g. a Han ideograph used in
- * both Chinese and Japanese) still matches. It is the set of scripts Unicode
- * UTS #39 marks "Recommended" for general interchange / identifiers, plus
- * Cherokee and Mongolian (both in real modern name use). "Common" script is
- * deliberately EXCLUDED — that is where ASCII digits and general punctuation
- * live, and this policy excludes those; the space separators, combining marks,
- * and apostrophe a name needs are added back explicitly. Limited-use / excluded
- * / historic scripts (Batak, Runic, Deseret, Adlam, …) are simply absent.
+ * The allowlist is expressed with Unicode Script_Extensions (scx=…) so a letter
+ * shared by several scripts (e.g. a Han ideograph used in both Chinese and
+ * Japanese) still matches. It is the set of scripts Unicode UTS #39 marks
+ * "Recommended" for general interchange / identifiers, plus Cherokee and
+ * Mongolian (both in real modern name use). "Common" script is deliberately
+ * EXCLUDED — that is where ASCII digits and general punctuation live, and this
+ * policy excludes those; the space separators, combining marks, and apostrophe a
+ * name needs are added back explicitly. Limited-use / excluded / historic
+ * scripts (Batak, Runic, Deseret, Adlam, …) are simply absent.
+ *
+ * HERMES / RANGES: the class bodies below are built from explicit Unicode
+ * code-point RANGES ({@link DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES} et al. from
+ * `./displayNamePolicyRanges.generated`), NOT from `scx`/General_Category
+ * property escapes. React Native's Hermes engine ships with Unicode property
+ * escapes compiled OUT and throws "Invalid RegExp: Invalid property name" for
+ * any such escape at module load, crashing every Oxy RN/Expo app at boot. The
+ * ranges are the compressed union of exactly those properties (generated on
+ * Node/V8, which supports them — see `scripts/generateDisplayNamePolicyRanges.mjs`),
+ * so behavior is IDENTICAL on V8 (web) and Hermes (native) with the same `u`
+ * flag and lookbehind, but with zero property escapes in the shipped regex.
  *
  * This is the SINGLE definition of the policy: the character-class sources below
  * are the ONE source of truth, shared between the API strip/gate
@@ -81,40 +100,34 @@ export function isValidPassword(password: string): boolean {
 
 /**
  * The curated allowlist of Unicode scripts permitted in a display name, as a
- * character-class body of Script_Extensions (`scx`) property escapes. Ordered by
- * rough script family for readability; order has no semantic effect.
+ * character-class body of explicit code-point ranges (the compressed union of
+ * the 30 allowlisted Script_Extensions, generated on V8). Interpolated into the
+ * negated class below.
  */
-export const DISPLAY_NAME_ALLOWED_SCRIPTS =
-  '\\p{scx=Latin}\\p{scx=Greek}\\p{scx=Cyrillic}\\p{scx=Armenian}' +
-  '\\p{scx=Hebrew}\\p{scx=Arabic}\\p{scx=Thaana}\\p{scx=Devanagari}' +
-  '\\p{scx=Bengali}\\p{scx=Gurmukhi}\\p{scx=Gujarati}\\p{scx=Oriya}' +
-  '\\p{scx=Tamil}\\p{scx=Telugu}\\p{scx=Kannada}\\p{scx=Malayalam}' +
-  '\\p{scx=Sinhala}\\p{scx=Thai}\\p{scx=Lao}\\p{scx=Tibetan}' +
-  '\\p{scx=Myanmar}\\p{scx=Georgian}\\p{scx=Hangul}\\p{scx=Ethiopic}' +
-  '\\p{scx=Cherokee}\\p{scx=Khmer}\\p{scx=Mongolian}\\p{scx=Hiragana}' +
-  '\\p{scx=Katakana}\\p{scx=Bopomofo}\\p{scx=Han}';
+export const DISPLAY_NAME_ALLOWED_SCRIPTS = DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES;
 
 /**
  * Source of the disallowed-character pattern: the negation of the full allowed
- * set (allowlisted scripts + combining marks `\p{M}` + space separators `\p{Zs}`
- * + the straight apostrophe). Consumers compile this with the `u` flag (and `g`
- * for a global strip). The whitespace class is `\p{Zs}` (space separators only),
+ * set (allowlisted scripts + combining marks + space separators + the straight
+ * apostrophe). Consumers compile this with the `u` flag (and `g` for a global
+ * strip). The whitespace class is space separators only (General_Category Zs),
  * NOT `\s` — the latter would admit tab/newline/carriage return, which break
  * layout and enable multi-line spoofing.
  */
-export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}\\p{M}\\p{Zs}']`;
+export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}${DISPLAY_NAME_COMBINING_MARKS_RANGES}${DISPLAY_NAME_SPACE_SEPARATORS_RANGES}']`;
 
 /**
- * Source of the orphaned combining-mark pattern: a run of `\p{M}` NOT attached
- * to a base letter (preceded by string start, whitespace, the apostrophe, or a
- * position vacated by a stripped character). A mark preceded by `\p{L}` (a base
- * letter, e.g. the decomposed accent in "Renée") or by another `\p{M}` (a
- * multi-mark cluster) is NOT matched because the negative lookbehind fails at its
- * position. Used both as a non-global probe (`.test`) and, with the `g` flag, to
- * strip whole orphaned runs. The lookbehind intentionally still uses the broad
- * `\p{L}` so that a mark riding on an allowlisted base letter is preserved.
+ * Source of the orphaned combining-mark pattern: a run of combining marks NOT
+ * attached to a base letter (preceded by string start, whitespace, the
+ * apostrophe, or a position vacated by a stripped character). A mark preceded by
+ * a base letter (e.g. the decomposed accent in "Renée") or by another combining
+ * mark (a multi-mark cluster) is NOT matched because the negative lookbehind
+ * fails at its position. Used both as a non-global probe (`.test`) and, with the
+ * `g` flag, to strip whole orphaned runs. The lookbehind intentionally uses the
+ * BROAD letters set (General_Category L of any script) so that a mark riding on
+ * an allowlisted base letter is preserved.
  */
-export const DISPLAY_NAME_ORPHANED_MARK_SOURCE = '(?<![\\p{L}\\p{M}])\\p{M}+';
+export const DISPLAY_NAME_ORPHANED_MARK_SOURCE = `(?<![${DISPLAY_NAME_LETTERS_RANGES}${DISPLAY_NAME_COMBINING_MARKS_RANGES}])[${DISPLAY_NAME_COMBINING_MARKS_RANGES}]+`;
 
 /** Non-global probe for the presence of a disallowed character. */
 const DISALLOWED_PROBE = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'u');
