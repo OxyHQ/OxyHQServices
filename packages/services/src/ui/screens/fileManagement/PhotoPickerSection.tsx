@@ -547,7 +547,8 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                         </View>
                         <View pointerEvents="none">
                             <Text
-                                className="text-white text-[17px] font-semibold text-center tracking-[-0.2px]"
+                                className="text-white text-[17px] font-semibold text-center"
+                                style={{ letterSpacing: -0.2 }}
                                 numberOfLines={1}
                             >
                                 {t('fileManagement.choosePhoto')}

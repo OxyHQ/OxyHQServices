@@ -1008,21 +1008,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 const photoIndex = photos.findIndex(p => p.id === lastSelectedFileId);
 
                 if (photoIndex >= 0) {
-                    // Estimate photo item height based on grid layout
-                    // Calculate items per row
-                    let itemsPerRow = 3;
-                    if (safeContainerWidth > 768) itemsPerRow = 6;
-                    else if (safeContainerWidth > 480) itemsPerRow = 4;
-
-                    const scrollContainerPadding = 32;
-                    const gaps = (itemsPerRow - 1) * 4;
-                    const availableWidth = safeContainerWidth - scrollContainerPadding;
-                    const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-                    // Calculate row and approximate scroll position
+                    // Rough scroll estimate for the justified grid (3 photos/row; variable row heights).
+                    const itemsPerRow = 3;
+                    const estimatedRowHeight = 150;
+                    const rowGap = 4;
                     const row = Math.floor(photoIndex / itemsPerRow);
-                    const headerHeight = 250;
-                    const finalScrollPosition = headerHeight + (row * (itemWidth + 4)) - 150;
+                    const finalScrollPosition = row * (estimatedRowHeight + rowGap) - 100;
 
                     // Use requestAnimationFrame to ensure DOM is updated before scrolling
                     requestAnimationFrame(() => {
@@ -1048,45 +1039,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             return () => clearTimeout(timeoutId);
         }
     }, [lastSelectedFileId]);
-
-    const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = thumbSourceFor(photo);
-
-        // Calculate photo item width based on actual container size from bottom sheet
-        let itemsPerRow = 3; // Default for mobile
-        if (safeContainerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
-        else if (safeContainerWidth > 480) itemsPerRow = 4; // Large mobile
-
-        // Account for the photoScrollContainer padding (16px on each side = 32px total)
-        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items
-        const availableWidth = safeContainerWidth - scrollContainerPadding;
-        const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-        return (
-            <TouchableOpacity
-                key={photo.id}
-                className="rounded-[8px] overflow-hidden"
-                style={{ width: itemWidth, height: itemWidth }}
-                onPress={() => handleFileOpen(photo)}
-                activeOpacity={0.8}
-            >
-                <View className="w-full h-full relative rounded-[8px] overflow-hidden">
-                    <ExpoImage
-                        source={{ uri: downloadUrl }}
-                        style={screenStyles.photoImage}
-                        contentFit="cover"
-                        transition={120}
-                        cachePolicy="memory-disk"
-                        onError={() => {
-                            // Image preview failed to load
-                        }}
-                        accessibilityLabel={photo.filename}
-                    />
-                </View>
-            </TouchableOpacity>
-        );
-    };
 
     const renderPhotoGrid = useCallback(() => {
         const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
@@ -1159,9 +1111,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     loadPhotoDimensions={loadPhotoDimensions}
                     createJustifiedRows={createJustifiedRows}
                     renderJustifiedPhotoItem={renderJustifiedPhotoItem}
-                    renderSimplePhotoItem={renderPhotoItem}
                     textColor={colors.text}
-                    containerWidth={safeContainerWidth}
+                    containerWidth={
+                        typeof containerWidth === 'number' && containerWidth > 0
+                            ? containerWidth
+                            : undefined
+                    }
                 />
             </ScrollView>
         );
@@ -1179,8 +1134,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         loadPhotoDimensions,
         createJustifiedRows,
         renderJustifiedPhotoItem,
-        renderPhotoItem,
-        safeContainerWidth
+        containerWidth,
     ]);
 
     // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)

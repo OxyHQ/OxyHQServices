@@ -8,7 +8,6 @@ export interface JustifiedPhotoGridProps {
     loadPhotoDimensions: (photos: FileMetadata[]) => Promise<void>;
     createJustifiedRows: (photos: FileMetadata[], containerWidth: number) => FileMetadata[][];
     renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => React.ReactElement;
-    renderSimplePhotoItem: (photo: FileMetadata, index: number) => React.ReactElement;
     textColor: string;
     /**
      * Full available width from parent. If omitted, component will measure itself and adapt responsively.
