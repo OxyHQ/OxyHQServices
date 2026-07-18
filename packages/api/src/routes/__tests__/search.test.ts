@@ -94,6 +94,7 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
 const activeUser = new Types.ObjectId();
 const archivedUser = new Types.ObjectId();
 const restrictedUser = new Types.ObjectId();
+const privateUser = new Types.ObjectId();
 
 let server: http.Server;
 
@@ -190,6 +191,42 @@ describe('GET /search archived exclusion', () => {
     const ids = (res.body.users ?? []).map((user) => String(user.id));
     expect(ids).toContain(activeUser.toString());
     expect(ids).not.toContain(restrictedUser.toString());
+  });
+
+  it('filters private accounts while surfacing public matches', async () => {
+    const pool: PoolUser[] = [
+      { _id: activeUser, username: 'public_match', accountStatus: 'active' },
+      {
+        _id: privateUser,
+        username: 'private_match',
+        accountStatus: 'active',
+        privacySettings: { isPrivateAccount: true },
+      },
+    ];
+
+    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
+      const matched = pool.filter((user) => matchesFindFilter(user, filter));
+      return {
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue(
+          matched.map((user) => ({
+            _id: user._id,
+            username: user.username,
+            accountStatus: user.accountStatus,
+            privacySettings: user.privacySettings,
+          })),
+        ),
+      };
+    });
+
+    const res = await requestJson(server, '/?query=match&type=users');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.users ?? []).map((user) => String(user.id));
+    expect(ids).toContain(activeUser.toString());
+    expect(ids).not.toContain(privateUser.toString());
   });
 });
 

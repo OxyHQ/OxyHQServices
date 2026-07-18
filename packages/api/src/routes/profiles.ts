@@ -773,9 +773,15 @@ router.get(
         },
         { $unwind: '$user' },
         // Hold co-follower candidates to the same discovery eligibility bar as
-        // the recommendations surface: drop incomplete shell/QA profiles and
-        // stale/unavailable federated actors before they reach the response.
-        { $match: eligibleUserMatch(minFederatedResolvedAt, 'user.') },
+        // the recommendations surface: drop incomplete shell/QA profiles,
+        // private accounts, and stale/unavailable federated actors before they
+        // reach the response.
+        {
+          $match: {
+            'user.privacySettings.isPrivateAccount': { $ne: true },
+            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
+          },
+        },
         ...followCountLookupStages,
         profileProjectionStage,
       ]);
