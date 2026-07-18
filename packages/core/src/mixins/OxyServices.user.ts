@@ -244,7 +244,15 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           handle,
         }, {
           cache: true,
-          cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
+          // 5 min — matches the sibling profile fetches (getUserById /
+          // getProfileByUsername). /profiles/resolve now carries the viewer-relative
+          // `relationship` (isFollowing / followsYou); `followsYou` is target→viewer,
+          // so the viewer can't self-refresh it via a follow action. The GET cache is
+          // identity-scoped (keyed by the caller's access-token identity tag → no
+          // cross-viewer poison), so a short TTL keeps "Follows you" reasonably fresh
+          // without a per-call bypass. The identity fields alone tolerate a longer
+          // window, but a 24h stale relationship is not acceptable.
+          cacheTTL: 5 * 60 * 1000,
         });
         return normalizeUserIdentityOrNull(result);
       } catch (error: unknown) {
