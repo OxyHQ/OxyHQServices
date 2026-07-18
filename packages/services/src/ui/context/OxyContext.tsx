@@ -45,7 +45,7 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, onlineManager } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
@@ -848,6 +848,41 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
 
+  // Reconnect heal: when connectivity transitions offline→online while there is
+  // no live access token but a persisted device credential exists, re-mint ONCE
+  // through the SAME shared single-flight lane the scheduler / tab-focus
+  // reconcile / 401 path use — never a private mint lane, so this can't
+  // double-rotate the device secret against them. A device that cold-booted
+  // OFFLINE skipped the network mint step, so its session is otherwise only
+  // recovered by the next scheduled re-mint; healing on the reconnect edge makes
+  // recovery immediate. `onlineManager` is fed by OxyProvider's existing NetInfo
+  // (native) / `navigator.onLine` (web) listener, so this reuses the one
+  // connectivity signal instead of opening a second NetInfo subscription. Works
+  // on native and web alike.
+  useEffect(() => {
+    // Seed from the current verdict so the first callback heals only on a
+    // genuine offline→online edge, never an initial subscribe fan-out.
+    let previousOnline = onlineManager.isOnline();
+    return onlineManager.subscribe((online: boolean) => {
+      const wasOffline = previousOnline === false;
+      previousOnline = online;
+      if (!online || !wasOffline) {
+        return;
+      }
+      void (async () => {
+        if (oxyServices.getAccessToken() || !sessionClientHost.getDeviceCredential()) {
+          return;
+        }
+        await oxyServices.httpService.refreshAccessToken('preflight');
+        if (!oxyServices.getAccessToken()) {
+          return;
+        }
+        await sessionClient.bootstrap();
+        await syncFromClient();
+      })().catch(() => undefined);
+    });
+  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
+
   // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
   // state and reproject — the manual counterpart to the realtime socket.
   const refreshSessionsForContext = useCallback(async (): Promise<void> => {
@@ -877,6 +912,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [sessionClient, syncFromClient],
   );
 
+  // Thin passthroughs to the platform-agnostic KeyManager. NOTE: both now THROW
+  // `IdentityUnavailableError` (from `@oxyhq/core`) when identity storage is
+  // locked/unreadable, instead of flattening that into `false`/`null`. We keep
+  // the signatures and deliberately let the typed error PROPAGATE to the caller
+  // — a locked keychain must never be misreported as "no identity". `hasIdentity`
+  // still resolves `false` and `getPublicKey` still resolves `null` for a genuine
+  // absence.
   const hasIdentity = useCallback(async (): Promise<boolean> => KeyManager.hasIdentity(), []);
   const getPublicKey = useCallback(async (): Promise<string | null> => KeyManager.getPublicKey(), []);
 

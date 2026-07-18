@@ -497,14 +497,21 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Request an authentication challenge
      * The client must sign this challenge with their private key
-     * 
+     *
      * @param publicKey - The user's public key
+     * @param requestOptions - Optional per-call transport overrides (`retry`,
+     *   `timeout`). Interactive callers omit it (defaults keep retries); the
+     *   cold-boot `shared-key-signin` step passes `{ retry: false }` so a slow
+     *   network cannot multiply boot latency via the inner retry loop.
      */
-    async requestChallenge(publicKey: string): Promise<ChallengeResponse> {
+    async requestChallenge(
+      publicKey: string,
+      requestOptions?: { retry?: boolean; timeout?: number },
+    ): Promise<ChallengeResponse> {
       try {
         return await this.makeRequest<ChallengeResponse>('POST', '/auth/challenge', {
           publicKey,
-        }, { cache: false });
+        }, { cache: false, ...requestOptions });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -519,6 +526,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * @param timestamp - Timestamp when the signature was created
      * @param deviceName - Optional device name
      * @param deviceFingerprint - Optional device fingerprint
+     * @param requestOptions - Optional per-call transport overrides (`retry`,
+     *   `timeout`). Interactive callers omit it (defaults keep retries); the
+     *   cold-boot `shared-key-signin` step passes `{ retry: false }` so a slow
+     *   network cannot multiply boot latency via the inner retry loop.
      */
     async verifyChallenge(
       publicKey: string,
@@ -526,7 +537,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       signature: string,
       timestamp: number,
       deviceName?: string,
-      deviceFingerprint?: string
+      deviceFingerprint?: string,
+      requestOptions?: { retry?: boolean; timeout?: number },
     ): Promise<SessionLoginResponse> {
       try {
         const res = await this.makeRequest<SessionLoginResponse>('POST', '/auth/verify', {
@@ -536,7 +548,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           timestamp,
           deviceName,
           deviceFingerprint,
-        }, { cache: false });
+        }, { cache: false, ...requestOptions });
 
         // Plant the freshly-minted tokens, mirroring `claimSessionByToken`.
         // `/auth/verify` returns the first access token (and refresh token) in
@@ -718,9 +730,20 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      *
      * The cold-boot wiring that CALLS this lives in `OxyContext`
      * (`@oxyhq/services`); this method just performs the exchange.
+     *
+     * @param opts.requestOptions - Optional per-call transport overrides
+     *   (`retry`, `timeout`) forwarded to BOTH the `requestChallenge` and
+     *   `verifyChallenge` round-trips. Interactive flows omit it (defaults keep
+     *   retries); the cold-boot `shared-key-signin` step passes `{ retry: false }`
+     *   so this network step cannot multiply boot latency via the inner retry
+     *   loop. The token-refresh scheduler / 401 lane still retry later.
      */
     async signInWithSharedIdentity(
-      opts: { deviceName?: string; deviceFingerprint?: string } = {}
+      opts: {
+        deviceName?: string;
+        deviceFingerprint?: string;
+        requestOptions?: { retry?: boolean; timeout?: number };
+      } = {}
     ): Promise<SessionLoginResponse | null> {
       try {
         // `hasSharedIdentity()` already returns false on web (the shared
@@ -734,7 +757,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           return null;
         }
 
-        const { challenge } = await this.requestChallenge(sharedPublicKey);
+        const { challenge } = await this.requestChallenge(sharedPublicKey, opts.requestOptions);
         const signed = await SignatureService.signChallengeWithSharedKey(challenge);
 
         // `signed.challenge` carries the SIGNATURE (mirrors `signChallenge`).
@@ -745,6 +768,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           signed.timestamp,
           opts.deviceName,
           opts.deviceFingerprint,
+          opts.requestOptions,
         );
       } catch (error) {
         throw this.handleError(error);
