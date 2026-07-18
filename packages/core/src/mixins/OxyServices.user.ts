@@ -161,7 +161,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getProfileByUsername(username: string, options?: { cache?: boolean }): Promise<User> {
       try {
-        const user = await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
+        const user = await this.makeRequest<User>('GET', `/profiles/username/${encodeURIComponent(username)}`, undefined, {
           cache: options?.cache ?? true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
         });
@@ -733,6 +733,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         const result = await this.makeRequest<FollowMutationResult>('POST', `/users/${userId}/follow`, undefined, { cache: false });
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        // Profile fetches embed viewer-relative `relationship` — bust so a
+        // remount doesn't serve a stale isFollowing for up to 5 minutes.
+        this.clearCacheEntry(`GET:/users/${userId}`);
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheByPrefix('GET:/profiles/resolve');
         // The follow changed the viewer's graph — bust the cached consolidated
         // `GET /users/me/graph` so the next read reflects the new following/
         // mutual set instead of the stale pre-write snapshot.
@@ -760,7 +765,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         // Bust each affected user's cached follow-status (see `followUser`).
         for (const id of userIds) {
           this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+          this.clearCacheEntry(`GET:/users/${id}`);
         }
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheByPrefix('GET:/profiles/resolve');
         // The batch changed the viewer's graph — bust the consolidated cache.
         this.clearCacheEntry('GET:/users/me/graph');
         return result;
@@ -786,7 +794,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         // Bust each affected user's cached follow-status (see `followUser`).
         for (const id of userIds) {
           this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+          this.clearCacheEntry(`GET:/users/${id}`);
         }
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheByPrefix('GET:/profiles/resolve');
         // The batch changed the viewer's graph — bust the consolidated cache.
         this.clearCacheEntry('GET:/users/me/graph');
         return result;
@@ -803,6 +814,9 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const result = await this.makeRequest<FollowMutationResult>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
         // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
         this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        this.clearCacheEntry(`GET:/users/${userId}`);
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheByPrefix('GET:/profiles/resolve');
         // The unfollow changed the viewer's graph — bust the consolidated cache.
         this.clearCacheEntry('GET:/users/me/graph');
         return result;

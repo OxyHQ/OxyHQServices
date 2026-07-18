@@ -17,13 +17,16 @@ const mockUserFindById = jest.fn();
 const mockResolveAndUpsert = jest.fn();
 const mockIsFediverseHandle = jest.fn();
 const mockGetUserStats = jest.fn();
+const mockGetViewerRelationship = jest.fn();
+
+let currentViewerId: string | undefined;
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 jest.mock('../../middleware/optionalAuth', () => ({
   optionalUserOrServiceAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
-  resolveViewerId: (): string | undefined => undefined,
+  resolveViewerId: () => currentViewerId,
 }));
 jest.mock('../../middleware/validate', () => ({
   validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -35,6 +38,7 @@ jest.mock('../../services/user.service', () => ({
       id: profile._id.toString(),
       username: profile.username,
     }),
+    getViewerRelationship: (...args: unknown[]) => mockGetViewerRelationship(...args),
   },
 }));
 jest.mock('../../services/federation.service', () => ({
@@ -109,6 +113,7 @@ describe('GET /profiles/username/:username', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    currentViewerId = undefined;
     mockIsFediverseHandle.mockReturnValue(false);
     mockGetUserStats.mockResolvedValue({});
   });
@@ -156,5 +161,60 @@ describe('GET /profiles/username/:username', () => {
     const res = await requestJson(server, 'nate');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ id: activeUserId.toString(), username: 'nate' });
+  });
+
+  it('resolves local usernames case-insensitively', async () => {
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({
+        _id: activeUserId,
+        username: 'Alice',
+        accountStatus: 'active',
+        reputationTier: 'trusted',
+      }),
+    );
+
+    const res = await requestJson(server, 'alice');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ id: activeUserId.toString(), username: 'Alice' });
+    expect(mockUserFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: expect.objectContaining({ source: '^alice$', flags: 'i' }),
+      }),
+    );
+  });
+
+  it('omits relationship for anonymous viewers', async () => {
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({
+        _id: activeUserId,
+        username: 'nate',
+        accountStatus: 'active',
+        reputationTier: 'trusted',
+      }),
+    );
+
+    const res = await requestJson(server, 'nate');
+    expect(res.status).toBe(200);
+    expect(res.body.data?.relationship).toBeUndefined();
+    expect(mockGetViewerRelationship).not.toHaveBeenCalled();
+  });
+
+  it('includes relationship when an authenticated viewer fetches another profile', async () => {
+    const viewerId = new Types.ObjectId().toHexString();
+    currentViewerId = viewerId;
+    mockUserFindOne.mockReturnValue(
+      findOneQuery({
+        _id: activeUserId,
+        username: 'nate',
+        accountStatus: 'active',
+        reputationTier: 'trusted',
+      }),
+    );
+    mockGetViewerRelationship.mockResolvedValue({ isFollowing: true, followsYou: false });
+
+    const res = await requestJson(server, 'nate');
+    expect(res.status).toBe(200);
+    expect(res.body.data?.relationship).toEqual({ isFollowing: true, followsYou: false });
+    expect(mockGetViewerRelationship).toHaveBeenCalledWith(viewerId, activeUserId.toString());
   });
 });

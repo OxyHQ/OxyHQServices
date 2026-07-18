@@ -28,6 +28,7 @@ import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 import { type NameParts } from '../utils/displayName';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
+import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
 import { AppAffinityEdge } from '../models/AppAffinityEdge';
@@ -367,7 +368,9 @@ router.get(
       throw new BadRequestError(`Username must be no more than ${MAX_USERNAME_LENGTH} characters`);
     }
 
-    let user = await User.findOne({ username })
+    let user = await User.findOne(
+      isFedHandle ? { username } : { username: exactCaseInsensitiveUsernameRegex(username) },
+    )
       .select('-password -refreshToken')
       .lean({ virtuals: true });
 

@@ -200,7 +200,10 @@ export const useUserByUsername = (username: string | null, options?: { enabled?:
       if (!username) {
         throw new Error('Username is required');
       }
-      return await oxyServices.getProfileByUsername(username);
+      // Match queryKeys.users.byUsername normalization so the cache key and
+      // the API request agree (case-insensitive local handles).
+      const normalizedUsername = username.trim().toLowerCase();
+      return await oxyServices.getProfileByUsername(normalizedUsername);
     },
     enabled: (options?.enabled !== false) && !!username,
     staleTime: 5 * 60 * 1000,

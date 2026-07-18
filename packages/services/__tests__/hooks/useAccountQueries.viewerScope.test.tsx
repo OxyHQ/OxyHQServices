@@ -129,6 +129,7 @@ describe('useUserByUsername viewer scope', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockState.oxyServices.getProfileByUsername).toHaveBeenCalledTimes(1);
+    expect(mockState.oxyServices.getProfileByUsername).toHaveBeenCalledWith('alice');
 
     mockState = {
       oxyServices: {
@@ -143,6 +144,16 @@ describe('useUserByUsername viewer scope', () => {
     expect(mockState.oxyServices.getProfileByUsername).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryData(queryKeys.users.byUsername('alice', 'viewer-1'))).toEqual(
       AUTH_PROFILE,
+    );
+  });
+
+  it('normalizes mixed-case usernames before fetching', async () => {
+    renderHook(() => useUserByUsername('Alice'), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    await waitFor(() =>
+      expect(mockState.oxyServices.getProfileByUsername).toHaveBeenCalledWith('alice'),
     );
   });
 });
