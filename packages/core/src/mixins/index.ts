@@ -30,6 +30,7 @@ import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
 import { OxyServicesLinksMixin } from './OxyServices.links';
 import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
+import { OxyServicesDeviceTransferMixin } from './OxyServices.deviceTransfer';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -64,6 +65,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDeviceBootMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDeviceTransferMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -137,6 +139,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Device-first token mint: the client half of the zero-cookie transport
     // (`mintFromDeviceSecret` → `POST /session/device/token`).
     OxyServicesDeviceBootMixin,
+
+    // Device-to-device identity transfer ("add a device"): E2E-encrypted key
+    // clone over a short-lived relay (b3 Feature 2).
+    OxyServicesDeviceTransferMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,
