@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
+import { PhraseInputGrid } from '@/components/auth/PhraseInputGrid';
 import { useTranslation } from '@/lib/i18n';
 
 interface ImportPhraseStepProps {
@@ -13,6 +14,12 @@ interface ImportPhraseStepProps {
   onImport: () => void;
   error: string | null;
   isLoading: boolean;
+  /**
+   * Optional handler for the "restore from encrypted backup" affordance. When
+   * provided, a ghost button is rendered so the user can recover from their
+   * Oxy-stored encrypted backup instead of retyping the phrase by hand.
+   */
+  onRestoreFromBackup?: () => void;
   backgroundColor: string;
   textColor: string;
 }
@@ -27,6 +34,7 @@ export function ImportPhraseStep({
   onImport,
   error,
   isLoading,
+  onRestoreFromBackup,
   backgroundColor,
   textColor,
 }: ImportPhraseStepProps) {
@@ -45,35 +53,12 @@ export function ImportPhraseStep({
           {t('auth.importStep.subtitle')}
         </Text>
 
-        <View style={[styles.phraseGrid, {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        }]}>
-          {phraseWords.map((word, index) => (
-            <View key={index} style={styles.wordInputContainer}>
-              <Text style={[styles.wordNumber, { color: textColor, opacity: 0.6 }]}>{index + 1}</Text>
-              <TextInput
-                style={[styles.wordInput, {
-                  color: textColor,
-                  borderColor: colors.border,
-                }]}
-                value={word}
-                onChangeText={(text) => {
-                  // Detect paste: if text contains multiple words (space-separated), handle as paste
-                  if (index === 0 && text.includes(' ') && text.split(/\s+/).length > 1) {
-                    onPaste(text);
-                  } else {
-                    onWordChange(index, text);
-                  }
-                }}
-                placeholder={t('auth.importStep.wordPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          ))}
-        </View>
+        <PhraseInputGrid
+          words={phraseWords}
+          onWordChange={onWordChange}
+          onPaste={onPaste}
+          editable={!isLoading}
+        />
 
         {error && <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>}
 
@@ -87,9 +72,20 @@ export function ImportPhraseStep({
           {t('auth.importStep.import')}
         </Button>
 
+        {onRestoreFromBackup && (
+          <Button
+            variant="ghost"
+            onPress={onRestoreFromBackup}
+            disabled={isLoading}
+          >
+            {t('restoreBackup.entry')}
+          </Button>
+        )}
+
         <Button
           variant="ghost"
           onPress={() => router.push('/(auth)/create-identity')}
+          disabled={isLoading}
         >
           {t('auth.importStep.createInstead')}
         </Button>
@@ -130,32 +126,8 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     marginTop: 8,
+    marginBottom: 8,
     textAlign: 'center',
-  },
-  phraseGrid: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  wordInputContainer: {
-    width: '30%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  wordNumber: {
-    fontSize: 12,
-    width: 20,
-  },
-  wordInput: {
-    flex: 1,
-    borderBottomWidth: 1,
-    paddingVertical: 4,
-    fontSize: 14,
   },
 });
 
