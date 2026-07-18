@@ -148,10 +148,11 @@ function parseUpdatedAt(value: unknown): number | null {
  * Get user by ID
  */
 export const useUserById = (userId: string | null, options?: { enabled?: boolean }) => {
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
+  const viewerId = user?.id ?? '';
 
   return useQuery({
-    queryKey: queryKeys.users.detail(userId || ''),
+    queryKey: queryKeys.users.detailForViewer(userId || '', viewerId),
     queryFn: async () => {
       if (!userId) {
         throw new Error('User ID is required');
@@ -182,7 +183,7 @@ export const useUserByUsername = (username: string | null, options?: { enabled?:
   const viewerId = user?.id ?? '';
 
   return useQuery({
-    queryKey: [...queryKeys.users.details(), 'username', username || '', 'viewer', viewerId],
+    queryKey: queryKeys.users.byUsername(username || '', viewerId),
     queryFn: async () => {
       if (!username) {
         throw new Error('Username is required');
