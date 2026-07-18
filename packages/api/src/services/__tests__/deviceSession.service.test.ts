@@ -1,6 +1,7 @@
 import * as nodeCrypto from 'crypto';
 
 const mockFindOne = jest.fn();
+const mockFind = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 const mockUpdateOne = jest.fn();
 const mockCreate = jest.fn();
@@ -12,6 +13,7 @@ jest.mock('../../models/DeviceSession', () => ({
   __esModule: true,
   default: {
     findOne: (...a: unknown[]) => mockFindOne(...a),
+    find: (...a: unknown[]) => mockFind(...a),
     findOneAndUpdate: (...a: unknown[]) => mockFindOneAndUpdate(...a),
     updateOne: (...a: unknown[]) => mockUpdateOne(...a),
     create: (...a: unknown[]) => mockCreate(...a),
@@ -708,5 +710,46 @@ describe('signout — device-secret cleanup (2c)', () => {
 
     const [, update] = mockFindOneAndUpdate.mock.calls[0];
     expect(update.$unset).toBeUndefined();
+  });
+});
+
+describe('purgeAccountFromAllDevices', () => {
+  beforeEach(() => {
+    mockFind.mockReset();
+    mockFindOne.mockReset();
+    mockFindOneAndUpdate.mockReset();
+    mockDeactivate.mockReset();
+  });
+
+  it('signs the account out of every device session that lists it', async () => {
+    mockFind.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ deviceId: 'd1' }, { deviceId: 'd2' }]),
+      }),
+    });
+
+    mockFindOne
+      .mockReturnValueOnce(lean({
+        deviceId: 'd1',
+        accounts: [{ accountId: { toString: () => 'u1' }, sessionId: 's1', authuser: 0 }],
+        activeAccountId: { toString: () => 'u1' },
+        revision: 1,
+      }))
+      .mockReturnValueOnce(lean({
+        deviceId: 'd2',
+        accounts: [{ accountId: { toString: () => 'u1' }, sessionId: 's2', authuser: 0 }],
+        activeAccountId: { toString: () => 'u1' },
+        revision: 1,
+      }));
+
+    mockFindOneAndUpdate
+      .mockReturnValueOnce(lean({ deviceId: 'd1', accounts: [], activeAccountId: null, revision: 2 }))
+      .mockReturnValueOnce(lean({ deviceId: 'd2', accounts: [], activeAccountId: null, revision: 2 }));
+
+    await deviceSessionService.purgeAccountFromAllDevices('u1');
+
+    expect(mockFind).toHaveBeenCalledWith({ 'accounts.accountId': 'u1' });
+    expect(mockDeactivate).toHaveBeenCalledTimes(2);
+    expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(2);
   });
 });

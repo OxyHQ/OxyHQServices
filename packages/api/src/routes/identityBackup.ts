@@ -83,6 +83,30 @@ const publicRestoreLimiter = rateLimit({
   keyGenerator: (req: Request): string => `identity:backup:ip:${hashedIpKey(req)}`,
 });
 
+/** Per-user write budget for backup upserts (ciphertext can be large). */
+const backupWriteLimiter = rateLimit({
+  prefix: 'rl:identity:backup:write:',
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Too many backup uploads. Please try again later.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `identity:backup:write:${userId}` : `identity:backup:write:ip:${hashedIpKey(req)}`;
+  },
+});
+
+/** Per-user delete budget — idempotent but should not be hammered. */
+const backupDeleteLimiter = rateLimit({
+  prefix: 'rl:identity:backup:delete:',
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: 'Too many backup delete requests. Please try again later.',
+  keyGenerator: (req: Request): string => {
+    const userId = (req as AuthRequest).user?.id;
+    return userId ? `identity:backup:delete:${userId}` : `identity:backup:delete:ip:${hashedIpKey(req)}`;
+  },
+});
+
 /**
  * POST /identity/backup — create or REPLACE the caller's encrypted backup.
  * Upsert by `userId`, so a re-upload never accumulates duplicates. The raw
@@ -91,6 +115,7 @@ const publicRestoreLimiter = rateLimit({
 router.post(
   '/',
   authMiddleware,
+  backupWriteLimiter,
   validate({ body: backupUploadRequestSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const userId = req.user?._id?.toString();
@@ -165,6 +190,7 @@ router.get(
 router.delete(
   '/',
   authMiddleware,
+  backupDeleteLimiter,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const userId = req.user?._id?.toString();
     if (!userId) {

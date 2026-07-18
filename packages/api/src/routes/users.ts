@@ -54,6 +54,8 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
 import { buildExportBundle } from '../services/identityExport.service';
 import { exportBundleSchema } from '@oxyhq/contracts';
+import sessionService from '../services/session.service';
+import deviceSessionService from '../services/deviceSession.service';
 
 // Types
 interface AuthRequest extends Request {
@@ -1448,8 +1450,16 @@ router.delete(
     // Drop any encrypted off-device identity backup for this account.
     await IdentityBackup.deleteOne({ userId });
 
+    // Revoke every active session and detach the account from all device-session
+    // docs so a deleted user cannot keep minting tokens from a retained secret.
+    await sessionService.deactivateAllUserSessions(userId);
+    await deviceSessionService.purgeAccountFromAllDevices(userId);
+
     // Delete the user account
     await User.findByIdAndDelete(userId);
+
+    userCache.invalidate(userId);
+    await graphCache.invalidate(userId);
 
     logger.info('Account deleted', { userId, username: user.username });
 

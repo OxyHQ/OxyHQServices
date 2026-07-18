@@ -374,6 +374,28 @@ class DeviceSessionService {
     }
     return null;
   }
+
+  /**
+   * Remove a deleted account from every device session that still lists it.
+   * Reuses the normal signout cascade (deactivates sessions, pulls the account
+   * from `accounts[]`, and removes any managed accounts the user operated).
+   */
+  async purgeAccountFromAllDevices(userId: string): Promise<void> {
+    const docs = await DeviceSession.find({ 'accounts.accountId': userId })
+      .select('deviceId')
+      .lean<{ deviceId: string }[]>();
+    for (const doc of docs) {
+      try {
+        await this.signout(doc.deviceId, { accountId: userId });
+      } catch (error) {
+        logger.warn('deviceSession.purgeAccountFromAllDevices: signout failed', {
+          deviceId: doc.deviceId,
+          userId,
+          error,
+        });
+      }
+    }
+  }
 }
 
 // Exported BOTH as the default (existing static `import deviceSessionService`

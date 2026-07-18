@@ -59,7 +59,7 @@ export default function ImportIdentityPhraseScreen() {
 
     try {
       const offline = await checkIfOffline();
-      const result = await importIdentity(phrase);
+      const result = await importIdentity(phrase, { skipSync: offline });
 
       // Online but server sync failed: do not advance — username would call
       // authenticated APIs with no session (same guard as create-identity).

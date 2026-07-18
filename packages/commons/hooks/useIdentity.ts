@@ -43,7 +43,7 @@ export interface UseIdentityResult {
    */
   createIdentity: (opts?: { skipSync?: boolean }) => Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }>;
   /** Import an existing identity from recovery phrase */
-  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
+  importIdentity: (phrase: string, opts?: { skipSync?: boolean }) => Promise<{ synced: boolean }>;
   /** Sync local identity with server (when online) */
   syncIdentity: () => Promise<User>;
   /** Check if device has an identity stored */
@@ -264,7 +264,7 @@ export const useIdentity = (): UseIdentityResult => {
   );
 
   const importIdentity = useCallback(
-    async (phrase: string): Promise<{ synced: boolean }> => {
+    async (phrase: string, opts?: { skipSync?: boolean }): Promise<{ synced: boolean }> => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
       if (!signIn) throw new Error('signIn not available');
 
@@ -292,6 +292,12 @@ export const useIdentity = (): UseIdentityResult => {
         // (see the matching reset in `createIdentity`). It flips back to `true`
         // only when this identity completes onboarding in `useOnboardingStatus`.
         await persistOnboardingComplete(false);
+
+        // Offline: skip register + signIn (same ~19s DNS-timeout stall as create).
+        if (opts?.skipSync) {
+          console.warn('[useIdentity] Offline during import — identity stored locally, server sync deferred');
+          return { synced: false };
+        }
 
         try {
           const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
