@@ -118,7 +118,8 @@
     "passkeySigningIn": "جارٍ تسجيل الدخول…",
     "getCommons": "احصل على Commons",
     "commonsNotInstalled": "لا تملك Commons؟ احصل على التطبيق لتسجيل الدخول بمعرّف Oxy الخاص بك.",
-    "showQrAnyway": "لدي Commons على جهاز آخر"
+    "showQrAnyway": "لدي Commons على جهاز آخر",
+    "switchWhileSignedInAs": "تبديل الحساب، مسجّل الدخول باسم {{name}}"
   },
   "common": {
     "actions": {

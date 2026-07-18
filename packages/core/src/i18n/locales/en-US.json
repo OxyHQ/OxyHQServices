@@ -420,7 +420,8 @@
     "passkeySigningIn": "Signing in…",
     "getCommons": "Get Commons",
     "commonsNotInstalled": "Don't have Commons? Get the app to sign in with your Oxy ID.",
-    "showQrAnyway": "I have Commons on another device"
+    "showQrAnyway": "I have Commons on another device",
+    "switchWhileSignedInAs": "Switch account, signed in as {{name}}"
   },
   "reputation": {
     "faq": {

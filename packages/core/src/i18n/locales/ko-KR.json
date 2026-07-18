@@ -118,7 +118,8 @@
     "passkeySigningIn": "로그인 중…",
     "getCommons": "Commons 다운로드",
     "commonsNotInstalled": "Commons가 없으신가요? 앱을 다운로드하여 Oxy ID로 로그인하세요.",
-    "showQrAnyway": "다른 기기에 Commons가 있습니다"
+    "showQrAnyway": "다른 기기에 Commons가 있습니다",
+    "switchWhileSignedInAs": "계정 전환, {{name}}(으)로 로그인됨"
   },
   "common": {
     "actions": {

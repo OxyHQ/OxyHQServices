@@ -118,7 +118,8 @@
     "passkeySigningIn": "Iniciant sessió…",
     "getCommons": "Descarrega Commons",
     "commonsNotInstalled": "No tens Commons? Descarrega l'app per iniciar sessió amb el teu Oxy ID.",
-    "showQrAnyway": "Tinc Commons en un altre dispositiu"
+    "showQrAnyway": "Tinc Commons en un altre dispositiu",
+    "switchWhileSignedInAs": "Canvia de compte, amb la sessió iniciada com a {{name}}"
   },
   "common": {
     "actions": {

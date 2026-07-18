@@ -118,7 +118,8 @@
     "passkeySigningIn": "Anmeldung läuft…",
     "getCommons": "Commons herunterladen",
     "commonsNotInstalled": "Kein Commons? Holen Sie sich die App, um sich mit Ihrer Oxy-ID anzumelden.",
-    "showQrAnyway": "Ich habe Commons auf einem anderen Gerät"
+    "showQrAnyway": "Ich habe Commons auf einem anderen Gerät",
+    "switchWhileSignedInAs": "Konto wechseln, angemeldet als {{name}}"
   },
   "common": {
     "actions": {

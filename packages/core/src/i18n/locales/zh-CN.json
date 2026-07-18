@@ -118,7 +118,8 @@
     "passkeySigningIn": "正在登录…",
     "getCommons": "获取 Commons",
     "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
-    "showQrAnyway": "我在另一台设备上有 Commons"
+    "showQrAnyway": "我在另一台设备上有 Commons",
+    "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}"
   },
   "common": {
     "actions": {
