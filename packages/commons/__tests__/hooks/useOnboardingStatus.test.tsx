@@ -1,31 +1,42 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Platform } from 'react-native';
+import type { IdentityStatus } from '@oxyhq/core';
+import { KeyManager } from '@oxyhq/core';
 import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
 
-const hasIdentityMock = jest.fn<Promise<boolean>, []>();
+const getIdentityStatusMock = jest.fn<Promise<IdentityStatus>, [unknown?]>();
 
-// Mock KeyManager.hasIdentity surgically. Everything else from @oxyhq/core
-// passes through to the real built module so types remain consistent.
+// The listener registered via subscribeIdentityChanged — captured so tests can
+// fire an identity-change event (the seam the root layout uses).
+let identityChangeListener: (() => void) | null = null;
+const subscribeIdentityChangedMock = jest.fn((listener: () => void) => {
+  identityChangeListener = listener;
+  return () => {
+    if (identityChangeListener === listener) identityChangeListener = null;
+  };
+});
+
+// Mock KeyManager.getIdentityStatus (the sole identity probe the hook now uses)
+// and subscribeIdentityChanged surgically. Everything else passes through to the
+// real built module so types + error classes remain consistent.
 jest.mock('@oxyhq/core', () => {
   const actual = jest.requireActual('@oxyhq/core');
   return {
     ...actual,
     KeyManager: {
       ...actual.KeyManager,
-      hasIdentity: () => hasIdentityMock(),
+      getIdentityStatus: (opts?: unknown) => getIdentityStatusMock(opts),
+      subscribeIdentityChanged: (listener: () => void) => subscribeIdentityChangedMock(listener),
     },
   };
 });
 
-// Deterministic control over the LOCAL, offline-safe "onboarding complete"
-// milestone. The hook reads it via `getOnboardingCompleteFromStorage` (a plain
-// secure-store read) and writes it via `persistOnboardingComplete`. Mocking
-// both here (backed by a plain in-memory flag) decouples the test from the
-// platform storage-singleton selection and lets us simulate a RETURNING user
-// (`mockOnboardingCompleteFlag = true`) vs. a first-time onboarding
-// (`= false`). `mock`-prefixed so jest's hoisted factory may reference it.
+// Deterministic control over the LOCAL "onboarding complete" milestone. The hook
+// reads it via `getOnboardingCompleteFromStorage` and writes via
+// `persistOnboardingComplete`; both are mocked over a plain in-memory flag so we
+// can simulate a RETURNING user (`= true`) vs first-time onboarding (`= false`).
 let mockOnboardingCompleteFlag = false;
 jest.mock('@/hooks/identity/identityStore', () => {
   const actual = jest.requireActual('@/hooks/identity/identityStore');
@@ -38,57 +49,80 @@ jest.mock('@/hooks/identity/identityStore', () => {
   };
 });
 
-// Imported AFTER jest.mock so the hook sees the patched KeyManager +
-// identityStore.
+// Imported AFTER jest.mock so the hook sees the patched modules.
 // eslint-disable-next-line import/first
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import {
+  useOnboardingStatus,
+  ONBOARDING_IDENTITY_QUERY_KEY,
+  ONBOARDING_COMPLETE_QUERY_KEY,
+} from '@/hooks/useOnboardingStatus';
 // eslint-disable-next-line import/first
 import { persistOnboardingComplete } from '@/hooks/identity/identityStore';
 
-// The hook now reads the shared identity probe via React Query, so each render
-// needs its own QueryClient. A fresh client per render keeps the
-// `staleTime: Infinity` cache from leaking across test cases.
-function createWrapper() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+const PRESENT: IdentityStatus = { state: 'present', publicKey: 'pub-abc' };
+const ABSENT: IdentityStatus = { state: 'absent' };
+const LOST: IdentityStatus = {
+  state: 'lost',
+  marker: { v: 1, publicKey: 'pub-lost', createdAt: 1, origin: 'create' },
+};
+const unavailable = (): IdentityStatus => ({ state: 'unavailable', cause: new Error('locked') });
+
+// Each render needs its own QueryClient so the `staleTime: Infinity` cache never
+// leaks across cases. A helper that also exposes the client for the tests that
+// drive invalidation/refetch directly.
+function makeClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { gcTime: 0 } } });
+}
+function wrapperFor(client: QueryClient) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
+}
+function createWrapper() {
+  return wrapperFor(makeClient());
 }
 
 describe('useOnboardingStatus', () => {
   beforeEach(() => {
     __resetOxyState();
-    hasIdentityMock.mockReset();
-    // Default: a first-time device that has NOT finished onboarding, so the
-    // legacy expectations (identity-but-no-session → "in_progress") still hold.
+    getIdentityStatusMock.mockReset();
+    subscribeIdentityChangedMock.mockClear();
+    identityChangeListener = null;
     mockOnboardingCompleteFlag = false;
     Platform.OS = 'ios';
   });
 
-  it('reports status "none" when no identity exists', async () => {
-    hasIdentityMock.mockResolvedValue(false);
+  // Safety net: guarantee real timers are restored between cases even if a
+  // fake-timer test throws/times out before its own cleanup runs, so leftover
+  // fake timers can never corrupt a later test's async flush.
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('reports status "none" when the verdict is absent (fresh device)', async () => {
+    getIdentityStatusMock.mockResolvedValue(ABSENT);
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
       expect(result.current.status).toBe('none');
     });
     expect(result.current.hasIdentity).toBe(false);
+    expect(result.current.identityPresent).toBe(false);
     expect(result.current.hasUsername).toBe(false);
   });
 
-  it('reports status "in_progress" when identity exists but user is not authenticated', async () => {
-    hasIdentityMock.mockResolvedValue(true);
+  it('reports "in_progress" when identity is present but the user is not authenticated', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
     __setOxyState({ isAuthenticated: false, user: null });
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
       expect(result.current.status).toBe('in_progress');
     });
     expect(result.current.hasIdentity).toBe(true);
+    expect(result.current.identityPresent).toBe(true);
   });
 
-  it('reports status "complete" when identity exists, user is authenticated, and has username', async () => {
-    hasIdentityMock.mockResolvedValue(true);
+  it('reports "complete" when present, authenticated, and has username', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
     __setOxyState({ isAuthenticated: true, user: { username: 'alice' } });
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
@@ -97,8 +131,8 @@ describe('useOnboardingStatus', () => {
     expect(result.current.hasUsername).toBe(true);
   });
 
-  it('reports status "in_progress" when authenticated but username is missing', async () => {
-    hasIdentityMock.mockResolvedValue(true);
+  it('reports "in_progress" when authenticated but username is missing', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
     __setOxyState({ isAuthenticated: true, user: {} });
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
@@ -107,9 +141,8 @@ describe('useOnboardingStatus', () => {
     expect(result.current.hasUsername).toBe(false);
   });
 
-  it('needsAuth is true on native when status is "none"', async () => {
-    Platform.OS = 'ios';
-    hasIdentityMock.mockResolvedValue(false);
+  it('needsAuth is true when status is "none"', async () => {
+    getIdentityStatusMock.mockResolvedValue(ABSENT);
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
       expect(result.current.status).toBe('none');
@@ -117,9 +150,8 @@ describe('useOnboardingStatus', () => {
     expect(result.current.needsAuth).toBe(true);
   });
 
-  it('needsAuth is true on native when status is "in_progress"', async () => {
-    Platform.OS = 'ios';
-    hasIdentityMock.mockResolvedValue(true);
+  it('needsAuth is true when status is "in_progress"', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
       expect(result.current.status).toBe('in_progress');
@@ -127,9 +159,8 @@ describe('useOnboardingStatus', () => {
     expect(result.current.needsAuth).toBe(true);
   });
 
-  it('needsAuth is false on native when status is "complete"', async () => {
-    Platform.OS = 'ios';
-    hasIdentityMock.mockResolvedValue(true);
+  it('needsAuth is false only when status is "complete"', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
     __setOxyState({ isAuthenticated: true, user: { username: 'alice' } });
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
@@ -138,15 +169,9 @@ describe('useOnboardingStatus', () => {
     expect(result.current.needsAuth).toBe(false);
   });
 
-  it('needsAuth is true on web when no session resolves (status "none")', async () => {
-    // Regression guard: web previously hard-clamped needsAuth to false, which
-    // routed unauthenticated visitors into (tabs). The (tabs) layout then
-    // redirected them back to (auth), and the two guards deadlocked into a
-    // blank screen. Web must follow the same status-driven gate as native so a
-    // fresh visitor lands on the welcome/auth stack instead of an infinite
-    // redirect loop.
+  it('web follows the same status-driven gate (absent → none → needsAuth)', async () => {
     Platform.OS = 'web';
-    hasIdentityMock.mockResolvedValue(false);
+    getIdentityStatusMock.mockResolvedValue(ABSENT);
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
     await waitFor(() => {
       expect(result.current.status).toBe('none');
@@ -154,106 +179,77 @@ describe('useOnboardingStatus', () => {
     expect(result.current.needsAuth).toBe(true);
   });
 
-  it('needsAuth is false on web once a session is authenticated (status "complete")', async () => {
-    // Once the device-first cold boot restores a session, the authenticated web
-    // user must be able to reach (tabs) — needsAuth flips to false exactly as on
-    // native.
-    Platform.OS = 'web';
-    hasIdentityMock.mockResolvedValue(false);
-    __setOxyState({ isAuthenticated: true, user: { username: 'alice' } });
+  it('starts "checking" until the identity probe resolves', async () => {
+    let releaseProbe: (value: IdentityStatus) => void = () => undefined;
+    getIdentityStatusMock.mockImplementation(
+      () => new Promise<IdentityStatus>((resolve) => {
+        releaseProbe = resolve;
+      }),
+    );
     const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-    await waitFor(() => {
-      expect(result.current.status).toBe('complete');
-    });
-    expect(result.current.needsAuth).toBe(false);
-  });
-
-  it('treats a KeyManager error as "no identity"', async () => {
-    hasIdentityMock.mockRejectedValue(new Error('boom'));
-    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-    await waitFor(() => {
-      expect(result.current.status).toBe('none');
-    });
-    expect(result.current.hasIdentity).toBe(false);
-  });
-
-  it('starts in "checking" state then transitions once oxy finishes loading', async () => {
-    hasIdentityMock.mockResolvedValue(false);
-    __setOxyState({ isLoading: true });
-    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-    expect(result.current.status).toBe('checking');
-
-    await act(async () => {
-      __setOxyState({ isLoading: false });
-    });
-
-    await waitFor(() => {
-      expect(result.current.status).toBe('none');
-    });
-  });
-
-  it('stays "checking" while the device-first cold boot is unresolved', async () => {
-    // Regression guard for the cold-boot flash: while `isAuthResolved` is false
-    // the SDK's device-first session mint has not concluded, so we cannot yet
-    // know whether a returning user's persisted session will restore. The hook
-    // must stay in the neutral "checking" state (not fall through to
-    // "in_progress" and bounce the user through create-identity) even after the
-    // local identity lookup resolves.
-    hasIdentityMock.mockResolvedValue(true);
-    __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
-    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(hasIdentityMock).toHaveBeenCalled();
-    });
     expect(result.current.status).toBe('checking');
     expect(result.current.isLoading).toBe(true);
 
     await act(async () => {
-      __setOxyState({ isAuthResolved: true });
+      releaseProbe(ABSENT);
     });
-
     await waitFor(() => {
-      expect(result.current.status).toBe('in_progress');
+      expect(result.current.status).toBe('none');
     });
     expect(result.current.isLoading).toBe(false);
   });
 
-  // ── OFFLINE / device-first identity-loss guard ────────────────────────────
-  // These simulate the exact hazard: a returning user opens Commons with NO
-  // network. The device-first cold boot cannot mint a session, so
-  // `isAuthenticated` stays false even though cold boot HAS concluded
-  // (`isAuthResolved: true`). The local keystore still holds the identity
-  // (`hasIdentity()` is a pure local read → true) and the local onboarding
-  // milestone is set. The gate MUST route to the vault, NEVER to create-identity.
+  // ── The KEY regression: routing must NOT wait on the session ────────────────
+  it('reports "complete" from local reads WHILE isAuthResolved is false (present + milestone)', async () => {
+    // A returning user opens the app: the identity is present locally and the
+    // onboarding milestone is set, but the device-first cold boot has NOT
+    // concluded (`isAuthResolved: false`) and there is no session yet. Routing is
+    // decided from the LOCAL reads only, so this must resolve to `complete` and
+    // NEVER stall on the unresolved session.
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
+    mockOnboardingCompleteFlag = true;
+    __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
+
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('complete');
+    });
+    expect(result.current.needsAuth).toBe(false);
+    expect(result.current.hasIdentity).toBe(true);
+    // The session is still resolving in the background — exposed but not gating.
+    expect(result.current.isSessionResolving).toBe(true);
+  });
+
+  it('exposes isSessionResolving=false once the cold boot resolves', async () => {
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
+    mockOnboardingCompleteFlag = true;
+    __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+    await waitFor(() => {
+      expect(result.current.status).toBe('complete');
+    });
+    expect(result.current.isSessionResolving).toBe(false);
+  });
+
+  // ── Offline / device-first identity-loss guard ──────────────────────────────
   describe('offline returning user (no session)', () => {
-    it('routes a previously-onboarded identity to the vault OFFLINE (status "complete", needsAuth false)', async () => {
-      // hasIdentity true (local, offline-safe) + onboarding-complete milestone
-      // set + NO session (cold boot concluded signed-out because the network is
-      // down). This is the identity-loss bug: it must resolve to the vault.
-      hasIdentityMock.mockResolvedValue(true);
+    it('routes a previously-onboarded identity to the vault OFFLINE ("complete", needsAuth false)', async () => {
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
       mockOnboardingCompleteFlag = true;
       __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
       await waitFor(() => {
         expect(result.current.status).toBe('complete');
       });
       expect(result.current.needsAuth).toBe(false);
-      expect(result.current.hasIdentity).toBe(true);
     });
 
     it('NEVER downgrades an existing offline identity into the create flow ("none")', async () => {
-      // Explicit guard: with a local identity present, status can never be
-      // "none" (the only path that shows "create identity"), regardless of the
-      // absent session.
-      hasIdentityMock.mockResolvedValue(true);
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
       mockOnboardingCompleteFlag = true;
       __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
       await waitFor(() => {
         expect(result.current.status).not.toBe('checking');
       });
@@ -261,69 +257,187 @@ describe('useOnboardingStatus', () => {
       expect(result.current.status).toBe('complete');
     });
 
-    it('keeps a never-completed identity in the wizard OFFLINE (status "in_progress")', async () => {
-      // Counterpart: an identity generated but whose onboarding never finished
-      // (e.g. an offline create) has NO completion milestone. Offline it must
-      // stay in the wizard to finish, NOT jump to the vault — and still never
-      // fall through to "none"/create.
-      hasIdentityMock.mockResolvedValue(true);
+    it('keeps a never-completed identity in the wizard OFFLINE ("in_progress")', async () => {
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
       mockOnboardingCompleteFlag = false;
       __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
       await waitFor(() => {
         expect(result.current.status).toBe('in_progress');
       });
       expect(result.current.needsAuth).toBe(true);
     });
+  });
 
-    it('stays "checking" until the local onboarding milestone resolves', async () => {
-      // The milestone read is part of the "resolving" gate: we must not flash a
-      // premature verdict before the local flag is known.
-      hasIdentityMock.mockResolvedValue(true);
-      let releaseComplete: (value: boolean) => void = () => undefined;
-      (persistOnboardingComplete as jest.Mock).mockClear();
-      const { getOnboardingCompleteFromStorage } = jest.requireMock(
-        '@/hooks/identity/identityStore',
-      ) as { getOnboardingCompleteFromStorage: jest.Mock };
-      getOnboardingCompleteFromStorage.mockImplementationOnce(
-        () => new Promise<boolean>((resolve) => {
-          releaseComplete = resolve;
-        }),
-      );
+  // ── Loss detection: lost / unavailable never fall through to "none" ─────────
+  it('reports "recovery" when the verdict is lost, never "none"', async () => {
+    getIdentityStatusMock.mockResolvedValue(LOST);
+    __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
+    const statuses: string[] = [];
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+    statuses.push(result.current.status);
+    await waitFor(() => {
+      expect(result.current.status).toBe('recovery');
+    });
+    statuses.push(result.current.status);
+    expect(statuses).not.toContain('none');
+    expect(result.current.needsAuth).toBe(true);
+    expect(result.current.unavailableReason).toBe('lost');
+  });
+
+  it('reports "unavailable" when the probe persistently throws, never "none"', async () => {
+    jest.useFakeTimers();
+    try {
+      getIdentityStatusMock.mockResolvedValue(unavailable());
       __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
-      await waitFor(() => {
-        expect(hasIdentityMock).toHaveBeenCalled();
-      });
       expect(result.current.status).toBe('checking');
 
+      // Advance through both retry delays (250ms + 1000ms) to exhaust retries.
       await act(async () => {
-        releaseComplete(true);
+        await jest.advanceTimersByTimeAsync(1500);
       });
 
-      await waitFor(() => {
-        expect(result.current.status).toBe('complete');
+      expect(result.current.status).toBe('unavailable');
+      expect(result.current.needsAuth).toBe(true);
+      expect(result.current.unavailableReason).toBe('locked');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('never reports "none" while the probe throws twice then resolves present', async () => {
+    jest.useFakeTimers();
+    try {
+      getIdentityStatusMock
+        .mockResolvedValueOnce(unavailable())
+        .mockResolvedValueOnce(unavailable())
+        .mockResolvedValue(PRESENT);
+      mockOnboardingCompleteFlag = true;
+      __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
+
+      const statuses: string[] = [];
+      const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+      statuses.push(result.current.status);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(300);
       });
-      // Restore the default resolver for subsequent cases.
-      getOnboardingCompleteFromStorage.mockImplementation(async () => mockOnboardingCompleteFlag);
+      statuses.push(result.current.status);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1200);
+      });
+      statuses.push(result.current.status);
+
+      expect(statuses).not.toContain('none');
+      expect(result.current.status).toBe('complete');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a cached "present" verdict sticky across a later failing refetch', async () => {
+    jest.useFakeTimers();
+    try {
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
+      __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
+      const client = makeClient();
+      const { result } = renderHook(() => useOnboardingStatus(), {
+        wrapper: wrapperFor(client),
+      });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10);
+      });
+      expect(result.current.status).toBe('in_progress'); // present + no milestone
+
+      // A later refetch throws persistently — the cached present must stick, so
+      // the status can never regress to `unavailable`. Do NOT await
+      // `invalidateQueries` (its refetch resolves only once the fake-timer retry
+      // delays are advanced below — awaiting it first would deadlock).
+      getIdentityStatusMock.mockResolvedValue(unavailable());
+      await act(async () => {
+        void client.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        await jest.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(result.current.status).toBe('in_progress');
+      expect(result.current.identityPresent).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // ── Late session upgrade ────────────────────────────────────────────────────
+  it('upgrades in_progress → complete when the session lands late, persisting the milestone', async () => {
+    (persistOnboardingComplete as jest.Mock).mockClear();
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
+    mockOnboardingCompleteFlag = false;
+    __setOxyState({ isAuthResolved: true, isAuthenticated: false, user: null });
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+    await waitFor(() => {
+      expect(result.current.status).toBe('in_progress');
+    });
+
+    await act(async () => {
+      __setOxyState({ isAuthenticated: true, user: { username: 'alice' } });
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('complete');
+    });
+    await waitFor(() => {
+      expect(persistOnboardingComplete).toHaveBeenCalledWith(true);
+    });
+  });
+
+  // ── Event-driven refresh (the root layout's subscribeIdentityChanged wiring) ─
+  it('re-reads the verdict when an identity-change event fires (routing refresh)', async () => {
+    getIdentityStatusMock.mockResolvedValue(ABSENT);
+    const client = makeClient();
+    // Mirror the root layout's subscription so firing the captured listener
+    // invalidates the shared probes exactly as AppStackContent does.
+    function SubscriberHarness() {
+      const qc = useQueryClient();
+      useEffect(
+        () =>
+          KeyManager.subscribeIdentityChanged(() => {
+            qc.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+            qc.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+          }),
+        [qc],
+      );
+      return null;
+    }
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <SubscriberHarness />
+        {children}
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.status).toBe('none');
+    });
+    expect(subscribeIdentityChangedMock).toHaveBeenCalled();
+
+    // An identity is created elsewhere → the verdict flips + milestone set.
+    mockOnboardingCompleteFlag = true;
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
+    act(() => {
+      identityChangeListener?.();
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('complete');
     });
   });
 
   describe('onboarding-complete milestone persistence', () => {
     it('persists the milestone when onboarding genuinely completes online', async () => {
-      // A live session whose user has a username is the single genuine
-      // completion event — the hook writes the local milestone so the NEXT cold
-      // start can route to the vault with no network.
       (persistOnboardingComplete as jest.Mock).mockClear();
-      hasIdentityMock.mockResolvedValue(true);
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
       __setOxyState({ isAuthResolved: true, isAuthenticated: true, user: { username: 'alice' } });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
       await waitFor(() => {
         expect(result.current.status).toBe('complete');
       });
@@ -332,13 +446,11 @@ describe('useOnboardingStatus', () => {
       });
     });
 
-    it('does NOT persist the milestone while onboarding is still incomplete (no username)', async () => {
+    it('does NOT persist while onboarding is still incomplete (no username)', async () => {
       (persistOnboardingComplete as jest.Mock).mockClear();
-      hasIdentityMock.mockResolvedValue(true);
+      getIdentityStatusMock.mockResolvedValue(PRESENT);
       __setOxyState({ isAuthResolved: true, isAuthenticated: true, user: {} });
-
       const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
-
       await waitFor(() => {
         expect(result.current.status).toBe('in_progress');
       });

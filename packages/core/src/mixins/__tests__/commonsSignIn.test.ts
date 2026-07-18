@@ -242,6 +242,51 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
     });
   });
 
+  describe('requestChallenge / verifyChallenge — requestOptions spread into makeRequest', () => {
+    it('requestChallenge omits transport overrides by default (retries ON) and spreads them when given', async () => {
+      makeRequestSpy.mockResolvedValue(challengeFixture);
+
+      await oxy.requestChallenge('pub-x');
+      expect(makeRequestSpy).toHaveBeenLastCalledWith(
+        'POST',
+        '/auth/challenge',
+        { publicKey: 'pub-x' },
+        { cache: false },
+      );
+
+      await oxy.requestChallenge('pub-x', { retry: false });
+      expect(makeRequestSpy).toHaveBeenLastCalledWith(
+        'POST',
+        '/auth/challenge',
+        { publicKey: 'pub-x' },
+        { cache: false, retry: false },
+      );
+    });
+
+    it('verifyChallenge spreads requestOptions (retry + timeout) into makeRequest', async () => {
+      makeRequestSpy.mockResolvedValue(sessionFixture);
+
+      await oxy.verifyChallenge('pub-x', 'chal', 'sig', 123, 'dev', 'fp', {
+        retry: false,
+        timeout: 9000,
+      });
+
+      expect(makeRequestSpy).toHaveBeenLastCalledWith(
+        'POST',
+        '/auth/verify',
+        {
+          publicKey: 'pub-x',
+          challenge: 'chal',
+          signature: 'sig',
+          timestamp: 123,
+          deviceName: 'dev',
+          deviceFingerprint: 'fp',
+        },
+        { cache: false, retry: false, timeout: 9000 },
+      );
+    });
+  });
+
   describe('signInWithSharedIdentity (Mechanism A — same-device SSO)', () => {
     it('mints a session from the shared key when one exists (native)', async () => {
       jest.spyOn(KeyManager, 'hasSharedIdentity').mockResolvedValue(true);
@@ -263,7 +308,9 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         deviceFingerprint: 'fp-1',
       });
 
-      expect(requestChallengeSpy).toHaveBeenCalledWith('shared-pub');
+      // No requestOptions passed → both round-trips get `undefined` (defaults:
+      // retries ON), preserving interactive behaviour.
+      expect(requestChallengeSpy).toHaveBeenCalledWith('shared-pub', undefined);
       expect(verifyChallengeSpy).toHaveBeenCalledWith(
         'shared-pub',
         'chal-shared',
@@ -271,6 +318,42 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         1700000000456,
         'iPad',
         'fp-1',
+        undefined,
+      );
+      expect(result).toEqual(sessionFixture);
+    });
+
+    it('threads requestOptions into BOTH the challenge and verify round-trips (cold-boot retry:false)', async () => {
+      jest.spyOn(KeyManager, 'hasSharedIdentity').mockResolvedValue(true);
+      jest.spyOn(KeyManager, 'getSharedPublicKey').mockResolvedValue('shared-pub');
+      const requestChallengeSpy = jest
+        .spyOn(oxy, 'requestChallenge')
+        .mockResolvedValue({ challenge: 'chal-shared', expiresAt: '2026-06-26T00:05:00.000Z' });
+      jest.spyOn(SignatureService, 'signChallengeWithSharedKey').mockResolvedValue({
+        challenge: 'sig-shared',
+        publicKey: 'shared-pub',
+        timestamp: 1700000000456,
+      });
+      const verifyChallengeSpy = jest
+        .spyOn(oxy, 'verifyChallenge')
+        .mockResolvedValue(sessionFixture);
+
+      const result = await oxy.signInWithSharedIdentity({
+        requestOptions: { retry: false },
+      });
+
+      // The SAME requestOptions object is forwarded to both calls — this is how
+      // the cold-boot `shared-key-signin` step keeps its two round-trips as
+      // single attempts without changing interactive defaults.
+      expect(requestChallengeSpy).toHaveBeenCalledWith('shared-pub', { retry: false });
+      expect(verifyChallengeSpy).toHaveBeenCalledWith(
+        'shared-pub',
+        'chal-shared',
+        'sig-shared',
+        1700000000456,
+        undefined,
+        undefined,
+        { retry: false },
       );
       expect(result).toEqual(sessionFixture);
     });

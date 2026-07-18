@@ -6,11 +6,14 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { Redirect, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+import { Button } from '@/components/ui';
+import { CenteredState } from '@/components/ui/centered-state';
 import { useTranslation } from '@/lib/i18n';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import { useOnboardingStatus, ONBOARDING_IDENTITY_QUERY_KEY } from '@/hooks/useOnboardingStatus';
 
 const humanTranslations = [
   'Human',
@@ -29,6 +32,11 @@ export default function AuthIndexScreen() {
   const textColor = colors.text;
   const { t } = useTranslation();
   const { status, hasIdentity } = useOnboardingStatus();
+  const queryClient = useQueryClient();
+
+  const handleRetryIdentityProbe = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+  }, [queryClient]);
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);
@@ -120,6 +128,35 @@ export default function AuthIndexScreen() {
   // does NOT race the root Stack's cross-group swap — it's safe here.
   if (hasIdentity && status === 'in_progress') {
     return <Redirect href="/(auth)/create-identity" />;
+  }
+
+  // A `lost` identity (marker present, keys gone) must go to the recovery ladder,
+  // NEVER the "Hello Human" welcome — the welcome looks identical to a fresh
+  // install and would invite the user to overwrite a still-recoverable identity.
+  if (status === 'recovery') {
+    return <Redirect href="/(auth)/recover-identity" />;
+  }
+
+  // Storage is unreadable RIGHT NOW (locked keychain). This is NOT a blank
+  // device, so we render a neutral "identity protected, couldn't be read" retry
+  // surface — never the welcome splash. Retrying re-runs the local identity
+  // probe; once the keychain unlocks the status settles to its real verdict.
+  if (status === 'unavailable') {
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <CenteredState
+          icon="shield-lock-outline"
+          iconColor={textColor}
+          title={t('recovery.lockedTitle')}
+          body={t('recovery.lockedBody')}
+          action={
+            <Button variant="primary" onPress={handleRetryIdentityProbe}>
+              {t('common.retry')}
+            </Button>
+          }
+        />
+      </View>
+    );
   }
 
   // While the onboarding status is still resolving on cold start, render a

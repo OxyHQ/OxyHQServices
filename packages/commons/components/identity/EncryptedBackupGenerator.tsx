@@ -52,9 +52,23 @@ export function EncryptedBackupGenerator({
     useEffect(() => {
         let mounted = true;
         (async () => {
-            const hasIdentity = await KeyManager.hasIdentity();
-            if (!mounted) return;
-            setIdentityStatus(hasIdentity ? 'present' : 'missing');
+            try {
+                const hasIdentity = await KeyManager.hasIdentity();
+                if (!mounted) return;
+                setIdentityStatus(hasIdentity ? 'present' : 'missing');
+            } catch (error) {
+                // `hasIdentity()` now THROWS when storage is locked/unreadable.
+                // That is NOT "no identity" — assume `present` so we never show
+                // the alarming "no identity on this device" state to a user who
+                // actually has one (this screen is only reachable while signed
+                // in). The real read (`getPrivateKey`, null-safe) surfaces a
+                // retriable error if the keystore is still locked at backup time.
+                if (!mounted) return;
+                if (__DEV__) {
+                    console.warn('[backup] identity preflight read failed (storage locked?)', error);
+                }
+                setIdentityStatus('present');
+            }
         })();
         return () => { mounted = false; };
     }, []);

@@ -1761,5 +1761,20 @@
   "settings": {
     "title": "Settings",
     "subtitle": "Manage your identity, backups and account."
+  },
+  "recovery": {
+    "attemptingTitle": "Restoring your identity",
+    "attemptingBody": "Checking this device's protected backups…",
+    "restoredTitle": "Identity restored",
+    "restoredBody": "You're all set — taking you back in.",
+    "failedTitle": "We couldn't restore automatically",
+    "failedBody": "Your identity ({{key}}) is protected on this device but couldn't be read from a backup. Enter your recovery phrase to restore it, or start over.",
+    "lockedTitle": "Identity protected",
+    "lockedBody": "Your identity is safe, but the secure store couldn't be read right now. Please try again.",
+    "enterPhrase": "Enter recovery phrase",
+    "startOver": "Start over",
+    "startOverConfirmTitle": "Start over?",
+    "startOverConfirmBody": "This permanently erases the protected identity on this device. Without your 12-word recovery phrase, your account will be unrecoverable.",
+    "startOverConfirmCta": "Erase and start over"
   }
 }

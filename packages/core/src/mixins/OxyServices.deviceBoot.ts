@@ -39,6 +39,14 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
      * `no_active_session`) to decide whether to drop the secret and fall back or
      * resolve signed-out.
      *
+     * `retry: false`: the mint is a single logical attempt. The proactive
+     * token-refresh scheduler and the reactive 401 lane already own backoff and
+     * re-arm, so `HttpService`'s inner retry loop here would only multiply the
+     * mint's latency on a slow/black-hole network (3 retries × 5s timeout ≈ 20s
+     * per lane) with no correctness benefit — it is the dominant term in the cold
+     * boot's worst-case time-to-route. A transient failure surfaces once and the
+     * scheduler/401 path retries it later.
+     *
      * @throws if the response does not match {@link deviceTokenMintResponseSchema}.
      */
     async mintFromDeviceSecret(
@@ -50,7 +58,7 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           'POST',
           '/session/device/token',
           { deviceId, deviceSecret },
-          { cache: false, skipAuth: true },
+          { cache: false, skipAuth: true, retry: false },
         );
         const parsed = safeParseContract(deviceTokenMintResponseSchema, res);
         if (!parsed) {

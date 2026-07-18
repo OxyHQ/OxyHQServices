@@ -120,7 +120,18 @@ export function useAuthHandlers({
 
     // The session sign-in requires the device's public key as the identity
     // credential; resolve it from the local KeyManager before authenticating.
-    const publicKey = await KeyManager.getPublicKey();
+    // `getPublicKey()` now THROWS `IdentityUnavailableError` when storage is
+    // locked/unreadable (as opposed to returning `null` for a genuine absence) —
+    // catch it so a momentarily-locked keystore surfaces a retriable error
+    // rather than the misleading "No identity found on this device".
+    let publicKey: string | null;
+    try {
+      publicKey = await KeyManager.getPublicKey();
+    } catch (error: unknown) {
+      setAuthError(extractAuthErrorMessage(error, 'Could not read your identity. Please try again.'));
+      setSigningIn(false);
+      return false;
+    }
     if (!publicKey) {
       setAuthError('No identity found on this device.');
       setSigningIn(false);

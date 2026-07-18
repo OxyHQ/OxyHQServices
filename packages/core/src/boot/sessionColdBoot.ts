@@ -47,6 +47,31 @@ export interface RunSessionColdBootOptions {
   /** Invoked when the boot ended signed out. */
   onSignedOut?: (reason: SignedOutReason) => void | Promise<void>;
   onStepError?: (id: string, error: unknown) => void;
+  /**
+   * HARD overall deadline (ms) for the whole ordered step chain, forwarded to
+   * {@link runColdBoot}. Defense-in-depth so a single non-settling network step
+   * (a black-hole network that neither connects nor rejects) can NEVER hang the
+   * boot — and therefore app routing — indefinitely. Inert on healthy loads
+   * (every step settles well under it); only trips on pathological networks.
+   * When omitted there is no overall deadline (unchanged behavior).
+   */
+  overallDeadlineMs?: number;
+  /**
+   * Invoked once per step abandoned because {@link overallDeadlineMs} expired
+   * before it settled. Forwarded to {@link runColdBoot}. Must not throw.
+   */
+  onStepDeadline?: (stepId: string) => void;
+  /**
+   * Best-effort connectivity hint. When it returns `true` the two NETWORK steps
+   * (`device-secret-mint`, `shared-key-signin`) are skipped — an offline device
+   * cannot mint, and attempting to would burn the whole deadline on a doomed
+   * request before routing settles. The pure-local `warm-token-plant` step is
+   * NEVER gated by this: an offline returning user with an unexpired persisted
+   * token must still boot authenticated. Only an EXPLICIT offline verdict should
+   * be returned; the caller resolves unknown/timeout to `false` (assume online)
+   * so a flaky probe can never falsely skip a real sign-in.
+   */
+  isOffline?: () => boolean;
 }
 
 /**
@@ -59,6 +84,11 @@ export async function runSessionColdBoot(
 ): Promise<ColdBootOutcome<DeviceBootSession>> {
   const { oxy, store } = opts;
   const isNative = opts.platform?.isNative ?? detectNative();
+
+  // Best-effort connectivity gate for the NETWORK steps only. A missing hint or
+  // any non-`true` verdict means "assume online" — never falsely skip a real
+  // sign-in on an ambiguous probe.
+  const isOffline = (): boolean => opts.isOffline?.() ?? false;
 
   // Boot-local (not module-level) so it cannot leak across boots or break under
   // bundler re-evaluation.
@@ -114,6 +144,9 @@ export async function runSessionColdBoot(
   //    the durable store always converges on the true `current` secret.
   steps.push({
     id: 'device-secret-mint',
+    // Network step — skip entirely when the caller reports the device offline so
+    // a doomed mint cannot burn the overall deadline before routing settles.
+    enabled: () => !isOffline(),
     run: async () => {
       const result = await refreshDeviceSecretArm({ oxy, store });
       switch (result.status) {
@@ -166,12 +199,16 @@ export async function runSessionColdBoot(
     },
   });
 
-  // 3. shared-key-signin (native) — re-mint from the shared identity.
+  // 3. shared-key-signin (native) — re-mint from the shared identity. Native
+  //    AND online: it is a network step (challenge + verify round-trips), so it
+  //    is gated by the same offline hint as the mint lane. `{ retry: false }`
+  //    keeps the two round-trips as single attempts — the refresh scheduler /
+  //    401 lane own later retries — so this step cannot multiply boot latency.
   steps.push({
     id: 'shared-key-signin',
-    enabled: () => isNative,
+    enabled: () => isNative && !isOffline(),
     run: async () => {
-      const session = await oxy.signInWithSharedIdentity();
+      const session = await oxy.signInWithSharedIdentity({ requestOptions: { retry: false } });
       if (!session?.accessToken) {
         return { kind: 'skip' };
       }
@@ -201,6 +238,8 @@ export async function runSessionColdBoot(
 
   const outcome = await runColdBoot<DeviceBootSession>({
     steps,
+    overallDeadlineMs: opts.overallDeadlineMs,
+    onStepDeadline: opts.onStepDeadline,
     onStepError: (id, error) => {
       signedOutReason = 'error';
       opts.onStepError?.(id, error);

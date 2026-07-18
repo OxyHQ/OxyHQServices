@@ -455,3 +455,116 @@ describe('runSessionColdBoot — signed out', () => {
     expect(setTokens).not.toHaveBeenCalled();
   });
 });
+
+describe('runSessionColdBoot — offline gating (isOffline)', () => {
+  /** Comfortably beyond the 60s refresh lead window. */
+  const farFuture = () => new Date(Date.now() + 3_600_000).toISOString();
+
+  const sharedSession: SessionLoginResponse = {
+    sessionId: 'sess-shared',
+    deviceId: 'dev-1',
+    expiresAt: '2030-01-01T00:00:00.000Z',
+    user: { id: 'user-shared', username: 'u', name: {}, avatar: undefined },
+    accessToken: 'access-shared',
+  };
+
+  it('offline: skips BOTH network steps (no mint, no shared-key) → signed out', async () => {
+    // Credential present, no warm token — the ONLY things that could resolve are
+    // the two network steps, which the offline hint must gate off.
+    const { store, seed } = seedCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const signInWithSharedIdentity = jest.fn(async () => sharedSession);
+    const { oxy } = makeOxy({ mintFromDeviceSecret, signInWithSharedIdentity });
+    const onSignedOut = jest.fn();
+
+    const outcome = await runSessionColdBoot({
+      oxy,
+      store,
+      platform: NATIVE,
+      isOffline: () => true,
+      onSignedOut,
+    });
+
+    expect(outcome).toEqual({ kind: 'unauthenticated' });
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+    expect(signInWithSharedIdentity).not.toHaveBeenCalled();
+    expect(onSignedOut).toHaveBeenCalledWith('no_session');
+  });
+
+  it('offline: the pure-local warm-token-plant STILL runs (returning user boots authenticated offline)', async () => {
+    const { store, seed } = seedCredStore({ accessToken: 'warm-access', expiresAt: farFuture() });
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy, setTokens } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({
+      oxy,
+      store,
+      platform: NATIVE,
+      isOffline: () => true,
+    });
+
+    // Warm plant is a pure-local read — never gated by the offline hint.
+    expect(outcome).toMatchObject({ kind: 'session', via: 'warm-token-plant' });
+    expect(setTokens).toHaveBeenCalledWith('warm-access');
+    expect(mintFromDeviceSecret).not.toHaveBeenCalled();
+  });
+
+  it('online (isOffline:()=>false): the network mint runs as normal', async () => {
+    const { store, seed } = seedCredStore();
+    await seed();
+    const mintFromDeviceSecret = jest.fn(async () => MINT);
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+
+    const outcome = await runSessionColdBoot({
+      oxy,
+      store,
+      platform: WEB,
+      isOffline: () => false,
+    });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'device-secret-mint' });
+    expect(mintFromDeviceSecret).toHaveBeenCalledWith('dev-mint', 'ds-secret-orig');
+  });
+
+  it('shared-key-signin passes { requestOptions: { retry: false } } (cold-boot single-attempt)', async () => {
+    const store = createMemoryAuthStateStore(); // no mint credential → mint step no-secret skip
+    const signInWithSharedIdentity = jest.fn(async () => sharedSession);
+    const { oxy } = makeOxy({ signInWithSharedIdentity });
+
+    const outcome = await runSessionColdBoot({ oxy, store, platform: NATIVE });
+
+    expect(outcome).toMatchObject({ kind: 'session', via: 'shared-key-signin' });
+    expect(signInWithSharedIdentity).toHaveBeenCalledWith({ requestOptions: { retry: false } });
+  });
+});
+
+describe('runSessionColdBoot — overall deadline (overallDeadlineMs + onStepDeadline)', () => {
+  it('forwards the deadline: a non-settling mint step is abandoned via onStepDeadline and the boot ends bounded', async () => {
+    const { store, seed } = seedCredStore();
+    await seed();
+    // A mint that NEVER settles — without the overall deadline this hangs the
+    // whole boot (and therefore app routing) forever.
+    const mintFromDeviceSecret = jest.fn(
+      () => new Promise<DeviceTokenMintResponse>(() => undefined),
+    );
+    const { oxy } = makeOxy({ mintFromDeviceSecret });
+    const onStepDeadline = jest.fn();
+    const onSignedOut = jest.fn();
+
+    const outcome = await runSessionColdBoot({
+      oxy,
+      store,
+      platform: WEB,
+      overallDeadlineMs: 50,
+      onStepDeadline,
+      onSignedOut,
+    });
+
+    expect(outcome).toEqual({ kind: 'unauthenticated' });
+    expect(onStepDeadline).toHaveBeenCalledWith('device-secret-mint');
+    // A deadline trip is not an error — the boot resolves signed-out, not `error`.
+    expect(onSignedOut).toHaveBeenCalledWith('no_session');
+  });
+});

@@ -42,9 +42,22 @@ export default function DeleteAccountScreen() {
 
     setIsDeleting(true);
     try {
-      // Pre-flight: identity key must exist on this device to sign the delete request.
-      const hasIdentity = await KeyManager.hasIdentity();
-      if (!hasIdentity) {
+      // Pre-flight: identity key must exist on this device to sign the delete
+      // request. `hasIdentity()` now THROWS `IdentityUnavailableError` when
+      // storage is locked/unreadable — that is an INDETERMINATE read, not proof
+      // the identity is gone, so we ABORT the deletion with a visible error and
+      // NEVER fall through to the purge on an unreadable keystore.
+      let identityReadable: boolean;
+      try {
+        identityReadable = await KeyManager.hasIdentity();
+      } catch (probeError) {
+        const message = probeError instanceof Error
+          ? probeError.message
+          : t('data.deleteAccount.failedDefault');
+        toast.error(message);
+        return;
+      }
+      if (!identityReadable) {
         alert(
           t('data.deleteAccount.identityRequiredTitle'),
           t('data.deleteAccount.identityRequiredMessage'),

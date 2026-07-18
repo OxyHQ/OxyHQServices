@@ -3,7 +3,7 @@ import { Stack, router } from 'expo-router';
 import { ThemeProvider } from 'expo-router/react-navigation';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
@@ -20,12 +20,18 @@ configureReanimatedLogger({
 });
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { useQueryClient } from '@tanstack/react-query';
 import { OxyProvider, useOxy } from '@oxyhq/services';
+import { KeyManager, logger } from '@oxyhq/core';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import {
+  useOnboardingStatus,
+  ONBOARDING_IDENTITY_QUERY_KEY,
+  ONBOARDING_COMPLETE_QUERY_KEY,
+} from '@/hooks/useOnboardingStatus';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
@@ -134,6 +140,12 @@ export function ErrorBoundary(props: { error: Error; retry: () => void }) {
 function RootLayoutInner() {
   const { themeMode } = useThemeMode();
 
+  // NOTE: the cross-app shared-identity boot backfill used to live here, keyed
+  // off a raw `KeyManager.hasIdentity()` read on mount. It moved into
+  // `AppStackContent` (below) and is now gated on the shared identity probe
+  // reporting `present`, so it never fires during a possibly-locked cold-start
+  // window and never touches a fresh install — see the effect there.
+
   // `AppStackContent` is rendered UNCONDITIONALLY — the held native OS splash
   // covers the RN view until `AppStackContent` hides it once the app is ready.
   // This avoids an intermediate boot shell (which flashed white on the dark
@@ -193,9 +205,62 @@ function AppStackContent() {
   // Must be called inside OxyProvider (which wraps BloomThemeProvider)
   const navTheme = useNavigationTheme();
   const { isStorageReady } = useOxy();
-  const { status, needsAuth } = useOnboardingStatus();
+  const { status, needsAuth, identityPresent } = useOnboardingStatus();
+  const queryClient = useQueryClient();
 
   const appReady = isStorageReady && status !== 'checking';
+
+  // Cross-app shared-identity backfill (native only, one-shot per launch).
+  //
+  // Commons is the ONLY app that writes the cross-app shared-identity slot other
+  // Oxy apps read for silent "Sign in with Oxy". For users whose identity
+  // predates that write-through, the slot stays empty until it is backfilled
+  // once via `KeyManager.migrateToSharedIdentity()`. Gated on the shared identity
+  // probe reporting a healthy LOCAL `present` verdict (`identityPresent`), so it
+  // never runs on a fresh install, a `lost`/`unavailable` device, or during the
+  // possibly-locked cold-start window — and it is never the app's first identity
+  // reader. Ref-guarded so it fires at most once per launch. Fire-and-forget:
+  // never awaited on the render path, never blocks the splash hand-off.
+  const backfillDoneRef = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === 'web' || backfillDoneRef.current || !identityPresent) return;
+    backfillDoneRef.current = true;
+
+    void (async () => {
+      try {
+        if (await KeyManager.hasSharedIdentity()) return;
+
+        const migrated = await KeyManager.migrateToSharedIdentity();
+        if (!migrated) {
+          // The probe already confirmed a healthy primary and the shared slot
+          // was empty, so `false` here means the write itself failed (e.g.
+          // `OxyIdentityStore.write` threw) — surfaced distinctly so a real write
+          // failure is greppable in production, not confused with "not attempted".
+          logger.error(
+            '[commons] shared-identity boot backfill: migrateToSharedIdentity returned false for a confirmed primary identity',
+            undefined,
+            { component: 'AppStackContent' },
+          );
+        }
+      } catch (error) {
+        logger.error('[commons] shared-identity boot backfill threw unexpectedly', error, {
+          component: 'AppStackContent',
+        });
+      }
+    })();
+  }, [identityPresent]);
+
+  // Event-driven routing refresh: the moment the on-device identity verdict may
+  // have changed (create / import / delete / restore / cache invalidation),
+  // re-read the shared onboarding probes so routing reflects it immediately,
+  // without polling. `subscribeIdentityChanged` fires synchronously and returns
+  // its own unsubscribe.
+  useEffect(() => {
+    return KeyManager.subscribeIdentityChanged(() => {
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+    });
+  }, [queryClient]);
 
   // Bounded fallback so a stalled `isStorageReady`/`status` signal can never
   // hang the OS splash forever. Cleaned up on unmount.
