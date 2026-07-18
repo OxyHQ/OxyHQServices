@@ -168,10 +168,21 @@ export const useUserById = (userId: string | null, options?: { enabled?: boolean
  * Get user profile by username
  */
 export const useUserByUsername = (username: string | null, options?: { enabled?: boolean }) => {
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
+  // Viewer-scope the cache. Authenticated single-profile fetches embed a
+  // viewer-relative `relationship` ({ isFollowing, followsYou }); anonymous
+  // fetches omit it and different viewers get different values. Without the
+  // active viewer in the key, react-query freezes the first (often anonymous
+  // cold-boot) copy and never refetches when the session lands ~5-25s later,
+  // so the "Follows you" tag flashes then vanishes forever. Adding the viewer
+  // makes anon vs authed distinct entries AND forces a refetch when the
+  // session resolves or the account switches. (The SDK's GET response cache is
+  // already identity-scoped by the access-token user id via `computeIdentityTag`,
+  // so it never cross-poisons `relationship` — the only gap was this key.)
+  const viewerId = user?.id ?? '';
 
   return useQuery({
-    queryKey: [...queryKeys.users.details(), 'username', username || ''],
+    queryKey: [...queryKeys.users.details(), 'username', username || '', 'viewer', viewerId],
     queryFn: async () => {
       if (!username) {
         throw new Error('Username is required');
