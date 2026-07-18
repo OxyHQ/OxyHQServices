@@ -2,6 +2,7 @@
   "name": "@oxyhq/ship",
   "version": "0.1.0",
   "description": "oxy-ship — publish Expo OTA updates to the Oxy Updates service",
+  "license": "AGPL-3.0-only",
   "type": "commonjs",
   "bin": {
     "oxy-ship": "dist/cli.js"
