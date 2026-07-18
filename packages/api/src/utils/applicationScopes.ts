@@ -23,6 +23,11 @@
  * - `notifications:write` permits trusted services to create realtime
  *   notifications for arbitrary recipients. PRIVILEGED — only Oxy platform staff
  *   may grant it.
+ * - `payments:read` / `payments:write` permit a service credential to read and
+ *   manage the Oxy Pay Gateway resources (merchants, payment intents, webhook
+ *   deliveries) belonging to ITS OWN Application. Non-privileged — same
+ *   pattern as `files:write`/`updates:publish`: authority is scoped to the
+ *   app's own tenant, never cross-tenant.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -37,6 +42,8 @@ export const APPLICATION_SCOPES = [
   'signals:write',
   'reputation:write',
   'notifications:write',
+  'payments:read',
+  'payments:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];

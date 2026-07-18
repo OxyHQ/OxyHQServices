@@ -97,3 +97,18 @@ describe('scope classification helpers', () => {
     expect(isPrivilegedScope('bogus:scope')).toBe(false);
   });
 });
+
+describe('payments:read / payments:write (F2.0)', () => {
+  it('are recognised, non-privileged application scopes', () => {
+    expect(isValidApplicationScope('payments:read')).toBe(true);
+    expect(isValidApplicationScope('payments:write')).toBe(true);
+    expect(isPrivilegedScope('payments:read')).toBe(false);
+    expect(isPrivilegedScope('payments:write')).toBe(false);
+  });
+
+  it('survive intersectScopes like any other non-privileged scope', () => {
+    expect(intersectScopes(['payments:write'], ['payments:write', 'user:read'])).toEqual([
+      'payments:write',
+    ]);
+  });
+});
