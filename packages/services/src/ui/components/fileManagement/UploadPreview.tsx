@@ -1,12 +1,11 @@
 import type React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { RNFileDescriptor } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
-import { fileManagementStyles } from './styles';
 
 interface PendingFile {
     file: File | Blob | RNFileDescriptor;
@@ -25,6 +24,15 @@ interface UploadPreviewProps {
     inline?: boolean;
 }
 
+// `expo-image` takes no className remap — the thumbnail size stays inline.
+const previewStyles = StyleSheet.create({
+    thumbnail: {
+        width: 60,
+        height: 60,
+        borderRadius: 8,
+    },
+});
+
 const UploadPreviewContent: React.FC<{
     pendingFiles: PendingFile[];
     onConfirm: () => void;
@@ -38,13 +46,13 @@ const UploadPreviewContent: React.FC<{
     onRemoveFile,
     showActions = true,
 }) => {
-    const { colors, isDark } = useTheme();
+    const { colors } = useTheme();
     const totalSize = pendingFiles.reduce((sum, f) => sum + f.size, 0);
 
     return (
-        <View style={[fileManagementStyles.uploadPreviewContainer, { backgroundColor: colors.background }]}>
-            <View className="border-b border-border" style={fileManagementStyles.uploadPreviewHeader}>
-                <Text className="text-text" style={fileManagementStyles.uploadPreviewTitle}>
+        <View className="bg-bg flex-1">
+            <View className="border-b border-border flex-row items-center justify-between px-[16px] py-[16px]">
+                <Text className="text-text text-[20px] font-bold">
                     Review Files ({pendingFiles.length})
                 </Text>
                 <TouchableOpacity onPress={onCancel}>
@@ -52,23 +60,25 @@ const UploadPreviewContent: React.FC<{
                 </TouchableOpacity>
             </View>
 
-            <ScrollView style={fileManagementStyles.uploadPreviewList}>
+            <ScrollView className="flex-1 p-[16px]">
                 {pendingFiles.map((pendingFile, index) => {
                     const isImage = pendingFile.type.startsWith('image/');
                     return (
                         <View
                             key={index}
-                            className="bg-secondary border-border"
-                            style={fileManagementStyles.uploadPreviewItem}
+                            className="bg-secondary border-border flex-row items-center p-[12px] rounded-[12px] border mb-[12px] gap-[12px]"
                         >
                             {isImage && pendingFile.preview ? (
                                 <ExpoImage
                                     source={{ uri: pendingFile.preview }}
-                                    style={fileManagementStyles.uploadPreviewThumbnail}
+                                    style={previewStyles.thumbnail}
                                     contentFit="cover"
                                 />
                             ) : (
-                                <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: colors.backgroundSecondary }]}>
+                                <View
+                                    className="w-[60px] h-[60px] rounded-[8px] items-center justify-center"
+                                    style={{ backgroundColor: colors.backgroundSecondary }}
+                                >
                                     <Ionicons
                                         name={getFileIcon(pendingFile.type)}
                                         size={32}
@@ -76,16 +86,16 @@ const UploadPreviewContent: React.FC<{
                                     />
                                 </View>
                             )}
-                            <View style={fileManagementStyles.uploadPreviewInfo}>
-                                <Text className="text-text" style={fileManagementStyles.uploadPreviewName} numberOfLines={1}>
+                            <View className="flex-1 min-w-0">
+                                <Text className="text-text text-[16px] font-semibold mb-[4px]" numberOfLines={1}>
                                     {pendingFile.name}
                                 </Text>
-                                <Text className="text-text-secondary" style={fileManagementStyles.uploadPreviewMeta}>
+                                <Text className="text-text-secondary text-[13px]">
                                     {formatFileSize(pendingFile.size)} • {pendingFile.type}
                                 </Text>
                             </View>
                             <TouchableOpacity
-                                style={fileManagementStyles.uploadPreviewRemove}
+                                className="p-[4px]"
                                 onPress={() => onRemoveFile(index)}
                             >
                                 <Ionicons name="close-circle" size={24} color={colors.error} />
@@ -95,36 +105,31 @@ const UploadPreviewContent: React.FC<{
                 })}
             </ScrollView>
 
-            <View className="border-t border-border" style={fileManagementStyles.uploadPreviewFooter}>
-                <View style={fileManagementStyles.uploadPreviewStats}>
-                    <Text className="text-text" style={fileManagementStyles.uploadPreviewStatsText}>
+            <View className="border-t border-border p-[16px]">
+                <View className="flex-row justify-between mb-[16px]">
+                    <Text className="text-text text-[15px] font-semibold">
                         {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}
                     </Text>
-                    <Text className="text-text" style={fileManagementStyles.uploadPreviewStatsText}>
+                    <Text className="text-text text-[15px] font-semibold">
                         {formatFileSize(totalSize)}
                     </Text>
                 </View>
                 {showActions && (
-                    <View style={fileManagementStyles.uploadPreviewActions}>
+                    <View className="flex-row gap-[12px]">
                         <TouchableOpacity
-                            className="border-border"
-                            style={[
-                                fileManagementStyles.uploadPreviewCancelButton,
-                                { backgroundColor: 'transparent' }
-                            ]}
+                            className="bg-transparent border-border flex-1 py-[14px] rounded-[12px] border items-center justify-center"
                             onPress={onCancel}
                         >
-                            <Text className="text-text" style={fileManagementStyles.uploadPreviewCancelText}>
+                            <Text className="text-text text-[16px] font-semibold">
                                 Cancel
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            className="bg-primary"
-                            style={fileManagementStyles.uploadPreviewConfirmButton}
+                            className="bg-primary flex-[2] flex-row items-center justify-center py-[14px] rounded-[12px] gap-[8px]"
                             onPress={onConfirm}
                         >
                             <Ionicons name="cloud-upload" size={20} color={colors.primaryForeground} />
-                            <Text style={[fileManagementStyles.uploadPreviewConfirmText, { color: colors.primaryForeground }]}>Upload</Text>
+                            <Text className="text-[16px] font-semibold" style={{ color: colors.primaryForeground }}>Upload</Text>
                         </TouchableOpacity>
                     </View>
                 )}

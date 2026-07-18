@@ -34,12 +34,28 @@ import { useResolvedFileUrls, fileThumbSource } from '../hooks/useResolvedFileUr
 import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
-import { fileManagementStyles } from '../components/fileManagement/styles';
 import { getErrorMessage } from './fileManagement/shared';
 import { useFileUploadState } from './fileManagement/hooks/useFileUploadState';
 import PhotoPickerView from './fileManagement/PhotoPickerSection';
 import FileListSection, { type FileListItem } from './fileManagement/FileListSection';
 import UploadBar from './fileManagement/UploadBar';
+
+// Genuinely-inline-only styles: `viewModeButton` is spread into an Animated.View
+// style array (interpolated backgroundColor), and the photo tiles are
+// `expo-image` (no className remap). Everything else uses NativeWind classNames.
+const screenStyles = StyleSheet.create({
+    viewModeButton: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        minWidth: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 1,
+    },
+    photoImage: { width: '100%', height: '100%', borderRadius: 8 },
+    justifiedPhotoImage: { width: '100%', height: '100%', borderRadius: 6 },
+});
 
 // Animated button component for smooth transitions
 const AnimatedButton: React.FC<{
@@ -788,79 +804,26 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         fileDetailsControl.open();
     };
 
-    const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = thumbSourceFor(photo);
-
-        // Calculate photo item width based on actual container size from bottom sheet
-        let itemsPerRow = 3; // Default for mobile
-        if (safeContainerWidth > 768) itemsPerRow = 4; // Desktop/tablet
-        else if (safeContainerWidth > 480) itemsPerRow = 3; // Large mobile
-
-        // Account for the photoScrollContainer padding (16px on each side = 32px total)
-        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items (4px)
-        const availableWidth = safeContainerWidth - scrollContainerPadding;
-        const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-        return (
-            <TouchableOpacity
-                key={photo.id}
-                style={[
-                    fileManagementStyles.simplePhotoItem,
-                    {
-                        width: itemWidth,
-                        height: itemWidth,
-                        marginRight: (index + 1) % itemsPerRow === 0 ? 0 : 4,
-                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {})
-                    }
-                ]}
-                onPress={() => handleFileOpen(photo)}
-                activeOpacity={0.8}
-            >
-                <View style={fileManagementStyles.simplePhotoContainer}>
-                    <ExpoImage
-                        source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.simplePhotoImage}
-                        contentFit="cover"
-                        transition={120}
-                        cachePolicy="memory-disk"
-                        onError={() => {
-                            // Photo failed to load, will show placeholder
-                        }}
-                        accessibilityLabel={photo.filename}
-                    />
-                    {selectMode && (
-                        <View style={fileManagementStyles.selectionBadge}>
-                            <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? colors.primary : colors.text} />
-                        </View>
-                    )}
-                </View>
-            </TouchableOpacity>
-        );
-    }, [thumbSourceFor, safeContainerWidth, selectMode, selectedIds, colors.primary, colors.text]);
-
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
         const downloadUrl = thumbSourceFor(photo);
 
         return (
             <TouchableOpacity
                 key={photo.id}
-                style={[
-                    fileManagementStyles.justifiedPhotoItem,
-                    {
-                        width,
-                        height,
-                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {}),
-                        ...(selectMode && multiSelect && selectedIds.size > 0 && !selectedIds.has(photo.id) ? { opacity: 0.4 } : {}),
-                    },
-                ]}
+                className="rounded-[6px] overflow-hidden relative"
+                style={{
+                    width,
+                    height,
+                    ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {}),
+                    ...(selectMode && multiSelect && selectedIds.size > 0 && !selectedIds.has(photo.id) ? { opacity: 0.4 } : {}),
+                }}
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={fileManagementStyles.justifiedPhotoContainer}>
+                <View className="w-full h-full relative rounded-[6px] overflow-hidden">
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.justifiedPhotoImage}
+                        style={screenStyles.justifiedPhotoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -870,7 +833,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         accessibilityLabel={photo.filename}
                     />
                     {selectMode && (
-                        <View style={fileManagementStyles.selectionBadge}>
+                        <View className="absolute top-[4px] right-[4px] rounded-[12px] p-[2px]" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
                             <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? colors.primary : colors.text} />
                         </View>
                     )}
@@ -889,147 +852,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [targetUserId]);
-
-    const renderFileItem = (file: FileMetadata) => {
-        const isImage = file.contentType.startsWith('image/');
-        const isPDF = file.contentType.includes('pdf');
-        const isVideo = file.contentType.startsWith('video/');
-        const isAudio = file.contentType.startsWith('audio/');
-        const hasPreview = isImage || isPDF || isVideo;
-        const borderColor = colors.border;
-
-        return (
-            <View
-                key={file.id}
-                style={[fileManagementStyles.fileItem, { backgroundColor: colors.backgroundSecondary, borderColor }, selectMode && selectedIds.has(file.id) && { borderColor: colors.primary, borderWidth: 2 }]}
-            >
-                <TouchableOpacity
-                    style={fileManagementStyles.fileContent}
-                    onPress={() => handleFileOpen(file)}
-                >
-                    {/* Preview Thumbnail */}
-                    <View style={fileManagementStyles.filePreviewContainer}>
-                        {hasPreview ? (
-                            <View style={fileManagementStyles.filePreview}>
-                                {isImage && (
-                                    <ExpoImage
-                                        source={{ uri: thumbSourceFor(file) }}
-                                        style={fileManagementStyles.previewImage}
-                                        contentFit="cover"
-                                        transition={120}
-                                        cachePolicy="memory-disk"
-                                        onError={() => {
-                                            // Image preview failed to load
-                                        }}
-                                        accessibilityLabel={file.filename}
-                                    />
-                                )}
-                                {isPDF && (
-                                    <View style={fileManagementStyles.pdfPreview}>
-                                        <Ionicons name="document" size={32} color={colors.primary} />
-                                        <Text style={[fileManagementStyles.pdfLabel, { color: colors.primary }]}>PDF</Text>
-                                    </View>
-                                )}
-                                {isVideo && (
-                                    <View style={fileManagementStyles.videoPreviewWrapper}>
-                                        <ExpoImage
-                                            source={{ uri: thumbSourceFor(file) }}
-                                            style={fileManagementStyles.videoPosterImage}
-                                            contentFit="cover"
-                                            transition={120}
-                                            cachePolicy="memory-disk"
-                                            onError={(_: unknown) => {
-                                                // If thumbnail not available, we still show icon overlay
-                                            }}
-                                            accessibilityLabel={`${file.filename} video thumbnail`}
-                                        />
-                                        <View style={fileManagementStyles.videoOverlay}>
-                                            <Ionicons name="play" size={24} color="#FFFFFF" />
-                                        </View>
-                                    </View>
-                                )}
-                                {/* Fallback icon (hidden by default for images) */}
-                                <View
-                                    style={[fileManagementStyles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
-                                >
-                                    <Ionicons
-                                        name={getFileIcon(file.contentType)}
-                                        size={32}
-                                        color={colors.primary}
-                                    />
-                                </View>
-
-                                {selectMode && (
-                                    <View style={fileManagementStyles.selectionBadge}>
-                                        <Ionicons name={selectedIds.has(file.id) ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selectedIds.has(file.id) ? colors.primary : colors.text} />
-                                    </View>
-                                )}
-                            </View>
-                        ) : (
-                            <View style={fileManagementStyles.fileIconContainer}>
-                                <Ionicons
-                                    name={getFileIcon(file.contentType)}
-                                    size={32}
-                                    color={colors.primary}
-                                />
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={fileManagementStyles.fileInfo}>
-                        <Text style={[fileManagementStyles.fileName, { color: colors.text }]} numberOfLines={1}>
-                            {file.filename}
-                        </Text>
-                        <Text style={[fileManagementStyles.fileDetails, { color: colors.textSecondary }]}>
-                            {formatFileSize(file.length)} • {new Date(file.uploadDate).toLocaleDateString()}
-                        </Text>
-                        {file.metadata?.description && (
-                            <Text
-                                style={[fileManagementStyles.fileDescription, { color: colors.textTertiary }]}
-                                numberOfLines={2}
-                            >
-                                {file.metadata.description}
-                            </Text>
-                        )}
-                    </View>
-                </TouchableOpacity>
-
-                {!selectMode && (
-                    <View style={fileManagementStyles.fileActions}>
-                        {/* Preview button for supported files */}
-                        {hasPreview && (
-                            <TouchableOpacity
-                                style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
-                                onPress={() => handleFileOpen(file)}
-                            >
-                                <Ionicons name="eye" size={20} color={colors.primary} />
-                            </TouchableOpacity>
-                        )}
-
-                        <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
-                            onPress={() => handleFileDownload(file.id, file.filename)}
-                        >
-                            <Ionicons name="download" size={20} color={colors.primary} />
-                        </TouchableOpacity>
-
-                        {/* Always show delete button for debugging */}
-                        <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.negativeSubtle }]}
-                            onPress={() => confirmFileDelete(file.id, file.filename)}
-                            disabled={deleting === file.id}
-                        >
-                            {deleting === file.id ? (
-                                <ActivityIndicator size="small" color={colors.error} />
-                            ) : (
-                                <Ionicons name="trash" size={20} color={colors.error} />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                )}
-            </View>
-        );
-    };
 
     // SettingsListItem-based file items (for 'all' view)
     const groupedFileItems: FileListItem[] = useMemo(() => {
@@ -1106,23 +928,26 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 },
                 // Hide action buttons when selecting (in selectMode or bulk operations mode)
                 rightElement: (!selectMode && selectedIds.size === 0) ? (
-                    <View style={fileManagementStyles.groupedActions}>
+                    <View className="flex-row items-center gap-[6px] ml-[12px]">
                         {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
-                                style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
+                                className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                                style={{ backgroundColor: colors.backgroundSecondary }}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={18} color={colors.primary} />
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
+                            className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                            style={{ backgroundColor: colors.backgroundSecondary }}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={18} color={colors.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.negativeSubtle }]}
+                            className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                            style={{ backgroundColor: colors.negativeSubtle }}
                             onPress={() => confirmFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
@@ -1241,20 +1066,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <TouchableOpacity
                 key={photo.id}
-                style={[
-                    fileManagementStyles.photoItem,
-                    {
-                        width: itemWidth,
-                        height: itemWidth,
-                    }
-                ]}
+                className="rounded-[8px] overflow-hidden"
+                style={{ width: itemWidth, height: itemWidth }}
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={fileManagementStyles.photoContainer}>
+                <View className="w-full h-full relative rounded-[8px] overflow-hidden">
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.photoImage}
+                        style={screenStyles.photoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -1273,17 +1093,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         if (photos.length === 0) {
             return (
-                <View style={fileManagementStyles.emptyState}>
+                <View className="items-center py-[40px] px-[24px]">
                     <Ionicons name="images-outline" size={64} color={colors.textTertiary} />
-                    <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyPhotos.title')}</Text>
-                    <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}> {
+                    <Text className="text-[24px] font-bold mt-[16px] mb-[8px]" style={{ color: colors.text }}>{t('fileManagement.emptyPhotos.title')}</Text>
+                    <Text className="text-[16px] text-center leading-[24px] mb-[32px]" style={{ color: colors.textSecondary }}> {
                         user?.id === targetUserId
                             ? t('fileManagement.emptyPhotos.ownDescription')
                             : t('fileManagement.emptyPhotos.otherDescription')
                     } </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
-                            style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
+                            className="flex-row items-center px-[24px] py-[12px] rounded-[24px] gap-[8px]"
+                            style={{ backgroundColor: colors.primary }}
                             onPress={handleFileUpload}
                             disabled={uploading || isPickingDocument}
                         >
@@ -1294,7 +1115,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             ) : (
                                 <>
                                     <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                                    <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadPhotos')}</Text>
+                                    <Text className="text-white text-[16px] font-semibold">{t('fileManagement.uploadPhotos')}</Text>
                                 </>
                             )}
                         </TouchableOpacity>
@@ -1306,8 +1127,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <ScrollView
                 ref={photoScrollViewRef}
-                style={fileManagementStyles.scrollView}
-                contentContainerStyle={fileManagementStyles.photoScrollContainer}
+                className="flex-1"
+                contentContainerClassName="p-[10px]"
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -1326,9 +1147,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 scrollEventThrottle={250}
             >
                 {loadingDimensions && (
-                    <View style={fileManagementStyles.dimensionsLoadingIndicator}>
+                    <View className="flex-row items-center justify-center py-[16px] gap-[8px]">
                         <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: colors.textSecondary }]}>{t('fileManagement.loadingPhotoLayout')}</Text>
+                        <Text className="text-[14px] italic" style={{ color: colors.textSecondary }}>{t('fileManagement.loadingPhotoLayout')}</Text>
                     </View>
                 )}
 
@@ -1367,10 +1188,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
 
     const renderEmptyState = () => (
-        <View style={fileManagementStyles.emptyState}>
+        <View className="items-center py-[40px] px-[24px]">
             <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
-            <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyFiles.title')}</Text>
-            <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
+            <Text className="text-[24px] font-bold mt-[16px] mb-[8px]" style={{ color: colors.text }}>{t('fileManagement.emptyFiles.title')}</Text>
+            <Text className="text-[16px] text-center leading-[24px] mb-[32px]" style={{ color: colors.textSecondary }}>
                 {user?.id === targetUserId
                     ? t('fileManagement.emptyFiles.ownDescription')
                     : t('fileManagement.emptyFiles.otherDescription')
@@ -1378,7 +1199,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             </Text>
             {user?.id === targetUserId && (
                 <TouchableOpacity
-                    style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
+                    className="flex-row items-center px-[24px] py-[12px] rounded-[24px] gap-[8px]"
+                    style={{ backgroundColor: colors.primary }}
                     onPress={handleFileUpload}
                     disabled={uploading || isPickingDocument}
                 >
@@ -1389,7 +1211,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ) : (
                         <>
                             <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                            <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadFiles')}</Text>
+                            <Text className="text-white text-[16px] font-semibold">{t('fileManagement.uploadFiles')}</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -1517,11 +1339,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
 
         return (
-            <View style={[fileManagementStyles.container, { backgroundColor }]}>
+            <View className="flex-1" style={{ backgroundColor }}>
                 {/* Header Skeleton */}
-                <View style={[fileManagementStyles.header, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                <View
+                    className="flex-row items-center justify-between px-[16px] py-[12px] relative"
+                    style={{ borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
+                >
                     <SkeletonBox width={44} height={44} borderRadius={12} />
-                    <View style={[fileManagementStyles.headerTitleContainer, { flex: 1 }]}>
+                    <View className="flex-1 items-center justify-center mx-[16px]">
                         <SkeletonBox width={140} height={20} style={{ marginBottom: 6 }} />
                         <SkeletonBox width={100} height={14} />
                     </View>
@@ -1529,24 +1354,26 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* Controls Bar Skeleton */}
-                <View style={fileManagementStyles.controlsBar}>
+                <View className="flex-row items-center justify-between px-[12px] py-[12px] gap-[12px]">
                     <SkeletonBox width={100} height={36} borderRadius={18} />
                     <SkeletonBox width={44} height={44} borderRadius={22} />
                 </View>
 
                 {/* Search Bar Skeleton */}
-                <View style={[fileManagementStyles.searchContainer, {
-                    backgroundColor: colors.card,
-                }]}>
+                <View
+                    className="flex-row items-center px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-full gap-[10px]"
+                    style={{ backgroundColor: colors.card }}
+                >
                     <SkeletonBox width="100%" height={44} borderRadius={12} />
                 </View>
 
                 {/* Stats Container Skeleton */}
-                <View style={[fileManagementStyles.statsContainer, {
-                    backgroundColor: colors.card,
-                }]}>
+                <View
+                    className="flex-row px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-[18px]"
+                    style={{ backgroundColor: colors.card }}
+                >
                     {[1, 2, 3].map((i) => (
-                        <View key={i} style={fileManagementStyles.statItem}>
+                        <View key={i} className="flex-1 items-center py-[4px]">
                             <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} delay={i * 30} />
                             <SkeletonBox width={40} height={14} delay={i * 30 + 15} />
                         </View>
@@ -1555,8 +1382,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                 {/* File List Skeleton - Matching SettingsListItem */}
                 <ScrollView
-                    style={fileManagementStyles.scrollView}
-                    contentContainerStyle={fileManagementStyles.scrollContainer}
+                    className="flex-1"
+                    contentContainerClassName="px-[12px] pt-0 pb-[12px]"
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={{
@@ -1660,7 +1487,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // If upload preview is showing, render it inline instead of the file list
     if (showUploadPreview) {
         return (
-            <View style={fileManagementStyles.container}>
+            <View className="flex-1">
                 <Header
                     title={t('fileManagement.reviewFiles')}
                     subtitle={t('fileManagement.readyToUpload', { count: pendingFiles.length })}
@@ -1682,7 +1509,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }
 
     return (
-        <View style={fileManagementStyles.container}>
+        <View className="flex-1">
             <Header
                 title={selectMode ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile')) : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title'))}
                 subtitle={selectMode ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect')) : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length }))}
@@ -1728,25 +1555,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 titleAlignment="left"
             />
 
-            <View style={fileManagementStyles.controlsBar}>
+            <View className="flex-row items-center justify-between px-[12px] py-[12px] gap-[12px]">
                 <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={fileManagementStyles.viewModeScroll}
+                    className="flex-1"
+                    style={{ maxWidth: '80%' }}
                 >
-                    <View style={[
-                        fileManagementStyles.viewModeToggle,
-                        {
-                            backgroundColor: colors.card,
-                        }
-                    ]}>
+                    <View
+                        className="flex-row rounded-full p-[2px] overflow-hidden"
+                        style={{ backgroundColor: colors.card }}
+                    >
                         <AnimatedButton
                             isSelected={viewMode === 'all'}
                             onPress={() => setViewMode('all')}
                             icon={viewMode === 'all' ? 'folder' : 'folder-outline'}
                             primaryColor={colors.primary}
                             textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
+                            style={screenStyles.viewModeButton}
                             accessibilityLabel={t('fileManagement.a11y.viewAll') || 'Show all files'}
                         />
                         <AnimatedButton
@@ -1755,7 +1581,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             icon={viewMode === 'photos' ? 'image-multiple' : 'image-multiple-outline'}
                             primaryColor={colors.primary}
                             textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
+                            style={screenStyles.viewModeButton}
                             accessibilityLabel={t('fileManagement.a11y.viewPhotos') || 'Show photos only'}
                         />
                         {!isImageOnlyPicker && (
@@ -1766,7 +1592,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     icon={viewMode === 'videos' ? 'video' : 'video-outline'}
                                     primaryColor={colors.primary}
                                     textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
+                                    style={screenStyles.viewModeButton}
                                     accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
                                 />
                                 <AnimatedButton
@@ -1775,7 +1601,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
                                     primaryColor={colors.primary}
                                     textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
+                                    style={screenStyles.viewModeButton}
                                     accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
                                 />
                                 <AnimatedButton
@@ -1784,7 +1610,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
                                     primaryColor={colors.primary}
                                     textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
+                                    style={screenStyles.viewModeButton}
                                     accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
                                 />
                             </>
@@ -1792,9 +1618,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </ScrollView>
                 <TouchableOpacity
-                    style={[fileManagementStyles.sortButton, {
-                        backgroundColor: colors.card,
-                    }]}
+                    className="flex-row items-center justify-center px-[10px] py-[6px] rounded-full min-w-[36px] gap-[4px]"
+                    style={{ backgroundColor: colors.card }}
                     accessibilityRole="button"
                     accessibilityLabel={t('fileManagement.a11y.sortBy', {
                         field: sortBy,
@@ -1829,11 +1654,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </TouchableOpacity>
                 {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
-                        style={[
-                            fileManagementStyles.uploadButton,
-                            isImageOnlyPicker && fileManagementStyles.uploadButtonExtended,
-                            { backgroundColor: colors.primary },
-                        ]}
+                        className={`h-[44px] rounded-[22px] items-center justify-center ${isImageOnlyPicker ? 'w-auto min-w-[44px] px-[14px]' : 'w-[44px]'}`}
+                        style={{ backgroundColor: colors.primary }}
                         onPress={handleFileUpload}
                         disabled={uploading || isPickingDocument}
                         accessibilityRole="button"
@@ -1845,10 +1667,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         accessibilityState={{ busy: uploading || isPickingDocument }}
                     >
                         {uploading ? (
-                            <View style={fileManagementStyles.uploadProgress}>
+                            <View className="items-center justify-center">
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                                 {uploadProgress && (
-                                    <Text style={fileManagementStyles.uploadProgressText}>
+                                    <Text className="text-white text-[10px] font-semibold mt-[2px]">
                                         {uploadProgress.current}/{uploadProgress.total}
                                     </Text>
                                 )}
@@ -1856,9 +1678,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         ) : isPickingDocument ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : isImageOnlyPicker ? (
-                            <View style={fileManagementStyles.uploadButtonContent}>
+                            <View className="flex-row items-center gap-[6px]">
                                 <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.uploadButtonLabel} numberOfLines={1}>
+                                <Text className="text-white text-[14px] font-semibold" numberOfLines={1}>
                                     {t('fileManagement.upload') || 'Upload'}
                                 </Text>
                             </View>
@@ -1871,15 +1693,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Search Bar */}
             {files.length > 0 && (viewMode === 'all' || files.some(f => f.contentType.startsWith('image/'))) && (
-                <View style={[
-                    fileManagementStyles.searchContainer,
-                    {
-                        backgroundColor: colors.card,
-                    }
-                ]}>
+                <View
+                    className="flex-row items-center px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-full gap-[10px]"
+                    style={{ backgroundColor: colors.card }}
+                >
                     <Ionicons name="search" size={22} color={colors.icon} />
                     <TextInput
-                        style={[fileManagementStyles.searchInput, { color: colors.text }]}
+                        className="flex-1 text-[16px] leading-[20px]"
+                        style={{ color: colors.text }}
                         placeholder={viewMode === 'photos' ? t('fileManagement.searchPhotos') : t('fileManagement.searchFiles')}
                         placeholderTextColor={colors.textSecondary}
                         value={searchQuery}
@@ -1888,7 +1709,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {searchQuery.length > 0 && (
                         <TouchableOpacity
                             onPress={() => setSearchQuery('')}
-                            style={fileManagementStyles.searchClearButton}
+                            className="p-[4px] rounded-[12px] items-center justify-center"
                         >
                             <Ionicons name="close-circle" size={22} color={colors.icon} />
                         </TouchableOpacity>
@@ -1898,30 +1719,28 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* File Stats */}
             {files.length > 0 && (
-                <View style={[
-                    fileManagementStyles.statsContainer,
-                    {
-                        backgroundColor: colors.card,
-                    }
-                ]}>
-                    <View style={fileManagementStyles.statItem}>
-                        <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>{filteredFiles.length}</Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                <View
+                    className="flex-row px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-[18px]"
+                    style={{ backgroundColor: colors.card }}
+                >
+                    <View className="flex-1 items-center py-[4px]">
+                        <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>{filteredFiles.length}</Text>
+                        <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                             {searchQuery.length > 0 ? t('fileManagement.found') : (filteredFiles.length === 1 ? (viewMode === 'photos' ? t('fileManagement.photo') : t('fileManagement.file')) : (viewMode === 'photos' ? t('fileManagement.photos_stat') : t('fileManagement.files')))}
                         </Text>
                     </View>
-                    <View style={fileManagementStyles.statItem}>
-                        <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>
+                    <View className="flex-1 items-center py-[4px]">
+                        <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                        <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                             {searchQuery.length > 0 ? t('fileManagement.size') : t('fileManagement.totalSize')}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
-                        <View style={fileManagementStyles.statItem}>
-                            <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>{files.length}</Text>
-                            <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                        <View className="flex-1 items-center py-[4px]">
+                            <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>{files.length}</Text>
+                            <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                                 {t('fileManagement.total')}
                             </Text>
                         </View>
@@ -2003,7 +1822,5 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         </View>
     );
 };
-
-// Styles have been moved to components/fileManagement/styles.ts
 
 export default FileManagementScreen;
