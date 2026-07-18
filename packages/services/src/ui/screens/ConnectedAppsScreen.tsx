@@ -120,7 +120,6 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                             t('connectedApps.item.granted', {
                                 relative: formatRelative(item.firstGrantedAt),
                             })
-                            || `Granted ${formatRelative(item.firstGrantedAt)}`
                         }
                         onPress={isRevoking ? undefined : () => confirmRevoke(item)}
                         disabled={isRevoking}

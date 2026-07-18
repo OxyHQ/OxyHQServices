@@ -221,6 +221,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "Concedit {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {

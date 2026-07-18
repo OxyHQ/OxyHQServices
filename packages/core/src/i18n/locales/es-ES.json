@@ -1339,6 +1339,8 @@
       "creditCard": "Tarjeta de crédito",
       "enterCardSecurely": "Introduce los datos de tu tarjeta de forma segura",
       "acceptedCards": "Aceptamos Visa, Mastercard y más",
+      "cardNumber": "Número de tarjeta",
+      "expiry": "Caducidad",
       "readyToProcess": "Listo para procesar el pago...",
       "payWithWallet": "Paga con tu billetera de la app",
       "balance": "Saldo: {{balance}}",
@@ -1591,6 +1593,7 @@
       "subtitle": "Las apps que autorices a iniciar sesión con tu cuenta Oxy aparecerán aquí"
     },
     "item": {
+      "granted": "Concedido {{relative}}",
       "lastUsed": "Último uso: {{relative}}"
     },
     "confirm": {
@@ -1653,6 +1656,12 @@
         "description": "Una cuenta programática con credenciales de servicio"
       }
     },
+    "organizationCategory": {
+      "agency": "Agencia inmobiliaria",
+      "cooperative": "Cooperativa de vivienda",
+      "landlord": "Propietario / administrador de fincas",
+      "other": "Otra organización"
+    },
     "create": {
       "title": "Crear cuenta",
       "subtitle": "Crea una cuenta que tú controlas. Tendrá su propio perfil, miembros y aplicaciones.",
@@ -1669,6 +1678,9 @@
         "tooShort": "El nombre de usuario debe tener al menos 3 caracteres",
         "invalidChars": "Solo letras, números, guiones y guiones bajos",
         "checkFailed": "No se pudo comprobar la disponibilidad"
+      },
+      "organizationCategory": {
+        "label": "Tipo de organización"
       },
       "toasts": {
         "success": "Cuenta creada",

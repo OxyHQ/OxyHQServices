@@ -79,13 +79,13 @@ const organizationCategoryLabel = (
 ): string => {
   switch (category) {
     case 'agency':
-      return t('accounts.organizationCategory.agency') || 'Real estate agency';
+      return t('accounts.organizationCategory.agency');
     case 'cooperative':
-      return t('accounts.organizationCategory.cooperative') || 'Housing cooperative';
+      return t('accounts.organizationCategory.cooperative');
     case 'landlord':
-      return t('accounts.organizationCategory.landlord') || 'Landlord / property manager';
+      return t('accounts.organizationCategory.landlord');
     default:
-      return t('accounts.organizationCategory.other') || 'Other organization';
+      return t('accounts.organizationCategory.other');
   }
 };
 
@@ -309,7 +309,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
           {kind === 'organization' ? (
             <View className="gap-space-8">
               <Text className="text-body font-bodyBold text-text">
-                {t('accounts.create.organizationCategory.label') || 'Organization type'}
+                {t('accounts.create.organizationCategory.label')}
               </Text>
               <View className="flex-row flex-wrap gap-space-8">
                 {ORGANIZATION_CATEGORY_OPTIONS.map((option) => {
