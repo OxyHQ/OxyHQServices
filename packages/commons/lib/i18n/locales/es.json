@@ -264,7 +264,6 @@
     "title": "Seguridad e inicio de sesión",
     "subtitle": "Gestiona tu configuración de seguridad y métodos de inicio de sesión.",
     "loading": "Cargando configuración de seguridad...",
-    "signInRequired": "Inicia sesión para ver tu configuración de seguridad.",
     "sections": {
       "recommendations": "Recomendaciones de seguridad",
       "recentActivity": "Actividad de seguridad reciente",
@@ -374,7 +373,6 @@
     "title": "Datos y privacidad",
     "subtitle": "Gestiona tus datos y tu configuración de privacidad.",
     "loading": "Cargando configuración de privacidad...",
-    "signInRequired": "Inicia sesión para ver tu configuración de privacidad.",
     "sections": {
       "download": "Descargar tus datos",
       "downloadSubtitle": "Obtén una copia de los datos de tu cuenta",
@@ -450,7 +448,6 @@
       "failedTitle": "Eliminación fallida",
       "failedDefault": "No se pudo eliminar la cuenta. Inténtalo de nuevo.",
       "localKeyPurgeWarning": "Tu cuenta se eliminó, pero no se pudo borrar la clave de identidad de este dispositivo. Reinstala la app para borrarla por completo.",
-      "signInRequired": "Inicia sesión para eliminar tu cuenta.",
       "thisAccount": "esta cuenta",
       "confirmInputLabel": "Escribe tu nombre de usuario para confirmar la eliminación de cuenta"
     },
@@ -473,7 +470,6 @@
     "retry": "Reintentar",
     "errorTitle": "No se pudo cargar la actividad",
     "errorMessage": "Ocurrió un error al cargar tu actividad. Desliza para actualizar o inténtalo de nuevo.",
-    "signInRequired": "Inicia sesión para ver tu actividad.",
     "empty": {
       "title": "Sin actividad todavía",
       "subtitle": "Aquí aparecerán inicios de sesión, cambios de seguridad y eventos de dispositivos."
@@ -520,7 +516,6 @@
     "title": "Información personal",
     "subtitle": "Gestiona tu información personal y los datos de tu perfil.",
     "loading": "Cargando información personal...",
-    "signInRequired": "Inicia sesión para ver tu información personal.",
     "sections": {
       "profileSummary": "Resumen del perfil",
       "contactDetails": "Contacto y detalles",
@@ -653,7 +648,6 @@
   "storage": {
     "title": "Almacenamiento Oxy",
     "subtitle": "Gestiona tu uso de almacenamiento y archivos.",
-    "signInRequired": "Inicia sesión para ver tu uso de almacenamiento.",
     "loading": "Cargando uso de almacenamiento…",
     "loadFailed": "No se pudo cargar el uso de almacenamiento",
     "retry": "Reintentar",
@@ -694,14 +688,12 @@
   "family": {
     "title": "Conexiones de terceros",
     "subtitle": "Gestiona las apps y servicios conectados a tu cuenta.",
-    "signInRequired": "Inicia sesión para gestionar tus conexiones de terceros.",
     "emptyTitle": "Aún no hay apps conectadas",
     "emptySubtitle": "Cuando autorices a apps externas a acceder a tu cuenta de Oxy, aparecerán aquí."
   },
   "sharing": {
     "title": "Personas y compartido",
     "subtitle": "Gestiona tus conexiones y ajustes de compartido.",
-    "signInRequired": "Inicia sesión para gestionar tus conexiones y ajustes de compartido.",
     "sections": {
       "contacts": "Contactos",
       "contactsSubtitle": "Gestiona tus conexiones y encuentra nuevas personas",

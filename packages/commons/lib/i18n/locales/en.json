@@ -264,7 +264,6 @@
     "title": "Security & sign-in",
     "subtitle": "Manage your security settings and sign-in methods.",
     "loading": "Loading security settings...",
-    "signInRequired": "Please sign in to view your security settings.",
     "sections": {
       "recommendations": "Security recommendations",
       "recentActivity": "Recent security activity",
@@ -374,7 +373,6 @@
     "title": "Data & privacy",
     "subtitle": "Manage your data and privacy settings.",
     "loading": "Loading privacy settings...",
-    "signInRequired": "Please sign in to view your privacy settings.",
     "sections": {
       "download": "Download your data",
       "downloadSubtitle": "Get a copy of your account data",
@@ -450,7 +448,6 @@
       "failedTitle": "Deletion Failed",
       "failedDefault": "Failed to delete account. Please try again.",
       "localKeyPurgeWarning": "Your account was deleted, but the identity key could not be removed from this device. Reinstall the app to clear it fully.",
-      "signInRequired": "Please sign in to delete your account.",
       "thisAccount": "this account",
       "confirmInputLabel": "Type your username to confirm account deletion"
     },
@@ -473,7 +470,6 @@
     "retry": "Try again",
     "errorTitle": "Couldn't load activity",
     "errorMessage": "Something went wrong while loading your activity. Pull to refresh or try again.",
-    "signInRequired": "Please sign in to view your activity.",
     "empty": {
       "title": "No activity yet",
       "subtitle": "Sign-ins, security changes and device events will appear here."
@@ -520,7 +516,6 @@
     "title": "Personal info",
     "subtitle": "Manage your personal information and profile details.",
     "loading": "Loading personal info...",
-    "signInRequired": "Please sign in to view your personal information.",
     "sections": {
       "profileSummary": "Profile summary",
       "contactDetails": "Contact & details",
@@ -653,7 +648,6 @@
   "storage": {
     "title": "Oxy storage",
     "subtitle": "Manage your storage usage and files.",
-    "signInRequired": "Sign in to see your storage usage.",
     "loading": "Loading storage usage…",
     "loadFailed": "Failed to load storage usage",
     "retry": "Retry",
@@ -694,14 +688,12 @@
   "family": {
     "title": "Third-party connections",
     "subtitle": "Manage apps and services connected to your account.",
-    "signInRequired": "Please sign in to manage your third-party connections.",
     "emptyTitle": "No connected apps yet",
     "emptySubtitle": "When you grant third-party apps access to your Oxy account, they will appear here."
   },
   "sharing": {
     "title": "People & sharing",
     "subtitle": "Manage your connections and sharing settings.",
-    "signInRequired": "Please sign in to manage your connections and sharing settings.",
     "sections": {
       "contacts": "Contacts",
       "contactsSubtitle": "Manage your connections and find new people",
