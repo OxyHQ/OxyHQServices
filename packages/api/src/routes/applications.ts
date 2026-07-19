@@ -5,6 +5,7 @@ import { Application, type IApplication } from '../models/Application';
 import {
   type APPLICATION_SCOPES,
   type ApplicationScope,
+  isPaymentsScope,
   isPrivilegedScope,
 } from '../utils/applicationScopes';
 import {
@@ -764,14 +765,34 @@ router.post(
       scopes?: ApplicationScope[];
     };
 
+    // A credential may never exceed its owning application's authority.
+    const requestedScopes = body.scopes ?? [];
+
     // Service credentials mint bearer service tokens for Oxy-to-Oxy / internal
-    // routes. Only platform-trusted applications may hold them.
-    if (body.type === 'service' && !isTrustedApplication(application)) {
+    // routes. Only platform-trusted applications may hold them — EXCEPT a
+    // narrow Oxy Pay carve-out: a non-trusted (`third_party`) application MAY
+    // create a service credential when every requested scope is a payments
+    // scope ({@link isPaymentsScope}, i.e. `payments:read`/`payments:write`).
+    // Those two scopes are already non-privileged/self-grantable and bounded
+    // to the app's own Oxy Pay Gateway tenant (see `applicationScopes.ts`),
+    // and the resulting service token's downstream authority is bounded by
+    // its scopes — the Oxy Pay Gateway only honours `payments:*`. This lets
+    // external Oxy Pay merchants (WooCommerce, Mercaria, etc.) self-serve the
+    // service credential the `@oxyhq/pay` SDK needs, without ever letting a
+    // self-service app mint a trusted service token for files/user/
+    // federation/etc. Requesting ANY non-payments scope on a service
+    // credential still requires platform trust — the check below is
+    // unaffected for that case.
+    const isPaymentsOnlyServiceCredential =
+      requestedScopes.length > 0 && requestedScopes.every(isPaymentsScope);
+    if (
+      body.type === 'service' &&
+      !isTrustedApplication(application) &&
+      !isPaymentsOnlyServiceCredential
+    ) {
       throw new ForbiddenError('Service credentials are only available to trusted applications');
     }
 
-    // A credential may never exceed its owning application's authority.
-    const requestedScopes = body.scopes ?? [];
     const grantableScopes = new Set(application.scopes);
     const ungrantable = requestedScopes.filter((scope) => !grantableScopes.has(scope));
     if (ungrantable.length > 0) {

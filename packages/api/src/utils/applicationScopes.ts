@@ -100,6 +100,32 @@ export function isPrivilegedScope(scope: string): scope is ApplicationScope {
 }
 
 /**
+ * Oxy Pay Gateway scopes — the only scopes {@link APPLICATION_SCOPES} grants
+ * that authorise payments resources. Used by the `POST /applications/:appId/credentials`
+ * route (`applications.ts`) as the boundary of a narrow trust carve-out: a
+ * non-trusted (`third_party`) application may create a `type:'service'`
+ * credential ONLY when every requested scope is in this set, so external Oxy
+ * Pay merchants can self-serve the service credential the `@oxyhq/pay` SDK
+ * needs without gaining the ability to mint a trusted service token for any
+ * other, still staff-gated capability. Safe because both scopes are already
+ * non-privileged/self-grantable (see the doc comment on `APPLICATION_SCOPES`
+ * above) and scoped to the app's own tenant.
+ */
+export const PAYMENTS_APPLICATION_SCOPES = [
+  'payments:read',
+  'payments:write',
+] as const satisfies readonly ApplicationScope[];
+
+const PAYMENTS_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(
+  PAYMENTS_APPLICATION_SCOPES
+);
+
+/** True when `scope` is one of the Oxy Pay Gateway scopes. */
+export function isPaymentsScope(scope: string): scope is ApplicationScope {
+  return PAYMENTS_APPLICATION_SCOPE_SET.has(scope as ApplicationScope);
+}
+
+/**
  * Effective scopes for a credential = credential scopes ∩ application scopes,
  * preserving the credential's order and dropping unknown scopes. A credential
  * can never exceed the authority granted to its owning application: if the app
