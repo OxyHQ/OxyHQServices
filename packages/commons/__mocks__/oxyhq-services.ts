@@ -133,6 +133,29 @@ export function useUpdateProfile(): { mutateAsync: jest.Mock; isPending: boolean
   return { mutateAsync: updateProfileMutateAsync, isPending: false };
 }
 
+/**
+ * Auth store stub — only the members consumer code touches in tests
+ * (`setState` for surfacing an auth error, `getState` for auth-state polling).
+ */
+export const useAuthStore = {
+  setState: jest.fn(),
+  getState: jest.fn(() => ({ isAuthenticated: false })),
+};
+
+/**
+ * Error funnel stub — mirrors the real signature: it invokes the caller's
+ * `setAuthError` with the default message so a rejected flow still surfaces a
+ * message, without pulling in the real toast/logging machinery.
+ */
+export const handleAuthError = jest.fn(
+  (
+    _error: unknown,
+    opts?: { defaultMessage?: string; setAuthError?: (message: string) => void },
+  ): void => {
+    opts?.setAuthError?.(opts.defaultMessage ?? 'Authentication error');
+  },
+);
+
 /** Hydration hook — a no-op in tests. */
 export const useCurrentUser = (): { data: undefined } => ({ data: undefined });
 

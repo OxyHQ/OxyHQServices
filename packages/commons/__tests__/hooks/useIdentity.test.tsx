@@ -243,4 +243,37 @@ describe('useIdentity — importIdentityFromPrivateKey interlock', () => {
     expect(importKeyPairMock).toHaveBeenCalledWith(VALID_PRIVATE_KEY, undefined);
     expect(deleteRecoveryMnemonicMock).toHaveBeenCalledTimes(1);
   });
+
+  it('rejects an invalid private key before touching storage or status', async () => {
+    isValidPrivateKeyMock.mockReturnValue(false);
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, 'not-a-key');
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/invalid private key/i);
+    expect(getIdentityStatusMock).not.toHaveBeenCalled();
+    expect(importKeyPairMock).not.toHaveBeenCalled();
+  });
+
+  it('allows re-importing the SAME identity that is already present', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'present', publicKey: VALID_PUBLIC_KEY });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(
+      result.current.importIdentityFromPrivateKey,
+      VALID_PRIVATE_KEY,
+      { skipSync: true },
+    );
+    expect(error).toBeUndefined();
+    expect(importKeyPairMock).toHaveBeenCalledWith(VALID_PRIVATE_KEY, undefined);
+  });
+
+  it('refuses with IdentityUnavailableError when identity storage is unavailable', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'unavailable', cause: new Error('locked') });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, VALID_PRIVATE_KEY);
+    expect(error).toBeInstanceOf(IdentityUnavailableError);
+    expect(importKeyPairMock).not.toHaveBeenCalled();
+  });
 });
