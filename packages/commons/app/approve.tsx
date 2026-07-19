@@ -125,7 +125,7 @@ export default function ApproveSignInScreen() {
     return () => clearTimeout(timer);
   }, [state, source, navigateAway, dismiss]);
 
-  const appName = info?.application.name ?? '';
+  const appName = info?.application?.name ?? '';
   const scopes = useMemo(() => info?.scopes ?? [], [info?.scopes]);
   // Anti-phishing: treat anything other than an explicit `true` as unverified
   // (false OR a missing field → warn). The reassuring "official Oxy app"
@@ -186,10 +186,11 @@ export default function ApproveSignInScreen() {
     );
   } else {
     // --- Ready: the server-resolved identity + actions ---
-    const description = info.application.description?.trim()
-      ? info.application.description
+    const application = info.application;
+    const description = application.description?.trim()
+      ? application.description
       : t('signInApproval.approve.description', { app: appName });
-    const hasLegalLinks = Boolean(info.application.privacyPolicyUrl || info.application.termsUrl);
+    const hasLegalLinks = Boolean(application.privacyPolicyUrl || application.termsUrl);
 
     content = (
       <View>
@@ -215,8 +216,8 @@ export default function ApproveSignInScreen() {
             <View className="flex-row items-center gap-4">
               {/* Requesting app — logo from the SERVER-RESOLVED record only. */}
               <View className="h-14 w-14 items-center justify-center rounded-2xl bg-white" style={styles.logoCard}>
-                {info.application.icon ? (
-                  <Image source={{ uri: info.application.icon }} className="h-9 w-9 rounded-lg" />
+                {application.icon ? (
+                  <Image source={{ uri: application.icon }} className="h-9 w-9 rounded-lg" />
                 ) : (
                   <ThemedText style={[styles.logoInitial, { color: colors.primary }]}>
                     {appName.charAt(0).toUpperCase() || '?'}
@@ -238,16 +239,16 @@ export default function ApproveSignInScreen() {
             {t('signInApproval.approve.titleWithOxy', { app: appName })}
           </ThemedText>
 
-          {originVerified && info.application.isOfficial ? (
+          {originVerified && application.isOfficial ? (
             <View className="mt-2 flex-row items-center justify-center gap-1">
               <MaterialCommunityIcons name="check-decagram" size={14} color={colors.tint} />
               <ThemedText style={[styles.officialText, { color: colors.tint }]}>
                 {t('signInApproval.approve.officialBadge')}
               </ThemedText>
             </View>
-          ) : info.application.developerName ? (
+          ) : application.developerName ? (
             <ThemedText style={[styles.developer, { color: colors.textSecondary }]}>
-              {t('signInApproval.approve.developerBy', { developer: info.application.developerName })}
+              {t('signInApproval.approve.developerBy', { developer: application.developerName })}
             </ThemedText>
           ) : null}
 
@@ -320,15 +321,15 @@ export default function ApproveSignInScreen() {
 
           {hasLegalLinks ? (
             <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
-              {info.application.privacyPolicyUrl ? (
-                <Pressable onPress={() => openLink(info.application.privacyPolicyUrl ?? '')} accessibilityRole="link">
+              {application.privacyPolicyUrl ? (
+                <Pressable onPress={() => openLink(application.privacyPolicyUrl ?? '')} accessibilityRole="link">
                   <ThemedText style={[styles.legalLink, { color: colors.tint }]}>
                     {t('signInApproval.approve.privacyLink')}
                   </ThemedText>
                 </Pressable>
               ) : null}
-              {info.application.termsUrl ? (
-                <Pressable onPress={() => openLink(info.application.termsUrl ?? '')} accessibilityRole="link">
+              {application.termsUrl ? (
+                <Pressable onPress={() => openLink(application.termsUrl ?? '')} accessibilityRole="link">
                   <ThemedText style={[styles.legalLink, { color: colors.tint }]}>
                     {t('signInApproval.approve.termsLink')}
                   </ThemedText>
