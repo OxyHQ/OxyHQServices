@@ -47,21 +47,12 @@
     "errors": {
       "invalidPhrase": "Invalid recovery phrase. Please check the words and try again.",
       "importSyncFailed": "Your identity was imported on this device, but we could not connect it to your account. Check your connection and try again.",
-      "identityAlreadyExists": "An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.",
+      "identityAlreadyExists": "An identity already exists on this device. Use your existing identity or remove it from settings before importing a new one.",
       "importFailed": "Failed to import identity",
       "identityExistsSyncFailed": "Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.",
       "identityCreatedSyncFailed": "Your identity was created on this device, but we could not connect it to your account. Check your connection and try again.",
       "noIdentityFound": "No identity found on this device.",
       "couldNotReadIdentity": "Could not read your identity. Please try again."
-    },
-    "signIn": {
-      "title": "Sign in to your account",
-      "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
-      "button": "Sign in with Oxy",
-      "error": "Sign-in failed. Please try again.",
-      "unsupported": "Your browser doesn't support secure sign-in. Please update it or use the Oxy app.",
-      "noAccount": "Don't have an Oxy account yet?",
-      "createAccount": "Create one in the app"
     },
     "welcome": {
       "lead": "Oxy is your",
@@ -93,9 +84,7 @@
       "createIdentity": "Create New Identity",
       "createIdentitySubtitle": "Generate a new self-custody identity",
       "importIdentity": "Import Existing Identity",
-      "importIdentitySubtitle": "Use your recovery phrase or backup file",
-      "signInExisting": "Sign in to existing account",
-      "signInExistingSubtitle": "Use your username and password"
+      "importIdentitySubtitle": "Use your recovery phrase or backup file"
     },
     "creating": {
       "messages": [
@@ -104,8 +93,8 @@
         "Setting up your account..."
       ],
       "subtitle": "This may take a moment",
-      "signingIn": "Signing in...",
-      "signingInSubtitle": "Almost there!",
+      "connecting": "Connecting your identity…",
+      "connectingSubtitle": "Almost there!",
       "syncing": "Syncing your identity...",
       "syncingSubtitle": "Connecting to Oxy servers",
       "errorTitle": "Couldn't finish setting up",

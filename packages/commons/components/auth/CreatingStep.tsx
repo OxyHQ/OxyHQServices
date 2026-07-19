@@ -46,8 +46,8 @@ export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, 
   let subtitle: string = t('auth.creating.subtitle');
 
   if (isSigningIn) {
-    currentMessage = t('auth.creating.signingIn');
-    subtitle = t('auth.creating.signingInSubtitle');
+    currentMessage = t('auth.creating.connecting');
+    subtitle = t('auth.creating.connectingSubtitle');
   } else if (isSyncing) {
     currentMessage = t('auth.creating.syncing');
     subtitle = t('auth.creating.syncingSubtitle');

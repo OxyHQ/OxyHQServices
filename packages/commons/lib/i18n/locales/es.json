@@ -47,21 +47,12 @@
     "errors": {
       "invalidPhrase": "Frase de recuperación no válida. Revisa las palabras e inténtalo de nuevo.",
       "importSyncFailed": "Tu identidad se importó en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
-      "identityAlreadyExists": "Ya existe una identidad en este dispositivo. Inicia sesión con tu identidad actual o elimínala desde ajustes antes de importar una nueva.",
+      "identityAlreadyExists": "Ya existe una identidad en este dispositivo. Usa tu identidad actual o elimínala desde ajustes antes de importar una nueva.",
       "importFailed": "No se pudo importar la identidad",
       "identityExistsSyncFailed": "Tu identidad existe en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
       "identityCreatedSyncFailed": "Tu identidad se creó en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
       "noIdentityFound": "No se encontró ninguna identidad en este dispositivo.",
       "couldNotReadIdentity": "No se pudo leer tu identidad. Inténtalo de nuevo."
-    },
-    "signIn": {
-      "title": "Inicia sesión en tu cuenta",
-      "subtitle": "Usa tu cuenta de Oxy para gestionar tu perfil, seguridad y apps conectadas.",
-      "button": "Iniciar sesión con Oxy",
-      "error": "No se pudo iniciar sesión. Inténtalo de nuevo.",
-      "unsupported": "Tu navegador no admite el inicio de sesión seguro. Actualízalo o usa la app de Oxy.",
-      "noAccount": "¿Aún no tienes una cuenta de Oxy?",
-      "createAccount": "Créala en la app"
     },
     "welcome": {
       "lead": "Oxy es tu",
@@ -93,9 +84,7 @@
       "createIdentity": "Crear identidad nueva",
       "createIdentitySubtitle": "Genera una identidad de autocustodia",
       "importIdentity": "Importar identidad existente",
-      "importIdentitySubtitle": "Usa tu frase de recuperación o archivo de copia",
-      "signInExisting": "Iniciar sesión en cuenta existente",
-      "signInExistingSubtitle": "Usa tu usuario y contraseña"
+      "importIdentitySubtitle": "Usa tu frase de recuperación o archivo de copia"
     },
     "creating": {
       "messages": [
@@ -104,8 +93,8 @@
         "Configurando tu cuenta..."
       ],
       "subtitle": "Esto puede tardar un momento",
-      "signingIn": "Iniciando sesión...",
-      "signingInSubtitle": "¡Casi listo!",
+      "connecting": "Conectando tu identidad…",
+      "connectingSubtitle": "¡Casi listo!",
       "syncing": "Sincronizando tu identidad...",
       "syncingSubtitle": "Conectando con los servidores de Oxy",
       "errorTitle": "No se pudo terminar la configuración",

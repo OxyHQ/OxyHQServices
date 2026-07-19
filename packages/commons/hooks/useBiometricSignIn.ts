@@ -32,7 +32,7 @@ export function useBiometricSignIn() {
             const canUse = await canUseBiometrics();
             if (canUse) {
               // Perform biometric authentication
-              const authResult = await authenticate('Authenticate to sign in to your account');
+              const authResult = await authenticate("Verify it's you to continue");
 
               if (!authResult.success) {
                 const errorMsg = getErrorMessage(authResult.error);
@@ -42,9 +42,9 @@ export function useBiometricSignIn() {
           }
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : '';
-          // If it's a user cancellation, throw to prevent sign-in
+          // If it's a user cancellation, throw to prevent proceeding
           if (message.includes('cancelled') || message.includes('cancel') || message.includes('user_cancel')) {
-            throw new Error('Sign in cancelled');
+            throw new Error('Authentication cancelled');
           }
           // For other errors, re-throw
           throw err;
