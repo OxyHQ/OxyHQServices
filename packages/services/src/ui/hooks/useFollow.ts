@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
 import type { OxyServices, BulkFollowResult, BulkUnfollowResult } from '@oxyhq/core';
 import { useShallow } from 'zustand/react/shallow';
 import { queryKeys } from './queries/queryKeys';
+import { patchCachedUserRelationship } from './queries/userCacheRelationship';
 
 /**
  * useFollow — Hook for follow state management.
@@ -20,6 +21,7 @@ import { queryKeys } from './queries/queryKeys';
  *    them in selectors would cause unnecessary selector recalculations).
  */
 export const useFollow = (userId?: string | string[]) => {
+  const queryClient = useQueryClient();
   const { oxyServices, canUsePrivateApi } = useOxy();
   const userIds = useMemo(() => (Array.isArray(userId) ? userId : userId ? [userId] : []), [userId]);
   const isSingleUser = typeof userId === 'string';
@@ -100,7 +102,8 @@ export const useFollow = (userId?: string | string[]) => {
     if (!canUsePrivateApi) throw new Error('Authentication is required to follow users');
     const currentlyFollowing = useFollowStore.getState().followingUsers[userId] ?? false;
     await useFollowStore.getState().toggleFollowUser(userId, oxyServices, currentlyFollowing);
-  }, [isSingleUser, userId, canUsePrivateApi, oxyServices]);
+    patchCachedUserRelationship(queryClient, userId, !currentlyFollowing);
+  }, [isSingleUser, userId, canUsePrivateApi, oxyServices, queryClient]);
 
   const setFollowStatus = useCallback((following: boolean) => {
     if (!isSingleUser || !userId) throw new Error('setFollowStatus is only available for single user mode');
@@ -162,7 +165,8 @@ export const useFollow = (userId?: string | string[]) => {
     if (!canUsePrivateApi) throw new Error('Authentication is required to follow users');
     const currentState = useFollowStore.getState().followingUsers[targetUserId] ?? false;
     await useFollowStore.getState().toggleFollowUser(targetUserId, oxyServices, currentState);
-  }, [canUsePrivateApi, oxyServices]);
+    patchCachedUserRelationship(queryClient, targetUserId, !currentState);
+  }, [canUsePrivateApi, oxyServices, queryClient]);
 
   const setFollowStatusForUser = useCallback((targetUserId: string, following: boolean) => {
     useFollowStore.getState().setFollowingStatus(targetUserId, following);

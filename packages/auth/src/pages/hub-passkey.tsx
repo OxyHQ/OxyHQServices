@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { OxyAuthChooser, useOxy } from "@oxyhq/services"
-import { getAccountDisplayName, type CommonsApprovalInfo } from "@oxyhq/core"
+import { getAccountDisplayName, getCommonsApprovalBlockingReason, type CommonsApprovalInfo } from "@oxyhq/core"
 import { Button } from "@oxyhq/bloom/button"
 import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/auth-form-layout"
@@ -79,7 +79,13 @@ export function HubPasskeyPage() {
         void oxyServices
             .getCommonsApprovalInfo(code)
             .then((info) => {
-                if (!cancelled) setApproval(info)
+                if (cancelled) return
+                const blockingReason = getCommonsApprovalBlockingReason(info)
+                if (blockingReason) {
+                    setLoadError(blockingReason)
+                    return
+                }
+                setApproval(info)
             })
             .catch((error: unknown) => {
                 if (!cancelled) {
@@ -173,13 +179,15 @@ export function HubPasskeyPage() {
         )
     }
 
-    if (!approval) {
+    if (!approval?.application) {
         return (
             <AuthFormLayout>
                 <LoadingSpinner />
             </AuthFormLayout>
         )
     }
+
+    const application = approval.application
 
     if (done) {
         return (
@@ -208,7 +216,7 @@ export function HubPasskeyPage() {
         return (
             <AuthFormLayout>
                 <AuthFormHeader
-                    title={`Authorize sign-in to ${approval.application.name}?`}
+                    title={`Authorize sign-in to ${application.name}?`}
                     description={`Continuing as ${getAccountDisplayName(user)}.`}
                 />
                 <label className="flex items-start gap-2 text-sm">
@@ -220,8 +228,8 @@ export function HubPasskeyPage() {
                     />
                     <span>
                         {approval.originVerified
-                            ? `I started this sign-in myself in ${approval.application.name}.`
-                            : `We couldn't verify where this request came from. I understand the risk and started this sign-in myself in ${approval.application.name}.`}
+                            ? `I started this sign-in myself in ${application.name}.`
+                            : `We couldn't verify where this request came from. I understand the risk and started this sign-in myself in ${application.name}.`}
                     </span>
                 </label>
                 {authorizeError && <p className="text-destructive text-sm">{authorizeError}</p>}
@@ -240,7 +248,7 @@ export function HubPasskeyPage() {
 
     return (
         <AuthFormLayout>
-            <AuthFormHeader title={`Continue to ${approval.application.name}`} />
+            <AuthFormHeader title={`Continue to ${application.name}`} />
             <OxyAuthChooser onComplete={handleChooserComplete} />
             <Button variant="ghost" onClick={handleCancel}>
                 Cancel

@@ -127,4 +127,30 @@ describe('useCommonsApproval', () => {
     expect(services.denyCommonsSignIn).toHaveBeenCalledWith('code-1');
     expect(result.current.state).toBe('denied');
   });
+
+  it('enters the error state when the application cannot be resolved', async () => {
+    installServices({
+      getCommonsApprovalInfo: jest.fn(async () => ({
+        ...SAMPLE_INFO,
+        application: null,
+      })),
+    });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+
+    await waitFor(() => expect(result.current.state).toBe('error'));
+    expect(result.current.errorMessage).toMatch(/could not be resolved/i);
+  });
+
+  it('enters the error state when the session is no longer pending', async () => {
+    installServices({
+      getCommonsApprovalInfo: jest.fn(async () => ({
+        ...SAMPLE_INFO,
+        status: 'expired',
+      })),
+    });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+
+    await waitFor(() => expect(result.current.state).toBe('error'));
+    expect(result.current.errorMessage).toMatch(/invalid, already used, or expired/i);
+  });
 });

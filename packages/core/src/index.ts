@@ -34,7 +34,13 @@ export type { AuthRefreshReason, AuthRefreshHandler } from './HttpService';
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
-export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
+export {
+  ServiceCredentialMismatchError,
+} from './mixins/OxyServices.auth';
+export {
+  getCommonsApprovalBlockingReason,
+  parseCommonsApprovalExpiresAt,
+} from './utils/commonsApproval';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)
 export type {

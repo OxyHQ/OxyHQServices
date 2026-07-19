@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOxy } from '@oxyhq/services';
-import type { CommonsApprovalInfo } from '@oxyhq/core';
+import { getCommonsApprovalBlockingReason, type CommonsApprovalInfo } from '@oxyhq/core';
 import { authenticate } from '@/lib/biometricAuth';
 
 /**
@@ -80,6 +80,13 @@ export function useCommonsApproval(
       .getCommonsApprovalInfo(code)
       .then((result) => {
         if (cancelled) return;
+        const blockingReason = getCommonsApprovalBlockingReason(result);
+        if (blockingReason) {
+          setInfo(null);
+          setErrorMessage(blockingReason);
+          setState('error');
+          return;
+        }
         setInfo(result);
         setState('ready');
       })

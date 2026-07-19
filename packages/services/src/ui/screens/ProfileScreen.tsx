@@ -138,7 +138,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 setError(errorMessage);
             })
             .finally(() => setIsLoading(false));
-    }, [userId]);
+    }, [userId, currentUser?.id, oxyServices]);
 
     if (isLoading) {
         return (

@@ -9,6 +9,10 @@ import { loginResultSchema, safeParseContract } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import type { PublicApplication } from './OxyServices.connectedApps';
+export {
+  getCommonsApprovalBlockingReason,
+  parseCommonsApprovalExpiresAt,
+} from '../utils/commonsApproval';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
@@ -96,7 +100,7 @@ export interface CommonsSignInStatus {
  */
 export interface CommonsApprovalInfo {
   /** Sanitized, display-safe identity of the requesting application. */
-  application: PublicApplication;
+  application: PublicApplication | null;
   /** OAuth scopes the application is requesting. */
   scopes: string[];
   /** The origin the session is bound to (the RP web origin), when applicable. */
@@ -109,8 +113,8 @@ export interface CommonsApprovalInfo {
    * "not verified") by {@link OxyServicesAuthMixin.getCommonsApprovalInfo}.
    */
   originVerified: boolean;
-  /** Server-authoritative expiry (epoch milliseconds). */
-  expiresAt: number;
+  /** Server-authoritative expiry (epoch ms or ISO-8601 string from the API). */
+  expiresAt: number | string;
   /** Session lifecycle status. */
   status: string;
 }
@@ -122,11 +126,11 @@ export interface CommonsApprovalInfo {
  * into {@link CommonsApprovalInfo}.
  */
 interface CommonsApprovalInfoResponse {
-  application: PublicApplication;
+  application: PublicApplication | null;
   scopes: string[];
   boundOrigin?: string;
   originVerified?: unknown;
-  expiresAt: number;
+  expiresAt: number | string;
   status: string;
 }
 

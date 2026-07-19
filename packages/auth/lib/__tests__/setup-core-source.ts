@@ -14,6 +14,7 @@
  * TEST-ONLY: never affects the Vite app build.
  */
 import { mock } from "bun:test"
+import { getCommonsApprovalBlockingReason } from "../../../core/src/utils/commonsApproval"
 import { isOxyRpOrigin } from "../../../core/src/utils/webauthnOrigin"
 import { getAccountDisplayName } from "../../../core/src/utils/accountUtils"
 import { translate } from "../../../core/src/i18n"
@@ -22,6 +23,7 @@ import { getBaseLanguage, normalizeLocale } from "../../../core/src/utils/langua
 mock.module("@oxyhq/core", () => ({
     isOxyRpOrigin,
     getAccountDisplayName,
+    getCommonsApprovalBlockingReason,
     translate,
     getBaseLanguage,
     normalizeLocale,

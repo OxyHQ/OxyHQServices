@@ -22,7 +22,7 @@ import { MemoryRouter } from "react-router-dom"
 import { createServicesMock, defaultSwitchableAccounts } from "@/lib/__tests__/setup-services-mock"
 
 const getCommonsApprovalInfo = mock(async () => ({
-    application: { name: "Acme Widgets" },
+    application: { id: "app1", name: "Acme Widgets" },
     scopes: [],
     boundOrigin: "https://mention.earth",
     originVerified: true,
@@ -107,7 +107,7 @@ describe("HubPasskeyPage", () => {
     beforeEach(() => {
         getCommonsApprovalInfo.mockClear()
         getCommonsApprovalInfo.mockImplementation(async () => ({
-            application: { name: "Acme Widgets" },
+            application: { id: "app1", name: "Acme Widgets" },
             scopes: [],
             boundOrigin: "https://mention.earth",
             originVerified: true,
@@ -189,7 +189,7 @@ describe("HubPasskeyPage", () => {
 
     test("(b) an unverified origin disables Authorize until the acknowledgement checkbox is checked", async () => {
         getCommonsApprovalInfo.mockImplementation(async () => ({
-            application: { name: "Sketchy Co" },
+            application: { id: "app2", name: "Sketchy Co" },
             scopes: [],
             boundOrigin: undefined,
             originVerified: false,

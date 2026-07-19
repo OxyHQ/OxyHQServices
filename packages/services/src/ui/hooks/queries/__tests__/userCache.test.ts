@@ -14,6 +14,7 @@
 
 import { QueryClient } from '@tanstack/react-query';
 import { upsertCachedUser, upsertCachedUsers } from '../userCache';
+import { patchCachedUserRelationship } from '../userCacheRelationship';
 import type { CacheableUser } from '../userCache';
 import { queryKeys } from '../queryKeys';
 import { useAuthStore } from '../../../stores/authStore';
@@ -357,5 +358,27 @@ describe('upsertCachedUsers — batch', () => {
     upsertCachedUsers(qc, null, 'v1');
     upsertCachedUsers(qc, [], 'v1');
     expect(qc.getQueryCache().getAll()).toHaveLength(0);
+  });
+});
+
+describe('patchCachedUserRelationship', () => {
+  it('updates relationship.isFollowing on the viewer-scoped by-username entry', () => {
+    const qc = makeClient();
+    upsertCachedUser(
+      qc,
+      {
+        id: 'u1',
+        username: 'alice',
+        relationship: { isFollowing: false, followsYou: true },
+      },
+      'viewer-1',
+    );
+
+    patchCachedUserRelationship(qc, 'u1', true, 'viewer-1');
+
+    expect(readByUsername(qc, 'alice', 'viewer-1')?.relationship).toEqual({
+      isFollowing: true,
+      followsYou: true,
+    });
   });
 });

@@ -27,8 +27,11 @@ module.exports = {
   testMatch: [
     '<rootDir>/__tests__/**/*.(test|spec).(ts|tsx)',
   ],
-  moduleNameMapper: {
+    moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
+    '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
+    '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
     // Mock heavy native modules with lightweight stubs.
     '^react-native$': '<rootDir>/__mocks__/react-native.ts',
     '^@react-native-async-storage/async-storage$':

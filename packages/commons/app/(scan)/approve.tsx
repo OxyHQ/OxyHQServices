@@ -68,7 +68,7 @@ export default function ApproveSignInScreen() {
   const { code, source } = useLocalSearchParams<{ code?: string; source?: string }>();
   const control = useDialogControl();
 
-  const { state, info, biometricFailed, approve, deny, reload } = useCommonsApproval(
+  const { state, info, biometricFailed, errorMessage, approve, deny, reload } = useCommonsApproval(
     code,
     t('signInApproval.approve.biometricReason'),
   );
@@ -155,7 +155,11 @@ export default function ApproveSignInScreen() {
           icon="alert-circle-outline"
           iconColor={colors.error}
           title={t('signInApproval.approve.errorTitle')}
-          body={code ? t('signInApproval.approve.errorBody') : t('signInApproval.approve.noCode')}
+          body={
+            code
+              ? (errorMessage ?? t('signInApproval.approve.errorBody'))
+              : t('signInApproval.approve.noCode')
+          }
           action={
             <View className="mt-1 flex-row gap-3">
               {code ? <SecondaryButton label={t('signInApproval.approve.tryAgain')} onPress={reload} fullWidth={false} /> : null}
@@ -165,7 +169,7 @@ export default function ApproveSignInScreen() {
         />
       </View>
     );
-  } else if (state === 'loading' || !info) {
+  } else if (state === 'loading' || !info?.application) {
     // --- Loading ---
     content = (
       <View className="px-5 py-2">
