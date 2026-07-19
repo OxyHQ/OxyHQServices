@@ -16,7 +16,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@hugeicons/core-free-icons": "^3.3.0",
     "@hugeicons/react": "^1.1.9",
-    "@oxyhq/bloom": "^0.37.2",
+    "@oxyhq/bloom": "^0.38.0",
     "@oxyhq/contracts": "*",
     "@oxyhq/core": "*",
     "@oxyhq/services": "*",
