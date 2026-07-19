@@ -7,6 +7,7 @@ import { useAuthStore, useUpdateProfile } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
 import { STORE_UPDATE_DELAY_MS } from '@/constants/auth';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Check if running in Expo Go
@@ -50,6 +51,7 @@ export function useAuthHandlers({
   isAuthenticated,
 }: UseAuthHandlersOptions) {
   const router = useRouter();
+  const { t } = useTranslation();
   const updateProfile = useUpdateProfile();
   const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
   
@@ -129,12 +131,12 @@ export function useAuthHandlers({
     try {
       publicKey = await KeyManager.getPublicKey();
     } catch (error: unknown) {
-      setAuthError(extractAuthErrorMessage(error, 'Could not read your identity. Please try again.'));
+      setAuthError(extractAuthErrorMessage(error, t('auth.errors.couldNotReadIdentity')));
       setSigningIn(false);
       return false;
     }
     if (!publicKey) {
-      setAuthError('No identity found on this device.');
+      setAuthError(t('auth.errors.noIdentityFound'));
       setSigningIn(false);
       return false;
     }
@@ -204,7 +206,7 @@ export function useAuthHandlers({
     }
 
     return true;
-  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState, updateProfile]);
+  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState, updateProfile, t]);
 
   const handleSignIn = useCallback(async () => {
     await completeSignIn({ navigateOnSuccess: true });

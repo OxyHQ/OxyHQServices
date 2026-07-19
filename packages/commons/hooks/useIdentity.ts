@@ -17,7 +17,7 @@ import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromSto
 import { syncIdentityWithServer } from './identity/syncService';
 import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
-import { isAlreadyRegisteredError, isIdentityPreflightRefusal, IdentityMayExistError } from './identity/errorUtils';
+import { isAlreadyRegisteredError, isIdentityPreflightRefusal, IdentityMayExistError } from './identity/identityErrors';
 import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from './useOnboardingStatus';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';

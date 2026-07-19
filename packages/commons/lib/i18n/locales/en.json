@@ -43,6 +43,16 @@
     "indexHello": "Hello",
     "indexTapToContinue": "Tap to continue",
     "indexRestore": "Restore with recovery phrase",
+    "errors": {
+      "invalidPhrase": "Invalid recovery phrase. Please check the words and try again.",
+      "importSyncFailed": "Your identity was imported on this device, but we could not connect it to your account. Check your connection and try again.",
+      "identityAlreadyExists": "An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.",
+      "importFailed": "Failed to import identity",
+      "identityExistsSyncFailed": "Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.",
+      "identityCreatedSyncFailed": "Your identity was created on this device, but we could not connect it to your account. Check your connection and try again.",
+      "noIdentityFound": "No identity found on this device.",
+      "couldNotReadIdentity": "Could not read your identity. Please try again."
+    },
     "signIn": {
       "title": "Sign in to your account",
       "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",

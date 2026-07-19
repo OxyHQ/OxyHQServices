@@ -5,13 +5,14 @@ import { useOxy } from '@oxyhq/services';
 import { IdentityAlreadyExistsError, IdentityUnavailableError } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
-import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
+import { IdentityMayExistError } from '@/hooks/identity/identityErrors';
 import { CreatingStep } from '@/components/auth/CreatingStep';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { CREATING_PROGRESS_INTERVAL_MS, CREATING_FINAL_DELAY_MS } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Create Identity - Creating Screen (Index)
@@ -31,6 +32,7 @@ export default function CreateIdentityScreen() {
   const { createIdentity, syncIdentity } = useIdentity();
   const { status, hasIdentity } = useOnboardingStatus();
   const { setAuthError, recoveryPhraseRef } = useAuthFlowContext();
+  const { t } = useTranslation();
 
   const backgroundColor = colors.background;
   const textColor = colors.text;
@@ -140,8 +142,7 @@ export default function CreateIdentityScreen() {
 
         // Online resume without a session: username would call authenticated APIs.
         if (!sessionReady && !offline) {
-          const syncErrorMessage =
-            'Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.';
+          const syncErrorMessage = t('auth.errors.identityExistsSyncFailed');
           setAuthError(syncErrorMessage);
           setCreateError(syncErrorMessage);
           hasNavigatedResumeRef.current = false;
@@ -201,8 +202,7 @@ export default function CreateIdentityScreen() {
           // username would call authenticated APIs with no session.
           if (!offline && !result.synced) {
             if (!isMountedRef.current) return;
-            const syncErrorMessage =
-              'Your identity was created on this device, but we could not connect it to your account. Check your connection and try again.';
+            const syncErrorMessage = t('auth.errors.identityCreatedSyncFailed');
             setAuthError(syncErrorMessage);
             setCreateError(syncErrorMessage);
             hasStartedCreateRef.current = false;
@@ -262,8 +262,7 @@ export default function CreateIdentityScreen() {
             }
 
             if (!sessionReady && !offline) {
-              const syncErrorMessage =
-                'Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.';
+              const syncErrorMessage = t('auth.errors.identityExistsSyncFailed');
               setAuthError(syncErrorMessage);
               setCreateError(syncErrorMessage);
               return;
@@ -301,6 +300,7 @@ export default function CreateIdentityScreen() {
     cleanupTimers,
     recoveryPhraseRef,
     retryNonce,
+    t,
   ]);
 
   // Render a neutral backdrop (not the "generating keys" copy) while the status

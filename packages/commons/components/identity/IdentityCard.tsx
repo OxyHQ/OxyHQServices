@@ -10,6 +10,7 @@ import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
 import { BackSide } from '@/components/OxyID/back-side';
 import { IdQrBack } from '@/components/civic/IdQrBack';
+import { shortenKey } from '@/utils/shorten-key';
 
 export interface IdentityCardProps {
   displayName?: string;
@@ -36,12 +37,11 @@ export function IdentityCard({
   width = 240,
   height = 380,
 }: IdentityCardProps) {
-  // Format public key for FrontSide display (first 8 + last 8 characters)
-  const publicKeyShort = useMemo(() => {
-    if (!publicKey) return undefined;
-    if (publicKey.length <= 16) return publicKey;
-    return `${publicKey.substring(0, 8)}...${publicKey.substring(publicKey.length - 8)}`;
-  }, [publicKey]);
+  // Format public key for FrontSide display (first 8 + last 8 characters).
+  const publicKeyShort = useMemo(
+    () => (publicKey ? shortenKey(publicKey) : undefined),
+    [publicKey],
+  );
 
   return (
     <OxyID

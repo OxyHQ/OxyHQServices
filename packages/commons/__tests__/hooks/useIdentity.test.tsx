@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { IdentityStatus } from '@oxyhq/core';
 import { IdentityAlreadyExistsError, IdentityUnavailableError } from '@oxyhq/core';
-import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
+import { IdentityMayExistError } from '@/hooks/identity/identityErrors';
 import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
 
 /**

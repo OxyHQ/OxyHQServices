@@ -1,7 +1,7 @@
 import { isInvalidSessionError } from '@oxyhq/services';
 import { KeyManager, SignatureService } from '@oxyhq/core';
 import type { User, OxyServices } from '@oxyhq/core';
-import { isAlreadyRegisteredError } from './errorUtils';
+import { isAlreadyRegisteredError } from './identityErrors';
 
 export interface SyncServiceOptions {
   /** OxyServices instance */

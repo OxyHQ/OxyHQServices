@@ -17,6 +17,7 @@ import {
 } from '@/lib/civic/credential-display';
 import { userIdFromDid } from '@/lib/civic/did';
 import { formatDate } from '@/utils/date-utils';
+import { shortenKey } from '@/utils/shorten-key';
 import { useTranslation } from '@/lib/i18n';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
@@ -30,12 +31,6 @@ const STATUS_ICON: Record<CredentialStatus, MaterialCommunityIconName> = {
 /** Format an epoch-ms timestamp to a short readable date (or empty). */
 function formatMs(ms: number | undefined): string {
   return ms != null ? formatDate(new Date(ms).toISOString()) : '';
-}
-
-/** A compact, opaque-but-stable issuer reference for the list row. */
-function truncateMiddle(value: string, head = 6, tail = 4): string {
-  if (value.length <= head + tail + 1) return value;
-  return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
 /**
@@ -160,8 +155,11 @@ function CredentialRow({ credential, colors, t, onPress }: CredentialRowProps) {
   const typeLabel = primary ? humanizeTypeTag(primary) : t('civic.credentials.detail.title');
   const statusMeta = getCredentialStatusMeta(credential.status);
   const preview = claimEntries(credential.claims)[0]?.value ?? '';
-  const issuerRef = truncateMiddle(
+  // A compact, opaque-but-stable issuer reference for the list row (6…4).
+  const issuerRef = shortenKey(
     userIdFromDid(credential.issuerDid) ?? credential.issuerUserId ?? credential.issuerDid,
+    6,
+    4,
   );
   const issuedOn = formatMs(credential.issuedAt);
 

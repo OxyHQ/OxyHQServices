@@ -7,7 +7,7 @@ import {
   recordFailure,
   recordSuccess,
   type CircuitBreakerState,
-} from './networkUtils';
+} from './reconnectPolicy';
 import { getIdentitySyncStateFromStorage } from './identityStore';
 
 export interface UseNetworkReconnectOptions {

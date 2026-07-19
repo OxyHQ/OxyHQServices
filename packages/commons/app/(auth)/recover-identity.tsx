@@ -15,15 +15,7 @@ import {
   getOnboardingResumeHref,
 } from '@/hooks/useOnboardingStatus';
 import { persistOnboardingComplete, persistOnboardingFlow } from '@/hooks/identity/identityStore';
-
-/**
- * Shorten a public key for display: `abcd1234…wxyz5678`. Mirrors the inline
- * convention in `components/identity/IdentityCard.tsx` (first 8 + last 8).
- */
-function shortenPublicKey(key: string): string {
-  if (key.length <= 16) return key;
-  return `${key.slice(0, 8)}…${key.slice(-8)}`;
-}
+import { shortenKey } from '@/utils/shorten-key';
 
 /**
  * Recover Identity screen.
@@ -158,7 +150,7 @@ export default function RecoverIdentityScreen() {
         iconColor={colors.textSecondary}
         title={t('recovery.failedTitle')}
         body={t('recovery.failedBody', {
-          key: markerKey ? shortenPublicKey(markerKey) : '—',
+          key: markerKey ? shortenKey(markerKey) : '—',
         })}
         action={
           <View style={styles.actions}>

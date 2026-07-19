@@ -13,7 +13,8 @@ import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useIdentityStore, persistOnboardingFlow } from '@/hooks/identity/identityStore';
-import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
+import { IdentityMayExistError } from '@/hooks/identity/identityErrors';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -23,6 +24,7 @@ import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useTranslation();
   const { importIdentity } = useIdentity();
   const { error, setAuthError } = useAuthFlowContext();
   const setRecoveryPhraseAcknowledgedPersisted = useIdentityStore(
@@ -64,7 +66,7 @@ export default function ImportIdentityPhraseScreen() {
     const phrase = phraseWords.join(' ');
 
     if (!RecoveryPhraseService.validatePhrase(phrase)) {
-      setAuthError('Invalid recovery phrase. Please check the words and try again.');
+      setAuthError(t('auth.errors.invalidPhrase'));
       return;
     }
 
@@ -78,9 +80,7 @@ export default function ImportIdentityPhraseScreen() {
       // Online but server sync failed: do not advance — username would call
       // authenticated APIs with no session (same guard as create-identity).
       if (!offline && !result.synced) {
-        setAuthError(
-          'Your identity was imported on this device, but we could not connect it to your account. Check your connection and try again.',
-        );
+        setAuthError(t('auth.errors.importSyncFailed'));
         return;
       }
 
@@ -110,16 +110,14 @@ export default function ImportIdentityPhraseScreen() {
         // existing one. We don't quietly clobber — they must use the
         // settings UI to remove the current identity (with a written
         // recovery phrase warning) before importing a new one.
-        setAuthError(
-          'An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.',
-        );
+        setAuthError(t('auth.errors.identityAlreadyExists'));
       } else {
-        setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+        setAuthError(extractAuthErrorMessage(err, t('auth.errors.importFailed')));
       }
     } finally {
       setIsLoading(false);
     }
-  }, [phraseWords, importIdentity, router, setAuthError, setRecoveryPhraseAcknowledgedPersisted]);
+  }, [phraseWords, importIdentity, router, setAuthError, setRecoveryPhraseAcknowledgedPersisted, t]);
 
   return (
     <ImportPhraseStep
