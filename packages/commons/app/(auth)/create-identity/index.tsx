@@ -107,7 +107,13 @@ export default function CreateIdentityScreen() {
     // app mid-onboarding), sync and route to username. We DO NOT route
     // through the recovery-phrase screen because we no longer have the
     // mnemonic in memory — the user must view it from settings instead.
-    if (status === 'in_progress' && hasIdentity) {
+    //
+    // hasStartedCreateRef guard: an IN-SESSION create flips status to
+    // 'in_progress' the moment the identity query is invalidated, while the
+    // create success path is still in its final delay. Without the guard this
+    // resume redirect wins that race and sends the user to /username,
+    // silently skipping the mandatory recovery-phrase acknowledgement.
+    if (status === 'in_progress' && hasIdentity && !hasStartedCreateRef.current) {
       if (hasNavigatedResumeRef.current) return;
       hasNavigatedResumeRef.current = true;
 
