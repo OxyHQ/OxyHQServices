@@ -14,6 +14,7 @@ import {
   CenteredState,
   PrimaryButton,
   SecondaryButton,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import {
@@ -549,7 +550,7 @@ export default function NodeScreen() {
         onBack={formOpen ? closeForm : handleBack}
         backAccessibilityLabel={t('common.back')}
       />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

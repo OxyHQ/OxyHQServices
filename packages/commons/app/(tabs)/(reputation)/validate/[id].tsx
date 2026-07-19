@@ -11,6 +11,7 @@ import {
   CenteredState,
   PrimaryButton,
   SecondaryButton,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useValidatorInbox } from '@/hooks/useValidatorInbox';
@@ -180,7 +181,7 @@ export default function ValidationVoteScreen() {
   return (
     <Screen gap={20}>
       <StackHeader title={t('civic.validate.vote.title')} onBack={handleClose} backAccessibilityLabel={t('common.back')} />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

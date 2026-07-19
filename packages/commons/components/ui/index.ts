@@ -19,3 +19,4 @@ export { PrimaryButton, SecondaryButton } from './action-button';
 export { SoftSurface } from './soft-surface';
 export { Callout } from './callout';
 export { CenteredState } from './centered-state';
+export { SessionGate } from './session-gate';

@@ -1201,6 +1201,12 @@
     }
   },
   "civic": {
+    "sessionGate": {
+      "title": "Inicia sesión para continuar",
+      "body": "Inicia sesión en tu cuenta de Oxy para ver y gestionar esto.",
+      "cta": "Iniciar sesión",
+      "connecting": "Conectando…"
+    },
     "hub": {
       "title": "Ciudadanía",
       "subtitle": "Tu identidad Oxy verificable: muéstrala, demuéstrala, llévala contigo.",

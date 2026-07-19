@@ -11,6 +11,7 @@ import {
   Callout,
   CenteredState,
   PrimaryButton,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useMyPersonhood } from '@/hooks/usePersonhood';
@@ -206,7 +207,7 @@ export default function PersonhoodScreen() {
           backAccessibilityLabel={t('common.back')}
         />
       </View>
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

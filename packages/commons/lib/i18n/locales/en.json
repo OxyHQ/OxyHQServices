@@ -1201,6 +1201,12 @@
     }
   },
   "civic": {
+    "sessionGate": {
+      "title": "Sign in to continue",
+      "body": "Sign in to your Oxy account to view and manage this.",
+      "cta": "Sign in",
+      "connecting": "Connecting…"
+    },
     "hub": {
       "title": "Citizen",
       "subtitle": "Your verifiable Oxy identity — show it, prove it, carry it.",
