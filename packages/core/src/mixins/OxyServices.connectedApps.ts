@@ -105,7 +105,12 @@ export function OxyServicesConnectedAppsMixin<T extends typeof OxyServicesBase>(
           'GET',
           `/auth/oauth/client/${encodeURIComponent(clientId)}`,
           undefined,
-          { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
+          {
+            cache: true,
+            cacheTTL: CACHE_TIMES.MEDIUM,
+            // Public client metadata (pre-session consent UI) — skip the bearer preflight.
+            skipAuth: true,
+          },
         );
         return res.application;
       } catch (error) {

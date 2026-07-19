@@ -697,7 +697,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             sessionToken,
             ...(options.deviceFingerprint ? { deviceFingerprint: options.deviceFingerprint } : {}),
           },
-          { cache: false, retry: false }
+          // Body-authenticated device-flow claim (no bearer) — skip the preflight.
+          { cache: false, retry: false, skipAuth: true }
         );
 
         this.setTokens(res.accessToken);
@@ -1189,7 +1190,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/login/options',
           { ...(username !== undefined ? { username } : {}) },
-          { cache: false },
+          // Pre-session login ceremony — skip the bearer preflight.
+          { cache: false, skipAuth: true },
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1213,7 +1215,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/login/verify',
           { response, ...envelope },
-          { cache: false },
+          // Pre-session login ceremony — skip the bearer preflight.
+          { cache: false, skipAuth: true },
         );
         const parsed = safeParseContract(loginResultSchema, res);
         if (!parsed) {
@@ -1246,7 +1249,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           clientId: params.clientId,
           redirectUri: params.redirectUri,
           codeVerifier: params.codeVerifier,
-        }, { cache: false });
+        }, { cache: false, skipAuth: true });
         const payload =
           (res as { data?: Record<string, unknown> }).data ??
           (res as Record<string, unknown>);

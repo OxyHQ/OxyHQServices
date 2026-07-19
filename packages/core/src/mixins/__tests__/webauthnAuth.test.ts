@@ -83,7 +83,7 @@ describe('webauthnLoginOptions', () => {
       'POST',
       '/auth/webauthn/login/options',
       { username: 'alice' },
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 
@@ -94,7 +94,7 @@ describe('webauthnLoginOptions', () => {
       'POST',
       '/auth/webauthn/login/options',
       {},
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 });
@@ -183,7 +183,7 @@ describe('webauthnLoginVerify', () => {
       'POST',
       '/auth/webauthn/login/verify',
       { response: GET_RESPONSE, deviceName: 'Phone', deviceFingerprint: 'fp-1', deviceId: 'dev-persisted' },
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 
@@ -194,7 +194,7 @@ describe('webauthnLoginVerify', () => {
       'POST',
       '/auth/webauthn/login/verify',
       { response: GET_RESPONSE },
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 
