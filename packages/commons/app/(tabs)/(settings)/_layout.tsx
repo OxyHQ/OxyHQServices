@@ -14,6 +14,7 @@ export default function SettingsTabLayout() {
       <Stack.Screen name="index" />
       <Stack.Screen name="about-identity" />
       <Stack.Screen name="create-backup" />
+      <Stack.Screen name="rotate-key" />
       <Stack.Screen name="personhood" />
       <Stack.Screen name="credentials/index" />
       <Stack.Screen name="credentials/[recordId]" />

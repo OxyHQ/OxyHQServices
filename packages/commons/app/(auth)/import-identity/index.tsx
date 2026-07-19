@@ -39,6 +39,11 @@ export default function ImportIdentityPhraseScreen() {
     void persistOnboardingFlow('import');
   }, []);
 
+  const handleRestoreFromBackup = useCallback(() => {
+    setAuthError(null);
+    router.push('/(auth)/import-identity/restore-from-backup');
+  }, [router, setAuthError]);
+
   const handleWordChange = useCallback((index: number, word: string) => {
     setPhraseWords(prev => {
       const newWords = [...prev];
@@ -122,6 +127,7 @@ export default function ImportIdentityPhraseScreen() {
       onWordChange={handleWordChange}
       onPaste={handlePaste}
       onImport={handleImport}
+      onRestoreFromBackup={handleRestoreFromBackup}
       error={error}
       isLoading={isLoading}
       backgroundColor={backgroundColor}

@@ -27,6 +27,10 @@ export default function SettingsScreen() {
     router.push('/(tabs)/(settings)/create-backup');
   }, [router]);
 
+  const handleRotateKey = useCallback(() => {
+    router.push('/(tabs)/(settings)/rotate-key');
+  }, [router]);
+
   const handlePersonhood = useCallback(() => {
     router.push('/(tabs)/(settings)/personhood');
   }, [router]);
@@ -72,6 +76,13 @@ export default function SettingsScreen() {
             title={t('vault.home.actions.createBackup')}
             subtitle={t('vault.home.actions.createBackupSubtitle')}
             onPress={handleCreateBackup}
+            showChevron
+          />
+          <ListRow
+            icon="key-change"
+            title={t('rotateKey.settingsEntry')}
+            subtitle={t('rotateKey.settingsEntrySubtitle')}
+            onPress={handleRotateKey}
             showChevron
           />
         </GroupedList>

@@ -13,6 +13,7 @@ export default function ImportIdentityLayout() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="restore-from-backup" />
       <Stack.Screen name="username" />
       <Stack.Screen name="notifications" />
     </Stack>
