@@ -31,17 +31,19 @@ describe('OxyServices.deviceBoot', () => {
       },
     };
 
-    it('POSTs deviceId + deviceSecret with skipAuth + retry:false (no bearer, no cache, single attempt) and returns the validated mint', async () => {
+    it('POSTs deviceId + deviceSecret with skipAuth + retry:false + bypassQueue (no bearer, no cache, single attempt, never queued) and returns the validated mint', async () => {
       makeRequest.mockResolvedValueOnce(MINT);
       const result = await oxy.mintFromDeviceSecret('dev-1', 'ds-current-secret');
       expect(result).toEqual(MINT);
       // `retry: false` — the scheduler/401 lane own backoff; HttpService's inner
       // retry here would only multiply cold-boot latency on a slow network.
+      // `bypassQueue: true` — the mint is the control-plane call the auth lane
+      // depends on; it must never wait for a RequestQueue slot (deadlock).
       expect(makeRequest).toHaveBeenCalledWith(
         'POST',
         '/session/device/token',
         { deviceId: 'dev-1', deviceSecret: 'ds-current-secret' },
-        { cache: false, skipAuth: true, retry: false },
+        { cache: false, skipAuth: true, retry: false, bypassQueue: true },
       );
     });
 
