@@ -7,18 +7,11 @@ import {
     RefreshControl,
     FlatList,
     Platform,
+    Animated,
     useWindowDimensions,
     type LayoutChangeEvent,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import Reanimated, {
-    FadeIn,
-    useAnimatedStyle,
-    useSharedValue,
-    withSequence,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
 import { computePhotoGridLayout } from './photoGridLayout';
@@ -145,6 +138,33 @@ export interface PhotoPickerViewProps {
 }
 
 /**
+ * Photo-cell animation tuning. The animated cell uses RN's own `Animated`
+ * (NOT Reanimated): its entrance is a staggered opacity fade — replacing the
+ * Reanimated `entering={FadeIn}` LAYOUT animation, which cannot load on the
+ * RN-Web build (no `react-native-worklets` babel plugin) and only warns +
+ * no-ops there. RN `Animated` runs cross-platform: native-driven on device,
+ * JS-driven on web (`useNativeDriver: false`), so the fade actually plays on
+ * web instead of being skipped.
+ */
+const STAGGER_PER_CELL_MS = 15;
+const MAX_TOTAL_STAGGER_MS = 800;
+const ENTRANCE_DURATION_MS = 200;
+/** Selection-ring pulse: a quick scale bump that springs back to rest. */
+const RING_PULSE_PEAK = 1.05;
+const RING_PULSE_UP_MS = 110;
+const RING_SPRING_FRICTION = 9;
+const RING_SPRING_TENSION = 120;
+/**
+ * Inline mirror of the `rounded-radius-8 border-[3px]` classes the static ring
+ * carries. The animated ring MUST use inline `style` (its animated transform
+ * has to be inline, and NativeWind `className` interop is not guaranteed on an
+ * `Animated.View` under the RN-Web build), so these keep it pixel-identical to
+ * the static ring.
+ */
+const CELL_CORNER_RADIUS = 8; // `rounded-radius-8`
+const SELECTION_RING_WIDTH = 3; // `border-[3px]`
+
+/**
  * A single photo cell. Memoized so re-renders during selection only touch
  * affected cells — selection of one photo must not redraw the whole grid.
  *
@@ -153,7 +173,7 @@ export interface PhotoPickerViewProps {
  */
 /**
  * Shared cell chrome (image, dim, badge). Ring border is injected by the
- * static vs animated wrappers so web never touches Reanimated worklets.
+ * static vs animated wrappers.
  */
 function PhotoPickerCellContent(props: {
     photo: FileMetadata;
@@ -263,82 +283,89 @@ const PhotoPickerCellStatic = React.memo(function PhotoPickerCellStatic(props: P
 const PhotoPickerCellAnimated = React.memo(function PhotoPickerCellAnimated(props: PhotoPickerCellProps) {
     const {
         photo, size, marginRight, marginBottom, isSelected, selectionIndex,
-        dim, primaryColor, thumbUrl, enterIndex, reduceMotion, onPress,
-        onLongPress, a11yLabel,
+        dim, primaryColor, thumbUrl, enterIndex, onPress, onLongPress, a11yLabel,
     } = props;
 
-    const STAGGER_PER_CELL_MS = 15;
-    const MAX_TOTAL_STAGGER_MS = 800;
     const delay = Math.min(enterIndex * STAGGER_PER_CELL_MS, MAX_TOTAL_STAGGER_MS);
 
-    const ringScale = useSharedValue(1);
+    // Entrance: a per-cell opacity fade, staggered by the cell's grid index.
+    // `useNativeDriver` is only available on native — on web the animation is
+    // JS-driven, which still plays the fade (unlike Reanimated layout entering,
+    // which no-ops on the plugin-less RN-Web build).
+    const opacity = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        const entrance = Animated.timing(opacity, {
+            toValue: 1,
+            duration: ENTRANCE_DURATION_MS,
+            delay,
+            useNativeDriver: Platform.OS !== 'web',
+        });
+        entrance.start();
+        return () => entrance.stop();
+    }, [opacity, delay]);
+
+    // Ring pulse: a quick scale bump each time a cell transitions INTO the
+    // selected state, springing back to rest.
+    const ringScale = useRef(new Animated.Value(1)).current;
     const prevSelected = useRef(isSelected);
     useEffect(() => {
         if (prevSelected.current === isSelected) return;
         prevSelected.current = isSelected;
         if (!isSelected) {
-            ringScale.value = 1;
+            ringScale.setValue(1);
             return;
         }
-        if (reduceMotion) {
-            ringScale.value = 1;
-            return;
-        }
-        ringScale.value = withSequence(
-            withTiming(1.05, { duration: 110 }),
-            withSpring(1, { damping: 14, stiffness: 200 }),
-        );
-    }, [isSelected, reduceMotion, ringScale]);
+        const pulse = Animated.sequence([
+            Animated.timing(ringScale, {
+                toValue: RING_PULSE_PEAK,
+                duration: RING_PULSE_UP_MS,
+                useNativeDriver: Platform.OS !== 'web',
+            }),
+            Animated.spring(ringScale, {
+                toValue: 1,
+                friction: RING_SPRING_FRICTION,
+                tension: RING_SPRING_TENSION,
+                useNativeDriver: Platform.OS !== 'web',
+            }),
+        ]);
+        pulse.start();
+        return () => pulse.stop();
+    }, [isSelected, ringScale]);
 
-    const ringAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: ringScale.value }],
-    }));
-
-    const cellWrapperStyle = {
-        width: size,
-        height: size,
-        marginRight,
-        marginBottom,
-    };
-
+    // The animated ring reads `ringScale`; its border/radius/position are inline
+    // `style` because NativeWind `className` interop is not guaranteed on an
+    // `Animated.View` under the RN-Web build.
     const ring = isSelected ? (
-        <Reanimated.View
+        <Animated.View
             pointerEvents="none"
-            className="absolute inset-0 rounded-radius-8 border-[3px]"
-            style={[{ borderColor: primaryColor }, ringAnimatedStyle]}
+            style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                borderRadius: CELL_CORNER_RADIUS,
+                borderWidth: SELECTION_RING_WIDTH,
+                borderColor: primaryColor,
+                transform: [{ scale: ringScale }],
+            }}
         />
     ) : null;
 
-    if (reduceMotion) {
-        return (
-            <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onPress}
-                onLongPress={onLongPress}
-                className="relative"
-                style={cellWrapperStyle}
-                accessibilityRole="button"
-                accessibilityLabel={a11yLabel}
-                accessibilityState={{ selected: isSelected }}
-            >
-                <PhotoPickerCellContent
-                    photo={photo}
-                    dim={dim}
-                    isSelected={isSelected}
-                    selectionIndex={selectionIndex}
-                    primaryColor={primaryColor}
-                    thumbUrl={thumbUrl}
-                    ring={ring}
-                />
-            </TouchableOpacity>
-        );
-    }
-
     return (
-        <Reanimated.View
-            entering={FadeIn.delay(delay).duration(200)}
-            className="relative"
-            style={cellWrapperStyle}
+        // Animated wrapper carries the entrance opacity + layout box as inline
+        // `style` (animated values must be inline, and className interop on
+        // Animated.View is not guaranteed on RN-Web). `className` stays on the
+        // non-animated TouchableOpacity + content below.
+        <Animated.View
+            style={{
+                width: size,
+                height: size,
+                marginRight,
+                marginBottom,
+                position: 'relative',
+                opacity,
+            }}
         >
             <TouchableOpacity
                 activeOpacity={0.85}
@@ -359,12 +386,15 @@ const PhotoPickerCellAnimated = React.memo(function PhotoPickerCellAnimated(prop
                     ring={ring}
                 />
             </TouchableOpacity>
-        </Reanimated.View>
+        </Animated.View>
     );
 });
 
 const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCellProps) {
-    if (Platform.OS === 'web') {
+    // reduceMotion → the static (unanimated) cell on every platform. Otherwise
+    // the RN-`Animated` cell, which now plays on web too (no Reanimated layout
+    // entering, so no plugin-less RN-Web warning / no-op).
+    if (props.reduceMotion) {
         return <PhotoPickerCellStatic {...props} />;
     }
     return <PhotoPickerCellAnimated {...props} />;
