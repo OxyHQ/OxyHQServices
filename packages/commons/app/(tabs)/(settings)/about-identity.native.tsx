@@ -6,7 +6,6 @@ import {
   Share,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
@@ -15,19 +14,14 @@ import { AccountCard, ScreenHeader, Button, ImportantBanner } from '@/components
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
-import { KeyManager } from '@oxyhq/core';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
-import { useRelativeTime } from '@/hooks/useRelativeTime';
-import * as Print from 'expo-print';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDisplayName } from '@/utils/date-utils';
 import { IdentityCard } from '@/components/identity';
 import { useTranslation } from '@/lib/i18n';
 
 export default function AboutIdentityScreen() {
   const colors = useColors();
-  const router = useRouter();
   const { t } = useTranslation();
   // Auth is enforced by the `(vault)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
@@ -57,11 +51,6 @@ export default function AboutIdentityScreen() {
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSavingExpiration, setIsSavingExpiration] = useState(false);
-  const [exportHistory, setExportHistory] = useState<{ timestamp: string; date: string }[]>([]);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const formatRelativeTime = useRelativeTime();
-
 
   useEffect(() => {
     const loadPublicKey = async () => {
@@ -79,27 +68,6 @@ export default function AboutIdentityScreen() {
 
     loadPublicKey();
   }, [getPublicKey]);
-
-  // Load export history
-  useEffect(() => {
-    const loadExportHistory = async () => {
-      try {
-        const historyKey = 'oxy_private_key_export_history';
-        const stored = await AsyncStorage.getItem(historyKey);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setExportHistory(parsed);
-        } else {
-          setExportHistory([]);
-        }
-      } catch (error) {
-        console.error('Failed to load export history:', error);
-        setExportHistory([]);
-      }
-    };
-
-    loadExportHistory();
-  }, []);
 
   const handleCopyPublicKey = useCallback(async () => {
     if (!publicKey) return;
@@ -171,201 +139,6 @@ export default function AboutIdentityScreen() {
       ]
     );
   }, [handleExpirationChange, t]);
-
-  // Save export history
-  const saveExportHistory = useCallback(async (timestamp: string) => {
-    try {
-      const historyKey = 'oxy_private_key_export_history';
-      const newEntry = {
-        timestamp,
-        date: new Date(timestamp).toLocaleString(),
-      };
-      const updatedHistory = [newEntry, ...exportHistory].slice(0, 50); // Keep last 50 exports
-      await AsyncStorage.setItem(historyKey, JSON.stringify(updatedHistory));
-      setExportHistory(updatedHistory);
-    } catch (error) {
-      console.error('Failed to save export history:', error);
-    }
-  }, [exportHistory]);
-
-  // Export private key using expo-print
-  const handleExportPrivateKey = useCallback(async () => {
-    alert(
-      t('aboutIdentity.securityWarning.title'),
-      t('aboutIdentity.securityWarning.message'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('aboutIdentity.securityWarning.continue'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsExporting(true);
-
-              // Get private key
-              const privateKey = await KeyManager.getPrivateKey();
-              if (!privateKey) {
-                toast.error(t('aboutIdentity.export.noPrivateKey'));
-                return;
-              }
-
-              // Get public key for reference
-              const pk = publicKey || await KeyManager.getPublicKey() || 'Unknown';
-
-              // Create HTML for printing
-              const html = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-    <style>
-      @page {
-        margin: 20mm;
-      }
-      body {
-        font-family: 'Courier New', monospace;
-        padding: 20px;
-        line-height: 1.6;
-        color: #000;
-      }
-      .header {
-        text-align: center;
-        border-bottom: 2px solid #000;
-        padding-bottom: 20px;
-        margin-bottom: 30px;
-      }
-      .header h1 {
-        margin: 0;
-        font-size: 24px;
-        font-weight: bold;
-      }
-      .warning {
-        background-color: #fff3cd;
-        border: 2px solid #ffc107;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 20px 0;
-      }
-      .warning-title {
-        font-weight: bold;
-        font-size: 16px;
-        margin-bottom: 10px;
-        color: #856404;
-      }
-      .key-section {
-        margin: 30px 0;
-        padding: 20px;
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-      }
-      .key-label {
-        font-weight: bold;
-        font-size: 14px;
-        margin-bottom: 10px;
-        color: #495057;
-      }
-      .key-value {
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        word-break: break-all;
-        background-color: #fff;
-        padding: 15px;
-        border: 1px solid #ced4da;
-        border-radius: 4px;
-        margin-top: 10px;
-      }
-      .info-section {
-        margin-top: 30px;
-        padding: 15px;
-        background-color: #e7f3ff;
-        border-left: 4px solid #0066cc;
-      }
-      .info-title {
-        font-weight: bold;
-        margin-bottom: 10px;
-      }
-      .footer {
-        margin-top: 40px;
-        padding-top: 20px;
-        border-top: 1px solid #dee2e6;
-        text-align: center;
-        font-size: 12px;
-        color: #6c757d;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="header">
-      <h1>${t('aboutIdentity.print.documentTitle')}</h1>
-      <p>${t('aboutIdentity.print.generated', { date: new Date().toLocaleString() })}</p>
-    </div>
-
-    <div class="warning">
-      <div class="warning-title">⚠️ ${t('aboutIdentity.print.warningTitle')}</div>
-      <p>${t('aboutIdentity.print.warningBody')}</p>
-    </div>
-
-    <div class="key-section">
-      <div class="key-label">${t('aboutIdentity.print.publicKeyLabel')}</div>
-      <div class="key-value">${pk}</div>
-    </div>
-
-    <div class="key-section">
-      <div class="key-label">${t('aboutIdentity.print.privateKeyLabel')}</div>
-      <div class="key-value">${privateKey}</div>
-    </div>
-
-    <div class="info-section">
-      <div class="info-title">${t('aboutIdentity.print.infoTitle')}</div>
-      <ul>
-        <li>${t('aboutIdentity.print.info1')}</li>
-        <li>${t('aboutIdentity.print.info2')}</li>
-        <li>${t('aboutIdentity.print.info3')}</li>
-        <li>${t('aboutIdentity.print.info4')}</li>
-        <li>${t('aboutIdentity.print.info5')}</li>
-      </ul>
-    </div>
-
-    <div class="footer">
-      <p>${t('aboutIdentity.print.footerLine1')}</p>
-      <p>${t('aboutIdentity.print.footerLine2')}</p>
-    </div>
-  </body>
-</html>
-              `;
-
-              // Print the HTML
-              await Print.printAsync({ html });
-
-              // Save to export history
-              const timestamp = new Date().toISOString();
-              await saveExportHistory(timestamp);
-
-              // Log security event for private key export
-              if (oxyServices) {
-                try {
-                  await oxyServices.logPrivateKeyExported();
-                } catch (error) {
-                  // Log error but don't fail the export
-                  console.error('Failed to log security event:', error);
-                }
-              }
-
-              toast.success(t('aboutIdentity.export.sentToPrinter'));
-            } catch (error: unknown) {
-              const message = error instanceof Error
-                ? error.message
-                : t('aboutIdentity.export.failed');
-              toast.error(message);
-            } finally {
-              setIsExporting(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [publicKey, saveExportHistory, t]);
 
   // Self-custody features
   const selfCustodyItems = useMemo(() => [
@@ -456,42 +229,6 @@ export default function AboutIdentityScreen() {
             </ThemedText>
             <AccountCard>
               <GroupedSection items={selfCustodyItems} />
-            </AccountCard>
-          </Section>
-
-          {/* Security Actions */}
-          <Section title={t('aboutIdentity.securityActions')}>
-            <AccountCard>
-              <GroupedSection
-                items={[
-                  {
-                    id: 'create-backup',
-                    icon: 'file-export',
-                    iconColor: colors.iconWarning,
-                    title: t('aboutIdentity.createBackupTitle'),
-                    subtitle: t('aboutIdentity.createBackupSubtitle'),
-                    onPress: () => router.push('/(tabs)/(settings)/create-backup'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'export-private-key',
-                    icon: 'printer',
-                    iconColor: colors.identityIconPublicKey,
-                    title: t('aboutIdentity.exportKeyTitle'),
-                    subtitle: isExporting
-                      ? t('aboutIdentity.exporting')
-                      : exportHistory.length > 0
-                        ? t('aboutIdentity.lastExported', { time: formatRelativeTime(exportHistory[0]?.timestamp) })
-                        : t('aboutIdentity.exportKeySubtitle'),
-                    onPress: handleExportPrivateKey,
-                    showChevron: true,
-                    disabled: isExporting,
-                    customContent: isExporting ? (
-                      <ActivityIndicator size="small" color={colors.identityIconPublicKey} />
-                    ) : undefined,
-                  },
-                ]}
-              />
             </AccountCard>
           </Section>
 

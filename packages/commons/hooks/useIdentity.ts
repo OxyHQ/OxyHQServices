@@ -195,6 +195,17 @@ export const useIdentity = (): UseIdentityResult => {
         // we MUST still return the phrase to the caller so it can be
         // shown to the user — losing it permanently would lock them out
         // the next time they wipe the app.
+
+        // Persist the phrase into its dedicated device-only keychain slot so the
+        // user can re-reveal it from Settings later. Best-effort: a storage
+        // failure must never fail identity creation — the phrase is still
+        // returned to the caller for the mandatory acknowledgement screen.
+        try {
+          await KeyManager.storeRecoveryMnemonic(words.join(' '));
+        } catch (mnemonicError) {
+          console.warn('[useIdentity] Failed to persist recovery mnemonic for re-reveal', mnemonicError);
+        }
+
         setSynced(false);
         await persistIdentitySyncState(false);
         // A brand-new identity has NOT finished onboarding yet. Reset the
@@ -324,6 +335,15 @@ export const useIdentity = (): UseIdentityResult => {
         }
 
         const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
+
+        // Persist the just-entered phrase so the user can re-reveal it from
+        // Settings. Best-effort — a storage failure must never fail the import
+        // (the user already holds the written phrase they just typed).
+        try {
+          await KeyManager.storeRecoveryMnemonic(phrase);
+        } catch (mnemonicError) {
+          console.warn('[useIdentity] Failed to persist recovery mnemonic for re-reveal', mnemonicError);
+        }
 
         setSynced(false);
         await persistIdentitySyncState(false);

@@ -964,13 +964,6 @@
       "decentralizedTitle": "Identidad descentralizada",
       "decentralizedSubtitle": "Tu identidad no está controlada por ninguna empresa. Es completamente tuya."
     },
-    "securityActions": "Acciones de seguridad",
-    "createBackupTitle": "Crear copia de seguridad cifrada",
-    "createBackupSubtitle": "Genera un archivo de copia de seguridad protegido con contraseña",
-    "exportKeyTitle": "Exportar clave privada",
-    "exporting": "Exportando…",
-    "lastExported": "Exportada por última vez {{time}}",
-    "exportKeySubtitle": "Imprime tu clave privada para una copia de seguridad segura",
     "accountSettings": "Configuración de la cuenta",
     "accountSettingsDescription": "Gestiona las preferencias y la configuración de caducidad de tu cuenta.",
     "accountExpiration": "Caducidad de la cuenta",
@@ -989,33 +982,7 @@
       "never": "Nunca"
     },
     "expirationUpdated": "Configuración de caducidad de la cuenta actualizada",
-    "expirationUpdateFailed": "No se pudo actualizar la configuración de caducidad de la cuenta. Inténtalo de nuevo.",
-    "securityWarning": {
-      "title": "Advertencia de seguridad",
-      "message": "Al exportar tu clave privada se imprimirá en papel. Cualquiera con acceso a esta clave impresa puede controlar tu identidad. Asegúrate de estar en un lugar seguro y de guardar el documento impreso de forma segura.\n\n¿Quieres continuar?",
-      "continue": "Continuar"
-    },
-    "export": {
-      "noPrivateKey": "No se encontró ninguna clave privada en este dispositivo",
-      "sentToPrinter": "La clave privada se ha enviado a la impresora",
-      "failed": "No se pudo exportar la clave privada. Inténtalo de nuevo."
-    },
-    "print": {
-      "documentTitle": "Identidad de Oxy - Exportación de clave privada",
-      "generated": "Generado: {{date}}",
-      "warningTitle": "ADVERTENCIA DE SEGURIDAD",
-      "warningBody": "Este documento contiene tu clave privada. Cualquiera con acceso a esta clave puede controlar tu identidad. Guarda este documento en un lugar seguro, como una caja fuerte o una caja de seguridad. Nunca compartas esta clave con nadie.",
-      "publicKeyLabel": "Clave pública (tu identidad):",
-      "privateKeyLabel": "Clave privada (MANTÉNLA EN SECRETO):",
-      "infoTitle": "Información importante:",
-      "info1": "Esta clave privada se usa para firmar transacciones y demostrar tu identidad",
-      "info2": "Si pierdes esta clave y tu frase de recuperación, perderás el acceso a tu identidad de forma permanente",
-      "info3": "No guardes este documento de forma digital (capturas de pantalla, almacenamiento en la nube, etc.)",
-      "info4": "Considera guardar varias copias en distintos lugares seguros",
-      "info5": "Si esta clave se ve comprometida, deberías crear una nueva identidad de inmediato",
-      "footerLine1": "Identidad de Oxy - Identidad criptográfica de autocustodia",
-      "footerLine2": "Este documento fue generado por la app Oxy Accounts"
-    }
+    "expirationUpdateFailed": "No se pudo actualizar la configuración de caducidad de la cuenta. Inténtalo de nuevo."
   },
   "backup": {
     "title": "Copia de seguridad cifrada",
@@ -1124,6 +1091,8 @@
         "aboutIdentitySubtitle": "Clave pública, detalles de autocustodia y exportación",
         "createBackup": "Crear una copia cifrada",
         "createBackupSubtitle": "Guarda una copia recuperable de tus claves",
+        "recoveryPhrase": "Ver frase de recuperación",
+        "recoveryPhraseSubtitle": "Revela las 12 palabras que restauran tu identidad",
         "manageAccount": "Gestionar cuenta",
         "manageAccountSubtitle": "Perfil, dispositivos, pagos y privacidad",
         "deleteAccount": "Eliminar cuenta",
@@ -1814,7 +1783,23 @@
   },
   "settings": {
     "title": "Ajustes",
-    "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta."
+    "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta.",
+    "recoveryPhrase": {
+      "title": "Frase de recuperación",
+      "subtitle": "Las 12 palabras que restauran tu identidad en un dispositivo nuevo.",
+      "warning": "Cualquiera con estas 12 palabras puede tomar el control total de tu identidad. No las compartas nunca ni las escribas en ningún sitio web o app que no sea Oxy.",
+      "lockedTitle": "Tu frase de recuperación está protegida",
+      "lockedBody": "Confirma que eres tú para revelar las 12 palabras que respaldan esta identidad.",
+      "revealButton": "Revelar frase de recuperación",
+      "hide": "Ocultar frase",
+      "copyWarning": "Anota estas palabras en papel. No hagas capturas de pantalla ni las guardes de forma digital.",
+      "biometricReason": "Autentícate para revelar tu frase de recuperación",
+      "notStoredTitle": "La frase no está disponible en este dispositivo",
+      "notStoredBody": "Esta identidad se creó o importó antes de que existiera la reaparición de la frase, así que su frase nunca se guardó aquí, y no puede derivarse de las claves. Si la anotaste, guarda esa copia a buen recaudo: es la única forma de restaurar esta identidad.",
+      "unavailableTitle": "No se pudo leer tu frase",
+      "unavailableBody": "El almacenamiento de tu identidad está bloqueado ahora mismo. Desbloquea tu dispositivo e inténtalo de nuevo.",
+      "gateFailedTitle": "No se pudo verificar tu identidad"
+    }
   },
   "recovery": {
     "attemptingTitle": "Restaurando tu identidad",

@@ -199,6 +199,25 @@ const V2_STORAGE_KEYS = {
 } as const;
 
 /**
+ * Dedicated keychain slot for the recovery mnemonic (the 12-word phrase).
+ *
+ * Stored under its OWN keychain service — distinct from the v2 primary, backup,
+ * and shared slots — so it shares an AndroidKeyStore key with none of them
+ * (blast-radius isolation, same rationale as the v2 primary/backup split).
+ * Written `WHEN_UNLOCKED_THIS_DEVICE_ONLY` and NEVER exported off-device: it
+ * exists solely so the user can RE-READ their phrase from Settings on the SAME
+ * device that generated/imported it.
+ *
+ * This is convenience persistence, NOT a recovery mechanism — a keystore death
+ * wipes it alongside the keys, exactly like the private key itself. The user's
+ * written-down phrase remains the sole out-of-band recovery path. The mnemonic
+ * lives ONLY in this slot: it is never mirrored into the identity marker,
+ * {@link KeyManager.getIdentityStatus}, logs, or any exported bundle.
+ */
+const RECOVERY_MNEMONIC_KEYCHAIN_SERVICE = 'oxy_identity_mnemonic';
+const RECOVERY_MNEMONIC_STORAGE_KEY = 'oxy_identity_mnemonic_v1';
+
+/**
  * Advisory AsyncStorage fast-path flag: set once the v2 slots own the identity.
  * Re-derivable (its loss just re-runs the cheap slot check), so it lives in
  * plain AsyncStorage rather than the keychain. It only SKIPS re-reading the
@@ -1774,6 +1793,81 @@ export class KeyManager {
   }
 
   /**
+   * Persist the recovery mnemonic (the 12-word phrase) into its dedicated,
+   * device-only keychain slot so the user can re-reveal it from Settings after
+   * onboarding.
+   *
+   * Called best-effort at identity creation/import, where the phrase is already
+   * in memory: a failure to persist it must NEVER fail the identity itself, so
+   * callers deliberately swallow the thrown error (logging it). Storage errors
+   * throw {@link IdentityUnavailableError} — same "cannot determine" semantics as
+   * the other getters — so a caller MAY observe/log the failure.
+   *
+   * The mnemonic is stored ONLY here — never in the marker, `getIdentityStatus`,
+   * logs, or any exported bundle.
+   */
+  static async storeRecoveryMnemonic(mnemonic: string): Promise<void> {
+    if (isWebPlatform()) {
+      return; // Identity storage is only available on native platforms
+    }
+    try {
+      const store = await initSecureStore();
+      await store.setItemAsync(
+        RECOVERY_MNEMONIC_STORAGE_KEY,
+        mnemonic,
+        KeyManager._privateWriteOpts(store, RECOVERY_MNEMONIC_KEYCHAIN_SERVICE),
+      );
+    } catch (error) {
+      if (isDev()) {
+        logger.warn('Failed to persist recovery mnemonic', { component: 'KeyManager' }, error);
+      }
+      throw new IdentityUnavailableError('Failed to persist recovery mnemonic.', error);
+    }
+  }
+
+  /**
+   * Read the stored recovery mnemonic for re-reveal in Settings.
+   *
+   * Returns the phrase, or `null` when a read SUCCEEDS and finds none — the
+   * expected result for any identity created/imported before this feature
+   * existed, since the phrase was never captured for those. THROWS
+   * {@link IdentityUnavailableError} when storage is unreadable (keychain locked
+   * / module load failure), matching {@link getPublicKey}'s contract — a thrown
+   * read is never flattened to `null`, so a caller distinguishes "phrase was
+   * never stored" from "keychain temporarily locked, retry".
+   */
+  static async getRecoveryMnemonic(): Promise<string | null> {
+    if (isWebPlatform()) {
+      return null; // Identity storage is only available on native platforms
+    }
+    try {
+      const store = await initSecureStore();
+      return await store.getItemAsync(
+        RECOVERY_MNEMONIC_STORAGE_KEY,
+        KeyManager._slotOpts(RECOVERY_MNEMONIC_KEYCHAIN_SERVICE),
+      );
+    } catch (error) {
+      if (isDev()) {
+        logger.warn('Failed to read recovery mnemonic', { component: 'KeyManager' }, error);
+      }
+      throw new IdentityUnavailableError('Failed to read recovery mnemonic from secure storage.', error);
+    }
+  }
+
+  /**
+   * Delete the stored recovery mnemonic. Best-effort: a delete failure is logged
+   * and swallowed, never thrown — it runs inside the identity-deletion path where
+   * an unreadable keychain must not abort the wider teardown.
+   */
+  static async deleteRecoveryMnemonic(): Promise<void> {
+    if (isWebPlatform()) {
+      return; // Identity storage is only available on native platforms
+    }
+    const store = await initSecureStore();
+    await KeyManager._bestEffortDelete(store, RECOVERY_MNEMONIC_STORAGE_KEY, RECOVERY_MNEMONIC_KEYCHAIN_SERVICE);
+  }
+
+  /**
    * Check if a complete, parseable identity exists on this device.
    *
    * Returns `true` only when BOTH the private and public keys are present,
@@ -2015,6 +2109,11 @@ export class KeyManager {
     await KeyManager._bestEffortDeleteV2Primary(store);
     await KeyManager._bestEffortDelete(store, STORAGE_KEYS.PRIVATE_KEY);
     await KeyManager._bestEffortDelete(store, STORAGE_KEYS.PUBLIC_KEY);
+
+    // Always drop the stored recovery mnemonic — it is scoped to the identity
+    // being deleted, so a leftover would let Settings reveal a stale phrase for
+    // an identity that no longer exists (or a DIFFERENT one after re-onboarding).
+    await KeyManager.deleteRecoveryMnemonic();
 
     // Also clear backups + the shared slot on force deletion, so a deleted
     // identity cannot be resurrected from any recovery source.

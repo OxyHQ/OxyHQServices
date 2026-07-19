@@ -31,6 +31,10 @@ export default function SettingsScreen() {
     router.push('/(tabs)/(settings)/rotate-key');
   }, [router]);
 
+  const handleRecoveryPhrase = useCallback(() => {
+    router.push('/(tabs)/(settings)/recovery-phrase');
+  }, [router]);
+
   const handlePersonhood = useCallback(() => {
     router.push('/(tabs)/(settings)/personhood');
   }, [router]);
@@ -83,6 +87,13 @@ export default function SettingsScreen() {
             title={t('rotateKey.settingsEntry')}
             subtitle={t('rotateKey.settingsEntrySubtitle')}
             onPress={handleRotateKey}
+            showChevron
+          />
+          <ListRow
+            icon="text-box-outline"
+            title={t('vault.home.actions.recoveryPhrase')}
+            subtitle={t('vault.home.actions.recoveryPhraseSubtitle')}
+            onPress={handleRecoveryPhrase}
             showChevron
           />
         </GroupedList>

@@ -105,8 +105,9 @@ export default function CreateIdentityScreen() {
 
     // If identity already exists (e.g., user resumed after closing the
     // app mid-onboarding), sync and route to username. We DO NOT route
-    // through the recovery-phrase screen because we no longer have the
-    // mnemonic in memory — the user must view it from settings instead.
+    // through the recovery-phrase acknowledgement screen because we no longer
+    // have the mnemonic in memory here. The phrase was persisted best-effort at
+    // creation, so the user can re-reveal it from Settings → Recovery phrase.
     //
     // hasStartedCreateRef guard: an IN-SESSION create flips status to
     // 'in_progress' the moment the identity query is invalidated, while the

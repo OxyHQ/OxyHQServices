@@ -1,12 +1,12 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Checkbox } from 'expo-checkbox';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Button, ImportantBanner } from '@/components/ui';
+import { RecoveryPhraseGrid } from '@/components/identity/RecoveryPhraseGrid';
 import { useTranslation } from '@/lib/i18n';
-import { Fonts } from '@/constants/theme';
 
 interface RecoveryPhraseStepProps {
   /**
@@ -85,11 +85,6 @@ export function RecoveryPhraseStep({
     Promise.resolve().then(onMissingPhrase);
   }
 
-  const wordItems = useMemo(() => {
-    if (!hasPhrase) return [] as { index: number; word: string }[];
-    return (words as string[]).map((word, index) => ({ index: index + 1, word }));
-  }, [hasPhrase, words]);
-
   const toggleAcknowledged = useCallback(() => {
     onAcknowledgeChange(!acknowledged);
   }, [acknowledged, onAcknowledgeChange]);
@@ -161,19 +156,7 @@ export function RecoveryPhraseStep({
               </Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.wordList}>
-              {wordItems.map(({ index, word }) => (
-                <View
-                  key={index}
-                  style={[styles.wordRow, { borderColor: colors.border }]}
-                  accessibilityRole="text"
-                  accessibilityLabel={t('auth.recoveryPhrase.wordLabel', { index })}
-                >
-                  <Text style={[styles.wordNumber, { color: textColor, opacity: 0.5 }]}>{index}</Text>
-                  <Text style={[styles.word, { color: textColor }]}>{word}</Text>
-                </View>
-              ))}
-            </View>
+            <RecoveryPhraseGrid words={words as string[]} textColor={textColor} />
           )}
         </View>
 
@@ -277,33 +260,6 @@ const styles = StyleSheet.create({
   revealLabel: {
     fontSize: 16,
     fontWeight: '500',
-  },
-  wordList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  wordRow: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  wordNumber: {
-    fontSize: 11,
-    width: 22,
-    fontWeight: '500',
-  },
-  word: {
-    fontSize: 14,
-    fontWeight: '500',
-    // Monospace keeps recovery words evenly aligned; `Fonts.mono` resolves to
-    // the platform monospace stack (`Geist Mono` was never bundled).
-    fontFamily: Fonts?.mono,
   },
   hideLink: {
     flexDirection: 'row',
