@@ -13,8 +13,8 @@ import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { runAccountDeletion } from '@/lib/account/delete-account-flow';
-import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from '@/hooks/useOnboardingStatus';
-import { persistOnboardingComplete } from '@/hooks/identity/identityStore';
+import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from '@/hooks/useOnboardingStatus';
+import { persistOnboardingComplete, persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 /**
  * Account Deletion Screen.
@@ -85,8 +85,10 @@ export default function DeleteAccountScreen() {
       // milestone so a subsequent re-onboard on this device starts fresh (the
       // identity-presence check gates first, but keep storage coherent).
       await persistOnboardingComplete(false);
+      await persistOnboardingFlow(null);
       queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
 
       // The account is gone server-side regardless. If the local key purge
       // failed, surface a non-fatal warning so the user knows to reinstall to

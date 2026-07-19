@@ -135,6 +135,14 @@ export const RECOVERY_PHRASE_ACK_STORAGE_KEY = 'oxy_recovery_phrase_acknowledged
  * Offline-safe: a plain local secure-store read, never a network call.
  */
 export const ONBOARDING_COMPLETE_STORAGE_KEY = 'oxy_onboarding_complete';
+/**
+ * Which onboarding wizard the user started (`create` vs `import`).
+ * Used on resume so an in-progress import is not mis-routed into the
+ * create-identity flow (which has no offline username skip).
+ */
+export const ONBOARDING_FLOW_STORAGE_KEY = 'oxy_onboarding_flow';
+
+export type OnboardingFlow = 'create' | 'import';
 
 /** Canonical serialized truthy value. Only this literal is treated as set. */
 const STORED_TRUE = 'true';
@@ -330,5 +338,34 @@ export const getRecoveryPhraseAcknowledgedFromStorage = async (): Promise<boolea
   } catch (error) {
     console.error('[IdentityStore] Failed to read recovery phrase acknowledgement', error);
     return false;
+  }
+};
+
+/**
+ * Persist which onboarding wizard the user chose (create vs import).
+ * Cleared when a new identity is created/imported or onboarding resets.
+ */
+export const persistOnboardingFlow = async (flow: OnboardingFlow | null): Promise<void> => {
+  try {
+    if (flow === null) {
+      await storage.setItem(ONBOARDING_FLOW_STORAGE_KEY, '');
+      return;
+    }
+    await storage.setItem(ONBOARDING_FLOW_STORAGE_KEY, flow);
+  } catch (error) {
+    console.error('[IdentityStore] Failed to persist onboarding flow', error);
+  }
+};
+
+/**
+ * Read the persisted onboarding flow (offline-safe local read).
+ */
+export const getOnboardingFlowFromStorage = async (): Promise<OnboardingFlow | null> => {
+  try {
+    const flow = await storage.getItem(ONBOARDING_FLOW_STORAGE_KEY);
+    return flow === 'create' || flow === 'import' ? flow : null;
+  } catch (error) {
+    console.error('[IdentityStore] Failed to read onboarding flow', error);
+    return null;
   }
 };

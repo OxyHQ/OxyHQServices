@@ -252,10 +252,9 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
     throw new BadRequestError('newPublicKey must differ from the current identity key');
   }
 
-  // 2. Timestamp freshness (recent, not in the future) — BEFORE the burn, so a
+  // 2. Timestamp freshness (recent, modest client clock skew) — BEFORE the burn, so a
   //    stale-but-otherwise-valid request cannot consume its own challenge.
-  const age = Date.now() - timestamp;
-  if (age > ROTATE_SIGNATURE_MAX_AGE_MS || age < 0) {
+  if (!SignatureService.isTimestampFresh(timestamp, ROTATE_SIGNATURE_MAX_AGE_MS)) {
     throw new BadRequestError('Signature expired or invalid timestamp — please try again');
   }
 
@@ -396,9 +395,8 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
     throw new BadRequestError('Invalid signature - cannot verify identity ownership');
   }
 
-  // Check timestamp is recent (within 5 minutes) and not in the future
-  const age = Date.now() - timestamp;
-  if (age > 5 * 60 * 1000 || age < 0) {
+  // Check timestamp is recent (within 5 minutes), allowing modest client clock skew
+  if (!SignatureService.isTimestampFresh(timestamp)) {
     throw new BadRequestError('Signature expired or invalid timestamp - please try again');
   }
 

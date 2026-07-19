@@ -38,11 +38,13 @@ jest.mock('@oxyhq/core', () => {
 // `persistOnboardingComplete`; both are mocked over a plain in-memory flag so we
 // can simulate a RETURNING user (`= true`) vs first-time onboarding (`= false`).
 let mockOnboardingCompleteFlag = false;
+let mockOnboardingFlow: 'create' | 'import' | null = null;
 jest.mock('@/hooks/identity/identityStore', () => {
   const actual = jest.requireActual('@/hooks/identity/identityStore');
   return {
     ...actual,
     getOnboardingCompleteFromStorage: jest.fn(async () => mockOnboardingCompleteFlag),
+    getOnboardingFlowFromStorage: jest.fn(async () => mockOnboardingFlow),
     persistOnboardingComplete: jest.fn(async (complete: boolean) => {
       mockOnboardingCompleteFlag = complete;
     }),
@@ -55,6 +57,7 @@ import {
   useOnboardingStatus,
   ONBOARDING_IDENTITY_QUERY_KEY,
   ONBOARDING_COMPLETE_QUERY_KEY,
+  getOnboardingResumeHref,
 } from '@/hooks/useOnboardingStatus';
 // eslint-disable-next-line import/first
 import { persistOnboardingComplete } from '@/hooks/identity/identityStore';
@@ -89,6 +92,7 @@ describe('useOnboardingStatus', () => {
     subscribeIdentityChangedMock.mockClear();
     identityChangeListener = null;
     mockOnboardingCompleteFlag = false;
+    mockOnboardingFlow = null;
     Platform.OS = 'ios';
   });
 
@@ -456,5 +460,25 @@ describe('useOnboardingStatus', () => {
       });
       expect(persistOnboardingComplete).not.toHaveBeenCalled();
     });
+  });
+
+  it('exposes the persisted onboarding flow', async () => {
+    mockOnboardingFlow = 'import';
+    getIdentityStatusMock.mockResolvedValue(PRESENT);
+    const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+    await waitFor(() => {
+      expect(result.current.onboardingFlow).toBe('import');
+    });
+  });
+});
+
+describe('getOnboardingResumeHref', () => {
+  it('routes import resumes to the import username step', () => {
+    expect(getOnboardingResumeHref('import')).toBe('/(auth)/import-identity/username');
+  });
+
+  it('defaults create resumes to the create wizard entry', () => {
+    expect(getOnboardingResumeHref(null)).toBe('/(auth)/create-identity');
+    expect(getOnboardingResumeHref('create')).toBe('/(auth)/create-identity');
   });
 });

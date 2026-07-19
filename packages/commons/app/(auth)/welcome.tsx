@@ -12,6 +12,7 @@ import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-tex
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { Button } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
+import { persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 const ROTATING_TEXT_KEYS = [
   'auth.welcome.rotating.humanId',
@@ -107,6 +108,7 @@ export default function WelcomeScreen() {
 
   const handleContinue = useCallback(() => {
     if (termsAccepted) {
+      void persistOnboardingFlow('create');
       router.replace('/(auth)/create-identity');
     }
   }, [termsAccepted, router]);

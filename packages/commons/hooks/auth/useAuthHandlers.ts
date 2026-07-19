@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import type { OxyServices, User } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
-import { useAuthStore } from '@oxyhq/services';
+import { useAuthStore, useUpdateProfile } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
 import { STORE_UPDATE_DELAY_MS } from '@/constants/auth';
@@ -50,6 +50,7 @@ export function useAuthHandlers({
   isAuthenticated,
 }: UseAuthHandlersOptions) {
   const router = useRouter();
+  const updateProfile = useUpdateProfile();
   const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
   
   // Constants for retry logic
@@ -175,14 +176,9 @@ export function useAuthHandlers({
     const usernameToSave = usernameRef.current;
     if (usernameToSave && oxyServices) {
       try {
-        // Check if online before trying to save username
         const offline = await checkIfOffline();
         if (!offline) {
-          const updatedUser = await oxyServices.updateProfile({ username: usernameToSave });
-          // Update authStore so home screen shows username immediately
-          if (updatedUser) {
-            useAuthStore.getState().setUser(updatedUser);
-          }
+          await updateProfile.mutateAsync({ username: usernameToSave });
         }
       } catch (err: unknown) {
         // Log but don't block - username can be set later
@@ -208,7 +204,7 @@ export function useAuthHandlers({
     }
 
     return true;
-  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
+  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState, updateProfile]);
 
   const handleSignIn = useCallback(async () => {
     await completeSignIn({ navigateOnSuccess: true });

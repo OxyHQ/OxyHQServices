@@ -13,12 +13,12 @@ import {
 } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
-import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage, persistOnboardingComplete } from './identity/identityStore';
+import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage, persistOnboardingComplete, persistOnboardingFlow } from './identity/identityStore';
 import { syncIdentityWithServer } from './identity/syncService';
 import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
 import { isAlreadyRegisteredError, isIdentityPreflightRefusal, IdentityMayExistError } from './identity/errorUtils';
-import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from './useOnboardingStatus';
+import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from './useOnboardingStatus';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
 
@@ -204,6 +204,7 @@ export const useIdentity = (): UseIdentityResult => {
         // wizard. It flips back to `true` only when THIS identity genuinely
         // completes (username + session) in `useOnboardingStatus`.
         await persistOnboardingComplete(false);
+        await persistOnboardingFlow('create');
 
         // Caller detected no connectivity: skip the register + signIn round-trip
         // rather than stalling the "Setting up your account…" screen on a ~19s
@@ -263,6 +264,7 @@ export const useIdentity = (): UseIdentityResult => {
         // reset onboarding-complete milestone without a per-component re-check.
         queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
         return result;
       } catch (error) {
         // The typed preflight refusals (already-exists / may-exist / storage-
@@ -329,6 +331,7 @@ export const useIdentity = (): UseIdentityResult => {
         // (see the matching reset in `createIdentity`). It flips back to `true`
         // only when this identity completes onboarding in `useOnboardingStatus`.
         await persistOnboardingComplete(false);
+        await persistOnboardingFlow('import');
 
         // Offline: skip register + signIn (same ~19s DNS-timeout stall as create).
         if (opts?.skipSync) {
@@ -374,6 +377,7 @@ export const useIdentity = (): UseIdentityResult => {
         // reset onboarding-complete milestone without a per-component re-check.
         queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
         return result;
       } catch (error) {
         // Typed preflight refusals (already-exists / may-exist / unavailable)

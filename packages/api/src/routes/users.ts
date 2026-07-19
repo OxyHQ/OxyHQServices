@@ -1429,9 +1429,8 @@ router.delete(
     const message = `delete:${user.publicKey}:${timestamp}`;
     const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);
     
-    // Check timestamp is recent (within 5 minutes) and not in the future
-    const age = Date.now() - timestamp;
-    if (age > 5 * 60 * 1000 || age < 0) {
+    // Check timestamp is recent (within 5 minutes), allowing modest client clock skew
+    if (!SignatureService.isTimestampFresh(timestamp)) {
       throw new BadRequestError('Signature has expired. Please try again.');
     }
     

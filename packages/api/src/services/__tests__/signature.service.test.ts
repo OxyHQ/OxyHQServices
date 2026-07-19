@@ -1,4 +1,4 @@
-import SignatureService from '../signature.service';
+import SignatureService, { MAX_CLOCK_SKEW_MS } from '../signature.service';
 
 describe('SignatureService timestamp freshness', () => {
   const publicKey =
@@ -13,8 +13,8 @@ describe('SignatureService timestamp freshness', () => {
     jest.restoreAllMocks();
   });
 
-  it('rejects challenge responses with a future timestamp', () => {
-    const future = Date.now() + 60_000;
+  it('rejects challenge responses with a timestamp too far in the future', () => {
+    const future = Date.now() + MAX_CLOCK_SKEW_MS + 1_000;
     expect(
       SignatureService.verifyChallengeResponse(
         publicKey,
@@ -25,15 +25,34 @@ describe('SignatureService timestamp freshness', () => {
     ).toBe(false);
   });
 
-  it('rejects registration signatures with a future timestamp', () => {
-    const future = Date.now() + 60_000;
+  it('accepts challenge responses within the clock-skew window', () => {
+    const slightlyFuture = Date.now() + MAX_CLOCK_SKEW_MS - 1_000;
+    expect(
+      SignatureService.verifyChallengeResponse(
+        publicKey,
+        'challenge',
+        signature,
+        slightlyFuture
+      )
+    ).toBe(true);
+  });
+
+  it('rejects registration signatures with a timestamp too far in the future', () => {
+    const future = Date.now() + MAX_CLOCK_SKEW_MS + 1_000;
     expect(
       SignatureService.verifyRegistrationSignature(publicKey, signature, future)
     ).toBe(false);
   });
 
-  it('rejects request signatures with a future timestamp', () => {
-    const future = Date.now() + 60_000;
+  it('accepts registration signatures within the clock-skew window', () => {
+    const slightlyFuture = Date.now() + MAX_CLOCK_SKEW_MS - 1_000;
+    expect(
+      SignatureService.verifyRegistrationSignature(publicKey, signature, slightlyFuture)
+    ).toBe(true);
+  });
+
+  it('rejects request signatures with a timestamp too far in the future', () => {
+    const future = Date.now() + MAX_CLOCK_SKEW_MS + 1_000;
     expect(
       SignatureService.verifyRequestSignature(
         publicKey,
@@ -42,5 +61,17 @@ describe('SignatureService timestamp freshness', () => {
         future
       )
     ).toBe(false);
+  });
+
+  it('accepts request signatures within the clock-skew window', () => {
+    const slightlyFuture = Date.now() + MAX_CLOCK_SKEW_MS - 1_000;
+    expect(
+      SignatureService.verifyRequestSignature(
+        publicKey,
+        { action: 'test' },
+        signature,
+        slightlyFuture
+      )
+    ).toBe(true);
   });
 });

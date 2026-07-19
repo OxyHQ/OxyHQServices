@@ -28,7 +28,10 @@ jest.mock('@oxyhq/core', () => {
 import {
   persistOnboardingComplete,
   getOnboardingCompleteFromStorage,
+  persistOnboardingFlow,
+  getOnboardingFlowFromStorage,
   ONBOARDING_COMPLETE_STORAGE_KEY,
+  ONBOARDING_FLOW_STORAGE_KEY,
 } from '@/hooks/identity/identityStore';
 // eslint-disable-next-line import/first
 import {
@@ -97,5 +100,21 @@ describe('identityStore — onboarding milestone (marker mirror + self-heal)', (
   it('returns false when the flag is absent and there is no marker (genuine fresh device)', async () => {
     readIdentityMarkerMock.mockResolvedValue(null);
     expect(await getOnboardingCompleteFromStorage()).toBe(false);
+  });
+});
+
+describe('identityStore — onboarding flow persistence', () => {
+  beforeEach(() => {
+    __resetSecureStore();
+  });
+
+  it('round-trips the create/import flow choice', async () => {
+    await persistOnboardingFlow('import');
+    expect(await getOnboardingFlowFromStorage()).toBe('import');
+    await persistOnboardingFlow('create');
+    expect(await getOnboardingFlowFromStorage()).toBe('create');
+    await persistOnboardingFlow(null);
+    expect(await getOnboardingFlowFromStorage()).toBeNull();
+    expect(await getItemAsync(ONBOARDING_FLOW_STORAGE_KEY)).toBe('');
   });
 });

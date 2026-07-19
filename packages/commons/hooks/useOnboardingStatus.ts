@@ -5,7 +5,9 @@ import { KeyManager } from '@oxyhq/core';
 import type { IdentityStatus } from '@oxyhq/core';
 import {
   getOnboardingCompleteFromStorage,
+  getOnboardingFlowFromStorage,
   persistOnboardingComplete,
+  type OnboardingFlow,
 } from './identity/identityStore';
 
 export type OnboardingStatus =
@@ -44,6 +46,8 @@ export interface OnboardingState {
    * gone → recovery ladder). `null` for every other status.
    */
   unavailableReason: 'locked' | 'lost' | null;
+  /** Persisted wizard choice; `null` until read or if unset (defaults to create on resume). */
+  onboardingFlow: OnboardingFlow | null;
 }
 
 /**
@@ -64,6 +68,16 @@ export const ONBOARDING_IDENTITY_QUERY_KEY = ['onboarding', 'identity'] as const
  * `queryClient.setQueryData` below.
  */
 export const ONBOARDING_COMPLETE_QUERY_KEY = ['onboarding', 'complete'] as const;
+
+/** Shared React Query key for the persisted create-vs-import wizard choice. */
+export const ONBOARDING_FLOW_QUERY_KEY = ['onboarding', 'flow'] as const;
+
+/** Resume path for an in-progress onboarding wizard. */
+export function getOnboardingResumeHref(flow: OnboardingFlow | null): string {
+  return flow === 'import'
+    ? '/(auth)/import-identity/username'
+    : '/(auth)/create-identity';
+}
 
 /**
  * The identity verdict routing keys off of, with `unavailable` removed: the
@@ -173,6 +187,13 @@ export function useOnboardingStatus(): OnboardingState {
     retry: false,
   });
 
+  const flowQuery = useQuery({
+    queryKey: ONBOARDING_FLOW_QUERY_KEY,
+    queryFn: getOnboardingFlowFromStorage,
+    staleTime: Infinity,
+    retry: false,
+  });
+
   // ── Derived local read state ───────────────────────────────────────────────
   const identityVerdict = identityQuery.data;
   // Still resolving: no verdict yet AND retries not yet exhausted.
@@ -182,6 +203,8 @@ export function useOnboardingStatus(): OnboardingState {
 
   const onboardingComplete = completeQuery.data === true;
   const isCompleteResolving = completeQuery.data === undefined;
+  const onboardingFlow = flowQuery.data ?? null;
+  const isFlowResolving = flowQuery.data === undefined;
 
   // Persist the monotonic onboarding-complete milestone the moment onboarding
   // genuinely completes ONLINE (a live session whose user has a username). This
@@ -198,7 +221,7 @@ export function useOnboardingStatus(): OnboardingState {
 
   const status = useMemo<OnboardingStatus>(() => {
     // 1. Local reads still resolving — neutral backdrop, never a premature verdict.
-    if (isIdentityResolving || isCompleteResolving) {
+    if (isIdentityResolving || isCompleteResolving || isFlowResolving) {
       return 'checking';
     }
 
@@ -242,6 +265,7 @@ export function useOnboardingStatus(): OnboardingState {
   }, [
     isIdentityResolving,
     isCompleteResolving,
+    isFlowResolving,
     isIdentityUnavailable,
     identityVerdict,
     onboardingComplete,
@@ -268,5 +292,6 @@ export function useOnboardingStatus(): OnboardingState {
     identityPresent: identityVerdict?.state === 'present',
     isSessionResolving: !isAuthResolved,
     unavailableReason,
+    onboardingFlow,
   };
 }

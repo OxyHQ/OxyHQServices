@@ -13,7 +13,7 @@ import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text
 import { Button } from '@/components/ui';
 import { CenteredState } from '@/components/ui/centered-state';
 import { useTranslation } from '@/lib/i18n';
-import { useOnboardingStatus, ONBOARDING_IDENTITY_QUERY_KEY } from '@/hooks/useOnboardingStatus';
+import { useOnboardingStatus, ONBOARDING_IDENTITY_QUERY_KEY, getOnboardingResumeHref } from '@/hooks/useOnboardingStatus';
 
 const humanTranslations = [
   'Human',
@@ -31,7 +31,7 @@ export default function AuthIndexScreen() {
   const backgroundColor = colors.background;
   const textColor = colors.text;
   const { t } = useTranslation();
-  const { status, hasIdentity } = useOnboardingStatus();
+  const { status, hasIdentity, onboardingFlow } = useOnboardingStatus();
   const queryClient = useQueryClient();
 
   const handleRetryIdentityProbe = useCallback(() => {
@@ -127,7 +127,7 @@ export default function AuthIndexScreen() {
   // `create-identity` is a route WITHIN the `(auth)` group, so redirecting to it
   // does NOT race the root Stack's cross-group swap — it's safe here.
   if (hasIdentity && status === 'in_progress') {
-    return <Redirect href="/(auth)/create-identity" />;
+    return <Redirect href={getOnboardingResumeHref(onboardingFlow)} />;
   }
 
   // A `lost` identity (marker present, keys gone) must go to the recovery ladder,

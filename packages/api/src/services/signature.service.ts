@@ -16,7 +16,17 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 // Maximum age for signed requests (5 minutes)
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 
+/** Allow client clocks slightly ahead of the server (device skew). */
+export const MAX_CLOCK_SKEW_MS = 60 * 1000;
+
 export class SignatureService {
+  /**
+   * True when `timestamp` is within `[now - maxAgeMs, now + MAX_CLOCK_SKEW_MS]`.
+   */
+  static isTimestampFresh(timestamp: number, maxAgeMs: number = MAX_SIGNATURE_AGE_MS): boolean {
+    const age = Date.now() - timestamp;
+    return age <= maxAgeMs && age >= -MAX_CLOCK_SKEW_MS;
+  }
   /**
    * Generate a random challenge string
    */
@@ -83,8 +93,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    const age = Date.now() - timestamp;
-    if (age > CHALLENGE_TTL_MS || age < 0) {
+    if (!SignatureService.isTimestampFresh(timestamp, CHALLENGE_TTL_MS)) {
       return false;
     }
 
@@ -102,8 +111,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    const age = Date.now() - timestamp;
-    if (age > MAX_SIGNATURE_AGE_MS || age < 0) {
+    if (!SignatureService.isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 
@@ -121,8 +129,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    const age = Date.now() - timestamp;
-    if (age > MAX_SIGNATURE_AGE_MS || age < 0) {
+    if (!SignatureService.isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 

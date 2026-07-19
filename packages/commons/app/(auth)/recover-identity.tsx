@@ -12,8 +12,9 @@ import {
   useOnboardingStatus,
   ONBOARDING_IDENTITY_QUERY_KEY,
   ONBOARDING_COMPLETE_QUERY_KEY,
+  getOnboardingResumeHref,
 } from '@/hooks/useOnboardingStatus';
-import { persistOnboardingComplete } from '@/hooks/identity/identityStore';
+import { persistOnboardingComplete, persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 /**
  * Shorten a public key for display: `abcd1234…wxyz5678`. Mirrors the inline
@@ -44,7 +45,7 @@ export default function RecoverIdentityScreen() {
   const colors = useColors();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { status } = useOnboardingStatus();
+  const { status, onboardingFlow } = useOnboardingStatus();
 
   // The marker records the PUBLIC key of the lost identity — shown so the user
   // can recognize which account is being recovered. Read once; never changes
@@ -84,6 +85,7 @@ export default function RecoverIdentityScreen() {
   }, [status, runRecovery]);
 
   const handleEnterPhrase = useCallback(() => {
+    void persistOnboardingFlow('import');
     // The existing import flow restores from the 12-word phrase. Importing the
     // SAME identity is the sanctioned path; a different phrase triggers the
     // import guard's "different identity" confirmation.
@@ -103,6 +105,7 @@ export default function RecoverIdentityScreen() {
             // status resolves to `none` → the welcome/create flow.
             await KeyManager.deleteIdentity(false, false, true);
             await persistOnboardingComplete(false);
+            await persistOnboardingFlow(null);
             invalidateOnboarding();
             router.replace('/(auth)');
           })();
@@ -120,7 +123,7 @@ export default function RecoverIdentityScreen() {
   // Present but not yet onboarded → resume the create flow (which detects the
   // existing identity and continues at the username step).
   if (status === 'in_progress') {
-    return <Redirect href="/(auth)/create-identity" />;
+    return <Redirect href={getOnboardingResumeHref(onboardingFlow)} />;
   }
   // Genuinely blank now (start-over completed) → the fresh welcome entry.
   if (status === 'none') {

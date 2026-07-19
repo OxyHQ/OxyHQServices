@@ -1,6 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { RecoveryPhraseService, IdentityAlreadyExistsError } from '@oxyhq/core';
+import {
+  RecoveryPhraseService,
+  IdentityAlreadyExistsError,
+  IdentityUnavailableError,
+} from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
@@ -8,7 +12,8 @@ import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useIdentityStore } from '@/hooks/identity/identityStore';
+import { useIdentityStore, persistOnboardingFlow } from '@/hooks/identity/identityStore';
+import { IdentityMayExistError } from '@/hooks/identity/errorUtils';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -29,6 +34,10 @@ export default function ImportIdentityPhraseScreen() {
   const textColor = colors.text;
 
   const [phraseWords, setPhraseWords] = useState<string[]>(new Array(RECOVERY_PHRASE_LENGTH).fill(''));
+
+  useEffect(() => {
+    void persistOnboardingFlow('import');
+  }, []);
 
   const handleWordChange = useCallback((index: number, word: string) => {
     setPhraseWords(prev => {
@@ -83,6 +92,14 @@ export default function ImportIdentityPhraseScreen() {
         router.replace('/(auth)/import-identity/username');
       }
     } catch (err: unknown) {
+      if (err instanceof IdentityMayExistError) {
+        router.replace('/(auth)/recover-identity');
+        return;
+      }
+      if (err instanceof IdentityUnavailableError) {
+        router.replace('/(auth)');
+        return;
+      }
       if (err instanceof IdentityAlreadyExistsError) {
         // The user is trying to import a different identity on top of an
         // existing one. We don't quietly clobber — they must use the
