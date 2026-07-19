@@ -438,6 +438,70 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     expect(res.status).toBe(403);
   });
 
+  it('the Oxy Pay carve-out mints a token for a non-trusted app from a payments-only credential', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(
+      stubCredential({ scopes: ['payments:read', 'payments:write'] })
+    );
+    mockApplicationFindOne.mockResolvedValue(
+      stubApp({ isInternal: false, scopes: ['payments:read', 'payments:write'] })
+    );
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt(res.body.data?.token as string);
+    expect(claims.scopes).toEqual(['payments:read', 'payments:write']);
+    expect(claims.environment).toBe('production');
+  });
+
+  it('the Oxy Pay carve-out still rejects a non-trusted app whose credential holds any non-payments scope', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(
+      stubCredential({ scopes: ['payments:read', 'user:read'] })
+    );
+    mockApplicationFindOne.mockResolvedValue(
+      stubApp({ isInternal: false, scopes: ['payments:read', 'user:read'] })
+    );
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('the Oxy Pay carve-out never applies to a scopeless credential from a non-trusted app', async () => {
+    // A scopeless credential inherits the app's FULL granted scope set below
+    // (intersectScopes fallback) — it must never qualify for the carve-out,
+    // even if the app itself only holds payments scopes.
+    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ scopes: [] }));
+    mockApplicationFindOne.mockResolvedValue(
+      stubApp({ isInternal: false, scopes: ['payments:read', 'payments:write'] })
+    );
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('a trusted application is unaffected by the Oxy Pay carve-out', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
+    mockApplicationFindOne.mockResolvedValue(stubApp({ isInternal: true }));
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+  });
+
   it('rejects when the owning application is inactive', async () => {
     mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
     mockApplicationFindOne.mockResolvedValue(null);

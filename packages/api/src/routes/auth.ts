@@ -14,7 +14,7 @@ import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { Application } from '../models/Application';
 import type { IApplication } from '../models/Application';
-import { intersectScopes } from '../utils/applicationScopes';
+import { intersectScopes, isPaymentsScope } from '../utils/applicationScopes';
 import { ApplicationCredential } from '../models/ApplicationCredential';
 import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
@@ -2398,7 +2398,21 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // The owning application must be active and part of the platform-trusted set.
   // Service tokens are bearer credentials for Oxy-to-Oxy / internal routes;
   // self-service third-party applications must not be able to mint them even if
-  // they somehow hold a historical `service` credential row.
+  // they somehow hold a historical `service` credential row — EXCEPT via the
+  // same narrow Oxy Pay carve-out enforced at credential-creation time
+  // (`applications.ts` POST /:appId/credentials): a non-trusted application MAY
+  // mint a service token from a credential whose OWN scopes are a non-empty,
+  // payments-only set ({@link isPaymentsScope}, i.e. `payments:read`/
+  // `payments:write`). Keying this on `credential.scopes` (never `app.scopes`)
+  // is deliberate: a credential requesting no scopes falls back below to the
+  // app's FULL granted scope set (`intersectScopes` fallback), so a scopeless
+  // credential must never qualify here — only an explicit, payments-only
+  // credential does. Both payments scopes are already non-privileged/
+  // self-grantable and tenant-scoped, and the Oxy Pay Gateway only honours
+  // `payments:*`, so this lets external Oxy Pay merchants (WooCommerce,
+  // Mercaria, etc.) mint the payments-scoped service token the `@oxyhq/pay`
+  // SDK needs without ever letting a self-service app mint a token carrying
+  // any other capability.
   const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
   if (!app) {
     logger.warn('[ServiceToken] Application inactive for service credential', {
@@ -2408,7 +2422,9 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     throw new UnauthorizedError('Invalid credentials');
   }
 
-  if (!isTrustedApplication(app)) {
+  const isPaymentsOnlyServiceCredential =
+    credential.scopes.length > 0 && credential.scopes.every(isPaymentsScope);
+  if (!isTrustedApplication(app) && !isPaymentsOnlyServiceCredential) {
     logger.warn('[ServiceToken] Untrusted application attempted service token', {
       credentialId: credential._id.toString(),
       applicationId: credential.applicationId.toString(),
