@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancelar",
+    "copy": "Copiar",
     "save": "Guardar",
     "ok": "Aceptar",
     "continue": "Continuar",
@@ -962,6 +963,9 @@
     "publicKeyCopied": "Clave pública copiada al portapapeles",
     "copyFailed": "No se pudo copiar",
     "importantNotice": "Tu frase de recuperación es la ÚNICA forma de restaurar tu identidad si pierdes el acceso a este dispositivo. Oxy no puede restablecer ni recuperar tu cuenta. Guarda tu frase de recuperación en un lugar seguro y nunca la compartas.",
+    "identifiersTitle": "Identificadores",
+    "publicKeyRow": "Clave pública",
+    "didRow": "ID descentralizado",
     "selfCustodyTitle": "Identidad de autocustodia",
     "selfCustodyDescription": "A diferencia de las cuentas tradicionales, tu identidad de Oxy usa la misma tecnología que protege Bitcoin. Tienes control total sobre tu identidad.",
     "items": {

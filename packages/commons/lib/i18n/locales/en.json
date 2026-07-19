@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancel",
+    "copy": "Copy",
     "save": "Save",
     "ok": "OK",
     "continue": "Continue",
@@ -962,6 +963,9 @@
     "publicKeyCopied": "Public key copied to clipboard",
     "copyFailed": "Failed to copy",
     "importantNotice": "Your recovery phrase is the ONLY way to restore your identity if you lose access to this device. Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.",
+    "identifiersTitle": "Identifiers",
+    "publicKeyRow": "Public key",
+    "didRow": "Decentralized ID",
     "selfCustodyTitle": "Self-Custody Identity",
     "selfCustodyDescription": "Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin. You have complete control over your identity.",
     "items": {
