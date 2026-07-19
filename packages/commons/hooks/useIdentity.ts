@@ -13,10 +13,9 @@ import {
 } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
-import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage, persistOnboardingComplete, persistOnboardingFlow } from './identity/identityStore';
-import { syncIdentityWithServer } from './identity/syncService';
-import { acquireSyncLock, isSyncLockAborted } from './identity/syncLock';
+import { useIdentityStore, persistIdentitySyncState, persistOnboardingComplete, persistOnboardingFlow } from './identity/identityStore';
 import { useNetworkReconnect } from './identity/useNetworkReconnect';
+import { useSyncIdentity } from './identity/useSyncIdentity';
 import { isAlreadyRegisteredError, isIdentityPreflightRefusal, IdentityMayExistError } from './identity/identityErrors';
 import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from './useOnboardingStatus';
 
@@ -80,65 +79,13 @@ export const useIdentity = (): UseIdentityResult => {
   const { signIn } = useBiometricSignIn();
   const queryClient = useQueryClient();
 
-  const isSynced = useIdentityStore((state) => state.isSynced);
-  const isSyncing = useIdentityStore((state) => state.isSyncing);
   const setSynced = useIdentityStore((state) => state.setSynced);
-  const setSyncing = useIdentityStore((state) => state.setSyncing);
-  const hydrateStore = useIdentityStore((state) => state.hydrate);
 
-  useEffect(() => {
-    hydrateStore();
-  }, [hydrateStore]);
-
-  const isIdentitySynced = useCallback(async (): Promise<boolean> => {
-    const synced = await getIdentitySyncStateFromStorage();
-    setSynced(synced);
-    return synced;
-  }, [setSynced]);
-
-  const syncIdentity = useCallback(
-    async (): Promise<User> => {
-      if (!oxyServices) throw new Error('OxyServices not initialized');
-      if (!signIn) throw new Error('signIn not available');
-
-      // Acquire global sync lock
-      const lock = acquireSyncLock();
-      setSyncing(true);
-
-      try {
-        const result = await syncIdentityWithServer({
-          oxyServices,
-          signIn,
-          isAlreadySynced: isSynced,
-          signal: lock.signal,
-          onSessionExpired: async () => {
-            setSynced(false);
-            await persistIdentitySyncState(false);
-          },
-        });
-
-        setSynced(true);
-        await persistIdentitySyncState(true);
-
-        return result.user;
-      } catch (error) {
-        if (isSyncLockAborted(error)) {
-          throw new Error('Sync was cancelled');
-        }
-        handleAuthError(error, {
-          defaultMessage: `Failed to sync identity: ${error instanceof Error ? error.message : String(error)}`,
-          code: REGISTER_ERROR_CODE,
-          setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
-          logger: __DEV__ ? console.warn : undefined,
-        });
-        throw error;
-      } finally {
-        setSyncing(false);
-        lock.release();
-      }
-    },
-    [oxyServices, signIn, setSynced, setSyncing, isSynced],
-  );
+  // The single-flight identity → session sync (register-if-needed + key sign-in)
+  // and the reactive sync state come from the extracted lean hook. `useIdentity`
+  // composes it and layers on create/import, the network-reconnect scheduler, and
+  // the on-mount integrity/backup effect — so its public surface is unchanged.
+  const { syncIdentity, isIdentitySynced, identitySyncState } = useSyncIdentity();
 
   const createIdentity = useCallback(
     async (opts?: { skipSync?: boolean }): Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> => {
@@ -618,7 +565,7 @@ export const useIdentity = (): UseIdentityResult => {
     isAuthenticated,
     hasIdentity,
     syncIdentity,
-    isSyncing,
+    isSyncing: identitySyncState.isSyncing,
   });
 
   return {
@@ -629,9 +576,6 @@ export const useIdentity = (): UseIdentityResult => {
     hasIdentity,
     getPublicKey,
     isIdentitySynced,
-    identitySyncState: {
-      isSynced: isSynced ?? false,
-      isSyncing: isSyncing ?? false,
-    },
+    identitySyncState,
   };
 };

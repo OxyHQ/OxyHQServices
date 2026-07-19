@@ -32,7 +32,7 @@ import {
   ONBOARDING_IDENTITY_QUERY_KEY,
   ONBOARDING_COMPLETE_QUERY_KEY,
 } from '@/hooks/useOnboardingStatus';
-import { useIdentity } from '@/hooks/useIdentity';
+import { useSyncIdentity } from '@/hooks/identity/useSyncIdentity';
 import { useSessionAutoConnect } from '@/hooks/identity/useSessionAutoConnect';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
@@ -213,7 +213,10 @@ function AppStackContent() {
   const { isStorageReady, isAuthResolved, user } = useOxy();
   const online = useOnlineStatus();
   const { status, needsAuth, identityPresent } = useOnboardingStatus();
-  const { syncIdentity } = useIdentity();
+  // The LEAN sync hook — just the single-flight `syncIdentity`, WITHOUT
+  // `useIdentity`'s network-reconnect poll loop or on-mount integrity effect,
+  // which stay owned by the screens that already mount `useIdentity`.
+  const { syncIdentity } = useSyncIdentity();
   const queryClient = useQueryClient();
 
   const appReady = isStorageReady && status !== 'checking';
