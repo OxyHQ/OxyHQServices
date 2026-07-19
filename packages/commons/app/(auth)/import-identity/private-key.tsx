@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyManager, IdentityAlreadyExistsError, IdentityUnavailableError } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
+import { Fonts } from '@/constants/theme';
+import { withAlpha } from '@/utils/color';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useIdentity } from '@/hooks/useIdentity';
@@ -104,7 +106,7 @@ export default function ImportPrivateKeyScreen() {
           value={privateKey}
           onChangeText={handleChange}
           placeholder={t('importPrivateKey.placeholder')}
-          placeholderTextColor={colors.text + '66'}
+          placeholderTextColor={withAlpha(colors.text, 0.4)}
           editable={!isLoading}
           autoCapitalize="none"
           autoCorrect={false}
@@ -112,7 +114,7 @@ export default function ImportPrivateKeyScreen() {
           spellCheck={false}
           style={[
             styles.input,
-            { color: colors.text, borderColor: colors.text + '33', backgroundColor: colors.card },
+            { color: colors.text, borderColor: withAlpha(colors.text, 0.2), backgroundColor: colors.card },
           ]}
         />
 
@@ -165,7 +167,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     fontSize: 15,
-    fontFamily: 'monospace',
+    fontFamily: Fonts.mono,
     textAlignVertical: 'top',
   },
   primaryButton: {
