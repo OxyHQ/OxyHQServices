@@ -1,9 +1,9 @@
 import React, { useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useColors } from '@/hooks/useColors';
-import { ThemedText } from '@/components/themed-text';
 import { Screen, StackHeader, ImportantBanner } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useRotateKeyFlow } from '@/contexts/rotate-key-flow-context';
@@ -35,103 +35,44 @@ export default function RotateKeyEntryScreen() {
   }, [reset, setProof, router]);
 
   return (
-    <Screen>
-      <StackHeader
-        title={t('rotateKey.title')}
-        subtitle={t('rotateKey.subtitle')}
-        onBack={() => router.back()}
-        backAccessibilityLabel={t('common.back')}
-      />
-
-      <ImportantBanner title={t('rotateKey.warningTitle')} icon="alert-octagon">
-        {t('rotateKey.warning')}
-      </ImportantBanner>
-
-      <View style={styles.options}>
-        <PathOption
-          icon="cellphone-key"
-          title={t('rotateKey.pathDevice')}
-          subtitle={t('rotateKey.pathDeviceSubtitle')}
-          onPress={handleDevice}
-          colors={colors}
-        />
-        <PathOption
-          icon="key-remove"
-          title={t('rotateKey.pathPhrase')}
-          subtitle={t('rotateKey.pathPhraseSubtitle')}
-          onPress={handlePhrase}
-          colors={colors}
+    // Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
+    // header and banner are padded to align with it (see settings index).
+    <Screen contentStyle={styles.flush} gap={16}>
+      <View style={styles.header}>
+        <StackHeader
+          title={t('rotateKey.title')}
+          subtitle={t('rotateKey.subtitle')}
+          onBack={() => router.back()}
+          backAccessibilityLabel={t('common.back')}
         />
       </View>
+
+      <View style={styles.gutter}>
+        <ImportantBanner title={t('rotateKey.warningTitle')} icon="alert-octagon">
+          {t('rotateKey.warning')}
+        </ImportantBanner>
+      </View>
+
+      <SettingsListGroup title={t('rotateKey.pathSection')}>
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="cellphone-key" size={22} color={colors.text} />}
+          title={t('rotateKey.pathDevice')}
+          description={t('rotateKey.pathDeviceSubtitle')}
+          onPress={handleDevice}
+        />
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="key-remove" size={22} color={colors.text} />}
+          title={t('rotateKey.pathPhrase')}
+          description={t('rotateKey.pathPhraseSubtitle')}
+          onPress={handlePhrase}
+        />
+      </SettingsListGroup>
     </Screen>
   );
 }
 
-function PathOption({
-  icon,
-  title,
-  subtitle,
-  onPress,
-  colors,
-}: {
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-  colors: ReturnType<typeof useColors>;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      style={[styles.option, { backgroundColor: colors.card, borderColor: colors.border }]}
-    >
-      <View style={[styles.optionIcon, { backgroundColor: `${colors.tint}1A` }]}>
-        <MaterialCommunityIcons name={icon} size={24} color={colors.tint} />
-      </View>
-      <View style={styles.optionText}>
-        <ThemedText style={[styles.optionTitle, { color: colors.text }]}>{title}</ThemedText>
-        <ThemedText style={[styles.optionSubtitle, { color: colors.textSecondary }]}>
-          {subtitle}
-        </ThemedText>
-      </View>
-      <MaterialCommunityIcons name="chevron-right" size={22} color={colors.textSecondary} />
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  options: {
-    gap: 12,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-  },
-  optionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  optionText: {
-    flex: 1,
-    gap: 2,
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  optionSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  flush: { paddingHorizontal: 0 },
+  header: { paddingHorizontal: 20, marginBottom: 16 },
+  gutter: { paddingHorizontal: 20 },
 });

@@ -1056,6 +1056,20 @@
     "offlineHint": "Parece que estás sin conexión. La identidad se guardará en este dispositivo y se sincronizará al reconectar.",
     "identityAlreadyExists": "Ya existe una identidad diferente en este dispositivo. Elimínala en Ajustes primero y luego importa."
   },
+  "backupRecovery": {
+    "title": "Copia y recuperación",
+    "subtitle": "Todo lo que necesitas para respaldar y restaurar esta identidad.",
+    "statusPresent": "Esta identidad está respaldada por tu frase de recuperación de 12 palabras. Guárdala en un lugar seguro — es la única forma de restaurar tu cuenta en un dispositivo nuevo.",
+    "statusAbsent": "Esta identidad se importó desde una clave privada, así que no tiene frase de recuperación — y no se puede crear una a partir de la clave. La frase y la copia cifrada de abajo no están disponibles. Para obtener una frase de recuperación, rota a una clave nueva.",
+    "rotateCta": "Rotar a una clave con frase de recuperación",
+    "methodsTitle": "Métodos de copia",
+    "phraseTitle": "Frase de recuperación",
+    "phraseSubtitle": "Revela las 12 palabras que restauran tu identidad",
+    "phraseUnavailable": "No disponible — esta identidad se importó desde una clave privada",
+    "encryptedTitle": "Copia cifrada",
+    "encryptedSubtitle": "Guarda una copia recuperable de tus claves fuera del dispositivo",
+    "encryptedUnavailable": "No disponible — requiere una frase de recuperación"
+  },
   "rotateKey": {
     "settingsEntry": "Rota tu clave",
     "settingsEntrySubtitle": "Reemplaza tu clave de identidad por una nueva",
@@ -1063,6 +1077,7 @@
     "subtitle": "Reemplaza la clave de firma de tu identidad por una totalmente nueva. Tu cuenta, nombre de usuario e historial se mantienen.",
     "warningTitle": "Esto cambia tus claves",
     "warning": "Rotar genera una NUEVA frase de recuperación. Tu frase y clave antiguas dejan de funcionar en cuanto se completa la rotación; guarda la nueva frase antes de terminar.",
+    "pathSection": "Elige cómo rotar",
     "pathDevice": "Rotar con este dispositivo",
     "pathDeviceSubtitle": "Usa la clave de este dispositivo para autorizar el cambio.",
     "pathPhrase": "Perdí la clave de mi dispositivo",
@@ -1110,12 +1125,8 @@
       "account": "Cuenta",
       "accountSubtitle": "Gestiona tu perfil, dispositivos y privacidad en la app de Accounts.",
       "actions": {
-        "aboutIdentity": "Sobre tu identidad",
-        "aboutIdentitySubtitle": "Clave pública, detalles de autocustodia y exportación",
-        "createBackup": "Crear una copia cifrada",
-        "createBackupSubtitle": "Guarda una copia recuperable de tus claves",
-        "recoveryPhrase": "Ver frase de recuperación",
-        "recoveryPhraseSubtitle": "Revela las 12 palabras que restauran tu identidad",
+        "backupRecovery": "Copia y recuperación",
+        "backupRecoverySubtitle": "Frase de recuperación y copia cifrada",
         "manageAccount": "Gestionar cuenta",
         "manageAccountSubtitle": "Perfil, dispositivos, pagos y privacidad",
         "deleteAccount": "Eliminar cuenta",

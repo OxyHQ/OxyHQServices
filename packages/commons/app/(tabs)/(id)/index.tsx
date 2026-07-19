@@ -16,7 +16,8 @@ import { buildUserDid } from '@oxyhq/core';
 import { Fab } from '@oxyhq/bloom/fab';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, Section, GroupedList, ListRow, Callout } from '@/components/ui';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Screen, Section, Callout } from '@/components/ui';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
 import { BackSide } from '@/components/OxyID/back-side';
@@ -222,7 +223,9 @@ export default function IdScreen() {
 
   return (
     <View style={styles.screen}>
-      <Screen>
+      {/* Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
+          centered hero and the DID/callout blocks are padded to align with it. */}
+      <Screen contentStyle={styles.flush} gap={16}>
         <View style={styles.hero}>
           <OxyID
             width={CARD_WIDTH}
@@ -268,51 +271,54 @@ export default function IdScreen() {
 
         {/* Self-custody identity actions (native only). */}
         {isNative && (
-          <Section title={t('vault.home.yourIdentity')} subtitle={t('vault.home.yourIdentitySubtitle')}>
-            <GroupedList>
-              <ListRow
-                icon="shield-key"
-                title={t('home.identity.selfCustody')}
-                subtitle={t('home.identity.selfCustodySubtitle')}
-                onPress={handleAboutIdentity}
-                showChevron
-              />
-              <ListRow
-                icon="key-variant"
-                title={t('home.identity.publicKey')}
-                subtitle={t('home.identity.publicKeySubtitle')}
-                onPress={handleAboutIdentity}
-                showChevron
-              />
-            </GroupedList>
-          </Section>
+          <SettingsListGroup
+            title={t('vault.home.yourIdentity')}
+            footer={t('vault.home.yourIdentitySubtitle')}
+          >
+            <SettingsListItem
+              icon={<MaterialCommunityIcons name="shield-key" size={22} color={colors.text} />}
+              title={t('home.identity.selfCustody')}
+              description={t('home.identity.selfCustodySubtitle')}
+              onPress={handleAboutIdentity}
+            />
+            <SettingsListItem
+              icon={<MaterialCommunityIcons name="key-variant" size={22} color={colors.text} />}
+              title={t('home.identity.publicKey')}
+              description={t('home.identity.publicKeySubtitle')}
+              onPress={handleAboutIdentity}
+            />
+          </SettingsListGroup>
         )}
 
         {/* Real-life attestation — A shows a QR for B to confirm they met IRL */}
-        <Section title={t('civic.attest.section.title')} subtitle={t('civic.attest.section.subtitle')}>
-          <GroupedList>
-            <ListRow
-              icon="handshake-outline"
-              title={t('civic.attest.section.action')}
-              subtitle={t('civic.attest.section.actionSubtitle')}
-              onPress={handleAttestMe}
-              showChevron
-            />
-          </GroupedList>
-        </Section>
+        <SettingsListGroup
+          title={t('civic.attest.section.title')}
+          footer={t('civic.attest.section.subtitle')}
+        >
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="handshake-outline" size={22} color={colors.text} />}
+            title={t('civic.attest.section.action')}
+            description={t('civic.attest.section.actionSubtitle')}
+            onPress={handleAttestMe}
+          />
+        </SettingsListGroup>
 
         {did && (
-          <Section title={t('civic.id.didLabel')}>
-            <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
-              {did}
-            </ThemedText>
-          </Section>
+          <View style={styles.gutter}>
+            <Section title={t('civic.id.didLabel')}>
+              <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
+                {did}
+              </ThemedText>
+            </Section>
+          </View>
         )}
 
         {state === 'pending' && (
-          <Callout tone="warning" icon="clock-outline">
-            {t('civic.id.pendingNote')}
-          </Callout>
+          <View style={styles.gutter}>
+            <Callout tone="warning" icon="clock-outline">
+              {t('civic.id.pendingNote')}
+            </Callout>
+          </View>
         )}
       </Screen>
 
@@ -332,6 +338,8 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
+  flush: { paddingHorizontal: 0 },
+  gutter: { paddingHorizontal: 20 },
   hero: {
     alignItems: 'center',
     gap: 16,

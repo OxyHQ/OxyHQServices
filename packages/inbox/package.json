@@ -3,11 +3,11 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "RCT_METRO_PORT=8103 expo start",
     "build": "node scripts/export-web.js",
-    "web": "expo start --web",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "web": "RCT_METRO_PORT=8103 expo start --web",
+    "android": "RCT_METRO_PORT=8103 expo run:android",
+    "ios": "RCT_METRO_PORT=8103 expo run:ios",
     "lint": "expo lint",
     "reset-project": "node ./scripts/reset-project.js"
   },

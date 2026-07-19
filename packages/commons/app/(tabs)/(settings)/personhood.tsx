@@ -1,14 +1,13 @@
 import React, { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
   Screen,
   StackHeader,
-  Section,
-  GroupedList,
-  ListRow,
   Callout,
   CenteredState,
   PrimaryButton,
@@ -84,12 +83,13 @@ export default function PersonhoodScreen() {
 
     return (
       <>
-        {!isOnline && (
-          <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.personhood.offline')} />
-        )}
+        <View style={styles.topBlock}>
+          {!isOnline && (
+            <CivicBadge tone="neutral" icon="cloud-off-outline" label={t('civic.personhood.offline')} />
+          )}
 
-        {/* Verified / building hero — flat, no card. */}
-        <View style={styles.hero}>
+          {/* Verified / building hero — flat, no card. */}
+          <View style={styles.hero}>
           <CivicBadge
             emphasis
             tone={verified ? 'positive' : 'caution'}
@@ -122,82 +122,107 @@ export default function PersonhoodScreen() {
           </ThemedText>
         </View>
 
-        {status.sybilPenalty > 0 && (
-          <Callout tone="warning" icon="alert-octagon-outline">
-            {t('civic.personhood.penaltyNote')}
-          </Callout>
-        )}
+          {status.sybilPenalty > 0 && (
+            <Callout tone="warning" icon="alert-octagon-outline">
+              {t('civic.personhood.penaltyNote')}
+            </Callout>
+          )}
+        </View>
 
         {/* Signals */}
-        <Section title={t('civic.personhood.signals.title')} subtitle={t('civic.personhood.signals.subtitle')}>
-          <GroupedList>
-            <ListRow
-              icon="account-group-outline"
-              title={t('civic.personhood.signals.vouches')}
-              subtitle={t('civic.personhood.signals.vouchesDesc')}
-              value={t('civic.personhood.signals.vouchesCount', { count: status.vouchCount })}
-            />
-            <ListRow
-              icon="handshake-outline"
-              title={t('civic.personhood.signals.realLife')}
-              subtitle={t('civic.personhood.signals.realLifeDesc')}
-              value={t('civic.personhood.signals.realLifeCount', { count: status.realLifeCount })}
-            />
-            <ListRow
-              icon="fingerprint"
-              title={t('civic.personhood.signals.biometric')}
-              subtitle={t('civic.personhood.signals.biometricDesc')}
-              value={t(
-                status.biometricBound
-                  ? 'civic.personhood.signals.biometricBound'
-                  : 'civic.personhood.signals.biometricUnbound',
-              )}
-              valueColor={status.biometricBound ? colors.success : undefined}
-            />
-          </GroupedList>
-        </Section>
+        <SettingsListGroup
+          title={t('civic.personhood.signals.title')}
+          footer={t('civic.personhood.signals.subtitle')}
+        >
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="account-group-outline" size={22} color={colors.text} />}
+            title={t('civic.personhood.signals.vouches')}
+            description={t('civic.personhood.signals.vouchesDesc')}
+            value={t('civic.personhood.signals.vouchesCount', { count: status.vouchCount })}
+          />
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="handshake-outline" size={22} color={colors.text} />}
+            title={t('civic.personhood.signals.realLife')}
+            description={t('civic.personhood.signals.realLifeDesc')}
+            value={t('civic.personhood.signals.realLifeCount', { count: status.realLifeCount })}
+          />
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="fingerprint" size={22} color={colors.text} />}
+            title={t('civic.personhood.signals.biometric')}
+            description={t('civic.personhood.signals.biometricDesc')}
+            value={status.biometricBound ? undefined : t('civic.personhood.signals.biometricUnbound')}
+            rightElement={
+              status.biometricBound ? (
+                <ThemedText style={[styles.boundValue, { color: colors.success }]}>
+                  {t('civic.personhood.signals.biometricBound')}
+                </ThemedText>
+              ) : undefined
+            }
+          />
+        </SettingsListGroup>
 
         {/* How to increase it */}
-        <Section title={t('civic.personhood.improve.title')} subtitle={t('civic.personhood.improve.subtitle')}>
-          <GroupedList>
-            <ListRow
-              icon="account-multiple-check-outline"
-              title={t('civic.personhood.improve.getVouched')}
-              subtitle={t('civic.personhood.improve.getVouchedDesc')}
-            />
-            <ListRow
-              icon="handshake-outline"
-              title={t('civic.personhood.improve.doRealLife')}
-              subtitle={t('civic.personhood.improve.doRealLifeDesc')}
-            />
-            <ListRow
-              icon="fingerprint"
-              title={t('civic.personhood.improve.bindBiometric')}
-              subtitle={t('civic.personhood.improve.bindBiometricDesc')}
-            />
-          </GroupedList>
-        </Section>
+        <SettingsListGroup
+          title={t('civic.personhood.improve.title')}
+          footer={t('civic.personhood.improve.subtitle')}
+        >
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="account-multiple-check-outline" size={22} color={colors.text} />}
+            title={t('civic.personhood.improve.getVouched')}
+            description={t('civic.personhood.improve.getVouchedDesc')}
+            showChevron={false}
+          />
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="handshake-outline" size={22} color={colors.text} />}
+            title={t('civic.personhood.improve.doRealLife')}
+            description={t('civic.personhood.improve.doRealLifeDesc')}
+            showChevron={false}
+          />
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="fingerprint" size={22} color={colors.text} />}
+            title={t('civic.personhood.improve.bindBiometric')}
+            description={t('civic.personhood.improve.bindBiometricDesc')}
+            showChevron={false}
+          />
+        </SettingsListGroup>
 
-        <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
-          {t('civic.personhood.footnote')}
-        </ThemedText>
+        <View style={styles.gutter}>
+          <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
+            {t('civic.personhood.footnote')}
+          </ThemedText>
+        </View>
       </>
     );
   };
 
   return (
-    <Screen gap={24}>
-      <StackHeader
-        title={t('civic.personhood.title')}
-        onBack={handleClose}
-        backAccessibilityLabel={t('common.back')}
-      />
+    // Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
+    // header and custom hero content are padded to align with it.
+    <Screen contentStyle={styles.flush} gap={16}>
+      <View style={styles.header}>
+        <StackHeader
+          title={t('civic.personhood.title')}
+          onBack={handleClose}
+          backAccessibilityLabel={t('common.back')}
+        />
+      </View>
       {renderBody()}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  flush: { paddingHorizontal: 0 },
+  header: { paddingHorizontal: 20, marginBottom: 16 },
+  gutter: { paddingHorizontal: 20 },
+  topBlock: {
+    paddingHorizontal: 20,
+    gap: 18,
+  },
+  boundValue: {
+    fontSize: 13,
+    lineHeight: 17,
+  },
   action: {
     alignItems: 'center',
     marginTop: 4,

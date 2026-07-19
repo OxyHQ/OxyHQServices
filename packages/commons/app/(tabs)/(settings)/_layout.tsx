@@ -13,6 +13,7 @@ export default function SettingsTabLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="about-identity" />
+      <Stack.Screen name="backup-recovery" />
       <Stack.Screen name="create-backup" />
       <Stack.Screen name="rotate-key" />
       <Stack.Screen name="recovery-phrase" />
