@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyManager, readIdentityMarker } from '@oxyhq/core';
+import { KeyManager, readIdentityMarker, type IdentityMarker, type IdentityRecoveryResult } from '@oxyhq/core';
 import { alert } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { Button } from '@/components/ui';
@@ -42,7 +42,7 @@ export default function RecoverIdentityScreen() {
   // The marker records the PUBLIC key of the lost identity — shown so the user
   // can recognize which account is being recovered. Read once; never changes
   // while this screen is mounted.
-  const markerQuery = useQuery({
+  const markerQuery = useQuery<IdentityMarker | null>({
     queryKey: ['recover-identity', 'marker'],
     queryFn: readIdentityMarker,
     staleTime: Infinity,
@@ -54,7 +54,7 @@ export default function RecoverIdentityScreen() {
     queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
   }, [queryClient]);
 
-  const recovery = useMutation({
+  const recovery = useMutation<IdentityRecoveryResult, Error>({
     mutationFn: () => KeyManager.attemptIdentityRecovery(),
     onSuccess: (result) => {
       if (result.recovered) {

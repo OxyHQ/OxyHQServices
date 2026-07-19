@@ -17,6 +17,10 @@ const getIdentityStatusMock = jest.fn<Promise<IdentityStatus>, [unknown?]>();
 const readIdentityMarkerMock = jest.fn();
 const generateMock = jest.fn();
 const signInMock = jest.fn();
+const importKeyPairMock = jest.fn();
+const derivePublicKeyMock = jest.fn();
+const isValidPrivateKeyMock = jest.fn();
+const deleteRecoveryMnemonicMock = jest.fn();
 
 jest.mock('@oxyhq/core', () => {
   const actual = jest.requireActual('@oxyhq/core');
@@ -25,6 +29,11 @@ jest.mock('@oxyhq/core', () => {
     KeyManager: {
       ...actual.KeyManager,
       getIdentityStatus: (opts?: unknown) => getIdentityStatusMock(opts),
+      importKeyPair: (privateKey: string, options?: { overwrite?: boolean }) =>
+        importKeyPairMock(privateKey, options),
+      derivePublicKey: (privateKey: string) => derivePublicKeyMock(privateKey),
+      isValidPrivateKey: (privateKey: string) => isValidPrivateKeyMock(privateKey),
+      deleteRecoveryMnemonic: () => deleteRecoveryMnemonicMock(),
       // Quiet the on-mount integrity/backup effect (not under test here).
       hasIdentity: jest.fn(async () => false),
       restoreIdentityFromBackup: jest.fn(async () => false),
@@ -61,6 +70,7 @@ jest.mock('@/hooks/identity/identityStore', () => {
     persistIdentitySyncState: jest.fn(async () => undefined),
     getIdentitySyncStateFromStorage: jest.fn(async () => false),
     persistOnboardingComplete: jest.fn(async () => undefined),
+    persistOnboardingFlow: jest.fn(async () => undefined),
   };
 });
 
@@ -90,6 +100,26 @@ async function callCreate(
   return { result, error };
 }
 
+async function callImportPrivateKey(
+  importFn: (privateKeyHex: string, opts?: { skipSync?: boolean }) => Promise<unknown>,
+  privateKeyHex: string,
+  opts?: { skipSync?: boolean },
+): Promise<{ result?: unknown; error?: unknown }> {
+  let result: unknown;
+  let error: unknown;
+  await act(async () => {
+    try {
+      result = await importFn(privateKeyHex, opts);
+    } catch (e) {
+      error = e;
+    }
+  });
+  return { result, error };
+}
+
+const VALID_PRIVATE_KEY = '1'.repeat(64);
+const VALID_PUBLIC_KEY = 'pub-from-key';
+
 describe('useIdentity — auto-create interlock', () => {
   beforeEach(() => {
     __resetOxyState();
@@ -98,6 +128,13 @@ describe('useIdentity — auto-create interlock', () => {
     readIdentityMarkerMock.mockReset().mockResolvedValue(null);
     generateMock.mockReset();
     signInMock.mockReset();
+    importKeyPairMock.mockReset();
+    derivePublicKeyMock.mockReset();
+    isValidPrivateKeyMock.mockReset();
+    deleteRecoveryMnemonicMock.mockReset().mockResolvedValue(undefined);
+    isValidPrivateKeyMock.mockReturnValue(true);
+    derivePublicKeyMock.mockReturnValue(VALID_PUBLIC_KEY);
+    importKeyPairMock.mockResolvedValue(VALID_PUBLIC_KEY);
   });
 
   it('refuses with IdentityAlreadyExistsError when the verdict is present', async () => {
@@ -155,5 +192,55 @@ describe('useIdentity — auto-create interlock', () => {
     expect(created).toEqual({ recoveryPhrase: ['a', 'b', 'c'], synced: false });
     expect(getIdentityStatusMock).toHaveBeenCalledWith({ bypassCache: true });
     expect(generateMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useIdentity — importIdentityFromPrivateKey interlock', () => {
+  beforeEach(() => {
+    __resetOxyState();
+    __setOxyState({ oxyServices: { register: jest.fn() }, isAuthenticated: false });
+    getIdentityStatusMock.mockReset();
+    readIdentityMarkerMock.mockReset().mockResolvedValue(null);
+    signInMock.mockReset();
+    importKeyPairMock.mockReset().mockResolvedValue(VALID_PUBLIC_KEY);
+    derivePublicKeyMock.mockReset().mockReturnValue(VALID_PUBLIC_KEY);
+    isValidPrivateKeyMock.mockReset().mockReturnValue(true);
+    deleteRecoveryMnemonicMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('refuses with IdentityAlreadyExistsError when a different identity is present', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'present', publicKey: 'other-pub' });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, VALID_PRIVATE_KEY);
+    expect(error).toBeInstanceOf(IdentityAlreadyExistsError);
+    expect(importKeyPairMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses with IdentityMayExistError when a different lost identity is marked', async () => {
+    getIdentityStatusMock.mockResolvedValue({
+      state: 'lost',
+      marker: { v: 1, publicKey: 'other-pub', createdAt: 1, origin: 'create' },
+    });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, VALID_PRIVATE_KEY);
+    expect(error).toBeInstanceOf(IdentityMayExistError);
+    expect(importKeyPairMock).not.toHaveBeenCalled();
+  });
+
+  it('imports on a fresh device and clears any stale mnemonic', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'absent' });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { result: imported, error } = await callImportPrivateKey(
+      result.current.importIdentityFromPrivateKey,
+      VALID_PRIVATE_KEY,
+      { skipSync: true },
+    );
+    expect(error).toBeUndefined();
+    expect(imported).toEqual({ synced: false });
+    expect(importKeyPairMock).toHaveBeenCalledWith(VALID_PRIVATE_KEY, undefined);
+    expect(deleteRecoveryMnemonicMock).toHaveBeenCalledTimes(1);
   });
 });

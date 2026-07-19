@@ -4,18 +4,32 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
-import { RecoveryPhraseService, IdentityAlreadyExistsError, IdentityUnavailableError, handleHttpError } from '@oxyhq/core';
+import {
+  KeyManager,
+  RecoveryPhraseService,
+  IdentityAlreadyExistsError,
+  IdentityUnavailableError,
+  handleHttpError,
+} from '@oxyhq/core';
 import { alert } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { PhraseInputGrid } from '@/components/auth/PhraseInputGrid';
 import { useTranslation } from '@/lib/i18n';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useIdentityStore } from '@/hooks/identity/identityStore';
+import {
+  useIdentityStore,
+  persistOnboardingComplete,
+  persistOnboardingFlow,
+} from '@/hooks/identity/identityStore';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
-import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from '@/hooks/useOnboardingStatus';
+import {
+  ONBOARDING_IDENTITY_QUERY_KEY,
+  ONBOARDING_COMPLETE_QUERY_KEY,
+  ONBOARDING_FLOW_QUERY_KEY,
+} from '@/hooks/useOnboardingStatus';
 
 /**
  * Restore identity from the user's encrypted off-device backup.
@@ -73,6 +87,20 @@ export default function RestoreFromBackupScreen() {
       try {
         await oxyServices.restoreFromEncryptedBackup(phrase, { overwrite });
 
+        // Mirror importIdentity: reset the local onboarding milestone for the
+        // freshly-restored identity so a stale flag from a prior account cannot
+        // skip the username wizard.
+        await persistOnboardingComplete(false);
+        await persistOnboardingFlow('import');
+
+        // Persist the phrase the user just typed so Settings re-reveal matches
+        // the restored identity (especially after an overwrite).
+        try {
+          await KeyManager.storeRecoveryMnemonic(phrase);
+        } catch (mnemonicError) {
+          console.warn('[restore-from-backup] Failed to persist recovery mnemonic for re-reveal', mnemonicError);
+        }
+
         // The user typed the phrase by hand, so they unambiguously already hold
         // it — don't nag them to back it up on the Security screen.
         setRecoveryPhraseAcknowledgedPersisted(true);
@@ -81,6 +109,7 @@ export default function RestoreFromBackupScreen() {
         // onboarding probes so routing reflects the restored identity.
         queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
 
         // Establish a session with the restored key (register-if-needed + sign
         // in). If the network is unavailable, defer to the notifications step —

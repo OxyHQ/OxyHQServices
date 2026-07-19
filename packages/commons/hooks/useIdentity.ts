@@ -466,6 +466,14 @@ export const useIdentity = (): UseIdentityResult => {
         // persist for re-reveal — the user recovered from a raw key export.
         const publicKey = await KeyManager.importKeyPair(normalizedKey);
 
+        // No mnemonic to store for a raw-key import — clear any stale phrase
+        // left from a prior identity so Settings re-reveal reports none.
+        try {
+          await KeyManager.deleteRecoveryMnemonic();
+        } catch (mnemonicError) {
+          console.warn('[useIdentity] Failed to clear stale recovery mnemonic after private-key import', mnemonicError);
+        }
+
         setSynced(false);
         await persistIdentitySyncState(false);
         await persistOnboardingComplete(false);
@@ -610,7 +618,7 @@ export const useIdentity = (): UseIdentityResult => {
     getPublicKey,
     isIdentitySynced,
     identitySyncState: {
-      isSynced: isSynced ?? true,
+      isSynced: isSynced ?? false,
       isSyncing: isSyncing ?? false,
     },
   };
