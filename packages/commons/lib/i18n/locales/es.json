@@ -961,6 +961,7 @@
     "idCard": "Tarjeta de identidad",
     "copyPublicKey": "Copiar clave pública",
     "publicKeyCopied": "Clave pública copiada al portapapeles",
+    "didCopied": "ID descentralizado copiado al portapapeles",
     "copyFailed": "No se pudo copiar",
     "importantNotice": "Tu frase de recuperación es la ÚNICA forma de restaurar tu identidad si pierdes el acceso a este dispositivo. Oxy no puede restablecer ni recuperar tu cuenta. Guarda tu frase de recuperación en un lugar seguro y nunca la compartas.",
     "identifiersTitle": "Identificadores",

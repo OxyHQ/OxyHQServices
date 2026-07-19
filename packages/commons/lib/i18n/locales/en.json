@@ -961,6 +961,7 @@
     "idCard": "ID Card",
     "copyPublicKey": "Copy Public Key",
     "publicKeyCopied": "Public key copied to clipboard",
+    "didCopied": "Decentralized ID copied to clipboard",
     "copyFailed": "Failed to copy",
     "importantNotice": "Your recovery phrase is the ONLY way to restore your identity if you lose access to this device. Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.",
     "identifiersTitle": "Identifiers",

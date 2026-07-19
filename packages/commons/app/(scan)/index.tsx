@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -47,6 +47,15 @@ export default function ScanSignInScreen() {
   const attest = useAttestFlow();
   // True while B's device biometric gate is running (before the signed submit).
   const [confirming, setConfirming] = useState(false);
+
+  // Opening the scanner starts a fresh session: clear any stale attest outcome
+  // from an earlier scan so a leftover confirmation/success/error card can't
+  // surface over this live camera (the review sheet is shown whenever the shared
+  // flow is non-idle).
+  const resetAttest = attest.reset;
+  useEffect(() => {
+    resetAttest();
+  }, [resetAttest]);
 
   // Shared routing for anything `parseScan` can resolve, regardless of
   // whether the raw string came from the camera or an NFC read.

@@ -216,7 +216,7 @@ export default function AboutIdentityScreen() {
             title={t('aboutIdentity.didRow')}
             rightElement={copyValue(shorten(did, 6, 4))}
             showChevron={false}
-            onPress={() => handleCopy(did, 'aboutIdentity.publicKeyCopied')}
+            onPress={() => handleCopy(did, 'aboutIdentity.didCopied')}
           />
         )}
       </SettingsListGroup>
