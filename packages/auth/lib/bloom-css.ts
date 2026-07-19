@@ -10,11 +10,8 @@
  *     win over `"base"` because they're appended later. Removing the scope
  *     element via `restoreBasePreset(scope)` lets the base preset bleed through.
  */
-import {
-    APP_COLOR_PRESETS,
-    APP_COLOR_NAMES,
-    type AppColorName,
-} from "@oxyhq/bloom/color-presets"
+import { APP_COLOR_NAMES, type AppColorName } from "@oxyhq/bloom/color-presets"
+import { getPresetVars } from "@oxyhq/bloom/preset-vars"
 
 const BASE_SCOPE = "base"
 const STYLE_ID_PREFIX = "bloom-color-preset-"
@@ -26,14 +23,16 @@ function styleIdFor(scope: string): string {
 }
 
 function presetToCSS(vars: Record<string, string>): string {
+    // `getPresetVars` already yields full `rgb(...)` colours (the engine
+    // resolves every role), so each value is a complete CSS colour — no
+    // `hsl(...)` wrapping.
     return Object.entries(vars)
-        .map(([key, value]) => `  ${key}: hsl(${value});`)
+        .map(([key, value]) => `  ${key}: ${value};`)
         .join("\n")
 }
 
 function presetToScopedCSS(preset: AppColorName): string {
-    const p = APP_COLOR_PRESETS[preset]
-    return `:root {\n${presetToCSS(p.light)}\n}\n.dark {\n${presetToCSS(p.dark)}\n}`
+    return `:root {\n${presetToCSS(getPresetVars(preset, "light"))}\n}\n.dark {\n${presetToCSS(getPresetVars(preset, "dark"))}\n}`
 }
 
 /**
