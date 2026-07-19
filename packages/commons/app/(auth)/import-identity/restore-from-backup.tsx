@@ -21,6 +21,7 @@ import {
   useIdentityStore,
   persistOnboardingComplete,
   persistOnboardingFlow,
+  persistIdentitySyncState,
 } from '@/hooks/identity/identityStore';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
@@ -50,12 +51,13 @@ export default function RestoreFromBackupScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-  const { oxyServices } = useOxy();
+  const { oxyServices, clearSessionState } = useOxy();
   const { syncIdentity } = useIdentity();
   const queryClient = useQueryClient();
   const setRecoveryPhraseAcknowledgedPersisted = useIdentityStore(
     (state) => state.setRecoveryPhraseAcknowledged,
   );
+  const setSynced = useIdentityStore((state) => state.setSynced);
 
   const [phraseWords, setPhraseWords] = useState<string[]>(
     () => new Array(RECOVERY_PHRASE_LENGTH).fill(''),
@@ -85,6 +87,12 @@ export default function RestoreFromBackupScreen() {
       setError(null);
       setIsLoading(true);
       try {
+        // Overwrite replaces local keys — clear any stale session first so a
+        // failed sync cannot leave the user authenticated as the OLD account.
+        if (overwrite) {
+          await clearSessionState();
+        }
+
         await oxyServices.restoreFromEncryptedBackup(phrase, { overwrite });
 
         // Mirror importIdentity: reset the local onboarding milestone for the
@@ -92,6 +100,8 @@ export default function RestoreFromBackupScreen() {
         // skip the username wizard.
         await persistOnboardingComplete(false);
         await persistOnboardingFlow('import');
+        setSynced(false);
+        await persistIdentitySyncState(false);
 
         // Persist the phrase the user just typed so Settings re-reveal matches
         // the restored identity (especially after an overwrite).
@@ -111,21 +121,22 @@ export default function RestoreFromBackupScreen() {
         queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
         queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
 
-        // Establish a session with the restored key (register-if-needed + sign
-        // in). If the network is unavailable, defer to the notifications step —
-        // the same offline fallback the manual import path uses.
-        let synced = true;
-        try {
-          await syncIdentity();
-        } catch {
-          synced = false;
+        const offline = await checkIfOffline();
+        if (offline) {
+          router.replace('/(auth)/import-identity/notifications');
+          return;
         }
 
-        router.replace(
-          synced
-            ? '/(auth)/import-identity/username'
-            : '/(auth)/import-identity/notifications',
-        );
+        // Online: establish a session with the restored key (register-if-needed +
+        // sign in). Do not advance on sync failure — username would call
+        // authenticated APIs with no session (same guard as the phrase importer).
+        try {
+          await syncIdentity();
+          await KeyManager.migrateToSharedIdentity();
+          router.replace('/(auth)/import-identity/username');
+        } catch {
+          setError(t('restoreBackup.syncFailed'));
+        }
       } catch (err: unknown) {
         if (err instanceof IdentityAlreadyExistsError) {
           // A different identity is on this device. Confirm before clobbering —
@@ -161,7 +172,7 @@ export default function RestoreFromBackupScreen() {
         setIsLoading(false);
       }
     },
-    [oxyServices, syncIdentity, queryClient, router, setRecoveryPhraseAcknowledgedPersisted, t],
+    [oxyServices, clearSessionState, syncIdentity, queryClient, router, setRecoveryPhraseAcknowledgedPersisted, setSynced, t],
   );
 
   const handleRestore = useCallback(async () => {

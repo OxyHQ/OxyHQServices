@@ -1038,6 +1038,7 @@
     "restoring": "Restaurando…",
     "failed": "No pudimos restaurar desde la copia de seguridad. Revisa tu frase e inténtalo de nuevo.",
     "offline": "Estás sin conexión. Conéctate a internet para restaurar desde tu copia de seguridad cifrada.",
+    "syncFailed": "Tu identidad se restauró en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
     "overwriteTitle": "¿Reemplazar la identidad de este dispositivo?",
     "overwriteBody": "Ya existe una identidad diferente en este dispositivo. Restaurar la reemplazará. Asegúrate de haber guardado su frase de recuperación primero.",
     "overwriteConfirm": "Reemplazar y restaurar",

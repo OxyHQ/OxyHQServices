@@ -1038,6 +1038,7 @@
     "restoring": "Restoring…",
     "failed": "We couldn't restore from backup. Check your phrase and try again.",
     "offline": "You're offline. Connect to the internet to restore from your encrypted backup.",
+    "syncFailed": "Your identity was restored on this device, but we could not connect it to your account. Check your connection and try again.",
     "overwriteTitle": "Replace the identity on this device?",
     "overwriteBody": "A different identity already exists on this device. Restoring will replace it. Make sure you've saved its recovery phrase first.",
     "overwriteConfirm": "Replace and restore",

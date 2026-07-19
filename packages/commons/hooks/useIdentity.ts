@@ -342,6 +342,12 @@ export const useIdentity = (): UseIdentityResult => {
           // explicit "different identity" confirmation) is the correct path.
           throw new IdentityMayExistError(status.marker.publicKey);
         }
+        if (status.state === 'absent') {
+          const concurrentMarker = await readIdentityMarker();
+          if (concurrentMarker && concurrentMarker.publicKey !== incomingPublicKey) {
+            throw new IdentityMayExistError(concurrentMarker.publicKey);
+          }
+        }
 
         const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
 
@@ -460,6 +466,12 @@ export const useIdentity = (): UseIdentityResult => {
         }
         if (status.state === 'lost' && status.marker.publicKey !== incomingPublicKey) {
           throw new IdentityMayExistError(status.marker.publicKey);
+        }
+        if (status.state === 'absent') {
+          const concurrentMarker = await readIdentityMarker();
+          if (concurrentMarker && concurrentMarker.publicKey !== incomingPublicKey) {
+            throw new IdentityMayExistError(concurrentMarker.publicKey);
+          }
         }
 
         // Store the key directly. Unlike the phrase path there is NO mnemonic to

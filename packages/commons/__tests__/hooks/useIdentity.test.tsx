@@ -19,6 +19,8 @@ const generateMock = jest.fn();
 const signInMock = jest.fn();
 const importKeyPairMock = jest.fn();
 const derivePublicKeyMock = jest.fn();
+const derivePublicKeyFromPhraseMock = jest.fn();
+const restoreFromPhraseMock = jest.fn();
 const isValidPrivateKeyMock = jest.fn();
 const deleteRecoveryMnemonicMock = jest.fn();
 
@@ -46,6 +48,8 @@ jest.mock('@oxyhq/core', () => {
     RecoveryPhraseService: {
       ...actual.RecoveryPhraseService,
       generateIdentityWithRecovery: () => generateMock(),
+      derivePublicKeyFromPhrase: (phrase: string) => derivePublicKeyFromPhraseMock(phrase),
+      restoreFromPhrase: (phrase: string) => restoreFromPhraseMock(phrase),
     },
   };
 });
@@ -100,6 +104,23 @@ async function callCreate(
   return { result, error };
 }
 
+async function callImportPhrase(
+  importFn: (phrase: string, opts?: { skipSync?: boolean }) => Promise<unknown>,
+  phrase: string,
+  opts?: { skipSync?: boolean },
+): Promise<{ result?: unknown; error?: unknown }> {
+  let result: unknown;
+  let error: unknown;
+  await act(async () => {
+    try {
+      result = await importFn(phrase, opts);
+    } catch (e) {
+      error = e;
+    }
+  });
+  return { result, error };
+}
+
 async function callImportPrivateKey(
   importFn: (privateKeyHex: string, opts?: { skipSync?: boolean }) => Promise<unknown>,
   privateKeyHex: string,
@@ -130,6 +151,8 @@ describe('useIdentity — auto-create interlock', () => {
     signInMock.mockReset();
     importKeyPairMock.mockReset();
     derivePublicKeyMock.mockReset();
+    derivePublicKeyFromPhraseMock.mockReset();
+    restoreFromPhraseMock.mockReset();
     isValidPrivateKeyMock.mockReset();
     deleteRecoveryMnemonicMock.mockReset().mockResolvedValue(undefined);
     isValidPrivateKeyMock.mockReturnValue(true);
@@ -195,6 +218,30 @@ describe('useIdentity — auto-create interlock', () => {
   });
 });
 
+describe('useIdentity — importIdentity interlock', () => {
+  const VALID_PHRASE = 'word '.repeat(12).trim();
+
+  beforeEach(() => {
+    __resetOxyState();
+    __setOxyState({ oxyServices: { register: jest.fn() }, isAuthenticated: false });
+    getIdentityStatusMock.mockReset();
+    readIdentityMarkerMock.mockReset().mockResolvedValue(null);
+    signInMock.mockReset();
+    derivePublicKeyFromPhraseMock.mockReset().mockResolvedValue(VALID_PUBLIC_KEY);
+    restoreFromPhraseMock.mockReset().mockResolvedValue(VALID_PUBLIC_KEY);
+  });
+
+  it('refuses with IdentityMayExistError when a marker appears concurrently after an absent read', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'absent' });
+    readIdentityMarkerMock.mockResolvedValue({ v: 1, publicKey: 'other-pub', createdAt: 1, origin: 'create' });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPhrase(result.current.importIdentity, VALID_PHRASE);
+    expect(error).toBeInstanceOf(IdentityMayExistError);
+    expect(restoreFromPhraseMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('useIdentity — importIdentityFromPrivateKey interlock', () => {
   beforeEach(() => {
     __resetOxyState();
@@ -222,6 +269,16 @@ describe('useIdentity — importIdentityFromPrivateKey interlock', () => {
       state: 'lost',
       marker: { v: 1, publicKey: 'other-pub', createdAt: 1, origin: 'create' },
     });
+    const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
+
+    const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, VALID_PRIVATE_KEY);
+    expect(error).toBeInstanceOf(IdentityMayExistError);
+    expect(importKeyPairMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses with IdentityMayExistError when a marker appears concurrently after an absent read', async () => {
+    getIdentityStatusMock.mockResolvedValue({ state: 'absent' });
+    readIdentityMarkerMock.mockResolvedValue({ v: 1, publicKey: 'other-pub', createdAt: 1, origin: 'create' });
     const { result } = renderHook(() => useIdentity(), { wrapper: createWrapper() });
 
     const { error } = await callImportPrivateKey(result.current.importIdentityFromPrivateKey, VALID_PRIVATE_KEY);
