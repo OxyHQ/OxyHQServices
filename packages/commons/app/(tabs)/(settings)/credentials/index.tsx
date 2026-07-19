@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import type { VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, StackHeader, Section, GroupedList, CenteredState } from '@/components/ui';
+import { Screen, StackHeader, Section, GroupedList, CenteredState, SessionGate } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useMyCredentials } from '@/hooks/useCredentials';
@@ -137,7 +137,7 @@ export default function CredentialsScreen() {
         onBack={handleBack}
         backAccessibilityLabel={t('common.back')}
       />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

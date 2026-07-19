@@ -21,11 +21,15 @@ import { attestErrorCode, type AttestErrorCode } from '@/lib/civic/civic-errors'
 
 /**
  *   idle       → no attestation in flight (nothing scanned yet / after reset)
- *   submitting → payload received; signing + submitting automatically
+ *   reviewing  → payload parsed + subject resolving; B reviews A's card before
+ *                signing (the confirm-before-submit lane — camera/NFC on the
+ *                scanner screen). Nothing is signed until `confirm`.
+ *   submitting → signing + submitting (either the auto lane's `submit` or the
+ *                reviewed lane's `confirm`)
  *   done       → accepted (points awarded to A)
  *   error      → rejected / failed (see `errorCode`)
  */
-export type AttestFlowStatus = 'idle' | 'submitting' | 'done' | 'error';
+export type AttestFlowStatus = 'idle' | 'reviewing' | 'submitting' | 'done' | 'error';
 
 /** The fields the scanner (B) carries over from a parsed attest payload. */
 export interface AttestSubmitParams {
@@ -48,6 +52,11 @@ export interface AttestFlowState {
   result: RealLifeAttestationResult | null;
   /** Classified rejection code for the `error` status (drives friendly copy). */
   errorCode: AttestErrorCode | null;
+  /**
+   * The parsed payload held between `prepare` and `confirm` on the reviewed
+   * lane. Non-null only while `status === 'reviewing'`; cleared on confirm/reset.
+   */
+  pendingParams: AttestSubmitParams | null;
 }
 
 export interface AttestFlowStore extends AttestFlowState {
@@ -58,6 +67,19 @@ export interface AttestFlowStore extends AttestFlowState {
    * scans a fresh payload instead. Enters `submitting` synchronously.
    */
   submit: (params: AttestSubmitParams, oxyServices: AttestSubmitServices) => Promise<void>;
+  /**
+   * Reviewed lane, step 1: hold a freshly parsed payload and resolve A's card
+   * (via `subjectUserId`) WITHOUT signing, so B can review before committing.
+   * Enters `reviewing` synchronously (or `error` if the DID can't resolve).
+   */
+  prepare: (params: AttestSubmitParams) => void;
+  /**
+   * Reviewed lane, step 2: sign + submit the held payload after B confirms
+   * (with `biometricOk` reflecting a passed device gate). No-op unless a
+   * payload is currently held (`status === 'reviewing'`). Same one-shot,
+   * never-auto-retried semantics as {@link AttestFlowStore.submit}.
+   */
+  confirm: (oxyServices: AttestSubmitServices, biometricOk: boolean) => Promise<void>;
   /** Return to `idle` and abandon any in-flight submission's outcome. */
   reset: () => void;
 }
@@ -68,31 +90,57 @@ const defaultState: AttestFlowState = {
   subjectUserId: null,
   result: null,
   errorCode: null,
+  pendingParams: null,
 };
 
-export const useAttestStore = create<AttestFlowStore>((set) => {
+export const useAttestStore = create<AttestFlowStore>((set, get) => {
   // Monotonic id of the CURRENT submission. A completion (success or failure)
   // applies only while it is still current, so a newer payload or a reset is
   // never clobbered by a stale in-flight response — each payload's flow is
   // independent.
   let submission = 0;
 
+  // Sign + submit a payload, transitioning submitting → done/error. Shared by
+  // the auto lane (`submit`) and the reviewed lane (`confirm`); `biometricOk`
+  // records whether a device gate was passed for this attestation.
+  const runSubmit = async (
+    params: AttestSubmitParams,
+    oxyServices: AttestSubmitServices,
+    biometricOk: boolean,
+  ) => {
+    const current = ++submission;
+    try {
+      const result = await oxyServices.submitRealLifeAttestation({
+        subjectDid: params.subjectDid,
+        context: params.context,
+        nonce: params.nonce,
+        exp: params.exp,
+        biometricOk,
+      });
+      if (current !== submission) return;
+      set({ status: 'done', result, errorCode: null, pendingParams: null });
+    } catch (error) {
+      if (current !== submission) return;
+      set({ status: 'error', result: null, errorCode: attestErrorCode(error), pendingParams: null });
+    }
+  };
+
   return {
     ...defaultState,
 
     submit: async (params, oxyServices) => {
-      const current = ++submission;
-
       const subjectUserId = userIdFromDid(params.subjectDid);
       if (!subjectUserId) {
         // The DID in the payload cannot resolve to an account — surface the
         // same friendly copy an unknown subject gets, without burning a request.
+        submission++;
         set({
           status: 'error',
           subjectDid: params.subjectDid,
           subjectUserId: null,
           result: null,
           errorCode: 'subject_not_found',
+          pendingParams: null,
         });
         return;
       }
@@ -103,22 +151,46 @@ export const useAttestStore = create<AttestFlowStore>((set) => {
         subjectUserId,
         result: null,
         errorCode: null,
+        pendingParams: null,
       });
 
-      try {
-        const result = await oxyServices.submitRealLifeAttestation({
+      await runSubmit(params, oxyServices, false);
+    },
+
+    prepare: (params) => {
+      const subjectUserId = userIdFromDid(params.subjectDid);
+      if (!subjectUserId) {
+        submission++;
+        set({
+          status: 'error',
           subjectDid: params.subjectDid,
-          context: params.context,
-          nonce: params.nonce,
-          exp: params.exp,
-          biometricOk: false,
+          subjectUserId: null,
+          result: null,
+          errorCode: 'subject_not_found',
+          pendingParams: null,
         });
-        if (current !== submission) return;
-        set({ status: 'done', result, errorCode: null });
-      } catch (error) {
-        if (current !== submission) return;
-        set({ status: 'error', result: null, errorCode: attestErrorCode(error) });
+        return;
       }
+
+      // Bump the counter so any in-flight submit from a prior payload can't land
+      // its result over this freshly-held review.
+      submission++;
+      set({
+        status: 'reviewing',
+        subjectDid: params.subjectDid,
+        subjectUserId,
+        result: null,
+        errorCode: null,
+        pendingParams: params,
+      });
+    },
+
+    confirm: async (oxyServices, biometricOk) => {
+      const { status, pendingParams } = get();
+      if (status !== 'reviewing' || !pendingParams) return;
+
+      set({ status: 'submitting', result: null, errorCode: null });
+      await runSubmit(pendingParams, oxyServices, biometricOk);
     },
 
     reset: () => {

@@ -86,6 +86,10 @@ const setLanguage = jest.fn(async (locale: string): Promise<void> => {
   __setOxyState({ currentLanguage: locale, currentLanguages: [locale] });
 });
 
+// Imperative sign-in entry — the real `useOxy()` exposes this to open the shared
+// account/sign-in dialog. Stubbed so consumers can trigger it and tests assert it.
+const openAccountDialog = jest.fn();
+
 // Account writer: `{ languages }` sets the ordered account locales; the derived
 // `currentLanguage` then follows `languages[0]`.
 const updateProfileMutateAsync = jest.fn(
@@ -101,6 +105,7 @@ export function __resetOxyState(): void {
   state = makeDefaultState();
   setLanguage.mockClear();
   updateProfileMutateAsync.mockClear();
+  openAccountDialog.mockClear();
   emit();
   oxyEventHandlers.clear();
 }
@@ -111,6 +116,11 @@ export function __getLanguageMocks(): {
   updateProfileMutateAsync: jest.Mock;
 } {
   return { setLanguage, updateProfileMutateAsync };
+}
+
+/** Exposes the imperative sign-in dialog spy for call assertions. */
+export function __getAuthDialogMock(): jest.Mock {
+  return openAccountDialog;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -124,9 +134,12 @@ function getSnapshot(): MockOxyState {
   return state;
 }
 
-export const useOxy = (): MockOxyState & { setLanguage: jest.Mock } => {
+export const useOxy = (): MockOxyState & {
+  setLanguage: jest.Mock;
+  openAccountDialog: jest.Mock;
+} => {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return { ...snapshot, setLanguage };
+  return { ...snapshot, setLanguage, openAccountDialog };
 };
 
 export function useUpdateProfile(): { mutateAsync: jest.Mock; isPending: boolean } {

@@ -199,6 +199,49 @@ describe('attestStore', () => {
     expect(useAttestStore.getState().status).toBe('idle');
     expect(useAttestStore.getState().result).toBeNull();
   });
+
+  it('prepare holds the payload in reviewing without signing', () => {
+    useAttestStore.getState().prepare(PARAMS);
+
+    const state = useAttestStore.getState();
+    expect(state.status).toBe('reviewing');
+    expect(state.subjectUserId).toBe('subjectUser');
+    expect(state.pendingParams).toEqual(PARAMS);
+    expect(state.result).toBeNull();
+  });
+
+  it('prepare surfaces subject_not_found for an unresolvable DID', () => {
+    useAttestStore.getState().prepare({ ...PARAMS, subjectDid: 'not-a-did' });
+
+    const state = useAttestStore.getState();
+    expect(state.status).toBe('error');
+    expect(state.errorCode).toBe('subject_not_found');
+    expect(state.pendingParams).toBeNull();
+  });
+
+  it('confirm signs the held payload with biometricOk and reaches done', async () => {
+    const services = { submitRealLifeAttestation: jest.fn(async () => RESULT) };
+
+    useAttestStore.getState().prepare(PARAMS);
+    await useAttestStore.getState().confirm(services, true);
+
+    const state = useAttestStore.getState();
+    expect(state.status).toBe('done');
+    expect(state.result?.points).toBe(25);
+    expect(state.pendingParams).toBeNull();
+    expect(services.submitRealLifeAttestation).toHaveBeenCalledWith(
+      expect.objectContaining({ nonce: 'nonce-1', biometricOk: true }),
+    );
+  });
+
+  it('confirm is a no-op when nothing is held for review', async () => {
+    const services = { submitRealLifeAttestation: jest.fn(async () => RESULT) };
+
+    await useAttestStore.getState().confirm(services, true);
+
+    expect(useAttestStore.getState().status).toBe('idle');
+    expect(services.submitRealLifeAttestation).not.toHaveBeenCalled();
+  });
 });
 
 describe('useAttestFlow', () => {
