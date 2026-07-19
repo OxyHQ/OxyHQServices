@@ -1430,6 +1430,17 @@
     },
     "attest": {
       "confirmed": "Verified in person",
+      "review": {
+        "title": "Did you meet this person?",
+        "resolving": "Resolving their identity…",
+        "submitting": "Signing your confirmation…",
+        "caution": "Only confirm if you truly met them in person — this affects their reputation.",
+        "confirm": "Confirm we met",
+        "unverified": "Unverified card",
+        "unresolvedTitle": "Couldn't identify this person",
+        "unresolvedBody": "We couldn't resolve the scanned code to an Oxy account. Ask them to show a fresh code and try again.",
+        "biometricReason": "Confirm you met this person in real life"
+      },
       "section": {
         "title": "Real-life confirmation",
         "subtitle": "The strongest reputation comes from people who met you in person.",

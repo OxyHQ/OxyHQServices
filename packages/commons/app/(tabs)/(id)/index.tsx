@@ -22,6 +22,7 @@ import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
 import { BackSide } from '@/components/OxyID/back-side';
 import { IdQrBack } from '@/components/civic/IdQrBack';
+import { AttestQrSheet } from '@/components/civic/AttestQrSheet';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
@@ -211,9 +212,10 @@ export default function IdScreen() {
     router.push('/(scan)');
   }, [router]);
 
-  const handleAttestMe = useCallback(() => {
-    router.push('/(tabs)/(id)/attest-me');
-  }, [router]);
+  // Show A's fresh attestation QR as a bottom sheet (over the ID tab) instead of
+  // pushing a dedicated screen — a counterparty scans it to confirm they met A.
+  const [qrSheetOpen, setQrSheetOpen] = useState(false);
+  const handleGetVerified = useCallback(() => setQrSheetOpen(true), []);
 
   const handleAboutIdentity = useCallback(() => {
     router.push('/(tabs)/(settings)/about-identity');
@@ -299,7 +301,7 @@ export default function IdScreen() {
             icon={<MaterialCommunityIcons name="handshake-outline" size={22} color={colors.text} />}
             title={t('civic.attest.section.action')}
             description={t('civic.attest.section.actionSubtitle')}
-            onPress={handleAttestMe}
+            onPress={handleGetVerified}
           />
         </SettingsListGroup>
 
@@ -330,6 +332,8 @@ export default function IdScreen() {
         accessibilityLabel={t('civic.id.scanAction')}
         icon={<MaterialCommunityIcons name="qrcode-scan" size={26} color={colors.primaryForeground} />}
       />
+
+      {qrSheetOpen && <AttestQrSheet onClose={() => setQrSheetOpen(false)} />}
     </View>
   );
 }

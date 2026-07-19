@@ -1430,6 +1430,17 @@
     },
     "attest": {
       "confirmed": "Verificado en persona",
+      "review": {
+        "title": "¿Conociste a esta persona?",
+        "resolving": "Resolviendo su identidad…",
+        "submitting": "Firmando tu confirmación…",
+        "caution": "Confirma solo si de verdad os conocisteis en persona — esto afecta su reputación.",
+        "confirm": "Confirmo que nos conocimos",
+        "unverified": "Tarjeta sin verificar",
+        "unresolvedTitle": "No pudimos identificar a esta persona",
+        "unresolvedBody": "No pudimos resolver el código escaneado a una cuenta Oxy. Pídele que muestre un código nuevo e inténtalo de nuevo.",
+        "biometricReason": "Confirma que conociste a esta persona en la vida real"
+      },
       "section": {
         "title": "Confirmación en persona",
         "subtitle": "La reputación más fuerte viene de quienes te conocieron en persona.",

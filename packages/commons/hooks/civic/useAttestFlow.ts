@@ -20,6 +20,10 @@ export interface AttestFlowView {
   /** Fire the automatic sign + submit for a freshly parsed payload (an event
    *  handler's call — never a mount side-effect). */
   submit: (params: AttestSubmitParams) => void;
+  /** Reviewed lane: hold a parsed payload for review (no signing yet). */
+  prepare: (params: AttestSubmitParams) => void;
+  /** Reviewed lane: sign + submit the held payload after B confirms. */
+  confirm: (biometricOk: boolean) => void;
   reset: () => void;
 }
 
@@ -39,6 +43,8 @@ export function useAttestFlow(subjectUserIdOverride?: string | null): AttestFlow
   const result = useAttestStore((s) => s.result);
   const errorCode = useAttestStore((s) => s.errorCode);
   const submitToStore = useAttestStore((s) => s.submit);
+  const prepareInStore = useAttestStore((s) => s.prepare);
+  const confirmInStore = useAttestStore((s) => s.confirm);
   const reset = useAttestStore((s) => s.reset);
 
   const card = useCivicCard(subjectUserIdOverride === undefined ? subjectUserId : subjectUserIdOverride);
@@ -50,6 +56,13 @@ export function useAttestFlow(subjectUserIdOverride?: string | null): AttestFlow
     [submitToStore, oxyServices],
   );
 
+  const confirm = useCallback(
+    (biometricOk: boolean) => {
+      void confirmInStore(oxyServices, biometricOk);
+    },
+    [confirmInStore, oxyServices],
+  );
+
   return {
     status,
     subjectDid,
@@ -58,6 +71,8 @@ export function useAttestFlow(subjectUserIdOverride?: string | null): AttestFlow
     result,
     errorCode,
     submit,
+    prepare: prepareInStore,
+    confirm,
     reset,
   };
 }

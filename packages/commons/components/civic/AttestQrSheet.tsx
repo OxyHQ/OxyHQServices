@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import { Dialog, useDialogControl } from '@oxyhq/bloom/dialog';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, StackHeader, PrimaryButton } from '@/components/ui';
+import { PrimaryButton } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useAttestQr } from '@/hooks/useAttestQr';
 import { useTranslation } from '@/lib/i18n';
@@ -13,20 +13,36 @@ import { useTranslation } from '@/lib/i18n';
 /** Tick the countdown once a second. */
 const TICK_MS = 1000;
 
-/**
- * "Confirm you met me IRL" — the person being attested (A) shows this QR so a
- * counterparty (B) can scan it and sign a real-life attestation. The QR encodes
- * only A's DID + a single-use nonce (10-min expiry); B re-signs and the server
- * is authoritative. A countdown shows freshness; "Regenerate" mints a new QR.
- */
-export default function AttestMeScreen() {
-  const colors = useColors();
-  const router = useRouter();
-  const { t } = useTranslation();
+interface AttestQrSheetProps {
+  /** Fired once the sheet has finished its close animation (parent unmounts it). */
+  onClose: () => void;
+}
 
-  // One opaque interaction id per screen session (stable across regenerations).
+/**
+ * A's "Get confirmed in person" bottom sheet.
+ *
+ * Replaces the old full-screen `attest-me`: shows the person being attested (A)
+ * a FRESHLY-minted attestation QR (single-use nonce + 10-min expiry) for a
+ * counterparty (B) to scan. The freshness is the anti-replay guarantee — a
+ * static QR could be re-scanned by bots to spam attestations, so each open mints
+ * a new nonce and the countdown / Regenerate keep it live. Rendered as a Bloom
+ * bottom sheet (imperative control, opened from the mount effect) so it rises
+ * over the ID tab instead of pushing a route.
+ */
+export function AttestQrSheet({ onClose }: AttestQrSheetProps) {
+  const colors = useColors();
+  const { t } = useTranslation();
+  const control = useDialogControl();
+
+  // One opaque interaction id per sheet session (stable across regenerations).
   const context = useMemo(() => `irl-${Date.now().toString(36)}`, []);
   const { state, payload, exp, regenerate } = useAttestQr(context);
+
+  // Imperative controls bind during the commit's layout phase, so opening from
+  // a mount effect is the sanctioned pattern (mirrors app/approve.tsx).
+  useEffect(() => {
+    control.open();
+  }, [control]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -44,14 +60,16 @@ export default function AttestMeScreen() {
   }, [remainingMs]);
 
   return (
-    <Screen gap={24}>
-      <StackHeader
-        title={t('civic.attest.request.title')}
-        onClose={() => router.back()}
-        closeAccessibilityLabel={t('common.close')}
-      />
-
+    <Dialog
+      control={control}
+      onClose={onClose}
+      placement="bottom"
+      label={t('civic.attest.request.title')}
+    >
       <View style={styles.body}>
+        <ThemedText style={[styles.title, { color: colors.text }]}>
+          {t('civic.attest.request.title')}
+        </ThemedText>
         <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
           {t('civic.attest.request.subtitle')}
         </ThemedText>
@@ -62,7 +80,9 @@ export default function AttestMeScreen() {
           {state === 'error' && (
             <View style={styles.qrState}>
               <MaterialCommunityIcons name="alert-circle-outline" size={40} color={colors.error} />
-              <ThemedText style={styles.qrStateText}>{t('civic.attest.request.buildError')}</ThemedText>
+              <ThemedText style={[styles.qrStateText, { color: colors.text }]}>
+                {t('civic.attest.request.buildError')}
+              </ThemedText>
             </View>
           )}
 
@@ -96,15 +116,23 @@ export default function AttestMeScreen() {
           </View>
         )}
       </View>
-    </Screen>
+    </Dialog>
   );
 }
 
 const styles = StyleSheet.create({
   body: {
     alignItems: 'center',
-    gap: 20,
+    gap: 18,
+    paddingHorizontal: 24,
     paddingTop: 8,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,

@@ -6,6 +6,7 @@ import { ActivityHeatmap } from '@oxyhq/bloom/activity-heatmap';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Screen, CenteredState, PrimaryButton } from '@/components/ui';
+import { AttestQrSheet } from '@/components/civic/AttestQrSheet';
 import { ReputationHeader } from '@/components/reputation/ReputationHeader';
 import { GetStartedCarousel, type CtaItem } from '@/components/reputation/GetStartedCarousel';
 import { SegmentedTabs, type SegmentedTabItem } from '@/components/reputation/SegmentedTabs';
@@ -70,9 +71,10 @@ export default function ReputationScreen() {
     router.push('/(tabs)/(reputation)/validate');
   }, [router]);
 
-  const handleAttest = useCallback(() => {
-    router.push('/(tabs)/(id)/attest-me');
-  }, [router]);
+  // Show A's fresh attestation QR as a bottom sheet (over this tab) — a
+  // counterparty scans it to confirm they met A in person.
+  const [qrSheetOpen, setQrSheetOpen] = useState(false);
+  const handleAttest = useCallback(() => setQrSheetOpen(true), []);
 
   const handlePersonhood = useCallback(() => {
     router.push('/(tabs)/(settings)/personhood');
@@ -158,6 +160,7 @@ export default function ReputationScreen() {
   }
 
   return (
+    <>
     <Screen gap={24}>
       {header}
 
@@ -206,6 +209,8 @@ export default function ReputationScreen() {
         />
       )}
     </Screen>
+    {qrSheetOpen && <AttestQrSheet onClose={() => setQrSheetOpen(false)} />}
+    </>
   );
 }
 
