@@ -141,7 +141,7 @@ export default function AttestDeepLinkScreen() {
 
     return (
       <AttestReviewSheet
-        open={status !== 'idle'}
+        open
         status={status as AttestReviewStatus}
         card={flow.subject?.card ?? null}
         verified={flow.subject?.verified ?? false}

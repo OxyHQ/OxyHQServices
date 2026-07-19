@@ -29,6 +29,9 @@ describe("bloom-css", () => {
         expect(css).toContain(":root {")
         expect(css).toContain(".dark {")
         expect(css).toContain("--primary:")
+        // Bloom 0.41 vivid accent trio — must not regress to the pre-0.41 HSL shape.
+        expect(css).toContain("--tertiary:")
+        expect(css).toContain("rgb(")
     })
 
     test("applyColorPreset injects a scoped <style> element", () => {
