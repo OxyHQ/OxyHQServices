@@ -1045,7 +1045,9 @@
     "deleteSuccess": "Encrypted backup deleted.",
     "deleteFailed": "We couldn't delete your backup. Please try again.",
     "biometricReason": "Verify it's you to create an encrypted backup",
-    "biometricFailed": "Verify with your device biometrics or passcode to continue."
+    "biometricFailed": "Verify with your device biometrics or passcode to continue.",
+    "identityUnavailable": "We couldn't read your identity from secure storage. Unlock your device and try again.",
+    "unavailableSubtitle": "Secure storage is temporarily unavailable"
   },
   "restoreBackup": {
     "entry": "Restore from encrypted backup",
@@ -1056,6 +1058,7 @@
     "restore": "Restore identity",
     "restoring": "Restoring…",
     "failed": "We couldn't restore from backup. Check your phrase and try again.",
+    "offline": "You're offline. Connect to the internet to restore from your encrypted backup.",
     "overwriteTitle": "Replace the identity on this device?",
     "overwriteBody": "A different identity already exists on this device. Restoring will replace it. Make sure you've saved its recovery phrase first.",
     "overwriteConfirm": "Replace and restore",

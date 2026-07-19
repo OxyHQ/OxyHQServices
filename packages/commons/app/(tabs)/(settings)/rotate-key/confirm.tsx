@@ -10,6 +10,7 @@ import { Screen, StackHeader, Button, Callout, ImportantBanner } from '@/compone
 import { useTranslation } from '@/lib/i18n';
 import { authenticate } from '@/lib/biometricAuth';
 import { useRotateKeyFlow } from '@/contexts/rotate-key-flow-context';
+import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 
 type ConfirmState = 'form' | 'rotating' | 'success' | 'localPersistFailed';
 
@@ -72,7 +73,6 @@ export default function RotateKeyConfirmScreen() {
 
       if (result.localPersistFailed) {
         // Server rotated, phrase already shown — guide to restore, don't error.
-        toast.error(t('rotateKey.confirm.localPersistBody'));
         setState('localPersistFailed');
         return;
       }
@@ -80,7 +80,7 @@ export default function RotateKeyConfirmScreen() {
       toast.success(t('rotateKey.confirm.successBody'));
       setState('success');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('rotateKey.confirm.errorGeneric'));
+      toast.error(extractAuthErrorMessage(err, t('rotateKey.confirm.errorGeneric')));
       setState('form');
     }
   }, [oxyServices, proof, currentPhraseRef, pendingIdentityRef, signOutEverywhere, t]);

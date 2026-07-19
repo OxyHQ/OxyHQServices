@@ -24,6 +24,7 @@ import { rateLimit } from '../middleware/rateLimiter.js';
 import { hashedIpKey } from '../utils/ipKey.js';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils.js';
 import userCache from '../utils/userCache.js';
+import IdentityBackup from '../models/IdentityBackup.js';
 import { buildUserDid } from '../services/did.service.js';
 import { buildAuthMethodEntries } from '../utils/authMethodEntries.js';
 import {
@@ -324,6 +325,10 @@ router.post('/rotate/complete', rotateCompleteLimiter, validate({ body: rotateKe
   user.publicKey = canonicalNewPublicKey;
   await user.save();
   userCache.invalidate(userId);
+
+  // The encrypted off-device backup still holds the OLD key under the OLD phrase's
+  // locator — delete it so restore cannot silently import a stale identity.
+  await IdentityBackup.deleteOne({ userId: userIdObj });
 
   // 8. Optional: revoke every OTHER session (the rotating device stays signed
   //    in) when the caller suspects the old key is compromised.

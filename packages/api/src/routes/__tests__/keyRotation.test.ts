@@ -51,6 +51,7 @@ let mockConflictUser: { _id: string } | null;
 let mockConflictKey: string | null;
 let mockOtherSessions: Array<{ sessionId: string }>;
 const mockInvalidate = jest.fn();
+const mockDeleteBackup = jest.fn().mockResolvedValue({ deletedCount: 1 });
 const mockDeactivateAll = jest.fn();
 const mockEmitSessionUpdate = jest.fn();
 const mockUserFindOne = jest.fn();
@@ -143,6 +144,13 @@ jest.mock('../../utils/userCache', () => ({
   default: { invalidate: (...args: unknown[]) => mockInvalidate(...args) },
 }));
 
+jest.mock('../../models/IdentityBackup', () => ({
+  __esModule: true,
+  default: {
+    deleteOne: (...args: unknown[]) => mockDeleteBackup(...args),
+  },
+}));
+
 import authLinkingRouter from '../authLinking';
 import SignatureService from '../../services/signature.service';
 import { buildDidDocument } from '../../services/did.service';
@@ -202,6 +210,8 @@ afterAll((done) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockDeleteBackup.mockClear();
+  mockDeleteBackup.mockResolvedValue({ deletedCount: 1 });
   mockChallengeStore.clear();
   mockConflictUser = null;
   mockConflictKey = null;
@@ -319,6 +329,8 @@ describe('POST /auth/rotate/complete — happy path', () => {
     expect(mockUserDoc.save).toHaveBeenCalledTimes(1);
     // Cache invalidated.
     expect(mockInvalidate).toHaveBeenCalledWith(USER_ID);
+    // Stale encrypted backup removed — it still held the old key.
+    expect(mockDeleteBackup).toHaveBeenCalledWith({ userId: USER_ID });
     // The derived DID reflects the new key IMMEDIATELY.
     const vms = buildDidDocument(mockUserDoc).verificationMethod as Array<{ publicKeyHex?: string }>;
     expect(vms.some((vm) => vm.publicKeyHex === newPublicKey)).toBe(true);

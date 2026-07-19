@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
-import { RecoveryPhraseService, IdentityAlreadyExistsError, handleHttpError } from '@oxyhq/core';
+import { RecoveryPhraseService, IdentityAlreadyExistsError, IdentityUnavailableError, handleHttpError } from '@oxyhq/core';
 import { alert } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
@@ -14,6 +14,7 @@ import { useIdentity } from '@/hooks/useIdentity';
 import { useIdentityStore } from '@/hooks/identity/identityStore';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
+import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY } from '@/hooks/useOnboardingStatus';
 
 /**
@@ -116,6 +117,10 @@ export default function RestoreFromBackupScreen() {
           );
           return;
         }
+        if (err instanceof IdentityUnavailableError) {
+          router.replace('/(auth)');
+          return;
+        }
         // A 404 means no encrypted backup exists for the phrase's locator —
         // surface the specific "no backup found" copy instead of a raw message.
         if (handleHttpError(err).status === 404) {
@@ -130,12 +135,19 @@ export default function RestoreFromBackupScreen() {
     [oxyServices, syncIdentity, queryClient, router, setRecoveryPhraseAcknowledgedPersisted, t],
   );
 
-  const handleRestore = useCallback(() => {
+  const handleRestore = useCallback(async () => {
     const phrase = phraseWords.join(' ');
     if (!RecoveryPhraseService.validatePhrase(phrase)) {
       setError(t('restoreBackup.invalidPhrase'));
       return;
     }
+
+    const offline = await checkIfOffline();
+    if (offline) {
+      setError(t('restoreBackup.offline'));
+      return;
+    }
+
     void runRestore(phrase, false);
   }, [phraseWords, runRestore, t]);
 

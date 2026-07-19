@@ -1045,7 +1045,9 @@
     "deleteSuccess": "Copia de seguridad cifrada eliminada.",
     "deleteFailed": "No pudimos eliminar tu copia de seguridad. Inténtalo de nuevo.",
     "biometricReason": "Verifica que eres tú para crear una copia de seguridad cifrada",
-    "biometricFailed": "Verifícate con la biometría o el código de tu dispositivo para continuar."
+    "biometricFailed": "Verifícate con la biometría o el código de tu dispositivo para continuar.",
+    "identityUnavailable": "No pudimos leer tu identidad del almacenamiento seguro. Desbloquea tu dispositivo e inténtalo de nuevo.",
+    "unavailableSubtitle": "El almacenamiento seguro no está disponible temporalmente"
   },
   "restoreBackup": {
     "entry": "Restaurar desde copia de seguridad cifrada",
@@ -1056,6 +1058,7 @@
     "restore": "Restaurar identidad",
     "restoring": "Restaurando…",
     "failed": "No pudimos restaurar desde la copia de seguridad. Revisa tu frase e inténtalo de nuevo.",
+    "offline": "Estás sin conexión. Conéctate a internet para restaurar desde tu copia de seguridad cifrada.",
     "overwriteTitle": "¿Reemplazar la identidad de este dispositivo?",
     "overwriteBody": "Ya existe una identidad diferente en este dispositivo. Restaurar la reemplazará. Asegúrate de haber guardado su frase de recuperación primero.",
     "overwriteConfirm": "Reemplazar y restaurar",

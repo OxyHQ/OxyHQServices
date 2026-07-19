@@ -218,6 +218,19 @@ export function OxyServicesIdentityBackupMixin<T extends typeof OxyServicesBase>
         );
         const payload = JSON.parse(new TextDecoder().decode(plaintext)) as BackupPayload;
 
+        if (!payload.privateKey || !payload.publicKey) {
+          throw new Error('Backup payload is missing key material');
+        }
+
+        const derivedFromPhrase = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
+        const derivedFromPrivate = KeyManager.derivePublicKey(payload.privateKey);
+        const phrasePk = derivedFromPhrase.toLowerCase();
+        const payloadPk = payload.publicKey.toLowerCase();
+        const privatePk = derivedFromPrivate.toLowerCase();
+        if (phrasePk !== payloadPk || privatePk !== payloadPk) {
+          throw new Error('Backup payload does not match the recovery phrase');
+        }
+
         // Persist the recovered key. Native-only; refuses to clobber a different
         // identity unless overwrite — the IdentityAlreadyExistsError propagates.
         return await KeyManager.importKeyPair(payload.privateKey, {

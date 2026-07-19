@@ -15,6 +15,7 @@
 import { OxyServices } from '../../OxyServices';
 import { KeyManager, IdentityAlreadyExistsError } from '../../crypto/keyManager';
 import { RecoveryPhraseService } from '../../crypto/recoveryPhrase';
+import { encryptAead, decryptAead } from '../../crypto/aead';
 import type { EncryptedBackupEnvelope, BackupUploadRequest } from '@oxyhq/contracts';
 
 const FIXED_PHRASE =
@@ -190,6 +191,62 @@ describe('encrypted identity backup mixin', () => {
 
     fetchMock.mockResolvedValueOnce(plainResponse(tampered));
     await expect(oxy.restoreFromEncryptedBackup(FIXED_PHRASE)).rejects.toThrow();
+  });
+
+  it('rejects when decrypted payload publicKey does not match the recovery phrase', async () => {
+    fetchMock.mockResolvedValueOnce(plainResponse({ exists: true }));
+    await oxy.createEncryptedBackup(FIXED_PHRASE);
+    const uploaded = uploadBodyFromCall(0);
+
+    const { backupKey } = await RecoveryPhraseService.deriveBackupMaterial(FIXED_PHRASE);
+    const aad = new TextEncoder().encode(
+      JSON.stringify({ version: uploaded.version, publicKeyHint: uploaded.publicKeyHint }),
+    );
+    const fromHex = (hex: string): Uint8Array => {
+      const out = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < out.length; i += 1) {
+        out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+      }
+      return out;
+    };
+    const toHex = (bytes: Uint8Array): string =>
+      Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+    const plaintext = decryptAead(
+      backupKey,
+      fromHex(uploaded.nonce),
+      fromHex(uploaded.ciphertext),
+      aad,
+    );
+    const payload = JSON.parse(new TextDecoder().decode(plaintext)) as {
+      privateKey: string;
+      publicKey: string;
+      createdAt: string;
+    };
+    payload.publicKey = `${payload.publicKey.slice(0, -1)}0`;
+
+    const { nonce, ciphertext } = encryptAead(
+      backupKey,
+      new TextEncoder().encode(JSON.stringify(payload)),
+      aad,
+    );
+    const tampered: EncryptedBackupEnvelope = {
+      version: uploaded.version,
+      algorithm: uploaded.algorithm,
+      kdfInfo: uploaded.kdfInfo,
+      nonce: toHex(nonce),
+      ciphertext: toHex(ciphertext),
+      publicKeyHint: uploaded.publicKeyHint,
+      createdAt: uploaded.createdAt,
+    };
+
+    const importSpy = jest.spyOn(KeyManager, 'importKeyPair').mockResolvedValue('x');
+    fetchMock.mockResolvedValueOnce(plainResponse(tampered));
+
+    await expect(oxy.restoreFromEncryptedBackup(FIXED_PHRASE)).rejects.toThrow(
+      /does not match the recovery phrase/,
+    );
+    expect(importSpy).not.toHaveBeenCalled();
   });
 
   it('propagates IdentityAlreadyExistsError UNCHANGED (so the caller can offer overwrite)', async () => {

@@ -13,7 +13,7 @@ import { authenticate } from '@/lib/biometricAuth';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
 
-type IdentityStatus = 'checking' | 'present' | 'missing';
+type IdentityStatus = 'checking' | 'present' | 'missing' | 'unavailable';
 
 /** Minimal shape of `GET /identity/backup/status`, mirrored to avoid a cross-package type import. */
 interface BackupStatus {
@@ -42,7 +42,6 @@ export default function CreateBackupScreen() {
   const formatRelative = useRelativeTime();
 
   const [identityStatus, setIdentityStatus] = useState<IdentityStatus>('checking');
-  const [onDevicePublicKey, setOnDevicePublicKey] = useState<string | null>(null);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [phraseWords, setPhraseWords] = useState<string[]>(
     () => new Array(RECOVERY_PHRASE_LENGTH).fill(''),
@@ -56,33 +55,18 @@ export default function CreateBackupScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let publicKey: string | null = null;
-      let lockedRead = false;
-      try {
-        publicKey = await KeyManager.getPublicKey();
-      } catch (err) {
-        // `getPublicKey()` THROWS when storage is locked/unreadable — that is
-        // NOT "no identity". This screen is only reachable while signed in, so
-        // assume the identity is present rather than showing the alarming
-        // "no identity on this device" state. The real read inside
-        // `createEncryptedBackup` surfaces a retriable error if the keystore is
-        // still locked at write time.
-        lockedRead = true;
-        if (__DEV__) {
-          console.warn('[backup] identity preflight read failed (storage locked?)', err);
-        }
-      }
+      const verdict = await KeyManager.getIdentityStatus({ bypassCache: true });
       if (cancelled) return;
 
-      if (!lockedRead && !publicKey) {
+      if (verdict.state === 'absent' || verdict.state === 'lost') {
         setIdentityStatus('missing');
         return;
       }
+      if (verdict.state === 'unavailable') {
+        setIdentityStatus('unavailable');
+        return;
+      }
 
-      // Present: we either read the key, or the read is locked (signed-in ⇒
-      // assume present). When locked, `onDevicePublicKey` stays null and the
-      // phrase-match guard is skipped.
-      if (publicKey) setOnDevicePublicKey(publicKey);
       setIdentityStatus('present');
 
       if (!oxyServices) return;
@@ -128,8 +112,18 @@ export default function CreateBackupScreen() {
     // Guard: the entered phrase must derive the SAME identity that lives on this
     // device — otherwise the user would silently back up the wrong key.
     try {
+      const verdict = await KeyManager.getIdentityStatus({ bypassCache: true });
+      if (verdict.state === 'unavailable') {
+        setError(t('backup.identityUnavailable'));
+        return;
+      }
+      if (verdict.state !== 'present') {
+        setError(t('backup.phraseMismatch'));
+        return;
+      }
+
       const derived = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
-      if (onDevicePublicKey && derived.toLowerCase() !== onDevicePublicKey.toLowerCase()) {
+      if (derived.toLowerCase() !== verdict.publicKey.toLowerCase()) {
         setError(t('backup.phraseMismatch'));
         return;
       }
@@ -157,7 +151,7 @@ export default function CreateBackupScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [oxyServices, phraseWords, onDevicePublicKey, t]);
+  }, [oxyServices, phraseWords, t]);
 
   const handleDelete = useCallback(() => {
     if (!oxyServices) return;
@@ -197,6 +191,23 @@ export default function CreateBackupScreen() {
           backAccessibilityLabel={t('common.back')}
         />
         <Text style={[styles.muted, { color: colors.textSecondary }]}>{t('backup.checkingStatus')}</Text>
+      </KeyboardAwareScrollViewWrapper>
+    );
+  }
+
+  if (identityStatus === 'unavailable') {
+    return (
+      <KeyboardAwareScrollViewWrapper contentContainerStyle={styles.content}>
+        <StackHeader
+          title={t('backup.title')}
+          subtitle={t('backup.unavailableSubtitle')}
+          onBack={() => router.back()}
+          backAccessibilityLabel={t('common.back')}
+        />
+        <ImportantBanner iconSize={20}>{t('backup.identityUnavailable')}</ImportantBanner>
+        <Button variant="primary" onPress={() => router.back()}>
+          {t('backup.goBack')}
+        </Button>
       </KeyboardAwareScrollViewWrapper>
     );
   }

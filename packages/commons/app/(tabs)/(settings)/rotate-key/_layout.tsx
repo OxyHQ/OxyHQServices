@@ -17,7 +17,14 @@ export default function RotateKeyLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="current-phrase" />
-        <Stack.Screen name="recovery-phrase" />
+        <Stack.Screen
+          name="recovery-phrase"
+          options={{
+            // Match create-identity: block iOS swipe-back before the new phrase
+            // is acknowledged.
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen name="confirm" />
       </Stack>
     </RotateKeyFlowProvider>
