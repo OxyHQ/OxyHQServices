@@ -1203,10 +1203,15 @@
   },
   "civic": {
     "sessionGate": {
-      "title": "Sign in to continue",
-      "body": "Sign in to your Oxy account to view and manage this.",
-      "cta": "Sign in",
-      "connecting": "Connecting…"
+      "connecting": "Connecting your identity…",
+      "error": {
+        "title": "Couldn't connect",
+        "body": "We couldn't connect your identity to Oxy. Try again whenever you're ready."
+      },
+      "offline": {
+        "title": "You're offline",
+        "body": "We'll reconnect your identity automatically once you're back online."
+      }
     },
     "hub": {
       "title": "Citizen",

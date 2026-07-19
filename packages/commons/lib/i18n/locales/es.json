@@ -1203,10 +1203,15 @@
   },
   "civic": {
     "sessionGate": {
-      "title": "Inicia sesión para continuar",
-      "body": "Inicia sesión en tu cuenta de Oxy para ver y gestionar esto.",
-      "cta": "Iniciar sesión",
-      "connecting": "Conectando…"
+      "connecting": "Conectando tu identidad…",
+      "error": {
+        "title": "No pudimos conectar",
+        "body": "No pudimos conectar tu identidad con Oxy. Reintenta cuando quieras."
+      },
+      "offline": {
+        "title": "Sin conexión",
+        "body": "Reconectaremos tu identidad automáticamente cuando vuelvas a tener conexión."
+      }
     },
     "hub": {
       "title": "Ciudadanía",
