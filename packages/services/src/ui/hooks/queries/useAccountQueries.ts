@@ -214,6 +214,22 @@ export const useUserByUsername = (username: string | null, options?: { enabled?:
     enabled: (options?.enabled !== false) && !!username,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    // Enforce the `upsertCachedUser` stale-seed contract from THIS hook rather
+    // than relying on the consuming app's global `refetchOnMount` default.
+    // When a feed/post author is precached into the by-username key it is seeded
+    // SPARSE (no `createdAt`/`relationship`/`_count`) and marked STALE
+    // (`updatedAt: 0`) precisely so this hook refetches the full authoritative
+    // profile on mount. A consumer whose QueryClient sets
+    // `defaultOptions.queries.refetchOnMount: false` (a common perf setting —
+    // Mention does this) would otherwise serve the stale sparse seed forever and
+    // the authoritative fetch (which carries `createdAt`) would never run — the
+    // "Joined <date> missing depending on where you came from" bug. `true` (NOT
+    // `'always'`) with the 5m `staleTime` keeps it efficient: a genuinely fresh
+    // real fetch is NOT refetched, only a stale seed / >5m-old entry is.
+    // `useUserByUsername` is consumed ONLY for single-profile views (never an
+    // N-instance list), so this is exactly one fetch. `useUserById` — the card
+    // workhorse in N-instance lists — deliberately does NOT do this.
+    refetchOnMount: true,
   });
 };
 
