@@ -1135,7 +1135,12 @@
       "tryAgain": "Try again",
       "noCode": "No sign-in code was provided.",
       "unverifiedTitle": "We couldn't verify this sign-in",
-      "unverifiedBody": "We couldn't confirm where this sign-in request started. Only approve if you JUST started it yourself on a device you trust. If you didn't, deny it."
+      "unverifiedBody": "We couldn't confirm where this sign-in request started. Only approve if you JUST started it yourself on a device you trust. If you didn't, deny it.",
+      "titleWithOxy": "Sign in to {{app}} with Oxy",
+      "description": "Approve to sign in to {{app}} with your Oxy identity.",
+      "controlTitle": "You're in control.",
+      "privacyLink": "Privacy Policy",
+      "termsLink": "Terms of Service"
     }
   },
   "civic": {

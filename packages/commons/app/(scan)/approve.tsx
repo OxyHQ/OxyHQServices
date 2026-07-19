@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
-import { View, Image, ScrollView, StyleSheet } from 'react-native';
+import {
+  View,
+  Image,
+  ScrollView,
+  Pressable,
+  StyleSheet,
+  Linking,
+  Platform,
+  BackHandler,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy } from '@oxyhq/services';
+import { LinearGradient } from 'expo-linear-gradient';
+import { LogoIcon } from '@oxyhq/services';
 import { Dialog, useDialogControl } from '@oxyhq/bloom/dialog';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import {
-  Section,
   Callout,
   CenteredState,
   ImportantBanner,
@@ -16,35 +25,47 @@ import {
 } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
 import { useCommonsApproval } from '@/hooks/commons-signin/useCommonsApproval';
+import { resolveApprovedAction } from '@/lib/commons-signin/approval-return';
+
+/** How long the success confirmation lingers before we return / close. */
+const APPROVED_RETURN_DELAY_MS = 1000;
 
 /**
  * "Sign in with Oxy" approval surface (Commons / approver side).
  *
  * Reachable two ways, both carrying the public `code`:
- *   - the in-app QR scanner (`/(scan)`) replaces into here after parsing
+ *   - the in-app QR scanner (`/(scan)`) replaces into here (threads `source=scanner`)
  *   - a same-device deep link `oxycommons://approve?...` / `commons://approve?...`
  *
- * Rendered as a Bloom bottom sheet (`<Dialog placement="bottom">`) that rises
- * over the underlying context rather than a full-screen takeover — the same
- * Bloom surface `@oxyhq/services`' `OxyAccountDialog` uses. The route is a
- * transparent modal (see `(scan)/_layout.tsx`); the sheet owns its own drag
- * handle + dimmed backdrop.
+ * Rendered as a Bloom bottom sheet (`<Dialog placement="bottom">`) — the same
+ * Bloom surface `@oxyhq/services`' `OxyAccountDialog` uses — restyled after the
+ * connect-app pairing pattern: a dark Oxy-brand hero with the [requesting app] ↔
+ * [Oxy] logo lockup, a centered title/description, the Approve CTA (Deny below),
+ * and a footer scope summary + privacy/terms links. The route is a transparent
+ * modal (see `(scan)/_layout.tsx`); the sheet owns its dimmed backdrop.
  *
- * The sheet is driven imperatively (`useDialogControl`) so a backdrop tap or a
- * drag-down fires `onClose` — Bloom's CONTROLLED bottom placement swallows those
- * gestures. Any dismissal (backdrop, drag, or an explicit "Done") is a CANCEL:
- * it navigates away WITHOUT calling deny, matching the previous screen's back
- * behavior. Only the explicit Deny button calls `deny()`.
+ * Driven imperatively (`useDialogControl`) so a backdrop tap, a drag-down, or an
+ * explicit close all fire `onClose` — Bloom's CONTROLLED bottom placement
+ * swallows those gestures. Any dismissal is a CANCEL: it never calls deny (parity
+ * with the previous screen's back behavior). Only the explicit Deny button calls
+ * `deny()`.
  *
- * Renders ONLY the server-resolved application identity (anti-phishing) and
- * gates approval behind the device biometric/passcode.
+ * On a SUCCESSFUL approve the success state lingers ~1s, then Commons either
+ * returns the user to the caller (same-device deep-link handoff on Android, via
+ * backgrounding) or simply closes the sheet (scanner path, and iOS — no
+ * programmatic backgrounding exists). See `resolveApprovedAction`.
+ *
+ * SECURITY: only the server-resolved `info.application` identity is rendered
+ * (anti-phishing — never the QR's self-asserted strings); the requesting app's
+ * logo comes ONLY from that record; `originVerified === true` is required for the
+ * reassuring "official app" treatment, and anything else raises a loud warning;
+ * approval stays gated behind the device biometric/passcode.
  */
 export default function ApproveSignInScreen() {
   const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
-  const { user } = useOxy();
-  const { code } = useLocalSearchParams<{ code?: string }>();
+  const { code, source } = useLocalSearchParams<{ code?: string; source?: string }>();
   const control = useDialogControl();
 
   const { state, info, biometricFailed, approve, deny, reload } = useCommonsApproval(
@@ -60,9 +81,7 @@ export default function ApproveSignInScreen() {
   }, [control]);
 
   // The SINGLE navigation exit, fired by `onClose` once the sheet has finished
-  // closing — from a backdrop tap, a drag-down, or an explicit `control.close()`.
-  // A dismissal is a CANCEL and never calls deny (parity with the prior back
-  // behavior); the RP's authorize code simply expires unclaimed.
+  // closing. A dismissal is a CANCEL and never calls deny.
   const navigateAway = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -75,7 +94,29 @@ export default function ApproveSignInScreen() {
   // Run the sheet's close animation, then `navigateAway` via `onClose`.
   const dismiss = useCallback(() => control.close(), [control]);
 
-  const username = user?.username ? `@${user.username}` : t('signInApproval.approve.heading');
+  const openLink = useCallback((url: string) => {
+    Linking.openURL(url).catch((error: unknown) => {
+      console.warn('[approve] failed to open external link', error);
+    });
+  }, []);
+
+  // After a successful approve: briefly show the confirmation, then return to
+  // the caller (deep-link handoff on Android) or close the sheet (scanner / iOS).
+  useEffect(() => {
+    if (state !== 'approved') return;
+    const timer = setTimeout(() => {
+      if (resolveApprovedAction(source, Platform.OS) === 'return-to-caller') {
+        // Reset the underlying route first so a later re-open lands on the ID
+        // home, then background Commons so the OS returns to the caller.
+        navigateAway();
+        BackHandler.exitApp();
+      } else {
+        dismiss();
+      }
+    }, APPROVED_RETURN_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [state, source, navigateAway, dismiss]);
+
   const appName = info?.application.name ?? '';
   const scopes = useMemo(() => info?.scopes ?? [], [info?.scopes]);
   // Anti-phishing: treat anything other than an explicit `true` as unverified
@@ -87,72 +128,106 @@ export default function ApproveSignInScreen() {
 
   let content: React.ReactNode;
   if (state === 'approved' || state === 'denied') {
-    // --- Terminal states (approved / denied) ---
+    // --- Terminal states. Approved auto-advances (return/close); denied waits. ---
     const approved = state === 'approved';
     content = (
-      <CenteredState
-        icon={approved ? 'check-circle-outline' : 'close-circle-outline'}
-        iconColor={approved ? colors.success : colors.textSecondary}
-        title={approved ? t('signInApproval.approve.approvedTitle') : t('signInApproval.approve.deniedTitle')}
-        body={approved ? t('signInApproval.approve.approvedBody') : t('signInApproval.approve.deniedBody')}
-        action={
-          <View style={styles.action}>
-            <PrimaryButton label={t('signInApproval.approve.done')} onPress={dismiss} fullWidth={false} />
-          </View>
-        }
-      />
+      <View className="px-5 py-2">
+        <CenteredState
+          icon={approved ? 'check-circle-outline' : 'close-circle-outline'}
+          iconColor={approved ? colors.success : colors.textSecondary}
+          title={approved ? t('signInApproval.approve.approvedTitle') : t('signInApproval.approve.deniedTitle')}
+          body={approved ? t('signInApproval.approve.approvedBody') : t('signInApproval.approve.deniedBody')}
+          action={
+            approved ? undefined : (
+              <View className="mt-1 items-center">
+                <PrimaryButton label={t('signInApproval.approve.done')} onPress={dismiss} fullWidth={false} />
+              </View>
+            )
+          }
+        />
+      </View>
     );
   } else if (state === 'error') {
     // --- Error state ---
     content = (
-      <CenteredState
-        icon="alert-circle-outline"
-        iconColor={colors.error}
-        title={t('signInApproval.approve.errorTitle')}
-        body={code ? t('signInApproval.approve.errorBody') : t('signInApproval.approve.noCode')}
-        action={
-          <View style={styles.errorActions}>
-            {code ? <SecondaryButton label={t('signInApproval.approve.tryAgain')} onPress={reload} fullWidth={false} /> : null}
-            <PrimaryButton label={t('signInApproval.approve.done')} onPress={dismiss} fullWidth={false} />
-          </View>
-        }
-      />
+      <View className="px-5 py-2">
+        <CenteredState
+          icon="alert-circle-outline"
+          iconColor={colors.error}
+          title={t('signInApproval.approve.errorTitle')}
+          body={code ? t('signInApproval.approve.errorBody') : t('signInApproval.approve.noCode')}
+          action={
+            <View className="mt-1 flex-row gap-3">
+              {code ? <SecondaryButton label={t('signInApproval.approve.tryAgain')} onPress={reload} fullWidth={false} /> : null}
+              <PrimaryButton label={t('signInApproval.approve.done')} onPress={dismiss} fullWidth={false} />
+            </View>
+          }
+        />
+      </View>
     );
   } else if (state === 'loading' || !info) {
     // --- Loading ---
-    content = <CenteredState loading body={t('signInApproval.approve.loading')} />;
-  } else {
-    // --- Ready: render the server-resolved identity + actions ---
     content = (
-      <>
-        {!originVerified ? (
-          <ImportantBanner
-            icon="alert"
-            title={t('signInApproval.approve.unverifiedTitle')}
-            style={styles.warningBanner}
-          >
-            {t('signInApproval.approve.unverifiedBody')}
-          </ImportantBanner>
-        ) : null}
+      <View className="px-5 py-2">
+        <CenteredState loading body={t('signInApproval.approve.loading')} />
+      </View>
+    );
+  } else {
+    // --- Ready: the server-resolved identity + actions ---
+    const description = info.application.description?.trim()
+      ? info.application.description
+      : t('signInApproval.approve.description', { app: appName });
+    const hasLegalLinks = Boolean(info.application.privacyPolicyUrl || info.application.termsUrl);
 
-        <View style={styles.brandBlock}>
-          <ThemedText style={[styles.heading, { color: colors.textSecondary }]}>
-            {t('signInApproval.approve.heading')}
+    content = (
+      <View>
+        {/* HERO — dark Oxy-brand block with the app ↔ Oxy pairing lockup. */}
+        <View className="overflow-hidden rounded-t-[28px]" style={{ backgroundColor: colors.primary }}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.04)', 'rgba(0,0,0,0.55)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Pressable
+            onPress={dismiss}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+            className="absolute right-3 top-3 h-10 w-10 items-center justify-center rounded-full"
+            style={styles.closeButton}
+          >
+            <MaterialCommunityIcons name="close" size={22} color="#FFFFFF" />
+          </Pressable>
+
+          <View className="items-center px-6 pb-9 pt-14">
+            <View className="flex-row items-center gap-4">
+              {/* Requesting app — logo from the SERVER-RESOLVED record only. */}
+              <View className="h-14 w-14 items-center justify-center rounded-2xl bg-white" style={styles.logoCard}>
+                {info.application.icon ? (
+                  <Image source={{ uri: info.application.icon }} className="h-9 w-9 rounded-lg" />
+                ) : (
+                  <ThemedText style={[styles.logoInitial, { color: colors.primary }]}>
+                    {appName.charAt(0).toUpperCase() || '?'}
+                  </ThemedText>
+                )}
+              </View>
+              <View className="h-9 w-px" style={styles.pairingDivider} />
+              {/* Oxy */}
+              <View className="h-14 w-14 items-center justify-center rounded-2xl bg-white" style={styles.logoCard}>
+                <LogoIcon height={30} color={colors.primary} />
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* BODY — title, description, (loud) unverified warning, CTAs. */}
+        <View className="px-5 pt-6">
+          <ThemedText style={[styles.title, { color: colors.text }]}>
+            {t('signInApproval.approve.titleWithOxy', { app: appName })}
           </ThemedText>
 
-          {info.application.icon ? (
-            <Image source={{ uri: info.application.icon }} style={styles.appIcon} />
-          ) : (
-            <View style={[styles.appIcon, styles.appIconFallback, { backgroundColor: colors.card }]}>
-              <ThemedText style={[styles.appIconLetter, { color: colors.text }]}>
-                {appName.charAt(0).toUpperCase() || '?'}
-              </ThemedText>
-            </View>
-          )}
-          <ThemedText style={[styles.appName, { color: colors.text }]}>{appName}</ThemedText>
-
           {originVerified && info.application.isOfficial ? (
-            <View style={[styles.officialBadge, { backgroundColor: colors.primarySubtle }]}>
+            <View className="mt-2 flex-row items-center justify-center gap-1">
               <MaterialCommunityIcons name="check-decagram" size={14} color={colors.tint} />
               <ThemedText style={[styles.officialText, { color: colors.tint }]}>
                 {t('signInApproval.approve.officialBadge')}
@@ -164,53 +239,93 @@ export default function ApproveSignInScreen() {
             </ThemedText>
           ) : null}
 
-          <ThemedText style={[styles.prompt, { color: colors.text }]}>
-            {t('signInApproval.approve.wantsToSignIn', { app: appName, user: username })}
+          <ThemedText style={[styles.description, { color: colors.textSecondary }]} numberOfLines={5}>
+            {description}
           </ThemedText>
-        </View>
 
-        {info.boundOrigin ? (
-          <Section title={t('signInApproval.approve.originLabel')}>
-            <ThemedText style={[styles.origin, { color: colors.text }]} numberOfLines={1}>
-              {info.boundOrigin}
-            </ThemedText>
-          </Section>
-        ) : null}
-
-        {scopes.length > 0 ? (
-          <Section title={t('signInApproval.approve.scopesTitle')}>
-            <View style={styles.scopes}>
-              {scopes.map((scope) => (
-                <View key={scope} style={styles.scopeRow}>
-                  <MaterialCommunityIcons name="check" size={18} color={colors.success} />
-                  <ThemedText style={[styles.scopeText, { color: colors.text }]}>{scope}</ThemedText>
-                </View>
-              ))}
+          {!originVerified ? (
+            <View className="pt-4">
+              <ImportantBanner
+                icon="alert"
+                title={t('signInApproval.approve.unverifiedTitle')}
+                style={styles.bannerFlush}
+              >
+                {t('signInApproval.approve.unverifiedBody')}
+              </ImportantBanner>
             </View>
-          </Section>
-        ) : null}
+          ) : null}
 
-        {biometricFailed ? (
-          <Callout tone="danger" icon="fingerprint">
-            {t('signInApproval.approve.biometricFailedBody')}
-          </Callout>
-        ) : null}
+          <View className="pb-1 pt-4">
+            <PrimaryButton
+              label={state === 'approving' ? t('signInApproval.approve.approving') : t('signInApproval.approve.approve')}
+              onPress={approve}
+              disabled={busy}
+            />
+            <View className="items-center pt-2">
+              <SecondaryButton
+                label={state === 'denying' ? t('signInApproval.approve.denying') : t('signInApproval.approve.deny')}
+                onPress={deny}
+                disabled={busy}
+                fullWidth={false}
+              />
+            </View>
+          </View>
 
-        <View style={styles.actions}>
-          <SecondaryButton
-            label={state === 'denying' ? t('signInApproval.approve.denying') : t('signInApproval.approve.deny')}
-            onPress={deny}
-            disabled={busy}
-            fullWidth={false}
-          />
-          <PrimaryButton
-            label={state === 'approving' ? t('signInApproval.approve.approving') : t('signInApproval.approve.approve')}
-            onPress={approve}
-            disabled={busy}
-            style={styles.approveFlex}
-          />
+          {biometricFailed ? (
+            <View className="pt-1">
+              <Callout tone="danger" icon="fingerprint">
+                {t('signInApproval.approve.biometricFailedBody')}
+              </Callout>
+            </View>
+          ) : null}
         </View>
-      </>
+
+        {/* FOOTER — scope summary + optional privacy/terms. */}
+        <View className="gap-2.5 px-5 pb-7 pt-5">
+          <View className="gap-1.5">
+            <ThemedText style={[styles.footerText, { color: colors.textSecondary }]}>
+              <ThemedText style={[styles.footerLead, { color: colors.text }]}>
+                {t('signInApproval.approve.controlTitle')}{' '}
+              </ThemedText>
+              {t('signInApproval.approve.scopesTitle')}:
+            </ThemedText>
+            {scopes.length > 0 ? (
+              <View className="gap-1">
+                {scopes.map((scope) => (
+                  <View key={scope} className="flex-row items-center gap-2">
+                    <MaterialCommunityIcons name="check" size={14} color={colors.success} />
+                    <ThemedText style={[styles.footerText, { color: colors.textSecondary }]}>{scope}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {info.boundOrigin ? (
+              <ThemedText style={[styles.footerText, { color: colors.textSecondary }]} numberOfLines={1}>
+                {t('signInApproval.approve.originLabel')}: {info.boundOrigin}
+              </ThemedText>
+            ) : null}
+          </View>
+
+          {hasLegalLinks ? (
+            <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1 pt-0.5">
+              {info.application.privacyPolicyUrl ? (
+                <Pressable onPress={() => openLink(info.application.privacyPolicyUrl ?? '')} accessibilityRole="link">
+                  <ThemedText style={[styles.legalLink, { color: colors.tint }]}>
+                    {t('signInApproval.approve.privacyLink')}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+              {info.application.termsUrl ? (
+                <Pressable onPress={() => openLink(info.application.termsUrl ?? '')} accessibilityRole="link">
+                  <ThemedText style={[styles.legalLink, { color: colors.tint }]}>
+                    {t('signInApproval.approve.termsLink')}
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </View>
     );
   }
 
@@ -220,11 +335,12 @@ export default function ApproveSignInScreen() {
       onClose={navigateAway}
       placement="bottom"
       contentPadding={0}
+      showHandle={false}
       label={t('signInApproval.approve.heading')}
     >
       <ScrollView
-        style={styles.body}
-        contentContainerStyle={styles.bodyContent}
+        className="w-full"
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         {content}
@@ -234,70 +350,32 @@ export default function ApproveSignInScreen() {
 }
 
 const styles = StyleSheet.create({
-  body: {
-    width: '100%',
-  },
-  bodyContent: {
+  scrollContent: {
     flexGrow: 1,
-    gap: 24,
-    paddingHorizontal: 22,
-    paddingTop: 4,
-    paddingBottom: 24,
   },
-  action: {
-    alignItems: 'center',
-    marginTop: 4,
+  closeButton: {
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
-  errorActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-  },
-  warningBanner: {
-    // The sheet body column already supplies vertical rhythm via `gap`.
-    marginBottom: 0,
-  },
-  brandBlock: {
-    alignItems: 'center',
-    gap: 10,
-    paddingTop: 4,
-  },
-  heading: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    textAlign: 'center',
-  },
-  appIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
+  logoCard: {
     borderCurve: 'continuous',
-    marginTop: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
-  appIconFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  appIconLetter: {
-    fontSize: 32,
+  logoInitial: {
+    fontSize: 24,
     fontWeight: '700',
   },
-  appName: {
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    textAlign: 'center',
+  pairingDivider: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
-  officialBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderCurve: 'continuous',
+  title: {
+    fontSize: 24,
+    fontWeight: '500',
+    letterSpacing: -0.4,
+    textAlign: 'center',
   },
   officialText: {
     fontSize: 12,
@@ -305,36 +383,28 @@ const styles = StyleSheet.create({
   },
   developer: {
     fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
   },
-  prompt: {
-    fontSize: 17,
-    fontWeight: '500',
-    lineHeight: 24,
+  description: {
+    fontSize: 14,
+    lineHeight: 20,
     textAlign: 'center',
     marginTop: 8,
   },
-  origin: {
-    fontSize: 14,
-    fontWeight: '500',
+  bannerFlush: {
+    marginBottom: 0,
   },
-  scopes: {
-    gap: 10,
+  footerText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
-  scopeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  footerLead: {
+    fontSize: 12,
+    fontWeight: '700',
   },
-  scopeText: {
-    flex: 1,
-    fontSize: 15,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 4,
-  },
-  approveFlex: {
-    flex: 1,
+  legalLink: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

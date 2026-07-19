@@ -1135,7 +1135,12 @@
       "tryAgain": "Reintentar",
       "noCode": "No se proporcionó ningún código de inicio de sesión.",
       "unverifiedTitle": "No pudimos verificar este inicio de sesión",
-      "unverifiedBody": "No pudimos confirmar desde dónde se inició esta solicitud. Apruébalo solo si acabas de iniciarlo tú en un dispositivo de confianza. Si no fuiste tú, deniégalo."
+      "unverifiedBody": "No pudimos confirmar desde dónde se inició esta solicitud. Apruébalo solo si acabas de iniciarlo tú en un dispositivo de confianza. Si no fuiste tú, deniégalo.",
+      "titleWithOxy": "Inicia sesión en {{app}} con Oxy",
+      "description": "Aprueba para iniciar sesión en {{app}} con tu identidad de Oxy.",
+      "controlTitle": "Tú tienes el control.",
+      "privacyLink": "Política de privacidad",
+      "termsLink": "Términos del servicio"
     }
   },
   "civic": {

@@ -53,7 +53,10 @@ export default function ScanSignInScreen() {
     (parsed: ScanResult) => {
       // `replace` so the hardware back button doesn't return to the camera.
       if (parsed.kind === 'approval') {
-        router.replace({ pathname: '/(scan)/approve', params: { code: parsed.code } });
+        // `source: 'scanner'` marks this as the cross-device QR path so the
+        // approval sheet stays in Commons on success (an external deep link
+        // omits it and, on Android, returns to the caller instead).
+        router.replace({ pathname: '/(scan)/approve', params: { code: parsed.code, source: 'scanner' } });
         return;
       }
       if (parsed.kind === 'id') {
