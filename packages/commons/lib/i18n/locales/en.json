@@ -1043,6 +1043,19 @@
     "overwriteConfirm": "Replace and restore",
     "cancel": "Cancel"
   },
+  "importPrivateKey": {
+    "entry": "Import with private key",
+    "title": "Import with private key",
+    "subtitle": "Paste the private key from your Oxy Identity export. This restores full control of your account when you don't have your recovery phrase.",
+    "placeholder": "Private key (hex)",
+    "invalidKey": "That doesn't look like a valid private key. Check the value and try again.",
+    "import": "Import identity",
+    "importing": "Importing…",
+    "failed": "We couldn't import that private key. Check the value and try again.",
+    "syncFailed": "Imported on this device, but we couldn't reach the server. Check your connection and try again.",
+    "offlineHint": "You appear to be offline. The identity will be stored on this device and synced when you reconnect.",
+    "identityAlreadyExists": "A different identity already exists on this device. Remove it from Settings first, then import."
+  },
   "rotateKey": {
     "settingsEntry": "Rotate your key",
     "settingsEntrySubtitle": "Replace your identity key with a new one",

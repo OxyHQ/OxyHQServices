@@ -34,6 +34,7 @@ const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
  */
 let inFlightCreateIdentity: Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> | null = null;
 let inFlightImportIdentity: Promise<{ synced: boolean }> | null = null;
+let inFlightImportPrivateKey: Promise<{ synced: boolean }> | null = null;
 
 export interface UseIdentityResult {
   /**
@@ -46,6 +47,14 @@ export interface UseIdentityResult {
   createIdentity: (opts?: { skipSync?: boolean }) => Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }>;
   /** Import an existing identity from recovery phrase */
   importIdentity: (phrase: string, opts?: { skipSync?: boolean }) => Promise<{ synced: boolean }>;
+  /**
+   * Import an existing identity from a raw private key (hex) — the recovery
+   * path for a user who exported their private key but has NO recovery phrase.
+   * Mirrors {@link importIdentity} minus the mnemonic steps: it stores the key
+   * directly and (online) registers-if-needed + signs in. No phrase is
+   * persisted, so the re-reveal surface correctly reports none.
+   */
+  importIdentityFromPrivateKey: (privateKeyHex: string, opts?: { skipSync?: boolean }) => Promise<{ synced: boolean }>;
   /** Sync local identity with server (when online) */
   syncIdentity: () => Promise<User>;
   /** Check if device has an identity stored */
@@ -419,6 +428,105 @@ export const useIdentity = (): UseIdentityResult => {
     [oxyServices, signIn, setSynced, queryClient],
   );
 
+  const importIdentityFromPrivateKey = useCallback(
+    async (privateKeyHex: string, opts?: { skipSync?: boolean }): Promise<{ synced: boolean }> => {
+      if (!oxyServices) throw new Error('OxyServices not initialized');
+      if (!signIn) throw new Error('signIn not available');
+
+      // Serialize concurrent imports (see importIdentity for rationale).
+      if (inFlightImportPrivateKey) {
+        return inFlightImportPrivateKey;
+      }
+
+      const run = async (): Promise<{ synced: boolean }> => {
+        const normalizedKey = privateKeyHex.trim().toLowerCase();
+        if (!KeyManager.isValidPrivateKey(normalizedKey)) {
+          throw new Error('Invalid private key. Check the value and try again.');
+        }
+
+        // Same preflight interlock as importIdentity: a raw-key import is a
+        // recovery path, so the SAME-identity case is allowed; we only refuse
+        // when overwriting would clobber a DIFFERENT, still-recoverable identity.
+        const incomingPublicKey = KeyManager.derivePublicKey(normalizedKey);
+        const status = await KeyManager.getIdentityStatus({ bypassCache: true });
+        if (status.state === 'unavailable') {
+          throw new IdentityUnavailableError(
+            'Cannot import an identity while identity storage is unavailable.',
+            status.cause,
+          );
+        }
+        if (status.state === 'present' && status.publicKey !== incomingPublicKey) {
+          throw new IdentityAlreadyExistsError(status.publicKey);
+        }
+        if (status.state === 'lost' && status.marker.publicKey !== incomingPublicKey) {
+          throw new IdentityMayExistError(status.marker.publicKey);
+        }
+
+        // Store the key directly. Unlike the phrase path there is NO mnemonic to
+        // persist for re-reveal — the user recovered from a raw key export.
+        const publicKey = await KeyManager.importKeyPair(normalizedKey);
+
+        setSynced(false);
+        await persistIdentitySyncState(false);
+        await persistOnboardingComplete(false);
+        await persistOnboardingFlow('import');
+
+        if (opts?.skipSync) {
+          console.warn('[useIdentity] Offline during private-key import — identity stored locally, server sync deferred');
+          return { synced: false };
+        }
+
+        try {
+          const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
+
+          if (!registered) {
+            try {
+              const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+              await oxyServices.register(publicKey, signature, timestamp);
+            } catch (registerError: unknown) {
+              if (!isAlreadyRegisteredError(registerError)) {
+                throw registerError;
+              }
+            }
+          }
+
+          await signIn(publicKey);
+
+          setSynced(true);
+          await persistIdentitySyncState(true);
+          await KeyManager.migrateToSharedIdentity();
+
+          return { synced: true };
+        } catch (syncError) {
+          console.error('[useIdentity] Identity imported locally but server sync failed', syncError);
+          return { synced: false };
+        }
+      };
+
+      inFlightImportPrivateKey = run();
+      try {
+        const result = await inFlightImportPrivateKey;
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+        queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
+        return result;
+      } catch (error) {
+        if (!isIdentityPreflightRefusal(error) && !(error instanceof IdentityPersistError)) {
+          handleAuthError(error, {
+            defaultMessage: 'Failed to import identity',
+            code: REGISTER_ERROR_CODE,
+            setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
+            logger: __DEV__ ? console.warn : undefined,
+          });
+        }
+        throw error;
+      } finally {
+        inFlightImportPrivateKey = null;
+      }
+    },
+    [oxyServices, signIn, setSynced, queryClient],
+  );
+
   // Thin passthroughs. Both now THROW `IdentityUnavailableError` when storage is
   // locked/unreadable (rather than the old `false`/`null`); callers must treat a
   // throw as "cannot determine", never as "no identity". `hasIdentity` still
@@ -496,6 +604,7 @@ export const useIdentity = (): UseIdentityResult => {
   return {
     createIdentity,
     importIdentity,
+    importIdentityFromPrivateKey,
     syncIdentity,
     hasIdentity,
     getPublicKey,

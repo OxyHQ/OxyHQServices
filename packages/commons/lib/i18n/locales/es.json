@@ -1043,6 +1043,19 @@
     "overwriteConfirm": "Reemplazar y restaurar",
     "cancel": "Cancelar"
   },
+  "importPrivateKey": {
+    "entry": "Importar con clave privada",
+    "title": "Importar con clave privada",
+    "subtitle": "Pega la clave privada de tu exportación de Identidad Oxy. Esto restaura el control total de tu cuenta cuando no tienes tu frase de recuperación.",
+    "placeholder": "Clave privada (hex)",
+    "invalidKey": "Eso no parece una clave privada válida. Revisa el valor e inténtalo de nuevo.",
+    "import": "Importar identidad",
+    "importing": "Importando…",
+    "failed": "No pudimos importar esa clave privada. Revisa el valor e inténtalo de nuevo.",
+    "syncFailed": "Se importó en este dispositivo, pero no pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.",
+    "offlineHint": "Parece que estás sin conexión. La identidad se guardará en este dispositivo y se sincronizará al reconectar.",
+    "identityAlreadyExists": "Ya existe una identidad diferente en este dispositivo. Elimínala en Ajustes primero y luego importa."
+  },
   "rotateKey": {
     "settingsEntry": "Rota tu clave",
     "settingsEntrySubtitle": "Reemplaza tu clave de identidad por una nueva",

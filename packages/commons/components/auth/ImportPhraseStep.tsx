@@ -20,6 +20,12 @@ interface ImportPhraseStepProps {
    * Oxy-stored encrypted backup instead of retyping the phrase by hand.
    */
   onRestoreFromBackup?: () => void;
+  /**
+   * Optional handler for the "import with private key" affordance. When
+   * provided, a ghost button lets a user who exported their raw private key
+   * (but has no recovery phrase) recover their account directly from the key.
+   */
+  onImportPrivateKey?: () => void;
   backgroundColor: string;
   textColor: string;
 }
@@ -35,6 +41,7 @@ export function ImportPhraseStep({
   error,
   isLoading,
   onRestoreFromBackup,
+  onImportPrivateKey,
   backgroundColor,
   textColor,
 }: ImportPhraseStepProps) {
@@ -79,6 +86,16 @@ export function ImportPhraseStep({
             disabled={isLoading}
           >
             {t('restoreBackup.entry')}
+          </Button>
+        )}
+
+        {onImportPrivateKey && (
+          <Button
+            variant="ghost"
+            onPress={onImportPrivateKey}
+            disabled={isLoading}
+          >
+            {t('importPrivateKey.entry')}
           </Button>
         )}
 
