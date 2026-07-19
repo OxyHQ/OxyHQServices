@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import type { Href } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyManager } from '@oxyhq/core';
@@ -73,7 +74,7 @@ export const ONBOARDING_COMPLETE_QUERY_KEY = ['onboarding', 'complete'] as const
 export const ONBOARDING_FLOW_QUERY_KEY = ['onboarding', 'flow'] as const;
 
 /** Resume path for an in-progress onboarding wizard. */
-export function getOnboardingResumeHref(flow: OnboardingFlow | null): string {
+export function getOnboardingResumeHref(flow: OnboardingFlow | null): Href {
   return flow === 'import'
     ? '/(auth)/import-identity/username'
     : '/(auth)/create-identity';
