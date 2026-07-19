@@ -206,6 +206,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return sorted;
     }, [files, searchQuery, viewMode, sortBy, sortOrder]);
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
+    const photoDimensionsRef = useRef(photoDimensions);
+    photoDimensionsRef.current = photoDimensions;
     const [loadingDimensions, setLoadingDimensions] = useState(false);
     // Selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelectedIds));
@@ -441,11 +443,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (photos.length === 0) return;
 
         setLoadingDimensions(true);
-        const newDimensions: { [key: string]: { width: number, height: number } } = { ...photoDimensions };
-        let hasNewDimensions = false;
 
-        // Only load dimensions for photos we don't have yet
-        const photosToLoad = photos.filter(photo => !newDimensions[photo.id]);
+        // Snapshot ids missing from the cache at kick-off; concurrent runs may
+        // overlap but each merge is applied via a functional updater.
+        const photosToLoad = photos.filter((photo) => !photoDimensionsRef.current[photo.id]);
 
         if (photosToLoad.length === 0) {
             setLoadingDimensions(false);
@@ -453,6 +454,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
 
         try {
+            const measured: { [key: string]: { width: number; height: number } } = {};
+
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
@@ -470,35 +473,32 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             Image.getSize(
                                 downloadUrl,
                                 (width: number, height: number) => {
-                                    newDimensions[photo.id] = { width, height };
-                                    hasNewDimensions = true;
+                                    measured[photo.id] = { width, height };
                                     resolve();
                                 },
                                 () => {
                                     // Fallback dimensions
-                                    newDimensions[photo.id] = { width: 1, height: 1 };
-                                    hasNewDimensions = true;
+                                    measured[photo.id] = { width: 1, height: 1 };
                                     resolve();
                                 }
                             );
                         });
                     } catch (error) {
                         // Fallback dimensions for any errors
-                        newDimensions[photo.id] = { width: 1, height: 1 };
-                        hasNewDimensions = true;
+                        measured[photo.id] = { width: 1, height: 1 };
                     }
                 })
             );
 
-            if (hasNewDimensions) {
-                setPhotoDimensions(newDimensions);
+            if (Object.keys(measured).length > 0) {
+                setPhotoDimensions((prev) => ({ ...prev, ...measured }));
             }
         } catch (error) {
             // Photo dimensions loading failed, continue without dimensions
         } finally {
             setLoadingDimensions(false);
         }
-    }, [thumbSourceFor, photoDimensions]);
+    }, [thumbSourceFor]);
 
     // Re-measure photo dimensions when their private-safe URLs resolve. The
     // justified grid's own trigger fires on the photo SET, not on URL

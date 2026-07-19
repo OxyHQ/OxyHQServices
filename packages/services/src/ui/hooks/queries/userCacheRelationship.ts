@@ -16,7 +16,12 @@ export function patchCachedUserRelationship(
   isFollowing: boolean,
 ): void {
   queryClient.setQueriesData<CachedUser>(
-    { queryKey: queryKeys.users.details() },
+    {
+      queryKey: queryKeys.users.details(),
+      // Viewer-relative `relationship` must never be written on the viewer-
+      // independent by-id key — only viewer-scoped detail / by-username keys.
+      predicate: (query) => (query.queryKey as readonly unknown[]).includes('viewer'),
+    },
     (existing) => {
       if (!existing || existing.id !== targetUserId) return existing;
       return {
