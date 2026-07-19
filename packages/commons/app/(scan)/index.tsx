@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
@@ -27,9 +27,8 @@ import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometric
  *     `/approve` flow, which re-resolves the requesting app identity server-side
  *   - a citizen Oxy ID card (`oxycommons://card?did=…`) → the `(id)/card` view,
  *     which resolves and verifies the signed card server-side
- *   - a real-life attestation (`oxycommons://attest?…`) → signed and submitted
- *     AUTOMATICALLY on the scan/NFC event (no confirm step, no biometric) and
- *     rendered inline over the frozen camera: Confirming… → ✓ Verified
+ *   - a real-life attestation (`oxycommons://attest?…`) → held for review in
+ *     `AttestReviewSheet`; B confirms + passes biometrics before signing
  *
  * The QR is never trusted for display — only the opaque `code` / `did` it
  * carries is used, and both are re-resolved server-side.
@@ -48,14 +47,20 @@ export default function ScanSignInScreen() {
   // True while B's device biometric gate is running (before the signed submit).
   const [confirming, setConfirming] = useState(false);
 
-  // Opening the scanner starts a fresh session: clear any stale attest outcome
-  // from an earlier scan so a leftover confirmation/success/error card can't
-  // surface over this live camera (the review sheet is shown whenever the shared
-  // flow is non-idle).
-  const resetAttest = attest.reset;
-  useEffect(() => {
-    resetAttest();
-  }, [resetAttest]);
+  // Each time the scanner gains focus, start a fresh session: clear any stale
+  // attest outcome from an earlier scan and reset local UI state so a leftover
+  // confirmation sheet or frozen camera can't leak across opens (the modal may
+  // stay mounted after `router.back()`).
+  const resetScannerSession = useCallback(() => {
+    attest.reset();
+    setScanned(false);
+    setScanError(null);
+    setConfirming(false);
+    setNfcReading(false);
+    setFlashOn(false);
+  }, [attest.reset]);
+
+  useFocusEffect(resetScannerSession);
 
   // Shared routing for anything `parseScan` can resolve, regardless of
   // whether the raw string came from the camera or an NFC read.

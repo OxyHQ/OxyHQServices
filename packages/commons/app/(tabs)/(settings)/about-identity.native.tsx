@@ -6,7 +6,7 @@ import { buildUserDid } from '@oxyhq/core';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, StackHeader } from '@/components/ui';
+import { Screen, StackHeader, SessionGate } from '@/components/ui';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { useIdentity } from '@/hooks/useIdentity';
@@ -31,8 +31,9 @@ export default function AboutIdentityScreen() {
   const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
-  // Auth is enforced by the layout — assume a session here.
-  const { user, isLoading: oxyLoading, oxyServices } = useOxy();
+  // Auth is enforced by the layout for navigation; session-dependent rows are
+  // gated below via SessionGate (cold boot may still be minting).
+  const { user, oxyServices } = useOxy();
   const { getPublicKey } = useIdentity();
 
   const userId = user?.id ?? oxyServices?.getCurrentUserId() ?? null;
@@ -173,7 +174,7 @@ export default function AboutIdentityScreen() {
     [colors.textSecondary, colors.tint],
   );
 
-  if (oxyLoading || loading) {
+  if (loading) {
     return (
       <Screen contentStyle={styles.flush}>
         <View style={styles.loadingContainer}>
@@ -186,19 +187,8 @@ export default function AboutIdentityScreen() {
     );
   }
 
-  return (
-    // Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
-    // header + footnote are padded to align with it.
-    <Screen contentStyle={styles.flush} gap={16}>
-      <View style={styles.header}>
-        <StackHeader
-          title={t('aboutIdentity.title')}
-          subtitle={t('aboutIdentity.subtitle')}
-          onBack={() => router.back()}
-          backAccessibilityLabel={t('common.back')}
-        />
-      </View>
-
+  const renderBody = () => (
+    <>
       {/* Technical identifiers — tap a row to copy the full value. */}
       <SettingsListGroup title={t('aboutIdentity.identifiersTitle')}>
         {publicKey && (
@@ -255,6 +245,23 @@ export default function AboutIdentityScreen() {
       <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
         {t('aboutIdentity.importantNotice')}
       </ThemedText>
+    </>
+  );
+
+  return (
+    // Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
+    // header + footnote are padded to align with it.
+    <Screen contentStyle={styles.flush} gap={16}>
+      <View style={styles.header}>
+        <StackHeader
+          title={t('aboutIdentity.title')}
+          subtitle={t('aboutIdentity.subtitle')}
+          onBack={() => router.back()}
+          backAccessibilityLabel={t('common.back')}
+        />
+      </View>
+
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

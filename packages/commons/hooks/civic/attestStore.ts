@@ -7,11 +7,15 @@ import { attestErrorCode, type AttestErrorCode } from '@/lib/civic/civic-errors'
 /**
  * Zustand store for the real-life attestation FLOW on the SCANNER's (B's) side.
  *
- * The flow is fully automatic: the moment a scan / NFC-read EVENT yields an
- * attest payload, {@link AttestFlowStore.submit} signs and submits it — no
- * biometric gate, no confirm button. The server upserts idempotently, so
- * re-confirming the same person is fine and there is deliberately NO
- * client-side cooldown or dedupe here.
+ * Two lanes share this store:
+ *   - Reviewed (`prepare` → biometric → `confirm`): the in-app scanner and the
+ *     NFC deep-link screen hold the payload until B reviews A's card and passes
+ *     the device gate.
+ *   - Auto (`submit`): legacy one-shot path kept for tests; production entry
+ *     points use the reviewed lane.
+ *
+ * The server upserts idempotently, so re-confirming the same person is fine and
+ * there is deliberately NO client-side cooldown or dedupe here.
  *
  * This store owns ONLY the flow state (what B just did); the subject's card
  * (name/avatar) is server state and stays in TanStack Query (`useCivicCard`,

@@ -13,7 +13,8 @@ export const VALIDATOR_INBOX_KEY = ['civic', 'validator-inbox'] as const;
  * fetch backs the badge count, the list, and the per-request lookup.
  */
 export function useValidatorInbox(): UseQueryResult<ValidationRequestSummary[]> {
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
+  const userId = user?.id ?? oxyServices?.getCurrentUserId?.() ?? null;
 
   return useQuery<ValidationRequestSummary[]>({
     queryKey: VALIDATOR_INBOX_KEY,
@@ -23,7 +24,7 @@ export function useValidatorInbox(): UseQueryResult<ValidationRequestSummary[]> 
       }
       return oxyServices.getValidatorInbox();
     },
-    enabled: Boolean(oxyServices),
+    enabled: Boolean(oxyServices) && Boolean(userId),
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
