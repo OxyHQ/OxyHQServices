@@ -26,6 +26,7 @@ import {
 import { useTranslation } from '@/lib/i18n';
 import { useCommonsApproval } from '@/hooks/commons-signin/useCommonsApproval';
 import { resolveApprovedAction } from '@/lib/commons-signin/approval-return';
+import { ErrorFallback } from '@/components/error-fallback';
 
 /** How long the success confirmation lingers before we return / close. */
 const APPROVED_RETURN_DELAY_MS = 1000;
@@ -33,16 +34,23 @@ const APPROVED_RETURN_DELAY_MS = 1000;
 /**
  * "Sign in with Oxy" approval surface (Commons / approver side).
  *
+ * This is a ROOT-level route (`app/approve.tsx`, URL `/approve`), NOT part of the
+ * `(scan)` group. It is deliberately outside `(scan)` because that group is a
+ * `fullScreenModal` — an opaque card would sit behind the sheet, making it look
+ * like a dedicated screen. As a root `transparentModal` (registered in
+ * `app/_layout.tsx`) the sheet instead rises over the real underlying context
+ * (the `(tabs)` anchor from `unstable_settings`), which is what the user sees.
+ *
  * Reachable two ways, both carrying the public `code`:
- *   - the in-app QR scanner (`/(scan)`) replaces into here (threads `source=scanner`)
+ *   - the in-app QR scanner (`/(scan)`) replaces into `/approve` (threads `source=scanner`)
  *   - a same-device deep link `oxycommons://approve?...` / `commons://approve?...`
  *
  * Rendered as a Bloom bottom sheet (`<Dialog placement="bottom">`) — the same
  * Bloom surface `@oxyhq/services`' `OxyAccountDialog` uses — restyled after the
  * connect-app pairing pattern: a dark Oxy-brand hero with the [requesting app] ↔
  * [Oxy] logo lockup, a centered title/description, the Approve CTA (Deny below),
- * and a footer scope summary + privacy/terms links. The route is a transparent
- * modal (see `(scan)/_layout.tsx`); the sheet owns its dimmed backdrop.
+ * and a footer scope summary + privacy/terms links. The sheet owns its own drag
+ * behavior + dimmed backdrop over the transparent route.
  *
  * Driven imperatively (`useDialogControl`) so a backdrop tap, a drag-down, or an
  * explicit close all fire `onClose` — Bloom's CONTROLLED bottom placement
@@ -412,3 +420,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+/**
+ * Route-level error boundary — preserves the branded retry UX this surface had
+ * while it lived under `(scan)/_layout.tsx`, now that it is a root route.
+ */
+export function ErrorBoundary(props: { error: Error; retry: () => void }) {
+  return <ErrorFallback {...props} />;
+}

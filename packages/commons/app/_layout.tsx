@@ -63,13 +63,16 @@ export const unstable_settings = {
 };
 
 /**
- * A typed expo-router `Href` for one of the root `(scan)` handoff screens. The
- * object form (not a raw string) is required because `typedRoutes` is on: a
- * runtime-built string can't narrow to the generated path union, whereas the
+ * A typed expo-router `Href` for a cold-launch handoff target. The object form
+ * (not a raw string) is required because `typedRoutes` is on: a runtime-built
+ * string can't narrow to the generated path union, whereas the
  * `{ pathname, params }` shape does — mirroring `app/(scan)/index.tsx`.
+ *
+ * `approve` is a ROOT `transparentModal` route (`/approve`); `attest` stays in
+ * the `(scan)` fullScreenModal group (`/(scan)/attest`).
  */
 type ScanReplayHref =
-  | { pathname: '/(scan)/approve'; params: Record<string, string> }
+  | { pathname: '/approve'; params: Record<string, string> }
   | { pathname: '/(scan)/attest'; params: Record<string, string> };
 
 /**
@@ -78,12 +81,13 @@ type ScanReplayHref =
  *
  * The sign-in / real-life-attestation handoffs arrive as
  * `oxycommons://approve?...` / `oxycommons://attest?...` (also the `commons://`
- * scheme). `+native-intent` passes these through as `/approve` / `/attest`,
- * which resolve into the root `(scan)` group. We strip any scheme + leading
- * slashes and, when the first path segment is `approve` or `attest`, return the
- * typed href with the query decoded into `params` (expo-router re-encodes them
- * when it builds the URL). Card links (`/card/<did>`, a `(tabs)` route) and
- * anything else yield `null` so they are never force-routed into `(scan)`.
+ * scheme). `+native-intent` passes these through as `/approve` / `/attest`.
+ * `approve` resolves to the root `transparentModal` route; `attest` resolves
+ * into the `(scan)` group. We strip any scheme + leading slashes and, when the
+ * first path segment is `approve` or `attest`, return the typed href with the
+ * query decoded into `params` (expo-router re-encodes them when it builds the
+ * URL). Card links (`/card/<did>`, a `(tabs)` route) and anything else yield
+ * `null` so they are never force-routed here.
  */
 function scanTargetFromColdLaunch(url: string): ScanReplayHref | null {
   const stripped = url
@@ -114,7 +118,7 @@ function scanTargetFromColdLaunch(url: string): ScanReplayHref | null {
   }
 
   return segment === 'approve'
-    ? { pathname: '/(scan)/approve', params }
+    ? { pathname: '/approve', params }
     : { pathname: '/(scan)/attest', params };
 }
 
@@ -351,18 +355,32 @@ function AppStackContent() {
             {/*
               The QR scanner is an ACTION, not a tab. It lives at the root as a
               full-screen presented modal (pushed from the ID landing FAB via
-              `router.push('/(scan)')`) so the CameraView covers the tab bar.
-              Declared LAST and guarded by the same `needsAuth` redirect as
-              `(tabs)`: only an authenticated user can open it, and an
-              unauthenticated `oxycommons://approve` / `oxycommons://attest`
-              deep link (which resolve to `(scan)/approve` / `(scan)/attest`) is
-              bounced to onboarding. Route groups are URL-transparent, so the
-              `/approve` and `/attest` deep-link paths are unchanged by this move.
+              `router.push('/(scan)')`) so the CameraView covers the tab bar. It
+              holds the camera (`index`) + the real-life attestation confirmation
+              (`attest`). Guarded by the same `needsAuth` redirect as `(tabs)`:
+              only an authenticated user can open it, and an unauthenticated
+              `oxycommons://attest` deep link is bounced to onboarding.
             */}
             <Stack.Screen
               name="(scan)"
               redirect={needsAuth}
               options={{ headerShown: false, presentation: 'fullScreenModal' }}
+            />
+            {/*
+              "Sign in with Oxy" approval — a Bloom bottom sheet. Registered at
+              the ROOT (not inside `(scan)`) as a TRANSPARENT modal so the sheet
+              rises over the real underlying context (the `(tabs)` anchor from
+              `unstable_settings`) instead of an opaque `fullScreenModal` group
+              card — otherwise it looks like a dedicated screen. `animation:
+              'none'` lets the sheet own the motion. Same `needsAuth` guard as
+              `(scan)`: an unauthenticated `oxycommons://approve` deep link is
+              bounced to onboarding (and the cold-start replay above re-navigates
+              here once the gate settles to an authenticated device).
+            */}
+            <Stack.Screen
+              name="approve"
+              redirect={needsAuth}
+              options={{ headerShown: false, presentation: 'transparentModal', animation: 'none' }}
             />
           </Stack>
           <StatusBar style="auto" />

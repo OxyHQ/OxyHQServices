@@ -53,10 +53,14 @@ export default function ScanSignInScreen() {
     (parsed: ScanResult) => {
       // `replace` so the hardware back button doesn't return to the camera.
       if (parsed.kind === 'approval') {
-        // `source: 'scanner'` marks this as the cross-device QR path so the
-        // approval sheet stays in Commons on success (an external deep link
-        // omits it and, on Android, returns to the caller instead).
-        router.replace({ pathname: '/(scan)/approve', params: { code: parsed.code, source: 'scanner' } });
+        // Approval lives at the ROOT (`/approve`, a transparentModal) — NOT in
+        // this `(scan)` fullScreenModal group — so the sheet rises over the real
+        // context (the `(tabs)` anchor) instead of an opaque group card.
+        // `replace` from the camera dismisses this modal and presents `/approve`.
+        // `source: 'scanner'` marks the cross-device QR path so approval stays in
+        // Commons on success (an external deep link omits it and, on Android,
+        // returns to the caller instead).
+        router.replace({ pathname: '/approve', params: { code: parsed.code, source: 'scanner' } });
         return;
       }
       if (parsed.kind === 'id') {
