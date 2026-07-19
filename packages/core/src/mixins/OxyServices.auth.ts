@@ -486,7 +486,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           publicKey,
           signature,
           timestamp,
-        }, { cache: false });
+        }, { cache: false, skipAuth: true });
 
         if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
           throw new OxyAuthenticationError('Registration failed', 'REGISTER_FAILED', 400);
@@ -515,7 +515,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         return await this.makeRequest<ChallengeResponse>('POST', '/auth/challenge', {
           publicKey,
-        }, { cache: false, ...requestOptions });
+        }, { cache: false, skipAuth: true, ...requestOptions });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -552,7 +552,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           timestamp,
           deviceName,
           deviceFingerprint,
-        }, { cache: false, ...requestOptions });
+        }, { cache: false, skipAuth: true, ...requestOptions });
 
         // Plant the freshly-minted tokens, mirroring `claimSessionByToken`.
         // `/auth/verify` returns the first access token (and refresh token) in
@@ -581,7 +581,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/check-publickey/${encodeURIComponent(publicKey)}`,
           undefined,
-          { cache: false }
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -836,7 +836,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/session/status/${encodeURIComponent(sessionToken)}`,
           undefined,
-          { cache: false, retry: false }
+          // Public/pre-session (no bearer): a preflight here is wrong per se and,
+          // if ever reached while a refresh is pending, would re-enter
+          // refreshAccessToken and await the very promise it runs inside.
+          { cache: false, retry: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -859,7 +862,9 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/session/approve-info/${encodeURIComponent(authorizeCode)}`,
           undefined,
-          { cache: false }
+          // Public (no auth required) — skip the bearer preflight (avoids the
+          // pre-session self-await class).
+          { cache: false, skipAuth: true }
         );
         return {
           application: raw.application,
@@ -917,7 +922,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             ...(params.deviceName ? { deviceName: params.deviceName } : {}),
             ...(params.deviceFingerprint ? { deviceFingerprint: params.deviceFingerprint } : {}),
           },
-          { cache: false }
+          // Key-signed, cookieless (no bearer) — skip the preflight.
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -936,7 +942,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           `/auth/session/deny/${encodeURIComponent(authorizeCode)}`,
           undefined,
-          { cache: false }
+          // Public (no auth required) — skip the bearer preflight.
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1069,7 +1076,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/auth/check-username/${username}`, undefined, { cache: false });
+        // Public availability lookup (pre-session) — skip the bearer preflight.
+        return await this.makeRequest('GET', `/auth/check-username/${username}`, undefined, { cache: false, skipAuth: true });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -1080,7 +1088,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/auth/check-email/${email}`, undefined, { cache: false });
+        // Public availability lookup (pre-session) — skip the bearer preflight.
+        return await this.makeRequest('GET', `/auth/check-email/${email}`, undefined, { cache: false, skipAuth: true });
       } catch (error) {
         throw this.handleError(error);
       }

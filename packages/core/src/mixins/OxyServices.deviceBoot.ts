@@ -102,7 +102,9 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           'POST',
           '/session/device/redeem-ticket',
           { ticket, returnOrigin },
-          { cache: false, skipAuth: true },
+          // Public device-hub sync mint (bearer-less). Same control-plane class as
+          // the device-secret mint — bypassQueue so it never waits for a slot.
+          { cache: false, skipAuth: true, bypassQueue: true },
         );
         const parsed = safeParseContract(deviceHubTicketRedeemResponseSchema, res);
         if (!parsed) {

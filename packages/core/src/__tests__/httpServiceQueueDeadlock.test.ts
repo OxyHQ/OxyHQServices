@@ -25,6 +25,20 @@ function jsonResponse(data: unknown): Response {
   });
 }
 
+/** Resolve to `true` if `promise` settles within `ms`, else `false`. Always
+ *  clears its timer so no pending timeout leaks into jest's teardown. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 describe('HttpService RequestQueue deadlock', () => {
   const originalFetch = globalThis.fetch;
 
@@ -63,11 +77,7 @@ describe('HttpService RequestQueue deadlock', () => {
       { skipAuth: true, bypassQueue: true, retry: false },
     );
 
-    const outcome = await Promise.race([
-      mint.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('deadlock'), 500)),
-    ]);
-    expect(outcome).toBe('settled');
+    expect(await settlesWithin(mint, 500)).toBe(true);
 
     releases.forEach((release) => release());
     await Promise.all([slowA, slowB]);
@@ -111,11 +121,7 @@ describe('HttpService RequestQueue deadlock', () => {
     // A boot burst of 4 against a pool of 2, all in the near-expiry window.
     const burst = Promise.all([http.get('/a'), http.get('/b'), http.get('/c'), http.get('/d')]);
 
-    const outcome = await Promise.race([
-      burst.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('deadlock'), 800)),
-    ]);
-    expect(outcome).toBe('settled');
+    expect(await settlesWithin(burst, 800)).toBe(true);
     // The single-flight refresh coalesces the whole burst into ONE mint.
     expect(mintCalls).toBe(1);
   });

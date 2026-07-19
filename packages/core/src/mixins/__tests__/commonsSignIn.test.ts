@@ -251,7 +251,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         'POST',
         '/auth/challenge',
         { publicKey: 'pub-x' },
-        { cache: false },
+        { cache: false, skipAuth: true },
       );
 
       await oxy.requestChallenge('pub-x', { retry: false });
@@ -259,7 +259,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         'POST',
         '/auth/challenge',
         { publicKey: 'pub-x' },
-        { cache: false, retry: false },
+        { cache: false, skipAuth: true, retry: false },
       );
     });
 
@@ -282,7 +282,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
           deviceName: 'dev',
           deviceFingerprint: 'fp',
         },
-        { cache: false, retry: false, timeout: 9000 },
+        { cache: false, skipAuth: true, retry: false, timeout: 9000 },
       );
     });
   });
