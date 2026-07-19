@@ -113,6 +113,11 @@ export default function WelcomeScreen() {
     }
   }, [termsAccepted, router]);
 
+  const handleRestore = useCallback(() => {
+    void persistOnboardingFlow('import');
+    router.replace('/(auth)/import-identity');
+  }, [router]);
+
   const handleDecline = useCallback(() => {
     router.back();
   }, [router]);
@@ -190,6 +195,18 @@ export default function WelcomeScreen() {
             {t('auth.welcome.accept')}
           </Button>
         </View>
+
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('auth.welcome.restore')}
+        >
+          <Text style={[styles.restoreText, { color: textColor }]}>
+            {t('auth.welcome.restore')}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     </View>
   );
@@ -245,5 +262,15 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+  },
+  restoreButton: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.7,
+    textDecorationLine: 'underline',
   },
 });

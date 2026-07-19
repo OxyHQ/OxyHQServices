@@ -42,6 +42,7 @@
   "auth": {
     "indexHello": "Hello",
     "indexTapToContinue": "Tap to continue",
+    "indexRestore": "Restore with recovery phrase",
     "signIn": {
       "title": "Sign in to your account",
       "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
@@ -56,6 +57,7 @@
       "termsAgree": "I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice",
       "decline": "Decline",
       "accept": "Accept",
+      "restore": "I already have an account",
       "rotating": {
         "humanId": "human ID",
         "digitalIdentity": "digital identity",

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui';
 import { CenteredState } from '@/components/ui/centered-state';
 import { useTranslation } from '@/lib/i18n';
 import { useOnboardingStatus, ONBOARDING_IDENTITY_QUERY_KEY, getOnboardingResumeHref } from '@/hooks/useOnboardingStatus';
+import { persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 const humanTranslations = [
   'Human',
@@ -98,6 +99,14 @@ export default function AuthIndexScreen() {
 
   const handlePress = useCallback(() => {
     router.push('./welcome');
+  }, [router]);
+
+  // A returning user with an existing account (but no local identity on THIS
+  // device) needs a direct path to paste their recovery phrase, without being
+  // funneled through the create-flavored welcome screen first.
+  const handleRestore = useCallback(() => {
+    void persistOnboardingFlow('import');
+    router.push('/(auth)/import-identity');
   }, [router]);
 
   // CRITICAL: when an identity already exists on this device but the user
@@ -209,6 +218,17 @@ export default function AuthIndexScreen() {
           fontSize={16}
           textStyle={[styles.tapText, { color: textColor }]}
         />
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('auth.indexRestore')}
+        >
+          <Text style={[styles.restoreText, { color: textColor }]}>
+            {t('auth.indexRestore')}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     </Pressable>
   );
@@ -244,5 +264,16 @@ const styles = StyleSheet.create({
   tapText: {
     fontWeight: '400',
     opacity: 0.6,
+  },
+  restoreButton: {
+    marginTop: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.7,
+    textDecorationLine: 'underline',
   },
 });
