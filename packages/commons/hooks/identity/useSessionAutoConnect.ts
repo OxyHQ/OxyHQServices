@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { logger } from '@oxyhq/core';
 import {
   createCircuitBreakerState,
   recordFailure,
@@ -122,6 +123,10 @@ export function useSessionAutoConnect(input: SessionAutoConnectInput): void {
 
     attemptingRef.current = true;
     setPhase('connecting');
+    // Field-debugging breadcrumb (no secrets): the attempt is starting.
+    logger.info('[commons] vault auto-connect: attempt starting', {
+      component: 'useSessionAutoConnect',
+    });
 
     void (async () => {
       try {
@@ -141,9 +146,11 @@ export function useSessionAutoConnect(input: SessionAutoConnectInput): void {
           // Re-run the driver; it re-checks the (possibly changed) conditions.
           setRetryTick((tick) => tick + 1);
         }, breakerRef.current.currentInterval);
-        if (__DEV__) {
-          console.warn('[commons] vault auto-connect attempt failed; scheduling retry', error);
-        }
+        // Field-debugging breadcrumb (error message only — no secrets).
+        logger.warn('[commons] vault auto-connect: attempt failed; scheduling retry', {
+          component: 'useSessionAutoConnect',
+          reason: error instanceof Error ? error.message : String(error),
+        });
       }
     })();
   }, [shouldConnect, hasUser, retryNonce, retryTick, setPhase]);

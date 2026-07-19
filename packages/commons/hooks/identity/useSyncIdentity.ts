@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { useOxy, useAuthStore, handleAuthError } from '@oxyhq/services';
 import type { User } from '@oxyhq/core';
-import { useBiometricSignIn } from '../useBiometricSignIn';
+import { useSilentKeySignIn } from '../useSilentKeySignIn';
 import {
   useIdentityStore,
   persistIdentitySyncState,
@@ -35,11 +35,16 @@ export interface UseSyncIdentityResult {
  *
  * `syncIdentity` serializes globally via `acquireSyncLock` (throws
  * "Sync already in progress" if held), so concurrent callers never double-run;
- * it register-if-needed + signs in with the device's PRIMARY key.
+ * it register-if-needed + signs in SILENTLY with the device's PRIMARY key (via
+ * `useSilentKeySignIn`, NOT the biometric-gated wrapper — a headless prompt at
+ * boot would hang forever). Every await is HttpService-bounded.
  */
 export function useSyncIdentity(): UseSyncIdentityResult {
   const { oxyServices } = useOxy();
-  const { signIn } = useBiometricSignIn();
+  // SILENT key sign-in (no biometric gate). This runs at boot to restore the
+  // vault's own session; a headless biometric prompt here would never resolve
+  // and hang "connecting" forever. Biometrics gate INTERACTIVE ops elsewhere.
+  const { signInWithKeySilent } = useSilentKeySignIn();
 
   const isSynced = useIdentityStore((state) => state.isSynced);
   const isSyncing = useIdentityStore((state) => state.isSyncing);
@@ -60,7 +65,6 @@ export function useSyncIdentity(): UseSyncIdentityResult {
   const syncIdentity = useCallback(
     async (): Promise<User> => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
-      if (!signIn) throw new Error('signIn not available');
 
       // Acquire global sync lock
       const lock = acquireSyncLock();
@@ -69,7 +73,7 @@ export function useSyncIdentity(): UseSyncIdentityResult {
       try {
         const result = await syncIdentityWithServer({
           oxyServices,
-          signIn,
+          signIn: signInWithKeySilent,
           isAlreadySynced: isSynced,
           signal: lock.signal,
           onSessionExpired: async () => {
@@ -98,7 +102,7 @@ export function useSyncIdentity(): UseSyncIdentityResult {
         lock.release();
       }
     },
-    [oxyServices, signIn, setSynced, setSyncing, isSynced],
+    [oxyServices, signInWithKeySilent, setSynced, setSyncing, isSynced],
   );
 
   return {

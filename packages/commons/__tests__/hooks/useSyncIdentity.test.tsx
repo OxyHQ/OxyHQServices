@@ -6,8 +6,9 @@ const syncIdentityWithServerMock = jest.fn();
 jest.mock('@/hooks/identity/syncService', () => ({
   syncIdentityWithServer: (opts: unknown) => syncIdentityWithServerMock(opts),
 }));
-jest.mock('@/hooks/useBiometricSignIn', () => ({
-  useBiometricSignIn: () => ({ signIn: jest.fn() }),
+// useSyncIdentity now uses the SILENT key sign-in (no biometric gate).
+jest.mock('@/hooks/useSilentKeySignIn', () => ({
+  useSilentKeySignIn: () => ({ signInWithKeySilent: jest.fn() }),
 }));
 jest.mock('@/hooks/identity/identityStore', () => {
   const actual = jest.requireActual('@/hooks/identity/identityStore');
