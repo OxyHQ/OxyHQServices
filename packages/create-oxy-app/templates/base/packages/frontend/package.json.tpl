@@ -56,6 +56,7 @@
     "tailwindcss": "{{v.tailwindcss}}"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "{{v.tailwindPostcss}}",
     "@types/react": "{{v.reactTypes}}",
     "babel-plugin-module-resolver": "{{v.babelModuleResolver}}",
     "babel-preset-expo": "{{v.babelPresetExpo}}",

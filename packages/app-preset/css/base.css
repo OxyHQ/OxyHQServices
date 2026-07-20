@@ -14,6 +14,23 @@
  *   @source "./app/**\/*.{js,jsx,ts,tsx}";
  *   @source "./components/**\/*.{js,jsx,ts,tsx}";
  *
+ * WIRING (required — two steps, or the WEB build ships ZERO utility CSS):
+ *   1. Add `postcss.config.mjs` at the app root:
+ *        export default { plugins: { "@tailwindcss/postcss": {} } };
+ *      This is what actually RUNS Tailwind v4 over this file during the Metro/Expo
+ *      web build. Without it, `@tailwind` / `@utility` / `@theme` pass through
+ *      UNPROCESSED and no `.flex-row` / `.bg-primary` / `.gap-*` rules are emitted.
+ *   2. Import the app's global.css from code (e.g. `import '../global.css'` at the
+ *      top of `app/_layout.tsx`). The `input`/`cssInput` Metro option is NOT what
+ *      compiles it — react-native-css keys off the code-level import.
+ * Skip either and react-native-css still stamps `className` tokens onto the DOM,
+ * but with no backing rules every className layout utility is inert on web and
+ * react-native-web's unlayered base View reset shows through (flex-direction:
+ * column, flex-shrink:0, padding:0). Colours look "fine" only because Bloom sets
+ * those via inline style, not className. Compiled utilities are UNLAYERED and, in
+ * an Expo static export, sit AFTER the react-native-web stylesheet in <head>, so
+ * they win the cascade over that same-specificity base reset.
+ *
  * The SDK `@source` globs below are RELATIVE TO THIS FILE's location. Published,
  * this file lives at `node_modules/@oxyhq/app-preset/css/base.css`, so
  * `../../services/lib` resolves to `node_modules/@oxyhq/services/lib` and

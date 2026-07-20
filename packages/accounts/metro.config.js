@@ -15,6 +15,16 @@ config.resolver.assetExts = [...config.resolver.assetExts, 'woff2', 'woff'];
 // otherwise it throws a setup error at runtime; capturing NativeWind's resolver as
 // `parentResolveRequest` and always calling through it satisfies that contract.
 const nativeWindConfig = withNativeWind(config, {
+  // NativeWind 5 / react-native-css compiles the Tailwind utility stylesheet
+  // from the `global.css` that `app/_layout.tsx` imports — the actual trigger is
+  // the code-level `import '../global.css'`, not this option (react-native-css
+  // does not consume a metro `input`). It is kept for parity with the shared
+  // @oxyhq/app-preset/metro factory. Without global.css wired in, react-native-css
+  // still puts `className` tokens on the DOM but NO backing `.flex-row` /
+  // `.bg-primary` / `.gap-*` rules exist, so every className layout utility used
+  // by @oxyhq/services' screens is inert on web and react-native-web's base View
+  // reset shows through (flex-direction:column, padding:0).
+  input: './global.css',
   inlineRem: 16,
   inlineVariables: false,
 });

@@ -57,9 +57,11 @@
     "expo-web-browser": "~57.0.1",
     "jszip": "^3.10.1",
     "lottie-react-native": "~7.3.8",
+    "nativewind": "5.0.0-preview.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-css": "^3.0.6",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-keyboard-controller": "1.21.13",
     "react-native-reanimated": "4.5.0",
@@ -72,6 +74,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "4.3.2",
     "@testing-library/react": "^16.3.2",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.17",
@@ -79,6 +82,7 @@
     "eslint-config-expo": "~57.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "tailwindcss": "4.3.2",
     "ts-jest": "^29.4.6",
     "typescript": "~6.0.3"
   },

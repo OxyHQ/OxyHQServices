@@ -1,3 +1,9 @@
+// Tailwind v4 + NativeWind entry. Importing it here is what makes react-native-css
+// compile the utility stylesheet for the web build, so className layout utilities
+// (from this app and @oxyhq/services) render on web instead of falling through to
+// react-native-web's base View reset. Pairs with postcss.config.mjs.
+import '../global.css';
+
 import type { ReactNode } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
