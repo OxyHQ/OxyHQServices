@@ -17,8 +17,10 @@
 import {
   intersectScopes,
   unionValidScopes,
+  isPaymentsScope,
   isPrivilegedScope,
   isValidApplicationScope,
+  PAYMENTS_APPLICATION_SCOPES,
 } from '../applicationScopes';
 
 describe('intersectScopes (credential ∩ app grant)', () => {
@@ -110,5 +112,14 @@ describe('payments:read / payments:write (F2.0)', () => {
     expect(intersectScopes(['payments:write'], ['payments:write', 'user:read'])).toEqual([
       'payments:write',
     ]);
+  });
+
+  it('classifies only the Oxy Pay gateway scopes via isPaymentsScope', () => {
+    expect(PAYMENTS_APPLICATION_SCOPES).toEqual(['payments:read', 'payments:write']);
+    expect(isPaymentsScope('payments:read')).toBe(true);
+    expect(isPaymentsScope('payments:write')).toBe(true);
+    expect(isPaymentsScope('user:read')).toBe(false);
+    expect(isPaymentsScope('federation:write')).toBe(false);
+    expect(isPaymentsScope('bogus:scope')).toBe(false);
   });
 });

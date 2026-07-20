@@ -192,6 +192,7 @@ const SEED_APPS: SeedAppSpec[] = [
     websiteUrl: 'https://pay.oxy.so',
     type: 'first_party',
     redirectUris: ['https://pay.oxy.so'],
+    scopes: ['user:read', 'payments:read', 'payments:write'],
   },
   {
     name: 'Noted',

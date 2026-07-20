@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { ImageUploadField } from '@/components/ui/image-upload-field';
 import {
   AlertDialog,
@@ -22,12 +23,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { getErrorMessage } from '@/lib/api-error';
+import { mergePaymentsScopes } from '@/lib/application-scopes';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 import {
-  
-  
   useDeleteApplication,
-  useUpdateApplication
+  useUpdateApplication,
 } from '@/hooks/use-applications';
 
 function arraysEqual(a: Array<string>, b: Array<string>): boolean {
@@ -58,7 +58,14 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
   const [icon, setIcon] = useState(application.icon ?? '');
   const [redirectUris, setRedirectUris] = useState<Array<string>>(application.redirectUris);
   const [newRedirectUri, setNewRedirectUri] = useState('');
+  const [paymentsRead, setPaymentsRead] = useState(application.scopes.includes('payments:read'));
+  const [paymentsWrite, setPaymentsWrite] = useState(application.scopes.includes('payments:write'));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const nextScopes = mergePaymentsScopes(application.scopes, {
+    read: paymentsRead,
+    write: paymentsWrite,
+  });
 
   const isDirty =
     name !== application.name ||
@@ -67,7 +74,8 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
     privacyPolicyUrl !== (application.privacyPolicyUrl ?? '') ||
     termsUrl !== (application.termsUrl ?? '') ||
     icon !== (application.icon ?? '') ||
-    !arraysEqual(redirectUris, application.redirectUris);
+    !arraysEqual(redirectUris, application.redirectUris) ||
+    !arraysEqual(nextScopes, application.scopes);
 
   const handleAddRedirectUri = () => {
     const value = newRedirectUri.trim();
@@ -106,6 +114,7 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           // saving because application metadata can be exposed publicly.
           icon: stripSensitiveImageUrlQueryParams(icon),
           redirectUris,
+          scopes: nextScopes,
         },
       });
       toast.success('Application updated');
@@ -279,6 +288,41 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
             </Button>
           </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Oxy Pay permissions</h2>
+          <p className="text-sm text-muted-foreground">
+            Grant payments scopes before creating a service credential for Oxy Pay integrations.
+          </p>
+        </div>
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">payments:read</p>
+              <p className="text-xs text-muted-foreground">
+                Read payment intents and webhook deliveries
+              </p>
+            </div>
+            <Switch
+              checked={paymentsRead}
+              onCheckedChange={setPaymentsRead}
+              disabled={!canEdit}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">payments:write</p>
+              <p className="text-xs text-muted-foreground">Create and manage payment intents</p>
+            </div>
+            <Switch
+              checked={paymentsWrite}
+              onCheckedChange={setPaymentsWrite}
+              disabled={!canEdit}
+            />
+          </div>
+        </div>
       </section>
 
       <section className="space-y-3">

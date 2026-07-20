@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -40,15 +41,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  
-  
-  
-  
-  
+  availablePaymentsScopes,
+  isUntrustedThirdPartyApp,
+  PAYMENTS_SCOPES,
+} from '@/lib/application-scopes';
+import {
   useApplicationCredentials,
   useCreateCredential,
   useRevokeCredential,
-  useRotateCredential
+  useRotateCredential,
 } from '@/hooks/use-applications';
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -107,6 +108,7 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
   const [name, setName] = useState('');
   const [type, setType] = useState<ApplicationCredentialType>('confidential');
   const [environment, setEnvironment] = useState<ApplicationEnvironment>('development');
+  const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
   const [revealed, setRevealed] = useState<RevealedSecret | null>(null);
   const [credentialToRotate, setCredentialToRotate] = useState<ApplicationCredential | null>(null);
   const [credentialToRevoke, setCredentialToRevoke] = useState<ApplicationCredential | null>(null);
@@ -116,20 +118,58 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
     toast.success(message);
   };
 
+  const grantablePaymentsScopes = availablePaymentsScopes(application.scopes);
+  const requiresPaymentsScopes =
+    type === 'service' && isUntrustedThirdPartyApp(application);
+
+  const resetCreateForm = () => {
+    setName('');
+    setType('confidential');
+    setEnvironment('development');
+    setSelectedScopes([]);
+  };
+
+  const handleTypeChange = (value: ApplicationCredentialType) => {
+    setType(value);
+    if (value === 'service') {
+      setSelectedScopes(availablePaymentsScopes(application.scopes));
+    } else {
+      setSelectedScopes([]);
+    }
+  };
+
+  const toggleScope = (scope: string, enabled: boolean) => {
+    setSelectedScopes((current) => {
+      if (enabled) {
+        return current.includes(scope) ? current : [...current, scope];
+      }
+      return current.filter((item) => item !== scope);
+    });
+  };
+
   const handleCreate = async () => {
     if (!name.trim()) {
       toast.error('Enter a name for the credential');
       return;
     }
+    if (requiresPaymentsScopes && selectedScopes.length === 0) {
+      toast.error('Select at least one payments scope for service credentials');
+      return;
+    }
     try {
       const result = await createCredential.mutateAsync({
         appId,
-        data: { name: name.trim(), type, environment },
+        data: {
+          name: name.trim(),
+          type,
+          environment,
+          ...(type === 'service' && selectedScopes.length > 0
+            ? { scopes: selectedScopes }
+            : {}),
+        },
       });
       setShowCreateDialog(false);
-      setName('');
-      setType('confidential');
-      setEnvironment('development');
+      resetCreateForm();
       setRevealed({
         credentialName: result.credential.name,
         publicKey: result.credential.publicKey,
@@ -193,7 +233,13 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
           </p>
         </div>
         {canCreate && (
-          <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              resetCreateForm();
+              setShowCreateDialog(true);
+            }}
+          >
             <HugeiconsIcon icon={Add01Icon} size={16} className="mr-2" />
             Create credential
           </Button>
@@ -344,7 +390,7 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
               </Label>
               <Select
                 value={type}
-                onValueChange={(value) => setType(value as ApplicationCredentialType)}
+                onValueChange={(value) => handleTypeChange(value as ApplicationCredentialType)}
               >
                 <SelectTrigger id="credential-type" className="w-full">
                   <SelectValue />
@@ -358,6 +404,43 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
                 </SelectContent>
               </Select>
             </div>
+            {type === 'service' && (
+              <div className="space-y-2">
+                <Label className="text-sm">Scopes</Label>
+                {grantablePaymentsScopes.length > 0 ? (
+                  <div className="space-y-3 rounded-lg border border-border p-3">
+                    {PAYMENTS_SCOPES.filter((scope) =>
+                      grantablePaymentsScopes.includes(scope)
+                    ).map((scope) => (
+                      <div key={scope} className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{scope}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {scope === 'payments:read'
+                              ? 'Read payment intents and webhook deliveries'
+                              : 'Create and manage payment intents'}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={selectedScopes.includes(scope)}
+                          onCheckedChange={(checked) => toggleScope(scope, checked)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Enable payments scopes under General before creating a service credential.
+                  </p>
+                )}
+                {requiresPaymentsScopes && (
+                  <p className="text-xs text-muted-foreground">
+                    Third-party applications must request payments-only scopes for service
+                    credentials.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="credential-environment" className="text-sm">
                 Environment
@@ -383,7 +466,14 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={createCredential.isPending || !name.trim()}>
+            <Button
+              onClick={handleCreate}
+              disabled={
+                createCredential.isPending ||
+                !name.trim() ||
+                (requiresPaymentsScopes && selectedScopes.length === 0)
+              }
+            >
               {createCredential.isPending ? 'Creating...' : 'Create credential'}
             </Button>
           </DialogFooter>
