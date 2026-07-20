@@ -716,6 +716,49 @@ describe('credentials', () => {
     expect(res.status).toBe(403);
   });
 
+  it('the Oxy Pay carve-out lets a non-trusted app create a payments-only service credential', async () => {
+    seedApp({
+      type: 'third_party',
+      isOfficial: false,
+      isInternal: false,
+      scopes: ['payments:read', 'payments:write'],
+    });
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'oxy-pay-svc',
+      type: 'service',
+      environment: 'production',
+      scopes: ['payments:read', 'payments:write'],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.credential?.scopes).toEqual(['payments:read', 'payments:write']);
+  });
+
+  it('the Oxy Pay carve-out still rejects a non-trusted app requesting any non-payments scope', async () => {
+    seedApp({
+      type: 'third_party',
+      isOfficial: false,
+      isInternal: false,
+      scopes: ['payments:read', 'user:read'],
+    });
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'svc',
+      type: 'service',
+      environment: 'production',
+      scopes: ['payments:read', 'user:read'],
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('a trusted application is unaffected by the Oxy Pay carve-out (no scopes required)', async () => {
+    seedApp({ type: 'internal', isOfficial: false, isInternal: false, scopes: ['user:read'] });
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'svc',
+      type: 'service',
+      environment: 'production',
+    });
+    expect(res.status).toBe(201);
+  });
+
   it('rejects credential scopes that exceed the application grant', async () => {
     seedApp({ scopes: ['user:read'] });
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
