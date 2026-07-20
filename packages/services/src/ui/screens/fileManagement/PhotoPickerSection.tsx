@@ -190,7 +190,15 @@ function PhotoPickerCellContent(props: {
 
     return (
         <>
+            {/* Inline `flex: 1` is load-bearing on web and NOT interchangeable with
+                the `flex-1` class: on RN-Web the NativeWind/react-native-css `flex-1`
+                utility does not reliably resolve to `flex: 1` (the class is present in
+                the DOM but inert — RN-Web's base View atomic styles out-rank it), so
+                this content View collapses to 0 height and the image (`height: 100%` of
+                a 0-height box) becomes invisible — every tile blank. Inline style always
+                wins, so it is the sanctioned exception here. Native is unaffected. */}
             <View
+                style={{ flex: 1 }}
                 className={`flex-1 rounded-radius-8 overflow-hidden bg-[#111111]${dim ? ' opacity-60' : ''}`}
             >
                 <ExpoImage
@@ -367,10 +375,15 @@ const PhotoPickerCellAnimated = React.memo(function PhotoPickerCellAnimated(prop
                 opacity,
             }}
         >
+            {/* Inline `flex: 1` (not just `className="flex-1"`): on RN-Web the
+                `flex-1` utility is inert on this TouchableOpacity, so the button would
+                collapse to 0 height inside the fixed-size wrapper and hide the tile.
+                See PhotoPickerCellContent for the full rationale. */}
             <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={onPress}
                 onLongPress={onLongPress}
+                style={{ flex: 1 }}
                 className="flex-1"
                 accessibilityRole="button"
                 accessibilityLabel={a11yLabel}
@@ -571,14 +584,24 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
 
     return (
         // Measured wrapper: `style`-only (no className) so RN-Web fires onLayout.
-        // `minHeight: 0` down the whole flex chain: the sheet is `scrollable=false`
-        // (the FlatList owns scrolling) and clamped by its `maxHeight`, but on web a
-        // flex child defaults to `min-height: auto` and grows to its content, so the
-        // list overflows the clamp and is clipped (renders "half", no scroll). Letting
-        // each flex link shrink to the clamped height gives the FlatList a bounded
-        // scroll area. Native (Yoga) already defaults min to 0, so this is web-only.
-        <View style={{ flex: 1, minHeight: 0 }} onLayout={onRootLayout}>
-            <View className="flex-1 bg-black" style={{ minHeight: 0 }}>
+        // The sheet is `scrollable=false` (the FlatList owns scrolling) and clamped by
+        // its `maxHeight`; every flex link between it and the FlatList must SHRINK into
+        // that clamp so the FlatList gets a bounded scroll area (else the list grows to
+        // its content and is clipped — "renders half", no scroll).
+        //
+        // CRITICAL (web): shrink-into-clamp must be driven through `style`, NOT
+        // `className="flex-1"`. On RN-Web every View carries a base atomic class that
+        // hard-sets `flex-shrink: 0; flex-basis: auto` (and `min-height: 0`). The
+        // `flex-1` utility is unreliable against it — depending on the consumer's web
+        // pipeline it either never reaches the DOM or is out-ranked by that base reset,
+        // so a className'd View keeps `flex-shrink: 0`, never shrinks, and grows to its
+        // content (the list overflows the clamp and is clipped — "renders half", no
+        // scroll). RN-Web emits inline `style` flex as a HIGHER-precedence atomic class
+        // that beats the base reset, so inline `flex: 1` reliably yields `flex: 1 1 0%`.
+        // No explicit `min-height: 0` is needed: RN-Web's base View already sets it (and
+        // native Yoga defaults min to 0), so `flex: 1` alone shrinks into the clamp.
+        <View style={{ flex: 1 }} onLayout={onRootLayout}>
+            <View className="flex-1 bg-black" style={{ flex: 1 }}>
                 {/* Photo grid (renders behind translucent header) */}
                 {isEmpty ? (
                     <View className="flex-1 items-center justify-center px-space-32 pt-[88px]">
@@ -622,7 +645,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             keyExtractor={keyExtractor}
                             numColumns={columns}
                             className="flex-1"
-                            style={{ minHeight: 0 }}
+                            style={{ flex: 1 }}
                             contentContainerClassName="pt-[88px] pb-space-24"
                             showsVerticalScrollIndicator={false}
                             refreshControl={
@@ -646,8 +669,16 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 {/* Translucent black header. The bottom sheet already sits below
                     the status bar, so we do NOT add `insets.top` — that would
                     double-pad. `pt-[28px]` clears the 28dp drag handle floating
-                    at the top of the sheet; `min-h-[84px]` = handle + app bar. */}
-                <View className="absolute top-0 left-0 right-0 flex-row items-center justify-between px-space-12 z-30 bg-[#000000EB] pt-[28px] min-h-[84px]">
+                    at the top of the sheet; `min-h-[84px]` = handle + app bar.
+                    `position/top/left/right/zIndex` are ALSO set inline: on RN-Web
+                    the `absolute`/`top-0`/`z-30` utility classes are inert (RN-Web's
+                    base View forces `position: relative; z-index: 0`), so without the
+                    inline overrides the header renders in normal flow below the grid
+                    instead of floating over it. Inline wins; native is unchanged. */}
+                <View
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30 }}
+                    className="absolute top-0 left-0 right-0 flex-row items-center justify-between px-space-12 z-30 bg-[#000000EB] pt-[28px] min-h-[84px]"
+                >
                     <View className="flex-row items-center justify-between w-full h-14">
                         <View className="basis-0 grow flex-row items-center justify-start">
                             <TouchableOpacity
