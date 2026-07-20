@@ -113,6 +113,17 @@ describe('pre-session public endpoints use skipAuth', () => {
     );
   });
 
+  it('getServiceToken skips auth preflight', async () => {
+    makeRequest.mockResolvedValueOnce({ token: 'svc-tok', expiresIn: 3600 });
+    await oxy.getServiceToken('oxy_dk_svc', 'secret-value');
+    expect(makeRequest).toHaveBeenCalledWith(
+      'POST',
+      '/auth/service-token',
+      { apiKey: 'oxy_dk_svc', apiSecret: 'secret-value' },
+      expect.objectContaining({ skipAuth: true, cache: false, retry: false }),
+    );
+  });
+
   it('exchangeOAuthCode skips auth preflight', async () => {
     makeRequest.mockResolvedValueOnce({
       sessionId: 's1',

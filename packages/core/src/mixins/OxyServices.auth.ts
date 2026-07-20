@@ -371,7 +371,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         'POST',
         '/auth/service-token',
         { apiKey: key, apiSecret: secret },
-        { cache: false, retry: false }
+        { cache: false, retry: false, skipAuth: true }
       );
 
       const expiresAt = Date.now() + response.expiresIn * 1000;

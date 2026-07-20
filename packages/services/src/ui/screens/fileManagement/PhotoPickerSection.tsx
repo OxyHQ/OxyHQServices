@@ -604,7 +604,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
             <View className="flex-1 bg-black" style={{ flex: 1 }}>
                 {/* Photo grid (renders behind translucent header) */}
                 {isEmpty ? (
-                    <View className="flex-1 items-center justify-center px-space-32 pt-[88px]">
+                    <View className="flex-1 items-center justify-center px-space-32 pt-[88px]" style={{ flex: 1 }}>
                         <View className="opacity-30 mb-space-16">
                             <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />
                         </View>
