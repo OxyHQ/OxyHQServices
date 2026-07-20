@@ -48,7 +48,7 @@ describe('webauthnRegisterOptions', () => {
       'POST',
       '/auth/webauthn/register/options',
       { username: 'alice' },
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 
@@ -129,7 +129,7 @@ describe('webauthnRegisterVerify', () => {
       'POST',
       '/auth/webauthn/register/verify',
       { response: CREATE_RESPONSE, username: 'alice', deviceName: 'Phone', deviceFingerprint: 'fp-1' },
-      { cache: false },
+      { cache: false, skipAuth: true },
     );
   });
 

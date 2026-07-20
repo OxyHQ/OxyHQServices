@@ -85,6 +85,34 @@ describe('pre-session public endpoints use skipAuth', () => {
     );
   });
 
+  it('webauthnRegisterOptions skips auth preflight on signup (username provided)', async () => {
+    await oxy.webauthnRegisterOptions('alice');
+    expect(makeRequest).toHaveBeenCalledWith(
+      'POST',
+      '/auth/webauthn/register/options',
+      { username: 'alice' },
+      expect.objectContaining({ skipAuth: true }),
+    );
+  });
+
+  it('webauthnRegisterVerify skips auth preflight on signup (username in envelope)', async () => {
+    makeRequest.mockResolvedValueOnce({
+      sessionId: 's1',
+      deviceId: 'd1',
+      accessToken: 'tok',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      deviceSecret: 'ds',
+      user: { id: 'u1', username: 'alice' },
+    });
+    await oxy.webauthnRegisterVerify({ id: 'cred' }, { username: 'alice' });
+    expect(makeRequest).toHaveBeenCalledWith(
+      'POST',
+      '/auth/webauthn/register/verify',
+      expect.objectContaining({ username: 'alice' }),
+      expect.objectContaining({ skipAuth: true }),
+    );
+  });
+
   it('exchangeOAuthCode skips auth preflight', async () => {
     makeRequest.mockResolvedValueOnce({
       sessionId: 's1',

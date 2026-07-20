@@ -1121,7 +1121,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/register/options',
           { ...(username !== undefined ? { username } : {}) },
-          { cache: false },
+          { cache: false, ...(username !== undefined ? { skipAuth: true } : {}) },
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1155,7 +1155,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/register/verify',
           { response, ...envelope },
-          { cache: false },
+          { cache: false, ...(envelope.username !== undefined ? { skipAuth: true } : {}) },
         );
         if (res && typeof res === 'object') {
           const record = res as Record<string, unknown>;
