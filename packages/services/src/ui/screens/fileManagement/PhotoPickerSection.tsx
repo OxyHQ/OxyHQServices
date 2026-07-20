@@ -571,8 +571,14 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
 
     return (
         // Measured wrapper: `style`-only (no className) so RN-Web fires onLayout.
-        <View style={{ flex: 1 }} onLayout={onRootLayout}>
-            <View className="flex-1 bg-black">
+        // `minHeight: 0` down the whole flex chain: the sheet is `scrollable=false`
+        // (the FlatList owns scrolling) and clamped by its `maxHeight`, but on web a
+        // flex child defaults to `min-height: auto` and grows to its content, so the
+        // list overflows the clamp and is clipped (renders "half", no scroll). Letting
+        // each flex link shrink to the clamped height gives the FlatList a bounded
+        // scroll area. Native (Yoga) already defaults min to 0, so this is web-only.
+        <View style={{ flex: 1, minHeight: 0 }} onLayout={onRootLayout}>
+            <View className="flex-1 bg-black" style={{ minHeight: 0 }}>
                 {/* Photo grid (renders behind translucent header) */}
                 {isEmpty ? (
                     <View className="flex-1 items-center justify-center px-space-32 pt-[88px]">
@@ -616,6 +622,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             keyExtractor={keyExtractor}
                             numColumns={columns}
                             className="flex-1"
+                            style={{ minHeight: 0 }}
                             contentContainerClassName="pt-[88px] pb-space-24"
                             showsVerticalScrollIndicator={false}
                             refreshControl={
