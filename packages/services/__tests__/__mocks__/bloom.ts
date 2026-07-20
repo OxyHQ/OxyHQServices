@@ -124,6 +124,8 @@ export const useTheme = (): { isDark: boolean; colors: Record<string, string> } 
     secondary: '#eeeeee',
     background: '#ffffff',
     backgroundSecondary: '#f5f5f5',
+    backgroundTertiary: '#efefef',
+    inputBackground: '#f5f5f5',
     text: '#000000',
     textSecondary: '#666666',
     card: '#ffffff',

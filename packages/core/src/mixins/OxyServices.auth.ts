@@ -597,7 +597,12 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/user/${encodeURIComponent(publicKey)}`,
           undefined,
-          { cache: true, cacheTTL: 2 * 60 * 1000 }
+          {
+            cache: true,
+            cacheTTL: 2 * 60 * 1000,
+            // Public lookup by public key (pre-session) — skip the bearer preflight.
+            skipAuth: true,
+          },
         );
         return normalizeUserIdentity(user);
       } catch (error) {
@@ -807,7 +812,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/session/create',
           { sessionToken, expiresAt, clientId: params.clientId },
-          { cache: false }
+          // Public/pre-session (no bearer): skip the preflight so a stale
+          // near-expiry token cannot re-enter refreshAccessToken while the
+          // refresh handler is already in flight (self-await hang).
+          { cache: false, skipAuth: true },
         );
 
         return {

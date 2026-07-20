@@ -3,6 +3,7 @@
  * so a pending refresh handler cannot self-await (see httpServiceAuthSelfAwait).
  */
 import { OxyServices } from '../../OxyServices';
+import { SignatureService } from '../../crypto/signatureService';
 
 describe('pre-session public endpoints use skipAuth', () => {
   let oxy: OxyServices;
@@ -50,6 +51,37 @@ describe('pre-session public endpoints use skipAuth', () => {
       '/auth/session/claim',
       { sessionToken: 'secret-session-token' },
       expect.objectContaining({ skipAuth: true, retry: false }),
+    );
+  });
+
+  it('startCommonsSignIn skips auth preflight', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    const generateChallenge = jest
+      .spyOn(SignatureService, 'generateChallenge')
+      .mockResolvedValue('secret-session-token');
+    makeRequest.mockResolvedValueOnce({
+      authorizeCode: 'code-1',
+      qrPayload: 'oxycommons://approve?v=1&code=code-1',
+      status: 'pending',
+    });
+    await oxy.startCommonsSignIn({ clientId: 'oxy_dk_test' });
+    expect(makeRequest).toHaveBeenCalledWith(
+      'POST',
+      '/auth/session/create',
+      expect.objectContaining({ sessionToken: 'secret-session-token', clientId: 'oxy_dk_test' }),
+      expect.objectContaining({ cache: false, skipAuth: true }),
+    );
+    generateChallenge.mockRestore();
+  });
+
+  it('getUserByPublicKey skips auth preflight', async () => {
+    makeRequest.mockResolvedValueOnce({ id: 'u1', username: 'alice' });
+    await oxy.getUserByPublicKey('abc123');
+    expect(makeRequest).toHaveBeenCalledWith(
+      'GET',
+      '/auth/user/abc123',
+      undefined,
+      expect.objectContaining({ skipAuth: true }),
     );
   });
 
