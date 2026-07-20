@@ -164,9 +164,9 @@ export function useAuthHandlers({
       }
     }
 
-    // If sign-in failed after retries, show error
+    // If connecting the identity failed after retries, show error
     if (!signInSuccess) {
-      setAuthError(extractAuthErrorMessage(lastError, 'Failed to sign in. Please try again.'));
+      setAuthError(extractAuthErrorMessage(lastError, "Couldn't connect your identity. Please try again."));
       setSigningIn(false);
       return false;
     }

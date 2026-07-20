@@ -371,7 +371,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         'POST',
         '/auth/service-token',
         { apiKey: key, apiSecret: secret },
-        { cache: false, retry: false }
+        { cache: false, retry: false, skipAuth: true }
       );
 
       const expiresAt = Date.now() + response.expiresIn * 1000;
@@ -486,7 +486,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           publicKey,
           signature,
           timestamp,
-        }, { cache: false });
+        }, { cache: false, skipAuth: true });
 
         if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
           throw new OxyAuthenticationError('Registration failed', 'REGISTER_FAILED', 400);
@@ -515,7 +515,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         return await this.makeRequest<ChallengeResponse>('POST', '/auth/challenge', {
           publicKey,
-        }, { cache: false, ...requestOptions });
+        }, { cache: false, skipAuth: true, ...requestOptions });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -552,7 +552,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           timestamp,
           deviceName,
           deviceFingerprint,
-        }, { cache: false, ...requestOptions });
+        }, { cache: false, skipAuth: true, ...requestOptions });
 
         // Plant the freshly-minted tokens, mirroring `claimSessionByToken`.
         // `/auth/verify` returns the first access token (and refresh token) in
@@ -581,7 +581,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/check-publickey/${encodeURIComponent(publicKey)}`,
           undefined,
-          { cache: false }
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -597,7 +597,12 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/user/${encodeURIComponent(publicKey)}`,
           undefined,
-          { cache: true, cacheTTL: 2 * 60 * 1000 }
+          {
+            cache: true,
+            cacheTTL: 2 * 60 * 1000,
+            // Public lookup by public key (pre-session) — skip the bearer preflight.
+            skipAuth: true,
+          },
         );
         return normalizeUserIdentity(user);
       } catch (error) {
@@ -697,7 +702,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             sessionToken,
             ...(options.deviceFingerprint ? { deviceFingerprint: options.deviceFingerprint } : {}),
           },
-          { cache: false, retry: false }
+          // Body-authenticated device-flow claim (no bearer) — skip the preflight.
+          { cache: false, retry: false, skipAuth: true }
         );
 
         this.setTokens(res.accessToken);
@@ -806,7 +812,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/session/create',
           { sessionToken, expiresAt, clientId: params.clientId },
-          { cache: false }
+          // Public/pre-session (no bearer): skip the preflight so a stale
+          // near-expiry token cannot re-enter refreshAccessToken while the
+          // refresh handler is already in flight (self-await hang).
+          { cache: false, skipAuth: true },
         );
 
         return {
@@ -836,7 +845,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/session/status/${encodeURIComponent(sessionToken)}`,
           undefined,
-          { cache: false, retry: false }
+          // Public/pre-session (no bearer): a preflight here is wrong per se and,
+          // if ever reached while a refresh is pending, would re-enter
+          // refreshAccessToken and await the very promise it runs inside.
+          { cache: false, retry: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -859,7 +871,9 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'GET',
           `/auth/session/approve-info/${encodeURIComponent(authorizeCode)}`,
           undefined,
-          { cache: false }
+          // Public (no auth required) — skip the bearer preflight (avoids the
+          // pre-session self-await class).
+          { cache: false, skipAuth: true }
         );
         return {
           application: raw.application,
@@ -917,7 +931,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             ...(params.deviceName ? { deviceName: params.deviceName } : {}),
             ...(params.deviceFingerprint ? { deviceFingerprint: params.deviceFingerprint } : {}),
           },
-          { cache: false }
+          // Key-signed, cookieless (no bearer) — skip the preflight.
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -936,7 +951,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           `/auth/session/deny/${encodeURIComponent(authorizeCode)}`,
           undefined,
-          { cache: false }
+          // Public (no auth required) — skip the bearer preflight.
+          { cache: false, skipAuth: true }
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1069,7 +1085,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/auth/check-username/${username}`, undefined, { cache: false });
+        // Public availability lookup (pre-session) — skip the bearer preflight.
+        return await this.makeRequest('GET', `/auth/check-username/${username}`, undefined, { cache: false, skipAuth: true });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -1080,7 +1097,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/auth/check-email/${email}`, undefined, { cache: false });
+        // Public availability lookup (pre-session) — skip the bearer preflight.
+        return await this.makeRequest('GET', `/auth/check-email/${email}`, undefined, { cache: false, skipAuth: true });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -1103,7 +1121,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/register/options',
           { ...(username !== undefined ? { username } : {}) },
-          { cache: false },
+          { cache: false, ...(username !== undefined ? { skipAuth: true } : {}) },
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1137,7 +1155,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/register/verify',
           { response, ...envelope },
-          { cache: false },
+          { cache: false, ...(envelope.username !== undefined ? { skipAuth: true } : {}) },
         );
         if (res && typeof res === 'object') {
           const record = res as Record<string, unknown>;
@@ -1180,7 +1198,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/login/options',
           { ...(username !== undefined ? { username } : {}) },
-          { cache: false },
+          // Pre-session login ceremony — skip the bearer preflight.
+          { cache: false, skipAuth: true },
         );
       } catch (error) {
         throw this.handleError(error);
@@ -1204,7 +1223,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           'POST',
           '/auth/webauthn/login/verify',
           { response, ...envelope },
-          { cache: false },
+          // Pre-session login ceremony — skip the bearer preflight.
+          { cache: false, skipAuth: true },
         );
         const parsed = safeParseContract(loginResultSchema, res);
         if (!parsed) {
@@ -1237,7 +1257,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           clientId: params.clientId,
           redirectUri: params.redirectUri,
           codeVerifier: params.codeVerifier,
-        }, { cache: false });
+        }, { cache: false, skipAuth: true });
         const payload =
           (res as { data?: Record<string, unknown> }).data ??
           (res as Record<string, unknown>);

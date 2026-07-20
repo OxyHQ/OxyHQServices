@@ -52,6 +52,8 @@ interface MockOxyState {
   /** The ordered account locales (primary first), or the single guest locale. */
   currentLanguages: string[];
   oxyServices: MockOxyServices | null;
+  /** The SDK key sign-in the silent/biometric sign-in hooks delegate to. */
+  signIn: jest.Mock;
 }
 
 function makeDefaultState(): MockOxyState {
@@ -66,6 +68,7 @@ function makeDefaultState(): MockOxyState {
     currentLanguage: 'en-US',
     currentLanguages: [],
     oxyServices: { updateProfile: jest.fn(async () => undefined) },
+    signIn: jest.fn(async () => ({ id: 'mock-user' })),
   };
 }
 

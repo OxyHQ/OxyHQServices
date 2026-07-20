@@ -3,12 +3,12 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "RCT_METRO_PORT=8104 expo start",
     "start:clear": "expo start --clear",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "android": "RCT_METRO_PORT=8104 expo start --android",
+    "ios": "RCT_METRO_PORT=8104 expo start --ios",
+    "web": "RCT_METRO_PORT=8104 expo start --web",
     "lint": "expo lint"
   },
   "dependencies": {
@@ -18,7 +18,7 @@
     "@gorhom/bottom-sheet": "^5.2.14",
     "@lottiefiles/dotlottie-react": "^0.19.9",
     "@oxyhq/app-preset": "workspace:*",
-    "@oxyhq/bloom": "^0.34.2",
+    "@oxyhq/bloom": "^0.44.1",
     "@oxyhq/services": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native/virtualized-lists": "0.86.0",

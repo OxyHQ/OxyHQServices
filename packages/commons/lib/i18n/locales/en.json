@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancel",
+    "copy": "Copy",
     "save": "Save",
     "ok": "OK",
     "continue": "Continue",
@@ -46,21 +47,12 @@
     "errors": {
       "invalidPhrase": "Invalid recovery phrase. Please check the words and try again.",
       "importSyncFailed": "Your identity was imported on this device, but we could not connect it to your account. Check your connection and try again.",
-      "identityAlreadyExists": "An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.",
+      "identityAlreadyExists": "An identity already exists on this device. Use your existing identity or remove it from settings before importing a new one.",
       "importFailed": "Failed to import identity",
       "identityExistsSyncFailed": "Your identity exists on this device, but we could not connect it to your account. Check your connection and try again.",
       "identityCreatedSyncFailed": "Your identity was created on this device, but we could not connect it to your account. Check your connection and try again.",
       "noIdentityFound": "No identity found on this device.",
       "couldNotReadIdentity": "Could not read your identity. Please try again."
-    },
-    "signIn": {
-      "title": "Sign in to your account",
-      "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
-      "button": "Sign in with Oxy",
-      "error": "Sign-in failed. Please try again.",
-      "unsupported": "Your browser doesn't support secure sign-in. Please update it or use the Oxy app.",
-      "noAccount": "Don't have an Oxy account yet?",
-      "createAccount": "Create one in the app"
     },
     "welcome": {
       "lead": "Oxy is your",
@@ -92,9 +84,7 @@
       "createIdentity": "Create New Identity",
       "createIdentitySubtitle": "Generate a new self-custody identity",
       "importIdentity": "Import Existing Identity",
-      "importIdentitySubtitle": "Use your recovery phrase or backup file",
-      "signInExisting": "Sign in to existing account",
-      "signInExistingSubtitle": "Use your username and password"
+      "importIdentitySubtitle": "Use your recovery phrase or backup file"
     },
     "creating": {
       "messages": [
@@ -103,8 +93,8 @@
         "Setting up your account..."
       ],
       "subtitle": "This may take a moment",
-      "signingIn": "Signing in...",
-      "signingInSubtitle": "Almost there!",
+      "connecting": "Connecting your identity…",
+      "connectingSubtitle": "Almost there!",
       "syncing": "Syncing your identity...",
       "syncingSubtitle": "Connecting to Oxy servers",
       "errorTitle": "Couldn't finish setting up",
@@ -274,7 +264,6 @@
     "title": "Security & sign-in",
     "subtitle": "Manage your security settings and sign-in methods.",
     "loading": "Loading security settings...",
-    "signInRequired": "Please sign in to view your security settings.",
     "sections": {
       "recommendations": "Security recommendations",
       "recentActivity": "Recent security activity",
@@ -384,7 +373,6 @@
     "title": "Data & privacy",
     "subtitle": "Manage your data and privacy settings.",
     "loading": "Loading privacy settings...",
-    "signInRequired": "Please sign in to view your privacy settings.",
     "sections": {
       "download": "Download your data",
       "downloadSubtitle": "Get a copy of your account data",
@@ -460,7 +448,6 @@
       "failedTitle": "Deletion Failed",
       "failedDefault": "Failed to delete account. Please try again.",
       "localKeyPurgeWarning": "Your account was deleted, but the identity key could not be removed from this device. Reinstall the app to clear it fully.",
-      "signInRequired": "Please sign in to delete your account.",
       "thisAccount": "this account",
       "confirmInputLabel": "Type your username to confirm account deletion"
     },
@@ -483,7 +470,6 @@
     "retry": "Try again",
     "errorTitle": "Couldn't load activity",
     "errorMessage": "Something went wrong while loading your activity. Pull to refresh or try again.",
-    "signInRequired": "Please sign in to view your activity.",
     "empty": {
       "title": "No activity yet",
       "subtitle": "Sign-ins, security changes and device events will appear here."
@@ -530,7 +516,6 @@
     "title": "Personal info",
     "subtitle": "Manage your personal information and profile details.",
     "loading": "Loading personal info...",
-    "signInRequired": "Please sign in to view your personal information.",
     "sections": {
       "profileSummary": "Profile summary",
       "contactDetails": "Contact & details",
@@ -663,7 +648,6 @@
   "storage": {
     "title": "Oxy storage",
     "subtitle": "Manage your storage usage and files.",
-    "signInRequired": "Sign in to see your storage usage.",
     "loading": "Loading storage usage…",
     "loadFailed": "Failed to load storage usage",
     "retry": "Retry",
@@ -704,14 +688,12 @@
   "family": {
     "title": "Third-party connections",
     "subtitle": "Manage apps and services connected to your account.",
-    "signInRequired": "Please sign in to manage your third-party connections.",
     "emptyTitle": "No connected apps yet",
     "emptySubtitle": "When you grant third-party apps access to your Oxy account, they will appear here."
   },
   "sharing": {
     "title": "People & sharing",
     "subtitle": "Manage your connections and sharing settings.",
-    "signInRequired": "Please sign in to manage your connections and sharing settings.",
     "sections": {
       "contacts": "Contacts",
       "contactsSubtitle": "Manage your connections and find new people",
@@ -960,8 +942,12 @@
     "idCard": "ID Card",
     "copyPublicKey": "Copy Public Key",
     "publicKeyCopied": "Public key copied to clipboard",
+    "didCopied": "Decentralized ID copied to clipboard",
     "copyFailed": "Failed to copy",
     "importantNotice": "Your recovery phrase is the ONLY way to restore your identity if you lose access to this device. Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.",
+    "identifiersTitle": "Identifiers",
+    "publicKeyRow": "Public key",
+    "didRow": "Decentralized ID",
     "selfCustodyTitle": "Self-Custody Identity",
     "selfCustodyDescription": "Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin. You have complete control over your identity.",
     "items": {
@@ -1057,6 +1043,20 @@
     "offlineHint": "You appear to be offline. The identity will be stored on this device and synced when you reconnect.",
     "identityAlreadyExists": "A different identity already exists on this device. Remove it from Settings first, then import."
   },
+  "backupRecovery": {
+    "title": "Backup & recovery",
+    "subtitle": "Everything you need to back up and restore this identity.",
+    "statusPresent": "This identity is backed up by your 12-word recovery phrase. Keep it somewhere safe — it's the only way to restore your account on a new device.",
+    "statusAbsent": "This identity was imported from a private key, so it has no recovery phrase — and one can't be created from a key. The phrase and encrypted backup below aren't available. To get a recovery phrase, rotate to a new key.",
+    "rotateCta": "Rotate to a key with a recovery phrase",
+    "methodsTitle": "Backup methods",
+    "phraseTitle": "Recovery phrase",
+    "phraseSubtitle": "Reveal the 12 words that restore your identity",
+    "phraseUnavailable": "Not available — this identity was imported from a private key",
+    "encryptedTitle": "Encrypted backup",
+    "encryptedSubtitle": "Save a recoverable copy of your keys off-device",
+    "encryptedUnavailable": "Not available — needs a recovery phrase"
+  },
   "rotateKey": {
     "settingsEntry": "Rotate your key",
     "settingsEntrySubtitle": "Replace your identity key with a new one",
@@ -1064,6 +1064,7 @@
     "subtitle": "Replace your identity's signing key with a brand-new one. Your account, username and history stay the same.",
     "warningTitle": "This changes your keys",
     "warning": "Rotating generates a NEW recovery phrase. Your old phrase and key stop working the moment the rotation completes — save the new phrase before you finish.",
+    "pathSection": "Choose how to rotate",
     "pathDevice": "Rotate with this device",
     "pathDeviceSubtitle": "Use the key on this device to authorize the change.",
     "pathPhrase": "My device key is lost",
@@ -1111,12 +1112,8 @@
       "account": "Account",
       "accountSubtitle": "Manage your profile, devices and privacy in the Accounts app.",
       "actions": {
-        "aboutIdentity": "About your identity",
-        "aboutIdentitySubtitle": "Public key, self-custody details and export",
-        "createBackup": "Create an encrypted backup",
-        "createBackupSubtitle": "Save a recoverable copy of your keys",
-        "recoveryPhrase": "View recovery phrase",
-        "recoveryPhraseSubtitle": "Reveal the 12 words that restore your identity",
+        "backupRecovery": "Backup & recovery",
+        "backupRecoverySubtitle": "Recovery phrase and encrypted backup",
         "manageAccount": "Manage account",
         "manageAccountSubtitle": "Profile, devices, payments and privacy",
         "deleteAccount": "Delete account",
@@ -1186,6 +1183,17 @@
     }
   },
   "civic": {
+    "sessionGate": {
+      "connecting": "Connecting your identity…",
+      "error": {
+        "title": "Couldn't connect",
+        "body": "We couldn't connect your identity to Oxy. Try again whenever you're ready."
+      },
+      "offline": {
+        "title": "You're offline",
+        "body": "We'll reconnect your identity automatically once you're back online."
+      }
+    },
     "hub": {
       "title": "Citizen",
       "subtitle": "Your verifiable Oxy identity — show it, prove it, carry it.",
@@ -1420,6 +1428,17 @@
     },
     "attest": {
       "confirmed": "Verified in person",
+      "review": {
+        "title": "Did you meet this person?",
+        "resolving": "Resolving their identity…",
+        "submitting": "Signing your confirmation…",
+        "caution": "Only confirm if you truly met them in person — this affects their reputation.",
+        "confirm": "Confirm we met",
+        "unverified": "Unverified card",
+        "unresolvedTitle": "Couldn't identify this person",
+        "unresolvedBody": "We couldn't resolve the scanned code to an Oxy account. Ask them to show a fresh code and try again.",
+        "biometricReason": "Confirm you met this person in real life"
+      },
       "section": {
         "title": "Real-life confirmation",
         "subtitle": "The strongest reputation comes from people who met you in person.",

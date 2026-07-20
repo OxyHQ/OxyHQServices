@@ -57,7 +57,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         'POST',
         '/auth/session/create',
         { sessionToken: 'secret-session-token', expiresAt: 1700000300000, clientId: 'oxy_dk_test' },
-        expect.objectContaining({ cache: false }),
+        expect.objectContaining({ cache: false, skipAuth: true }),
       );
       // ...and the handle carries the SECRET token + the server's public code/payload.
       expect(handle).toEqual({
@@ -251,7 +251,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         'POST',
         '/auth/challenge',
         { publicKey: 'pub-x' },
-        { cache: false },
+        { cache: false, skipAuth: true },
       );
 
       await oxy.requestChallenge('pub-x', { retry: false });
@@ -259,7 +259,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         'POST',
         '/auth/challenge',
         { publicKey: 'pub-x' },
-        { cache: false, retry: false },
+        { cache: false, skipAuth: true, retry: false },
       );
     });
 
@@ -282,7 +282,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
           deviceName: 'dev',
           deviceFingerprint: 'fp',
         },
-        { cache: false, retry: false, timeout: 9000 },
+        { cache: false, skipAuth: true, retry: false, timeout: 9000 },
       );
     });
   });

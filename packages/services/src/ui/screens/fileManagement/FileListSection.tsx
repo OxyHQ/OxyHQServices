@@ -63,6 +63,7 @@ const FileListSection: React.FC<FileListSectionProps> = ({
         <ScrollView
             ref={scrollViewRef}
             className="flex-1"
+            style={{ flex: 1 }}
             contentContainerClassName="px-space-12 pt-0 pb-space-12"
             refreshControl={
                 <RefreshControl

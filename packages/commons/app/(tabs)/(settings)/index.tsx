@@ -1,38 +1,35 @@
 import React, { useCallback } from 'react';
-import { Linking, Platform } from 'react-native';
+import { Linking, Platform, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Screen, StackHeader, Section, GroupedList, ListRow } from '@/components/ui';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Screen, StackHeader } from '@/components/ui';
+import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 
 /**
  * Settings tab — identity & vault management.
  *
  * Owns the key-management and account actions that used to live on the vault
- * home: about your identity, create an encrypted backup, manage your account
- * (deep-links to the Accounts app), and delete your account. The detail screens
- * are pushed within this tab's stack. Flat, hairline-separated rows — no cards.
+ * home: backup & recovery, key rotation, trust & verification, manage account
+ * (deep-links to the Accounts app), and delete account. Identity info (public
+ * key, DID, self-custody details) lives on the ID tab, not here. The detail
+ * screens are pushed within this tab's stack. Uses Bloom's grouped settings list.
  */
 const ACCOUNTS_DEEP_LINK = 'accounts://';
 const ACCOUNTS_WEB_URL = 'https://accounts.oxy.so';
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const colors = useColors();
   const { t } = useTranslation();
 
-  const handleAboutIdentity = useCallback(() => {
-    router.push('/(tabs)/(settings)/about-identity');
-  }, [router]);
-
-  const handleCreateBackup = useCallback(() => {
-    router.push('/(tabs)/(settings)/create-backup');
+  const handleBackupRecovery = useCallback(() => {
+    router.push('/(tabs)/(settings)/backup-recovery');
   }, [router]);
 
   const handleRotateKey = useCallback(() => {
     router.push('/(tabs)/(settings)/rotate-key');
-  }, [router]);
-
-  const handleRecoveryPhrase = useCallback(() => {
-    router.push('/(tabs)/(settings)/recovery-phrase');
   }, [router]);
 
   const handlePersonhood = useCallback(() => {
@@ -62,90 +59,74 @@ export default function SettingsScreen() {
   }, []);
 
   return (
-    <Screen>
-      <StackHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
+    // Bloom's SettingsListGroup owns its own 16pt horizontal gutter, so the
+    // Screen column runs flush (no SCREEN_PADDING) — otherwise the cards would be
+    // double-inset (22 + 16). Non-grouped content (the header) is padded to align
+    // with Bloom's section titles.
+    <Screen contentStyle={styles.flush} gap={16}>
+      <View style={styles.header}>
+        <StackHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
+      </View>
 
       {/* Key-management actions */}
-      <Section title={t('vault.home.manageKeys')}>
-        <GroupedList>
-          <ListRow
-            icon="shield-key"
-            title={t('vault.home.actions.aboutIdentity')}
-            subtitle={t('vault.home.actions.aboutIdentitySubtitle')}
-            onPress={handleAboutIdentity}
-            showChevron
-          />
-          <ListRow
-            icon="file-export"
-            title={t('vault.home.actions.createBackup')}
-            subtitle={t('vault.home.actions.createBackupSubtitle')}
-            onPress={handleCreateBackup}
-            showChevron
-          />
-          <ListRow
-            icon="key-change"
-            title={t('rotateKey.settingsEntry')}
-            subtitle={t('rotateKey.settingsEntrySubtitle')}
-            onPress={handleRotateKey}
-            showChevron
-          />
-          <ListRow
-            icon="text-box-outline"
-            title={t('vault.home.actions.recoveryPhrase')}
-            subtitle={t('vault.home.actions.recoveryPhraseSubtitle')}
-            onPress={handleRecoveryPhrase}
-            showChevron
-          />
-        </GroupedList>
-      </Section>
+      <SettingsListGroup title={t('vault.home.manageKeys')}>
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="shield-key" size={22} color={colors.text} />}
+          title={t('vault.home.actions.backupRecovery')}
+          description={t('vault.home.actions.backupRecoverySubtitle')}
+          onPress={handleBackupRecovery}
+        />
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="key-change" size={22} color={colors.text} />}
+          title={t('rotateKey.settingsEntry')}
+          description={t('rotateKey.settingsEntrySubtitle')}
+          onPress={handleRotateKey}
+        />
+      </SettingsListGroup>
 
       {/* Trust & verification — Fase 3 personhood + Fase 4 credentials */}
-      <Section title={t('civic.personhood.settingsSection')}>
-        <GroupedList>
-          <ListRow
-            icon="account-check"
-            title={t('civic.personhood.settingsEntry')}
-            subtitle={t('civic.personhood.settingsEntrySubtitle')}
-            onPress={handlePersonhood}
-            showChevron
-          />
-          <ListRow
-            icon="certificate"
-            title={t('civic.credentials.settingsEntry')}
-            subtitle={t('civic.credentials.settingsEntrySubtitle')}
-            onPress={handleCredentials}
-            showChevron
-          />
-          <ListRow
-            icon="server-network"
-            title={t('civic.nodes.settingsEntry')}
-            subtitle={t('civic.nodes.settingsEntrySubtitle')}
-            onPress={handleNode}
-            showChevron
-          />
-        </GroupedList>
-      </Section>
+      <SettingsListGroup title={t('civic.personhood.settingsSection')}>
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="account-check" size={22} color={colors.text} />}
+          title={t('civic.personhood.settingsEntry')}
+          description={t('civic.personhood.settingsEntrySubtitle')}
+          onPress={handlePersonhood}
+        />
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="certificate" size={22} color={colors.text} />}
+          title={t('civic.credentials.settingsEntry')}
+          description={t('civic.credentials.settingsEntrySubtitle')}
+          onPress={handleCredentials}
+        />
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="server-network" size={22} color={colors.text} />}
+          title={t('civic.nodes.settingsEntry')}
+          description={t('civic.nodes.settingsEntrySubtitle')}
+          onPress={handleNode}
+        />
+      </SettingsListGroup>
 
       {/* Account management lives in the Accounts app */}
-      <Section title={t('vault.home.account')} subtitle={t('vault.home.accountSubtitle')}>
-        <GroupedList>
-          <ListRow
-            icon="account-cog"
-            title={t('vault.home.actions.manageAccount')}
-            subtitle={t('vault.home.actions.manageAccountSubtitle')}
-            onPress={handleManageAccount}
-            showChevron
-          />
-          <ListRow
-            icon="delete-outline"
-            title={t('vault.home.actions.deleteAccount')}
-            subtitle={t('vault.home.actions.deleteAccountSubtitle')}
-            onPress={handleDeleteAccount}
-            showChevron
-            destructive
-          />
-        </GroupedList>
-      </Section>
+      <SettingsListGroup title={t('vault.home.account')} footer={t('vault.home.accountSubtitle')}>
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="account-cog" size={22} color={colors.text} />}
+          title={t('vault.home.actions.manageAccount')}
+          description={t('vault.home.actions.manageAccountSubtitle')}
+          onPress={handleManageAccount}
+        />
+        <SettingsListItem
+          icon={<MaterialCommunityIcons name="delete-outline" size={22} color={colors.error} />}
+          title={t('vault.home.actions.deleteAccount')}
+          description={t('vault.home.actions.deleteAccountSubtitle')}
+          onPress={handleDeleteAccount}
+          destructive
+        />
+      </SettingsListGroup>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  flush: { paddingHorizontal: 0 },
+  header: { paddingHorizontal: 20, marginBottom: 16 },
+});

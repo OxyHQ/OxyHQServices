@@ -3,9 +3,9 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "start": "RCT_METRO_PORT=8101 expo start",
+    "android": "RCT_METRO_PORT=8101 expo run:android",
+    "ios": "RCT_METRO_PORT=8101 expo run:ios",
     "lint": "expo lint",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
@@ -15,7 +15,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@lottiefiles/dotlottie-react": "^0.19.9",
-    "@oxyhq/bloom": "^0.34.2",
+    "@oxyhq/bloom": "^0.44.1",
     "@oxyhq/core": "*",
     "@oxyhq/expo-splash": "workspace:*",
     "@oxyhq/services": "*",

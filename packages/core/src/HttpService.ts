@@ -85,6 +85,20 @@ export interface RequestOptions {
    * mint call fully independent of the current (near-expired) bearer.
    */
   skipAuth?: boolean;
+  /**
+   * Execute this request WITHOUT taking a `RequestQueue` slot — run it directly.
+   *
+   * A queue slot represents network occupancy for ordinary DATA requests. The
+   * CONTROL-PLANE calls the auth lane depends on (the device-secret mint, `POST
+   * /session/device/token`, reached from `getAuthHeader` → `refreshAccessToken`)
+   * must never compete for a slot: when `maxConcurrentRequests` requests are all
+   * parked awaiting that very mint, a queued mint could never acquire a slot to
+   * run — a systemic deadlock. `bypassQueue` lets the mint run even when the
+   * queue is saturated. (The auth preflight is also resolved OUTSIDE the slot in
+   * `request()`, so ordinary requests never hold a slot while awaiting the mint;
+   * this flag is the explicit guarantee for the mint itself.)
+   */
+  bypassQueue?: boolean;
 }
 
 interface RequestConfig extends RequestOptions {
@@ -414,24 +428,29 @@ export class HttpService {
       this.requestMetrics.cacheMisses++;
     }
 
+    // Resolve the auth preflight OUTSIDE the queue slot. A slot represents
+    // NETWORK OCCUPANCY only. `getAuthHeader` may await the single-flight token
+    // refresh/mint — itself a request — so if a slot-holding request awaited it
+    // here and every slot were held by requests all waiting on that same mint,
+    // the mint could never acquire a slot to run (systemic deadlock). Resolving
+    // it before enqueue means auth-blocked requests hold NO slot while the shared
+    // mint runs. `skipAuth` requests (the body-authenticated mint) send NO bearer
+    // and skip the near-expiry preflight — see RequestOptions.skipAuth. The
+    // 401/CSRF retry re-enters request() with a fresh config, so it re-resolves
+    // these here with the refreshed token / cleared CSRF.
+    const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    const authHeader = config.skipAuth ? null : await this.getAuthHeader();
+    // CSRF protects cookie-authenticated browser writes. Bearer-authenticated SDK
+    // clients are not vulnerable to ambient-cookie CSRF, and linked app APIs
+    // should not need to implement a duplicate `/csrf-token` route.
+    const csrfToken = isStateChangingMethod && !authHeader ? await this.fetchCsrfToken() : null;
+
     // Request function
     const requestFn = async (): Promise<T> => {
       const startTime = Date.now();
       try {
         // Build URL with params
         const fullUrl = this.buildURL(url, params);
-        
-        // Get auth token (with auto-refresh). `skipAuth` requests (the
-        // body-authenticated refresh endpoint) send NO bearer and skip the
-        // near-expiry preflight — see RequestOptions.skipAuth for the deadlock
-        // this avoids.
-        const authHeader = config.skipAuth ? null : await this.getAuthHeader();
-
-        // CSRF protects cookie-authenticated browser writes. Bearer-authenticated
-        // SDK clients are not vulnerable to ambient-cookie CSRF, and linked app
-        // APIs should not need to implement a duplicate `/csrf-token` route.
-        const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-        const csrfToken = isStateChangingMethod && !authHeader ? await this.fetchCsrfToken() : null;
 
         // Determine if data is FormData using robust detection
         const isFormData = this.isFormData(data);
@@ -665,8 +684,12 @@ export class HttpService {
       ? () => this.deduplicator.deduplicate(dedupeKey, requestWithRetry)
       : requestWithRetry;
 
-    // Execute request (with queue if needed)
-    const result = await this.requestQueue.enqueue(finalRequest);
+    // Execute the request. Control-plane calls the auth lane depends on
+    // (`bypassQueue`, e.g. the device-secret mint) run DIRECTLY — a queued mint
+    // could never acquire a slot when every slot is parked awaiting it.
+    const result = config.bypassQueue
+      ? await finalRequest()
+      : await this.requestQueue.enqueue(finalRequest);
 
     // Cache the result if caching is enabled
     if (cache && cacheKey && result) {

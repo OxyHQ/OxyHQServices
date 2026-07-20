@@ -21,7 +21,7 @@ configureReanimatedLogger({
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useQueryClient } from '@tanstack/react-query';
-import { OxyProvider, useOxy } from '@oxyhq/services';
+import { OxyProvider, useOxy, useOnlineStatus } from '@oxyhq/services';
 import { KeyManager, logger } from '@oxyhq/core';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
@@ -32,6 +32,8 @@ import {
   ONBOARDING_IDENTITY_QUERY_KEY,
   ONBOARDING_COMPLETE_QUERY_KEY,
 } from '@/hooks/useOnboardingStatus';
+import { useSyncIdentity } from '@/hooks/identity/useSyncIdentity';
+import { useSessionAutoConnect } from '@/hooks/identity/useSessionAutoConnect';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
@@ -208,11 +210,32 @@ function AppHead() {
 function AppStackContent() {
   // Must be called inside OxyProvider (which wraps BloomThemeProvider)
   const navTheme = useNavigationTheme();
-  const { isStorageReady } = useOxy();
+  const { isStorageReady, isAuthResolved, user } = useOxy();
+  const online = useOnlineStatus();
   const { status, needsAuth, identityPresent } = useOnboardingStatus();
+  // The LEAN sync hook — just the single-flight `syncIdentity`, WITHOUT
+  // `useIdentity`'s network-reconnect poll loop or on-mount integrity effect,
+  // which stay owned by the screens that already mount `useIdentity`.
+  const { syncIdentity } = useSyncIdentity();
   const queryClient = useQueryClient();
 
   const appReady = isStorageReady && status !== 'checking';
+
+  // Zero-tap session auto-connect. Commons IS the identity — it never asks its
+  // owner to "sign in". When a returning user reaches the vault with a healthy
+  // local identity but no live session (the local-first router lands them here
+  // without waiting on the network), connect the session from the device's OWN
+  // primary key. Gated on `!needsAuth` so it never races the onboarding flow's
+  // own register + sign-in for a freshly-made identity; single-flight + backoff
+  // are owned by the hook (see `useSessionAutoConnect`).
+  useSessionAutoConnect({
+    isAuthResolved,
+    hasUser: Boolean(user),
+    onboardingComplete: !needsAuth,
+    identityPresent,
+    online,
+    syncIdentity,
+  });
 
   // Cross-app shared-identity backfill (native only, one-shot per launch).
   //

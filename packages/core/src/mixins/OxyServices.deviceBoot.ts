@@ -58,7 +58,10 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           'POST',
           '/session/device/token',
           { deviceId, deviceSecret },
-          { cache: false, skipAuth: true, retry: false },
+          // `bypassQueue`: this mint is the control-plane call the auth lane
+          // depends on — it must run even when every RequestQueue slot is parked
+          // awaiting it, or the whole client deadlocks. See RequestOptions.bypassQueue.
+          { cache: false, skipAuth: true, retry: false, bypassQueue: true },
         );
         const parsed = safeParseContract(deviceTokenMintResponseSchema, res);
         if (!parsed) {
@@ -99,7 +102,9 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           'POST',
           '/session/device/redeem-ticket',
           { ticket, returnOrigin },
-          { cache: false, skipAuth: true },
+          // Public device-hub sync mint (bearer-less). Same control-plane class as
+          // the device-secret mint — bypassQueue so it never waits for a slot.
+          { cache: false, skipAuth: true, bypassQueue: true },
         );
         const parsed = safeParseContract(deviceHubTicketRedeemResponseSchema, res);
         if (!parsed) {

@@ -186,6 +186,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       return await this.makeRequest('GET', `/auth/lookup/${encodeURIComponent(username)}`, undefined, {
         cache: true,
         cacheTTL: 60 * 1000, // 1 minute cache
+        // Public login-flow lookup (pre-session) — skip the bearer preflight.
+        skipAuth: true,
       });
     }
 

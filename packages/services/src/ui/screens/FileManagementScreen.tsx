@@ -1028,6 +1028,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <ScrollView
                 ref={photoScrollViewRef}
                 className="flex-1"
+                style={{ flex: 1 }}
                 contentContainerClassName="p-[10px]"
                 refreshControl={
                     <RefreshControl
@@ -1288,6 +1289,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 {/* File List Skeleton - Matching SettingsListItem */}
                 <ScrollView
                     className="flex-1"
+                    style={{ flex: 1 }}
                     contentContainerClassName="px-[12px] pt-0 pb-[12px]"
                     showsVerticalScrollIndicator={false}
                 >
@@ -1414,7 +1416,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }
 
     return (
-        <View className="flex-1">
+        <View className="flex-1" style={{ flex: 1 }}>
             <Header
                 title={selectMode ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile')) : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title'))}
                 subtitle={selectMode ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect')) : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length }))}

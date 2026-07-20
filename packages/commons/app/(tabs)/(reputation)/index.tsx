@@ -5,7 +5,8 @@ import { useOxy } from '@oxyhq/services';
 import { ActivityHeatmap } from '@oxyhq/bloom/activity-heatmap';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, CenteredState, PrimaryButton } from '@/components/ui';
+import { Screen, CenteredState, PrimaryButton, SessionGate } from '@/components/ui';
+import { AttestQrSheet } from '@/components/civic/AttestQrSheet';
 import { ReputationHeader } from '@/components/reputation/ReputationHeader';
 import { GetStartedCarousel, type CtaItem } from '@/components/reputation/GetStartedCarousel';
 import { SegmentedTabs, type SegmentedTabItem } from '@/components/reputation/SegmentedTabs';
@@ -70,9 +71,10 @@ export default function ReputationScreen() {
     router.push('/(tabs)/(reputation)/validate');
   }, [router]);
 
-  const handleAttest = useCallback(() => {
-    router.push('/(tabs)/(id)/attest-me');
-  }, [router]);
+  // Show A's fresh attestation QR as a bottom sheet (over this tab) — a
+  // counterparty scans it to confirm they met A in person.
+  const [qrSheetOpen, setQrSheetOpen] = useState(false);
+  const handleAttest = useCallback(() => setQrSheetOpen(true), []);
 
   const handlePersonhood = useCallback(() => {
     router.push('/(tabs)/(settings)/personhood');
@@ -124,19 +126,13 @@ export default function ReputationScreen() {
     />
   );
 
-  if (balanceQuery.isPending && !balance) {
-    return (
-      <Screen gap={24}>
-        {header}
-        <CenteredState loading body={t('civic.reputation.loading')} />
-      </Screen>
-    );
-  }
+  const renderContent = () => {
+    if (balanceQuery.isPending && !balance) {
+      return <CenteredState loading body={t('civic.reputation.loading')} />;
+    }
 
-  if (balanceQuery.isError && !balance) {
-    return (
-      <Screen gap={24}>
-        {header}
+    if (balanceQuery.isError && !balance) {
+      return (
         <CenteredState
           icon="cloud-alert"
           title={t('civic.reputation.error.title')}
@@ -149,63 +145,71 @@ export default function ReputationScreen() {
             />
           }
         />
-      </Screen>
-    );
-  }
+      );
+    }
 
-  if (!balance || !sources) {
-    return <Screen gap={24}>{header}</Screen>;
-  }
+    if (!balance || !sources) {
+      return null;
+    }
+
+    return (
+      <>
+        {!getStartedDismissed && (
+          <GetStartedCarousel
+            title={t('civic.reputation.getStarted.title')}
+            dismissLabel={t('civic.reputation.getStarted.dismiss')}
+            items={ctaItems}
+            onDismiss={() => setGetStartedDismissed(true)}
+          />
+        )}
+
+        <SegmentedTabs items={tabItems} value={tab} onChange={setTab} />
+
+        {tab === 'overview' ? (
+          <View style={styles.overview}>
+            <StandingSection balance={balance} sources={sources} isOffline={!isOnline} />
+
+            <View style={styles.heatmapSection}>
+              <ThemedText style={[styles.heatmapTitle, { color: colors.text }]}>
+                {t('civic.reputation.activity.heatmapTitle')}
+              </ThemedText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.heatmapScroll}
+              >
+                <ActivityHeatmap
+                  data={heatmapQuery.data ?? []}
+                  endDate={today}
+                  monthLabels={monthLabels}
+                  weekdayLabels={weekdayLabels}
+                />
+              </ScrollView>
+            </View>
+
+            <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
+              {t('civic.reputation.footnote')}
+            </ThemedText>
+          </View>
+        ) : (
+          <ActivityList
+            transactions={activityQuery.data}
+            isLoading={activityQuery.isPending}
+            isError={activityQuery.isError}
+          />
+        )}
+      </>
+    );
+  };
 
   return (
-    <Screen gap={24}>
-      {header}
-
-      {!getStartedDismissed && (
-        <GetStartedCarousel
-          title={t('civic.reputation.getStarted.title')}
-          dismissLabel={t('civic.reputation.getStarted.dismiss')}
-          items={ctaItems}
-          onDismiss={() => setGetStartedDismissed(true)}
-        />
-      )}
-
-      <SegmentedTabs items={tabItems} value={tab} onChange={setTab} />
-
-      {tab === 'overview' ? (
-        <View style={styles.overview}>
-          <StandingSection balance={balance} sources={sources} isOffline={!isOnline} />
-
-          <View style={styles.heatmapSection}>
-            <ThemedText style={[styles.heatmapTitle, { color: colors.text }]}>
-              {t('civic.reputation.activity.heatmapTitle')}
-            </ThemedText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.heatmapScroll}
-            >
-              <ActivityHeatmap
-                data={heatmapQuery.data ?? []}
-                endDate={today}
-                monthLabels={monthLabels}
-                weekdayLabels={weekdayLabels}
-              />
-            </ScrollView>
-          </View>
-
-          <ThemedText style={[styles.footnote, { color: colors.textSecondary }]}>
-            {t('civic.reputation.footnote')}
-          </ThemedText>
-        </View>
-      ) : (
-        <ActivityList
-          transactions={activityQuery.data}
-          isLoading={activityQuery.isPending}
-          isError={activityQuery.isError}
-        />
-      )}
-    </Screen>
+    <>
+      <Screen gap={24}>
+        {header}
+        <SessionGate>{renderContent()}</SessionGate>
+      </Screen>
+      {qrSheetOpen && <AttestQrSheet onClose={() => setQrSheetOpen(false)} />}
+    </>
   );
 }
 

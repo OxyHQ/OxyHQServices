@@ -15,6 +15,7 @@ import {
   SecondaryButton,
   Callout,
   CenteredState,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useMyCredentials } from '@/hooks/useCredentials';
@@ -287,7 +288,7 @@ export default function CredentialDetailScreen() {
         onBack={handleBack}
         backAccessibilityLabel={t('common.back')}
       />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }
