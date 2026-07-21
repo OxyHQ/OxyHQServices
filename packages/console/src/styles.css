@@ -3,6 +3,20 @@
 @import "shadcn/tailwind.css";
 @import "@oxyhq/bloom/design-tokens/theme.css";
 
+/*
+ * Tailwind v4 auto-detects content in this project but does NOT scan workspace
+ * dependencies under node_modules. The `@oxyhq/services` screens (file manager,
+ * profile, etc.) and `@oxyhq/bloom` web forks render with NativeWind className
+ * strings (`flex-1`, `flex-row`, `items-center`, arbitrary values like
+ * `w-[40px]`/`top-[12px]`, `group-hover:*`) that exist only in those packages'
+ * compiled output — without these @source globs Tailwind never generates those
+ * utilities and the SDK screens render unstyled. Scoped to the two Oxy packages'
+ * symlinked build output at the repo-root node_modules, NOT all of node_modules.
+ * Mirrors packages/commons/global.css.
+ */
+@source "../../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
+@source "../../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
+
 @custom-variant dark (&:is(.dark *));
 
 /*
