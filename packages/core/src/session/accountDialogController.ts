@@ -35,6 +35,13 @@
  * password, social login, and 2FA were removed ecosystem-wide. Account
  * creation (`signup` view) is the same two identity backends: a passkey
  * ceremony on web, or a Commons-created identity.
+ *
+ * The controller owns NO surface PRESENTATION: whether the account dialog is
+ * mounted, visible, or dismissed is the job of the shared surface stack
+ * (`@oxyhq/services` presents the `AccountDialog` surface into `@oxyhq/bloom`'s
+ * stack). This is a headless state machine only — it exposes `setView` /
+ * `add` / `startSignup` (the view axis) and `cancelSignIn` (device-flow
+ * teardown), never an `open` / `close` / `visible`.
  */
 
 import type { OxyServices } from '../OxyServices';
@@ -460,12 +467,6 @@ export class AccountDialogController {
     if (this.view === view) return;
     this.view = view;
     this.emit();
-  }
-
-  /** Return to the account list and cancel any in-flight sign-in flow. */
-  close(): void {
-    this.cancelSignIn();
-    this.setView('accounts');
   }
 
   /** Switch to the "add account" view (the sign-in entry chooser). */

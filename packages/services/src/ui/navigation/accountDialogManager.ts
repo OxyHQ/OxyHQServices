@@ -1,10 +1,22 @@
 /**
- * Imperative controls for the unified {@link OxyAccountDialog}.
+ * Imperative, outside-React entry points for the unified `OxyAccountDialog`.
+ *
+ * These delegate to the live handles the mounted `OxyProvider` registers via
+ * {@link registerAccountDialogControls}. Under the hood `open`/`close` present
+ * and dismiss the `AccountDialog` surface on the shared Bloom surface stack
+ * (`OxyContext.openAccountDialog` → `presentDetached('AccountDialog', …)`), so
+ * whether the dialog is open is owned by that stack — this module is only the
+ * thin bridge that reaches the provider's controller (which sets the dialog
+ * view) from a non-React call site.
  */
 
 import type { AccountDialogView } from '@oxyhq/core';
 
-/** Live open/close handles registered by the mounted provider. */
+/**
+ * Live open/close handles registered by the mounted provider. `open` presents
+ * the `AccountDialog` surface (and points its view); `close` dismisses it. Both
+ * are stack operations — this interface never carries visibility state.
+ */
 export interface AccountDialogControls {
   open: (view?: AccountDialogView) => void;
   close: () => void;

@@ -163,7 +163,7 @@ describe('AccountDialogController — initial + views', () => {
     expect(snap.commonsAvailability).toBe('unknown');
   });
 
-  it('setView / add / close move between views and notify subscribers', () => {
+  it('setView / add move between views and notify subscribers', () => {
     const { controller } = makeHarness();
     const seen: string[] = [];
     controller.subscribe((s) => seen.push(s.view));
@@ -172,7 +172,7 @@ describe('AccountDialogController — initial + views', () => {
     expect(controller.getSnapshot().view).toBe('add');
     controller.setView('signin');
     expect(controller.getSnapshot().view).toBe('signin');
-    controller.close();
+    controller.setView('accounts');
     expect(controller.getSnapshot().view).toBe('accounts');
 
     expect(seen).toEqual(['add', 'signin', 'accounts']);
@@ -185,7 +185,7 @@ describe('AccountDialogController — initial + views', () => {
 
     controller.startSignup();
     expect(controller.getSnapshot().view).toBe('signup');
-    controller.close();
+    controller.setView('accounts');
     expect(controller.getSnapshot().view).toBe('accounts');
 
     expect(seen).toEqual(['signup', 'accounts']);

@@ -644,9 +644,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const commitSwitchedSessionRef = useRef(commitSwitchedSession);
   commitSwitchedSessionRef.current = commitSwitchedSession;
 
-  // The live AccountDialog surface (a stacked Bloom surface), while open. Held so
+  // The live AccountDialog surface (a stacked Bloom surface), while open — the
+  // SINGLE source of truth for "is the account dialog open". Held so
   // `openAccountDialog` can no-op when already open and `closeAccountDialog` /
-  // `onSignedIn` can dismiss it. Cleared when the surface settles.
+  // `onSignedIn` can dismiss it. Its present→settle lifecycle is what drives the
+  // reactive `accountDialogOpen` mirror below: presenting flips it true, the
+  // surface settling (`result.finally`) flips it false — no other write site.
   const accountDialogSurfaceRef = useRef<SurfaceInstance<'AccountDialog'> | null>(null);
 
   const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
@@ -662,8 +665,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       commitSession: (session) => handleWebSessionRef.current(session),
       commitSwitchedSession: (session) => commitSwitchedSessionRef.current(session),
       onSignedIn: () => {
+        // Dismiss the surface; its settle (`result.finally` below) is what flips
+        // `accountDialogOpen` false. The surface's present→settle lifecycle is the
+        // SINGLE source of truth for "is the account dialog open" — never a manual
+        // flip here.
         accountDialogSurfaceRef.current?.dismiss();
-        setAccountDialogOpen(false);
       },
       openUrl: (url) => {
         if (isWebBrowser()) {
@@ -692,7 +698,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Present the AccountDialog surface on the shared Bloom stack the FIRST time
     // (subsequent opens just re-point the controller's view above). `presentDetached`
     // keeps it OUT of the `showBottomSheet` route-surface lineage, so closing the
-    // bottom-sheet session never touches the account dialog and vice-versa.
+    // bottom-sheet session never touches the account dialog and vice-versa. When a
+    // route surface (e.g. ManageAccount) is already open, this stacks the dialog
+    // ABOVE it; dismissing the dialog unwinds back to that surface.
     if (!accountDialogSurfaceRef.current) {
       const instance = presentDetached(
         'AccountDialog',
@@ -700,6 +708,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         { placement: { base: 'bottom', md: 'center' }, dismissOnBackdrop: false, maxWidth: 420 },
       );
       accountDialogSurfaceRef.current = instance;
+      // The surface settling is the ONE place `accountDialogOpen` flips false —
+      // covering every dismiss path (close button, `onSignedIn`, programmatic
+      // `closeAccountDialog`, host unmount). So the stack owns the open state.
       instance.result.finally(() => {
         if (accountDialogSurfaceRef.current === instance) accountDialogSurfaceRef.current = null;
         setAccountDialogOpen(false);
@@ -710,8 +721,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const closeAccountDialog = useCallback((): void => {
     accountDialogControllerRef.current?.cancelSignIn();
+    // Dismiss the surface; its settle (`result.finally` above) flips
+    // `accountDialogOpen` false. Do NOT flip it here — the surface lifecycle is
+    // the single source of truth, so a manual write would be a second authority.
     accountDialogSurfaceRef.current?.dismiss();
-    setAccountDialogOpen(false);
   }, []);
 
   // Start driving the dialog on mount; tear it down on unmount.
