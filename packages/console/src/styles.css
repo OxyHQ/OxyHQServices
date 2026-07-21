@@ -12,7 +12,8 @@
  * compiled output — without these @source globs Tailwind never generates those
  * utilities and the SDK screens render unstyled. Scoped to the two Oxy packages'
  * symlinked build output at the repo-root node_modules, NOT all of node_modules.
- * Mirrors packages/commons/global.css.
+ * Mirrors packages/auth/app/globals.css (Vite web apps). Expo apps use
+ * @oxyhq/app-preset/base.css instead.
  */
 @source "../../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
 @source "../../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";

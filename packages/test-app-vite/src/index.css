@@ -3,6 +3,15 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
+/*
+ * This playground mounts OxyProvider from @oxyhq/services (and Bloom UI). Tailwind
+ * v4 only scans the app's own tree by default, so layout utilities from those
+ * packages would never be generated without scoped @source globs — same fix as
+ * auth/console Vite apps.
+ */
+@source "../../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
+@source "../../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {

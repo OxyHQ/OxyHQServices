@@ -35,9 +35,10 @@
  * this file lives at `node_modules/@oxyhq/app-preset/css/base.css`, so
  * `../../services/lib` resolves to `node_modules/@oxyhq/services/lib` and
  * `../../bloom/lib` to `node_modules/@oxyhq/bloom/lib` — @oxyhq/app-preset,
- * @oxyhq/services and @oxyhq/bloom are siblings under `@oxyhq/`. The same two
- * levels up land on `packages/` in the source monorepo, so the globs resolve in
- * both layouts without each app guessing its own node_modules path. */
+ * @oxyhq/services and @oxyhq/bloom are siblings under `@oxyhq/`. In the source
+ * monorepo `../../services/lib` still lands on `packages/services/lib`, but
+ * `@oxyhq/bloom` is npm-only (no `packages/bloom`), so the extra
+ * `../../../node_modules/@oxyhq/bloom/lib` fallback covers that layout. */
 
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/preflight.css" layer(base);
@@ -47,3 +48,4 @@
 
 @source "../../services/lib/**/*.{js,jsx}";
 @source "../../bloom/lib/**/*.{js,jsx}";
+@source "../../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
