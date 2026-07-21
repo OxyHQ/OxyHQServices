@@ -91,9 +91,12 @@ function createOxyMetroConfig(projectRoot, options = {}) {
     unstable_enablePackageExports: true,
     sourceExts: [...config.resolver.sourceExts, 'ts', 'tsx'],
     // Bloom imports `.woff2`/`.woff` fonts directly from JS on web; Metro does not
-    // include them in default assetExts, and svg is handled by the transformer.
+    // include them in default assetExts. SVGs stay ASSETS (metro's default): the
+    // apps `require('*.svg')` them as image URIs (e.g. `<Image source={require(
+    // '…/empty.svg')} />`) — there is no react-native-svg-transformer configured,
+    // so removing `svg` from assetExts leaves it unresolvable (breaks the build).
     assetExts: [
-      ...config.resolver.assetExts.filter((ext) => ext !== 'svg'),
+      ...config.resolver.assetExts,
       'wasm',
       'woff2',
       'woff',
