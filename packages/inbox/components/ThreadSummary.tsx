@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -98,8 +99,8 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
         <View style={styles.loadingContent}>
-          <View style={[styles.skeletonLine, { backgroundColor: colors.border }]} />
-          <View style={[styles.skeletonLine, styles.skeletonLineMedium, { backgroundColor: colors.border }]} />
+          <Skeleton.Box width="100%" height={14} borderRadius={4} />
+          <Skeleton.Box width="70%" height={14} borderRadius={4} />
         </View>
       </View>
     );
@@ -298,13 +299,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 12,
     gap: 8,
-  },
-  skeletonLine: {
-    height: 14,
-    borderRadius: 4,
-    opacity: 0.3,
-  },
-  skeletonLineMedium: {
-    width: '70%',
   },
 });
