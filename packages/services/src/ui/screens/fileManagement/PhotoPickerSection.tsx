@@ -14,6 +14,7 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BREAKPOINTS } from '@oxyhq/bloom/styles';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import type { FileMetadata } from '@oxyhq/core';
 import { computePhotoGridLayout } from './photoGridLayout';
 
@@ -122,6 +123,13 @@ export interface PhotoPickerViewProps {
     uploadProgress: { current: number; total: number } | null;
     hasMore: boolean;
     loadingMore: boolean;
+    /**
+     * Initial-load flag. While `true` AND no photos have arrived yet, the picker
+     * renders its OWN loading skeleton (placement-aware grid of shimmer tiles)
+     * instead of the empty state — so the loading UI matches the picker's shape
+     * and container width, not the browse file-manager chrome.
+     */
+    loading: boolean;
     reduceMotion: boolean;
     getThumbUrl: (file: FileMetadata) => string | undefined;
     primaryColor: string;
@@ -160,6 +168,18 @@ const RING_SPRING_TENSION = 120;
  */
 const CELL_CORNER_RADIUS = 8; // `rounded-radius-8`
 const SELECTION_RING_WIDTH = 3; // `border-[3px]`
+
+/**
+ * Loading-skeleton tile fill. The picker's backdrop is ALWAYS black regardless
+ * of theme, so we cannot use Bloom `Skeleton.Box`'s theme default (`contrast50`,
+ * which is a near-black gray on a dark theme → invisible on this backdrop). A
+ * neutral dark gray reads as a photo placeholder on black; Bloom's shimmer still
+ * pulses the tile opacity on top of it. `Skeleton.Box` applies `style` after its
+ * own base, so this override wins while the animated opacity is preserved.
+ */
+const SKELETON_TILE_COLOR = '#26262A';
+/** Minimum skeleton rows so the grid never looks empty on a very short panel. */
+const SKELETON_MIN_ROWS = 4;
 
 type PhotoPickerCellProps = {
     photo: FileMetadata;
@@ -325,6 +345,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     uploadProgress,
     hasMore,
     loadingMore,
+    loading,
     reduceMotion,
     getThumbUrl,
     primaryColor,
@@ -366,20 +387,31 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     // better below full height); the bottom sheet may run taller. Keep this
     // breakpoint in sync with `DIALOG_PLACEMENT` in BottomSheetRouter.
     const isCenteredPanel = windowWidth >= BREAKPOINTS.md;
-    const rootStyle = useMemo(
-        () => ({
-            maxHeight: isCenteredPanel
-                ? Math.min(Math.round(windowHeight * 0.85), 720)
-                : Math.round(windowHeight * 0.9),
-        }),
+    const maxPanelHeight = useMemo(
+        () => (isCenteredPanel
+            ? Math.min(Math.round(windowHeight * 0.85), 720)
+            : Math.round(windowHeight * 0.9)),
         [isCenteredPanel, windowHeight],
     );
+    const rootStyle = useMemo(() => ({ maxHeight: maxPanelHeight }), [maxPanelHeight]);
 
     const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
     const { columns, cellSize, gutter } = useMemo(
         () => computePhotoGridLayout(effectiveWidth),
         [effectiveWidth],
     );
+
+    // How many shimmer tiles the loading skeleton renders: enough FULL rows to
+    // fill the panel down to (but never past) its `maxHeight` cap, so the panel
+    // hugs the skeleton content instead of overflowing or scrolling. `floor`
+    // keeps the last row whole; `SKELETON_MIN_ROWS` guards a very short panel.
+    const skeletonTileCount = useMemo(() => {
+        const rowHeight = cellSize + gutter;
+        if (rowHeight <= 0) return columns * SKELETON_MIN_ROWS;
+        const available = Math.max(0, maxPanelHeight - GRID_CONTENT_PADDING_TOP);
+        const rows = Math.max(SKELETON_MIN_ROWS, Math.floor(available / rowHeight));
+        return rows * columns;
+    }, [cellSize, gutter, columns, maxPanelHeight]);
 
     // Map selectedIds → 1-based selection order for the badge. We freeze a
     // stable order at the time of selection: the order is the insertion
@@ -515,7 +547,37 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 where Yoga already defaults min-height to 0). */}
             <View className="flex-1 min-h-0 bg-black">
                 {/* Photo grid (renders behind the translucent header). */}
-                {isEmpty ? (
+                {isEmpty && loading ? (
+                    /* Loading skeleton — the picker's OWN shape: shimmer tiles laid
+                       out with the SAME placement-aware geometry the real grid uses
+                       (`computePhotoGridLayout(effectiveWidth)`), pushed below the
+                       translucent header by the grid content padding. `flexWrap`
+                       breaks rows exactly at `columns` because the last tile in each
+                       row carries no right margin (a full row + gutters fits the
+                       measured width by construction). The real translucent header
+                       still floats on top, so Cancel stays reachable while loading. */
+                    <View
+                        className="pt-[60px]"
+                        style={{ flexDirection: 'row', flexWrap: 'wrap' }}
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                    >
+                        {Array.from({ length: skeletonTileCount }, (_, index) => (
+                            <Skeleton.Box
+                                key={index}
+                                width={cellSize}
+                                height={cellSize}
+                                borderRadius={CELL_CORNER_RADIUS}
+                                style={{
+                                    marginRight: (index + 1) % columns === 0 ? 0 : gutter,
+                                    marginBottom: gutter,
+                                    backgroundColor: SKELETON_TILE_COLOR,
+                                }}
+                            />
+                        ))}
+                    </View>
+                ) : isEmpty ? (
                     <View className="flex-1 items-center justify-center px-space-32 pt-[60px]">
                         <View className="opacity-30 mb-space-16">
                             <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />

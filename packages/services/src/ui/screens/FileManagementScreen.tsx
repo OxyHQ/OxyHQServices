@@ -1123,7 +1123,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // this is pure layout: the top chrome (header / controls / search) plus a
     // photo grid of shimmering tiles sized with the same 3-per-row geometry the
     // real photo grid uses. No hand-rolled `Animated` shimmer.
-    if (loading) {
+    //
+    // The image-only picker owns its OWN loading skeleton (rendered by
+    // `PhotoPickerView` when its photo list is still loading), so it inherits the
+    // picker's placement-aware container width / columns / tile size and the
+    // Dialog-vs-bottom-sheet sizing. Skipping the browse chrome here is what keeps
+    // the picker from flashing the wrong (file-manager) skeleton inside the Dialog.
+    if (loading && !isImageOnlyPicker) {
         const GRID_PADDING = 10;
         const TILE_GAP = 4;
         const GRID_COLUMNS = 3;
@@ -1197,6 +1203,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     uploadProgress={uploadProgress}
                     hasMore={paging.hasMore}
                     loadingMore={paging.loadingMore}
+                    loading={loading}
                     reduceMotion={reduceMotion}
                     getThumbUrl={thumbSourceFor}
                     primaryColor={colors.primary}
