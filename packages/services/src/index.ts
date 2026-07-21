@@ -276,6 +276,12 @@ export { default as AccountSettingsScreen } from './ui/screens/AccountSettingsSc
 export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetManager';
 export type { RouteName } from './ui/navigation/routes';
 
+// Surface nav header — a surface screen declares its title/subtitle (+ any
+// action slot) into the Dialog's OWN navigation header. Screens render no header
+// of their own.
+export { useSurfaceHeader, type SurfaceHeaderContent } from './ui/hooks/useSurfaceHeader';
+export { SurfaceHeaderAction, type SurfaceHeaderActionProps } from './ui/components/SurfaceHeaderAction';
+
 // ---------------------------------------------------------------------------
 // Unified account dialog — imperative entry points
 // ---------------------------------------------------------------------------

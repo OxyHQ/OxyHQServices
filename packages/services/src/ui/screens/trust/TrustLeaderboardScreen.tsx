@@ -16,8 +16,8 @@ import { Button } from '@oxyhq/bloom/button';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../../types/navigation';
 import { Avatar } from '@oxyhq/bloom/avatar';
-import Header from '../../components/Header';
 import { useI18n } from '../../hooks/useI18n';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { useOxy } from '../../context/OxyContext';
 import { getTrustTierLabel } from './trustTier';
 
@@ -27,7 +27,7 @@ const ERROR_ICON_SIZE = 48;
 /** Ranks within the podium (1–3) get a highlighted row surface. */
 const PODIUM_RANK = 3;
 
-const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate }) => {
+const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
     const { oxyServices, user: currentUser } = useOxy();
     const { t, locale } = useI18n();
     const bloomTheme = useTheme();
@@ -61,6 +61,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate })
 
     const title = t('trust.leaderboard.title') || 'Trust Leaderboard';
     const subtitle = t('trust.leaderboard.subtitle') || 'Top contributors in the community';
+    useSurfaceHeader({ title, subtitle });
 
     const handleEntryPress = useCallback(
         (entry: ReputationLeaderboardEntry) => {
@@ -130,7 +131,6 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate })
     if (isLoading) {
         return (
             <View className="flex-1 bg-bg">
-                <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
                 <View style={styles.center}>
                     <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
                 </View>
@@ -141,7 +141,6 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate })
     if (error) {
         return (
             <View className="flex-1 bg-bg">
-                <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
                 <View style={styles.center} className="px-space-32 gap-space-16">
                     <Ionicons name="alert-circle" size={ERROR_ICON_SIZE} color={bloomTheme.colors.error} />
                     <Text className="text-text-secondary text-base text-center">
@@ -157,7 +156,6 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate })
 
     return (
         <View className="flex-1 bg-bg">
-            <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
             <FlatList
                 data={leaderboard}
                 renderItem={renderEntry}

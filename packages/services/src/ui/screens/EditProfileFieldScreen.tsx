@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Image,
@@ -9,13 +9,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { normalizeTheme } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
 import { toast } from '@oxyhq/bloom';
@@ -461,6 +462,26 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         }
     };
 
+    // Contribute the field title/subtitle + a Save action into the Dialog's own
+    // nav header (this screen renders no header of its own). `handleSave` closes
+    // over the live form values, so route it through a ref to keep the Save node
+    // stable across keystrokes (only re-created when the saving state flips).
+    const handleSaveRef = useRef(handleSave);
+    handleSaveRef.current = handleSave;
+    const onSavePress = useCallback(() => { void handleSaveRef.current(); }, []);
+    const saveAction = useMemo(
+        () => (
+            <SurfaceHeaderAction
+                label={isSaving ? (t('common.saving') || 'Saving…') : (t('common.save') || 'Save')}
+                onPress={onSavePress}
+                loading={isSaving}
+                disabled={isSaving}
+            />
+        ),
+        [isSaving, onSavePress, t],
+    );
+    useSurfaceHeader({ title: fieldConfig.title, subtitle: fieldConfig.subtitle, right: saveAction });
+
     // Render a single field input
     const renderField = (field: FieldConfig['fields'][0], index: number) => {
         const error = fieldErrors[field.key];
@@ -566,40 +587,12 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     };
 
     return (
-        <>
-            <Header
-                title=""
-                subtitle=""
-                onBack={onClose || goBack}
-                variant="minimal"
-                elevation="none"
-                actions={[{
-                    text: isSaving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save'),
-                    onPress: handleSave,
-                    disabled: isSaving,
-                    loading: isSaving,
-                }]}
-            />
-
-            <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
-                {/* Big Title */}
-                <View className="gap-space-8">
-                    <H1 className="text-headerBold font-headerBold text-text">
-                        {fieldConfig.title}
-                    </H1>
-                    {fieldConfig.subtitle && (
-                        <Text className="text-body font-body text-text-secondary">
-                            {fieldConfig.subtitle}
-                        </Text>
-                    )}
-                </View>
-
-                {/* Form Content */}
-                <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
-                    {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
-                </View>
+        <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
+            {/* Form Content */}
+            <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
+                {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
             </View>
-        </>
+        </View>
     );
 };
 

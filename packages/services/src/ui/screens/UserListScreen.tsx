@@ -12,11 +12,11 @@ import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
-import Header from '../components/Header';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import FollowButton from '../components/FollowButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { logger, getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
@@ -46,7 +46,6 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   userId,
   mode,
   initialCount,
-  goBack,
   navigate,
 }) => {
   const { oxyServices, user: currentUser } = useOxy();
@@ -230,11 +229,11 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
     : (t('userList.following') || 'Following');
 
   const headerSubtitle = total > 0 ? String(total) : undefined;
+  useSurfaceHeader({ title, subtitle: headerSubtitle });
 
   if (isLoading && users.length === 0) {
     return (
       <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} elevation="subtle" />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
         </View>
@@ -245,7 +244,6 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   if (error) {
     return (
       <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} elevation="subtle" />
         <View style={styles.center} className="px-space-32 gap-space-16">
           <Ionicons name="alert-circle" size={ERROR_ICON_SIZE} color={bloomTheme.colors.error} />
           <Text className="text-text-secondary text-base text-center">{error}</Text>
@@ -259,7 +257,6 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   return (
     <View className="flex-1 bg-bg">
-      <Header title={title} subtitle={headerSubtitle} onBack={goBack} elevation="subtle" />
       <FlatList
         data={users}
         renderItem={renderUser}

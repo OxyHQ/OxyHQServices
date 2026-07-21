@@ -1,18 +1,23 @@
-import React, { useCallback, useEffect, useMemo, type ErrorInfo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, type ErrorInfo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useStore } from 'zustand';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { useDialogHeader, type DialogHeaderConfig } from '@oxyhq/bloom/dialog';
 import type { SurfaceControls } from '@oxyhq/bloom/surfaces';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent } from '../navigation/routes';
 import type { SurfaceNavStack } from '../navigation/surfaceNavStack';
-import type { SurfacePresentation } from '../navigation/surfaceRegistry';
+import { getSurfaceConfig, type SurfacePresentation } from '../navigation/surfaceRegistry';
 import {
   closeAllRouteSurfaces,
   navigateWithinOrPresent,
   presentRoute,
   replaceWithinOrPresent,
 } from '../navigation/surfaces';
+import {
+  SurfaceHeaderContext,
+  type SurfaceHeaderContent,
+} from '../hooks/useSurfaceHeader';
 import type { BaseScreenProps } from '../types/navigation';
 
 /** Error boundary catching screen render failures (e.g. a lazy `require()` throw). */
@@ -129,6 +134,35 @@ function SurfaceScreen({ navStack, surface, presentation }: SurfaceScreenProps) 
     [],
   );
 
+  // --- Dialog nav-header wiring ------------------------------------------
+  // Screens render NO header of their own: the Dialog owns a sticky gradient nav
+  // bar + a large collapsing title. Here the surface HOST supplies the back/close
+  // wiring and bridges the mounted screen's runtime contribution (its translated
+  // title/subtitle + any action slot, via `useSurfaceHeader`) into the Dialog's
+  // header. One writer to Bloom's header store — this merge — so back/close and
+  // the screen's content never race.
+  const [headerContent, setHeaderContent] = useState<SurfaceHeaderContent | null>(null);
+  const headerContext = useMemo(() => ({ setContent: setHeaderContent }), []);
+
+  const headerMode = useMemo(
+    () => getSurfaceConfig(top.route, top.props).header,
+    [top.route, top.props],
+  );
+  // Show a back affordance whenever the surface can navigate back — either an
+  // earlier frame in this surface's stack, or an earlier wizard step.
+  const canGoBackNow = state.frames.length > 1 || top.step > 0;
+
+  const dialogHeader = useMemo<DialogHeaderConfig | null>(() => {
+    if (!headerMode) return null;
+    return {
+      largeTitle: true,
+      ...headerContent,
+      onBack: canGoBackNow ? goBack : undefined,
+    };
+  }, [headerMode, headerContent, canGoBackNow, goBack]);
+
+  useDialogHeader(dialogHeader);
+
   const screenProps = useMemo<BaseScreenProps>(() => {
     const { initialStep: _omitInitialStep, ...rest } = top.props;
     return {
@@ -157,9 +191,11 @@ function SurfaceScreen({ navStack, surface, presentation }: SurfaceScreenProps) 
   if (!ScreenComponent) return null;
 
   return (
-    <ScreenErrorBoundary screenName={top.route}>
-      <ScreenComponent {...screenProps} />
-    </ScreenErrorBoundary>
+    <SurfaceHeaderContext.Provider value={headerContext}>
+      <ScreenErrorBoundary screenName={top.route}>
+        <ScreenComponent {...screenProps} />
+      </ScreenErrorBoundary>
+    </SurfaceHeaderContext.Provider>
   );
 }
 

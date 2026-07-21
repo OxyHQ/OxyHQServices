@@ -19,13 +19,13 @@ import {
     packageInfo,
 } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { presentDeleteAccount } from '../components/modals/DeleteAccountModal';
 import { presentActionSheet } from '../components/surfaces/ActionSheetSurface';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUserSubscription } from '../hooks/queries/usePaymentQueries';
 import { useDeviceSessions } from '../hooks/queries/useServicesQueries';
@@ -86,6 +86,8 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
+
+    useSurfaceHeader({ title: t('manageAccount.title') || 'Manage your Oxy Account' });
     const {
         user: contextUser,
         isAuthenticated,
@@ -331,11 +333,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     if (!isAuthenticated) {
         return (
             <>
-                <Header
-                    title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                    onBack={goBack || onClose}
-                    elevation="subtle"
-                />
                 <View className="items-center py-space-40">
                     <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
@@ -348,11 +345,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     if (userLoading && !user) {
         return (
             <>
-                <Header
-                    title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                    onBack={goBack || onClose}
-                    elevation="subtle"
-                />
                 <View className="items-center py-space-40">
                     <ActivityIndicator color={bloomTheme.colors.primary} size="large" />
                 </View>
@@ -365,11 +357,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                onBack={goBack || onClose}
-                elevation="subtle"
-            />
             <View className="px-screen-margin pb-space-24">
                 {/* Profile card */}
                 <ProfileSummaryCard

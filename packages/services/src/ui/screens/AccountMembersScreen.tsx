@@ -10,15 +10,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Divider } from '@oxyhq/bloom/divider';
 import type { AccountMember, AccountRole } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 /** Roles assignable via invite / role change — everything except `owner`. */
 type AssignableRole = Exclude<AccountRole, 'owner'>;
@@ -42,6 +42,11 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
   const { t } = useI18n();
+
+  useSurfaceHeader({
+    title: t('accounts.members.title') || 'Members',
+    subtitle: t('accounts.members.subtitle') || 'People with access to this account.',
+  });
   const { oxyServices, canUsePrivateApi } = useOxy();
   const queryClient = useQueryClient();
 
@@ -195,12 +200,9 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     if (confirmed) transferMutation.mutate(member.memberUserId);
   }, [transferMutation, t]);
 
-  const title = t('accounts.members.title') || 'Members';
-
   if (!id) {
     return (
       <>
-        <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
         <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.members.errors.missingAccount') || 'No account selected.'}
@@ -211,17 +213,7 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
   }
 
   return (
-    <>
-      <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-
-      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
-          <View className="gap-space-8">
-            <H1 className="text-headerBold font-headerBold text-text">{title}</H1>
-            <Text className="text-body font-body text-text-secondary">
-              {t('accounts.members.subtitle') || 'People with access to this account.'}
-            </Text>
-          </View>
-
+      <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
           {!accountQuery.isLoading && !canRead ? (
             <Text className="text-body font-body text-text-secondary text-center py-space-24">
               {t('accounts.members.errors.noPermission') || 'You do not have permission to view members.'}
@@ -422,7 +414,6 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
             </View>
           ) : null}
       </View>
-    </>
   );
 };
 

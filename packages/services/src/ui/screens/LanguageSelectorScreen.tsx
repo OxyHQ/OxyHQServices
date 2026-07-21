@@ -4,7 +4,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Search } from '@oxyhq/bloom/search';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
@@ -12,8 +12,8 @@ import {
     getNativeLanguageName,
     type SupportedLanguage,
 } from '@oxyhq/core';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { addLocale, removeLocale, setPrimaryLocale } from '../hooks/useLanguageManagement';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
@@ -38,16 +38,17 @@ const CATALOG_BY_CODE: ReadonlyMap<string, SupportedLanguage> = new Map(
  * (`updateProfile({ languages })`, primary first) and every Oxy app follows it;
  * when signed out a single local override is stored on-device.
  */
-const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
-    goBack,
-    onClose,
-}) => {
+const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = () => {
     const { user, isAuthenticated, currentLanguage, currentLanguages, setLanguage } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const updateProfile = useUpdateProfile();
     const [query, setQuery] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // The Dialog owns the nav header + large collapsing title; this screen just
+    // declares its title/subtitle.
+    useSurfaceHeader({ title: t('language.title'), subtitle: t('language.subtitle') || undefined });
 
     // The current ordered selection: the account locales when signed in, else
     // the single guest/device locale. Always non-empty (`currentLanguage`
@@ -159,29 +160,9 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     );
 
     return (
-        <>
-            <Header
-                title=""
-                subtitle=""
-                onBack={onClose || goBack}
-                variant="minimal"
-                elevation="none"
-            />
-
-            <View className="pt-space-24 pb-space-24">
-                <View className="px-screen-margin mb-space-16">
-                    <H1 className="text-text" style={styles.bigTitle}>
-                        {t('language.title')}
-                    </H1>
-                    {t('language.subtitle') ? (
-                        <Text className="text-text-secondary mt-space-2" style={styles.bigSubtitle}>
-                            {t('language.subtitle')}
-                        </Text>
-                    ) : null}
-                </View>
-
-                <View className="px-screen-margin mb-space-16">
-                    <Search
+        <View className="pt-space-24 pb-space-24 px-screen-margin">
+            <View className="mb-space-16">
+                <Search
                         value={query}
                         onChangeText={setQuery}
                         onClearText={() => setQuery('')}
@@ -258,22 +239,12 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                         />
                     ))}
                 </SettingsListGroup>
-            </View>
-        </>
+        </View>
     );
 };
 
 // StyleSheet retained ONLY for measured layout (sizes / line metrics) — no colors.
 const styles = StyleSheet.create({
-    bigTitle: {
-        fontSize: 34,
-        lineHeight: 40,
-        letterSpacing: -0.5,
-    },
-    bigSubtitle: {
-        fontSize: 16,
-        lineHeight: 22,
-    },
     chip: {
         width: CHIP_SIZE,
         height: CHIP_SIZE,

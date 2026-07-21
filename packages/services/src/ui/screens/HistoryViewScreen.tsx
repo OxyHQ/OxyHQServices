@@ -2,12 +2,12 @@ import React, { useState, useCallback } from 'react';
 import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
-import Header from '../components/Header';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { surfaces } from '@oxyhq/bloom/surfaces';
@@ -19,6 +19,8 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     // shows that account's history, not the device-session owner's.
     const { user } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('history.title') || 'History' });
     const bloomTheme = useTheme();
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -104,7 +106,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
 
     return (
         <>
-            <Header title={t('history.title') || 'History'} onBack={goBack || onClose} variant="minimal" elevation="subtle" />
             <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup title={t('history.actions') || 'Actions'}>
                         <SettingsListItem

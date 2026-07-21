@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { Loading } from '@oxyhq/bloom/loading';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
@@ -26,6 +26,8 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     // authenticate as the active session, which IS that account.
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('searchSettings.title') || 'Search Settings' });
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
 
@@ -80,12 +82,6 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     if (isLoading) {
         return (
             <>
-                <Header
-                    title={t('searchSettings.title') || 'Search Settings'}
-                    onBack={goBack || onClose}
-                    variant="minimal"
-                    elevation="subtle"
-                />
                 <Loading size="large" color={bloomTheme.colors.text} />
             </>
         );
@@ -93,12 +89,6 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('searchSettings.title') || 'Search Settings'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-24">
                     {/* SafeSearch */}

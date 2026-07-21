@@ -8,16 +8,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import type { UpdateAccountInput } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 const DISPLAY_NAME_MAX = 50;
 const BIO_MAX = 160;
@@ -36,6 +36,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
   const { t } = useI18n();
+
   const { oxyServices, canUsePrivateApi, user, accounts, switchToAccount } = useOxy();
   const queryClient = useQueryClient();
 
@@ -138,10 +139,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     return username ? `@${username}` : '';
   }, [node?.account?.username]);
 
+  // The nav large title is the account's handle once loaded (falls back to the
+  // generic screen title before the account resolves).
+  useSurfaceHeader({
+    title: accountHandle || title,
+    subtitle: t('accounts.settings.subtitle') || 'Manage this account’s profile, members, and access.',
+  });
+
   if (!id) {
     return (
       <>
-        <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
         <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.settings.errors.missingAccount') || 'No account selected.'}
@@ -153,7 +160,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
 
   return (
     <>
-      <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
 
       <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
           {accountQuery.isLoading ? (
@@ -162,15 +168,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
             </View>
           ) : (
             <>
-              <View className="gap-space-8">
-                <H1 className="text-headerBold font-headerBold text-text" numberOfLines={1}>
-                  {accountHandle || title}
-                </H1>
-                <Text className="text-body font-body text-text-secondary">
-                  {t('accounts.settings.subtitle') || 'Manage this account’s profile, members, and access.'}
-                </Text>
-              </View>
-
               {/* Profile edit */}
               {canUpdate ? (
                 <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">

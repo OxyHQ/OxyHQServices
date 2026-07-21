@@ -9,10 +9,10 @@ import { Ionicons } from '@expo/vector-icons';
 import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
 import { ORGANIZATION_CATEGORIES } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useOxy } from '../context/OxyContext';
@@ -102,6 +102,12 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const bloomTheme = useTheme();
   const { oxyServices, createAccount, switchToAccount } = useOxy();
   const { t } = useI18n();
+
+  useSurfaceHeader({
+    title: t('accounts.create.title') || 'Create account',
+    subtitle: t('accounts.create.subtitle')
+      || 'Create an account you control. It will have its own profile, members, and apps.',
+  });
 
   const parentId = typeof parentAccountId === 'string' ? parentAccountId : undefined;
 
@@ -229,26 +235,8 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
 
   return (
     <>
-      <Header
-        title={title}
-        onBack={goBack}
-        onClose={onClose}
-        showBackButton={true}
-        showCloseButton={true}
-        elevation="subtle"
-      />
 
-      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
-          {/* Big Title */}
-          <View className="gap-space-8">
-            <H1 className="text-headerBold font-headerBold text-text">
-              {title}
-            </H1>
-            <Text className="text-body font-body text-text-secondary">
-              {t('accounts.create.subtitle')
-                || 'Create an account you control. It will have its own profile, members, and apps.'}
-            </Text>
-          </View>
+      <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
 
           {/* Kind picker */}
           <View className="gap-space-8">

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { View } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { Search } from '@oxyhq/bloom/search';
 import {
     Accordion,
@@ -22,8 +22,13 @@ const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const
  * classes; the Bloom Accordion owns its own expand/collapse animation, so no
  * `LayoutAnimation` is used here.
  */
-const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustFAQScreen: React.FC<BaseScreenProps> = () => {
     const { t } = useI18n();
+
+    useSurfaceHeader({
+        title: t('trust.faq.title') || 'Trust FAQ',
+        subtitle: t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust',
+    });
 
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState<string | undefined>(undefined);
@@ -52,14 +57,6 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
     return (
         <>
-            <Header
-                title={t('trust.faq.title') || 'Trust FAQ'}
-                subtitle={t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust'}
-                subtitleVariant="muted"
-                onBack={goBack}
-                elevation="subtle"
-            />
-
             <View className="px-screen-margin pt-space-20 pb-space-12">
                 <Search
                     label={t('trust.faq.search') || 'Search FAQ...'}

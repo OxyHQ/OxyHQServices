@@ -107,22 +107,31 @@ export type SurfacePresentation = 'sheet' | 'center' | 'drawer' | 'fullScreen';
  * Per-route surface configuration. Merges the historical `SheetRouteConfig`
  * knobs with the new {@link SurfacePresentation}.
  *
- * NOTE: `scrollable` / `manualActivation` / `dynamicBackdrop` / `handleComponent`
- * describe the in-tree bottom-sheet's pan + scroll behaviour. On Bloom's `Dialog`
- * surface those concerns are now owned by the shared `DialogBottomSheet` (it opts
- * pure custom children OUT of its internal ScrollView and manages the pan itself),
- * so for P1 these fields are informational — reserved for a future Bloom
- * bottom-placement passthrough. `presentation` (+ `scrollable` for the picker's
- * flush layout) is what actually drives the surface today.
+ * NOTE: `scrollable` is LIVE — it is threaded through `bloomOptionsFor` onto the
+ * Bloom `Dialog` surface (`scrollable` prop), so a route that owns its own scroll
+ * container opts OUT of the Dialog's internal ScrollView. `manualActivation` /
+ * `dynamicBackdrop` / `handleComponent` remain informational — reserved for a
+ * future Bloom bottom-placement passthrough; the shared `DialogBottomSheet`
+ * currently owns pan coordination itself.
  */
 export interface SurfaceRouteConfig {
   /** Which surface hosts the route. */
   presentation: SurfacePresentation;
   /**
    * When `false`, the route owns its own scroll container (a FlatList /
-   * SectionList / VirtualizedList) and the host must not wrap it in a ScrollView.
+   * SectionList / VirtualizedList, or its own ScrollView) and the host must not
+   * wrap it in a ScrollView. Threaded onto Bloom's `Dialog` via `bloomOptionsFor`.
    */
   scrollable: boolean;
+  /**
+   * Whether the surface renders the Dialog's OWN navigation header (sticky
+   * gradient nav bar + large collapsing title over the surface's scroll content).
+   * `true` for every route screen — screens render NO header of their own and
+   * declare their title/subtitle (+ any action slot) via `useSurfaceHeader`.
+   * `false` for surfaces with their own chrome (the account dialog, the flagship
+   * full-bleed image picker).
+   */
+  header: boolean;
   /** Body-pan activation strategy — reserved (owned by Bloom's Dialog surface). */
   manualActivation: boolean;
   /** Drag-proportional backdrop dim — reserved (owned by Bloom's Dialog surface). */
@@ -135,9 +144,27 @@ export interface SurfaceRouteConfig {
 const DEFAULT_SURFACE_CONFIG: SurfaceRouteConfig = {
   presentation: 'sheet',
   scrollable: true,
+  header: true,
   manualActivation: true,
   dynamicBackdrop: true,
 };
+
+/**
+ * Routes that render NO Dialog nav header — they own their chrome:
+ * - `AccountDialog` — the account switcher/sign-in dialog (own header).
+ * - `AvatarCrop` — its own translucent Cancel / title / Done top bar.
+ * - `PaymentGateway` — the payment surface owns its controls.
+ * - `WelcomeNewUser` — a full-bleed onboarding wizard with its own step chrome.
+ * - `Profile` — a full profile view, no nav-header chrome.
+ * (The flagship full-bleed image picker is handled separately below.)
+ */
+const HEADERLESS_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
+  'AccountDialog',
+  'AvatarCrop',
+  'PaymentGateway',
+  'WelcomeNewUser',
+  'Profile',
+]);
 
 /**
  * Predicate matching `FileManagementScreen`'s internal `isImageOnlyPicker`
@@ -161,16 +188,45 @@ const isFileManagementImageOnlyPicker = (props: Record<string, unknown>): boolea
 };
 
 /**
+ * Routes whose screen owns its OWN scroll container — a FlatList /
+ * VirtualizedList (`ConnectedApps`, `TrustLeaderboard`, `FollowersList` /
+ * `FollowingList` via `UserListScreen`) or its own vertical `ScrollView`
+ * (`FileManagement`). These MUST opt out of the Dialog's internal ScrollView
+ * (`scrollable: false`) so there is exactly ONE scroll container — otherwise a
+ * VirtualizedList nests inside a plain ScrollView (RN warning) or a nested
+ * vertical scroll-in-scroll breaks windowing. Screens with only a HORIZONTAL
+ * ScrollView (FAQ's category row, Premium's plan carousel) are NOT listed — a
+ * horizontal scroller does not conflict with the Dialog's vertical scroll.
+ */
+const OWN_SCROLL_CONTAINER_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
+  'FileManagement',
+  'ConnectedApps',
+  'TrustLeaderboard',
+  'FollowersList',
+  'FollowingList',
+]);
+
+/**
  * Resolve the surface configuration for a route + props. Defaults to the
  * responsive sheet; the image-only FileManagement picker upgrades to a full-bleed
- * `'fullScreen'` surface that owns its own scrolling.
+ * `'fullScreen'` surface, and every route that owns its own scroll container is
+ * marked `scrollable: false`.
  */
 export const getSurfaceConfig = (
   route: RouteName,
   props: Record<string, unknown>,
 ): SurfaceRouteConfig => {
   if (route === 'FileManagement' && isFileManagementImageOnlyPicker(props)) {
-    return { ...DEFAULT_SURFACE_CONFIG, presentation: 'fullScreen', scrollable: false };
+    // The full-bleed image picker owns its own translucent top bar — no nav header.
+    return { ...DEFAULT_SURFACE_CONFIG, presentation: 'fullScreen', scrollable: false, header: false };
+  }
+  if (HEADERLESS_ROUTES.has(route)) {
+    return { ...DEFAULT_SURFACE_CONFIG, header: false };
+  }
+  if (OWN_SCROLL_CONTAINER_ROUTES.has(route)) {
+    // Own-scroller list screens keep the nav header (static, non-collapsing —
+    // there is no Dialog scroll offset to drive the large-title collapse).
+    return { ...DEFAULT_SURFACE_CONFIG, scrollable: false };
   }
   return DEFAULT_SURFACE_CONFIG;
 };

@@ -8,16 +8,14 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
 import { SettingsIcon } from '../../components/SettingsIcon';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { useOxy } from '../../context/OxyContext';
 import { getTrustTierLabel } from './trustTier';
 
 const TrustCenterScreen: React.FC<BaseScreenProps> = ({
-    onClose,
-    goBack,
     navigate,
 }) => {
     // Reputation/trust is the ACTIVE account's standing (the org/project/bot
@@ -61,35 +59,28 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     );
 
     const title = t('trust.center.title') || 'Trust Center';
+    useSurfaceHeader({ title });
 
     if (!isAuthenticated) {
         return (
-            <>
-                <Header title={title} onBack={goBack || onClose} elevation="subtle" />
                 <View className="items-center py-space-40">
                     <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </>
         );
     }
 
     if (isLoading) {
         return (
-            <>
-                <Header title={title} onBack={goBack || onClose} elevation="subtle" />
                 <View className="items-center py-space-40">
                     <Loading size="large" color={primaryColor} />
                 </View>
-            </>
         );
     }
 
     return (
-        <>
-            <Header title={title} onBack={goBack || onClose} elevation="subtle" />
-            <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pt-space-16 pb-space-24">
                 {/* Balance hero card */}
                 <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
                     <H1 style={{ color: primaryColor }}>{reputationTotal ?? 0}</H1>
@@ -248,7 +239,6 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 ) : null}
             </View>
-        </>
     );
 };
 

@@ -13,8 +13,8 @@ import {
 import * as Icons from '@oxyhq/bloom/icons';
 import type { Props as IconProps } from '@oxyhq/bloom/icons';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 interface InfoSection {
     id: string;
@@ -62,6 +62,8 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('learnMoreUsernames.introTitle') });
     // Start with the first section expanded.
     const [expandedIds, setExpandedIds] = useState<string[]>(['what']);
 
@@ -80,12 +82,6 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('learnMoreUsernames.introTitle')}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
             <View className="px-screen-margin pb-space-32">
                 <View className="items-center py-space-24 gap-space-12">
                     <IconCircle icon={Icons.At_Stroke2_Corner0_Rounded} />

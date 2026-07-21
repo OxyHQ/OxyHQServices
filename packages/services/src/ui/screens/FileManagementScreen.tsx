@@ -18,9 +18,11 @@ import { toast } from '@oxyhq/bloom';
 import { surfaces } from '@oxyhq/bloom/surfaces';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Pressable } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
-import Header from '../components/Header';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
@@ -45,6 +47,21 @@ import { AnimatedButton } from '../components/fileManagement/AnimatedButton';
 // Genuinely-inline-only styles: `viewModeButton` is spread into an Animated.View
 // style array (interpolated backgroundColor), and the photo tiles are
 // `expo-image` (no className remap). Everything else uses NativeWind classNames.
+// Nav-header slot layout for this screen's action row + review-mode back button.
+const fmHeaderStyles = StyleSheet.create({
+    actionsRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    backButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+});
+
 const screenStyles = StyleSheet.create({
     viewModeButton: {
         paddingHorizontal: 10,
@@ -1162,6 +1179,64 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // picker's placement-aware container width / columns / tile size and the
     // Dialog-vs-bottom-sheet sizing. Skipping the browse chrome here is what keeps
     // the picker from flashing the wrong (file-manager) skeleton inside the Dialog.
+    // The Dialog owns the nav header; this screen contributes its state-dependent
+    // title/subtitle + action slots. The image-only picker mode is headerless
+    // (PhotoPickerView owns its own bar), so this config is simply ignored there.
+    const fmHeaderRight = useMemo<React.ReactNode>(() => {
+        const actions = selectMode && multiSelect
+            ? [
+                { key: 'clear', label: t('fileManagement.clear'), onPress: () => setSelectedIds(new Set()), disabled: selectedIds.size === 0 },
+                { key: 'confirm', label: t('fileManagement.confirm'), onPress: confirmMultiSelection, disabled: selectedIds.size === 0 },
+            ]
+            : !selectMode && selectedIds.size > 0
+                ? [
+                    { key: 'clear', label: t('fileManagement.clear'), onPress: () => setSelectedIds(new Set()), disabled: false },
+                    { key: 'delete', label: t('fileManagement.delete', { count: selectedIds.size }), onPress: confirmBulkDelete, disabled: false },
+                    { key: 'visibility', label: t('fileManagement.visibility'), onPress: handleVisibilityChange, disabled: false },
+                ]
+                : [];
+        if (actions.length === 0) return undefined;
+        return (
+            <View style={fmHeaderStyles.actionsRow}>
+                {actions.map((a) => (
+                    <SurfaceHeaderAction key={a.key} label={a.label} onPress={a.onPress} disabled={a.disabled} />
+                ))}
+            </View>
+        );
+    }, [selectMode, multiSelect, selectedIds, t, confirmMultiSelection, confirmBulkDelete, handleVisibilityChange]);
+
+    const fmHeaderBack = useMemo<React.ReactNode>(() => (
+        <Pressable
+            onPress={handleCancelUpload}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back') || 'Back'}
+            hitSlop={8}
+            style={fmHeaderStyles.backButton}
+        >
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
+    ), [handleCancelUpload, colors.text, t]);
+
+    useSurfaceHeader(
+        showUploadPreview
+            ? {
+                title: t('fileManagement.reviewFiles'),
+                subtitle: t('fileManagement.readyToUpload', { count: pendingFiles.length }),
+                left: fmHeaderBack,
+                largeTitle: false,
+            }
+            : {
+                title: selectMode
+                    ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile'))
+                    : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title')),
+                subtitle: selectMode
+                    ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect'))
+                    : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length })),
+                right: fmHeaderRight,
+                largeTitle: false,
+            },
+    );
+
     if (loading && !isImageOnlyPicker) {
         const GRID_PADDING = 10;
         const TILE_GAP = 4;
@@ -1283,15 +1358,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     if (showUploadPreview) {
         return (
             <View className="flex-1">
-                <Header
-                    title={t('fileManagement.reviewFiles')}
-                    subtitle={t('fileManagement.readyToUpload', { count: pendingFiles.length })}
-                    onBack={handleCancelUpload}
-                    showBackButton
-                    variant="minimal"
-                    elevation="none"
-                    titleAlignment="left"
-                />
                 <UploadPreview
                     pendingFiles={pendingFiles}
                     onConfirm={handleConfirmUpload}
@@ -1305,49 +1371,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     return (
         <View className="flex-1">
-            <Header
-                title={selectMode ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile')) : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title'))}
-                subtitle={selectMode ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect')) : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length }))}
-                actions={selectMode && multiSelect ? [
-                    {
-                        key: 'clear',
-                        text: t('fileManagement.clear'),
-                        onPress: () => setSelectedIds(new Set()),
-                        disabled: selectedIds.size === 0,
-                    },
-                    {
-                        key: 'confirm',
-                        text: t('fileManagement.confirm'),
-                        onPress: confirmMultiSelection,
-                        disabled: selectedIds.size === 0,
-                    }
-                ] : !selectMode && selectedIds.size > 0 ? [
-                    {
-                        key: 'clear',
-                        text: t('fileManagement.clear'),
-                        onPress: () => setSelectedIds(new Set()),
-                    },
-                    {
-                        key: 'delete',
-                        text: t('fileManagement.delete', { count: selectedIds.size }),
-                        onPress: confirmBulkDelete,
-                        icon: 'delete',
-                    },
-                    {
-                        key: 'visibility',
-                        text: t('fileManagement.visibility'),
-                        onPress: handleVisibilityChange,
-                        icon: 'eye',
-                    }
-                ] : undefined}
-                onBack={onClose || goBack}
-
-                showBackButton
-                variant="minimal"
-                elevation="none"
-                titleAlignment="left"
-            />
-
             <View className="flex-row items-center justify-between px-[12px] py-[12px] gap-[12px]">
                 <ScrollView
                     horizontal

@@ -4,9 +4,9 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useTheme } from '@oxyhq/bloom/theme';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -14,6 +14,8 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('help.title') || 'Help & Support' });
     const bloomTheme = useTheme();
 
     const handleContactSupport = useMemo(() => () => {
@@ -56,12 +58,6 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('help.title') || 'Help & Support'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-24">
                     {/* Help Options */}

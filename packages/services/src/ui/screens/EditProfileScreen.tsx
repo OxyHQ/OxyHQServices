@@ -5,12 +5,12 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { getAccountDisplayName } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import type { ProfileFieldType } from './EditProfileFieldScreen';
 
 /**
@@ -22,10 +22,12 @@ import type { ProfileFieldType } from './EditProfileFieldScreen';
  * {@link ManageAccountScreen} uses. This is the single entry into per-field
  * editing — reached from ManageAccount's "Edit profile" row.
  */
-const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigate }) => {
+const EditProfileScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
     const { user, oxyServices, openAvatarPicker } = useOxy();
+
+    useSurfaceHeader({ title: t('editProfile.title') || 'Edit Profile' });
 
     const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
     const avatarUri = useMemo(
@@ -51,13 +53,7 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
     const goToField = (fieldType: ProfileFieldType) => navigate?.('EditProfileField', { fieldType });
 
     return (
-        <>
-            <Header
-                title={t('editProfile.title') || 'Edit Profile'}
-                onBack={goBack || onClose}
-                elevation="subtle"
-            />
-            <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pt-space-16 pb-space-24">
                 {/* Profile card */}
                 <ProfileSummaryCard
                     displayName={displayName}
@@ -138,7 +134,6 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
                     />
                 </SettingsListGroup>
             </View>
-        </>
     );
 };
 

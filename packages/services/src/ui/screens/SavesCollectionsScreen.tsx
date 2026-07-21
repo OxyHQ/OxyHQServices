@@ -9,11 +9,11 @@ import {
 } from '@oxyhq/bloom/segmented-control';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import Header from '../components/Header';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 type SavesTab = 'saves' | 'collections';
@@ -42,6 +42,8 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     // switched, else the personal user).
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('saves.title') || 'Saves & Collections' });
     const bloomTheme = useTheme();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
     const [collections, setCollections] = useState<Collection[]>([]);
@@ -88,12 +90,6 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('saves.title') || 'Saves & Collections'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             {/* Tabs */}
             <View className="px-screen-margin py-space-12 border-b border-border">

@@ -48,11 +48,19 @@ const SDK_SURFACE_CHROME = { contentPadding: 0, maxHeightRatio: 0.9 } as const;
 
 /** Map a route's presentation taxonomy onto concrete Bloom `Dialog` options. */
 function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
+  // Threaded onto every placement so a route that owns its own scroll container
+  // (`scrollable: false`) opts out of the Dialog's internal ScrollView.
+  const scrollable = config.scrollable;
+  // Nav-header mode marker: turns on the Dialog's OWN sticky gradient nav bar +
+  // large collapsing title over its scroll content. The title/subtitle/action
+  // slots are contributed at runtime by the mounted screen via `useSurfaceHeader`
+  // (resolved in `SurfaceScreen`), so the seed here just enables the scaffold.
+  const header = config.header ? { largeTitle: true } : undefined;
   switch (config.presentation) {
     case 'center':
-      return { placement: 'center', ...SDK_SURFACE_CHROME };
+      return { placement: 'center', scrollable, header, ...SDK_SURFACE_CHROME };
     case 'drawer':
-      return { placement: { base: 'bottom', md: 'left' }, ...SDK_SURFACE_CHROME };
+      return { placement: { base: 'bottom', md: 'left' }, scrollable, header, ...SDK_SURFACE_CHROME };
     case 'fullScreen':
       // Approximate a full-screen surface with the shared `Dialog`: a tall
       // sheet / large centered card, flush content, a black canvas and
@@ -63,11 +71,12 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
         maxWidth: 640,
         maxHeightRatio: 0.9,
         dismissOnBackdrop: false,
+        scrollable,
         style: FULLSCREEN_SURFACE_STYLE,
         panelStyle: FULLSCREEN_SURFACE_STYLE,
       };
     default:
-      return { placement: SHEET_PLACEMENT, ...SDK_SURFACE_CHROME };
+      return { placement: SHEET_PLACEMENT, scrollable, header, ...SDK_SURFACE_CHROME };
   }
 }
 

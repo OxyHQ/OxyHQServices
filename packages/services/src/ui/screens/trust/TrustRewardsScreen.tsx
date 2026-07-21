@@ -2,7 +2,7 @@ import type React from 'react';
 import { useMemo, useState, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H1, H4, H5, Text } from '@oxyhq/bloom/typography';
@@ -75,11 +75,16 @@ const RARITY_DARKEN = 0.4;
 const ACCENT_LIGHTEN = 0.1;
 const LOCKED_OPACITY = 0.5;
 
-const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustRewardsScreen: React.FC<BaseScreenProps> = () => {
     const { t } = useI18n();
     // Reputation/trust is the ACTIVE account's standing (the org/project/bot
     // when switched, else the personal user).
     const { user, oxyServices, isAuthenticated } = useOxy();
+
+    useSurfaceHeader({
+        title: t('trust.rewards.title') || 'Trust Rewards',
+        subtitle: t('trust.rewards.subtitle') || 'Unlock special features and recognition',
+    });
     const [reputationTotal, setReputationTotal] = useState<number>(0);
     const [, setIsLoading] = useState(true);
 
@@ -360,19 +365,11 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
     if (!isAuthenticated) {
         return (
-            <>
-                <Header
-                    title={t('trust.rewards.title') || 'Trust Rewards'}
-                    subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
-                    onBack={goBack}
-                    elevation="subtle"
-                />
                 <View className="items-center justify-center px-screen-margin py-space-40">
                     <Text className="text-text text-base text-center">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </>
         );
     }
 
@@ -381,13 +378,6 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
         : 0;
 
     return (
-        <>
-            <Header
-                title={t('trust.rewards.title') || 'Trust Rewards'}
-                subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
-                onBack={goBack}
-                elevation="subtle"
-            />
             <View className="px-screen-margin pt-space-20 pb-space-40">
                 {/* Stats Header */}
                 <View className="bg-fill rounded-radius-20 p-space-20 mb-space-24">
@@ -455,7 +445,6 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                     </>
                 )}
             </View>
-        </>
     );
 };
 

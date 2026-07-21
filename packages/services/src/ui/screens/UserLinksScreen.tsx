@@ -1,11 +1,11 @@
 import type React from 'react';
 import { View, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 interface UserLinksScreenProps extends BaseScreenProps {
     userId: string;
@@ -28,6 +28,8 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     const bloomTheme = useTheme();
     const { t } = useI18n();
 
+    useSurfaceHeader({ title: t('userLinks.title'), subtitle: links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length }) });
+
     const handleLinkPress = async (url: string) => {
         try {
             await Linking.openURL(url);
@@ -40,13 +42,6 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('userLinks.title')}
-                subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}
-                onBack={goBack}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup title={t('userLinks.title')}>

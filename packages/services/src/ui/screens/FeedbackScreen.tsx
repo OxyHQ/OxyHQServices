@@ -18,8 +18,8 @@ import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Switch } from '@oxyhq/bloom/switch';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 import { useFeedbackForm } from '../components/feedback/useFeedbackForm';
@@ -61,6 +61,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const bloomTheme = useTheme();
     const colors = bloomTheme.colors;
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('feedback.title') || 'Feedback' });
 
     const { feedbackData, feedbackState, setFeedbackState, updateField, resetForm } = useFeedbackForm();
 
@@ -563,12 +565,6 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('feedback.title') || 'Feedback'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pt-space-24 pb-space-32">
                 {feedbackState.status !== 'success' ? renderProgress() : null}

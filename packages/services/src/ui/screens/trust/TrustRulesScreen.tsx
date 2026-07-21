@@ -6,7 +6,7 @@ import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { ReputationRule, ReputationCategory } from '@oxyhq/core';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
@@ -22,9 +22,14 @@ const CATEGORY_ORDER: ReputationCategory[] = [
     'other',
 ];
 
-const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustRulesScreen: React.FC<BaseScreenProps> = () => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({
+        title: t('trust.rules.title') || 'Trust Rules',
+        subtitle: t('trust.rules.subtitle') || 'How to earn reputation',
+    });
     const bloomTheme = useTheme();
 
     const [rules, setRules] = useState<ReputationRule[]>([]);
@@ -62,12 +67,6 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
     return (
         <>
-            <Header
-                title={t('trust.rules.title') || 'Trust Rules'}
-                subtitle={t('trust.rules.subtitle') || 'How to earn reputation'}
-                onBack={goBack}
-                elevation="subtle"
-            />
             {isLoading ? (
                 <Loading size="large" color={bloomTheme.colors.primary} />
             ) : error ? (

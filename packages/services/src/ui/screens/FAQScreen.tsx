@@ -14,9 +14,9 @@ import {
 } from '@oxyhq/bloom/accordion';
 import { Text } from '@oxyhq/bloom/typography';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 interface FAQ {
@@ -32,6 +32,8 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('faq.title') || 'FAQ' });
     const bloomTheme = useTheme();
 
     const [faqs, setFaqs] = useState<FAQ[]>([]);
@@ -97,12 +99,6 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('faq.title') || 'FAQ'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             {/* Search bar */}
             <View className="px-screen-margin py-space-12">

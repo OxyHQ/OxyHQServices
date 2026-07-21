@@ -242,6 +242,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
 
                 {/* Info Grid as a settings list group */}
+                <View className="px-screen-margin">
                 <SettingsListGroup>
                     {profile?.createdAt && (
                         <SettingsListItem
@@ -301,6 +302,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         />
                     )}
                 </SettingsListGroup>
+                </View>
 
                 {/* All Stats in one row */}
                 <View style={styles.statsRow} className="px-screen-margin">

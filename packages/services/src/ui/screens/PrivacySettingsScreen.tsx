@@ -6,12 +6,12 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import { Switch } from '@oxyhq/bloom/switch';
 import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
-import Header from '../components/Header';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { getAccountDisplayName } from '@oxyhq/core';
@@ -69,6 +69,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     // switched, else the personal user).
     const { oxyServices, user } = useOxy();
     const { t, locale } = useI18n();
+
+    useSurfaceHeader({ title: t('privacySettings.title') || 'Privacy Settings' });
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
@@ -206,12 +208,6 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     if (isLoading) {
         return (
             <>
-                <Header
-                    title={t('privacySettings.title') || 'Privacy Settings'}
-                    onBack={goBack || onClose}
-                    variant="minimal"
-                    elevation="subtle"
-                />
                 <Loading size="large" color={bloomTheme.colors.text} />
             </>
         );
@@ -219,12 +215,6 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('privacySettings.title') || 'Privacy Settings'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-24">
                     {/* Account Privacy */}

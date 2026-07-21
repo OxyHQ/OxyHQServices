@@ -7,11 +7,11 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import type { ConnectedApp } from '@oxyhq/core';
 import { logger as loggerUtil } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Text } from '@oxyhq/bloom/typography';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useConnectedApps } from '../hooks/queries/useAccountQueries';
 import { useRevokeConnectedApp } from '../hooks/mutations/useAccountMutations';
@@ -49,6 +49,8 @@ const formatRelative = (iso: string): string => {
 const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('connectedApps.title') || 'Connected apps' });
     const { isAuthenticated } = useOxy();
     const {
         data: apps,
@@ -143,12 +145,6 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
 
     return (
         <View className="flex-1 bg-bg">
-            <Header
-                title={t('connectedApps.title') || 'Connected apps'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
             {isLoading && !apps ? (
                 <Loading size="large" color={bloomTheme.colors.primary} />
             ) : (

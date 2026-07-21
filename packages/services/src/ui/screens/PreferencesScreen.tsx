@@ -6,9 +6,9 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import type { UserPreferences } from '@oxyhq/core';
 import { getNativeLanguageName } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateUserPreferences } from '../hooks/mutations/useAccountMutations';
@@ -44,6 +44,8 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
+
+    useSurfaceHeader({ title: t('preferences.title') || 'Preferences' });
     const { isAuthenticated } = useOxy();
     const { data: user } = useCurrentUser({ enabled: isAuthenticated });
     const updateMutation = useUpdateUserPreferences();
@@ -121,12 +123,6 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('preferences.title') || 'Preferences'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
             <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup
                         title={t('preferences.sections.appearance') || 'Appearance'}

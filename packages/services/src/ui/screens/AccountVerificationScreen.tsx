@@ -13,8 +13,8 @@ import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { IconCircle } from '@oxyhq/bloom/icon-circle';
 import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
 import * as Icons from '@oxyhq/bloom/icons';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
@@ -24,6 +24,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('accountVerification.title') || 'Account Verification' });
     const bloomTheme = useTheme();
 
     const [reason, setReason] = useState('');
@@ -76,12 +78,6 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('accountVerification.title') || 'Account Verification'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-32">
                 {/* Hero */}

@@ -17,8 +17,8 @@ import {
     SegmentedControlItemText,
 } from '@oxyhq/bloom/segmented-control';
 import { Ionicons } from '@expo/vector-icons';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -89,6 +89,20 @@ const FEATURE_CATEGORIES: IndividualFeature['category'][] = [
     'productivity',
 ];
 
+// Pure package-name → display-name mapping (module scope so the nav-header
+// subtitle can reference it before the component's render helpers).
+const getAppDisplayName = (packageName: string): string => {
+    const appNames: Record<string, string> = {
+        'mention': 'Mention',
+        'oxy-social': 'Oxy Social',
+        'oxy-workspace': 'Oxy Workspace',
+        'oxy-creator': 'Oxy Creator',
+        'oxy-analytics': 'Oxy Analytics',
+        'oxy-studio': 'Oxy Studio',
+    };
+    return appNames[packageName] || packageName;
+};
+
 const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     onClose,
     navigate,
@@ -108,6 +122,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
 
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('premium.title') || 'Oxy+ Subscriptions', subtitle: t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}` });
     const bloomTheme = useTheme();
     const colors = bloomTheme.colors;
 
@@ -537,18 +553,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
         }
     }, [individualFeatures, t]);
-
-    const getAppDisplayName = (packageName: string) => {
-        const appNames: Record<string, string> = {
-            'mention': 'Mention',
-            'oxy-social': 'Oxy Social',
-            'oxy-workspace': 'Oxy Workspace',
-            'oxy-creator': 'Oxy Creator',
-            'oxy-analytics': 'Oxy Analytics',
-            'oxy-studio': 'Oxy Studio'
-        };
-        return appNames[packageName] || packageName;
-    };
 
     const renderCurrentSubscription = () => {
         if (!subscription) return null;
@@ -1004,14 +1008,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     if (loading) {
         return (
             <>
-                <Header
-                    title={t('premium.title') || 'Oxy+ Subscriptions'}
-                    subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
-                    onBack={goBack || onClose}
-                    onClose={onClose}
-                    showCloseButton={!!onClose}
-                    elevation="subtle"
-                />
                 <View className="items-center justify-center px-screen-margin py-space-40">
                     <ActivityIndicator size="large" color={colors.primary} />
                     <Text className="text-text-secondary text-base text-center mt-space-16">
@@ -1024,14 +1020,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <>
-            <Header
-                title={t('premium.title') || 'Oxy+ Subscriptions'}
-                subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
-                onBack={goBack || onClose}
-                onClose={onClose}
-                showCloseButton={!!onClose}
-                elevation="subtle"
-            />
 
             <View className="px-screen-margin pb-space-32">
                 <View className="pt-space-20">
