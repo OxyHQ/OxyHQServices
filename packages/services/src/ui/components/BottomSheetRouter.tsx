@@ -5,6 +5,7 @@ import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, getSheetConfig, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Dialog } from '@oxyhq/bloom/dialog';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import {
     bottomSheetStore,
@@ -67,6 +68,15 @@ const errorStyles = StyleSheet.create({
     message: { fontSize: 13, textAlign: 'center' },
 });
 
+/**
+ * Responsive placement for `presentation: 'dialog'` routes: a bottom-sheet on
+ * narrow viewports, a centered card at `md+` (≥768dp). Module-scoped so the
+ * object identity is stable across renders (Bloom's placement resolver memoizes
+ * on it). PhotoPickerSection keys its center-vs-bottom layout off the SAME `md`
+ * breakpoint — keep the two in sync if this map changes.
+ */
+const DIALOG_PLACEMENT = { base: 'bottom', md: 'center' } as const;
+
 export interface BottomSheetRouterProps {
     onScreenChange?: (screen: RouteName | null) => void;
     onDismiss?: () => void;
@@ -93,6 +103,15 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
         return component ?? null;
     }, [currentScreen]);
 
+    // Route-level sheet config (which surface hosts the route, whether the sheet
+    // provides its own ScrollView, etc.). Computed early so the visibility
+    // effect can gate the in-tree sheet on the resolved presentation.
+    const sheetConfig = useMemo(
+        () => getSheetConfig(currentScreen, screenProps),
+        [currentScreen, screenProps],
+    );
+    const isDialogPresentation = sheetConfig.presentation === 'dialog';
+
     // Notify screen changes
     useEffect(() => {
         if (prevScreenRef.current !== currentScreen) {
@@ -101,16 +120,19 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
         }
     }, [currentScreen, onScreenChange]);
 
-    // Control visibility
+    // Control visibility. The in-tree BottomSheet only ever presents for
+    // 'sheet'-presentation routes — 'dialog' routes render in the Bloom
+    // `<Dialog>` below, so the sheet stays dismissed for them (both surfaces
+    // remain mounted, so the pick→crop dialog→sheet handoff has no unmount jank).
     useEffect(() => {
         if (!sheetRef.current) return;
 
-        if (isOpen) {
+        if (isOpen && !isDialogPresentation) {
             sheetRef.current.present();
         } else {
             sheetRef.current.dismiss();
         }
-    }, [isOpen]);
+    }, [isOpen, isDialogPresentation]);
 
     // Android back button
     useEffect(() => {
@@ -210,33 +232,56 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
         };
     }, [navigate, handleGoBack, theme.mode, currentScreen, currentStep, screenProps, handleStepChange, scrollTo]);
 
-    // Route-level sheet config (e.g. whether the sheet provides its own
-    // ScrollView or yields scrolling to a VirtualizedList inside the screen).
-    const sheetConfig = useMemo(
-        () => getSheetConfig(currentScreen, screenProps),
-        [currentScreen, screenProps],
-    );
+    // The active screen, wrapped in its error boundary. Routed into EXACTLY ONE
+    // surface (the in-tree sheet OR the Dialog) based on the resolved
+    // presentation, so it never double-mounts.
+    const screenNode =
+        ScreenComponent && currentScreen ? (
+            <ScreenErrorBoundary screenName={currentScreen}>
+                <ScreenComponent {...screenPropsValue} />
+            </ScreenErrorBoundary>
+        ) : null;
 
     return (
-        <BottomSheet
-            ref={sheetRef}
-            enablePanDownToClose
-            enableHandlePanningGesture
-            backgroundComponent={renderBackground}
-            style={styles.container}
-            onDismiss={handleDismiss}
-            onDismissAttempt={handleDismissAttempt}
-            scrollable={sheetConfig.scrollable}
-            manualActivation={sheetConfig.manualActivation}
-            dynamicBackdrop={sheetConfig.dynamicBackdrop}
-            handleComponent={sheetConfig.handleComponent}
-        >
-            {ScreenComponent && currentScreen && (
-                <ScreenErrorBoundary screenName={currentScreen}>
-                    <ScreenComponent {...screenPropsValue} />
-                </ScreenErrorBoundary>
-            )}
-        </BottomSheet>
+        <>
+            <BottomSheet
+                ref={sheetRef}
+                enablePanDownToClose
+                enableHandlePanningGesture
+                backgroundComponent={renderBackground}
+                style={styles.container}
+                onDismiss={handleDismiss}
+                onDismissAttempt={handleDismissAttempt}
+                scrollable={sheetConfig.scrollable}
+                manualActivation={sheetConfig.manualActivation}
+                dynamicBackdrop={sheetConfig.dynamicBackdrop}
+                handleComponent={sheetConfig.handleComponent}
+            >
+                {!isDialogPresentation && screenNode}
+            </BottomSheet>
+            {/* Always-mounted responsive Dialog surface for `presentation:
+                'dialog'` routes (currently the flagship photo picker). It stays
+                inert (`open={false}`, no child) for the ~28 sheet routes, so they
+                keep byte-for-byte identical behavior. `contentPadding={0}` +
+                the full-bleed black, rounded, clipped surface let the picker
+                paint edge-to-edge; `dismissOnBackdrop={false}` keeps the
+                controlled open state authoritative (dismissal flows through the
+                store, matching OxyAccountDialog). */}
+            <Dialog
+                open={isOpen && isDialogPresentation}
+                onClose={handleDismiss}
+                placement={DIALOG_PLACEMENT}
+                dismissOnBackdrop={false}
+                contentPadding={0}
+                maxWidth={640}
+                maxHeightRatio={0.9}
+                style={styles.dialogSurface}
+                panelStyle={styles.dialogSurface}
+                label={currentScreen ?? undefined}
+            >
+                {isDialogPresentation ? screenNode : null}
+            </Dialog>
+        </>
     );
 };
 
@@ -250,6 +295,14 @@ const styles = StyleSheet.create({
     background: {
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
+        overflow: 'hidden',
+    },
+    // Full-bleed black surface for `presentation: 'dialog'` routes. `overflow:
+    // 'hidden'` clips the picker's edge-to-edge black content to the panel's
+    // rounded corners (Dialog supplies the radius per placement); the black
+    // fill covers any sub-pixel gap behind the picker during entrance.
+    dialogSurface: {
+        backgroundColor: '#000000',
         overflow: 'hidden',
     },
 });

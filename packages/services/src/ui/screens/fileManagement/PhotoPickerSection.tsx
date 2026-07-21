@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { BREAKPOINTS } from '@oxyhq/bloom/styles';
 import type { FileMetadata } from '@oxyhq/core';
 import { computePhotoGridLayout } from './photoGridLayout';
 
@@ -91,20 +92,18 @@ const hapticNotification = async (type: HapticNotification): Promise<void> => {
 };
 
 /**
- * The bottom sheet renders below the status bar already (its `maxHeight` is
- * capped by `SCREEN_HEIGHT - insets.top`), so the picker MUST NOT add an extra
- * safe-area inset to the header. Header zone from the sheet top:
- *   • 28dp drag-handle hit area floats at the very top of the sheet
- *   • 56dp app bar sits immediately below the handle
- * Grid content is pushed down by the full header zone + 4dp of breathing room
- * so the first row clears the translucent header. These are fixed layout
- * constants — the equivalent `pt-[28px]` / `min-h-[84px]` / `pt-[88px]` utility
- * classes in the JSX MUST stay in sync with them.
+ * The picker renders inside a Bloom `<Dialog>` (bottom-sheet on narrow, centered
+ * card on `md+`). The Dialog owns its own chrome: it draws its OWN drag handle
+ * in bottom placement (a floating 28dp pill that paints ABOVE this header via a
+ * higher z-index) and none in center placement — so the picker's translucent
+ * header no longer reserves the handle strip itself. The header is just the 56dp
+ * app bar; grid content is pushed down by the app bar + 4dp of breathing room so
+ * the first row clears it. These are fixed layout constants — the equivalent
+ * `min-h-[56px]` / `pt-[60px]` utility classes in the JSX MUST stay in sync.
  */
-const HANDLE_ZONE = 28;
 const APP_BAR_HEIGHT = 56;
-const HEADER_HEIGHT = HANDLE_ZONE + APP_BAR_HEIGHT; // 84
-const GRID_CONTENT_PADDING_TOP = HEADER_HEIGHT + 4; // 88
+const HEADER_HEIGHT = APP_BAR_HEIGHT; // 56
+const GRID_CONTENT_PADDING_TOP = HEADER_HEIGHT + 4; // 60
 
 /**
  * Props for the dedicated photo picker view. Used by FileManagementScreen
@@ -349,12 +348,32 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     // then snaps to the sheet width once `onLayout` reports it. The measured
     // wrapper carries ONLY a `style` (no `className`) to maximise the chance
     // `onLayout` fires on web.
-    const { width: windowWidth } = useWindowDimensions();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
     const [gridWidth, setGridWidth] = useState(0);
     const onRootLayout = useCallback((e: LayoutChangeEvent) => {
         const w = Math.round(e.nativeEvent.layout.width);
         setGridWidth((prev) => (prev === w ? prev : w));
     }, []);
+
+    // The hosting Dialog uses `{ base: 'bottom', md: 'center' }`. In BOTH
+    // placements the panel/sheet has no intrinsic height that a `flex: 1` root
+    // could fill down to the FlatList: the centered card hugs its content, and
+    // the bottom sheet's own `maxHeight` (several flex levels above this root)
+    // does not propagate a definite bound through the chain. So the root owns a
+    // `maxHeight` DIRECTLY — the FlatList then scrolls within it when the grid is
+    // long, and the panel hugs its content when the grid is short (no huge empty
+    // panel). The cap is tighter for the centered card (a floating modal reads
+    // better below full height); the bottom sheet may run taller. Keep this
+    // breakpoint in sync with `DIALOG_PLACEMENT` in BottomSheetRouter.
+    const isCenteredPanel = windowWidth >= BREAKPOINTS.md;
+    const rootStyle = useMemo(
+        () => ({
+            maxHeight: isCenteredPanel
+                ? Math.min(Math.round(windowHeight * 0.85), 720)
+                : Math.round(windowHeight * 0.9),
+        }),
+        [isCenteredPanel, windowHeight],
+    );
 
     const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
     const { columns, cellSize, gutter } = useMemo(
@@ -484,16 +503,20 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
         : 0;
 
     return (
-        // Measured wrapper: `style`-only (no className) so RN-Web fires onLayout,
-        // and `flex: 1` fills the sheet's `maxHeight` clamp so the FlatList gets a
-        // bounded scroll area (the sheet is `scrollable=false` — the list owns
-        // scrolling). This wrapper is the one inline `flex: 1` the picker keeps:
-        // it must not carry a className (that can suppress web `onLayout`).
-        <View style={{ flex: 1 }} onLayout={onRootLayout}>
-            <View className="flex-1 bg-black">
+        // Measured wrapper: `style`-only (no className) so RN-Web fires onLayout.
+        // `rootStyle` is placement-aware — a `maxHeight` cap that gives the
+        // FlatList a bounded scroll region while letting a short grid hug its
+        // content (see the `rootStyle` derivation). It must NOT carry a className
+        // (that can suppress web `onLayout`).
+        <View style={rootStyle} onLayout={onRootLayout}>
+            {/* `min-h-0` lets this flex child shrink below its content on web so
+                the FlatList gets a bounded scroll region inside the height-capped
+                root (the CSS flexbox `min-height:auto` trap; a no-op on native,
+                where Yoga already defaults min-height to 0). */}
+            <View className="flex-1 min-h-0 bg-black">
                 {/* Photo grid (renders behind the translucent header). */}
                 {isEmpty ? (
-                    <View className="flex-1 items-center justify-center px-space-32 pt-[88px]">
+                    <View className="flex-1 items-center justify-center px-space-32 pt-[60px]">
                         <View className="opacity-30 mb-space-16">
                             <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />
                         </View>
@@ -533,8 +556,8 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             renderItem={renderItem}
                             keyExtractor={keyExtractor}
                             numColumns={columns}
-                            className="flex-1"
-                            contentContainerClassName="pt-[88px] pb-space-24"
+                            className="flex-1 min-h-0"
+                            contentContainerClassName="pt-[60px] pb-space-24"
                             showsVerticalScrollIndicator={false}
                             refreshControl={
                                 <RefreshControl
@@ -554,11 +577,12 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                         />
                 )}
 
-                {/* Translucent black header floating over the grid. The bottom sheet
-                    already sits below the status bar, so we do NOT add `insets.top`
-                    (that would double-pad). `pt-[28px]` clears the 28dp drag handle
-                    at the top of the sheet; `min-h-[84px]` = handle + app bar. */}
-                <View className="absolute top-0 left-0 right-0 flex-row items-center justify-between px-space-12 z-30 bg-[#000000EB] pt-[28px] min-h-[84px]">
+                {/* Translucent black header floating over the grid. The Dialog owns
+                    the drag handle (a floating pill above this bar in bottom
+                    placement, drawn at a higher z-index; none in center), so the
+                    header no longer reserves the 28dp handle strip — it is just the
+                    56dp app bar (`min-h-[56px]`). */}
+                <View className="absolute top-0 left-0 right-0 flex-row items-center justify-between px-space-12 z-30 bg-[#000000EB] min-h-[56px]">
                     <View className="flex-row items-center justify-between w-full h-14">
                         <View className="basis-0 grow flex-row items-center justify-start">
                             <TouchableOpacity

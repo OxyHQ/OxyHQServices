@@ -129,10 +129,22 @@ export const isValidRoute = (routeName: string): routeName is RouteName => {
  */
 export interface SheetRouteConfig {
     /**
+     * Which surface hosts the route. `'sheet'` (default) renders the screen in
+     * the in-tree `BottomSheet`. `'dialog'` renders it in a responsive Bloom
+     * `<Dialog>` (bottom-sheet on narrow, centered card on `md+`) — used for the
+     * flagship image picker, which reads better as a centered panel on wide
+     * viewports than a full-width sheet. `BottomSheetRouter` keeps BOTH surfaces
+     * mounted and routes the active screen into exactly one based on this value.
+     */
+    presentation: 'sheet' | 'dialog';
+    /**
      * When `false`, BottomSheet skips its internal ScrollView and lets the
      * screen own scrolling. Required for screens that render a FlatList,
      * SectionList, or any other VirtualizedList — nesting one inside a
      * plain ScrollView breaks windowing and triggers a RN warning.
+     *
+     * Ignored for `presentation: 'dialog'` routes — those don't render in the
+     * in-tree `BottomSheet` at all.
      */
     scrollable: boolean;
     /**
@@ -187,6 +199,7 @@ const isFileManagementImageOnlyPicker = (props: Record<string, unknown>): boolea
 
 /** Defaults shared across all routes — preserves the historical in-tree BS UX. */
 const DEFAULT_SHEET_CONFIG: SheetRouteConfig = {
+    presentation: 'sheet',
     scrollable: true,
     manualActivation: true,
     dynamicBackdrop: true,
@@ -203,10 +216,12 @@ export const getSheetConfig = (
 ): SheetRouteConfig => {
     if (!routeName) return DEFAULT_SHEET_CONFIG;
     if (routeName === 'FileManagement' && isFileManagementImageOnlyPicker(screenProps)) {
-        // PhotoPickerView owns its own FlatList — the sheet must not wrap a
-        // ScrollView around it. Everything else stays at the standard
-        // manualActivation + dynamicBackdrop defaults.
-        return { ...DEFAULT_SHEET_CONFIG, scrollable: false };
+        // The flagship photo picker renders in a responsive Bloom `<Dialog>`
+        // (bottom-sheet on narrow, centered card on `md+`) rather than the
+        // in-tree BottomSheet — it owns its own FlatList and reads better as a
+        // centered panel on wide viewports. The Dialog surface, not this
+        // config's `scrollable`, governs its scrolling.
+        return { ...DEFAULT_SHEET_CONFIG, presentation: 'dialog' };
     }
     return DEFAULT_SHEET_CONFIG;
 };
