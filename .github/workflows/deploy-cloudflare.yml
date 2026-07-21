@@ -130,7 +130,7 @@ jobs:
       # installs without the buggy frozen flag.
       - run: bun install
       - run: bun x turbo run build --filter=accounts
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -156,7 +156,7 @@ jobs:
       # installs without the buggy frozen flag.
       - run: bun install
       - run: bun x turbo run build --filter=inbox
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -191,7 +191,7 @@ jobs:
           else
             echo "No build output found" && exit 1
           fi
-      - uses: cloudflare/wrangler-action@v3
+      - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
