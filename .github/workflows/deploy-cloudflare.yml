@@ -21,24 +21,28 @@ jobs:
           filters: |
             accounts:
               - 'packages/accounts/**'
+      - 'packages/app-preset/**'
               - 'packages/core/**'
               - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             auth:
               - 'packages/auth/**'
+      - 'packages/app-preset/**'
               - 'packages/core/**'
               - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             inbox:
               - 'packages/inbox/**'
+      - 'packages/app-preset/**'
               - 'packages/core/**'
               - 'packages/protocol/**'
               - 'packages/services/**'
               - 'packages/contracts/**'
             console:
               - 'packages/console/**'
+      - 'packages/app-preset/**'
               - 'packages/core/**'
               - 'packages/protocol/**'
               - 'packages/services/**'
