@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 
 // Lazy loading: Screens are loaded on-demand to break require cycles
@@ -42,7 +42,8 @@ export type RouteName =
     | 'AvatarCrop' // Square-crop editor presented before avatar upload
     | 'Notifications' // Per-channel notification preferences
     | 'ConnectedApps' // OAuth-authorized third-party apps the user can revoke
-    | 'Preferences'; // General user preferences (theme, reduce-motion, etc.)
+    | 'Preferences' // General user preferences (theme, reduce-motion, etc.)
+    | 'AccountDialog'; // Unified account switcher + sign-in surface (folded OxyAccountDialog body)
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
@@ -86,6 +87,10 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     Notifications: () => require('../screens/NotificationsScreen').default,
     ConnectedApps: () => require('../screens/ConnectedAppsScreen').default,
     Preferences: () => require('../screens/PreferencesScreen').default,
+    // Unified account switcher + sign-in surface. Its body lives in the
+    // `OxyAccountDialog` component (folded from the standalone dialog); the
+    // surface stack provides the Dialog chrome around it.
+    AccountDialog: () => require('../components/OxyAccountDialog').default,
 };
 
 // Cache loaded components to avoid re-requiring
@@ -120,108 +125,4 @@ export const getScreenComponent = (routeName: RouteName): ComponentType<BaseScre
 // Uses the screenLoaders object to check existence without loading the screen
 export const isValidRoute = (routeName: string): routeName is RouteName => {
     return routeName in screenLoaders;
-};
-
-/**
- * Configuration that BottomSheetRouter applies to the underlying BottomSheet
- * for a given route. Adding new options here is additive — never rename or
- * remove fields without bumping the consumer surface as a breaking change.
- */
-export interface SheetRouteConfig {
-    /**
-     * Which surface hosts the route. `'sheet'` (default) renders the screen in
-     * the in-tree `BottomSheet`. `'dialog'` renders it in a responsive Bloom
-     * `<Dialog>` (bottom-sheet on narrow, centered card on `md+`) — used for the
-     * flagship image picker, which reads better as a centered panel on wide
-     * viewports than a full-width sheet. `BottomSheetRouter` keeps BOTH surfaces
-     * mounted and routes the active screen into exactly one based on this value.
-     */
-    presentation: 'sheet' | 'dialog';
-    /**
-     * When `false`, BottomSheet skips its internal ScrollView and lets the
-     * screen own scrolling. Required for screens that render a FlatList,
-     * SectionList, or any other VirtualizedList — nesting one inside a
-     * plain ScrollView breaks windowing and triggers a RN warning.
-     *
-     * Ignored for `presentation: 'dialog'` routes — those don't render in the
-     * in-tree `BottomSheet` at all.
-     */
-    scrollable: boolean;
-    /**
-     * Controls the body-pan activation strategy on the underlying bloom
-     * `BottomSheet`. `true` uses RNGH's `manualActivation` with scroll-handoff
-     * (recommended for scrollable content — the only RNGH 2.x pattern that
-     * doesn't steal vertical events from the inner scroller on Android).
-     * `false` uses an always-active body pan that gates on scroll offset.
-     *
-     * Defaults to `true` for all routes — matches the historical in-tree
-     * BottomSheet behavior. Per-route opt-out is possible if a screen needs
-     * the always-active pan instead.
-     */
-    manualActivation: boolean;
-    /**
-     * When `true`, the backdrop dims proportionally with drag distance (iOS
-     * Photos style). Defaults to `true` for all routes — matches the
-     * historical in-tree BottomSheet behavior.
-     */
-    dynamicBackdrop: boolean;
-    /**
-     * Optional custom handle slot. When provided, replaces the default
-     * 36×5 pill drag handle. The handle remains unconditionally draggable
-     * via the dedicated handle gesture (when `manualActivation` is `true`).
-     * Use sparingly — screens should default to the standard handle for
-     * platform consistency.
-     */
-    handleComponent?: () => ReactNode;
-}
-
-/**
- * Predicate matching FileManagementScreen's internal `isImageOnlyPicker`
- * derivation. When the consumer restricts to image MIME types (no videos,
- * no audio, no documents), FileManagement renders the flagship PhotoPickerView
- * which owns its own FlatList. The sheet must therefore stop scrolling
- * children. Kept in sync with `FileManagementScreen` — both check the same
- * disabled MIME type families.
- */
-const isFileManagementImageOnlyPicker = (props: Record<string, unknown>): boolean => {
-    if (!props.selectMode) return false;
-    const disabled = props.disabledMimeTypes;
-    if (!Array.isArray(disabled) || disabled.length === 0) return false;
-    const has = (predicate: (mt: string) => boolean): boolean =>
-        disabled.some((mt) => typeof mt === 'string' && predicate(mt));
-    const blocksVideos = has((mt) => mt === 'video/' || mt.startsWith('video/'));
-    const blocksAudio = has((mt) => mt === 'audio/' || mt.startsWith('audio/'));
-    const blocksDocs = has(
-        (mt) => mt === 'application/pdf' || mt === 'application/' || mt.startsWith('application/'),
-    );
-    return blocksVideos && blocksAudio && blocksDocs;
-};
-
-/** Defaults shared across all routes — preserves the historical in-tree BS UX. */
-const DEFAULT_SHEET_CONFIG: SheetRouteConfig = {
-    presentation: 'sheet',
-    scrollable: true,
-    manualActivation: true,
-    dynamicBackdrop: true,
-};
-
-/**
- * Returns the bottom-sheet configuration for a route. Defaults match the
- * pre-refactor in-tree `BottomSheet` (scrollable, manualActivation,
- * dynamicBackdrop). Routes opt out per-field as needed.
- */
-export const getSheetConfig = (
-    routeName: RouteName | null,
-    screenProps: Record<string, unknown>,
-): SheetRouteConfig => {
-    if (!routeName) return DEFAULT_SHEET_CONFIG;
-    if (routeName === 'FileManagement' && isFileManagementImageOnlyPicker(screenProps)) {
-        // The flagship photo picker renders in a responsive Bloom `<Dialog>`
-        // (bottom-sheet on narrow, centered card on `md+`) rather than the
-        // in-tree BottomSheet — it owns its own FlatList and reads better as a
-        // centered panel on wide viewports. The Dialog surface, not this
-        // config's `scrollable`, governs its scrolling.
-        return { ...DEFAULT_SHEET_CONFIG, presentation: 'dialog' };
-    }
-    return DEFAULT_SHEET_CONFIG;
 };

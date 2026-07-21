@@ -149,6 +149,42 @@ export const BloomDialogProvider = ({ children }: { children?: ReactNode }) =>
 
 export const ToastOutlet = () => null;
 
+/**
+ * `@oxyhq/bloom/surfaces` stubs. The real stack renders each presented surface as
+ * a stacked `<Dialog>`; here we only need the module surface so the SDK's
+ * `navigation/surfaces.ts` + `OxyProvider` resolve. `present` returns a
+ * never-settling promise (unit tests do not await surface dismissals) and
+ * `SurfaceHost` renders nothing. The SDK's own surface behaviour is covered by
+ * the browser-verification harness, not jsdom.
+ */
+export const SurfaceProvider = ({ children }: { children?: ReactNode }) =>
+  createElement(Fragment, null, children);
+
+export const SurfaceHost = () => null;
+
+export const useSurface = (): { dismiss: (result?: unknown) => void; present: () => Promise<unknown> } => ({
+  dismiss: () => {},
+  present: () => new Promise<unknown>(() => {}),
+});
+
+export const surfaces = {
+  present: () => new Promise<unknown>(() => {}),
+  dismiss: () => {},
+  dismissById: () => {},
+  dismissToRoot: () => {},
+  dismissAll: () => {},
+  confirm: () => Promise.resolve(false),
+  prompt: () => Promise.resolve(null),
+};
+
+export const present = surfaces.present;
+export const dismiss = surfaces.dismiss;
+export const dismissById = surfaces.dismissById;
+export const dismissToRoot = surfaces.dismissToRoot;
+export const dismissAll = surfaces.dismissAll;
+export const confirm = surfaces.confirm;
+export const prompt = surfaces.prompt;
+
 export const PressableScale = passthrough('div');
 
 export const SettingsListGroup = passthrough('div');

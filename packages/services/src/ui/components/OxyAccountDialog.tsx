@@ -1,38 +1,30 @@
 /**
- * OxyAccountDialog — the ONE unified account dialog for `@oxyhq/services`.
+ * OxyAccountDialog — the ONE unified account dialog BODY for `@oxyhq/services`.
  *
- * Bloom `<Dialog>` chrome (header, back button, placement, scroll body) around
- * the headless chooser logic, which lives in `OxyAuthChooser` — the account
- * switcher, sign-in, sign-up, and QR views are ALL there, extracted so the
- * same chooser can be mounted bare by a future host with no Dialog chrome
- * (e.g. an auth.oxy.so hub page driving the cross-origin passkey popup, b2).
- * This file owns ONLY the chrome: the title/subtitle per view, the back
- * button, and the Bloom `<Dialog>` surface itself.
+ * The header (title/subtitle per view + back button) around the headless chooser
+ * logic, which lives in `OxyAuthChooser` — the account switcher, sign-in,
+ * sign-up, and QR views are ALL there, extracted so the same chooser can be
+ * mounted bare by a future host with no Dialog chrome (e.g. an auth.oxy.so hub
+ * page driving the cross-origin passkey popup, b2). This file owns ONLY the
+ * header + the scroll body.
  *
- * The surface is Bloom's `<Dialog>` (`@oxyhq/bloom/dialog`) with a responsive
- * `placement` — a bottom sheet on narrow viewports, a centered card on wide ones.
- * It REPLACES the hand-rolled RN `<Modal>` + `<GestureHandlerRootView>` + manual
- * backdrop/card wrapper this component used before. That RN `<Modal>` is invisible
- * under React StrictMode on web: react-native-web's `ModalPortal` appends its host
- * node during render but removes it in an effect cleanup and never re-attaches, so
- * the dialog never paints in a dev Vite build. Bloom's `<Dialog>` renders through
- * its own Portal and has no such lifecycle hazard.
- *
- * Open/close is CONTROLLED by `isAccountDialogOpen` (the `open` prop); the Dialog
- * stays mounted whenever the controller exists so it can animate its own close.
- * Backdrop / swipe-to-dismiss is disabled (`dismissOnBackdrop={false}`) on purpose:
- * Bloom's controlled `bottom` placement does not fire `onClose` on a gesture or
- * backdrop dismissal, so allowing it would desync `isAccountDialogOpen` from the
- * sheet and block reopening. The header close button (and `OxyAuthChooser`'s
- * `onComplete`) drive `closeAccountDialog`, which flips `open` and runs the exit
- * animation.
+ * It is presented as the `AccountDialog` route on the shared Bloom SURFACE STACK
+ * (`@oxyhq/bloom/surfaces`) — `OxyContext.openAccountDialog` calls
+ * `presentDetached('AccountDialog', …, { placement: { base: 'bottom', md:
+ * 'center' }, dismissOnBackdrop: false, maxWidth: 420 })`, so the STACK owns the
+ * responsive `<Dialog>` chrome and this component renders only its content. That
+ * replaces the previous standalone controlled `<Dialog open={isAccountDialogOpen}>`
+ * mount: dismissal now flows through the stack (backdrop/swipe disabled), and the
+ * header close button (and `OxyAuthChooser`'s `onComplete`) drive
+ * `useOxy().closeAccountDialog`, which dismisses the surface and runs its exit
+ * animation. The view-enum (`accounts|signin|qr|add|signup`) stays internal here,
+ * driven by the shared `AccountDialogController` in `@oxyhq/core`.
  */
 
 import type React from 'react';
 import { useCallback, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Dialog } from '@oxyhq/bloom/dialog';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { AccountDialogSnapshot } from '@oxyhq/core';
@@ -45,11 +37,20 @@ type Theme = ReturnType<typeof useTheme>;
 type Translate = ReturnType<typeof useI18n>['t'];
 
 /**
- * The unified account dialog. Mounted once by `OxyProvider`; opened imperatively
- * via `useOxy().openAccountDialog(view?)` or imperative `openAccountDialog('signin')`.
+ * The unified account dialog BODY — the header + `OxyAuthChooser` chooser.
+ *
+ * Presented as the `AccountDialog` surface (route) on the shared Bloom surface
+ * stack; the surface owns the `<Dialog>` chrome (responsive `{ base: 'bottom',
+ * md: 'center' }` placement, `dismissOnBackdrop={false}`, `maxWidth={420}` — set
+ * by `OxyContext` when it presents this surface), so this component renders ONLY
+ * the content. Open it via `useOxy().openAccountDialog(view?)` or the imperative
+ * `openAccountDialog('signin')`; the view-enum (`accounts|signin|qr|add|signup`)
+ * stays internal here, driven by the shared `AccountDialogController` in
+ * `@oxyhq/core`. Closing routes through `useOxy().closeAccountDialog`, which
+ * dismisses the surface and runs its exit animation.
  */
 const OxyAccountDialog: React.FC = () => {
-  const { accountDialogController: controller, isAccountDialogOpen, closeAccountDialog } = useOxy();
+  const { accountDialogController: controller, closeAccountDialog } = useOxy();
   const theme = useTheme();
   const { t } = useI18n();
 
@@ -75,14 +76,7 @@ const OxyAccountDialog: React.FC = () => {
     view === 'qr' || view === 'signup' || (view === 'add' && snapshot.accounts.length > 0);
 
   return (
-    <Dialog
-      open={isAccountDialogOpen}
-      onClose={closeAccountDialog}
-      placement={{ base: 'bottom', md: 'center' }}
-      dismissOnBackdrop={false}
-      maxWidth={420}
-      label={headerCopy(view, snapshot.accounts.length, t).title}
-    >
+    <>
       <DialogHeader
         snapshot={snapshot}
         theme={theme}
@@ -94,7 +88,7 @@ const OxyAccountDialog: React.FC = () => {
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
         <OxyAuthChooser onComplete={closeAccountDialog} />
       </ScrollView>
-    </Dialog>
+    </>
   );
 };
 

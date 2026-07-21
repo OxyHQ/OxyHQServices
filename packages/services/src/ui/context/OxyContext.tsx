@@ -45,6 +45,7 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
+import { presentDetached, type SurfaceInstance } from '../navigation/surfaces';
 import { useQueryClient, onlineManager } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
@@ -643,6 +644,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const commitSwitchedSessionRef = useRef(commitSwitchedSession);
   commitSwitchedSessionRef.current = commitSwitchedSession;
 
+  // The live AccountDialog surface (a stacked Bloom surface), while open. Held so
+  // `openAccountDialog` can no-op when already open and `closeAccountDialog` /
+  // `onSignedIn` can dismiss it. Cleared when the surface settles.
+  const accountDialogSurfaceRef = useRef<SurfaceInstance<'AccountDialog'> | null>(null);
+
   const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
   if (!accountDialogControllerRef.current) {
     accountDialogControllerRef.current = createAccountDialogController({
@@ -655,7 +661,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       socketFactory: io,
       commitSession: (session) => handleWebSessionRef.current(session),
       commitSwitchedSession: (session) => commitSwitchedSessionRef.current(session),
-      onSignedIn: () => setAccountDialogOpen(false),
+      onSignedIn: () => {
+        accountDialogSurfaceRef.current?.dismiss();
+        setAccountDialogOpen(false);
+      },
       openUrl: (url) => {
         if (isWebBrowser()) {
           redirectToAuthorize(url);
@@ -680,11 +689,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const openAccountDialog = useCallback((view?: AccountDialogView): void => {
     accountDialogControllerRef.current?.setView(view ?? 'accounts');
+    // Present the AccountDialog surface on the shared Bloom stack the FIRST time
+    // (subsequent opens just re-point the controller's view above). `presentDetached`
+    // keeps it OUT of the `showBottomSheet` route-surface lineage, so closing the
+    // bottom-sheet session never touches the account dialog and vice-versa.
+    if (!accountDialogSurfaceRef.current) {
+      const instance = presentDetached(
+        'AccountDialog',
+        { initialView: view ?? 'accounts' },
+        { placement: { base: 'bottom', md: 'center' }, dismissOnBackdrop: false, maxWidth: 420 },
+      );
+      accountDialogSurfaceRef.current = instance;
+      instance.result.finally(() => {
+        if (accountDialogSurfaceRef.current === instance) accountDialogSurfaceRef.current = null;
+        setAccountDialogOpen(false);
+      });
+    }
     setAccountDialogOpen(true);
   }, []);
 
   const closeAccountDialog = useCallback((): void => {
     accountDialogControllerRef.current?.cancelSignIn();
+    accountDialogSurfaceRef.current?.dismiss();
     setAccountDialogOpen(false);
   }, []);
 
