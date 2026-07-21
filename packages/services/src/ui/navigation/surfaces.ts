@@ -36,13 +36,23 @@ const SHEET_PLACEMENT = { base: 'bottom', md: 'center' } as const;
 /** Full-bleed black canvas for the `'fullScreen'` approximation (image picker). */
 const FULLSCREEN_SURFACE_STYLE: ViewStyle = { backgroundColor: '#000000', overflow: 'hidden' };
 
+/**
+ * Every SDK screen owns its own background + content padding + scroll region
+ * (they were authored for the bare `BottomSheet`). So the shared `Dialog` must
+ * NOT add its own `contentPadding` on top (that double-pads) — it owns only the
+ * structural chrome: the surface card, the size cap (`maxHeightRatio`) and the
+ * scroll boundary. `contentPadding: 0` makes the screen's own padding the single
+ * source, matching the image-picker (`fullScreen`) surface.
+ */
+const SDK_SURFACE_CHROME = { contentPadding: 0, maxHeightRatio: 0.9 } as const;
+
 /** Map a route's presentation taxonomy onto concrete Bloom `Dialog` options. */
 function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
   switch (config.presentation) {
     case 'center':
-      return { placement: 'center' };
+      return { placement: 'center', ...SDK_SURFACE_CHROME };
     case 'drawer':
-      return { placement: { base: 'bottom', md: 'left' } };
+      return { placement: { base: 'bottom', md: 'left' }, ...SDK_SURFACE_CHROME };
     case 'fullScreen':
       // Approximate a full-screen surface with the shared `Dialog`: a tall
       // sheet / large centered card, flush content, a black canvas and
@@ -57,7 +67,7 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
         panelStyle: FULLSCREEN_SURFACE_STYLE,
       };
     default:
-      return { placement: SHEET_PLACEMENT };
+      return { placement: SHEET_PLACEMENT, ...SDK_SURFACE_CHROME };
   }
 }
 

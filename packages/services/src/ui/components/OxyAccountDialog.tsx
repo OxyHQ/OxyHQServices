@@ -23,7 +23,7 @@
 
 import type React from 'react';
 import { useCallback, useSyncExternalStore } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -85,9 +85,9 @@ const OxyAccountDialog: React.FC = () => {
         onBack={() => controller.setView('accounts')}
         onClose={closeAccountDialog}
       />
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.bodyContent}>
         <OxyAuthChooser onComplete={closeAccountDialog} />
-      </ScrollView>
+      </View>
     </>
   );
 };
@@ -224,9 +224,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: 'center',
     marginTop: 4,
-  },
-  body: {
-    width: '100%',
   },
   bodyContent: {
     paddingTop: 4,
