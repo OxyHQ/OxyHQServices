@@ -701,8 +701,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       );
       accountDialogSurfaceRef.current = instance;
       instance.result.finally(() => {
-        if (accountDialogSurfaceRef.current === instance) accountDialogSurfaceRef.current = null;
-        setAccountDialogOpen(false);
+        if (accountDialogSurfaceRef.current === instance) {
+          accountDialogSurfaceRef.current = null;
+          setAccountDialogOpen(false);
+        }
       });
     }
     setAccountDialogOpen(true);
