@@ -11,7 +11,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
@@ -96,7 +95,6 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
             )}
             <Text style={[styles.headerTitle, { color: colors.text }]}>Thread Summary</Text>
           </View>
-          <ActivityIndicator size="small" color={colors.primary} />
         </View>
         <View style={styles.loadingContent}>
           <Skeleton.Box width="100%" height={14} borderRadius={4} />

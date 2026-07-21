@@ -96,7 +96,7 @@ interface ScheduleSendSheetProps {
 
 export function ScheduleSendSheet({ visible, onClose, onSchedule }: ScheduleSendSheetProps) {
   const colors = useColors();
-  const options = useMemo(getScheduleOptions, []);
+  const options = useMemo(() => getScheduleOptions(), []);
   const sheetRef = useRef<BottomSheetRef>(null);
 
   useEffect(() => {

@@ -57,9 +57,32 @@ export const candidateUri = (candidate: UploadCandidate): string | undefined => 
 
 /** A processed file ready for review in the upload preview modal. */
 export interface PendingUploadFile {
+    /** Stable row identity for React keys and removal — survives reorder/filter. */
+    id: string;
     file: UploadCandidate;
     preview?: string;
     size: number;
     name: string;
     type: string;
 }
+
+const createPendingUploadId = (): string =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+/** Mint a {@link PendingUploadFile} row from a validated upload candidate. */
+export const createPendingUploadFile = (
+    file: UploadCandidate,
+    preview: string | undefined,
+    size: number,
+    name: string,
+    type: string,
+): PendingUploadFile => ({
+    id: createPendingUploadId(),
+    file,
+    preview,
+    size,
+    name,
+    type,
+});

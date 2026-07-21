@@ -4,23 +4,15 @@ import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
-import type { RNFileDescriptor } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
-
-interface PendingFile {
-    file: File | Blob | RNFileDescriptor;
-    preview?: string;
-    size: number;
-    name: string;
-    type: string;
-}
+import type { PendingUploadFile } from '../../screens/fileManagement/shared';
 
 interface UploadPreviewProps {
     control?: DialogControlProps;
-    pendingFiles: PendingFile[];
+    pendingFiles: PendingUploadFile[];
     onConfirm: () => void;
     onCancel: () => void;
-    onRemoveFile: (index: number) => void;
+    onRemoveFile: (id: string) => void;
     inline?: boolean;
 }
 
@@ -34,10 +26,10 @@ const previewStyles = StyleSheet.create({
 });
 
 const UploadPreviewContent: React.FC<{
-    pendingFiles: PendingFile[];
+    pendingFiles: PendingUploadFile[];
     onConfirm: () => void;
     onCancel: () => void;
-    onRemoveFile: (index: number) => void;
+    onRemoveFile: (id: string) => void;
     showActions?: boolean;
 }> = ({
     pendingFiles,
@@ -61,11 +53,11 @@ const UploadPreviewContent: React.FC<{
             </View>
 
             <ScrollView className="flex-1 p-[16px]">
-                {pendingFiles.map((pendingFile, index) => {
+                {pendingFiles.map((pendingFile) => {
                     const isImage = pendingFile.type.startsWith('image/');
                     return (
                         <View
-                            key={`${pendingFile.name}-${pendingFile.size}-${index}`}
+                            key={pendingFile.id}
                             className="bg-secondary border-border flex-row items-center p-[12px] rounded-[12px] border mb-[12px] gap-[12px]"
                         >
                             {isImage && pendingFile.preview ? (
@@ -96,7 +88,7 @@ const UploadPreviewContent: React.FC<{
                             </View>
                             <TouchableOpacity
                                 className="p-[4px]"
-                                onPress={() => onRemoveFile(index)}
+                                onPress={() => onRemoveFile(pendingFile.id)}
                             >
                                 <Ionicons name="close-circle" size={24} color={colors.error} />
                             </TouchableOpacity>

@@ -97,7 +97,7 @@ interface SnoozeSheetProps {
 
 export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
   const colors = useColors();
-  const options = useMemo(getSnoozeOptions, []);
+  const options = useMemo(() => getSnoozeOptions(), []);
   const sheetRef = useRef<BottomSheetRef>(null);
 
   useEffect(() => {

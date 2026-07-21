@@ -13,7 +13,6 @@ import {
   Platform,
   TouchableOpacity,
 } from 'react-native';
-import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -102,9 +101,6 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
         <Text style={[styles.label, { color: colors.secondaryText }]}>
           Quick replies
         </Text>
-        {isLoading && (
-          <Loading variant="inline" size="small" />
-        )}
       </View>
 
       <View style={styles.chips}>

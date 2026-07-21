@@ -10,6 +10,7 @@ import {
   Settings01Icon,
 } from '@hugeicons/core-free-icons';
 import { toast } from 'sonner';
+import { useAuth } from '@oxyhq/services';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -34,7 +35,6 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useApplications, useCreateApplication } from '@/hooks/use-applications';
-import { useAuth } from '@oxyhq/services';
 import { resolveStoredImageUrl } from '@/lib/image-upload';
 
 export const Route = createFileRoute('/_layout/apps/')({

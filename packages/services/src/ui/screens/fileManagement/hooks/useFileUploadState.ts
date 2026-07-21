@@ -6,6 +6,7 @@ import { useFileStore } from '../../../stores/fileStore';
 import type { useUploadFile } from '../../../hooks/mutations/useAccountMutations';
 import { convertDocumentPickerAssetToFile, formatFileSize } from '../../../utils/fileManagement';
 import {
+    createPendingUploadFile,
     type PendingUploadFile,
     type UploadCandidate,
     candidateName,
@@ -52,7 +53,7 @@ export interface UseFileUploadStateResult {
     handleFileUpload: () => Promise<void>;
     handleConfirmUpload: () => Promise<void>;
     handleCancelUpload: () => void;
-    removePendingFile: (index: number) => void;
+    removePendingFile: (id: string) => void;
 }
 
 /**
@@ -305,13 +306,7 @@ export const useFileUploadState = ({
                 }
             }
 
-            processedFiles.push({
-                file,
-                preview,
-                size,
-                name,
-                type: fileType
-            });
+            processedFiles.push(createPendingUploadFile(file, preview, size, name, fileType));
         }
 
         if (processedFiles.length === 0) {
@@ -387,12 +382,13 @@ export const useFileUploadState = ({
         setShowUploadPreview(false);
     };
 
-    const removePendingFile = (index: number) => {
-        const file = pendingFiles[index];
+    const removePendingFile = (id: string) => {
+        const file = pendingFiles.find((pf) => pf.id === id);
+        if (!file) return;
         if (file.preview) {
             URL.revokeObjectURL(file.preview);
         }
-        const updated = pendingFiles.filter((_, i) => i !== index);
+        const updated = pendingFiles.filter((pf) => pf.id !== id);
         setPendingFiles(updated);
         if (updated.length === 0) {
             setShowUploadPreview(false);
