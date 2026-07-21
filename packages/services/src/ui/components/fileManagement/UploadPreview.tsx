@@ -65,7 +65,7 @@ const UploadPreviewContent: React.FC<{
                     const isImage = pendingFile.type.startsWith('image/');
                     return (
                         <View
-                            key={index}
+                            key={`${pendingFile.name}-${pendingFile.size}-${index}`}
                             className="bg-secondary border-border flex-row items-center p-[12px] rounded-[12px] border mb-[12px] gap-[12px]"
                         >
                             {isImage && pendingFile.preview ? (

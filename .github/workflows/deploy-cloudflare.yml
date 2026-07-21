@@ -22,6 +22,7 @@ jobs:
             accounts:
               - 'packages/accounts/**'
               - 'packages/app-preset/**'
+              - 'packages/expo-splash/**'
               - 'packages/core/**'
               - 'packages/protocol/**'
               - 'packages/services/**'
