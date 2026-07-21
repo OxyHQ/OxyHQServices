@@ -10,14 +10,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast, Dialog, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Divider } from '@oxyhq/bloom/divider';
 import type { AccountMember, AccountRole } from '@oxyhq/core';
-import { logger as loggerUtil } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { useOxy } from '../context/OxyContext';
@@ -155,11 +155,6 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     },
   });
 
-  const [memberToRemove, setMemberToRemove] = useState<AccountMember | null>(null);
-  const [memberToPromote, setMemberToPromote] = useState<AccountMember | null>(null);
-  const removeDialog = useDialogControl();
-  const transferDialog = useDialogControl();
-
   const handleInvite = useCallback(() => {
     const usernameOrEmail = inviteIdentifier.trim();
     if (!usernameOrEmail) {
@@ -177,15 +172,31 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     updateMutation.mutate({ memberId: member._id, role });
   }, [updateMutation]);
 
-  const confirmRemove = useCallback((member: AccountMember) => {
-    setMemberToRemove(member);
-    removeDialog.open();
-  }, [removeDialog]);
+  const confirmRemove = useCallback(async (member: AccountMember) => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.members.removeConfirm.title') || 'Remove member',
+      message:
+        t('accounts.members.removeConfirm.description')
+        || 'Remove this member from the account? They will lose all access.',
+      confirmLabel: t('accounts.members.actions.remove') || 'Remove',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) removeMutation.mutate(member._id);
+  }, [removeMutation, t]);
 
-  const confirmTransfer = useCallback((member: AccountMember) => {
-    setMemberToPromote(member);
-    transferDialog.open();
-  }, [transferDialog]);
+  const confirmTransfer = useCallback(async (member: AccountMember) => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.members.transferConfirm.title') || 'Transfer ownership',
+      message:
+        t('accounts.members.transferConfirm.description')
+        || 'Transfer ownership of this account to this member? You will be demoted to admin. This cannot be undone.',
+      confirmLabel: t('accounts.members.actions.transfer') || 'Transfer ownership',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) transferMutation.mutate(member.memberUserId);
+  }, [transferMutation, t]);
 
   const title = t('accounts.members.title') || 'Members';
 
@@ -425,55 +436,6 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <Dialog
-        control={removeDialog}
-        title={t('accounts.members.removeConfirm.title') || 'Remove member'}
-        description={
-          t('accounts.members.removeConfirm.description')
-          || 'Remove this member from the account? They will lose all access.'
-        }
-        actions={[
-          {
-            label: t('accounts.members.actions.remove') || 'Remove',
-            color: 'destructive',
-            onPress: () => {
-              const target = memberToRemove;
-              setMemberToRemove(null);
-              if (target) {
-                removeMutation.mutate(target._id);
-              } else {
-                loggerUtil.debug('Remove confirmed with no pending member', { component: 'AccountMembersScreen' });
-              }
-            },
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
-      <Dialog
-        control={transferDialog}
-        title={t('accounts.members.transferConfirm.title') || 'Transfer ownership'}
-        description={
-          t('accounts.members.transferConfirm.description')
-          || 'Transfer ownership of this account to this member? You will be demoted to admin. This cannot be undone.'
-        }
-        actions={[
-          {
-            label: t('accounts.members.actions.transfer') || 'Transfer ownership',
-            color: 'destructive',
-            onPress: () => {
-              const target = memberToPromote;
-              setMemberToPromote(null);
-              if (target) {
-                transferMutation.mutate(target.memberUserId);
-              } else {
-                loggerUtil.debug('Transfer confirmed with no pending member', { component: 'AccountMembersScreen' });
-              }
-            },
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
     </View>
   );
 };

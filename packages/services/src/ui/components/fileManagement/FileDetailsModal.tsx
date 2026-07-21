@@ -1,62 +1,40 @@
 import type React from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
+import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { surfaces, type SurfaceControls } from '@oxyhq/bloom/surfaces';
 import type { FileMetadata } from '@oxyhq/core';
 import { useI18n } from '../../hooks/useI18n';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 
 interface FileDetailsModalProps {
-    control: DialogControlProps;
-    file: FileMetadata | null;
+    /** The presenting surface's controls (from `surfaces.present`). */
+    surface: SurfaceControls;
+    file: FileMetadata;
     onDownload: (fileId: string, filename: string) => void;
     onDelete: (fileId: string, filename: string) => void;
     isOwner: boolean;
-    onClose?: () => void;
 }
 
+/**
+ * File-detail panel — a rich presented surface (NOT a yes/no confirm): a file's
+ * icon + metadata plus download / delete / cancel actions. Each action first
+ * dismisses this surface, then runs its handler, so a follow-up delete confirm
+ * stacks cleanly above whatever remains. Presented via {@link presentFileDetails}.
+ */
 export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
-    control,
+    surface,
     file,
     onDownload,
     onDelete,
     isOwner,
-    onClose,
 }) => {
     const { t } = useI18n();
     const { colors } = useTheme();
 
-    if (!file) return null;
-
-    const actions = isOwner
-        ? [
-              {
-                  label: t('fileManagement.details.download'),
-                  onPress: () => onDownload(file.id, file.filename),
-              },
-              {
-                  label: t('common.actions.delete'),
-                  color: 'destructive' as const,
-                  onPress: () => onDelete(file.id, file.filename),
-              },
-              { label: t('common.cancel'), color: 'cancel' as const },
-          ]
-        : [
-              {
-                  label: t('fileManagement.details.download'),
-                  onPress: () => onDownload(file.id, file.filename),
-              },
-              { label: t('common.cancel'), color: 'cancel' as const },
-          ];
-
     return (
-        <Dialog
-            control={control}
-            onClose={onClose}
-            label={t('fileManagement.details.title')}
-            actions={actions}
-        >
+        <View>
             <View className="bg-secondary border-border p-[18px] rounded-[14px] border items-center">
                 <View className="mb-space-16">
                     <Ionicons
@@ -110,6 +88,42 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
                     )}
                 </View>
             </View>
-        </Dialog>
+
+            <View style={{ gap: 8 }}>
+                <Button
+                    variant="primary"
+                    onPress={() => {
+                        surface.dismiss();
+                        onDownload(file.id, file.filename);
+                    }}
+                >
+                    {t('fileManagement.details.download')}
+                </Button>
+                {isOwner ? (
+                    <Button
+                        variant="destructive"
+                        onPress={() => {
+                            surface.dismiss();
+                            onDelete(file.id, file.filename);
+                        }}
+                    >
+                        {t('common.actions.delete')}
+                    </Button>
+                ) : null}
+                <Button variant="secondary" onPress={() => surface.dismiss()}>
+                    {t('common.cancel')}
+                </Button>
+            </View>
+        </View>
     );
 };
+
+/** Options accepted by {@link presentFileDetails} (everything but `surface`). */
+type PresentFileDetailsOptions = Omit<FileDetailsModalProps, 'surface'>;
+
+/** Present the file-detail panel on the shared surface stack. */
+export function presentFileDetails(options: PresentFileDetailsOptions): void {
+    void surfaces.present((surface) => (
+        <FileDetailsModal surface={surface} {...options} />
+    ));
+}

@@ -2,18 +2,27 @@ import type React from 'react';
 import { useState, useCallback } from 'react';
 import { View, Text, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
+import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { surfaces, type SurfaceControls } from '@oxyhq/bloom/surfaces';
 
 interface DeleteAccountModalProps {
-    control: DialogControlProps;
+    /** The presenting surface's controls (from `surfaces.present`). */
+    surface: SurfaceControls;
     username: string;
     onDelete: (confirmText: string) => Promise<void>;
     t: (key: string, params?: Record<string, string>) => string | undefined;
 }
 
+/**
+ * Delete-account confirmation — a rich presented surface (NOT a yes/no confirm):
+ * the user must retype their username, then the destructive action runs
+ * `onDelete`. On success the surface is dismissed with `true` (the presenter
+ * then signs out + closes); cancel dismisses with `false`. Presented via
+ * {@link presentDeleteAccount}.
+ */
 const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
-    control,
+    surface,
     username,
     onDelete,
     t,
@@ -33,36 +42,21 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
         try {
             await onDelete(confirmUsername);
-            // Dialog will be closed by parent on success
+            surface.dismiss(true);
         } catch (err: unknown) {
             setError((err instanceof Error ? err.message : null) || t('deleteAccount.error') || 'Failed to delete account');
         } finally {
             setIsDeleting(false);
         }
-    }, [isValid, confirmUsername, onDelete, t]);
+    }, [isValid, confirmUsername, onDelete, surface, t]);
 
-    const handleCleanup = useCallback(() => {
+    const handleCancel = useCallback(() => {
         if (isDeleting) return;
-        setConfirmUsername('');
-        setError(null);
-    }, [isDeleting]);
+        surface.dismiss(false);
+    }, [isDeleting, surface]);
 
     return (
-        <Dialog
-            control={control}
-            onClose={handleCleanup}
-            label="Delete Account"
-            actions={[
-                {
-                    label: t('deleteAccount.confirm') || 'Delete Forever',
-                    color: 'destructive',
-                    onPress: handleDelete,
-                    disabled: !isValid || isDeleting,
-                    shouldCloseOnPress: false,
-                },
-                { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-            ]}
-        >
+        <View>
             <View className="flex-row items-center mb-4 gap-3">
                 <Ionicons name="alert-circle" size={32} color={theme.colors.error} />
                 <Text className="text-text text-xl font-bold" style={{ color: theme.colors.error }}>
@@ -92,7 +86,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 <TextInput
                     className="text-text bg-bg text-base py-3 px-4 border rounded-lg"
                     style={{
-                        borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
+                        borderColor: isValid ? theme.colors.success : theme.colors.border,
                     }}
                     value={confirmUsername}
                     onChangeText={setConfirmUsername}
@@ -103,8 +97,35 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     editable={!isDeleting}
                 />
             </View>
-        </Dialog>
+
+            <View style={{ gap: 8 }}>
+                <Button
+                    variant="destructive"
+                    onPress={handleDelete}
+                    disabled={!isValid || isDeleting}
+                    loading={isDeleting}
+                >
+                    {t('deleteAccount.confirm') || 'Delete Forever'}
+                </Button>
+                <Button variant="secondary" onPress={handleCancel} disabled={isDeleting}>
+                    {t('common.cancel') || 'Cancel'}
+                </Button>
+            </View>
+        </View>
     );
 };
+
+/** Options accepted by {@link presentDeleteAccount} (everything but `surface`). */
+type PresentDeleteAccountOptions = Omit<DeleteAccountModalProps, 'surface'>;
+
+/**
+ * Present the delete-account confirmation on the shared surface stack. Resolves
+ * `true` once the account is deleted, `false` if cancelled/dismissed.
+ */
+export function presentDeleteAccount(options: PresentDeleteAccountOptions): Promise<boolean> {
+    return surfaces
+        .present<boolean>((surface) => <DeleteAccountModal surface={surface} {...options} />)
+        .then((result) => result === true);
+}
 
 export default DeleteAccountModal;

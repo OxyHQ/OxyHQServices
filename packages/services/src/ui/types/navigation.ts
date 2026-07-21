@@ -15,6 +15,14 @@ export interface BaseScreenProps {
     goBack?: () => void;
     onClose?: () => void;
     onAuthenticated?: (payload?: unknown) => void;
+    /**
+     * Dismiss THIS surface, resolving the `present()` promise that opened it
+     * with `result`. Injected by the surface host (the P1 surface stack). Picker
+     * and crop screens use it to hand a typed result back to the awaiting
+     * `surfaces.present(...)` call instead of an untyped `onSelect`/`onConfirm`
+     * callback prop.
+     */
+    dismiss?: (result?: unknown) => void;
     
     // Theme props
     theme?: 'light' | 'dark' | string;

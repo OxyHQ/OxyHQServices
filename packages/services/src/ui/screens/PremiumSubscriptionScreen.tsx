@@ -1,8 +1,9 @@
 import type React from 'react';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, ActivityIndicator } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Chip } from '@oxyhq/bloom/chip';
@@ -105,15 +106,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [billingInterval, setBillingInterval] = useState<BillingInterval>(BILLING_MONTH);
     const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_PLANS);
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
-    const [pendingUnsubscribeFeatureId, setPendingUnsubscribeFeatureId] = useState<string | null>(null);
 
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const colors = bloomTheme.colors;
-
-    // Prompt controls
-    const cancelSubscriptionDialog = useDialogControl();
-    const unsubscribeFeatureDialog = useDialogControl();
 
     // Oxy+ subscription plans
     const mockPlans: SubscriptionPlan[] = [
@@ -426,11 +422,15 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const confirmCancelSubscription = useCallback(() => {
-        cancelSubscriptionDialog.open();
-    }, [cancelSubscriptionDialog]);
-
     const handleCancelSubscription = useCallback(async () => {
+        const confirmed = await surfaces.confirm({
+            title: t('premium.confirms.cancelSubTitle') || 'Cancel Subscription',
+            message: t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
+            confirmLabel: t('premium.actions.cancelSubBtn') || 'Cancel Subscription',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setSubscription(prev => prev ? {
                 ...prev,
@@ -512,18 +512,22 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const confirmFeatureUnsubscribe = useCallback((featureId: string) => {
-        setPendingUnsubscribeFeatureId(featureId);
-        unsubscribeFeatureDialog.open();
-    }, [unsubscribeFeatureDialog]);
-
-    const handleFeatureUnsubscribe = useCallback(async () => {
-        if (!pendingUnsubscribeFeatureId) return;
-        const feature = individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId);
+    const handleFeatureUnsubscribe = useCallback(async (featureId: string) => {
+        const feature = individualFeatures.find(f => f.id === featureId);
+        const confirmed = await surfaces.confirm({
+            title: t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature',
+            message: feature
+                ? (t('premium.confirms.unsubscribeFeature', { name: feature.name }) ?? `Are you sure you want to unsubscribe from ${feature.name}?`)
+                : '',
+            confirmLabel: t('premium.actions.unsubscribe') || 'Unsubscribe',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setIndividualFeatures(prev =>
                 prev.map(f =>
-                    f.id === pendingUnsubscribeFeatureId
+                    f.id === featureId
                         ? { ...f, isSubscribed: false }
                         : f
                 )
@@ -531,15 +535,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             toast.success((t('premium.toasts.featureUnsubscribed', { name: feature?.name ?? '' }) ?? `Unsubscribed from ${feature?.name}`));
         } catch (error) {
             toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
-        } finally {
-            setPendingUnsubscribeFeatureId(null);
         }
-    }, [pendingUnsubscribeFeatureId, individualFeatures, t]);
-
-    const pendingUnsubscribeFeature = useMemo(
-        () => individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId),
-        [individualFeatures, pendingUnsubscribeFeatureId]
-    );
+    }, [individualFeatures, t]);
 
     const getAppDisplayName = (packageName: string) => {
         const appNames: Record<string, string> = {
@@ -608,7 +605,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         ) : (
                             <Button
                                 variant="destructive"
-                                onPress={confirmCancelSubscription}
+                                onPress={handleCancelSubscription}
                                 className="flex-1"
                                 accessibilityLabel={t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}
                             >
@@ -915,7 +912,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Button>
                         <Button
                             variant="outline"
-                            onPress={() => confirmFeatureUnsubscribe(feature.id)}
+                            onPress={() => handleFeatureUnsubscribe(feature.id)}
                             accessibilityLabel={t('premium.actions.unsubscribe') || 'Unsubscribe'}
                             className="flex-1"
                         >
@@ -1115,25 +1112,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     </View>
                 </View>
             </ScrollView>
-
-            <Dialog
-                control={cancelSubscriptionDialog}
-                title={t('premium.confirms.cancelSubTitle') || 'Cancel Subscription'}
-                description={t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.'}
-                actions={[
-                    { label: t('premium.actions.cancelSubBtn') || 'Cancel Subscription', color: 'destructive', onPress: handleCancelSubscription },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={unsubscribeFeatureDialog}
-                title={t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature'}
-                description={pendingUnsubscribeFeature ? (t('premium.confirms.unsubscribeFeature', { name: pendingUnsubscribeFeature.name }) ?? `Are you sure you want to unsubscribe from ${pendingUnsubscribeFeature.name}?`) : ''}
-                actions={[
-                    { label: t('premium.actions.unsubscribe') || 'Unsubscribe', color: 'destructive', onPress: handleFeatureUnsubscribe },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </View>
     );
 };

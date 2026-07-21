@@ -8,7 +8,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast, Dialog, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
@@ -109,7 +110,18 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     },
   });
 
-  const archiveDialog = useDialogControl();
+  const handleArchive = useCallback(async () => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.settings.archive.confirmTitle') || 'Archive account',
+      message:
+        t('accounts.settings.archive.confirmDescription')
+        || 'Archive this account? It will be deactivated and its members will lose access.',
+      confirmLabel: t('accounts.settings.archive.title') || 'Archive account',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) archiveMutation.mutate();
+  }, [archiveMutation, t]);
 
   const handleSave = useCallback(() => {
     const trimmed = displayName.trim();
@@ -233,7 +245,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
                     icon={<SettingsIcon name="archive-arrow-down" color={colors.error} />}
                     title={t('accounts.settings.archive.title') || 'Archive account'}
                     description={t('accounts.settings.archive.subtitle') || 'Deactivate this account'}
-                    onPress={() => archiveDialog.open()}
+                    onPress={handleArchive}
                   />
                 </SettingsListGroup>
               ) : null}
@@ -241,23 +253,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
           )}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <Dialog
-        control={archiveDialog}
-        title={t('accounts.settings.archive.confirmTitle') || 'Archive account'}
-        description={
-          t('accounts.settings.archive.confirmDescription')
-          || 'Archive this account? It will be deactivated and its members will lose access.'
-        }
-        actions={[
-          {
-            label: t('accounts.settings.archive.title') || 'Archive account',
-            color: 'destructive',
-            onPress: () => archiveMutation.mutate(),
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
     </View>
   );
 };

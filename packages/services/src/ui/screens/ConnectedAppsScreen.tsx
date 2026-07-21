@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import type { ConnectedApp } from '@oxyhq/core';
@@ -56,45 +57,45 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
         isRefetching,
     } = useConnectedApps({ enabled: isAuthenticated });
     const revokeMutation = useRevokeConnectedApp();
-    const revokeDialog = useDialogControl();
-    const [pendingRevoke, setPendingRevoke] = useState<ConnectedApp | null>(null);
     const [revokingAppId, setRevokingAppId] = useState<string | null>(null);
 
     const confirmRevoke = useCallback(
-        (app: ConnectedApp) => {
-            setPendingRevoke(app);
-            revokeDialog.open();
+        async (app: ConnectedApp) => {
+            const confirmed = await surfaces.confirm({
+                title: t('connectedApps.confirm.title') || 'Revoke access',
+                message:
+                    t('connectedApps.confirm.message', { name: app.name })
+                    || `Revoke ${app.name}'s access to your Oxy account?`,
+                confirmLabel: t('common.revoke') || 'Revoke',
+                cancelLabel: t('common.cancel') || 'Cancel',
+                destructive: true,
+            });
+            if (!confirmed) {
+                return;
+            }
+            setRevokingAppId(app.applicationId);
+            try {
+                await revokeMutation.mutateAsync(app.applicationId);
+                toast.success(
+                    t('connectedApps.toasts.revoked', { name: app.name })
+                    || `Revoked access for ${app.name}`,
+                );
+            } catch (error) {
+                loggerUtil.warn(
+                    'Revoke connected app failed',
+                    { component: 'ConnectedAppsScreen' },
+                    error,
+                );
+                toast.error(
+                    t('connectedApps.toasts.revokeFailed')
+                    || 'Failed to revoke access',
+                );
+            } finally {
+                setRevokingAppId(null);
+            }
         },
-        [revokeDialog],
+        [revokeMutation, t],
     );
-
-    const handleRevoke = useCallback(async () => {
-        if (!pendingRevoke) {
-            return;
-        }
-        const target = pendingRevoke;
-        setRevokingAppId(target.applicationId);
-        try {
-            await revokeMutation.mutateAsync(target.applicationId);
-            toast.success(
-                t('connectedApps.toasts.revoked', { name: target.name })
-                || `Revoked access for ${target.name}`,
-            );
-        } catch (error) {
-            loggerUtil.warn(
-                'Revoke connected app failed',
-                { component: 'ConnectedAppsScreen' },
-                error,
-            );
-            toast.error(
-                t('connectedApps.toasts.revokeFailed')
-                || 'Failed to revoke access',
-            );
-        } finally {
-            setRevokingAppId(null);
-            setPendingRevoke(null);
-        }
-    }, [pendingRevoke, revokeMutation, t]);
 
     const renderEmpty = useCallback(
         () => (
@@ -167,24 +168,6 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                     }
                 />
             )}
-            <Dialog
-                control={revokeDialog}
-                title={t('connectedApps.confirm.title') || 'Revoke access'}
-                description={
-                    pendingRevoke
-                        ? (t('connectedApps.confirm.message', { name: pendingRevoke.name })
-                            || `Revoke ${pendingRevoke.name}'s access to your Oxy account?`)
-                        : ''
-                }
-                actions={[
-                    {
-                        label: t('common.revoke') || 'Revoke',
-                        color: 'destructive',
-                        onPress: handleRevoke,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </View>
     );
 };

@@ -9,7 +9,8 @@ import {
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -23,7 +24,8 @@ import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
-import DeleteAccountModal from '../components/modals/DeleteAccountModal';
+import { presentDeleteAccount } from '../components/modals/DeleteAccountModal';
+import { presentActionSheet } from '../components/surfaces/ActionSheetSurface';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
@@ -115,13 +117,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         isRefetching: deviceSessionsRefetching,
     } = useDeviceSessions({ enabled: isAuthenticated && !!activeSessionId });
 
-    const signOutDialog = useDialogControl();
-    const signOutAllDevicesDialog = useDialogControl();
-    const removeDeviceDialog = useDialogControl();
-    const downloadDataDialog = useDialogControl();
-    const deleteAccountDialog = useDialogControl();
-
-    const [pendingRemoveDevice, setPendingRemoveDevice] = useState<DeviceSessionRow | null>(null);
     const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
     const [signingOutAllDevices, setSigningOutAllDevices] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
@@ -138,6 +133,16 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         if (signingOut) {
             return;
         }
+        const confirmed = await surfaces.confirm({
+            title: t('common.actions.signOut') || 'Sign out',
+            message: t('common.confirms.signOut') || 'Are you sure you want to sign out?',
+            confirmLabel: t('common.actions.signOut') || 'Sign out',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
+            return;
+        }
         setSigningOut(true);
         try {
             await logout();
@@ -151,35 +156,55 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         }
     }, [signingOut, logout, t, onClose]);
 
-    const confirmRemoveDevice = useCallback((device: DeviceSessionRow) => {
-        setPendingRemoveDevice(device);
-        removeDeviceDialog.open();
-    }, [removeDeviceDialog]);
-
-    const handleRemoveDevice = useCallback(async () => {
-        if (!pendingRemoveDevice || !activeSessionId) {
+    const confirmRemoveDevice = useCallback(async (device: DeviceSessionRow) => {
+        if (!activeSessionId) {
             return;
         }
-        const target = pendingRemoveDevice;
-        setRemovingDeviceId(target.sessionId);
+        const confirmed = await surfaces.confirm({
+            title: t('manageAccount.confirms.removeDeviceTitle') || 'Remove device',
+            message:
+                t('manageAccount.confirms.removeDevice', { name: device.deviceName })
+                || `Sign out from "${device.deviceName}"?`,
+            confirmLabel: t('common.remove') || 'Remove',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        setRemovingDeviceId(device.sessionId);
         try {
-            await oxyServices.logoutSession(activeSessionId, target.sessionId);
+            await oxyServices.logoutSession(activeSessionId, device.sessionId);
             await refetchDeviceSessions();
             toast.success(
-                t('manageAccount.toasts.deviceRemoved', { name: target.deviceName })
-                || `Signed out from ${target.deviceName}`,
+                t('manageAccount.toasts.deviceRemoved', { name: device.deviceName })
+                || `Signed out from ${device.deviceName}`,
             );
         } catch (error) {
             loggerUtil.warn('Remove device failed', { component: 'ManageAccountScreen' }, error as unknown);
             toast.error(t('manageAccount.toasts.deviceRemoveFailed') || 'Failed to remove device');
         } finally {
             setRemovingDeviceId(null);
-            setPendingRemoveDevice(null);
         }
-    }, [pendingRemoveDevice, activeSessionId, oxyServices, refetchDeviceSessions, t]);
+    }, [activeSessionId, oxyServices, refetchDeviceSessions, t]);
 
     const handleSignOutAllDevices = useCallback(async () => {
         if (!activeSessionId || signingOutAllDevices) {
+            return;
+        }
+        const otherDeviceCount = ((deviceSessions ?? []) as DeviceSessionRow[]).filter(
+            (device) => !device.isCurrent,
+        ).length;
+        const confirmed = await surfaces.confirm({
+            title: t('manageAccount.confirms.signOutAllDevicesTitle') || 'Sign out of all other devices',
+            message:
+                t('manageAccount.confirms.signOutAllDevices', { count: otherDeviceCount })
+                || `End ${otherDeviceCount} other device session(s)? This won't sign you out here.`,
+            confirmLabel: t('common.actions.signOut') || 'Sign out',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
             return;
         }
         setSigningOutAllDevices(true);
@@ -199,7 +224,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setSigningOutAllDevices(false);
         }
-    }, [activeSessionId, signingOutAllDevices, oxyServices, refetchDeviceSessions, t]);
+    }, [activeSessionId, signingOutAllDevices, deviceSessions, oxyServices, refetchDeviceSessions, t]);
 
     const performDownload = useCallback(
         async (format: 'json' | 'csv') => {
@@ -245,6 +270,9 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         [oxyServices, user, t],
     );
 
+    // Runs the actual deletion from inside the delete-account surface; it throws
+    // on failure so the surface can surface the error and stay open. Sign-out +
+    // close happen in `handleDeleteAccount` once the surface resolves `true`.
     const handleConfirmDelete = useCallback(
         async (confirmText: string) => {
             if (!user) {
@@ -258,32 +286,50 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 t('accountOverview.items.deleteAccount.success')
                 || 'Account deleted successfully',
             );
-            deleteAccountDialog.close();
-            await logout();
-            onClose?.();
         },
-        [oxyServices, user, logout, onClose, t, deleteAccountDialog],
+        [oxyServices, user, t],
     );
 
-    const handleDownloadData = useCallback(() => {
+    const handleDownloadData = useCallback(async () => {
         if (!user) {
             toast.error(
                 t('accountOverview.items.downloadData.error') || 'Service not available',
             );
             return;
         }
-        downloadDataDialog.open();
-    }, [user, t, downloadDataDialog]);
+        const format = await presentActionSheet<'json' | 'csv'>({
+            title: t('accountOverview.items.downloadData.confirmTitle') || 'Download account data',
+            message:
+                t('accountOverview.items.downloadData.confirmMessage')
+                || 'Choose the format for your account data export:',
+            options: [
+                { label: 'JSON', value: 'json' },
+                { label: 'CSV', value: 'csv' },
+            ],
+            cancelLabel: t('common.cancel') || 'Cancel',
+        });
+        if (format) {
+            await performDownload(format);
+        }
+    }, [user, t, performDownload]);
 
-    const handleDeleteAccount = useCallback(() => {
+    const handleDeleteAccount = useCallback(async () => {
         if (!user) {
             toast.error(
                 t('accountOverview.items.deleteAccount.error') || 'User not available',
             );
             return;
         }
-        deleteAccountDialog.open();
-    }, [user, t, deleteAccountDialog]);
+        const deleted = await presentDeleteAccount({
+            username: user.username || '',
+            onDelete: handleConfirmDelete,
+            t,
+        });
+        if (deleted) {
+            await logout();
+            onClose?.();
+        }
+    }, [user, t, handleConfirmDelete, logout, onClose]);
 
     if (!isAuthenticated) {
         return (
@@ -517,7 +563,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                 })
                                 || `End ${otherDevices.length} other device session(s)`
                             }
-                            onPress={() => signOutAllDevicesDialog.open()}
+                            onPress={handleSignOutAllDevices}
                             destructive
                             showChevron={false}
                             disabled={signingOutAllDevices}
@@ -875,7 +921,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.signOutOfThisAccount')
                             || 'Sign out of this account'
                         }
-                        onPress={() => signOutDialog.open()}
+                        onPress={handleSignOut}
                         destructive
                         showChevron={false}
                         disabled={signingOut}
@@ -899,90 +945,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.footerSpacer} />
             </ScrollView>
-
-            <Dialog
-                control={signOutDialog}
-                title={t('common.actions.signOut') || 'Sign out'}
-                description={
-                    t('common.confirms.signOut')
-                    || 'Are you sure you want to sign out?'
-                }
-                actions={[
-                    {
-                        label: t('common.actions.signOut') || 'Sign out',
-                        color: 'destructive',
-                        onPress: handleSignOut,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={signOutAllDevicesDialog}
-                title={
-                    t('manageAccount.confirms.signOutAllDevicesTitle')
-                    || 'Sign out of all other devices'
-                }
-                description={
-                    t('manageAccount.confirms.signOutAllDevices', {
-                        count: otherDevices.length,
-                    })
-                    || `End ${otherDevices.length} other device session(s)? This won't sign you out here.`
-                }
-                actions={[
-                    {
-                        label: t('common.actions.signOut') || 'Sign out',
-                        color: 'destructive',
-                        onPress: handleSignOutAllDevices,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={removeDeviceDialog}
-                title={
-                    t('manageAccount.confirms.removeDeviceTitle') || 'Remove device'
-                }
-                description={
-                    pendingRemoveDevice
-                        ? (t('manageAccount.confirms.removeDevice', {
-                            name: pendingRemoveDevice.deviceName,
-                        })
-                            || `Sign out from "${pendingRemoveDevice.deviceName}"?`)
-                        : ''
-                }
-                actions={[
-                    {
-                        label: t('common.remove') || 'Remove',
-                        color: 'destructive',
-                        onPress: handleRemoveDevice,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={downloadDataDialog}
-                title={
-                    t('accountOverview.items.downloadData.confirmTitle')
-                    || 'Download account data'
-                }
-                description={
-                    t('accountOverview.items.downloadData.confirmMessage')
-                    || 'Choose the format for your account data export:'
-                }
-                actions={[
-                    { label: 'JSON', onPress: () => performDownload('json') },
-                    { label: 'CSV', onPress: () => performDownload('csv') },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            {user ? (
-                <DeleteAccountModal
-                    control={deleteAccountDialog}
-                    username={user.username || ''}
-                    onDelete={handleConfirmDelete}
-                    t={t}
-                />
-            ) : null}
         </View>
     );
 };

@@ -973,7 +973,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentLanguage,
     activeSessionId,
     queryClient,
-    showBottomSheet: showBottomSheetForContext,
   });
 
   const { accounts, refreshAccounts, switchToAccount, createAccount: createAccountFn } = useOxyAccountGraph({
