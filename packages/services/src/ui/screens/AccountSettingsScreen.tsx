@@ -2,10 +2,7 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
   View,
-  ScrollView,
   ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
@@ -143,32 +140,22 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
 
   if (!id) {
     return (
-      <View className="flex-1 bg-bg">
+      <>
         <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-        <View className="flex-1 items-center justify-center px-screen-margin">
+        <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.settings.errors.missingAccount') || 'No account selected.'}
           </Text>
         </View>
-      </View>
+      </>
     );
   }
 
   return (
-    <View className="flex-1 bg-bg">
+    <>
       <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
           {accountQuery.isLoading ? (
             <View className="items-center py-space-32">
               <ActivityIndicator color={colors.primary} />
@@ -251,9 +238,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
               ) : null}
             </>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+      </View>
+    </>
   );
 };
 

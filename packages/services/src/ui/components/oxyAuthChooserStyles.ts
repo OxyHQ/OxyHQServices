@@ -4,7 +4,7 @@ import { StyleSheet } from 'react-native';
 const QR_PLATE_BG = '#FFFFFF';
 
 /**
- * Shared styles for `OxyAuthChooser`'s views. Extracted from `OxyAccountDialog`
+ * Shared styles for `OxyAuthChooser`'s views. Extracted from `OxyAccountDialogScreen`
  * so both the Dialog-wrapped host and any bare host (e.g. a future
  * auth.oxy.so hub page) render identically without duplicating a StyleSheet.
  */

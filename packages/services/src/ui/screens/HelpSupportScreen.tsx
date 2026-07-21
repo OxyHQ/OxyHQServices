@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, Linking } from 'react-native';
+import { View, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -55,7 +55,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     }, [t]);
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('help.title') || 'Help & Support'}
                 onBack={goBack || onClose}
@@ -63,8 +63,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* Help Options */}
                     <SettingsListGroup title={t('help.options') || 'Get Help'}>
                         <SettingsListItem
@@ -109,8 +108,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { View, ScrollView, Linking } from 'react-native';
+import { View, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -39,7 +39,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     };
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('userLinks.title')}
                 subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}
@@ -48,8 +48,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup title={t('userLinks.title')}>
                         {links.map((link) => (
                             <SettingsListItem
@@ -62,8 +61,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
                         ))}
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

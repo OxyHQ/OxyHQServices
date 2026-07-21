@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -61,7 +61,7 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     }, [rules]);
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('trust.rules.title') || 'Trust Rules'}
                 subtitle={t('trust.rules.subtitle') || 'How to earn reputation'}
@@ -79,7 +79,6 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                     {t('trust.rules.empty') || 'No rules found.'}
                 </Text>
             ) : (
-                <ScrollView className="flex-1">
                     <View className="px-screen-margin pb-space-24 pt-space-12">
                         {groupedRules.map(({ category, items }) => (
                             <SettingsListGroup
@@ -106,9 +105,8 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                             </SettingsListGroup>
                         ))}
                     </View>
-                </ScrollView>
             )}
-        </View>
+        </>
     );
 };
 

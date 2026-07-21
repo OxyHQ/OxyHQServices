@@ -1,5 +1,5 @@
 /**
- * OxyAccountDialog — the ONE unified account dialog BODY for `@oxyhq/services`.
+ * OxyAccountDialogScreen — the ONE unified account dialog BODY for `@oxyhq/services`.
  *
  * The header (title/subtitle per view + back button) around the headless chooser
  * logic, which lives in `OxyAuthChooser` — the account switcher, sign-in,
@@ -49,7 +49,7 @@ type Translate = ReturnType<typeof useI18n>['t'];
  * `@oxyhq/core`. Closing routes through `useOxy().closeAccountDialog`, which
  * dismisses the surface and runs its exit animation.
  */
-const OxyAccountDialog: React.FC = () => {
+const OxyAccountDialogScreen: React.FC = () => {
   const { accountDialogController: controller, closeAccountDialog } = useOxy();
   const theme = useTheme();
   const { t } = useI18n();
@@ -231,4 +231,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default OxyAccountDialog;
+export default OxyAccountDialogScreen;

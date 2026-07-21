@@ -2,10 +2,8 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
     View,
-    ScrollView,
     StyleSheet,
     ActivityIndicator,
-    RefreshControl,
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,7 +77,7 @@ const formatRelative = (dateString?: string): string => {
  * Replaces AccountOverview + AccountSettings + the per-account half of
  * SessionManagement. Lists ONLY the active user's profile, sessions on this
  * device, and security/destructive actions for THIS account. Multi-account
- * surface lives in the unified `OxyAccountDialog` — keep these concerns separate.
+ * surface lives in the unified `OxyAccountDialogScreen` — keep these concerns separate.
  */
 const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -114,7 +112,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         data: deviceSessions,
         isLoading: deviceSessionsLoading,
         refetch: refetchDeviceSessions,
-        isRefetching: deviceSessionsRefetching,
     } = useDeviceSessions({ enabled: isAuthenticated && !!activeSessionId });
 
     const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
@@ -333,33 +330,33 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('manageAccount.title') || 'Manage your Oxy Account'}
                     onBack={goBack || onClose}
                     elevation="subtle"
                 />
-                <View style={styles.center}>
+                <View className="items-center py-space-40">
                     <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
     if (userLoading && !user) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('manageAccount.title') || 'Manage your Oxy Account'}
                     onBack={goBack || onClose}
                     elevation="subtle"
                 />
-                <View style={styles.center}>
+                <View className="items-center py-space-40">
                     <ActivityIndicator color={bloomTheme.colors.primary} size="large" />
                 </View>
-            </View>
+            </>
         );
     }
 
@@ -367,23 +364,13 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const otherDevices = deviceRows.filter((d) => !d.isCurrent);
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('manageAccount.title') || 'Manage your Oxy Account'}
                 onBack={goBack || onClose}
                 elevation="subtle"
             />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-24"
-                refreshControl={
-                    <RefreshControl
-                        refreshing={deviceSessionsRefetching}
-                        onRefresh={refetchDeviceSessions}
-                        tintColor={bloomTheme.colors.primary}
-                    />
-                }
-            >
+            <View className="px-screen-margin pb-space-24">
                 {/* Profile card */}
                 <ProfileSummaryCard
                     displayName={displayName}
@@ -944,8 +931,8 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <View style={styles.footerSpacer} />
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 
@@ -954,11 +941,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 // spacing, radius, and typography roles live on Bloom components + NativeWind
 // token classes.
 const styles = StyleSheet.create({
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     footerSpacer: {
         height: 24,
     },

@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useMemo } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { getAccountDisplayName } from '@oxyhq/core';
@@ -51,17 +51,13 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
     const goToField = (fieldType: ProfileFieldType) => navigate?.('EditProfileField', { fieldType });
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('editProfile.title') || 'Edit Profile'}
                 onBack={goBack || onClose}
                 elevation="subtle"
             />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-24"
-                showsVerticalScrollIndicator={false}
-            >
+            <View className="px-screen-margin pb-space-24">
                 {/* Profile card */}
                 <ProfileSummaryCard
                     displayName={displayName}
@@ -141,8 +137,8 @@ const EditProfileScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, navigat
                         onPress={() => goToField('locations')}
                     />
                 </SettingsListGroup>
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

@@ -32,7 +32,7 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
  * real per-account name / email / avatar / color.
  *
  * This is a thin binding over the shared `AccountDialogController` in
- * `@oxyhq/core` (the SAME headless source the {@link OxyAccountDialog} renders),
+ * `@oxyhq/core` (the SAME headless source the {@link OxyAccountDialogScreen} renders),
  * so there is ONE projection (`projectSwitchableAccounts`) and one switch path
  * (`controller.switchTo`) across the whole SDK — the local duplicate projection
  * this hook used to own has been removed. Every switch routes through

@@ -3,8 +3,6 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Platform,
-    KeyboardAvoidingView,
-    ScrollView,
     Animated,
     StyleSheet,
 } from 'react-native';
@@ -564,10 +562,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <KeyboardAvoidingView
-            className="flex-1 bg-bg"
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <>
             <Header
                 title={t('feedback.title') || 'Feedback'}
                 onBack={goBack || onClose}
@@ -575,16 +570,11 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-24 pb-space-32"
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
+            <View className="px-screen-margin pt-space-24 pb-space-32">
                 {feedbackState.status !== 'success' ? renderProgress() : null}
                 {renderCurrentStep()}
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </View>
+        </>
     );
 };
 

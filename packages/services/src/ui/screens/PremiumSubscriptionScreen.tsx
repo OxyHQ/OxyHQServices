@@ -1003,7 +1003,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     if (loading) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('premium.title') || 'Oxy+ Subscriptions'}
                     subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
@@ -1012,18 +1012,18 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     showCloseButton={!!onClose}
                     elevation="subtle"
                 />
-                <View className="flex-1 items-center justify-center px-screen-margin">
+                <View className="items-center justify-center px-screen-margin py-space-40">
                     <ActivityIndicator size="large" color={colors.primary} />
                     <Text className="text-text-secondary text-base text-center mt-space-16">
                         {t('premium.loading') || 'Loading subscription plans...'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('premium.title') || 'Oxy+ Subscriptions'}
                 subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
@@ -1033,11 +1033,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-32"
-                showsVerticalScrollIndicator={false}
-            >
+            <View className="px-screen-margin pb-space-32">
                 <View className="pt-space-20">
                     {renderAppSwitcher()}
 
@@ -1111,8 +1107,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </BenefitList>
                     </View>
                 </View>
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import {
@@ -87,7 +87,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
                 onBack={goBack || onClose}
@@ -116,8 +116,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                 </SegmentedControl>
             </View>
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {isLoading ? (
                         <Loading
                             size="large"
@@ -165,8 +164,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         )
                     )}
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

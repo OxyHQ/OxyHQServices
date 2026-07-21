@@ -43,7 +43,7 @@ export type RouteName =
     | 'Notifications' // Per-channel notification preferences
     | 'ConnectedApps' // OAuth-authorized third-party apps the user can revoke
     | 'Preferences' // General user preferences (theme, reduce-motion, etc.)
-    | 'AccountDialog'; // Unified account switcher + sign-in surface (folded OxyAccountDialog body)
+    | 'AccountDialog'; // Unified account switcher + sign-in surface (OxyAccountDialogScreen body)
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
@@ -88,9 +88,9 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     ConnectedApps: () => require('../screens/ConnectedAppsScreen').default,
     Preferences: () => require('../screens/PreferencesScreen').default,
     // Unified account switcher + sign-in surface. Its body lives in the
-    // `OxyAccountDialog` component (folded from the standalone dialog); the
+    // `OxyAccountDialogScreen` component (folded from the standalone dialog); the
     // surface stack provides the Dialog chrome around it.
-    AccountDialog: () => require('../components/OxyAccountDialog').default,
+    AccountDialog: () => require('../components/OxyAccountDialogScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring

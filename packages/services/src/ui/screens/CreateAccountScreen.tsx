@@ -2,10 +2,7 @@ import type React from 'react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  Platform,
   ActivityIndicator,
-  ScrollView,
-  KeyboardAvoidingView,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -231,7 +228,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const title = t('accounts.create.title') || 'Create account';
 
   return (
-    <View className="flex-1 bg-bg">
+    <>
       <Header
         title={title}
         onBack={goBack}
@@ -241,17 +238,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
         elevation="subtle"
       />
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
           {/* Big Title */}
           <View className="gap-space-8">
             <H1 className="text-headerBold font-headerBold text-text">
@@ -419,9 +406,8 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
           >
             {title}
           </Button>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+        </View>
+    </>
   );
 };
 

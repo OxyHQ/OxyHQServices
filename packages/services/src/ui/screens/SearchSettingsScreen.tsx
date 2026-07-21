@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { Loading } from '@oxyhq/bloom/loading';
@@ -79,7 +79,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
                     onBack={goBack || onClose}
@@ -87,12 +87,12 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                     elevation="subtle"
                 />
                 <Loading size="large" color={bloomTheme.colors.text} />
-            </View>
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
                 onBack={goBack || onClose}
@@ -100,8 +100,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* SafeSearch */}
                     <SettingsListGroup title={t('searchSettings.safeSearch.title') || 'SafeSearch'}>
                         <SettingsListItem
@@ -146,8 +145,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

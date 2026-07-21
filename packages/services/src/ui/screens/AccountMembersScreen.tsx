@@ -2,11 +2,8 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
   View,
-  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -202,32 +199,22 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
 
   if (!id) {
     return (
-      <View className="flex-1 bg-bg">
+      <>
         <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-        <View className="flex-1 items-center justify-center px-screen-margin">
+        <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.members.errors.missingAccount') || 'No account selected.'}
           </Text>
         </View>
-      </View>
+      </>
     );
   }
 
   return (
-    <View className="flex-1 bg-bg">
+    <>
       <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
           <View className="gap-space-8">
             <H1 className="text-headerBold font-headerBold text-text">{title}</H1>
             <Text className="text-body font-body text-text-secondary">
@@ -434,9 +421,8 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
               )}
             </View>
           ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </View>
+      </View>
+    </>
   );
 };
 

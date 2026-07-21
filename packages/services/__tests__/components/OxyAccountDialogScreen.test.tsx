@@ -1,9 +1,9 @@
 /**
- * `OxyAccountDialog` — the Bloom `<Dialog>` chrome around `OxyAuthChooser`.
+ * `OxyAccountDialogScreen` — the Bloom `<Dialog>` chrome around `OxyAuthChooser`.
  *
  * `OxyAuthChooser` (mocked here — its own behavior is unit-tested in
  * `OxyAuthChooser.test.tsx`) owns every view's actual content; this file only
- * covers what `OxyAccountDialog` itself is responsible for: the header
+ * covers what `OxyAccountDialogScreen` itself is responsible for: the header
  * title/subtitle per `snapshot.view`, and the back-button visibility.
  */
 
@@ -54,16 +54,16 @@ jest.mock('../../src/ui/components/OxyAuthChooser', () => ({
 }));
 
 // eslint-disable-next-line import/first
-import OxyAccountDialog from '../../src/ui/components/OxyAccountDialog';
+import OxyAccountDialogScreen from '../../src/ui/components/OxyAccountDialogScreen';
 
-describe('OxyAccountDialog — chrome', () => {
+describe('OxyAccountDialogScreen — chrome', () => {
   beforeEach(() => {
     snapshot = makeSnapshot();
     jest.clearAllMocks();
   });
 
   it('shows the accounts title with no back button in the accounts view', () => {
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     expect(screen.getByText('Your accounts')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
@@ -71,28 +71,28 @@ describe('OxyAccountDialog — chrome', () => {
 
   it('shows the create-account title in the signup view', () => {
     snapshot = makeSnapshot({ view: 'signup' });
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     expect(screen.getByText('Create your account')).toBeTruthy();
   });
 
   it('shows a back button in the qr view', () => {
     snapshot = makeSnapshot({ view: 'qr' });
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
   it('shows a back button in the signup view', () => {
     snapshot = makeSnapshot({ view: 'signup' });
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
   });
 
   it('returns to the accounts view on back', () => {
     snapshot = makeSnapshot({ view: 'qr' });
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(setView).toHaveBeenCalledWith('accounts');
@@ -100,7 +100,7 @@ describe('OxyAccountDialog — chrome', () => {
 
   it('hides the back button in the sign-in entry with no accounts yet', () => {
     snapshot = makeSnapshot({ view: 'add', accounts: [] });
-    render(<OxyAccountDialog />);
+    render(<OxyAccountDialogScreen />);
 
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
   });

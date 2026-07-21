@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -205,7 +205,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('privacySettings.title') || 'Privacy Settings'}
                     onBack={goBack || onClose}
@@ -213,12 +213,12 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     elevation="subtle"
                 />
                 <Loading size="large" color={bloomTheme.colors.text} />
-            </View>
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('privacySettings.title') || 'Privacy Settings'}
                 onBack={goBack || onClose}
@@ -226,8 +226,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* Account Privacy */}
                     <SettingsListGroup title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'}>
                         <SettingsListItem
@@ -423,8 +422,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         )}
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

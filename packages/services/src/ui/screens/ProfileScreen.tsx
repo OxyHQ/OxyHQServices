@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
@@ -142,7 +142,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (isLoading) {
         return (
-            <View style={styles.centerContainer} className="bg-bg">
+            <View className="items-center py-space-40">
                 <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
@@ -150,7 +150,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (error) {
         return (
-            <View style={styles.container} className="bg-bg">
+            <>
                 <View style={styles.errorHeader} className="px-screen-margin py-space-12 border-b border-border">
                     {goBack && (
                         <Button
@@ -165,14 +165,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         {t('profile.errorTitle') || 'Profile Error'}
                     </H2>
                 </View>
-                <View style={styles.errorContent} className="px-space-32 gap-space-12">
+                <View style={styles.errorContent} className="px-space-32 gap-space-12 py-space-40">
                     <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
                     <Text style={styles.errorText} className="text-text">{error}</Text>
                     <Text style={styles.errorSubtext} className="text-text-secondary">
                         {t('profile.errorSubtext') || "This could happen if the user doesn't exist or the profile service is unavailable."}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
@@ -192,8 +192,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     })();
 
     return (
-        <View style={styles.container} className="bg-bg">
-            <ScrollView style={styles.flex} contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.scrollContainer}>
                 {/* Banner Image */}
                 <View style={styles.bannerContainer} className="bg-fill-brand/20">
                     <View style={styles.flex} className="bg-fill-brand" />
@@ -326,7 +325,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         <Text style={styles.statLabel} className="text-text-secondary">{t('profile.following') || 'Following'}</Text>
                     </View>
                 </View>
-            </ScrollView>
         </View>
     );
 };
@@ -335,9 +333,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 // that no token class can express. Colors, spacing, radius, and typography roles
 // live on Bloom components + NativeWind token classes.
 const styles = StyleSheet.create({
-    container: { flex: 1 },
     flex: { flex: 1 },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
     bannerContainer: { height: BANNER_HEIGHT, position: 'relative', overflow: 'hidden' },
     avatarRow: {
@@ -366,7 +362,7 @@ const styles = StyleSheet.create({
     // Error state layout
     errorHeader: { flexDirection: 'row', alignItems: 'center', gap: 16 },
     errorTitle: { fontSize: 20 },
-    errorContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    errorContent: { justifyContent: 'center', alignItems: 'center' },
     errorText: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
     errorSubtext: { fontSize: 14, textAlign: 'center' },
 });

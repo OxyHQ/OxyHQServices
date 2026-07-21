@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useMemo, useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
 import { Ionicons } from '@expo/vector-icons';
@@ -360,19 +360,19 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
     if (!isAuthenticated) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header
                     title={t('trust.rewards.title') || 'Trust Rewards'}
                     subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
                     onBack={goBack}
                     elevation="subtle"
                 />
-                <View className="flex-1 items-center justify-center px-screen-margin">
+                <View className="items-center justify-center px-screen-margin py-space-40">
                     <Text className="text-text text-base text-center">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
@@ -381,18 +381,14 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
         : 0;
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('trust.rewards.title') || 'Trust Rewards'}
                 subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
                 onBack={goBack}
                 elevation="subtle"
             />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-20 pb-space-40"
-                showsVerticalScrollIndicator={false}
-            >
+            <View className="px-screen-margin pt-space-20 pb-space-40">
                 {/* Stats Header */}
                 <View className="bg-fill rounded-radius-20 p-space-20 mb-space-24">
                     <View className="flex-row justify-between items-center mb-space-16">
@@ -458,8 +454,8 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                         </View>
                     </>
                 )}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

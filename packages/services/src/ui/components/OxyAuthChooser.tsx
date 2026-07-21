@@ -4,8 +4,8 @@
  *
  * A thin React Native binding over the headless `AccountDialogController` in
  * `@oxyhq/core` (bound via `useSyncExternalStore`) — the same data/state
- * machine {@link OxyAccountDialog} renders, extracted so it can be mounted in
- * TWO places: wrapped in Bloom's `<Dialog>` by `OxyAccountDialog` (the normal
+ * machine {@link OxyAccountDialogScreen} renders, extracted so it can be mounted in
+ * TWO places: wrapped in Bloom's `<Dialog>` by `OxyAccountDialogScreen` (the normal
  * in-app surface), and mounted bare by a future auth.oxy.so hub page for the
  * cross-origin passkey popup (b2) — same chooser, two hosts, two completion
  * strategies via the `onComplete` prop. Neither host duplicates view logic.
@@ -122,7 +122,7 @@ type Theme = ReturnType<typeof useTheme>;
 type Translate = ReturnType<typeof useI18n>['t'];
 
 /**
- * The account switcher + sign-in/sign-up chooser. Mounted by `OxyAccountDialog`
+ * The account switcher + sign-in/sign-up chooser. Mounted by `OxyAccountDialogScreen`
  * (wrapped in Bloom's `<Dialog>`) today; mountable bare by any future host that
  * supplies its own `onComplete`.
  */

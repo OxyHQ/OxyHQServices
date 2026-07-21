@@ -1,13 +1,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
     View,
-    Platform,
     Image,
     StyleSheet,
-    ScrollView,
     TouchableOpacity,
     type TextInputProps,
-    KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
@@ -569,10 +566,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     };
 
     return (
-        <KeyboardAvoidingView
-            className="flex-1 bg-bg"
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <>
             <Header
                 title=""
                 subtitle=""
@@ -587,12 +581,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                 }]}
             />
 
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
+            <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
                 {/* Big Title */}
                 <View className="gap-space-8">
                     <H1 className="text-headerBold font-headerBold text-text">
@@ -609,8 +598,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                 <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
                     {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
                 </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </View>
+        </>
     );
 };
 

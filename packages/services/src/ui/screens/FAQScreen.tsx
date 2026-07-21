@@ -4,7 +4,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { SearchInput } from '@oxyhq/bloom/search-input';
+import { Search } from '@oxyhq/bloom/search';
 import { Button } from '@oxyhq/bloom/button';
 import {
     Accordion,
@@ -96,7 +96,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
     );
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('faq.title') || 'FAQ'}
                 onBack={goBack || onClose}
@@ -106,7 +106,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 
             {/* Search bar */}
             <View className="px-screen-margin py-space-12">
-                <SearchInput
+                <Search
                     label={t('faq.searchPlaceholder') || 'Search FAQs...'}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -147,7 +147,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                 </ScrollView>
             )}
 
-            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
+            <View className="px-screen-margin">
                 {isLoading ? (
                     <Loading
                         size="large"
@@ -188,8 +188,8 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         ))}
                     </Accordion>
                 )}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

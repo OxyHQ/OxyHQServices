@@ -15,7 +15,7 @@
  * neutral loading state so the signed-out wall never flashes before the
  * device-first cold boot concludes (the documented cold-boot race).
  *
- * Styling follows the sibling `OxyAccountDialog`/`OxySignInButton` pattern —
+ * Styling follows the sibling `OxyAccountDialogScreen`/`OxySignInButton` pattern —
  * `useTheme()` + `StyleSheet` (NOT NativeWind), so the gate renders correctly in
  * EVERY consumer, including apps that do not run NativeWind (e.g. the accounts
  * app).

@@ -1,5 +1,5 @@
 /**
- * Imperative, outside-React entry points for the unified `OxyAccountDialog`.
+ * Imperative, outside-React entry points for the unified `OxyAccountDialogScreen`.
  *
  * These delegate to the live handles the mounted `OxyProvider` registers via
  * {@link registerAccountDialogControls}. Under the hood `open`/`close` present

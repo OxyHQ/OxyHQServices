@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
-import { SearchInput } from '@oxyhq/bloom/search-input';
+import { Search } from '@oxyhq/bloom/search';
 import {
     Accordion,
     AccordionItem,
@@ -18,7 +18,7 @@ const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const
  * TrustFAQScreen
  *
  * Frequently asked questions about Oxy Trust, rendered with the shared Bloom
- * Accordion (single-expand) + SearchInput. Styling is centralized Bloom token
+ * Accordion (single-expand) + Search. Styling is centralized Bloom token
  * classes; the Bloom Accordion owns its own expand/collapse animation, so no
  * `LayoutAnimation` is used here.
  */
@@ -51,7 +51,7 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     );
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('trust.faq.title') || 'Trust FAQ'}
                 subtitle={t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust'}
@@ -61,7 +61,7 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
             />
 
             <View className="px-screen-margin pt-space-20 pb-space-12">
-                <SearchInput
+                <Search
                     label={t('trust.faq.search') || 'Search FAQ...'}
                     value={search}
                     onChangeText={setSearch}
@@ -70,7 +70,7 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                 />
             </View>
 
-            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
+            <View className="px-screen-margin">
                 {filteredFaqs.length === 0 ? (
                     <Text className="text-text-secondary text-center p-space-40">
                         {t('trust.faq.noResults', { query: search }) ||
@@ -96,8 +96,8 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                         ))}
                     </Accordion>
                 )}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

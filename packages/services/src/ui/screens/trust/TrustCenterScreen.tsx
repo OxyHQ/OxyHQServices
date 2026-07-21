@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import type { ReputationTransaction, TrustTier } from '@oxyhq/core';
 import { Ionicons } from '@expo/vector-icons';
 import { Chip } from '@oxyhq/bloom/chip';
@@ -64,35 +64,32 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header title={title} onBack={goBack || onClose} elevation="subtle" />
-                <View style={styles.center}>
+                <View className="items-center py-space-40">
                     <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
     if (isLoading) {
         return (
-            <View className="flex-1 bg-bg">
+            <>
                 <Header title={title} onBack={goBack || onClose} elevation="subtle" />
-                <View style={styles.center}>
+                <View className="items-center py-space-40">
                     <Loading size="large" color={primaryColor} />
                 </View>
-            </View>
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header title={title} onBack={goBack || onClose} elevation="subtle" />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-24"
-            >
+            <View className="px-screen-margin pb-space-24">
                 {/* Balance hero card */}
                 <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
                     <H1 style={{ color: primaryColor }}>{reputationTotal ?? 0}</H1>
@@ -250,20 +247,14 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
                         {error}
                     </Text>
                 ) : null}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 
-// Layout-only styles: flex centering for the empty/loading branches and the
-// info caption's measured max width. No color, spacing, radius, or typography
-// roles live here — those use Bloom token classes.
+// Layout-only styles: the info caption's measured max width. No color, spacing,
+// radius, or typography roles live here — those use Bloom token classes.
 const styles = StyleSheet.create({
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     infoText: {
         maxWidth: 320,
     },

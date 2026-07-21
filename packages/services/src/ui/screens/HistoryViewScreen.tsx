@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import Header from '../components/Header';
@@ -103,10 +103,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     };
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header title={t('history.title') || 'History'} onBack={goBack || onClose} variant="minimal" elevation="subtle" />
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup title={t('history.actions') || 'Actions'}>
                         <SettingsListItem
                             icon={<SettingsIcon name="clock-outline" color={bloomTheme.colors.warning} />}
@@ -136,8 +135,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
                         ))}
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

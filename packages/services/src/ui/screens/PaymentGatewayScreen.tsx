@@ -2,7 +2,6 @@ import type React from 'react';
 import { useState, useRef, useMemo, useCallback } from 'react';
 import {
     View,
-    ScrollView,
     Animated,
     Platform,
     useWindowDimensions,
@@ -179,7 +178,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     // Validate amount
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
         return (
-            <View className="flex-1 bg-bg items-center justify-center px-screen-margin gap-space-24">
+            <View className="items-center justify-center px-screen-margin gap-space-24 py-space-40">
                 <Ionicons name="alert-circle-outline" size={48} color={bloomTheme.colors.error} />
                 <H4 className="text-text text-center">
                     {t('payment.errors.invalidAmount')}
@@ -278,14 +277,8 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     return (
-        <View className="flex-1 bg-bg">
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="p-space-16"
-                showsVerticalScrollIndicator={false}
-            >
-                {renderCurrentStep()}
-            </ScrollView>
+        <View className="p-space-16">
+            {renderCurrentStep()}
         </View>
     );
 };

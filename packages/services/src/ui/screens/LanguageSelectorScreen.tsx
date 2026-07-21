@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import { H1, Text } from '@oxyhq/bloom/typography';
-import { SearchInput } from '@oxyhq/bloom/search-input';
+import { Search } from '@oxyhq/bloom/search';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
     SUPPORTED_LANGUAGES,
@@ -159,7 +159,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     );
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title=""
                 subtitle=""
@@ -168,13 +168,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 elevation="none"
             />
 
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-24 pb-space-24"
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
-                <View className="mb-space-16">
+            <View className="pt-space-24 pb-space-24">
+                <View className="px-screen-margin mb-space-16">
                     <H1 className="text-text" style={styles.bigTitle}>
                         {t('language.title')}
                     </H1>
@@ -185,8 +180,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                     ) : null}
                 </View>
 
-                <View className="mb-space-16">
-                    <SearchInput
+                <View className="px-screen-margin mb-space-16">
+                    <Search
                         value={query}
                         onChangeText={setQuery}
                         onClearText={() => setQuery('')}
@@ -263,8 +258,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                         />
                     ))}
                 </SettingsListGroup>
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

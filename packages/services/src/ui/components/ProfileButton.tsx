@@ -65,7 +65,7 @@ export interface ProfileButtonProps {
     onNavigateProfile?: () => void;
     /**
      * Retained for source compatibility. The trigger now opens the unified
-     * `OxyAccountDialog` (a centered / bottom-sheet modal) rather than an
+     * `OxyAccountDialogScreen` (a centered / bottom-sheet modal) rather than an
      * anchored popover, so popover placement no longer applies.
      */
     placement?: 'up' | 'down' | 'auto';
@@ -82,7 +82,7 @@ export interface ProfileButtonProps {
 /**
  * Self-contained sidebar account trigger, modeled on Bluesky's ProfileCard and
  * the Oxy inbox's `MailboxDrawer` footer. Pressing it opens the unified
- * {@link OxyAccountDialog} — the single account switcher + sign-in surface — via
+ * {@link OxyAccountDialogScreen} — the single account switcher + sign-in surface — via
  * `useOxy().openAccountDialog`.
  *
  * Three auth states from {@link useAuth}:

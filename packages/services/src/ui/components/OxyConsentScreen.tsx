@@ -14,7 +14,7 @@
  * and behavioral lockstep.
  *
  * Theming is `useTheme()` + a `StyleSheet` (the same approach as
- * {@link OxyAccountDialog}) so it renders correctly in EVERY consumer, including
+ * {@link OxyAccountDialogScreen}) so it renders correctly in EVERY consumer, including
  * apps that do not use NativeWind. Copy is localized through {@link useI18n}
  * under the `consent.*` keys.
  */

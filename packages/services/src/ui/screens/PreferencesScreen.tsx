@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AccessibilityInfo, Platform, View, ScrollView } from 'react-native';
+import { AccessibilityInfo, Platform, View } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -120,15 +120,14 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
     const isSaving = updateMutation.isPending;
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('preferences.title') || 'Preferences'}
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup
                         title={t('preferences.sections.appearance') || 'Appearance'}
                     >
@@ -233,8 +232,7 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
                         </SettingsListGroup>
                     )}
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

@@ -5,7 +5,6 @@ import {
     Platform,
     Dimensions,
     Clipboard,
-    ScrollView,
     ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
@@ -148,7 +147,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('appInfo.title')}
                 onBack={goBack || onClose}
@@ -156,8 +155,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-                <View className="px-screen-margin py-space-16 pb-space-24">
+            <View className="px-screen-margin py-space-16 pb-space-24">
                     {/* Package Information */}
                     <SettingsListGroup title={t('appInfo.sections.package')}>
                         <SettingsListItem
@@ -353,8 +351,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

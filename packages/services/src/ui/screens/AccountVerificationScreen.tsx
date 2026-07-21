@@ -1,10 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
     View,
-    ScrollView,
     StyleSheet,
-    Platform,
-    KeyboardAvoidingView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
@@ -78,10 +75,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const canSubmit = Boolean(reason.trim()) && !isSubmitting;
 
     return (
-        <KeyboardAvoidingView
-            className="flex-1 bg-bg"
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <>
             <Header
                 title={t('accountVerification.title') || 'Account Verification'}
                 onBack={goBack || onClose}
@@ -89,12 +83,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView
-                className="flex-1 px-screen-margin"
-                showsVerticalScrollIndicator={false}
-                contentContainerClassName="pb-space-32"
-                keyboardShouldPersistTaps="handled"
-            >
+            <View className="px-screen-margin pb-space-32">
                 {/* Hero */}
                 <View className="items-center py-space-24 gap-space-12">
                     <IconCircle icon={Icons.Verified_Stroke2_Corner2_Rounded} />
@@ -184,8 +173,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
                 </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </View>
+        </>
     );
 };
 

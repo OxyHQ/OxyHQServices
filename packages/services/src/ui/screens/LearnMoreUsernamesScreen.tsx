@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Text } from '@oxyhq/bloom/typography';
 import { IconCircle } from '@oxyhq/bloom/icon-circle';
@@ -79,18 +79,14 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
     );
 
     return (
-        <View className="flex-1 bg-bg">
+        <>
             <Header
                 title={t('learnMoreUsernames.introTitle')}
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
-            <ScrollView
-                className="flex-1 px-screen-margin"
-                showsVerticalScrollIndicator={false}
-                contentContainerClassName="pb-space-32"
-            >
+            <View className="px-screen-margin pb-space-32">
                 <View className="items-center py-space-24 gap-space-12">
                     <IconCircle icon={Icons.At_Stroke2_Corner0_Rounded} />
                     <Text className="font-sans text-body text-text-secondary text-center">
@@ -132,8 +128,8 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                 <Text className="font-sans text-caption text-text-tertiary text-center mt-space-16">
                     {t('learnMoreUsernames.footer')}
                 </Text>
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 
