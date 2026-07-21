@@ -652,36 +652,36 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </View>
       )}
 
-      {isLoading && messages.length === 0 && (
+      {isLoading && messages.length === 0 ? (
         <View style={styles.loadingContainer}>
           <Loading />
         </View>
+      ) : (
+        <View style={styles.listContainer}>
+          <FlashList
+            data={listItems}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            getItemType={getItemType}
+            ItemSeparatorComponent={renderSeparator}
+            ListEmptyComponent={renderEmpty}
+            ListFooterComponent={renderFooter}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.3}
+            extraData={selectedMessageIds}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefetching && !isFetchingNextPage}
+                onRefresh={handleRefresh}
+                tintColor={colors.primary}
+                colors={[colors.primary]}
+              />
+            }
+            contentContainerStyle={listItems.length === 0 ? styles.emptyListContent : undefined}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
       )}
-
-      <View style={styles.listContainer}>
-        <FlashList
-          data={listItems}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          getItemType={getItemType}
-          ItemSeparatorComponent={renderSeparator}
-          ListEmptyComponent={renderEmpty}
-          ListFooterComponent={renderFooter}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.3}
-          extraData={selectedMessageIds}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching && !isFetchingNextPage}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-          contentContainerStyle={listItems.length === 0 ? styles.emptyListContent : undefined}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
 
       {isAuthenticated && !isSelectionMode && (
         <TouchableOpacity

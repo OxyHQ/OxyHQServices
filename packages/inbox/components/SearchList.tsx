@@ -503,28 +503,28 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         </View>
       )}
 
-      {searching && (
+      {searching ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
+      ) : (
+        <FlatList
+          data={results}
+          renderItem={renderItem}
+          keyExtractor={(item) => item._id}
+          ListEmptyComponent={renderEmpty}
+          contentContainerStyle={{
+            ...(results.length === 0 ? styles.emptyListContent : null),
+            // NativeTabs adds the bottom safe-area inset on Android already; iOS / web
+            // get it here so the final result row never sits under the home indicator.
+            paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom,
+          }}
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => (
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+          )}
+        />
       )}
-
-      <FlatList
-        data={results}
-        renderItem={renderItem}
-        keyExtractor={(item) => item._id}
-        ListEmptyComponent={renderEmpty}
-        contentContainerStyle={{
-          ...(results.length === 0 ? styles.emptyListContent : null),
-          // NativeTabs adds the bottom safe-area inset on Android already; iOS / web
-          // get it here so the final result row never sits under the home indicator.
-          paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom,
-        }}
-        showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => (
-          <View style={[styles.separator, { backgroundColor: colors.border }]} />
-        )}
-      />
     </View>
   );
 }
@@ -579,6 +579,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   loadingContainer: {
+    flex: 1,
     paddingTop: 40,
     alignItems: 'center',
   },

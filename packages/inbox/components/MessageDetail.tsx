@@ -124,7 +124,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const { width } = useWindowDimensions();
   const colors = useColors();
 
-  const { data: currentMessage, isLoading } = useMessage(messageId);
+  const { data: currentMessage, isLoading, isError, refetch } = useMessage(messageId);
   const { data: threadMessages = [] } = useThread(messageId);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
@@ -477,36 +477,70 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
     return labels.filter((l) => currentMessage.labels.includes(l.name));
   }, [currentMessage, labels]);
 
-  if (isLoading || !currentMessage) {
-    return (
+  const shellStyle = [
+    styles.container,
+    { backgroundColor: colors.background },
+    mode === 'standalone' && { paddingTop: insets.top },
+  ];
+
+  const standaloneToolbar =
+    mode === 'standalone' ? (
       <View
         style={[
-          styles.container,
-          { backgroundColor: colors.background },
-          mode === 'standalone' && { paddingTop: insets.top },
+          styles.toolbar,
+          {
+            paddingLeft: 4 + insets.left,
+            paddingRight: 4 + insets.right,
+          },
         ]}
       >
-        {mode === 'standalone' && (
-          <View
-            style={[
-              styles.toolbar,
-              {
-                paddingLeft: 4 + insets.left,
-                paddingRight: 4 + insets.right,
-              },
-            ]}
-          >
-            <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
+        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+          )}
+        </TouchableOpacity>
+      </View>
+    ) : null;
+
+  if (isLoading) {
+    return (
+      <View style={shellStyle}>
+        {standaloneToolbar}
         <View style={styles.loadingContainer}>
           <Loading />
+        </View>
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={shellStyle}>
+        {standaloneToolbar}
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load this message</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
+            Check your connection and try again.
+          </Text>
+          <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
+            <Text style={[styles.retryButtonText, { color: colors.primary }]}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (!currentMessage) {
+    return (
+      <View style={shellStyle}>
+        {standaloneToolbar}
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Message not found</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
+            This message may have been deleted or moved.
+          </Text>
         </View>
       </View>
     );
@@ -1130,6 +1164,26 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   body: {
     flex: 1,
