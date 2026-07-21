@@ -145,4 +145,36 @@ function createOxyMetroConfig(projectRoot, options = {}) {
   });
 }
 
-module.exports = { createOxyMetroConfig };
+/**
+ * Wraps a NativeWind Metro config with the Bloom single-instance rewrite and the
+ * web `ws` shim. In hoisted monorepos the same Bloom version is duplicated under
+ * root `node_modules` and each app's local `node_modules`; two copies mean two
+ * React Context objects, so `<BloomThemeProvider>` (services) does not satisfy
+ * `useTheme()` (app code) and the app crashes.
+ */
+function withBloomSingleInstance(nativeWindConfig, projectRoot) {
+  const parentResolveRequest = nativeWindConfig.resolver.resolveRequest;
+  const bloomOrigin = path.join(projectRoot, 'package.json');
+
+  nativeWindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
+    if (platform === 'web' && (moduleName === 'ws' || moduleName === 'node:ws')) {
+      return { type: 'empty' };
+    }
+
+    const resolveContext =
+      moduleName === '@oxyhq/bloom' || moduleName.startsWith('@oxyhq/bloom/')
+        ? { ...context, originModulePath: bloomOrigin }
+        : context;
+
+    return parentResolveRequest(resolveContext, moduleName, platform);
+  };
+
+  return nativeWindConfig;
+}
+
+function createOxyMetroConfigWithBloom(projectRoot, options = {}) {
+  const nativeWindConfig = createOxyMetroConfig(projectRoot, options);
+  return withBloomSingleInstance(nativeWindConfig, projectRoot);
+}
+
+module.exports = { createOxyMetroConfig: createOxyMetroConfigWithBloom, withBloomSingleInstance };

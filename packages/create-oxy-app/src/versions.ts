@@ -9,9 +9,9 @@
  */
 export const VERSIONS = {
   // --- Oxy SDK ---
-  oxyServices: '^21.0.0', // @oxyhq/services
-  oxyCore: '^11.0.0', // @oxyhq/core
-  oxyBloom: '^0.30.8', // @oxyhq/bloom
+  oxyServices: '^22.0.0', // @oxyhq/services
+  oxyCore: '^12.0.0', // @oxyhq/core
+  oxyBloom: '^0.44.1', // @oxyhq/bloom
   oxyContracts: '^0.14.1', // @oxyhq/contracts
   oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
 
@@ -55,8 +55,8 @@ export const VERSIONS = {
 
   // --- Styling (NativeWind 5 preview + Tailwind v4) ---
   nativewind: '5.0.0-preview.3',
-  tailwindcss: '4.2.2',
-  tailwindPostcss: '4.2.2', // @tailwindcss/postcss — runs Tailwind over global.css on the web build
+  tailwindcss: '4.3.2',
+  tailwindPostcss: '4.3.2', // @tailwindcss/postcss — runs Tailwind over global.css on the web build
   reactNativeCss: '^3.0.6', // react-native-css (NativeWind 5 runtime)
 
   // --- Data / realtime ---

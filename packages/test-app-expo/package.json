@@ -60,7 +60,7 @@
     "socket.io-client": "^4.8.1",
     "sonner": "^2.0.7",
     "sonner-native": "^0.26.4",
-    "tailwindcss": "4.2.2",
+    "tailwindcss": "4.3.2",
     "tailwindcss-animate": "^1.0.7",
     "whatwg-fetch": "^3.6.20",
     "zustand": "^5.0.14"

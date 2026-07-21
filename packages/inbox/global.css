@@ -1,14 +1,23 @@
 /* Shared Oxy Tailwind v4 + NativeWind + Bloom base (imports + SDK @source globs).
-   See @oxyhq/app-preset/base.css. App-specific globs and theme follow below. */
+   See @oxyhq/app-preset/base.css. App-specific globs and theme follow below.
+
+   Wiring this file (via `input: './global.css'` in metro.config.js) is what
+   compiles the NativeWind/Tailwind utility stylesheet for the web build. Without
+   it, react-native-css still puts `className` tokens on the DOM but NO backing
+   `.flex-row` / `.bg-primary` / `.gap-*` rules exist, so every className layout
+   utility used by @oxyhq/services' screens (the file-management cluster, etc.)
+   is inert on web and react-native-web's base View reset shows through
+   (flex-direction:column, padding:0). */
 @import "@oxyhq/app-preset/base.css";
 
 @source "./app/**/*.{js,jsx,ts,tsx}";
 @source "./components/**/*.{js,jsx,ts,tsx}";
+@source "./contexts/**/*.{js,jsx,ts,tsx}";
+@source "./hooks/**/*.{js,jsx,ts,tsx}";
 @source "./lib/**/*.{js,jsx,ts,tsx}";
+@source "./constants/**/*.{js,jsx,ts,tsx}";
+@source "./utils/**/*.{js,jsx,ts,tsx}";
 
-/* App base color tokens — registers the color KEYS so utilities like
-   `bg-background` / `text-foreground` emit at build time. BloomThemeProvider
-   writes the real var values to the document at runtime. */
 @theme {
   --color-border: var(--border);
   --color-input: var(--input);
@@ -23,8 +32,6 @@
   --color-card: var(--card);
 }
 
-/* :root fallbacks so the build's color vars are non-empty before the theme
-   provider hydrates. BloomThemeProvider overrides these at runtime. */
 @layer base {
   :root {
     --background: #ffffff;

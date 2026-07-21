@@ -1,3 +1,7 @@
+// Tailwind v4 + NativeWind entry — compiles className utilities for web so
+// @oxyhq/services screens (FileManagement, etc.) render layout correctly.
+import '../global.css';
+
 import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';

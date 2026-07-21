@@ -1,25 +1,14 @@
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/preflight.css" layer(base);
-@import "tailwindcss/utilities.css";
-@import "nativewind/theme";
-
-/* Bloom canonical design tokens (radius scale, spacing, typography, colour
-   aliases). Single source of truth = `@oxyhq/bloom/design-tokens` theme.css, so
-   Bloom components' className utilities (e.g. `rounded-radius-28`, `bg-surface`)
-   resolve. Imported instead of hand-copied so it stays in sync with the package. */
-@import "@oxyhq/bloom/design-tokens/theme.css";
+/* Shared Oxy Tailwind v4 + NativeWind + Bloom base (imports + SDK @source globs).
+   See @oxyhq/app-preset/base.css. App-specific globs and theme follow below. */
+@import "@oxyhq/app-preset/base.css";
 
 @source "./app/**/*.{js,jsx,ts,tsx}";
 @source "./components/**/*.{js,jsx,ts,tsx}";
 @source "./hooks/**/*.{js,jsx,ts,tsx}";
 @source "./lib/**/*.{js,jsx,ts,tsx}";
 @source "./constants/**/*.{js,jsx,ts,tsx}";
-@source "../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
-@source "../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
+@source "./utils/**/*.{js,jsx,ts,tsx}";
 
-/* Colour utilities (`bg-card`, `bg-primary`, `text-muted-foreground`, …) come
-   from Bloom's imported theme.css — the single source of truth — so they are
-   NOT re-declared here (per-app duplication is what let `--color-card` drift). */
 @theme {
   --font-sans: Inter, sans-serif;
 
