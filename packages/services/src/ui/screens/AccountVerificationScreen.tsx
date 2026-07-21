@@ -7,7 +7,8 @@ import {
     KeyboardAvoidingView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H4, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
@@ -31,16 +32,6 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const [reason, setReason] = useState('');
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [successMessage, setSuccessMessage] = useState('');
-
-    // Dialog controls
-    const successDialog = useDialogControl();
-
-    const handleSuccessAcknowledged = useCallback(() => {
-        setReason('');
-        setEvidence('');
-        goBack?.();
-    }, [goBack]);
 
     const handleSubmit = useCallback(async () => {
         if (!reason.trim()) {
@@ -60,10 +51,18 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 evidence.trim() || undefined
             );
 
-            setSuccessMessage(
-                t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`
-            );
-            successDialog.open();
+            // Acknowledgement surface — dismiss (button OR backdrop) resets and
+            // returns; there is no negative action.
+            await surfaces.confirm({
+                title: t('accountVerification.successTitle') || 'Request Submitted',
+                message:
+                    t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`,
+                confirmLabel: t('accountVerification.ok') || 'OK',
+                hideCancel: true,
+            });
+            setReason('');
+            setEvidence('');
+            goBack?.();
         } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to submit verification request:', error);
@@ -74,7 +73,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [reason, evidence, oxyServices, t, successDialog]);
+    }, [reason, evidence, oxyServices, t, goBack]);
 
     const canSubmit = Boolean(reason.trim()) && !isSubmitting;
 
@@ -186,18 +185,6 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </View>
             </ScrollView>
-
-            <Dialog
-                control={successDialog}
-                title={t('accountVerification.successTitle') || 'Request Submitted'}
-                description={successMessage}
-                actions={[
-                    {
-                        label: t('accountVerification.ok') || 'OK',
-                        onPress: handleSuccessAcknowledged,
-                    },
-                ]}
-            />
         </KeyboardAvoidingView>
     );
 };

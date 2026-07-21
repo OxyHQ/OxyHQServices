@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
@@ -31,8 +32,9 @@ import {
 } from '../utils/fileManagement';
 import { useResolvedFileUrls, fileThumbSource } from '../hooks/useResolvedFileUrls';
 import { FileViewer } from '../components/fileManagement/FileViewer';
-import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
+import { presentFileDetails } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
+import { presentActionSheet } from '../components/surfaces/ActionSheetSurface';
 import { getErrorMessage } from './fileManagement/shared';
 import { useFileUploadState } from './fileManagement/hooks/useFileUploadState';
 import PhotoPickerView from './fileManagement/PhotoPickerSection';
@@ -62,6 +64,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     theme,
     goBack,
     navigate,
+    dismiss,
     userId,
     containerWidth,
     selectMode = false,
@@ -83,11 +86,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
     const uploadFileMutation = useUploadFile();
-    // Prompt controls
-    const fileDeleteDialog = useDialogControl();
-    const bulkDeleteDialog = useDialogControl();
-    const visibilityChangeDialog = useDialogControl();
-    const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: string; name: string } | null>(null);
     const files = useFiles();
     const { width: windowWidth } = useWindowDimensions();
     // Prefer an explicit sheet width from the router; fall back to the window
@@ -102,8 +100,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [paging, setPaging] = useState({ offset: 0, limit: 40, total: 0, hasMore: true, loadingMore: false });
-    const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
-    const fileDetailsControl = useDialogControl();
     // In selectMode we never open the detailed viewer
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
@@ -260,11 +256,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
 
         if (!multiSelect) {
-            onSelect?.(file);
-            if (afterSelect === 'back') {
-                goBack?.();
-            } else if (afterSelect === 'close') {
-                onClose?.();
+            if (onSelect) {
+                // Legacy callback caller (inbox, WelcomeNewUser): keep the
+                // callback + afterSelect behaviour unchanged.
+                onSelect(file);
+                if (afterSelect === 'back') {
+                    goBack?.();
+                } else if (afterSelect === 'close') {
+                    onClose?.();
+                }
+            } else {
+                // Promise-based picker (avatar picker): resolve the surface's
+                // present() promise with the picked file.
+                dismiss?.(file);
             }
             return;
         }
@@ -282,7 +286,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext]);
+    }, [selectMode, multiSelect, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext]);
 
     const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
@@ -322,9 +326,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Wait for all updates (but don't block on failures)
         await Promise.allSettled(updatePromises);
 
-        onConfirmSelection?.(chosen);
-        onClose?.();
-    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices, linkContext]);
+        if (onConfirmSelection) {
+            // Legacy callback caller (inbox): keep the callback + close.
+            onConfirmSelection(chosen);
+            onClose?.();
+        } else {
+            // Promise-based picker: resolve the surface with the chosen files.
+            dismiss?.(chosen);
+        }
+    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, dismiss, defaultVisibility, oxyServices, linkContext]);
 
     // Private-safe thumbnail URLs for the currently-shown files, resolved in
     // ONE batch per page (not N per-tile) and cached by React Query. Uploads
@@ -525,14 +535,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return rows;
     }, []);
 
-    const confirmFileDelete = useCallback((fileId: string, filename: string) => {
-        setPendingDeleteFile({ id: fileId, name: filename });
-        fileDeleteDialog.open();
-    }, [fileDeleteDialog]);
-
-    const handleFileDelete = useCallback(async () => {
-        if (!pendingDeleteFile) return;
-        const { id: fileId } = pendingDeleteFile;
+    const confirmFileDelete = useCallback(async (fileId: string, filename: string) => {
+        const confirmed = await surfaces.confirm({
+            title: t('fileManagement.deleteFile') || 'Delete File',
+            message: t('fileManagement.confirms.deleteFile', { filename }),
+            confirmLabel: t('fileManagement.confirm') || 'Delete',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
 
         try {
             storeSetDeleting(fileId);
@@ -559,17 +570,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
         } finally {
             storeSetDeleting(null);
-            setPendingDeleteFile(null);
         }
-    }, [pendingDeleteFile, storeSetDeleting, oxyServices, loadFiles, t]);
+    }, [storeSetDeleting, oxyServices, loadFiles, t]);
 
-    const confirmBulkDelete = useCallback(() => {
+    const confirmBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
-        bulkDeleteDialog.open();
-    }, [selectedIds.size, bulkDeleteDialog]);
 
-    const handleBulkDelete = useCallback(async () => {
-        if (selectedIds.size === 0) return;
+        const confirmed = await surfaces.confirm({
+            title: t('fileManagement.deleteFiles') || 'Delete Files',
+            message: t('fileManagement.confirms.deleteFiles', { count: selectedIds.size }),
+            confirmLabel: t('fileManagement.confirm') || 'Delete',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
 
         try {
             const deletePromises = Array.from(selectedIds).map(async (fileId) => {
@@ -598,7 +612,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.bulkDeleteError'));
         }
-    }, [selectedIds, files, oxyServices, loadFiles]);
+    }, [selectedIds, oxyServices, loadFiles, t]);
 
     const handleBulkVisibilityChange = useCallback(async (visibility: 'private' | 'public' | 'unlisted') => {
         if (selectedIds.size === 0) return;
@@ -634,7 +648,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.visibilityError'));
         }
-    }, [selectedIds, oxyServices, files, loadFiles]);
+    }, [selectedIds, oxyServices, files, loadFiles, t]);
+
+    const handleVisibilityChange = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        const visibility = await presentActionSheet<'private' | 'public' | 'unlisted'>({
+            title: t('fileManagement.changeVisibility') || 'Change Visibility',
+            message: t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size }),
+            options: [
+                { label: t('fileManagement.private') || 'Private', value: 'private' },
+                { label: t('fileManagement.public') || 'Public', value: 'public' },
+                { label: t('fileManagement.unlisted') || 'Unlisted', value: 'unlisted' },
+            ],
+            cancelLabel: t('common.cancel') || 'Cancel',
+        });
+        if (visibility) await handleBulkVisibilityChange(visibility);
+    }, [selectedIds.size, handleBulkVisibilityChange, t]);
 
     // Unified download function - works on all platforms
     const handleFileDownload = async (fileId: string, filename: string) => {
@@ -746,8 +775,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const showFileDetailsModal = (file: FileMetadata) => {
-        setSelectedFile(file);
-        fileDetailsControl.open();
+        presentFileDetails({
+            file,
+            onDownload: handleFileDownload,
+            onDelete: confirmFileDelete,
+            isOwner: user?.id === targetUserId,
+        });
     };
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
@@ -1190,71 +1223,59 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const allowUpload = isOwner && allowUploadInSelectMode;
 
         return (
-            <>
-                <PhotoPickerView
-                    photos={photosOnly}
-                    selectedIds={selectedIds}
-                    multiSelect={multiSelect}
-                    maxSelection={maxSelection}
-                    allowUpload={allowUpload}
-                    refreshing={refreshing}
-                    uploading={uploading}
-                    isPickingDocument={isPickingDocument}
-                    uploadProgress={uploadProgress}
-                    hasMore={paging.hasMore}
-                    loadingMore={paging.loadingMore}
-                    loading={loading}
-                    reduceMotion={reduceMotion}
-                    getThumbUrl={thumbSourceFor}
-                    primaryColor={colors.primary}
-                    isOwner={isOwner}
-                    onTogglePhoto={toggleSelect}
-                    onPreviewPhoto={(file) => showFileDetailsModal(file)}
-                    onUpload={handleFileUpload}
-                    onRefresh={() => loadFiles('refresh')}
-                    onLoadMore={() => loadFiles('more')}
-                    onCancel={() => {
+            <PhotoPickerView
+                photos={photosOnly}
+                selectedIds={selectedIds}
+                multiSelect={multiSelect}
+                maxSelection={maxSelection}
+                allowUpload={allowUpload}
+                refreshing={refreshing}
+                uploading={uploading}
+                isPickingDocument={isPickingDocument}
+                uploadProgress={uploadProgress}
+                hasMore={paging.hasMore}
+                loadingMore={paging.loadingMore}
+                loading={loading}
+                reduceMotion={reduceMotion}
+                getThumbUrl={thumbSourceFor}
+                primaryColor={colors.primary}
+                isOwner={isOwner}
+                onTogglePhoto={toggleSelect}
+                // Long-press preview surfaces the file-detail panel on the stack.
+                onPreviewPhoto={(file) => showFileDetailsModal(file)}
+                onUpload={handleFileUpload}
+                onRefresh={() => loadFiles('refresh')}
+                onLoadMore={() => loadFiles('more')}
+                onCancel={() => {
+                    if (onSelect || onConfirmSelection) {
+                        // Legacy callback caller: preserve close/back behaviour.
                         if (onClose) onClose();
                         else goBack?.();
-                    }}
-                    onConfirm={confirmMultiSelection}
-                    t={t}
-                />
-                {/* Long-press preview surfaces the existing details modal. */}
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={isOwner}
-                />
-            </>
+                    } else {
+                        // Promise picker (avatar): dismiss just this surface.
+                        dismiss?.();
+                    }
+                }}
+                onConfirm={confirmMultiSelection}
+                t={t}
+            />
         );
     }
 
     // If a file is opened, show the file viewer
     if (!selectMode && openedFile) {
         return (
-            <>
-                <FileViewer
-                    file={openedFile}
-                    fileContent={fileContent}
-                    loadingFileContent={loadingFileContent}
-                    showFileDetailsInViewer={showFileDetailsInViewer}
-                    onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
-                    onClose={handleCloseFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
-                />
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
-                />
-            </>
+            <FileViewer
+                file={openedFile}
+                fileContent={fileContent}
+                loadingFileContent={loadingFileContent}
+                showFileDetailsInViewer={showFileDetailsInViewer}
+                onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
+                onClose={handleCloseFile}
+                onDownload={handleFileDownload}
+                onDelete={confirmFileDelete}
+                isOwner={user?.id === targetUserId}
+            />
         );
     }
 
@@ -1315,9 +1336,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         key: 'visibility',
                         text: t('fileManagement.visibility'),
-                        onPress: () => {
-                            visibilityChangeDialog.open();
-                        },
+                        onPress: handleVisibilityChange,
                         icon: 'eye',
                     }
                 ] : undefined}
@@ -1542,16 +1561,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 />
             )}
 
-            {!selectMode && (
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
-                />
-            )}
-
             {/* Uploading banner overlay with progress */}
             {!selectMode && uploading && (
                 <UploadBar
@@ -1564,35 +1573,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
-            <Dialog
-                control={fileDeleteDialog}
-                title={t('fileManagement.deleteFile') || 'Delete File'}
-                description={pendingDeleteFile ? t('fileManagement.confirms.deleteFile', { filename: pendingDeleteFile.name }) : ''}
-                actions={[
-                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleFileDelete },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={bulkDeleteDialog}
-                title={t('fileManagement.deleteFiles') || 'Delete Files'}
-                description={t('fileManagement.confirms.deleteFiles', { count: selectedIds.size })}
-                actions={[
-                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleBulkDelete },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={visibilityChangeDialog}
-                title={t('fileManagement.changeVisibility') || 'Change Visibility'}
-                description={t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size })}
-                actions={[
-                    { label: t('fileManagement.private') || 'Private', onPress: () => handleBulkVisibilityChange('private') },
-                    { label: t('fileManagement.public') || 'Public', onPress: () => handleBulkVisibilityChange('public') },
-                    { label: t('fileManagement.unlisted') || 'Unlisted', onPress: () => handleBulkVisibilityChange('unlisted') },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </View>
     );
 };

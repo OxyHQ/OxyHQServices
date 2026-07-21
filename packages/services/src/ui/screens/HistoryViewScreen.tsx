@@ -10,7 +10,7 @@ import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 
 interface HistoryItem { id: string; query: string; type: 'search' | 'browse'; timestamp: Date; }
 
@@ -23,8 +23,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
-    const deleteLast15Dialog = useDialogControl();
-    const clearAllDialog = useDialogControl();
 
     const getStorage = async () => {
         const isRN = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
@@ -56,6 +54,14 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     }, [user?.id]);
 
     const handleDeleteLast15Minutes = useCallback(async () => {
+        const confirmed = await surfaces.confirm({
+            title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes',
+            message: t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?',
+            confirmLabel: t('common.actions.delete') || 'Delete',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setIsDeleting(true);
             const cutoff = new Date(Date.now() - 15 * 60 * 1000);
@@ -69,6 +75,14 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     }, [history, user?.id, t]);
 
     const handleClearAll = useCallback(async () => {
+        const confirmed = await surfaces.confirm({
+            title: t('history.clearAll.title') || 'Clear All History',
+            message: t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.',
+            confirmLabel: t('history.clearAll.title') || 'Clear All',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setIsDeleting(true); setHistory([]);
             const storage = await getStorage();
@@ -98,14 +112,14 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
                             icon={<SettingsIcon name="clock-outline" color={bloomTheme.colors.warning} />}
                             title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
                             description={t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries'}
-                            onPress={() => deleteLast15Dialog.open()}
+                            onPress={handleDeleteLast15Minutes}
                             disabled={isDeleting || history.length === 0}
                         />
                         <SettingsListItem
                             icon={<SettingsIcon name="delete-outline" color={bloomTheme.colors.error} />}
                             title={t('history.clearAll.title') || 'Clear All History'}
                             description={t('history.clearAll.subtitle') || 'Remove all history entries'}
-                            onPress={() => clearAllDialog.open()}
+                            onPress={handleClearAll}
                             disabled={isDeleting || history.length === 0}
                         />
                     </SettingsListGroup>
@@ -123,24 +137,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
                     </SettingsListGroup>
                 </View>
             </ScrollView>
-            <Dialog
-                control={deleteLast15Dialog}
-                title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
-                description={t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?'}
-                actions={[
-                    { label: t('common.actions.delete') || 'Delete', color: 'destructive', onPress: handleDeleteLast15Minutes },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={clearAllDialog}
-                title={t('history.clearAll.title') || 'Clear All History'}
-                description={t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.'}
-                actions={[
-                    { label: t('history.clearAll.title') || 'Clear All', color: 'destructive', onPress: handleClearAll },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </View>
     );
 };

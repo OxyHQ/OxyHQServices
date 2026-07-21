@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import type { AccountDialogView } from '@oxyhq/core';
+import type { AccountDialogView, FileMetadata } from '@oxyhq/core';
 import type { RouteName } from './routes';
+import type { AvatarCropResult } from '../screens/AvatarCropScreen';
 
 /**
  * The SDK's typed surface registry — the contract layer the SDK stacks on top of
@@ -28,7 +29,13 @@ export interface SurfaceRegistry {
   LanguageSelector: SurfaceRoute;
   PrivacySettings: SurfaceRoute;
   SearchSettings: SurfaceRoute;
-  FileManagement: SurfaceRoute;
+  /**
+   * File picker / manager. In single-select picker mode the surface is
+   * dismissed with the picked {@link FileMetadata} (the avatar-picker promise
+   * flow); legacy callers that pass an `onSelect`/`onConfirmSelection` callback
+   * keep their callback behaviour and this result goes unread.
+   */
+  FileManagement: SurfaceRoute<Record<string, unknown>, FileMetadata>;
   HelpSupport: SurfaceRoute;
   FAQ: SurfaceRoute;
   Feedback: SurfaceRoute;
@@ -53,7 +60,8 @@ export interface SurfaceRegistry {
   CreateAccount: SurfaceRoute;
   AccountMembers: SurfaceRoute;
   AccountSettings: SurfaceRoute;
-  AvatarCrop: SurfaceRoute;
+  /** Square-crop editor. Dismissed with the cropped {@link AvatarCropResult}. */
+  AvatarCrop: SurfaceRoute<Record<string, unknown>, AvatarCropResult>;
   Notifications: SurfaceRoute;
   ConnectedApps: SurfaceRoute;
   Preferences: SurfaceRoute;

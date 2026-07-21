@@ -72,10 +72,6 @@ export interface AvatarCropScreenProps extends BaseScreenProps {
     sourceWidth?: number;
     /** Natural height of the source image (optional — measured if absent). */
     sourceHeight?: number;
-    /** Called with the cropped file once the user confirms. */
-    onConfirm?: (result: AvatarCropResult) => void | Promise<void>;
-    /** Called if the user cancels without confirming. */
-    onCancel?: () => void;
 }
 
 /** Side length (in dp) of the crop viewport. The output is always 512x512px. */
@@ -296,13 +292,10 @@ async function hapticSelection(): Promise<void> {
 }
 
 const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
-    goBack,
-    onClose,
+    dismiss,
     imageUri,
     sourceWidth,
     sourceHeight,
-    onConfirm,
-    onCancel,
 }) => {
     const theme = useTheme();
     const { t } = useI18n();
@@ -765,16 +758,15 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
 
             void hapticNotification('success');
 
-            await onConfirm?.({
+            // Resolve the surface's present() promise with the cropped JPEG and
+            // close it. The awaiting caller (`useAvatarPicker`) handles the
+            // upload + any success toast.
+            dismiss?.({
                 uri: result.uri,
                 width: result.width,
                 height: result.height,
                 mime: 'image/jpeg',
             });
-
-            // Close the sheet on success. The caller is responsible for any
-            // success toast (uploads typically toast their own outcome).
-            onClose?.();
         } catch (err) {
             const normalizedError = normalizeCropError(err);
             logger.error('handleConfirm failed', normalizedError, { component: LOG_COMPONENT });
@@ -786,12 +778,11 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             preparedImageCleanup?.();
             setIsProcessing(false);
         }
-    }, [baseFit, imageUri, naturalSize, onClose, onConfirm, t]);
+    }, [baseFit, imageUri, naturalSize, dismiss, t]);
 
     const handleCancel = useCallback(() => {
-        onCancel?.();
-        goBack?.();
-    }, [goBack, onCancel]);
+        dismiss?.();
+    }, [dismiss]);
 
     const topInset = Platform.OS === 'ios' ? Math.max(insets.top, 12) : Math.max(insets.top, 16);
     const bottomInset = Math.max(insets.bottom, 16);
