@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import type {Application, CallerAccess} from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
 import {
@@ -57,10 +58,10 @@ export function UsageSection({ application, access }: UsageSectionProps) {
       <section>
         <p className="text-sm font-semibold text-foreground mb-4">Overview</p>
         {isLoading ? (
-          <div className="animate-pulse flex flex-row gap-12">
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
+          <div className="flex flex-row gap-12">
+            {[1, 2, 3].map((i) => (
+              <Skeleton.Box key={i} width={96} height={48} />
+            ))}
           </div>
         ) : (
           <div className="flex flex-row flex-wrap gap-12">

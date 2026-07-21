@@ -1,4 +1,5 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { ArrowRight01Icon, ChartLineData02Icon } from '@hugeicons/core-free-icons';
 import { useApplications } from '@/hooks/use-applications';
@@ -24,7 +25,7 @@ function UsagePage() {
         {isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+              <Skeleton.Box key={i} width="100%" height={64} borderRadius={14} />
             ))}
           </div>
         ) : applications.length === 0 ? (

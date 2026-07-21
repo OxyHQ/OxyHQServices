@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -84,10 +85,10 @@ function BillingPage() {
       <div className="px-6 py-6 border-b border-border">
         <p className="text-sm font-semibold text-foreground mb-4">Credit balance</p>
         {isLoadingCredits ? (
-          <div className="animate-pulse flex flex-row gap-12">
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
+          <div className="flex flex-row gap-12">
+            {[1, 2, 3].map((i) => (
+              <Skeleton.Box key={i} width={96} height={48} />
+            ))}
           </div>
         ) : (
           <div className="flex flex-row gap-12">
@@ -144,9 +145,9 @@ function BillingPage() {
       <div className="px-6 py-6 border-b border-border">
         <p className="text-sm font-semibold text-foreground mb-4">Purchase credits</p>
         {isLoadingPackages ? (
-          <div className="animate-pulse space-y-4">
+          <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 bg-muted rounded" />
+              <Skeleton.Box key={i} width="100%" height={64} />
             ))}
           </div>
         ) : packages.length > 0 ? (
@@ -188,9 +189,9 @@ function BillingPage() {
       <div className="px-6 py-6">
         <p className="text-sm font-semibold text-foreground mb-4">Transaction history</p>
         {isLoadingTransactions ? (
-          <div className="animate-pulse space-y-3">
+          <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-12 bg-muted rounded" />
+              <Skeleton.Box key={i} width="100%" height={48} />
             ))}
           </div>
         ) : transactions.length > 0 ? (

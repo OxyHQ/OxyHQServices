@@ -1,5 +1,6 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -448,7 +449,7 @@ function AccountSettingsPage() {
           {membersQuery.isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
+                <Skeleton.Box key={i} width="100%" height={56} borderRadius={14} />
               ))}
             </div>
           ) : activeMembers.length === 0 ? (

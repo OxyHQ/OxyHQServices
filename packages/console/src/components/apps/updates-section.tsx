@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowTurnBackwardIcon,
@@ -167,7 +168,7 @@ export function UpdatesSection({ application, access }: UpdatesSectionProps) {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2].map((i) => (
-            <div key={i} className="h-28 rounded-lg bg-muted animate-pulse" />
+            <Skeleton.Box key={i} width="100%" height={112} borderRadius={14} />
           ))}
         </div>
       ) : isError ? (
@@ -251,7 +252,7 @@ function ChannelCard({ appId, channel, channelNames }: ChannelCardProps) {
       {isLoading ? (
         <div className="space-y-2 p-4">
           {[1, 2].map((i) => (
-            <div key={i} className="h-10 rounded bg-muted animate-pulse" />
+            <Skeleton.Box key={i} width="100%" height={40} />
           ))}
         </div>
       ) : heads.length === 0 ? (

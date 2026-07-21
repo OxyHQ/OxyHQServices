@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
@@ -294,7 +295,7 @@ export function CredentialsSection({ application, access }: CredentialsSectionPr
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+            <Skeleton.Box key={i} width="100%" height={64} borderRadius={14} />
           ))}
         </div>
       ) : credentials.length === 0 ? (

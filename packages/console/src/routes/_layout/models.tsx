@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Cancel01Icon, CheckmarkCircle01Icon } from '@hugeicons/core-free-icons';
 import { Badge } from '@/components/ui/badge';
@@ -27,15 +28,15 @@ function ModelsPage() {
       {/* Models List */}
       <div className="px-6">
         {isLoading ? (
-          <div className="animate-pulse space-y-6 py-6">
+          <div className="space-y-6 py-6">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="space-y-3">
-                <div className="h-5 w-32 bg-muted rounded" />
-                <div className="h-4 w-48 bg-muted rounded" />
+                <Skeleton.Box width={128} height={20} />
+                <Skeleton.Box width={192} height={16} />
                 <div className="flex gap-8">
-                  <div className="h-8 w-16 bg-muted rounded" />
-                  <div className="h-8 w-16 bg-muted rounded" />
-                  <div className="h-8 w-16 bg-muted rounded" />
+                  {[1, 2, 3].map((j) => (
+                    <Skeleton.Box key={j} width={64} height={32} />
+                  ))}
                 </div>
               </div>
             ))}

@@ -1,5 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
@@ -116,9 +117,9 @@ function AppsPage() {
         {isLoading ? (
           <div className="py-6">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="py-4 border-b border-border animate-pulse">
-                <div className="h-4 w-32 bg-muted rounded mb-2" />
-                <div className="h-3 w-48 bg-muted rounded" />
+              <div key={i} className="py-4 border-b border-border">
+                <Skeleton.Box width={128} height={16} style={{ marginBottom: 8 }} />
+                <Skeleton.Box width={192} height={12} />
               </div>
             ))}
           </div>

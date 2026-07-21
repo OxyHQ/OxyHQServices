@@ -1,4 +1,5 @@
 import * as React from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -163,11 +164,11 @@ export function SidebarHeaderBrand() {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" className="animate-pulse">
-            <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted" />
+          <SidebarMenuButton size="lg">
+            <Skeleton.Box width={32} height={32} borderRadius={14} />
             <div className="grid flex-1 gap-1">
-              <div className="h-4 w-24 bg-muted rounded" />
-              <div className="h-3 w-16 bg-muted rounded" />
+              <Skeleton.Box width={96} height={16} />
+              <Skeleton.Box width={64} height={12} />
             </div>
           </SidebarMenuButton>
         </SidebarMenuItem>
