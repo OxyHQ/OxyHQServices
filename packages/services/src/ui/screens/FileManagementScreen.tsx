@@ -9,15 +9,13 @@ import {
     RefreshControl,
     TextInput,
     Image,
-    Animated,
-    Easing,
     AccessibilityInfo,
-    Platform,
     useWindowDimensions,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
@@ -1121,193 +1119,57 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         </View>
     );
 
-    // Professional Skeleton Loading Component with Advanced Shimmer Effect
-    const SkeletonLoader = React.memo(() => {
-        const shimmerAnim = useRef(new Animated.Value(0)).current;
-        const skeletonContainerWidth = safeContainerWidth;
-
-        useEffect(() => {
-            const shimmer = Animated.loop(
-                Animated.timing(shimmerAnim, {
-                    toValue: 1,
-                    duration: 2000,
-                    easing: Easing.linear,
-                    // Web has no native animated module; forcing the native
-                    // driver there warns and falls back to JS. The shimmer only
-                    // drives a transform, so JS-driving it on web is fine.
-                    useNativeDriver: Platform.OS !== 'web',
-                })
-            );
-            shimmer.start();
-            return () => shimmer.stop();
-        }, [shimmerAnim]);
-
-        // Create a sweeping shimmer effect
-        const shimmerTranslateX = shimmerAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-skeletonContainerWidth * 2, skeletonContainerWidth * 2],
-        });
-
-        const SkeletonBox = ({ width, height, borderRadius = 8, style, delay = 0 }: { width: number | string; height: number; borderRadius?: number; style?: Record<string, unknown>; delay?: number }) => {
-            const delayedTranslateX = shimmerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
-            });
-
-            return (
-                <View
-                    style={[
-                        {
-                            width,
-                            height,
-                            borderRadius,
-                            backgroundColor: colors.backgroundSecondary,
-                            overflow: 'hidden',
-                            position: 'relative',
-                        },
-                        style,
-                    ]}
-                >
-                    {/* Base background */}
-                    <View
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: colors.backgroundSecondary,
-                        }}
-                    />
-                    {/* Shimmer gradient effect */}
-                    <Animated.View
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            transform: [{ translateX: delayedTranslateX }],
-                        }}
-                    >
-                        <View
-                            style={{
-                                width: skeletonContainerWidth,
-                                height: '100%',
-                                backgroundColor: bloomTheme.isDark
-                                    ? 'rgba(255, 255, 255, 0.08)'
-                                    : 'rgba(255, 255, 255, 0.8)',
-                                shadowColor: bloomTheme.isDark ? '#000' : '#FFF',
-                                shadowOffset: { width: 0, height: 0 },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 10,
-                            }}
-                        />
-                    </Animated.View>
-                </View>
-            );
-        };
-
-        // Skeleton file item matching SettingsListItem structure
-        const SkeletonFileItem = ({ index }: { index: number }) => (
-            <View
-                style={[
-                    {
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 16,
-                        paddingVertical: 12,
-                        backgroundColor: colors.background,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                        borderBottomColor: colors.border,
-                    },
-                ]}
-            >
-                {/* Icon/Image skeleton */}
-                <SkeletonBox width={44} height={44} borderRadius={8} delay={index * 50} />
-
-                {/* Content skeleton */}
-                <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
-                    <SkeletonBox
-                        width={index % 3 === 0 ? '85%' : index % 3 === 1 ? '70%' : '90%'}
-                        height={16}
-                        style={{ marginBottom: 8 }}
-                        delay={index * 50 + 20}
-                    />
-                    <SkeletonBox
-                        width={index % 2 === 0 ? '50%' : '60%'}
-                        height={12}
-                        delay={index * 50 + 40}
-                    />
-                </View>
-            </View>
+    // Loading state — Bloom's shared `Skeleton` primitives own the shimmer, so
+    // this is pure layout: the top chrome (header / controls / search) plus a
+    // photo grid of shimmering tiles sized with the same 3-per-row geometry the
+    // real photo grid uses. No hand-rolled `Animated` shimmer.
+    if (loading) {
+        const GRID_PADDING = 10;
+        const TILE_GAP = 4;
+        const GRID_COLUMNS = 3;
+        const GRID_ROWS = 6;
+        const tileSize = Math.floor(
+            (safeContainerWidth - GRID_PADDING * 2 - TILE_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
         );
 
         return (
             <View className="flex-1" style={{ backgroundColor }}>
-                {/* Header Skeleton */}
+                {/* Header */}
                 <View
-                    className="flex-row items-center justify-between px-[16px] py-[12px] relative"
+                    className="flex-row items-center justify-between px-[16px] py-[12px]"
                     style={{ borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
                 >
-                    <SkeletonBox width={44} height={44} borderRadius={12} />
-                    <View className="flex-1 items-center justify-center mx-[16px]">
-                        <SkeletonBox width={140} height={20} style={{ marginBottom: 6 }} />
-                        <SkeletonBox width={100} height={14} />
-                    </View>
-                    <SkeletonBox width={44} height={44} borderRadius={12} />
+                    <Skeleton.Box width={44} height={44} borderRadius={12} />
+                    <Skeleton.Col style={{ alignItems: 'center', marginHorizontal: 16, gap: 6 }}>
+                        <Skeleton.Box width={140} height={20} />
+                        <Skeleton.Box width={100} height={14} />
+                    </Skeleton.Col>
+                    <Skeleton.Box width={44} height={44} borderRadius={12} />
                 </View>
 
-                {/* Controls Bar Skeleton */}
-                <View className="flex-row items-center justify-between px-[12px] py-[12px] gap-[12px]">
-                    <SkeletonBox width={100} height={36} borderRadius={18} />
-                    <SkeletonBox width={44} height={44} borderRadius={22} />
+                {/* Controls bar */}
+                <Skeleton.Row style={{ alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 12 }}>
+                    <Skeleton.Box width={100} height={36} borderRadius={18} />
+                    <Skeleton.Box width={44} height={44} borderRadius={22} />
+                </Skeleton.Row>
+
+                {/* Search bar */}
+                <View className="mx-[12px] mb-[12px]">
+                    <Skeleton.Box width="100%" height={44} borderRadius={22} />
                 </View>
 
-                {/* Search Bar Skeleton */}
-                <View
-                    className="flex-row items-center px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-full gap-[10px]"
-                    style={{ backgroundColor: colors.card }}
-                >
-                    <SkeletonBox width="100%" height={44} borderRadius={12} />
-                </View>
-
-                {/* Stats Container Skeleton */}
-                <View
-                    className="flex-row px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-[18px]"
-                    style={{ backgroundColor: colors.card }}
-                >
-                    {[1, 2, 3].map((i) => (
-                        <View key={i} className="flex-1 items-center py-[4px]">
-                            <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} delay={i * 30} />
-                            <SkeletonBox width={40} height={14} delay={i * 30 + 15} />
-                        </View>
+                {/* Photo grid */}
+                <View style={{ padding: GRID_PADDING, gap: TILE_GAP }}>
+                    {Array.from({ length: GRID_ROWS }, (_, row) => (
+                        <Skeleton.Row key={row} style={{ gap: TILE_GAP }}>
+                            {Array.from({ length: GRID_COLUMNS }, (_, col) => (
+                                <Skeleton.Box key={col} width={tileSize} height={tileSize} borderRadius={6} />
+                            ))}
+                        </Skeleton.Row>
                     ))}
                 </View>
-
-                {/* File List Skeleton - Matching SettingsListItem */}
-                <ScrollView
-                    className="flex-1"
-                    contentContainerClassName="px-[12px] pt-0 pb-[12px]"
-                    showsVerticalScrollIndicator={false}
-                >
-                    <View style={{
-                        backgroundColor: colors.card,
-                        borderRadius: 18,
-                        overflow: 'hidden',
-                        marginTop: 8,
-                    }}>
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <SkeletonFileItem key={i} index={i} />
-                        ))}
-                    </View>
-                </ScrollView>
             </View>
         );
-    });
-
-    if (loading) {
-        return <SkeletonLoader />;
     }
 
     // Dedicated flagship-style photo picker view used in the avatar-picker

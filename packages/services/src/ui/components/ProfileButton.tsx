@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar } from '@oxyhq/bloom/avatar';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
@@ -140,16 +141,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
             >
-                <View
-                    style={[
-                        styles.skeletonCircle,
-                        {
-                            width: resolvedAvatarSize,
-                            height: resolvedAvatarSize,
-                            backgroundColor: colors.backgroundSecondary,
-                        },
-                    ]}
-                />
+                <Skeleton.Circle size={resolvedAvatarSize} />
             </View>
         );
     }
@@ -351,10 +343,6 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
 const styles = StyleSheet.create({
     fullWidth: {
         width: '100%',
-    },
-    // Neutral skeleton / signed-out avatar circle (`rounded-full`).
-    skeletonCircle: {
-        borderRadius: 9999,
     },
     // Shared trigger row (`flex-row items-center gap-3 rounded-full px-2 py-2`).
     row: {
