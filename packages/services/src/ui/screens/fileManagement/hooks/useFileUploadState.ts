@@ -17,6 +17,12 @@ import {
     loadDocumentPicker,
 } from '../shared';
 
+function revokePreviewUrl(preview: string | undefined): void {
+    if (preview?.startsWith('blob:')) {
+        URL.revokeObjectURL(preview);
+    }
+}
+
 /**
  * Optimistic-entry metadata. `uploading` flags the placeholder so no asset URL
  * is ever built from its client-minted `temp-…` id; `localPreviewUri` lets the
@@ -334,9 +340,7 @@ export const useFileUploadState = ({
 
             // Cleanup preview URLs
             pendingFiles.forEach(pf => {
-                if (pf.preview) {
-                    URL.revokeObjectURL(pf.preview);
-                }
+                revokePreviewUrl(pf.preview);
             });
             setPendingFiles([]);
 
@@ -374,9 +378,7 @@ export const useFileUploadState = ({
     const handleCancelUpload = () => {
         // Cleanup preview URLs
         pendingFiles.forEach(pf => {
-            if (pf.preview) {
-                URL.revokeObjectURL(pf.preview);
-            }
+            revokePreviewUrl(pf.preview);
         });
         setPendingFiles([]);
         setShowUploadPreview(false);
@@ -386,7 +388,7 @@ export const useFileUploadState = ({
         const file = pendingFiles.find((pf) => pf.id === id);
         if (!file) return;
         if (file.preview) {
-            URL.revokeObjectURL(file.preview);
+            revokePreviewUrl(file.preview);
         }
         const updated = pendingFiles.filter((pf) => pf.id !== id);
         setPendingFiles(updated);
