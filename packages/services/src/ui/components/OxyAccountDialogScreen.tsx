@@ -23,17 +23,13 @@
 
 import type React from 'react';
 import { useCallback, useSyncExternalStore } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Text } from '@oxyhq/bloom/typography';
-import { useTheme } from '@oxyhq/bloom/theme';
+import { StyleSheet, View } from 'react-native';
 import type { AccountDialogSnapshot } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import OxyAuthChooser from './OxyAuthChooser';
-import { LogoIcon } from './logo/LogoIcon';
 
-type Theme = ReturnType<typeof useTheme>;
 type Translate = ReturnType<typeof useI18n>['t'];
 
 /**
@@ -51,7 +47,6 @@ type Translate = ReturnType<typeof useI18n>['t'];
  */
 const OxyAccountDialogScreen: React.FC = () => {
   const { accountDialogController: controller, closeAccountDialog } = useOxy();
-  const theme = useTheme();
   const { t } = useI18n();
 
   // A lightweight, header-only binding to the same controller `OxyAuthChooser`
@@ -67,79 +62,29 @@ const OxyAccountDialogScreen: React.FC = () => {
   );
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
+  const { view } = snapshot;
+  const showBack =
+    view === 'qr' || view === 'signup' || (view === 'add' && snapshot.accounts.length > 0);
+  const goToAccounts = useCallback(() => controller?.setView('accounts'), [controller]);
+  const { title, subtitle } = headerCopy(view, snapshot.accounts.length, t);
+
+  // The account dialog uses the SHARED Dialog nav header like every other screen
+  // (the base): the large in-content title/subtitle that collapses into the nav
+  // bar on scroll (default `largeTitle`), its per-view copy, and a per-view back
+  // that returns to the account list (the Dialog renders the frosted back/close).
+  useSurfaceHeader({
+    title,
+    subtitle: subtitle ?? undefined,
+    onBack: showBack ? goToAccounts : undefined,
+  });
+
   if (!controller) {
     return null;
   }
 
-  const { view } = snapshot;
-  const showBack =
-    view === 'qr' || view === 'signup' || (view === 'add' && snapshot.accounts.length > 0);
-
   return (
-    <>
-      <DialogHeader
-        snapshot={snapshot}
-        theme={theme}
-        t={t}
-        showBack={showBack}
-        onBack={() => controller.setView('accounts')}
-        onClose={closeAccountDialog}
-      />
-      <View style={styles.bodyContent}>
-        <OxyAuthChooser onComplete={closeAccountDialog} />
-      </View>
-    </>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
-interface HeaderProps {
-  snapshot: AccountDialogSnapshot;
-  theme: Theme;
-  t: Translate;
-  showBack: boolean;
-  onBack: () => void;
-  onClose: () => void;
-}
-
-const DialogHeader: React.FC<HeaderProps> = ({ snapshot, theme, t, showBack, onBack, onClose }) => {
-  const { title, subtitle } = headerCopy(snapshot.view, snapshot.accounts.length, t);
-  return (
-    <View style={styles.header}>
-      <View style={styles.headerBar}>
-        {showBack ? (
-          <Pressable
-            onPress={onBack}
-            style={[styles.iconButton, { backgroundColor: theme.colors.backgroundSecondary }]}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.actions.back') || 'Back'}
-          >
-            <MaterialCommunityIcons name="chevron-left" size={22} color={theme.colors.textSecondary} />
-          </Pressable>
-        ) : (
-          <View style={styles.iconButton} />
-        )}
-        <LogoIcon height={34} color={theme.colors.primary} />
-        <Pressable
-          onPress={onClose}
-          style={[styles.iconButton, { backgroundColor: theme.colors.backgroundSecondary }]}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.actions.close') || 'Close'}
-        >
-          <MaterialCommunityIcons name="close" size={20} color={theme.colors.textSecondary} />
-        </Pressable>
-      </View>
-      <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
-        {title}
-      </Text>
-      {subtitle ? (
-        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]} numberOfLines={2}>
-          {subtitle}
-        </Text>
-      ) : null}
+    <View style={styles.bodyContent}>
+      <OxyAuthChooser onComplete={closeAccountDialog} />
     </View>
   );
 };
@@ -194,37 +139,6 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
 };
 
 const styles = StyleSheet.create({
-  header: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  headerBar: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  iconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 19,
-    textAlign: 'center',
-    marginTop: 4,
-  },
   bodyContent: {
     paddingTop: 4,
     paddingBottom: 4,

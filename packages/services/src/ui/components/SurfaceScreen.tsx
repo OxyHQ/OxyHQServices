@@ -157,7 +157,10 @@ function SurfaceScreen({ navStack, surface, presentation }: SurfaceScreenProps) 
     return {
       largeTitle: true,
       ...headerContent,
-      onBack: canGoBackNow ? goBack : undefined,
+      // A screen may own its back (e.g. the account dialog's per-view back via
+      // `useSurfaceHeader({ onBack })`); otherwise the surface's nav-stack back
+      // drives it (a drilled-in frame / wizard step).
+      onBack: headerContent?.onBack ?? (canGoBackNow ? goBack : undefined),
     };
   }, [headerMode, headerContent, canGoBackNow, goBack]);
 

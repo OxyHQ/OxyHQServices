@@ -151,15 +151,17 @@ const DEFAULT_SURFACE_CONFIG: SurfaceRouteConfig = {
 
 /**
  * Routes that render NO Dialog nav header — they own their chrome:
- * - `AccountDialog` — the account switcher/sign-in dialog (own header).
  * - `AvatarCrop` — its own translucent Cancel / title / Done top bar.
  * - `PaymentGateway` — the payment surface owns its controls.
  * - `WelcomeNewUser` — a full-bleed onboarding wizard with its own step chrome.
  * - `Profile` — a full profile view, no nav-header chrome.
  * (The flagship full-bleed image picker is handled separately below.)
+ *
+ * `AccountDialog` used to be here — it now uses the SHARED Dialog nav header like
+ * every other screen (its per-view title/subtitle + view-back go through
+ * `useSurfaceHeader`), so the account/sign-in surface no longer feels bespoke.
  */
 const HEADERLESS_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
-  'AccountDialog',
   'AvatarCrop',
   'PaymentGateway',
   'WelcomeNewUser',
