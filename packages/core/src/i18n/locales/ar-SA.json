@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "حساباتك"
+    },
+    "loading": "جارٍ تحميل الحسابات...",
     "qrHeadline": "سجّل الدخول بهوية Oxy الخاصة بك",
     "signInWithOxy": "تسجيل الدخول باستخدام Oxy",
     "useIdentityOnDevice": "لا تملك Commons؟ استخدم مفتاح مرور على هذا الجهاز بدلاً من ذلك",

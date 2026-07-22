@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "你的账户"
+    },
+    "loading": "正在加载账户...",
     "qrHeadline": "使用您的 Oxy 身份登录",
     "signInWithOxy": "使用 Oxy 登录",
     "useIdentityOnDevice": "没有 Commons？改用此设备上的通行密钥",

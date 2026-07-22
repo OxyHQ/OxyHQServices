@@ -76,6 +76,7 @@ import { isOxyRpOrigin } from '@oxyhq/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { getAccountDialogConsumerHooks } from '../navigation/accountDialogManager';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { getCommonsAcquisitionUrl } from '../utils/commonsStoreLinks';
 import { authChooserStyles as styles } from './oxyAuthChooserStyles';
@@ -289,18 +290,32 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
 
   const handleManage = useCallback(() => {
     onComplete?.();
+    const hooks = getAccountDialogConsumerHooks();
+    if (hooks?.onNavigateManage) {
+      hooks.onNavigateManage();
+      return;
+    }
     showBottomSheet?.('ManageAccount');
   }, [onComplete, showBottomSheet]);
+
+  const handleAdd = useCallback(() => {
+    const hooks = getAccountDialogConsumerHooks();
+    if (hooks?.onAddAccount) {
+      hooks.onAddAccount();
+      return;
+    }
+    controller?.add();
+  }, [controller]);
 
   const handlers = useMemo<OxyAuthChooserHandlers>(
     () => ({
       onSwitch: (accountId) => {
         void handleSwitch(accountId);
       },
-      onAdd: () => controller?.add(),
+      onAdd: handleAdd,
       onManage: handleManage,
     }),
-    [handleSwitch, controller, handleManage],
+    [handleSwitch, handleAdd, handleManage],
   );
 
   if (!controller) {
@@ -516,23 +531,6 @@ const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handler
             onPress={handlers.onAdd}
             disabled={switchingDisabled}
             accessibilityLabel={t('signin.addAccountTitle') || 'Add another account'}
-            showChevron={false}
-          />
-
-          <SettingsListItem
-            icon={
-              <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
-                <MaterialCommunityIcons
-                  name="cog-outline"
-                  size={20}
-                  color={theme.colors.textSecondary}
-                />
-              </View>
-            }
-            title={t('accountSwitcher.manageOnDevice') || 'Manage accounts on this device'}
-            onPress={handlers.onManage}
-            disabled={switchingDisabled}
-            accessibilityLabel={t('accountSwitcher.manageOnDevice') || 'Manage accounts on this device'}
             showChevron={false}
           />
         </SettingsListGroup>
