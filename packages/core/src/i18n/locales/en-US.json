@@ -421,7 +421,8 @@
     "getCommons": "Get Commons",
     "commonsNotInstalled": "Don't have Commons? Get the app to sign in with your Oxy ID.",
     "showQrAnyway": "I have Commons on another device",
-    "switchWhileSignedInAs": "Switch account, signed in as {{name}}"
+    "switchWhileSignedInAs": "Switch account, signed in as {{name}}",
+    "manageOnDevice": "Manage accounts on this device"
   },
   "reputation": {
     "faq": {

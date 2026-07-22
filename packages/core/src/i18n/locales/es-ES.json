@@ -619,7 +619,8 @@
     "getCommons": "Descargar Commons",
     "commonsNotInstalled": "¿No tienes Commons? Descarga la app para iniciar sesión con tu Oxy ID.",
     "showQrAnyway": "Tengo Commons en otro dispositivo",
-    "switchWhileSignedInAs": "Cambiar de cuenta, con la sesión iniciada como {{name}}"
+    "switchWhileSignedInAs": "Cambiar de cuenta, con la sesión iniciada como {{name}}",
+    "manageOnDevice": "Gestionar cuentas en este dispositivo"
   },
   "feedback": {
     "type": {
