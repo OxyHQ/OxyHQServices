@@ -52,8 +52,6 @@ type TicketProps = {
     backSide?: ReactNode;
     /** Optional QR face, revealed by a long-press (tap only flips front↔back). */
     qrSide?: ReactNode;
-    /** Level-1 NFC-read feedback value (0→1 per read). Internal default: inert. */
-    scanPulse?: SharedValue<number>;
     /** Level-2 attestation-confirmed feedback value (0→1→0). Internal default: inert. */
     attestGlow?: SharedValue<number>;
 };
@@ -64,7 +62,6 @@ export const Ticket: FC<TicketProps> = memo(({
     frontSide,
     backSide,
     qrSide,
-    scanPulse: scanPulseProp,
     attestGlow: attestGlowProp,
 }) => {
     // Drift-free device attitude driving the 3D turn.
@@ -74,10 +71,8 @@ export const Ticket: FC<TicketProps> = memo(({
     // Flip (0 = front, 180 = back).
     const rotation = useSharedValue(0);
 
-    // Effect channels — inert local values unless the screen supplies live ones.
-    const internalScanPulse = useSharedValue(0);
+    // Effect channel — an inert local value unless the screen supplies a live one.
     const internalAttestGlow = useSharedValue(0);
-    const scanPulse = scanPulseProp ?? internalScanPulse;
     const attestGlow = attestGlowProp ?? internalAttestGlow;
 
     // The back shows the public-key face by default; a long-press swaps it to the
@@ -105,12 +100,11 @@ export const Ticket: FC<TicketProps> = memo(({
             pressRotateX,
             isPressed,
             rotation,
-            scanPulse,
             attestGlow,
             isFront,
             motionEnabled: tilt.motionEnabled,
         }),
-        [tilt, pressRotateX, isPressed, rotation, scanPulse, attestGlow, isFront],
+        [tilt, pressRotateX, isPressed, rotation, attestGlow, isFront],
     );
 
     // Press tilt (Pan with minDistance 0 catches any touch).
@@ -173,15 +167,7 @@ export const Ticket: FC<TicketProps> = memo(({
             { perspective: 900 },
             { translateY: pressTranslateY.value },
             { rotateY: `${rotation.value + yawDeg.value}deg` }, // flip composed with tilt-yaw
-            // Pitch composes the device tilt, the press-tilt nudge, and a −3° scan-pulse
-            // nudge shaped by sin(π·t) so it eases in/out and settles back to rest.
-            {
-                rotateX: `${
-                    pitchDeg.value +
-                    pressRotateX.value -
-                    3 * Math.sin(Math.min(1, Math.max(0, scanPulse.value)) * Math.PI)
-                }deg`,
-            },
+            { rotateX: `${pitchDeg.value + pressRotateX.value}deg` },
             { rotateZ: `${yawDeg.value * 0.15}deg` }, // subtle micro-roll
         ],
     }));

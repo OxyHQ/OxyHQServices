@@ -84,7 +84,7 @@ const buildGuilloche = (width: number, height: number) => {
 };
 
 export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => {
-    const { nx, ny, mag, isPressed, scanPulse, attestGlow } = useTilt();
+    const { nx, ny, mag, isPressed, attestGlow } = useTilt();
 
     const guilloche = useMemo(() => buildGuilloche(width, height), [width, height]);
 
@@ -132,24 +132,6 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
     );
     const glossOpacity = useDerivedValue(() =>
         Math.min(0.7, 0.28 + mag.value * 0.4 + isPressed.value * 0.22),
-    );
-
-    // NFC-read shine: a narrow diagonal band that sweeps corner-to-corner as
-    // scanPulse runs 0→1, fading in/out with sin(π·t) so it never pops. The band
-    // centre travels −0.3 → 1.3, so the stripe sits just off-canvas at both ends
-    // and crosses mid-canvas exactly when the opacity envelope peaks (t = 0.5).
-    const scanBandStart = useDerivedValue(() => {
-        const t = Math.min(1, Math.max(0, scanPulse.value));
-        const c = -0.3 + 1.6 * t;
-        return vec(width * (c - 0.6), height * (c - 0.6));
-    });
-    const scanBandEnd = useDerivedValue(() => {
-        const t = Math.min(1, Math.max(0, scanPulse.value));
-        const c = -0.3 + 1.6 * t;
-        return vec(width * (c + 0.6), height * (c + 0.6));
-    });
-    const scanBandOpacity = useDerivedValue(() =>
-        Math.sin(Math.min(1, Math.max(0, scanPulse.value)) * Math.PI) * 0.9,
     );
 
     // Attestation-confirmed edge glow (clamped so a spring overshoot past 1
@@ -217,24 +199,6 @@ export const HolographicCard: FC<HolographicCardProps> = ({ width, height }) => 
                                 'rgba(235,244,255,0)',
                             ]}
                             positions={[0, 0.4, 0.47, 0.5, 0.53, 0.6, 1]}
-                        />
-                    </RoundedRect>
-                </Group>
-
-                {/* NFC-read shine sweep (scanPulse-driven; invisible at rest). */}
-                <Group opacity={scanBandOpacity}>
-                    <RoundedRect x={0} y={0} width={width} height={height} r={24}>
-                        <LinearGradient
-                            start={scanBandStart}
-                            end={scanBandEnd}
-                            colors={[
-                                'rgba(255,255,255,0)',
-                                'rgba(255,255,255,0)',
-                                'rgba(255,255,255,0.9)',
-                                'rgba(255,255,255,0)',
-                                'rgba(255,255,255,0)',
-                            ]}
-                            positions={[0, 0.42, 0.5, 0.58, 1]}
                         />
                     </RoundedRect>
                 </Group>
