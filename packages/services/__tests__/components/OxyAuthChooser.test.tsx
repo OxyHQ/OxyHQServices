@@ -126,7 +126,7 @@ describe('OxyAuthChooser', () => {
     isOxyRpOriginMock.mockReturnValue(true);
   });
 
-  it('renders the account rows + add row in the accounts view', () => {
+  it('collapses to the current account by default and expands to reveal the rest', () => {
     snapshot = makeSnapshot({
       activeAccountId: 'a',
       accounts: [
@@ -137,9 +137,22 @@ describe('OxyAuthChooser', () => {
 
     render(<OxyAuthChooser />);
 
+    // Collapsed by default (Google account-menu pattern): only the current
+    // account + the "Manage your Oxy account" button are shown; the rest of the
+    // list is hidden behind the expand chevron.
     expect(screen.getByText('Alice')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Manage your Oxy account' })).toBeTruthy();
+    expect(screen.queryByText('Bob')).toBeNull();
+    expect(screen.queryByText('Add another account')).toBeNull();
+
+    // Tapping the current-account row expands the full list.
+    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
+
     expect(screen.getByText('Bob')).toBeTruthy();
     expect(screen.getByText('Add another account')).toBeTruthy();
+    expect(screen.getByText('Manage accounts on this device')).toBeTruthy();
+    // The current account is repeated first in the expanded list (checked row).
+    expect(screen.getAllByText('Alice')).toHaveLength(2);
   });
 
   it('toasts a failed account switch instead of rendering an inline banner', async () => {
@@ -157,6 +170,8 @@ describe('OxyAuthChooser', () => {
     });
 
     render(<OxyAuthChooser />);
+    // Expand the switcher first — the other accounts are collapsed by default.
+    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
     await waitFor(() =>
@@ -193,6 +208,8 @@ describe('OxyAuthChooser', () => {
     });
 
     render(<OxyAuthChooser />);
+    // Expand the switcher first — the other accounts are collapsed by default.
+    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
     await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));

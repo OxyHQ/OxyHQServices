@@ -82,6 +82,8 @@ import { authChooserStyles as styles } from './oxyAuthChooserStyles';
 
 /** Diameter of a row avatar. */
 const ROW_AVATAR_SIZE = 40;
+/** Diameter of the prominent current-account avatar in the collapsed header. */
+const HEADER_AVATAR_SIZE = 48;
 /** High-contrast QR colors — intentionally fixed (NOT themed) for scan reliability. */
 const QR_PLATE_BG = '#FFFFFF';
 const QR_FOREGROUND = '#000000';
@@ -372,7 +374,24 @@ interface AccountsViewProps {
   handlers: OxyAuthChooserHandlers;
 }
 
+/**
+ * The signed-in switcher, in the Google account-menu shape:
+ *  - COLLAPSED (default): the active account is prominent at the top (avatar +
+ *    name + email) with a trailing expand chevron, and a "Manage your Oxy
+ *    account" outline button directly under it. Nothing else.
+ *  - EXPANDED: the same header + button, then the full account list (current
+ *    first with a check-circle, every other switchable account, "Add another
+ *    account", and "Manage accounts on this device").
+ *
+ * Collapse state is a plain `useState` toggled in the header's press handler —
+ * no `useEffect`, no derived-from-props sync. When there is only ONE account
+ * (nothing to switch to) the chevron is hidden and the "Add another account" +
+ * "Manage accounts on this device" items render inline, so those affordances
+ * stay reachable without a pointless expand toggle.
+ */
 const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handlers }) => {
+  const [expanded, setExpanded] = useState(false);
+
   if (snapshot.loading && snapshot.accounts.length === 0) {
     return (
       <View style={styles.centeredBlock}>
@@ -385,69 +404,139 @@ const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handler
   }
 
   const switchingDisabled = snapshot.switchingAccountId !== null;
+  const current = snapshot.accounts.find((account) => account.isCurrent) ?? snapshot.accounts[0];
+  const hasOtherAccounts = snapshot.accounts.some(
+    (account) => account.accountId !== current?.accountId,
+  );
+  // Current account first, then the rest — the expanded list order.
+  const orderedAccounts = current
+    ? [current, ...snapshot.accounts.filter((account) => account.accountId !== current.accountId)]
+    : snapshot.accounts;
+  // Multi-account: reveal the list only when expanded. Single-account: no expand
+  // affordance, so surface add/manage inline.
+  const showList = hasOtherAccounts ? expanded : true;
+
+  const renderAccountItem = (account: SwitchableAccount) => {
+    const accent = resolveAccentHex(account.color, theme.colors.primary);
+    const isSwitching = snapshot.switchingAccountId === account.accountId;
+    return (
+      <SettingsListItem
+        key={account.accountId}
+        icon={
+          <View
+            style={[styles.avatarRing, { borderColor: account.isCurrent ? accent : 'transparent' }]}
+          >
+            <Avatar
+              source={account.avatarUrl ?? undefined}
+              variant="thumb"
+              name={account.displayName}
+              size={ROW_AVATAR_SIZE}
+            />
+          </View>
+        }
+        title={account.displayName}
+        description={account.email ?? undefined}
+        onPress={() => handlers.onSwitch(account.accountId)}
+        disabled={switchingDisabled}
+        accessibilityLabel={account.displayName}
+        showChevron={false}
+        rightElement={
+          isSwitching ? (
+            <MaterialCommunityIcons name="loading" size={20} color={accent} />
+          ) : account.isCurrent ? (
+            <MaterialCommunityIcons name="check-circle" size={20} color={accent} />
+          ) : undefined
+        }
+      />
+    );
+  };
 
   return (
     <View style={styles.rows}>
-      <SettingsListGroup title={t('accountSwitcher.sections.yourAccounts') || 'Your accounts'}>
-        {snapshot.accounts.map((account) => {
-          const accent = resolveAccentHex(account.color, theme.colors.primary);
-          const isSwitching = snapshot.switchingAccountId === account.accountId;
-          return (
-            <SettingsListItem
-              key={account.accountId}
-              icon={
-                <View
-                  style={[
-                    styles.avatarRing,
-                    { borderColor: account.isCurrent ? accent : 'transparent' },
-                  ]}
-                >
-                  <Avatar
-                    source={account.avatarUrl ?? undefined}
-                    variant="thumb"
-                    name={account.displayName}
-                    size={ROW_AVATAR_SIZE}
-                  />
-                </View>
-              }
-              title={account.displayName}
-              description={account.email ?? undefined}
-              onPress={() => handlers.onSwitch(account.accountId)}
-              disabled={switchingDisabled}
-              accessibilityLabel={account.displayName}
-              showChevron={false}
-              rightElement={
-                isSwitching ? (
-                  <MaterialCommunityIcons name="loading" size={20} color={accent} />
-                ) : account.isCurrent ? (
-                  <MaterialCommunityIcons name="check-circle" size={20} color={accent} />
-                ) : undefined
-              }
+      {current ? (
+        <Pressable
+          style={styles.currentAccountRow}
+          onPress={hasOtherAccounts ? () => setExpanded((value) => !value) : undefined}
+          disabled={hasOtherAccounts ? switchingDisabled : true}
+          accessibilityRole={hasOtherAccounts ? 'button' : undefined}
+          accessibilityState={hasOtherAccounts ? { expanded } : undefined}
+          accessibilityLabel={current.displayName}
+        >
+          <View
+            style={[
+              styles.avatarRing,
+              { borderColor: resolveAccentHex(current.color, theme.colors.primary) },
+            ]}
+          >
+            <Avatar
+              source={current.avatarUrl ?? undefined}
+              variant="thumb"
+              name={current.displayName}
+              size={HEADER_AVATAR_SIZE}
             />
-          );
-        })}
-
-        <SettingsListItem
-          icon={
-            <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
-              <MaterialCommunityIcons name="plus" size={20} color={theme.colors.textSecondary} />
-            </View>
-          }
-          title={t('signin.addAccountTitle') || 'Add another account'}
-          onPress={handlers.onAdd}
-          disabled={switchingDisabled}
-          accessibilityLabel={t('signin.addAccountTitle') || 'Add another account'}
-          showChevron={false}
-        />
-      </SettingsListGroup>
-
-      <View style={styles.footerLinks}>
-        <Pressable onPress={handlers.onManage} accessibilityRole="button">
-          <Text style={[styles.linkText, { color: theme.colors.primary }]}>
-            {t('accountMenu.manage') || 'Manage accounts'}
-          </Text>
+          </View>
+          <View style={styles.currentAccountMeta}>
+            <Text style={[styles.currentAccountName, { color: theme.colors.text }]} numberOfLines={1}>
+              {current.displayName}
+            </Text>
+            {current.email ? (
+              <Text
+                style={[styles.currentAccountEmail, { color: theme.colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {current.email}
+              </Text>
+            ) : null}
+          </View>
+          {hasOtherAccounts ? (
+            <MaterialCommunityIcons
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={24}
+              color={theme.colors.textSecondary}
+            />
+          ) : null}
         </Pressable>
-      </View>
+      ) : null}
+
+      <Button variant="outline" onPress={handlers.onManage} style={styles.manageButton}>
+        {t('accountMenu.manage') || 'Manage your Oxy account'}
+      </Button>
+
+      {showList ? (
+        <SettingsListGroup>
+          {hasOtherAccounts ? orderedAccounts.map(renderAccountItem) : null}
+
+          <SettingsListItem
+            icon={
+              <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
+                <MaterialCommunityIcons name="plus" size={20} color={theme.colors.textSecondary} />
+              </View>
+            }
+            title={t('signin.addAccountTitle') || 'Add another account'}
+            onPress={handlers.onAdd}
+            disabled={switchingDisabled}
+            accessibilityLabel={t('signin.addAccountTitle') || 'Add another account'}
+            showChevron={false}
+          />
+
+          <SettingsListItem
+            icon={
+              <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
+                <MaterialCommunityIcons
+                  name="cog-outline"
+                  size={20}
+                  color={theme.colors.textSecondary}
+                />
+              </View>
+            }
+            title={t('accountSwitcher.manageOnDevice') || 'Manage accounts on this device'}
+            onPress={handlers.onManage}
+            disabled={switchingDisabled}
+            accessibilityLabel={t('accountSwitcher.manageOnDevice') || 'Manage accounts on this device'}
+            showChevron={false}
+          />
+        </SettingsListGroup>
+      ) : null}
     </View>
   );
 };

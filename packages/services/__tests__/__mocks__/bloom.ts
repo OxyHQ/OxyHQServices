@@ -187,8 +187,64 @@ export const prompt = surfaces.prompt;
 
 export const PressableScale = passthrough('div');
 
-export const SettingsListGroup = passthrough('div');
-export const SettingsListItem = passthrough('div');
+/**
+ * `@oxyhq/bloom/settings-list` stubs. The real `SettingsListItem` renders a
+ * Pressable (→ button role) carrying `title`/`description`/`value` as text, an
+ * `icon` + `rightElement`, and an `accessibilityLabel` — the account switcher
+ * queries rows by their display name (`getByText` / `getByRole('button', …)`)
+ * and taps them, so the stub must forward those props rather than swallow them.
+ * A `disabled` item renders a disabled `<button>` (un-clickable in jsdom).
+ */
+export const SettingsListGroup = ({
+  title,
+  children,
+  testID,
+}: { title?: string; children?: ReactNode; testID?: string } & Record<string, unknown>) =>
+  createElement(
+    'div',
+    { 'data-testid': testID },
+    title ? createElement('span', { key: 'group-title' }, title) : null,
+    children,
+  );
+
+export const SettingsListItem = ({
+  icon,
+  title,
+  description,
+  value,
+  rightElement,
+  onPress,
+  disabled,
+  accessibilityLabel,
+  testID,
+}: {
+  icon?: ReactNode;
+  title?: string;
+  description?: string;
+  value?: string;
+  rightElement?: ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
+} & Record<string, unknown>) => {
+  const body = [
+    icon ? createElement(Fragment, { key: 'icon' }, icon) : null,
+    createElement('span', { key: 'title' }, title),
+    description ? createElement('span', { key: 'desc' }, description) : null,
+    value ? createElement('span', { key: 'value' }, value) : null,
+    rightElement ? createElement(Fragment, { key: 'right' }, rightElement) : null,
+  ];
+  const label = accessibilityLabel ?? title;
+  if (onPress) {
+    return createElement(
+      'button',
+      { type: 'button', 'aria-label': label, onClick: onPress, disabled, 'data-testid': testID },
+      body,
+    );
+  }
+  return createElement('div', { 'aria-label': label, 'data-testid': testID }, body);
+};
 
 export const Switch = ({
   value,

@@ -42,16 +42,30 @@ export const authChooserStyles = StyleSheet.create({
     fontSize: 12.5,
     marginTop: 1,
   },
-  addRow: {
+  /** Prominent current-account header (Google-style collapsed row). */
+  currentAccountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderStyle: 'dashed',
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  currentAccountMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  currentAccountName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  currentAccountEmail: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  manageButton: {
+    width: '100%',
+    borderRadius: 14,
+    marginTop: 4,
   },
   addBadge: {
     width: 40,
@@ -60,10 +74,6 @@ export const authChooserStyles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  footerLinks: {
-    alignItems: 'center',
-    marginTop: 16,
   },
   footerLink: {
     alignSelf: 'center',
