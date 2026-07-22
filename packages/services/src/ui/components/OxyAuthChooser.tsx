@@ -61,6 +61,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Button } from '@oxyhq/bloom/button';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { toast } from '@oxyhq/bloom';
 import { Text } from '@oxyhq/bloom/typography';
 import {
@@ -383,32 +384,62 @@ const AccountsView: React.FC<AccountsViewProps> = ({ snapshot, theme, t, handler
     );
   }
 
+  const switchingDisabled = snapshot.switchingAccountId !== null;
+
   return (
     <View style={styles.rows}>
-      {snapshot.accounts.map((account) => (
-        <AccountRow
-          key={account.accountId}
-          account={account}
-          theme={theme}
-          switching={snapshot.switchingAccountId === account.accountId}
-          disabled={snapshot.switchingAccountId !== null}
-          onPress={() => handlers.onSwitch(account.accountId)}
-        />
-      ))}
+      <SettingsListGroup title={t('accountSwitcher.sections.yourAccounts') || 'Your accounts'}>
+        {snapshot.accounts.map((account) => {
+          const accent = resolveAccentHex(account.color, theme.colors.primary);
+          const isSwitching = snapshot.switchingAccountId === account.accountId;
+          return (
+            <SettingsListItem
+              key={account.accountId}
+              icon={
+                <View
+                  style={[
+                    styles.avatarRing,
+                    { borderColor: account.isCurrent ? accent : 'transparent' },
+                  ]}
+                >
+                  <Avatar
+                    source={account.avatarUrl ?? undefined}
+                    variant="thumb"
+                    name={account.displayName}
+                    size={ROW_AVATAR_SIZE}
+                  />
+                </View>
+              }
+              title={account.displayName}
+              description={account.email ?? undefined}
+              onPress={() => handlers.onSwitch(account.accountId)}
+              disabled={switchingDisabled}
+              accessibilityLabel={account.displayName}
+              showChevron={false}
+              rightElement={
+                isSwitching ? (
+                  <MaterialCommunityIcons name="loading" size={20} color={accent} />
+                ) : account.isCurrent ? (
+                  <MaterialCommunityIcons name="check-circle" size={20} color={accent} />
+                ) : undefined
+              }
+            />
+          );
+        })}
 
-      <Pressable
-        style={[styles.addRow, { borderColor: theme.colors.border }]}
-        onPress={handlers.onAdd}
-        accessibilityRole="button"
-        accessibilityLabel={t('signin.addAccountTitle') || 'Add another account'}
-      >
-        <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
-          <MaterialCommunityIcons name="plus" size={20} color={theme.colors.textSecondary} />
-        </View>
-        <Text style={[styles.rowName, { color: theme.colors.textSecondary }]}>
-          {t('signin.addAccountTitle') || 'Add another account'}
-        </Text>
-      </Pressable>
+        <SettingsListItem
+          icon={
+            <View style={[styles.addBadge, { borderColor: theme.colors.border }]}>
+              <MaterialCommunityIcons name="plus" size={20} color={theme.colors.textSecondary} />
+            </View>
+          }
+          title={t('signin.addAccountTitle') || 'Add another account'}
+          onPress={handlers.onAdd}
+          disabled={switchingDisabled}
+          accessibilityLabel={t('signin.addAccountTitle') || 'Add another account'}
+          showChevron={false}
+        />
+      </SettingsListGroup>
 
       <View style={styles.footerLinks}>
         <Pressable onPress={handlers.onManage} accessibilityRole="button">
