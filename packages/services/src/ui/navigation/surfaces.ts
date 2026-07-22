@@ -130,14 +130,23 @@ function presentInternal<K extends RouteName>(
   const bloomOpts: PresentOptions = { label: route, ...bloomOptionsFor(config), ...opts };
 
   const result = bloomSurfaces.present<SurfaceResult<K>>((surface: SurfaceControls) =>
-    createElement(SurfaceScreen, { navStack, surface, presentation: config.presentation }),
+    createElement(SurfaceScreen, {
+      navStack,
+      surface,
+      presentation: config.presentation,
+      dismissOnBackdrop: bloomOpts.dismissOnBackdrop ?? true,
+    }),
     bloomOpts,
   );
 
   const instance: SurfaceInstance<K> = {
     route,
     presentation: config.presentation,
-    navigate: (nextRoute, nextProps) => navStack.navigate(nextRoute, nextProps),
+    navigate: (nextRoute, nextProps) => {
+      const top = navStack.getTop();
+      if (top.route === nextRoute) navStack.replace(nextRoute, nextProps);
+      else navStack.navigate(nextRoute, nextProps);
+    },
     replace: (nextRoute, nextProps) => navStack.replace(nextRoute, nextProps),
     goBack: () => navStack.goBack(),
     canGoBack: () => navStack.canGoBack(),

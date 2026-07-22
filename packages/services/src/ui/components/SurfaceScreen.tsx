@@ -6,6 +6,7 @@ import { useDialogHeader, type DialogHeaderConfig } from '@oxyhq/bloom/dialog';
 import type { SurfaceControls } from '@oxyhq/bloom/surfaces';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent } from '../navigation/routes';
+import { pushSurfaceBackHandler } from '../navigation/surfaceBackBridge';
 import type { SurfaceNavStack } from '../navigation/surfaceNavStack';
 import { getSurfaceConfig, type SurfacePresentation } from '../navigation/surfaceRegistry';
 import {
@@ -77,6 +78,8 @@ export interface SurfaceScreenProps {
   surface: SurfaceControls;
   /** This surface's presentation, so `navigate` knows when to drill in vs. stack. */
   presentation: SurfacePresentation;
+  /** Whether backdrop / Escape / back may dismiss at the root frame. Defaults to true. */
+  dismissOnBackdrop?: boolean;
 }
 
 /**
@@ -88,7 +91,12 @@ export interface SurfaceScreenProps {
  * effect) rather than a captured-controls call, so a dismiss requested before
  * this surface mounted still resolves the Bloom surface exactly once.
  */
-function SurfaceScreen({ navStack, surface, presentation }: SurfaceScreenProps) {
+function SurfaceScreen({
+  navStack,
+  surface,
+  presentation,
+  dismissOnBackdrop = true,
+}: SurfaceScreenProps) {
   const theme = useTheme();
   const state = useStore(navStack.store);
   const top = state.frames[state.frames.length - 1];
@@ -128,6 +136,19 @@ function SurfaceScreen({ navStack, surface, presentation }: SurfaceScreenProps) 
     }
     navStack.requestDismiss();
   }, [navStack]);
+
+  const handleSystemBack = useCallback((): boolean => {
+    if (navStack.goBack()) return true;
+    const current = navStack.getTop();
+    if (current.step > 0) {
+      navStack.setStep(current.step - 1);
+      return true;
+    }
+    if (dismissOnBackdrop) navStack.requestDismiss();
+    return true;
+  }, [navStack, dismissOnBackdrop]);
+
+  useEffect(() => pushSurfaceBackHandler(handleSystemBack), [handleSystemBack]);
 
   const present = useCallback(
     (route: RouteName, props?: Record<string, unknown>) => presentRoute(route, props).result,

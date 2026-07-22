@@ -712,8 +712,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // covering every dismiss path (close button, `onSignedIn`, programmatic
       // `closeAccountDialog`, host unmount). So the stack owns the open state.
       instance.result.finally(() => {
-        if (accountDialogSurfaceRef.current === instance) accountDialogSurfaceRef.current = null;
-        setAccountDialogOpen(false);
+        if (accountDialogSurfaceRef.current === instance) {
+          accountDialogSurfaceRef.current = null;
+          setAccountDialogOpen(false);
+        }
       });
     }
     setAccountDialogOpen(true);

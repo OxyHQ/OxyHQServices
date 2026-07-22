@@ -385,7 +385,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     // long, and the panel hugs its content when the grid is short (no huge empty
     // panel). The cap is tighter for the centered card (a floating modal reads
     // better below full height); the bottom sheet may run taller. Keep this
-    // breakpoint in sync with `DIALOG_PLACEMENT` in BottomSheetRouter.
+    // breakpoint in sync with `SHEET_PLACEMENT` in surfaces.ts.
     const isCenteredPanel = windowWidth >= BREAKPOINTS.md;
     const maxPanelHeight = useMemo(
         () => (isCenteredPanel
