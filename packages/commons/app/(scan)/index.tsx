@@ -80,7 +80,7 @@ export default function ScanSignInScreen() {
         // Real-life attestation: HOLD the parsed payload and resolve A's card so
         // B can review who they're vouching for BEFORE anything is signed (the
         // review sheet). Nothing is submitted until B confirms + passes biometrics.
-        setScanned(true); // freeze the camera behind the sheet (NFC hasn't yet)
+        setScanned(true); // freeze the camera behind the sheet
         attest.prepare({
           subjectDid: parsed.subjectDid,
           context: parsed.context,
@@ -89,9 +89,9 @@ export default function ScanSignInScreen() {
         });
         return;
       }
-      // Freeze the camera behind the error overlay for BOTH entry paths (the
-      // barcode handler already set `scanned`; an NFC-triggered invalid parse
-      // hasn't) so "Scan Again" resets the same state either way.
+      // Freeze the camera behind the error overlay (idempotent — the barcode
+      // handler already set `scanned`) so "Scan Again" always resets from the
+      // same state, whichever branch routed here.
       setScanned(true);
       setScanError(parsed.reason);
     },

@@ -3,11 +3,11 @@ import type { AttestSubmitParams } from './attestStore';
 
 /**
  * One-shot, readiness-gated auto-dispatch for a real-life attestation that
- * arrives via an OS/system entry point — the Android NFC deep link (foreground
- * dispatch while `app/(scan)/attest.tsx` is open, OR a cold launch straight into
- * it). Unlike the in-app scanner, that entry point delivers NO in-app event to
- * hang the submit off, so this hook fires it imperatively the instant the flow
- * is ready.
+ * arrives via an OS/system entry point — an external `oxycommons://attest…`
+ * deep link opening `app/(scan)/attest.tsx`, typically from the system camera
+ * scanning A's QR (including a cold launch straight into it). Unlike the in-app
+ * scanner, that entry point delivers NO in-app event to hang the submit off, so
+ * this hook fires it imperatively the instant the flow is ready.
  *
  * `ready` MUST fold in `canUsePrivateApi` from `useOxy()` (plus the subject
  * card having resolved): gating on private-API readiness is what stops a COLD
@@ -24,7 +24,7 @@ import type { AttestSubmitParams } from './attestStore';
  * The `useEffect` below is the SINGLE sanctioned effect in the entire attest
  * flow: an imperative one-shot bound to an EXTERNAL/OS entry point with no
  * in-app event — the same native-lifecycle/OS-deep-link category the project's
- * AGENTS.md allows (cf. `useNfcAttestEmitter`). It is NOT derived state and NOT
+ * AGENTS.md allows. It is NOT derived state and NOT
  * a control-flow crutch. Every other part of the attest flow stays effect-free.
  *
  * @param ready - `canUsePrivateApi && subjectCardResolved`. Never dispatch until true.

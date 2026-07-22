@@ -9,7 +9,7 @@ import { attestErrorCode, type AttestErrorCode } from '@/lib/civic/civic-errors'
  *
  * Two lanes share this store:
  *   - Reviewed (`prepare` → biometric → `confirm`): the in-app scanner and the
- *     NFC deep-link screen hold the payload until B reviews A's card and passes
+ *     deep-link screen hold the payload until B reviews A's card and passes
  *     the device gate.
  *   - Auto (`submit`): legacy one-shot path kept for tests; production entry
  *     points use the reviewed lane.
@@ -26,8 +26,8 @@ import { attestErrorCode, type AttestErrorCode } from '@/lib/civic/civic-errors'
 /**
  *   idle       → no attestation in flight (nothing scanned yet / after reset)
  *   reviewing  → payload parsed + subject resolving; B reviews A's card before
- *                signing (the confirm-before-submit lane — camera/NFC on the
- *                scanner screen). Nothing is signed until `confirm`.
+ *                signing (the confirm-before-submit lane on the scanner
+ *                screen). Nothing is signed until `confirm`.
  *   submitting → signing + submitting (either the auto lane's `submit` or the
  *                reviewed lane's `confirm`)
  *   done       → accepted (points awarded to A)

@@ -12,12 +12,12 @@ import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometric
 import { useTranslation } from '@/lib/i18n';
 
 /**
- * OS/system NFC deep-link entry for a real-life attestation (the scanner's /
- * B's side). Reached by Android NFC foreground dispatch OR a cold launch
- * straight into `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` (the same
- * bytes `OxyServices.civic.buildAttestQrPayload` puts on the QR — see
- * `useNfcAttestEmitter` and `plugins/with-hce.js`). The in-app camera path
- * routes through `app/(scan)/index.tsx` instead.
+ * OS/system deep-link entry for a real-life attestation (the scanner's / B's
+ * side). Reached when something outside the app opens
+ * `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` — typically the SYSTEM
+ * camera scanning A's attest QR, which cold-launches straight into this route.
+ * The bytes are exactly what `OxyServices.civic.buildAttestQrPayload` puts on
+ * the QR. The in-app camera path routes through `app/(scan)/index.tsx` instead.
  *
  * Matches the in-app scanner: hold the payload for review in
  * `AttestReviewSheet`, then sign + submit only after B confirms and passes the

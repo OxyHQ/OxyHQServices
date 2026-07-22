@@ -821,14 +821,11 @@ Reputation awards are NEVER self-issued. The flow: users generate signed attesta
 - `packages/api/src/services/civic/jury.service.ts` — weighted-reservoir selection, quorum, slash
 - `packages/api/src/routes/civic.ts` — all civic endpoints (`/civic/*`)
 
-### NFC Real-Life Attestation (extends Fase 2)
+### Real-Life Attestation transport — QR only
 
-- Emitter is Android-only (Apple gives no HCE to third-party apps); reading works on BOTH platforms — iPhone can receive, never emit.
-- The NFC tag content is byte-for-byte the attest QR string from `buildAttestQrPayload` (`oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` — raw query keys, there is NO `payload=` wrapper; the Android system NDEF tap deep-links those keys straight into `(scan)/attest`).
-- Key files: `hooks/nfc/useNfcAttestEmitter.ts` (HCE arm/disarm; enabled = screen focused AND AppState active), `hooks/nfc/useNfcReader.ts` (one-shot NDEF read, module-level busy guard), `hooks/civic/useAttestedEvent.ts` (strict-whitelist listener for the server's `civic:attested` push), `plugins/with-hce.js` (custom config plugin: HCE CardService + aid_list + NDEF_DISCOVERED intent filter).
-- SECURITY INVARIANTS (do not relax): `android:requireDeviceUnlock="true"` in the HCE aid_list (lock-screen taps must not read) AND the emitter gate composes AppState 'active' (backgrounded app must not emit). NFC emission must never exceed the QR's deliberate-display exposure.
-- Card feedback: `scanPulse`/`attestGlow` SharedValues threaded through `TiltContext` into the Skia canvas; level 1 = local HCE read event, level 2 = `civic:attested` socket event to room `user:<subjectUserId>` emitted by `POST /civic/attestations` (payload `{byUserId, recordId, points, at, subjectUserId}` — clients drop malformed payloads whole and scope the effect to the active identity).
-- NFC does not exist in emulators — changes to this surface require real-hardware verification and an EAS build (native modules react-native-hce + react-native-nfc-manager).
+- The ONLY transport is the attest QR: `buildAttestQrPayload` → `oxycommons://attest?subject=…&ctx=…&nonce=…&exp=…` (raw query keys, there is NO `payload=` wrapper). A shows it, B scans it — in-app via `(scan)/index.tsx`, or from the system camera, which deep-links straight into `(scan)/attest`.
+- **NFC/HCE was removed (2026-07-22).** It carried byte-for-byte the same payload, could only ever emit on Android (Apple gives no HCE to third-party apps), and forced a patch of the abandoned `react-native-hce` (dead `jcenter()` repos vs Gradle 9). Do NOT reintroduce it without owning the native module — `react-native-hce` is not an option. Design: `docs/superpowers/specs/2026-07-21-remove-nfc-hce-design.md`.
+- Card feedback: the `attestGlow` SharedValue is threaded through `TiltContext` into the Skia canvas, driven by the `civic:attested` socket event to room `user:<subjectUserId>` emitted by `POST /civic/attestations` (payload `{byUserId, recordId, points, at, subjectUserId}` — clients drop malformed payloads whole and scope the effect to the active identity).
 - Deploy-order rule: the api must deploy before a Commons build that requires new `civic:attested` payload fields ships (old api + new client = events dropped by the strict whitelist).
 
 ### Fase 3 — Proof of Personhood
