@@ -123,7 +123,8 @@
     "getCommons": "Commons herunterladen",
     "commonsNotInstalled": "Kein Commons? Holen Sie sich die App, um sich mit Ihrer Oxy-ID anzumelden.",
     "showQrAnyway": "Ich habe Commons auf einem anderen Gerät",
-    "switchWhileSignedInAs": "Konto wechseln, angemeldet als {{name}}"
+    "switchWhileSignedInAs": "Konto wechseln, angemeldet als {{name}}",
+    "manageOnDevice": "Konten auf diesem Gerät verwalten"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "Öffnet das Kontomenü",
     "openWithUser": "Kontomenü für {{name}}",
     "switching": "Konto wird gewechselt…",
-    "signOutAccount": "{{name}} abmelden"
+    "signOutAccount": "{{name}} abmelden",
+    "greeting": "Hallo, {{name}}!",
+    "switchAccount": "Konto wechseln",
+    "storage": {
+      "title": "Oxy-Speicher",
+      "usage": "{{used}} von {{total}} belegt",
+      "used": "Belegt",
+      "free": "Frei",
+      "unavailable": "Nutzungsdetails nicht verfügbar",
+      "upgrade": "Plan upgraden",
+      "manage": "Speicher verwalten"
+    },
+    "data": "Deine Daten bei Oxy",
+    "settings": "Oxy-Einstellungen",
+    "help": "Hilfe & Feedback",
+    "signOut": "Abmelden",
+    "privacy": "Datenschutzerklärung",
+    "terms": "Nutzungsbedingungen"
   }
 }

@@ -123,7 +123,8 @@
     "getCommons": "获取 Commons",
     "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
     "showQrAnyway": "我在另一台设备上有 Commons",
-    "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}"
+    "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}",
+    "manageOnDevice": "管理此设备上的账号"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "打开账户菜单",
     "openWithUser": "{{name}} 的账户菜单",
     "switching": "正在切换账户…",
-    "signOutAccount": "退出 {{name}}"
+    "signOutAccount": "退出 {{name}}",
+    "greeting": "你好，{{name}}！",
+    "switchAccount": "切换账号",
+    "storage": {
+      "title": "Oxy 存储",
+      "usage": "已使用 {{used}} / {{total}}",
+      "used": "已用",
+      "free": "可用",
+      "unavailable": "无法获取用量详情",
+      "upgrade": "升级方案",
+      "manage": "管理存储"
+    },
+    "data": "你在 Oxy 中的数据",
+    "settings": "Oxy 设置",
+    "help": "帮助与反馈",
+    "signOut": "退出登录",
+    "privacy": "隐私政策",
+    "terms": "服务条款"
   }
 }

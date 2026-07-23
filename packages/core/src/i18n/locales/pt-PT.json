@@ -123,7 +123,8 @@
     "getCommons": "Obter o Commons",
     "commonsNotInstalled": "Não tem o Commons? Obtenha a app para iniciar sessão com o seu Oxy ID.",
     "showQrAnyway": "Tenho o Commons noutro dispositivo",
-    "switchWhileSignedInAs": "Mudar de conta, com sessão iniciada como {{name}}"
+    "switchWhileSignedInAs": "Mudar de conta, com sessão iniciada como {{name}}",
+    "manageOnDevice": "Gerir contas neste dispositivo"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "Abre o menu da conta",
     "openWithUser": "Menu da conta de {{name}}",
     "switching": "A mudar de conta…",
-    "signOutAccount": "Terminar sessão de {{name}}"
+    "signOutAccount": "Terminar sessão de {{name}}",
+    "greeting": "Olá, {{name}}!",
+    "switchAccount": "Mudar de conta",
+    "storage": {
+      "title": "Armazenamento Oxy",
+      "usage": "{{used}} de {{total}} em uso",
+      "used": "Em uso",
+      "free": "Livre",
+      "unavailable": "Detalhes de utilização indisponíveis",
+      "upgrade": "Atualizar plano",
+      "manage": "Gerir armazenamento"
+    },
+    "data": "Os seus dados no Oxy",
+    "settings": "Definições do Oxy",
+    "help": "Ajuda e feedback",
+    "signOut": "Terminar sessão",
+    "privacy": "Política de privacidade",
+    "terms": "Termos de serviço"
   }
 }

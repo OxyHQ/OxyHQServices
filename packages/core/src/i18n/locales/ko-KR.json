@@ -123,7 +123,8 @@
     "getCommons": "Commons 다운로드",
     "commonsNotInstalled": "Commons가 없으신가요? 앱을 다운로드하여 Oxy ID로 로그인하세요.",
     "showQrAnyway": "다른 기기에 Commons가 있습니다",
-    "switchWhileSignedInAs": "계정 전환, {{name}}(으)로 로그인됨"
+    "switchWhileSignedInAs": "계정 전환, {{name}}(으)로 로그인됨",
+    "manageOnDevice": "이 기기의 계정 관리"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "계정 메뉴를 엽니다",
     "openWithUser": "{{name}}의 계정 메뉴",
     "switching": "계정 전환 중…",
-    "signOutAccount": "{{name}} 로그아웃"
+    "signOutAccount": "{{name}} 로그아웃",
+    "greeting": "안녕하세요, {{name}}님!",
+    "switchAccount": "계정 전환",
+    "storage": {
+      "title": "Oxy 저장소",
+      "usage": "{{total}} 중 {{used}} 사용",
+      "used": "사용됨",
+      "free": "여유",
+      "unavailable": "사용량 정보를 사용할 수 없음",
+      "upgrade": "플랜 업그레이드",
+      "manage": "저장소 관리"
+    },
+    "data": "Oxy의 데이터",
+    "settings": "Oxy 설정",
+    "help": "도움말 및 피드백",
+    "signOut": "로그아웃",
+    "privacy": "개인정보 처리방침",
+    "terms": "서비스 약관"
   }
 }

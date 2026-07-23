@@ -123,7 +123,8 @@
     "getCommons": "احصل على Commons",
     "commonsNotInstalled": "لا تملك Commons؟ احصل على التطبيق لتسجيل الدخول بمعرّف Oxy الخاص بك.",
     "showQrAnyway": "لدي Commons على جهاز آخر",
-    "switchWhileSignedInAs": "تبديل الحساب، مسجّل الدخول باسم {{name}}"
+    "switchWhileSignedInAs": "تبديل الحساب، مسجّل الدخول باسم {{name}}",
+    "manageOnDevice": "إدارة الحسابات على هذا الجهاز"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "يفتح قائمة الحساب",
     "openWithUser": "قائمة حساب {{name}}",
     "switching": "جارٍ تبديل الحساب…",
-    "signOutAccount": "تسجيل خروج {{name}}"
+    "signOutAccount": "تسجيل خروج {{name}}",
+    "greeting": "مرحبًا، {{name}}!",
+    "switchAccount": "تبديل الحساب",
+    "storage": {
+      "title": "تخزين Oxy",
+      "usage": "{{used}} من {{total}} مستخدم",
+      "used": "مستخدم",
+      "free": "متاح",
+      "unavailable": "تفاصيل الاستخدام غير متاحة",
+      "upgrade": "ترقية الخطة",
+      "manage": "إدارة التخزين"
+    },
+    "data": "بياناتك في Oxy",
+    "settings": "إعدادات Oxy",
+    "help": "المساعدة والملاحظات",
+    "signOut": "تسجيل الخروج",
+    "privacy": "سياسة الخصوصية",
+    "terms": "شروط الخدمة"
   }
 }

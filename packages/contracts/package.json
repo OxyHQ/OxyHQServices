@@ -56,7 +56,7 @@
     "typescript": "tsc --noEmit",
     "test": "jest --passWithNoTests",
     "lint": "biome lint --error-on-warnings ./src",
-    "prepublishOnly": "bun run clean && bun run build",
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build",
     "release": "rm -rf dist && bun run build && release-it"
   },
   "release-it": {

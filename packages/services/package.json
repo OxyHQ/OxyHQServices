@@ -109,7 +109,7 @@
     "delete-debug-view": "rm -rf ./lib/commonjs/components/bottomSheetDebugView ./lib/module/components/bottomSheetDebugView ./lib/typescript/components/bottomSheetDebugView || true",
     "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
     "release": "rm -rf lib && bun run build && release-it",
-    "prepublishOnly": "bun run typescript && bun run test && bun run build"
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run typescript && bun run test && bun run build"
   },
   "release-it": {
     "git": {
@@ -127,7 +127,7 @@
   },
   "dependencies": {
     "@oxyhq/contracts": "workspace:*",
-    "@oxyhq/core": "^12.10.1",
+    "@oxyhq/core": "^12.10.2",
     "@simplewebauthn/browser": "^13.3.0",
     "color": "^4.2.3"
   },
@@ -177,7 +177,7 @@
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/bloom": ">=0.48.0",
-    "@oxyhq/core": "^12.9.0",
+    "@oxyhq/core": "^12.10.0",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/query-async-storage-persister": "^5.101",

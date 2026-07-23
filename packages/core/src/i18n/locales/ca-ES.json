@@ -123,7 +123,8 @@
     "getCommons": "Descarrega Commons",
     "commonsNotInstalled": "No tens Commons? Descarrega l'app per iniciar sessió amb el teu Oxy ID.",
     "showQrAnyway": "Tinc Commons en un altre dispositiu",
-    "switchWhileSignedInAs": "Canvia de compte, amb la sessió iniciada com a {{name}}"
+    "switchWhileSignedInAs": "Canvia de compte, amb la sessió iniciada com a {{name}}",
+    "manageOnDevice": "Gestionar comptes en aquest dispositiu"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "Obre el menú del compte",
     "openWithUser": "Menú del compte de {{name}}",
     "switching": "Canviant de compte…",
-    "signOutAccount": "Tanca la sessió de {{name}}"
+    "signOutAccount": "Tanca la sessió de {{name}}",
+    "greeting": "Hola, {{name}}!",
+    "switchAccount": "Canviar de compte",
+    "storage": {
+      "title": "Emmagatzematge d'Oxy",
+      "usage": "{{used}} de {{total}} en ús",
+      "used": "En ús",
+      "free": "Lliure",
+      "unavailable": "Detalls d'ús no disponibles",
+      "upgrade": "Millorar el pla",
+      "manage": "Gestionar l'emmagatzematge"
+    },
+    "data": "Les teves dades a Oxy",
+    "settings": "Configuració d'Oxy",
+    "help": "Ajuda i comentaris",
+    "signOut": "Tancar sessió",
+    "privacy": "Política de privacitat",
+    "terms": "Condicions del servei"
   }
 }

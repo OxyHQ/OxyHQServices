@@ -123,7 +123,8 @@
     "getCommons": "Commonsを入手",
     "commonsNotInstalled": "Commonsがありませんか？アプリを入手してOxy IDでサインインしましょう。",
     "showQrAnyway": "別のデバイスにCommonsがあります",
-    "switchWhileSignedInAs": "アカウントを切り替え（{{name}} としてログイン中）"
+    "switchWhileSignedInAs": "アカウントを切り替え（{{name}} としてログイン中）",
+    "manageOnDevice": "このデバイスのアカウントを管理"
   },
   "common": {
     "actions": {
@@ -247,6 +248,23 @@
     "openHint": "アカウントメニューを開きます",
     "openWithUser": "{{name}} のアカウントメニュー",
     "switching": "アカウントを切り替えています…",
-    "signOutAccount": "{{name}} をログアウト"
+    "signOutAccount": "{{name}} をログアウト",
+    "greeting": "こんにちは、{{name}}さん！",
+    "switchAccount": "アカウントを切り替え",
+    "storage": {
+      "title": "Oxyストレージ",
+      "usage": "{{total}}中{{used}}を使用中",
+      "used": "使用中",
+      "free": "空き",
+      "unavailable": "使用状況を取得できません",
+      "upgrade": "プランをアップグレード",
+      "manage": "ストレージを管理"
+    },
+    "data": "Oxyのデータ",
+    "settings": "Oxyの設定",
+    "help": "ヘルプとフィードバック",
+    "signOut": "サインアウト",
+    "privacy": "プライバシーポリシー",
+    "terms": "利用規約"
   }
 }

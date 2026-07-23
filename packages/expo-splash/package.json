@@ -65,7 +65,7 @@
     "clean": "rm -rf dist",
     "typescript": "tsc --noEmit",
     "test": "jest --passWithNoTests",
-    "prepublishOnly": "bun run clean && bun run build"
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build"
   },
   "dependencies": {
     "@expo/image-utils": ">=0.7.0",
