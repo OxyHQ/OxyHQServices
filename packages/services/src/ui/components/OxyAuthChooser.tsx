@@ -93,6 +93,7 @@ import { getNormalizedUserHandle, isOxyRpOrigin } from '@oxyhq/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { getAccountDialogConsumerHooks } from '../navigation/accountDialogManager';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { getCommonsAcquisitionUrl } from '../utils/commonsStoreLinks';
 import { useAccountStorageUsage } from '../hooks/queries/useServicesQueries';
@@ -329,26 +330,38 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
 
   const handleManage = useCallback(() => {
     onComplete?.();
+    const hooks = getAccountDialogConsumerHooks();
+    if (hooks?.onNavigateManage) {
+      hooks.onNavigateManage();
+      return;
+    }
     showBottomSheet?.('ManageAccount');
   }, [onComplete, showBottomSheet]);
+
+  const handleAdd = useCallback(() => {
+    const hooks = getAccountDialogConsumerHooks();
+    if (hooks?.onAddAccount) {
+      hooks.onAddAccount();
+      return;
+    }
+    // No consumer override: enter the "add account" view and auto-start the web
+    // sign-in flow, from this handler (the event that reaches the view).
+    controller?.add();
+    autoStartSignIn();
+  }, [controller, autoStartSignIn]);
 
   const handlers = useMemo<OxyAuthChooserHandlers>(
     () => ({
       onSwitch: (accountId) => {
         void handleSwitch(accountId);
       },
-      // Entering the "add account" view auto-starts the web sign-in flow, from
-      // this handler (the event that reaches the view) — not a watcher.
-      onAdd: () => {
-        controller?.add();
-        autoStartSignIn();
-      },
+      onAdd: handleAdd,
       onManage: handleManage,
       // Morphs the AccountDialog surface into `ChangeAvatar` (and back), then
       // uploads / clears the picked photo — the single shared avatar write path.
       onEditAvatar: () => openAvatarPicker(),
     }),
-    [handleSwitch, controller, autoStartSignIn, handleManage, openAvatarPicker],
+    [handleSwitch, handleAdd, handleManage, openAvatarPicker],
   );
 
   // Real storage usage for the account menu's "Oxy storage" block. Disabled

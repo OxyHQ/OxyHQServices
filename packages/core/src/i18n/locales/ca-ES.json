@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "Els teus comptes"
+    },
+    "loading": "S'estan carregant els comptes...",
     "qrHeadline": "Inicia sessió amb la teva identitat d'Oxy",
     "signInWithOxy": "Inicia sessió amb Oxy",
     "useIdentityOnDevice": "No tens Commons? Fes servir una clau d'accés en aquest dispositiu",

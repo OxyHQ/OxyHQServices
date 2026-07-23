@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "Vos comptes"
+    },
+    "loading": "Chargement des comptes...",
     "qrHeadline": "Connectez-vous avec votre identité Oxy",
     "signInWithOxy": "Se connecter avec Oxy",
     "useIdentityOnDevice": "Pas de Commons ? Utilisez une clé d'accès sur cet appareil",

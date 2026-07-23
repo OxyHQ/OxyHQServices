@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "내 계정"
+    },
+    "loading": "계정을 불러오는 중...",
     "qrHeadline": "Oxy ID로 로그인",
     "signInWithOxy": "Oxy로 로그인",
     "useIdentityOnDevice": "Commons가 없으신가요? 이 기기의 패스키를 사용하세요",

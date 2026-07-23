@@ -143,8 +143,13 @@ jest.mock('@oxyhq/core', () => {
 
 // eslint-disable-next-line import/first
 import OxyAuthChooser from '../../src/ui/components/OxyAuthChooser';
+// eslint-disable-next-line import/first
+import { registerAccountDialogConsumerHooks } from '../../src/ui/navigation/accountDialogManager';
 
 describe('OxyAuthChooser', () => {
+  afterEach(() => {
+    registerAccountDialogConsumerHooks(null);
+  });
   beforeEach(() => {
     snapshot = makeSnapshot();
     jest.clearAllMocks();
@@ -181,6 +186,31 @@ describe('OxyAuthChooser', () => {
     expect(screen.getByText('Bob')).toBeTruthy();
     expect(screen.getByText('Add another account')).toBeTruthy();
     expect(screen.getByText('Manage accounts on this device')).toBeTruthy();
+  });
+
+  it('routes manage and add-account to registered consumer hooks', () => {
+    const onNavigateManage = jest.fn();
+    const onAddAccount = jest.fn();
+    registerAccountDialogConsumerHooks({ onNavigateManage, onAddAccount });
+
+    snapshot = makeSnapshot({
+      activeAccountId: 'a',
+      accounts: [
+        makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' }),
+        makeAccount({ accountId: 'b', displayName: 'Bob', sessionId: 's-b' }),
+      ],
+    });
+
+    render(<OxyAuthChooser />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage your Oxy account' }));
+    expect(onNavigateManage).toHaveBeenCalledTimes(1);
+    expect(showBottomSheet).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
+    fireEvent.click(screen.getByText('Add another account'));
+    expect(onAddAccount).toHaveBeenCalledTimes(1);
+    expect(controller.add).not.toHaveBeenCalled();
   });
 
   it('toasts a failed account switch instead of rendering an inline banner', async () => {

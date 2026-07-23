@@ -22,7 +22,19 @@ export interface AccountDialogControls {
   close: () => void;
 }
 
+/**
+ * Optional consumer overrides for account-dialog actions. `ProfileButton` (and
+ * similar hosts) register these while mounted so inbox/accounts can route
+ * "Manage" / "Add account" to app-local navigation instead of the SDK default.
+ */
+export interface AccountDialogConsumerHooks {
+  onNavigateManage?: () => void;
+  onAddAccount?: () => void;
+  onNavigateProfile?: () => void;
+}
+
 let controls: AccountDialogControls | null = null;
+let consumerHooks: AccountDialogConsumerHooks | null = null;
 const visibilityListeners = new Set<(visible: boolean) => void>();
 
 export function registerAccountDialogControls(next: AccountDialogControls): () => void {
@@ -32,6 +44,22 @@ export function registerAccountDialogControls(next: AccountDialogControls): () =
       controls = null;
     }
   };
+}
+
+/** Register app-local manage/add/profile handlers for the account dialog. */
+export function registerAccountDialogConsumerHooks(
+  next: AccountDialogConsumerHooks | null,
+): () => void {
+  consumerHooks = next;
+  return () => {
+    if (consumerHooks === next) {
+      consumerHooks = null;
+    }
+  };
+}
+
+export function getAccountDialogConsumerHooks(): AccountDialogConsumerHooks | null {
+  return consumerHooks;
 }
 
 /** Open the account dialog on `view` (default `accounts`). No-op before mount. */

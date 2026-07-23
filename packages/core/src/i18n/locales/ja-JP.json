@@ -112,6 +112,10 @@
     }
   },
   "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "あなたのアカウント"
+    },
+    "loading": "アカウントを読み込み中...",
     "qrHeadline": "Oxy IDでサインイン",
     "signInWithOxy": "Oxyでサインイン",
     "useIdentityOnDevice": "Commonsがありませんか？このデバイスのパスキーを使用",

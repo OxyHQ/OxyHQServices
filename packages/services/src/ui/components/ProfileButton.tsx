@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     View,
     Pressable,
@@ -17,6 +17,7 @@ import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { useAuth } from '../hooks/useAuth';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { registerAccountDialogConsumerHooks } from '../navigation/accountDialogManager';
 
 const isWeb = Platform.OS === 'web';
 
@@ -102,6 +103,9 @@ export interface ProfileButtonProps {
 const ProfileButton: React.FC<ProfileButtonProps> = ({
     expanded = true,
     avatarSize,
+    onNavigateManage,
+    onAddAccount,
+    onNavigateProfile,
     className,
     style,
 }) => {
@@ -126,6 +130,17 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     const openDialog = useCallback(() => {
         openAccountDialog('accounts');
     }, [openAccountDialog]);
+
+    useEffect(() => {
+        if (!onNavigateManage && !onAddAccount && !onNavigateProfile) {
+            return undefined;
+        }
+        return registerAccountDialogConsumerHooks({
+            onNavigateManage,
+            onAddAccount,
+            onNavigateProfile,
+        });
+    }, [onNavigateManage, onAddAccount, onNavigateProfile]);
 
     const avatarUrl = useMemo(
         () => (user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined),
