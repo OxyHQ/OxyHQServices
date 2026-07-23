@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { AccountDialogView, FileMetadata } from '@oxyhq/core';
 import type { RouteName } from './routes';
 import type { AvatarCropResult } from '../screens/AvatarCropScreen';
+import type { AvatarRemovalResult } from '../screens/ChangeAvatarScreen';
 
 /**
  * The SDK's typed surface registry — the contract layer the SDK stacks on top of
@@ -60,7 +61,17 @@ export interface SurfaceRegistry {
   CreateAccount: SurfaceRoute;
   AccountMembers: SurfaceRoute;
   AccountSettings: SurfaceRoute;
-  /** Square-crop editor. Dismissed with the cropped {@link AvatarCropResult}. */
+  /**
+   * Profile-picture source list — the ONE entry into changing an avatar. Every
+   * source that yields an image navigates WITHIN this surface to `AvatarCrop`
+   * (so the panel morphs), and the crop's own dismissal resolves this surface.
+   * Hence the union: a confirmed crop, or the user removing their photo.
+   */
+  ChangeAvatar: SurfaceRoute<Record<string, unknown>, AvatarCropResult | AvatarRemovalResult>;
+  /**
+   * Square-crop editor. Dismissed with the cropped {@link AvatarCropResult}.
+   * Reached only by navigating within a `ChangeAvatar` surface.
+   */
   AvatarCrop: SurfaceRoute<Record<string, unknown>, AvatarCropResult>;
   Notifications: SurfaceRoute;
   ConnectedApps: SurfaceRoute;
@@ -91,15 +102,18 @@ export type SurfaceResult<K extends RouteName> = SurfaceRegistry[K]['result'];
  * How a surface renders — the SDK's presentation taxonomy. Each value maps to a
  * concrete Bloom `Dialog` placement/chrome in `surfaces.ts`:
  *
- *   - `'sheet'`      → responsive `{ base: 'bottom', md: 'center' }` (the default:
- *                      a bottom sheet on narrow viewports, a centered card on wide).
- *   - `'center'`     → a plain centered modal at every width.
+ *   - `'sheet'`      → responsive `{ base: 'bottom', md: 'center' }` (the default,
+ *                      and — since every screen morphs — the presentation of EVERY
+ *                      route today: a bottom sheet on narrow, a centered card wide).
+ *   - `'center'`     → a plain centered modal at every width. Currently unused.
  *   - `'drawer'`     → responsive `{ base: 'bottom', md: 'left' }` side drawer.
- *   - `'fullScreen'` → approximated with the shared `Dialog`: a full-height sheet /
- *                      large centered card, flush (`contentPadding: 0`) content, a
- *                      black canvas and programmatic-only dismiss (the flagship
- *                      image picker). A real Bloom `'fullScreen'` placement is a
- *                      follow-up if the approximation reads wrong on device.
+ *                      Currently unused.
+ *   - `'fullScreen'` → a flush black-canvas surface (`contentPadding: 0`,
+ *                      programmatic-only dismiss). Currently unused: the flagship
+ *                      photo picker now MORPHS in place as a `sheet` (it paints its
+ *                      own black canvas + bar inside the themed panel), so nothing
+ *                      needs a stacked full-bleed surface. Retained for a future
+ *                      route that genuinely must be full-bleed.
  */
 export type SurfacePresentation = 'sheet' | 'center' | 'drawer' | 'fullScreen';
 
@@ -124,6 +138,47 @@ export interface SurfaceRouteConfig {
    */
   scrollable: boolean;
   /**
+   * Whether the surface MORPHS when this route is navigated to WITHIN it — the
+   * panel animates from the outgoing frame's size to this one's instead of
+   * hard-cutting (the in-place NAV-WITHIN size animation). `true` for every
+   * ordinary route screen; a wizard step swap counts as a frame here too.
+   *
+   * Distinct from {@link stacks}: `morph` tunes the size animation of an IN-PLACE
+   * frame swap; `stacks` decides whether the frame lands in place at all or opens
+   * a new surface. A stacked surface can still morph between ITS OWN frames.
+   */
+  morph: boolean;
+  /**
+   * An EXPLICIT target size the panel MORPHS to for this route, instead of the
+   * measured natural height / the surface width. This is how an own-scroller frame
+   * (its content owns its own scroll, so the panel can't measure it) still GROWS
+   * its container to a large declared size — the panel animates UP to it on entry
+   * and back DOWN on exit while the frame's inner list scrolls within. `heightRatio`
+   * is a fraction of the viewport height (clamped there); `maxWidth` (px) widens the
+   * centered card beyond the ordinary sheet. Omit for the normal measured behaviour.
+   */
+  frameSize?: { heightRatio?: number; maxWidth?: number };
+  /**
+   * Whether navigating TO this route from INSIDE an existing surface opens a NEW
+   * stacked surface (its own backdrop + entry animation — the DEPTH axis) instead
+   * of morphing in place within the current one (the NAV-WITHIN axis).
+   *
+   * `false` (the DEFAULT) — morph in place: the route is pushed as a frame in the
+   * host surface's nav stack and the panel reshapes from the previous frame to it
+   * (size-animated per {@link morph}). Every ordinary screen. This is what makes
+   * morph the default: a drill-in navigates WITHIN unless the target opts out.
+   *
+   * `true` — the route's chrome is fundamentally incompatible with morphing into
+   * a host, so it must own its own surface: the full-bleed `fullScreen` image
+   * picker (black canvas, flush content, programmatic-only dismiss). Presented on
+   * top; dismissing it unwinds back to the surface that opened it.
+   *
+   * NOTE: the DEPTH `present` / `presentDetached` APIs ALWAYS open a new surface
+   * regardless of this flag — `stacks` only governs the in-surface drill-in
+   * (`navigate` / `showBottomSheet`) decision in `navigateWithinOrPresent`.
+   */
+  stacks: boolean;
+  /**
    * Whether the surface renders the Dialog's OWN navigation header (sticky
    * gradient nav bar + large collapsing title over the surface's scroll content).
    * `true` for every route screen — screens render NO header of their own and
@@ -145,13 +200,14 @@ const DEFAULT_SURFACE_CONFIG: SurfaceRouteConfig = {
   presentation: 'sheet',
   scrollable: true,
   header: true,
+  morph: true,
+  stacks: false,
   manualActivation: true,
   dynamicBackdrop: true,
 };
 
 /**
  * Routes that render NO Dialog nav header — they own their chrome:
- * - `AvatarCrop` — its own translucent Cancel / title / Done top bar.
  * - `PaymentGateway` — the payment surface owns its controls.
  * - `WelcomeNewUser` — a full-bleed onboarding wizard with its own step chrome.
  * - `Profile` — a full profile view, no nav-header chrome.
@@ -160,9 +216,15 @@ const DEFAULT_SURFACE_CONFIG: SurfaceRouteConfig = {
  * `AccountDialog` used to be here — it now uses the SHARED Dialog nav header like
  * every other screen (its per-view title/subtitle + view-back go through
  * `useSurfaceHeader`), so the account/sign-in surface no longer feels bespoke.
+ *
+ * `AvatarCrop` used to be here too, for its own translucent Cancel/title/Done
+ * bar. It is now reached ONLY by navigating within a `ChangeAvatar` surface, and
+ * the Dialog's `header` is fixed for a surface's whole life — a headerless frame
+ * inside a header-mode surface would stack two bars. So the crop declares its
+ * title + its "Use photo" action through `useSurfaceHeader` like every other
+ * screen, and keeps only its dark crop stage.
  */
 const HEADERLESS_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
-  'AvatarCrop',
   'PaymentGateway',
   'WelcomeNewUser',
   'Profile',
@@ -209,18 +271,30 @@ const OWN_SCROLL_CONTAINER_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
 ]);
 
 /**
- * Resolve the surface configuration for a route + props. Defaults to the
- * responsive sheet; the image-only FileManagement picker upgrades to a full-bleed
- * `'fullScreen'` surface, and every route that owns its own scroll container is
- * marked `scrollable: false`.
+ * Resolve the surface configuration for a route + props. Every route defaults to
+ * the responsive sheet and MORPHS in place when navigated to from within a surface
+ * (no route stacks — genuine overlays are Bloom-raw `surfaces.present`/`confirm`
+ * calls, outside this registry). The image-only FileManagement picker is a normal
+ * sheet that owns its own scroll + translucent bar (no Dialog nav header); every
+ * other own-scroller is marked `scrollable: false`.
  */
 export const getSurfaceConfig = (
   route: RouteName,
   props: Record<string, unknown>,
 ): SurfaceRouteConfig => {
   if (route === 'FileManagement' && isFileManagementImageOnlyPicker(props)) {
-    // The full-bleed image picker owns its own translucent top bar — no nav header.
-    return { ...DEFAULT_SURFACE_CONFIG, presentation: 'fullScreen', scrollable: false, header: false };
+    // The flagship photo picker MORPHS in place like every other screen. It is an
+    // own-scroller (`PhotoPickerView`'s FlatList) that paints its OWN full-bleed
+    // black canvas + translucent top bar INSIDE the themed panel, so it takes no
+    // Dialog nav header. It needs ROOM for the photo grid, so it declares an
+    // explicit LARGE morph target — the panel grows UP to a near-full-height,
+    // wider card on entry (and back down on pick→crop), the grid scrolling within.
+    return {
+      ...DEFAULT_SURFACE_CONFIG,
+      scrollable: false,
+      header: false,
+      frameSize: { heightRatio: 0.9, maxWidth: 640 },
+    };
   }
   if (HEADERLESS_ROUTES.has(route)) {
     return { ...DEFAULT_SURFACE_CONFIG, header: false };

@@ -69,6 +69,8 @@ export const AppState: {
  */
 export const Linking = {
   openURL: async (_url: string): Promise<void> => undefined,
+  /** Deep-link into the OS app-settings page (a refused-permission escape hatch). */
+  openSettings: async (): Promise<void> => undefined,
   addEventListener: (_event: string, _handler: (event: { url: string }) => void) => ({
     remove: () => undefined,
   }),
@@ -145,6 +147,13 @@ const domSafeProps = (props: Record<string, unknown>): Record<string, unknown> =
   }
   if (typeof props.testID === 'string') {
     out['data-testid'] = props.testID;
+  }
+  // Forward `aria-expanded` verbatim, exactly as react-native-web does — it
+  // dropped the legacy `accessibilityState` object in 0.21, so `aria-expanded`
+  // is the one prop that reaches the DOM (and RN maps it to
+  // `accessibilityState.expanded` natively). Lets tests observe collapse state.
+  if (typeof props['aria-expanded'] === 'boolean') {
+    out['aria-expanded'] = props['aria-expanded'];
   }
   return out;
 };

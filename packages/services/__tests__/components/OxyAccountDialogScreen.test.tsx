@@ -75,11 +75,47 @@ describe('OxyAccountDialogScreen — shared nav header', () => {
     jest.clearAllMocks();
   });
 
-  it('contributes the accounts title with no back in the accounts view', () => {
+  it('brands the accounts view with the Oxy wordmark instead of a title, and no back', () => {
     render(<OxyAccountDialogScreen />);
 
-    expect(lastHeader()?.title).toBe('Your accounts');
+    // The account MENU is branded, not titled: a `titleContent` node owns the
+    // nav bar centre and Bloom then suppresses the large in-content title.
+    expect(lastHeader()?.titleContent).toBeTruthy();
+    expect(lastHeader()?.title).toBeUndefined();
+    expect(lastHeader()?.subtitle).toBeUndefined();
     expect(lastHeader()?.onBack).toBeUndefined();
+  });
+
+  it('keeps the wordmark even with an account signed in — the HERO names the account, not the bar', () => {
+    snapshot = makeSnapshot({
+      activeAccountId: 'a',
+      accounts: [
+        {
+          accountId: 'a',
+          sessionId: 's-a',
+          userId: 'u-a',
+          displayName: 'Alice',
+          username: 'alice',
+          email: 'alice@oxy.so',
+          avatarUrl: null,
+          color: null,
+          isCurrent: true,
+          isActive: true,
+        },
+      ],
+    });
+    render(<OxyAccountDialogScreen />);
+
+    expect(lastHeader()?.titleContent).toBeTruthy();
+    expect(lastHeader()?.title).toBeUndefined();
+  });
+
+  it('keeps the informative title (and drops the wordmark) on the other views', () => {
+    snapshot = makeSnapshot({ view: 'qr' });
+    render(<OxyAccountDialogScreen />);
+
+    expect(lastHeader()?.titleContent).toBeUndefined();
+    expect(lastHeader()?.title).toBe('Sign in with Oxy');
   });
 
   it('contributes the create-account title in the signup view', () => {

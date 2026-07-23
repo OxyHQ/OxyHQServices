@@ -13,6 +13,8 @@ export interface BaseScreenProps {
     // Navigation props
     navigate?: (screen: RouteName, props?: Record<string, unknown>) => void;
     goBack?: () => void;
+    /** Whether the host surface can navigate back — a deeper frame OR a prior step. */
+    canGoBack?: () => boolean;
     onClose?: () => void;
     onAuthenticated?: (payload?: unknown) => void;
     /**

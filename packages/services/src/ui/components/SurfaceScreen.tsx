@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState, type ErrorInfo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useStore } from 'zustand';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { useDialogHeader, type DialogHeaderConfig } from '@oxyhq/bloom/dialog';
+import {
+  useDialogFrame,
+  useDialogHeader,
+  type DialogHeaderConfig,
+} from '@oxyhq/bloom/dialog';
 import type { SurfaceControls } from '@oxyhq/bloom/surfaces';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent } from '../navigation/routes';
 import { pushSurfaceBackHandler } from '../navigation/surfaceBackBridge';
 import type { SurfaceNavStack } from '../navigation/surfaceNavStack';
-import { getSurfaceConfig, type SurfacePresentation } from '../navigation/surfaceRegistry';
+import { getSurfaceConfig } from '../navigation/surfaceRegistry';
 import {
   closeAllRouteSurfaces,
   navigateWithinOrPresent,
@@ -76,8 +80,6 @@ export interface SurfaceScreenProps {
   navStack: SurfaceNavStack;
   /** Bloom's per-surface controls (dismiss / present a child) — the DEPTH axis. */
   surface: SurfaceControls;
-  /** This surface's presentation, so `navigate` knows when to drill in vs. stack. */
-  presentation: SurfacePresentation;
   /** Whether backdrop / Escape / back may dismiss at the root frame. Defaults to true. */
   dismissOnBackdrop?: boolean;
 }
@@ -94,7 +96,6 @@ export interface SurfaceScreenProps {
 function SurfaceScreen({
   navStack,
   surface,
-  presentation,
   dismissOnBackdrop = true,
 }: SurfaceScreenProps) {
   const theme = useTheme();
@@ -109,17 +110,24 @@ function SurfaceScreen({
 
   const navigate = useCallback(
     (route: RouteName, props?: Record<string, unknown>) =>
-      navigateWithinOrPresent(presentation, navStack, route, props),
-    [navStack, presentation],
+      navigateWithinOrPresent(navStack, route, props),
+    [navStack],
   );
 
   const replace = useCallback(
     (route: RouteName, props?: Record<string, unknown>) =>
-      replaceWithinOrPresent(presentation, navStack, route, props),
-    [navStack, presentation],
+      replaceWithinOrPresent(navStack, route, props),
+    [navStack],
   );
 
-  const dismiss = useCallback((result?: unknown) => navStack.requestDismiss(result), [navStack]);
+  // Screens' `dismiss(result)` resolves an active sub-flow (morphed-in avatar
+  // picker) back to its caller and pops to its entry frame; with no flow it
+  // dismisses the whole surface (a screen presented as its own surface) — the
+  // historical behaviour. `navStack.resolveFlowOrDismiss` owns that fork.
+  const dismiss = useCallback(
+    (result?: unknown) => navStack.resolveFlowOrDismiss(result),
+    [navStack],
+  );
 
   const canGoBack = useCallback(() => navStack.canGoBack(), [navStack]);
 
@@ -165,9 +173,35 @@ function SurfaceScreen({
   const [headerContent, setHeaderContent] = useState<SurfaceHeaderContent | null>(null);
   const headerContext = useMemo(() => ({ setContent: setHeaderContent }), []);
 
-  const headerMode = useMemo(
-    () => getSurfaceConfig(top.route, top.props).header,
-    [top.route, top.props],
+  const config = useMemo(() => getSurfaceConfig(top.route, top.props), [top.route, top.props]);
+  const headerMode = config.header;
+
+  // --- Size morphing on nav-within ---------------------------------------
+  // The Dialog cannot see a drill-in from its own props (only this host
+  // re-renders when the nav stack moves), so it is told which frame is on
+  // screen. When that identity changes the surface MORPHS — the panel animates
+  // between the two frames' sizes instead of hard-cutting. A wizard step counts
+  // as a frame: it swaps the visible content inside one screen the same way.
+  // A `stacks` route opens its OWN surface (never a frame here); everything else
+  // morphs.
+  //
+  // A route may declare an EXPLICIT large morph target (`frameSize`) — the media
+  // selector's own-scroller grid, which the panel can't measure, grows the
+  // container to a near-full-height, wider card and shrinks back on exit. Resolve
+  // its viewport-relative height to px here (the Dialog clamps to the viewport).
+  const { height: viewportHeight } = useWindowDimensions();
+  const frameSize = useMemo(() => {
+    const spec = config.frameSize;
+    if (!spec) return undefined;
+    const height =
+      spec.heightRatio !== undefined ? Math.round(viewportHeight * spec.heightRatio) : undefined;
+    return { height, maxWidth: spec.maxWidth };
+  }, [config.frameSize, viewportHeight]);
+  useDialogFrame(
+    useMemo(
+      () => ({ key: `${top.route}#${top.step}`, morph: config.morph, size: frameSize }),
+      [top.route, top.step, config.morph, frameSize],
+    ),
   );
   // Show a back affordance whenever the surface can navigate back — either an
   // earlier frame in this surface's stack, or an earlier wizard step.

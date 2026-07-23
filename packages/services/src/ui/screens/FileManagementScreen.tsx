@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,10 +8,9 @@ import {
     ActivityIndicator,
     RefreshControl,
     TextInput,
-    Image,
-    AccessibilityInfo,
     useWindowDimensions,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
 import { toast } from '@oxyhq/bloom';
@@ -20,13 +19,15 @@ import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Pressable } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
-import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
+import { queryKeys } from '../hooks/queries/queryKeys';
+import { useUserFilesInfinite, removeFileFromCache, patchFileMetadataInCache } from '../hooks/queries/useFileQueries';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
     formatFileSize,
@@ -41,6 +42,7 @@ import { getErrorMessage } from './fileManagement/shared';
 import { useFileUploadState } from './fileManagement/hooks/useFileUploadState';
 import PhotoPickerView from './fileManagement/PhotoPickerSection';
 import FileListSection, { type FileListItem } from './fileManagement/FileListSection';
+import FileLibraryError from './fileManagement/FileLibraryError';
 import UploadBar from './fileManagement/UploadBar';
 import { AnimatedButton } from '../components/fileManagement/AnimatedButton';
 
@@ -72,13 +74,11 @@ const screenStyles = StyleSheet.create({
         justifyContent: 'center',
         marginHorizontal: 1,
     },
-    photoImage: { width: '100%', height: '100%', borderRadius: 8 },
     justifiedPhotoImage: { width: '100%', height: '100%', borderRadius: 6 },
 });
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
-    theme,
     goBack,
     navigate,
     dismiss,
@@ -102,8 +102,35 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // against `user`, so switching shows/manages that account's files.
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
+    const queryClient = useQueryClient();
     const uploadFileMutation = useUploadFile();
-    const files = useFiles();
+
+    // Files are owned by the ACTIVE account. `targetUserId` scopes the query key,
+    // so switching accounts (or an explicit `userId` prop) shows that account's
+    // library with no manual reset.
+    const targetUserId = userId || user?.id;
+
+    // The file list is React Query's, NOT a store: infinite-paginated, fetched on
+    // mount + on owner change, edited optimistically via cache helpers. The
+    // rendered list is the flattened pages.
+    const filesQuery = useUserFilesInfinite(targetUserId);
+    const files = useMemo(
+        () => filesQuery.data?.pages.flatMap((page) => page.files) ?? [],
+        [filesQuery.data],
+    );
+    // No owner resolved yet reads as "loading" (matches the old skeleton-until-
+    // first-load behaviour); `isLoading` is the first-page fetch only.
+    const isLoadingFiles = !targetUserId || filesQuery.isLoading;
+    const isRefreshingFiles = filesQuery.isRefetching;
+    const isFetchingMore = filesQuery.isFetchingNextPage;
+    const hasMoreFiles = filesQuery.hasNextPage ?? false;
+    // Terminal load failure with nothing cached — render a DISTINCT error state
+    // (not the empty state) so a failed load never looks like an empty library.
+    const hasLoadError = filesQuery.isError && files.length === 0;
+    const invalidateFiles = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.files.list(targetUserId) });
+    }, [queryClient, targetUserId]);
+
     const { width: windowWidth } = useWindowDimensions();
     // Prefer an explicit sheet width from the router; fall back to the window
     // so photo grids never size against a hardcoded 400px default.
@@ -111,38 +138,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         typeof containerWidth === 'number' && containerWidth > 0
             ? containerWidth
             : windowWidth;
-    const uploading = useUploadingStore();
-    const uploadProgress = useUploadAggregateProgress();
-    const deleting = useDeletingStore();
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [paging, setPaging] = useState({ offset: 0, limit: 40, total: 0, hasMore: true, loadingMore: false });
+    // In-flight delete target (local UI state — was in the file store).
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     // In selectMode we never open the detailed viewer
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [loadingFileContent, setLoadingFileContent] = useState(false);
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
-    const [reduceMotion, setReduceMotion] = useState(false);
-
-    // Detect reduce-motion preference once on mount + subscribe to changes.
-    // Used by `PhotoPickerView` to skip cell stagger animations.
-    useEffect(() => {
-        let cancelled = false;
-        AccessibilityInfo.isReduceMotionEnabled()
-            .then((enabled) => {
-                if (!cancelled) setReduceMotion(enabled);
-            })
-            .catch(() => {
-                // Defaults to false; no action needed.
-            });
-        const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
-            setReduceMotion(enabled);
-        });
-        return () => {
-            cancelled = true;
-            sub.remove();
-        };
-    }, []);
+    // Reduce-motion preference, read as an external store (no effect). Passed to
+    // `PhotoPickerView` to skip cell stagger animations.
+    const reduceMotion = useReduceMotion();
 
     // Image-only picker mode: when the consumer restricts to image MIME types
     // (e.g. avatar picker), photos grid is the more useful default view.
@@ -216,25 +221,54 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         return sorted;
     }, [files, searchQuery, viewMode, sortBy, sortOrder]);
-    const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
-    const photoDimensionsRef = useRef(photoDimensions);
-    photoDimensionsRef.current = photoDimensions;
-    const [loadingDimensions, setLoadingDimensions] = useState(false);
-    // Selection state
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelectedIds));
-    const [lastSelectedFileId, setLastSelectedFileId] = useState<string | null>(null);
+    // Selection state. `initialSelectedIds` is the INITIAL selection only (lazy
+    // init) — there is no prop→state sync effect, since no caller mutates it
+    // after mount.
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(initialSelectedIds));
     const scrollViewRef = useRef<ScrollView>(null);
     const photoScrollViewRef = useRef<ScrollView>(null);
-    const containerRef = useRef<View>(null);
-    useEffect(() => {
-        if (initialSelectedIds?.length) {
-            setSelectedIds(new Set(initialSelectedIds));
+
+    // Scroll the browse list/grid to a just-selected file. Driven directly from
+    // the selection event handler (double-rAF so the selection re-render has
+    // committed first) — not an effect. No-ops in the image-only picker, whose
+    // own FlatList is not either ScrollView ref.
+    const scrollToSelectedFile = useCallback((fileId: string) => {
+        if (viewMode === 'all' && scrollViewRef.current) {
+            const itemIndex = filteredFiles.findIndex(file => file.id === fileId);
+            if (itemIndex < 0) return;
+            // GroupedItem dense rows are ~65px, +30px when a description wraps.
+            const baseItemHeight = 65;
+            const descriptionHeight = 30;
+            let scrollPosition = 0;
+            for (let i = 0; i <= itemIndex && i < filteredFiles.length; i++) {
+                scrollPosition += baseItemHeight;
+                if (filteredFiles[i].metadata?.description) scrollPosition += descriptionHeight;
+            }
+            // Offset for the header/controls/search/stats chrome (~250px) so the
+            // item lands near the top, not under the chrome.
+            const finalScrollPosition = 250 + scrollPosition - 150;
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    scrollViewRef.current?.scrollTo({ y: Math.max(0, finalScrollPosition), animated: true });
+                });
+            });
+        } else if (viewMode === 'photos' && photoScrollViewRef.current) {
+            const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
+            const photoIndex = photos.findIndex(p => p.id === fileId);
+            if (photoIndex < 0) return;
+            // Rough estimate for the justified grid (3 photos/row, variable heights).
+            const row = Math.floor(photoIndex / 3);
+            const finalScrollPosition = row * (150 + 4) - 100;
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    photoScrollViewRef.current?.scrollTo({ y: Math.max(0, finalScrollPosition), animated: true });
+                });
+            });
         }
-    }, [initialSelectedIds]);
+    }, [viewMode, filteredFiles]);
 
     const toggleSelect = useCallback(async (file: FileMetadata) => {
-        // Allow selection in regular mode for bulk operations
-        // if (!selectMode) return;
+        // Selection is allowed in regular mode too (for bulk operations).
         if (disabledMimeTypes.length) {
             const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : `${mt}/`));
             if (blocked) {
@@ -252,9 +286,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // Continue anyway - selection shouldn't fail if visibility update fails
             }
         }
-
-        // Track the selected file for scrolling
-        setLastSelectedFileId(file.id);
 
         // Link file to entity if linkContext is provided
         if (linkContext) {
@@ -303,12 +334,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext]);
+        scrollToSelectedFile(file.id);
+    }, [multiSelect, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext, t, scrollToSelectedFile]);
 
     const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
         const map: Record<string, FileMetadata> = {};
-        files.forEach(f => { map[f.id] = f; });
+        for (const f of files) { map[f.id] = f; }
         const chosen = Array.from(selectedIds).map(id => map[id]).filter(Boolean);
 
         // Update visibility and link files if needed
@@ -373,70 +405,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const backgroundColor = colors.backgroundSecondary;
     const borderColor = colors.border;
 
-    const targetUserId = userId || user?.id;
-
-    const storeSetDeleting = useFileStore(s => s.setDeleting);
-
-    const loadFiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' | 'more' = 'initial') => {
-        if (!targetUserId) return;
-
-        try {
-            if (mode === 'refresh') {
-                setRefreshing(true);
-            } else if (mode === 'initial') {
-                setLoading(true);
-                setPaging(p => ({ ...p, offset: 0, hasMore: true }));
-            } else if (mode === 'more') {
-                // Prevent duplicate fetches
-                setPaging(p => ({ ...p, loadingMore: true }));
-            }
-            const currentPaging = mode === 'more' ? (prevPagingRef.current ?? paging) : paging;
-            const effectiveOffset = mode === 'more' ? currentPaging.offset + currentPaging.limit : 0;
-            const response = await oxyServices.listUserFiles(currentPaging.limit, effectiveOffset);
-            const assets: FileMetadata[] = (response.files || []).map((f: { id: string; originalName?: string; sha256?: string; mime?: string; size?: number; createdAt?: string; metadata?: Record<string, unknown>; variants?: unknown[] }) => ({
-                id: f.id,
-                filename: f.originalName ?? f.sha256 ?? '',
-                contentType: f.mime ?? '',
-                length: f.size ?? 0,
-                chunkSize: 0,
-                uploadDate: f.createdAt ?? '',
-                metadata: f.metadata ?? {},
-                variants: (f.variants ?? []) as FileMetadata['variants'],
-            }));
-            if (mode === 'more') {
-                // append
-                useFileStore.getState().setFiles(assets, { merge: true });
-                setPaging(p => ({
-                    ...p,
-                    offset: effectiveOffset,
-                    total: response.total || (effectiveOffset + assets.length),
-                    hasMore: response.hasMore,
-                    loadingMore: false,
-                }));
-            } else {
-                useFileStore.getState().setFiles(assets, { merge: false });
-                setPaging(p => ({
-                    ...p,
-                    offset: 0,
-                    total: response.total || assets.length,
-                    hasMore: response.hasMore,
-                    loadingMore: false,
-                }));
-            }
-        } catch (error: unknown) {
-            toast.error(getErrorMessage(error) || t('fileManagement.toasts.loadFailed'));
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-            setPaging(p => ({ ...p, loadingMore: false }));
-        }
-    }, [targetUserId, oxyServices, paging]);
-
     // Self-contained document-picking + upload-preview state and handlers.
+    // Optimistic uploads edit the file query cache directly (see
+    // useFileQueries), so no loader is threaded in.
     const {
         isPickingDocument,
         pendingFiles,
         showUploadPreview,
+        uploading,
+        uploadProgress,
         handleFileUpload,
         handleConfirmUpload,
         handleCancelUpload,
@@ -453,104 +430,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         onClose,
         selectedIds,
         setSelectedIds,
-        loadFiles,
         t,
     });
-
-    // Keep a ref to avoid stale closure when calculating next offset
-    const prevPagingRef = useRef(paging);
-    useEffect(() => { prevPagingRef.current = paging; }, [paging]);
-
-    // (removed effect; filteredFiles is memoized)
-
-    // Load photo dimensions for justified grid - unified approach using Image.getSize
-    const loadPhotoDimensions = useCallback(async (photos: FileMetadata[]) => {
-        if (photos.length === 0) return;
-
-        setLoadingDimensions(true);
-
-        // Snapshot ids missing from the cache at kick-off; concurrent runs may
-        // overlap but each merge is applied via a functional updater.
-        const photosToLoad = photos.filter((photo) => !photoDimensionsRef.current[photo.id]);
-
-        if (photosToLoad.length === 0) {
-            setLoadingDimensions(false);
-            return;
-        }
-
-        try {
-            const measured: { [key: string]: { width: number; height: number } } = {};
-
-            await Promise.all(
-                photosToLoad.map(async (photo) => {
-                    try {
-                        const downloadUrl = thumbSourceFor(photo);
-                        // URL not resolved yet — skip (do NOT record fallback
-                        // dims) so this photo is re-measured once its private-safe
-                        // URL resolves. Measuring the broken public URL is exactly
-                        // the bug we are fixing.
-                        if (!downloadUrl) {
-                            return;
-                        }
-
-                        // Unified approach using Image.getSize (works on all platforms)
-                        await new Promise<void>((resolve) => {
-                            Image.getSize(
-                                downloadUrl,
-                                (width: number, height: number) => {
-                                    measured[photo.id] = { width, height };
-                                    resolve();
-                                },
-                                () => {
-                                    // Fallback dimensions
-                                    measured[photo.id] = { width: 1, height: 1 };
-                                    resolve();
-                                }
-                            );
-                        });
-                    } catch (error) {
-                        // Fallback dimensions for any errors
-                        measured[photo.id] = { width: 1, height: 1 };
-                    }
-                })
-            );
-
-            if (Object.keys(measured).length > 0) {
-                setPhotoDimensions((prev) => ({ ...prev, ...measured }));
-            }
-        } catch (error) {
-            // Photo dimensions loading failed, continue without dimensions
-        } finally {
-            setLoadingDimensions(false);
-        }
-    }, [thumbSourceFor]);
-
-    // Re-measure photo dimensions when their private-safe URLs resolve. The
-    // justified grid's own trigger fires on the photo SET, not on URL
-    // availability, so newly-resolved private tiles would otherwise keep their
-    // skipped (unmeasured) state and render with fallback geometry.
-    useEffect(() => {
-        if (viewMode !== 'photos') return;
-        const photos = filteredFiles.filter((file) => file.contentType.startsWith('image/'));
-        if (photos.length > 0) {
-            loadPhotoDimensions(photos);
-        }
-    }, [resolvedThumbUrls, viewMode, filteredFiles, loadPhotoDimensions]);
-
-    // Create justified rows from photos with responsive algorithm
-    const createJustifiedRows = useCallback((photos: FileMetadata[], containerWidth: number) => {
-        if (photos.length === 0) return [];
-
-        const rows: FileMetadata[][] = [];
-        const photosPerRow = 3; // Fixed 3 photos per row for consistency
-
-        for (let i = 0; i < photos.length; i += photosPerRow) {
-            const rowPhotos = photos.slice(i, i + photosPerRow);
-            rows.push(rowPhotos);
-        }
-
-        return rows;
-    }, []);
 
     const confirmFileDelete = useCallback(async (fileId: string, filename: string) => {
         const confirmed = await surfaces.confirm({
@@ -563,32 +444,29 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (!confirmed) return;
 
         try {
-            storeSetDeleting(fileId);
+            setDeletingId(fileId);
             await oxyServices.deleteFile(fileId);
 
             toast.success(t('fileManagement.toasts.deleteSuccess'));
 
-            // Reload files after successful deletion
-            // Optimistic remove
-            useFileStore.getState().removeFile(fileId);
-            // Silent background reconcile
-            setTimeout(() => loadFiles('silent'), 800);
+            // Remove from the query cache, then reconcile against the server.
+            removeFileFromCache(queryClient, targetUserId, fileId);
+            invalidateFiles();
         } catch (error: unknown) {
-
             // Provide specific error messages
             if (getErrorMessage(error)?.includes('File not found') || getErrorMessage(error)?.includes('404')) {
                 toast.error(t('fileManagement.toasts.fileNotFound'));
-                // Still reload files to refresh the list
-                setTimeout(() => loadFiles('silent'), 800);
+                // It's already gone server-side — reconcile the list.
+                invalidateFiles();
             } else if (getErrorMessage(error)?.includes('permission') || getErrorMessage(error)?.includes('403')) {
                 toast.error(t('fileManagement.toasts.noPermission'));
             } else {
                 toast.error(getErrorMessage(error) || t('fileManagement.toasts.deleteFailed'));
             }
         } finally {
-            storeSetDeleting(null);
+            setDeletingId(null);
         }
-    }, [storeSetDeleting, oxyServices, loadFiles, t]);
+    }, [oxyServices, queryClient, targetUserId, invalidateFiles, t]);
 
     const confirmBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
@@ -606,7 +484,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const deletePromises = Array.from(selectedIds).map(async (fileId) => {
                 try {
                     await oxyServices.deleteFile(fileId);
-                    useFileStore.getState().removeFile(fileId);
+                    removeFileFromCache(queryClient, targetUserId, fileId);
                     return { success: true, fileId };
                 } catch (error: unknown) {
                     return { success: false, fileId, error };
@@ -625,11 +503,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
 
             setSelectedIds(new Set());
-            setTimeout(() => loadFiles('silent'), 800);
+            invalidateFiles();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.bulkDeleteError'));
         }
-    }, [selectedIds, oxyServices, loadFiles, t]);
+    }, [selectedIds, oxyServices, queryClient, targetUserId, invalidateFiles, t]);
 
     const handleBulkVisibilityChange = useCallback(async (visibility: 'private' | 'public' | 'unlisted') => {
         if (selectedIds.size === 0) return;
@@ -650,22 +528,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             if (successful > 0) {
                 toast.success(t('fileManagement.toasts.visibilitySuccess', { count: successful, visibility }));
-                // Update file metadata in store
-                Array.from(selectedIds).forEach(fileId => {
-                    useFileStore.getState().updateFile(fileId, {
-                        metadata: { ...files.find(f => f.id === fileId)?.metadata, visibility } as Partial<FileMetadata>['metadata']
-                    });
-                });
+                // Reflect the new visibility in the cached files.
+                for (const fileId of selectedIds) {
+                    patchFileMetadataInCache(queryClient, targetUserId, fileId, { visibility });
+                }
             }
             if (failed > 0) {
                 toast.error(t('fileManagement.toasts.visibilityFailed', { count: failed }));
             }
 
-            setTimeout(() => loadFiles('silent'), 800);
+            invalidateFiles();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.visibilityError'));
         }
-    }, [selectedIds, oxyServices, files, loadFiles, t]);
+    }, [selectedIds, oxyServices, queryClient, targetUserId, invalidateFiles, t]);
 
     const handleVisibilityChange = useCallback(async () => {
         if (selectedIds.size === 0) return;
@@ -683,7 +559,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [selectedIds.size, handleBulkVisibilityChange, t]);
 
     // Unified download function - works on all platforms
-    const handleFileDownload = async (fileId: string, filename: string) => {
+    const handleFileDownload = useCallback(async (fileId: string, filename: string) => {
         try {
             // Resolve an authenticated, private-safe URL. The synchronous
             // `getFileDownloadUrl` yields the public CDN origin, which 404s for
@@ -727,10 +603,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.downloadFailed'));
         }
-    };
+    }, [oxyServices, t]);
 
-
-    const handleFileOpen = async (file: FileMetadata) => {
+    const handleFileOpen = useCallback(async (file: FileMetadata) => {
         if (selectMode) {
             toggleSelect(file);
             return;
@@ -782,23 +657,23 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } finally {
             setLoadingFileContent(false);
         }
-    };
+    }, [selectMode, toggleSelect, oxyServices, t]);
 
-    const handleCloseFile = () => {
+    const handleCloseFile = useCallback(() => {
         setOpenedFile(null);
         setFileContent(null);
         setShowFileDetailsInViewer(false);
         // Don't reset view mode when closing a file
-    };
+    }, []);
 
-    const showFileDetailsModal = (file: FileMetadata) => {
+    const showFileDetailsModal = useCallback((file: FileMetadata) => {
         presentFileDetails({
             file,
             onDownload: handleFileDownload,
             onDelete: confirmFileDelete,
             isOwner: user?.id === targetUserId,
         });
-    };
+    }, [handleFileDownload, confirmFileDelete, user?.id, targetUserId]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
         const downloadUrl = thumbSourceFor(photo);
@@ -836,18 +711,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
             </TouchableOpacity>
         );
-    }, [thumbSourceFor, selectMode, selectedIds, multiSelect, colors.primary, colors.text]);
-
-    // Run initial load once per targetUserId change to avoid accidental loops
-    const lastLoadedFor = useRef<string | undefined>(undefined);
-    useEffect(() => {
-        const key = targetUserId || 'anonymous';
-        if (lastLoadedFor.current !== key) {
-            lastLoadedFor.current = key;
-            loadFiles('initial');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [targetUserId]);
+    }, [thumbSourceFor, selectMode, selectedIds, multiSelect, colors.primary, colors.text, handleFileOpen]);
 
     // SettingsListItem-based file items (for 'all' view)
     const groupedFileItems: FileListItem[] = useMemo(() => {
@@ -945,9 +809,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
                             style={{ backgroundColor: colors.negativeSubtle }}
                             onPress={() => confirmFileDelete(file.id, file.filename)}
-                            disabled={deleting === file.id}
+                            disabled={deletingId === file.id}
                         >
-                            {deleting === file.id ? (
+                            {deletingId === file.id ? (
                                 <ActivityIndicator size="small" color={colors.error} />
                             ) : (
                                 <Ionicons name="trash" size={18} color={colors.error} />
@@ -957,89 +821,30 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ) : undefined,
             };
         });
-    }, [filteredFiles, theme, deleting, handleFileDownload, confirmFileDelete, handleFileOpen, thumbSourceFor, selectMode, selectedIds]);
+    }, [filteredFiles, colors, deletingId, toggleSelect, handleFileDownload, confirmFileDelete, handleFileOpen, thumbSourceFor, selectMode, selectedIds]);
 
-    // Scroll to selected file after selection
-    useEffect(() => {
-        if (lastSelectedFileId && selectMode) {
-            if (viewMode === 'all' && scrollViewRef.current) {
-                // Find the index of the selected file (filteredFiles is already sorted)
-                const itemIndex = filteredFiles.findIndex(file => file.id === lastSelectedFileId);
+    // Browse-themed terminal load-failure state — DISTINCT from the empty state.
+    const renderLoadError = () => (
+        <FileLibraryError
+            title={t('fileManagement.loadError.title')}
+            description={t('fileManagement.loadError.description')}
+            retryLabel={t('fileManagement.retry')}
+            onRetry={() => filesQuery.refetch()}
+            iconColor={colors.error}
+            titleColor={colors.text}
+            descriptionColor={colors.textSecondary}
+            buttonColor={colors.primary}
+        />
+    );
 
-                if (itemIndex >= 0) {
-                    // Estimate item height (GroupedItem with dense mode is approximately 60-70px)
-                    // Account for description rows which add extra height
-                    const baseItemHeight = 65;
-                    const descriptionHeight = 30; // Approximate height for description
-                    // Use filteredFiles which is already sorted according to user's selection
-                    const sortedFiles = filteredFiles;
-
-                    // Calculate total height up to this item
-                    let scrollPosition = 0;
-                    for (let i = 0; i <= itemIndex && i < sortedFiles.length; i++) {
-                        const file = sortedFiles[i];
-                        scrollPosition += baseItemHeight;
-                        if (file.metadata?.description) {
-                            scrollPosition += descriptionHeight;
-                        }
-                    }
-
-                    // Add header, controls, search, and stats height (approximately 250px)
-                    const headerHeight = 250;
-                    const finalScrollPosition = headerHeight + scrollPosition - 150; // Offset to show item near top
-
-                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            scrollViewRef.current?.scrollTo({
-                                y: Math.max(0, finalScrollPosition),
-                                animated: true,
-                            });
-                        });
-                    });
-                }
-            } else if (viewMode === 'photos' && photoScrollViewRef.current) {
-                // For photo grid, find the photo index
-                const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
-                const photoIndex = photos.findIndex(p => p.id === lastSelectedFileId);
-
-                if (photoIndex >= 0) {
-                    // Rough scroll estimate for the justified grid (3 photos/row; variable row heights).
-                    const itemsPerRow = 3;
-                    const estimatedRowHeight = 150;
-                    const rowGap = 4;
-                    const row = Math.floor(photoIndex / itemsPerRow);
-                    const finalScrollPosition = row * (estimatedRowHeight + rowGap) - 100;
-
-                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            photoScrollViewRef.current?.scrollTo({
-                                y: Math.max(0, finalScrollPosition),
-                                animated: true,
-                            });
-                        });
-                    });
-                }
-            }
-        }
-    }, [lastSelectedFileId, selectMode, viewMode, filteredFiles, safeContainerWidth]);
-
-    // Clear selected file ID after scroll animation completes
-    useEffect(() => {
-        if (lastSelectedFileId && scrollViewRef.current) {
-            const timeoutId = setTimeout(() => {
-                setLastSelectedFileId(null);
-            }, 600); // Allow time for scroll animation to complete
-
-            return () => clearTimeout(timeoutId);
-        }
-    }, [lastSelectedFileId]);
-
-    const renderPhotoGrid = useCallback(() => {
+    // Browse "photos" view. The justified grid owns its own dimension
+    // measurement + reflow (see JustifiedPhotoGrid); this only supplies the
+    // photo set, the private-safe URL resolver, and the tile renderer.
+    const renderPhotoGrid = () => {
         const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
 
         if (photos.length === 0) {
+            if (hasLoadError) return renderLoadError();
             return (
                 <View className="items-center py-[40px] px-[24px]">
                     <Ionicons name="images-outline" size={64} color={colors.textTertiary} />
@@ -1056,9 +861,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             onPress={handleFileUpload}
                             disabled={uploading || isPickingDocument}
                         >
-                            {uploading ? (
-                                <ActivityIndicator size="small" color="#FFFFFF" />
-                            ) : isPickingDocument ? (
+                            {(uploading || isPickingDocument) ? (
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                                 <>
@@ -1079,8 +882,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 contentContainerClassName="p-[10px]"
                 refreshControl={
                     <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={() => loadFiles('refresh')}
+                        refreshing={isRefreshingFiles}
+                        onRefresh={() => filesQuery.refetch()}
                         tintColor={colors.primary}
                     />
                 }
@@ -1088,24 +891,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onScroll={({ nativeEvent }) => {
                     const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
                     const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-                    if (distanceFromBottom < 200 && !paging.loadingMore && paging.hasMore) {
-                        loadFiles('more');
+                    if (distanceFromBottom < 200 && !isFetchingMore && hasMoreFiles) {
+                        filesQuery.fetchNextPage();
                     }
                 }}
                 scrollEventThrottle={250}
             >
-                {loadingDimensions && (
-                    <View className="flex-row items-center justify-center py-[16px] gap-[8px]">
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text className="text-[14px] italic" style={{ color: colors.textSecondary }}>{t('fileManagement.loadingPhotoLayout')}</Text>
-                    </View>
-                )}
-
                 <JustifiedPhotoGrid
                     photos={photos}
-                    photoDimensions={photoDimensions}
-                    loadPhotoDimensions={loadPhotoDimensions}
-                    createJustifiedRows={createJustifiedRows}
+                    getThumbUrl={thumbSourceFor}
                     renderJustifiedPhotoItem={renderJustifiedPhotoItem}
                     textColor={colors.text}
                     containerWidth={
@@ -1116,28 +910,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 />
             </ScrollView>
         );
-    }, [
-        filteredFiles,
-        colors,
-        user?.id,
-        targetUserId,
-        uploading,
-        handleFileUpload,
-        refreshing,
-        loadFiles,
-        loadingDimensions,
-        photoDimensions,
-        loadPhotoDimensions,
-        createJustifiedRows,
-        renderJustifiedPhotoItem,
-        containerWidth,
-    ]);
+    };
 
-    // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)
-
-
-
-    const renderEmptyState = () => (
+    const renderEmptyState = () => hasLoadError ? renderLoadError() : (
         <View className="items-center py-[40px] px-[24px]">
             <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
             <Text className="text-[24px] font-bold mt-[16px] mb-[8px]" style={{ color: colors.text }}>{t('fileManagement.emptyFiles.title')}</Text>
@@ -1154,9 +929,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     onPress={handleFileUpload}
                     disabled={uploading || isPickingDocument}
                 >
-                    {uploading ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : isPickingDocument ? (
+                    {(uploading || isPickingDocument) ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                         <>
@@ -1237,7 +1010,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             },
     );
 
-    if (loading && !isImageOnlyPicker) {
+    if (isLoadingFiles && !isImageOnlyPicker) {
         const GRID_PADDING = 10;
         const TILE_GAP = 4;
         const GRID_COLUMNS = 3;
@@ -1304,13 +1077,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 multiSelect={multiSelect}
                 maxSelection={maxSelection}
                 allowUpload={allowUpload}
-                refreshing={refreshing}
+                refreshing={isRefreshingFiles}
                 uploading={uploading}
                 isPickingDocument={isPickingDocument}
                 uploadProgress={uploadProgress}
-                hasMore={paging.hasMore}
-                loadingMore={paging.loadingMore}
-                loading={loading}
+                hasMore={hasMoreFiles}
+                loadingMore={isFetchingMore}
+                loading={isLoadingFiles}
+                loadError={hasLoadError}
+                onRetry={() => filesQuery.refetch()}
                 reduceMotion={reduceMotion}
                 getThumbUrl={thumbSourceFor}
                 primaryColor={colors.primary}
@@ -1319,8 +1094,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // Long-press preview surfaces the file-detail panel on the stack.
                 onPreviewPhoto={(file) => showFileDetailsModal(file)}
                 onUpload={handleFileUpload}
-                onRefresh={() => loadFiles('refresh')}
-                onLoadMore={() => loadFiles('more')}
+                onRefresh={() => filesQuery.refetch()}
+                onLoadMore={() => filesQuery.fetchNextPage()}
                 onCancel={() => {
                     if (onSelect || onConfirmSelection) {
                         // Legacy callback caller: preserve close/back behaviour.
@@ -1400,37 +1175,33 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             style={screenStyles.viewModeButton}
                             accessibilityLabel={t('fileManagement.a11y.viewPhotos') || 'Show photos only'}
                         />
-                        {!isImageOnlyPicker && (
-                            <>
-                                <AnimatedButton
-                                    isSelected={viewMode === 'videos'}
-                                    onPress={() => setViewMode('videos')}
-                                    icon={viewMode === 'videos' ? 'video' : 'video-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={screenStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
-                                />
-                                <AnimatedButton
-                                    isSelected={viewMode === 'documents'}
-                                    onPress={() => setViewMode('documents')}
-                                    icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={screenStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
-                                />
-                                <AnimatedButton
-                                    isSelected={viewMode === 'audio'}
-                                    onPress={() => setViewMode('audio')}
-                                    icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={screenStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
-                                />
-                            </>
-                        )}
+                        <AnimatedButton
+                            isSelected={viewMode === 'videos'}
+                            onPress={() => setViewMode('videos')}
+                            icon={viewMode === 'videos' ? 'video' : 'video-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'documents'}
+                            onPress={() => setViewMode('documents')}
+                            icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'audio'}
+                            onPress={() => setViewMode('audio')}
+                            icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
+                        />
                     </View>
                 </ScrollView>
                 <TouchableOpacity
@@ -1468,18 +1239,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         color={colors.textSecondary}
                     />
                 </TouchableOpacity>
-                {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
+                {user?.id === targetUserId && (!selectMode || allowUploadInSelectMode) && (
                     <TouchableOpacity
-                        className={`h-[44px] rounded-[22px] items-center justify-center ${isImageOnlyPicker ? 'w-auto min-w-[44px] px-[14px]' : 'w-[44px]'}`}
+                        className="h-[44px] w-[44px] rounded-[22px] items-center justify-center"
                         style={{ backgroundColor: colors.primary }}
                         onPress={handleFileUpload}
                         disabled={uploading || isPickingDocument}
                         accessibilityRole="button"
-                        accessibilityLabel={
-                            isImageOnlyPicker
-                                ? (t('fileManagement.a11y.uploadFromDevice') || 'Upload photo from device')
-                                : (t('fileManagement.a11y.uploadFile') || 'Upload file')
-                        }
+                        accessibilityLabel={t('fileManagement.a11y.uploadFile') || 'Upload file'}
                         accessibilityState={{ busy: uploading || isPickingDocument }}
                     >
                         {uploading ? (
@@ -1493,13 +1260,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             </View>
                         ) : isPickingDocument ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : isImageOnlyPicker ? (
-                            <View className="flex-row items-center gap-[6px]">
-                                <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
-                                <Text className="text-white text-[14px] font-semibold" numberOfLines={1}>
-                                    {t('fileManagement.upload') || 'Upload'}
-                                </Text>
-                            </View>
                         ) : (
                             <Ionicons name="add" size={22} color="#FFFFFF" />
                         )}
@@ -1573,12 +1333,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     filteredFiles={filteredFiles}
                     searchQuery={searchQuery}
                     items={groupedFileItems}
-                    paging={paging}
-                    refreshing={refreshing}
+                    paging={{ loadingMore: isFetchingMore, hasMore: hasMoreFiles }}
+                    refreshing={isRefreshingFiles}
                     colors={colors}
                     t={t}
-                    onRefresh={() => loadFiles('refresh')}
-                    onLoadMore={() => loadFiles('more')}
+                    onRefresh={() => filesQuery.refetch()}
+                    onLoadMore={() => filesQuery.fetchNextPage()}
                     onClearSearch={() => setSearchQuery('')}
                     renderEmptyState={renderEmptyState}
                 />
@@ -1593,9 +1353,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     t={t}
                 />
             )}
-
-            {/* Selection bar removed; actions are now in header */}
-            {/* Global loadingMore bar removed; now inline in scroll areas */}
         </View>
     );
 };

@@ -42,36 +42,88 @@ export const authChooserStyles = StyleSheet.create({
     fontSize: 12.5,
     marginTop: 1,
   },
-  /** Prominent current-account header (Google-style collapsed row). */
-  currentAccountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+  /**
+   * Animated-collapse container for the account switch list — the outer clip and
+   * the inner measuring wrapper. Style-based (NOT NativeWind): the container
+   * carries the animated `height`/`opacity` off a reanimated style, and the
+   * measuring wrapper must stay className-free so its `onLayout` fires on RN-Web.
+   */
+  collapse: {
+    overflow: 'hidden',
   },
-  currentAccountMeta: {
-    flex: 1,
-    minWidth: 0,
-  },
-  currentAccountName: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  currentAccountEmail: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  manageButton: {
+  collapseMeasure: {
     width: '100%',
-    borderRadius: 14,
-    marginTop: 4,
   },
-  addBadge: {
-    width: 40,
-    height: 40,
+  /**
+   * The HERO block that opens the account menu: the current account's large
+   * avatar, a greeting, and the "Manage your Oxy account" pill — centred and
+   * deliberately chrome-free (no card, no grouped-section surface) so the
+   * grouped cards below read as the menu proper. The account's email sits above
+   * it in the Dialog's own nav bar, not here.
+   */
+  hero: {
+    alignItems: 'center',
+    paddingTop: 4,
+    paddingBottom: 20,
+    gap: 12,
+  },
+  /**
+   * The current account's accent ring in the switch list, drawn OUTSIDE its
+   * avatar as an overlay so it adds no width to the row — every avatar in the
+   * list keeps the same footprint and the same content line. The 3px offset is
+   * the ring's 2px stroke plus a 1px gap.
+   */
+  currentAvatarRing: {
+    position: 'absolute',
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderWidth: 2,
     borderRadius: 9999,
-    borderWidth: StyleSheet.hairlineWidth,
+  },
+  /**
+   * The hero avatar's pressable wrapper — the "change your photo" entry point.
+   * `relative` so the accent ring + camera badge (both absolutely positioned)
+   * anchor to the avatar box.
+   */
+  heroAvatarPressable: {
+    position: 'relative',
+  },
+  /** The hero avatar's accent ring — an overlay, like the row-level one. */
+  heroAvatarRing: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderWidth: 3,
+    borderRadius: 9999,
+  },
+  /** Greeting + address stacked tight, centred (the hero's own 12px gap sits
+   *  between this block and the avatar / manage pill, not between these lines). */
+  heroNameBlock: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  heroGreeting: {
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  /** The account address (`username@oxy.so` / `@handle`) under the greeting. */
+  heroAddress: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  /**
+   * The switch row's disclosure affordance — a filled circle around the chevron,
+   * right-aligned to the same 12px row inset every other trailing element uses.
+   */
+  chevronCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

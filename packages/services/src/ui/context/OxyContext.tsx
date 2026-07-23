@@ -45,7 +45,12 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
-import { presentDetached, type SurfaceInstance } from '../navigation/surfaces';
+import {
+  presentDetached,
+  topRouteSurface,
+  type SurfaceInstance,
+  type TrackedSurface,
+} from '../navigation/surfaces';
 import { useQueryClient, onlineManager } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
@@ -652,6 +657,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // surface settling (`result.finally`) flips it false — no other write site.
   const accountDialogSurfaceRef = useRef<SurfaceInstance<'AccountDialog'> | null>(null);
 
+  // When the account dialog is shown by MORPHING an already-open route surface
+  // (e.g. ManageAccount → the account switcher) it is pushed as a frame ONTO that
+  // surface rather than presented as its own. This holds that host surface so the
+  // close path can pop the AccountDialog frame back to it. `null` when the dialog
+  // is its OWN detached surface (opened cold, with no surface underneath).
+  const accountDialogHostRef = useRef<TrackedSurface | null>(null);
+
+  // The single teardown for the account dialog wherever it lives: pop the morphed
+  // frame back to its host surface (reshaping Manage ← switcher), or dismiss the
+  // detached surface (whose settle then flips `accountDialogOpen`). Reads only
+  // stable refs + `setAccountDialogOpen`, so its identity never changes.
+  const dismissAccountDialogSurface = useCallback((): void => {
+    const host = accountDialogHostRef.current;
+    if (host) {
+      accountDialogHostRef.current = null;
+      setAccountDialogOpen(false);
+      host.goBack();
+      return;
+    }
+    accountDialogSurfaceRef.current?.dismiss();
+  }, []);
+
   const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
   if (!accountDialogControllerRef.current) {
     accountDialogControllerRef.current = createAccountDialogController({
@@ -665,11 +692,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       commitSession: (session) => handleWebSessionRef.current(session),
       commitSwitchedSession: (session) => commitSwitchedSessionRef.current(session),
       onSignedIn: () => {
-        // Dismiss the surface; its settle (`result.finally` below) is what flips
-        // `accountDialogOpen` false. The surface's present→settle lifecycle is the
-        // SINGLE source of truth for "is the account dialog open" — never a manual
-        // flip here.
-        accountDialogSurfaceRef.current?.dismiss();
+        // Close the dialog: pop the morphed frame back to its host surface, or
+        // dismiss the detached surface (whose settle flips `accountDialogOpen`).
+        dismissAccountDialogSurface();
       },
       openUrl: (url) => {
         if (isWebBrowser()) {
@@ -694,40 +719,55 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const accountDialogController = accountDialogControllerRef.current;
 
   const openAccountDialog = useCallback((view?: AccountDialogView): void => {
-    accountDialogControllerRef.current?.setView(view ?? 'accounts');
-    // Present the AccountDialog surface on the shared Bloom stack the FIRST time
-    // (subsequent opens just re-point the controller's view above). `presentDetached`
-    // keeps it OUT of the `showBottomSheet` route-surface lineage, so closing the
-    // bottom-sheet session never touches the account dialog and vice-versa. When a
-    // route surface (e.g. ManageAccount) is already open, this stacks the dialog
-    // ABOVE it; dismissing the dialog unwinds back to that surface.
-    if (!accountDialogSurfaceRef.current) {
-      const instance = presentDetached(
-        'AccountDialog',
-        { initialView: view ?? 'accounts' },
-        { placement: { base: 'bottom', md: 'center' }, dismissOnBackdrop: false, maxWidth: 420 },
-      );
-      accountDialogSurfaceRef.current = instance;
-      // The surface settling is the ONE place `accountDialogOpen` flips false —
-      // covering every dismiss path (close button, `onSignedIn`, programmatic
-      // `closeAccountDialog`, host unmount). So the stack owns the open state.
-      instance.result.finally(() => {
-        if (accountDialogSurfaceRef.current === instance) {
-          accountDialogSurfaceRef.current = null;
-          setAccountDialogOpen(false);
-        }
-      });
+    const nextView = view ?? 'accounts';
+    accountDialogControllerRef.current?.setView(nextView);
+
+    // Its own detached surface is already open → just re-point the view above.
+    if (accountDialogSurfaceRef.current) {
+      setAccountDialogOpen(true);
+      return;
     }
+
+    // When a route surface (e.g. ManageAccount) is already open, MORPH it in
+    // place: push the AccountDialog as a frame ONTO that surface, so the panel
+    // reshapes from that surface to the switcher and a back returns to it. With no
+    // surface open (opened cold from a sign-in button), present the dialog as its
+    // OWN detached surface — kept OUT of the `showBottomSheet` route-surface
+    // lineage so closing the bottom-sheet session never touches it and vice-versa.
+    // `navigate` is idempotent for the top frame (it replaces rather than
+    // duplicates), so calling this while already morphed in just re-points the
+    // view, and calling it after a back re-pushes the frame — no stale guard.
+    const host = topRouteSurface();
+    if (host) {
+      accountDialogHostRef.current = host;
+      host.navigate('AccountDialog', { initialView: nextView });
+      setAccountDialogOpen(true);
+      return;
+    }
+
+    const instance = presentDetached(
+      'AccountDialog',
+      { initialView: nextView },
+      { placement: { base: 'bottom', md: 'center' }, dismissOnBackdrop: false, maxWidth: 420 },
+    );
+    accountDialogSurfaceRef.current = instance;
+    // The surface settling is the ONE place `accountDialogOpen` flips false for
+    // the detached path — covering every dismiss (close button, `onSignedIn`,
+    // programmatic `closeAccountDialog`, host unmount). The morphed path clears
+    // its own state in `dismissAccountDialogSurface`.
+    instance.result.finally(() => {
+      if (accountDialogSurfaceRef.current === instance) {
+        accountDialogSurfaceRef.current = null;
+        setAccountDialogOpen(false);
+      }
+    });
     setAccountDialogOpen(true);
   }, []);
 
   const closeAccountDialog = useCallback((): void => {
     accountDialogControllerRef.current?.cancelSignIn();
-    // Dismiss the surface; its settle (`result.finally` above) flips
-    // `accountDialogOpen` false. Do NOT flip it here — the surface lifecycle is
-    // the single source of truth, so a manual write would be a second authority.
-    accountDialogSurfaceRef.current?.dismiss();
-  }, []);
+    dismissAccountDialogSurface();
+  }, [dismissAccountDialogSurface]);
 
   // Start driving the dialog on mount; tear it down on unmount.
   useEffect(() => {

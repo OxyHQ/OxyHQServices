@@ -9,8 +9,6 @@ import SurfaceScreen from '../components/SurfaceScreen';
 import type { RouteName } from './routes';
 import {
   getSurfaceConfig,
-  getSurfacePresentation,
-  type SurfacePresentation,
   type SurfaceProps,
   type SurfaceResult,
   type SurfaceRouteConfig,
@@ -51,6 +49,11 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
   // Threaded onto every placement so a route that owns its own scroll container
   // (`scrollable: false`) opts out of the Dialog's internal ScrollView.
   const scrollable = config.scrollable;
+  // Surface-level morph opt-out (the DEPTH axis is untouched — this only governs
+  // whether the panel reshapes when the content is swapped in place). Each frame
+  // additionally declares its own opt-out through `useDialogFrame` in
+  // `SurfaceScreen`, so a surface can morph for most routes and not for one.
+  const morph = config.morph;
   // Nav-header mode marker: turns on the Dialog's OWN sticky gradient nav bar +
   // large collapsing title over its scroll content. The title/subtitle/action
   // slots are contributed at runtime by the mounted screen via `useSurfaceHeader`
@@ -58,9 +61,15 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
   const header = config.header ? { largeTitle: true } : undefined;
   switch (config.presentation) {
     case 'center':
-      return { placement: 'center', scrollable, header, ...SDK_SURFACE_CHROME };
+      return { placement: 'center', scrollable, header, morph, ...SDK_SURFACE_CHROME };
     case 'drawer':
-      return { placement: { base: 'bottom', md: 'left' }, scrollable, header, ...SDK_SURFACE_CHROME };
+      return {
+        placement: { base: 'bottom', md: 'left' },
+        scrollable,
+        header,
+        morph,
+        ...SDK_SURFACE_CHROME,
+      };
     case 'fullScreen':
       // Approximate a full-screen surface with the shared `Dialog`: a tall
       // sheet / large centered card, flush content, a black canvas and
@@ -72,11 +81,12 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
         maxHeightRatio: 0.9,
         dismissOnBackdrop: false,
         scrollable,
+        morph,
         style: FULLSCREEN_SURFACE_STYLE,
         panelStyle: FULLSCREEN_SURFACE_STYLE,
       };
     default:
-      return { placement: SHEET_PLACEMENT, scrollable, header, ...SDK_SURFACE_CHROME };
+      return { placement: SHEET_PLACEMENT, scrollable, header, morph, ...SDK_SURFACE_CHROME };
   }
 }
 
@@ -88,12 +98,13 @@ function bloomOptionsFor(config: SurfaceRouteConfig): PresentOptions {
  */
 export interface SurfaceInstance<K extends RouteName = RouteName> {
   readonly route: RouteName;
-  readonly presentation: SurfacePresentation;
   navigate: (route: RouteName, props?: Record<string, unknown>) => void;
   replace: (route: RouteName, props?: Record<string, unknown>) => void;
   goBack: () => boolean;
   canGoBack: () => boolean;
   setStep: (step: number) => void;
+  /** Open a result-bearing sub-flow WITHIN this surface (morph). See {@link openWithinOrPresent}. */
+  beginFlow: (route: RouteName, props?: Record<string, unknown>) => Promise<unknown>;
   dismiss: (result?: SurfaceResult<K>) => void;
   readonly result: Promise<SurfaceResult<K> | undefined>;
 }
@@ -102,12 +113,15 @@ export interface SurfaceInstance<K extends RouteName = RouteName> {
  * The type-erased handle the `showBottomSheet` adapter needs from a tracked
  * surface: what it hosts, and how to drive/dismiss it. Kept result-type-free so
  * the (generic) `SurfaceInstance<K>` never has to be widened into a shared array.
+ * Exported so `OxyContext` can hold the surface it MORPHS the account dialog into
+ * (see {@link topRouteSurface}).
  */
-interface TrackedSurface {
+export interface TrackedSurface {
   readonly route: RouteName;
-  readonly presentation: SurfacePresentation;
   navigate: (route: RouteName, props?: Record<string, unknown>) => void;
   goBack: () => boolean;
+  /** Open a result-bearing sub-flow WITHIN this surface (morph). See {@link openWithinOrPresent}. */
+  beginFlow: (route: RouteName, props?: Record<string, unknown>) => Promise<unknown>;
   dismiss: () => void;
 }
 
@@ -118,6 +132,17 @@ interface TrackedSurface {
  * navigable base. Entries self-remove when their surface is dismissed.
  */
 const activeRouteSurfaces: TrackedSurface[] = [];
+
+/**
+ * The frontmost DETACHED surface (the AccountDialog), while open. Detached
+ * surfaces are kept OUT of `activeRouteSurfaces` so `closeAllRouteSurfaces` never
+ * touches them — but the AccountDialog IS a valid morph target: a result-bearing
+ * flow opened from within it (the account-menu hero avatar → `ChangeAvatar`) must
+ * morph INTO it, not stack a new surface behind it. Invariant: whenever set, this
+ * surface is frontmost — every account-menu action that opens a tracked surface
+ * (Manage, Help, …) dismisses the dialog FIRST, so the two never overlap.
+ */
+let detachedFrontSurface: TrackedSurface | null = null;
 
 function presentInternal<K extends RouteName>(
   route: K,
@@ -133,7 +158,6 @@ function presentInternal<K extends RouteName>(
     createElement(SurfaceScreen, {
       navStack,
       surface,
-      presentation: config.presentation,
       dismissOnBackdrop: bloomOpts.dismissOnBackdrop ?? true,
     }),
     bloomOpts,
@@ -141,7 +165,6 @@ function presentInternal<K extends RouteName>(
 
   const instance: SurfaceInstance<K> = {
     route,
-    presentation: config.presentation,
     navigate: (nextRoute, nextProps) => {
       const top = navStack.getTop();
       if (top.route === nextRoute) navStack.replace(nextRoute, nextProps);
@@ -151,22 +174,35 @@ function presentInternal<K extends RouteName>(
     goBack: () => navStack.goBack(),
     canGoBack: () => navStack.canGoBack(),
     setStep: (step) => navStack.setStep(step),
+    beginFlow: (nextRoute, nextProps) => navStack.beginFlow(nextRoute, nextProps),
     dismiss: (dismissResult) => navStack.requestDismiss(dismissResult),
     result,
   };
 
+  // If the surface is torn down (backdrop, `closeAll`, host unmount) while a
+  // result-bearing sub-flow is still open, settle that flow so an awaiting caller
+  // never hangs. Runs for tracked and detached surfaces alike.
+  result.finally(() => navStack.abandonActiveFlow());
+
+  const tracked: TrackedSurface = {
+    route: instance.route,
+    navigate: instance.navigate,
+    goBack: instance.goBack,
+    beginFlow: instance.beginFlow,
+    dismiss: () => instance.dismiss(),
+  };
   if (track) {
-    const tracked: TrackedSurface = {
-      route: instance.route,
-      presentation: instance.presentation,
-      navigate: instance.navigate,
-      goBack: instance.goBack,
-      dismiss: () => instance.dismiss(),
-    };
     activeRouteSurfaces.push(tracked);
     result.finally(() => {
       const index = activeRouteSurfaces.indexOf(tracked);
       if (index >= 0) activeRouteSurfaces.splice(index, 1);
+    });
+  } else {
+    // Detached (the AccountDialog): NOT in the closeAll lineage, but recorded as
+    // the frontmost morph target so a flow opened from within it morphs IN.
+    detachedFrontSurface = tracked;
+    result.finally(() => {
+      if (detachedFrontSurface === tracked) detachedFrontSurface = null;
     });
   }
 
@@ -211,6 +247,16 @@ export function topRouteSurface(): TrackedSurface | undefined {
 }
 
 /**
+ * The frontmost surface a result-bearing flow should morph INTO: the detached
+ * AccountDialog if open (it sits on top of everything), else the top tracked
+ * route surface. Used by {@link openWithinOrPresent} so the account-menu hero
+ * avatar morphs the dialog into `ChangeAvatar` instead of stacking a new surface.
+ */
+export function topMorphableSurface(): TrackedSurface | undefined {
+  return detachedFrontSurface ?? topRouteSurface();
+}
+
+/**
  * Dismiss every active route surface (the whole `showBottomSheet` session). The
  * AccountDialog is untracked, so it is untouched. Iterates a snapshot because
  * `dismiss` mutates `activeRouteSurfaces` asynchronously as surfaces settle.
@@ -220,37 +266,70 @@ export function closeAllRouteSurfaces(): void {
 }
 
 /**
- * Drill in from a screen: navigate WITHIN the current surface when the target's
- * presentation matches, else present the target as a NEW surface on top (so a
- * sheet screen opening the full-bleed picker gets the right chrome).
+ * Drill in from a screen. From inside a surface the DEFAULT is to navigate WITHIN
+ * it — the panel MORPHS from the current frame's size to the next's. EVERY screen
+ * morphs; a NEW surface is stacked on top ONLY when the target route declares
+ * `stacks` (reserved for genuine overlays — none today, since action sheets /
+ * confirms / prompts are Bloom-raw `surfaces.present` calls outside this
+ * registry). A stacked surface gets its own backdrop + entry animation; dismissing
+ * it unwinds back to the surface that opened it.
  */
 export function navigateWithinOrPresent(
-  currentPresentation: SurfacePresentation,
   navStack: SurfaceNavStack,
   route: RouteName,
   props?: Record<string, unknown>,
 ): void {
   const nextProps = props ?? {};
-  if (getSurfacePresentation(route, nextProps) === currentPresentation) {
-    navStack.navigate(route, nextProps);
-  } else {
+  if (getSurfaceConfig(route, nextProps).stacks) {
     presentRoute(route, nextProps);
+  } else {
+    navStack.navigate(route, nextProps);
   }
 }
 
-/** Replace variant of {@link navigateWithinOrPresent}. */
+/** Replace variant of {@link navigateWithinOrPresent} (swaps the top frame). */
 export function replaceWithinOrPresent(
-  currentPresentation: SurfacePresentation,
   navStack: SurfaceNavStack,
   route: RouteName,
   props?: Record<string, unknown>,
 ): void {
   const nextProps = props ?? {};
-  if (getSurfacePresentation(route, nextProps) === currentPresentation) {
-    navStack.replace(route, nextProps);
-  } else {
+  if (getSurfaceConfig(route, nextProps).stacks) {
     presentRoute(route, nextProps);
+  } else {
+    navStack.replace(route, nextProps);
   }
+}
+
+/**
+ * Open a result-bearing route the SAME way a drill-in navigates (the morph-by-
+ * default rule), but returning the route's dismissal RESULT to the caller.
+ *
+ * When a surface is already open and the target morphs into it (the default —
+ * anything not marked `stacks`), it runs as a SUB-FLOW inside that surface: the
+ * panel morphs from the current screen into the target, and the promise resolves
+ * with the target's `dismiss(result)` (or `undefined` when cancelled), popping
+ * back to the caller's frame WITHOUT closing the host. Otherwise (no surface, or a
+ * route that stacks) it presents a fresh surface and resolves with its dismissal —
+ * identical to the historical `present(route).result`.
+ *
+ * The entry seam for the avatar picker AND its nested "My Oxy files" media
+ * selector: each awaits its result whether it morphed into the caller's surface
+ * or opened cold, with no morph-vs-present branch of its own.
+ */
+export function openWithinOrPresent<K extends RouteName>(
+  route: K,
+  props?: SurfaceProps<K>,
+): Promise<SurfaceResult<K> | undefined> {
+  const nextProps = (props ?? {}) as Record<string, unknown>;
+  const host = topMorphableSurface();
+  if (host && !getSurfaceConfig(route, nextProps).stacks) {
+    // Morph: run as a sub-flow inside the host. The erased `Promise<unknown>` is
+    // narrowed to this route's result at the typed boundary (the sub-flow resolves
+    // with exactly the value a descendant screen passes to `dismiss(result)`).
+    return host.beginFlow(route, nextProps) as Promise<SurfaceResult<K> | undefined>;
+  }
+  return present(route, props).result;
 }
 
 /**

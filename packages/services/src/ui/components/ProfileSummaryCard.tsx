@@ -1,11 +1,10 @@
 import type React from 'react';
 import { View, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { H4, Text } from '@oxyhq/bloom/typography';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Card } from '@oxyhq/bloom/card';
 import { PressableScale } from '@oxyhq/bloom/pressable-scale';
+import AvatarCameraBadge from './AvatarCameraBadge';
 
 /**
  * ProfileSummaryCard — the shared "who am I" summary block rendered at the top
@@ -37,18 +36,6 @@ export interface ProfileSummaryCardProps {
     avatarAccessibilityLabel?: string;
 }
 
-const badgeStyle: ViewStyle = {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-};
-
 const cardStyle: ViewStyle = {
     borderRadius: 20,
     marginBottom: 16,
@@ -67,8 +54,6 @@ const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
     showCameraBadge = false,
     avatarAccessibilityLabel,
 }) => {
-    const bloomTheme = useTheme();
-
     const avatar = <Avatar source={avatarUri} name={displayName} size={avatarSize} />;
 
     const avatarNode = onAvatarPress ? (
@@ -80,15 +65,7 @@ const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
             className="mb-space-12"
         >
             {avatar}
-            {showCameraBadge ? (
-                <View style={badgeStyle} className="bg-fill-brand border-border-image">
-                    <Ionicons
-                        name="camera"
-                        size={14}
-                        color={bloomTheme.colors.primaryForeground}
-                    />
-                </View>
-            ) : null}
+            {showCameraBadge ? <AvatarCameraBadge /> : null}
         </PressableScale>
     ) : (
         <View className="mb-space-12">{avatar}</View>

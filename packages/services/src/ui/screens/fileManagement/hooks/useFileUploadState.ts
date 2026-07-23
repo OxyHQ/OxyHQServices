@@ -1,9 +1,15 @@
 import type React from 'react';
 import { useCallback, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import type { AssetUploadInput, FileMetadata } from '@oxyhq/core';
-import { useFileStore } from '../../../stores/fileStore';
 import type { useUploadFile } from '../../../hooks/mutations/useAccountMutations';
+import { queryKeys } from '../../../hooks/queries/queryKeys';
+import {
+    prependFileToCache,
+    removeFileFromCache,
+    replaceFileInCache,
+} from '../../../hooks/queries/useFileQueries';
 import { convertDocumentPickerAssetToFile, formatFileSize } from '../../../utils/fileManagement';
 import {
     createPendingUploadFile,
@@ -16,6 +22,15 @@ import {
     getErrorMessage,
     loadDocumentPicker,
 } from '../shared';
+
+/** Aggregate progress across a multi-file upload. */
+export interface FileUploadAggregateProgress {
+    current: number;
+    total: number;
+}
+
+/** Minimum time the "Uploading…" indicator stays visible (anti-flash). */
+const MIN_BANNER_MS = 600;
 
 function revokePreviewUrl(preview: string | undefined): void {
     if (preview?.startsWith('blob:')) {
@@ -47,7 +62,6 @@ export interface UseFileUploadStateParams {
     onClose?: () => void;
     selectedIds: Set<string>;
     setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
-    loadFiles: (mode?: 'initial' | 'refresh' | 'silent' | 'more') => Promise<void> | void;
     t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
@@ -56,6 +70,10 @@ export interface UseFileUploadStateResult {
     isPickingDocument: boolean;
     pendingFiles: PendingUploadFile[];
     showUploadPreview: boolean;
+    /** Whether an upload is in flight (drives the "Uploading…" banner). */
+    uploading: boolean;
+    /** Aggregate progress across the current upload, or null. */
+    uploadProgress: FileUploadAggregateProgress | null;
     handleFileUpload: () => Promise<void>;
     handleConfirmUpload: () => Promise<void>;
     handleCancelUpload: () => void;
@@ -80,25 +98,23 @@ export const useFileUploadState = ({
     onClose,
     selectedIds,
     setSelectedIds,
-    loadFiles,
     t,
 }: UseFileUploadStateParams): UseFileUploadStateResult => {
     const [isPickingDocument, setIsPickingDocument] = useState(false);
     const [pendingFiles, setPendingFiles] = useState<PendingUploadFile[]>([]);
     const [showUploadPreview, setShowUploadPreview] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<FileUploadAggregateProgress | null>(null);
 
+    const queryClient = useQueryClient();
     const uploadStartRef = useRef<number | null>(null);
-    const MIN_BANNER_MS = 600;
-
-    const storeSetUploading = useFileStore(s => s.setUploading);
-    const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
 
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;
         const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
         const remaining = elapsed < MIN_BANNER_MS ? MIN_BANNER_MS - elapsed : 0;
         setTimeout(() => {
-            useFileStore.getState().setUploading(false);
+            setUploading(false);
             uploadStartRef.current = null;
         }, remaining);
     }, []);
@@ -108,7 +124,7 @@ export const useFileUploadState = ({
         if (!targetUserId) return []; // Guard clause to ensure userId is defined
         const uploadedFiles: FileMetadata[] = [];
         try {
-            storeSetUploadProgress({ current: 0, total: selectedFiles.length });
+            setUploadProgress({ current: 0, total: selectedFiles.length });
             const maxSize = 50 * 1024 * 1024; // 50MB
             const oversizedFiles = selectedFiles.filter(file => candidateSize(file) > maxSize);
             if (oversizedFiles.length > 0) {
@@ -120,20 +136,16 @@ export const useFileUploadState = ({
             let failureCount = 0;
             const errors: string[] = [];
             for (let i = 0; i < selectedFiles.length; i++) {
-                storeSetUploadProgress({ current: i + 1, total: selectedFiles.length });
+                setUploadProgress({ current: i + 1, total: selectedFiles.length });
                 const raw = selectedFiles[i];
                 const fileName = candidateName(raw, `file-${i + 1}`);
                 const fileSize = candidateSize(raw);
                 const fileType = candidateType(raw);
-                const optimisticId = `temp-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID per file
+                const optimisticId = `temp-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 11)}`; // Unique ID per file
 
                 try {
                     // Validate file before upload
                     if (!raw || !fileName || fileSize <= 0) {
-                        const errorMsg = `Invalid file: ${fileName}`;
-                        if (__DEV__) {
-                            console.error('Upload validation failed:', { file: raw, error: errorMsg });
-                        }
                         failureCount++;
                         errors.push(`${fileName}: Invalid file (missing name or size)`);
                         continue;
@@ -158,7 +170,7 @@ export const useFileUploadState = ({
                         metadata: optimisticMetadata,
                         variants: [],
                     };
-                    useFileStore.getState().addFile(optimisticFile, { prepend: true });
+                    prependFileToCache(queryClient, targetUserId, optimisticFile);
 
                     // Use the mutation hook with authentication handling
                     const result = await uploadFileMutation.mutateAsync({
@@ -179,41 +191,26 @@ export const useFileUploadState = ({
                             metadata: f.metadata || {},
                             variants: f.variants || [],
                         };
-                        // Remove optimistic then add real
-                        useFileStore.getState().removeFile(optimisticId);
-                        useFileStore.getState().addFile(merged, { prepend: true });
+                        // Swap the optimistic temp entry for the persisted record.
+                        replaceFileInCache(queryClient, targetUserId, optimisticId, merged);
                         uploadedFiles.push(merged);
                         successCount++;
                     } else {
                         // Upload succeeded but the API returned no file payload,
                         // so we cannot build a real entry. Drop the optimistic
                         // placeholder instead of stranding a `temp-…` id (which
-                        // would leak into asset URLs); the scheduled silent
-                        // reconcile below re-fetches the persisted record.
-                        useFileStore.getState().removeFile(optimisticId);
-                        if (__DEV__) {
-                            console.warn('Upload completed but no file data returned:', { fileName, result });
-                        }
+                        // would leak into asset URLs); the reconcile invalidation
+                        // below re-fetches the persisted record.
+                        removeFileFromCache(queryClient, targetUserId, optimisticId);
                         // Still count as success if upload didn't throw
                         successCount++;
                     }
                 } catch (error: unknown) {
                     failureCount++;
                     const errorMessage = getErrorMessage(error) || 'Upload failed';
-                    const fullError = `${fileName}: ${errorMessage}`;
-                    errors.push(fullError);
-                    if (__DEV__) {
-                        console.error('File upload failed:', {
-                            fileName,
-                            fileSize,
-                            fileType,
-                            error: errorMessage,
-                            stack: (error instanceof Error) ? error.stack : undefined
-                        });
-                    }
-
+                    errors.push(`${fileName}: ${errorMessage}`);
                     // Remove optimistic file on error (use the same optimisticId from above)
-                    useFileStore.getState().removeFile(optimisticId);
+                    removeFileFromCache(queryClient, targetUserId, optimisticId);
                 }
             }
 
@@ -228,12 +225,15 @@ export const useFileUploadState = ({
                     : '';
                 toast.error(`${t('fileManagement.toasts.uploadFailed', { count: failureCount })}${errorDetails}`);
             }
-            // Silent background refresh to ensure metadata/variants updated
-            setTimeout(() => { loadFiles('silent'); }, 1200);
+            // Reconcile against the server (picks up generated variants / metadata)
+            // — replaces the old silent-reload timer.
+            if (successCount > 0) {
+                queryClient.invalidateQueries({ queryKey: queryKeys.files.list(targetUserId) });
+            }
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.uploadError'));
         } finally {
-            storeSetUploadProgress(null);
+            setUploadProgress(null);
         }
         return uploadedFiles;
     };
@@ -245,35 +245,23 @@ export const useFileUploadState = ({
         for (const file of selectedFiles) {
             // Validate file has required properties
             if (!file) {
-                if (__DEV__) {
-                    console.error('Invalid file: file is null or undefined');
-                }
                 toast.error(t('fileManagement.toasts.invalidFileMissing'));
                 continue;
             }
 
             const name = candidateName(file, '');
             if (!name) {
-                if (__DEV__) {
-                    console.error('Invalid file: missing or invalid name property', file);
-                }
                 toast.error(t('fileManagement.toasts.invalidFileName'));
                 continue;
             }
 
             const size = (file as { size?: number }).size;
             if (size === undefined || size === null || Number.isNaN(size)) {
-                if (__DEV__) {
-                    console.error('Invalid file: missing or invalid size property', file);
-                }
                 toast.error(t('fileManagement.toasts.invalidFileSize', { name }));
                 continue;
             }
 
             if (size <= 0) {
-                if (__DEV__) {
-                    console.error('Invalid file: file size is zero or negative', file);
-                }
                 toast.error(t('fileManagement.toasts.fileEmpty', { name }));
                 continue;
             }
@@ -303,11 +291,8 @@ export const useFileUploadState = ({
                             (typeof Blob !== 'undefined' && file instanceof Blob)) {
                             preview = URL.createObjectURL(file as Blob);
                         }
-                    } catch (error: unknown) {
-                        if (__DEV__) {
-                            console.warn('Failed to create preview URL:', error);
-                        }
-                        // Preview is optional, continue without it
+                    } catch {
+                        // Preview is optional — continue without it.
                     }
                 }
             }
@@ -330,23 +315,23 @@ export const useFileUploadState = ({
 
         setShowUploadPreview(false);
         uploadStartRef.current = Date.now();
-        storeSetUploading(true);
-        storeSetUploadProgress(null);
+        setUploading(true);
+        setUploadProgress(null);
 
         try {
             const filesToUpload = pendingFiles.map(pf => pf.file);
-            storeSetUploadProgress({ current: 0, total: filesToUpload.length });
+            setUploadProgress({ current: 0, total: filesToUpload.length });
             const uploadedFiles = await processFileUploads(filesToUpload);
 
             // Cleanup preview URLs
-            pendingFiles.forEach(pf => {
+            for (const pf of pendingFiles) {
                 revokePreviewUrl(pf.preview);
-            });
+            }
             setPendingFiles([]);
 
             // If in selectMode, automatically select the uploaded file(s)
             if (selectMode && uploadedFiles.length > 0) {
-                // Wait a bit for the file store to update and ensure file is available
+                // Defer one tick so the query cache has settled before selecting.
                 setTimeout(() => {
                     const fileToSelect = uploadedFiles[0];
                     if (!multiSelect && fileToSelect) {
@@ -359,11 +344,11 @@ export const useFileUploadState = ({
                         }
                     } else if (multiSelect) {
                         // Multi-select mode - add all uploaded files to selection
-                        uploadedFiles.forEach(file => {
+                        for (const file of uploadedFiles) {
                             if (!selectedIds.has(file.id)) {
                                 setSelectedIds(prev => new Set(prev).add(file.id));
                             }
-                        });
+                        }
                     }
                 }, 500);
             }
@@ -377,9 +362,9 @@ export const useFileUploadState = ({
 
     const handleCancelUpload = () => {
         // Cleanup preview URLs
-        pendingFiles.forEach(pf => {
+        for (const pf of pendingFiles) {
             revokePreviewUrl(pf.preview);
-        });
+        }
         setPendingFiles([]);
         setShowUploadPreview(false);
     };
@@ -487,9 +472,6 @@ export const useFileUploadState = ({
                 toast.error(t('fileManagement.toasts.noFilesProcessed'));
             }
         } catch (error: unknown) {
-            if (__DEV__) {
-                console.error('File upload error:', error);
-            }
             if (getErrorMessage(error)?.includes('expo-document-picker') || getErrorMessage(error)?.includes('Different document picking in progress')) {
                 if (getErrorMessage(error)?.includes('Different document picking in progress')) {
                     toast.error(t('fileManagement.toasts.waitForSelection'));
@@ -509,6 +491,8 @@ export const useFileUploadState = ({
         isPickingDocument,
         pendingFiles,
         showUploadPreview,
+        uploading,
+        uploadProgress,
         handleFileUpload,
         handleConfirmUpload,
         handleCancelUpload,

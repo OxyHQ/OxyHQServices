@@ -755,6 +755,8 @@
       "saving": "Saving…",
       "helper": "The cropped circle is what will appear on your profile. Pinch to zoom, drag to position.",
       "zoom": "{{value}}×",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
       "a11yImage": "Crop preview. Pinch to zoom and drag to reposition the image.",
       "a11yReset": "Reset crop to default position",
       "a11yResetAnnouncement": "Crop reset"
@@ -774,6 +776,47 @@
       "cropFailed": "Failed to crop image"
     },
     "changeAvatar": "Change avatar"
+  },
+  "changeAvatar": {
+    "title": "Change profile picture",
+    "sources": {
+      "upload": {
+        "title": "Upload from device",
+        "description": "Choose a photo from your gallery"
+      },
+      "camera": {
+        "title": "Take a picture",
+        "description": "Use your camera"
+      },
+      "files": {
+        "title": "My Oxy files",
+        "description": "Pick an image you already uploaded"
+      },
+      "remove": {
+        "title": "Remove current photo",
+        "description": "Go back to your initials"
+      }
+    },
+    "remove": {
+      "confirmTitle": "Remove profile picture?",
+      "confirmMessage": "Your profile will show your initials instead. You can add a new photo at any time.",
+      "confirmLabel": "Remove"
+    },
+    "permission": {
+      "libraryDenied": "Oxy needs access to your photos to upload a picture.",
+      "cameraDenied": "Oxy needs access to your camera to take a picture.",
+      "openSettings": "Open settings"
+    },
+    "errors": {
+      "pickerUnavailable": "Photo picking is not available on this device.",
+      "cameraUnavailable": "The camera is not available on this device.",
+      "pickFailed": "Could not open the photo picker.",
+      "cameraFailed": "Could not open the camera.",
+      "loadImageFailed": "Could not load the selected image."
+    },
+    "a11y": {
+      "currentPhoto": "Your current profile picture"
+    }
   },
   "accountOverview": {
     "title": "Account",
@@ -1443,6 +1486,11 @@
     "uploadPhotos": "Upload Photos",
     "uploadFiles": "Upload Files",
     "clearSearch": "Clear Search",
+    "retry": "Try again",
+    "loadError": {
+      "title": "Couldn't load your files",
+      "description": "Something went wrong. Check your connection and try again."
+    },
     "choosePhoto": "Choose Photo",
     "done": "Done",
     "doneWithCount": "Done ({{count}})",
@@ -1615,7 +1663,9 @@
   },
   "accountMenu": {
     "label": "Account menu",
-    "manage": "Manage your Oxy Account",
+    "manage": "Manage your Oxy account",
+    "greeting": "Hi, {{name}}!",
+    "switchAccount": "Switch account",
     "viewProfile": "View profile",
     "addAnother": "Add another account",
     "signOutAll": "Sign out of all accounts",
@@ -1623,7 +1673,22 @@
     "openHint": "Opens the account menu",
     "openWithUser": "Account menu for {{name}}",
     "switching": "Switching account…",
-    "signOutAccount": "Sign out {{name}}"
+    "signOutAccount": "Sign out {{name}}",
+    "storage": {
+      "title": "Oxy storage",
+      "usage": "{{used}} of {{total}} used",
+      "used": "Used",
+      "free": "Free",
+      "unavailable": "Usage details unavailable",
+      "upgrade": "Upgrade plan",
+      "manage": "Manage storage"
+    },
+    "data": "Your data in Oxy",
+    "settings": "Oxy settings",
+    "help": "Help & feedback",
+    "signOut": "Sign out",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
   },
   "accounts": {
     "activeAccount": {

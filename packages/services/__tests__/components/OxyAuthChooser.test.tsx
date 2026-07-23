@@ -19,7 +19,7 @@
  * asserted absent.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { toast } from '@oxyhq/bloom';
 import type { AccountDialogSnapshot, SwitchableAccount, User } from '@oxyhq/core';
 
@@ -50,7 +50,7 @@ const makeSnapshot = (over?: Partial<AccountDialogSnapshot>): AccountDialogSnaps
 
 let snapshot = makeSnapshot();
 const controller = {
-  subscribe: (_l: () => void) => () => undefined,
+  subscribe: jest.fn((_l: () => void) => () => undefined),
   getSnapshot: () => snapshot,
   switchTo: jest.fn(async () => undefined),
   add: jest.fn(),
@@ -64,8 +64,10 @@ const controller = {
 
 const signInWithPasskey = jest.fn(async () => undefined);
 const registerWithPasskey = jest.fn(async () => undefined);
+const openAvatarPicker = jest.fn();
 const closeAccountDialog = jest.fn();
 const showBottomSheet = jest.fn();
+const logout = jest.fn(async () => undefined);
 const invalidateQueries = jest.fn();
 const checkUsernameAvailability = jest.fn(async () => ({ available: true, message: '' }));
 
@@ -76,18 +78,38 @@ jest.mock('../../src/ui/context/OxyContext', () => ({
     isAccountDialogOpen: true,
     closeAccountDialog,
     showBottomSheet,
+    logout,
     logoutAll: jest.fn(async () => undefined),
     refreshAccounts: jest.fn(async () => undefined),
     signInWithPasskey,
     registerWithPasskey,
+    openAvatarPicker,
     oxyServices: { checkUsernameAvailability },
   }),
 }));
 
-jest.mock('../../src/ui/hooks/useI18n', () => ({
+// The account menu wires `useAccountStorageUsage()` (a `useQuery` wrapper) for
+// its storage block — stub the query so the hook is inert in these RN-binding
+// tests (the storage block then renders its "unavailable" placeholder).
+jest.mock('../../src/ui/hooks/queries/useServicesQueries', () => ({
   __esModule: true,
-  useI18n: () => ({ t: () => '', locale: 'en' }),
+  useAccountStorageUsage: () => ({ data: undefined, isLoading: false, isFetching: false }),
 }));
+
+// Resolve REAL copy from the shipped dictionaries rather than stubbing `t` to a
+// blank string: the account menu renders `t(key)` with no inline English
+// fallback, so a key that is missing (or renamed) surfaces here as its raw
+// dotted path and fails the assertions below.
+jest.mock('../../src/ui/hooks/useI18n', () => {
+  const { translate } = jest.requireActual('@oxyhq/core');
+  return {
+    __esModule: true,
+    useI18n: () => ({
+      t: (key: string, vars?: Record<string, string | number>) => translate('en-US', key, vars),
+      locale: 'en-US',
+    }),
+  };
+});
 
 jest.mock('@tanstack/react-query', () => ({
   __esModule: true,
@@ -100,7 +122,11 @@ jest.mock('react-native-qrcode-svg', () => ({
     require('react').createElement('span', { 'data-testid': 'qrcode' }, value),
 }));
 
-jest.mock('@expo/vector-icons', () => ({ __esModule: true, MaterialCommunityIcons: () => null }));
+jest.mock('@expo/vector-icons', () => ({
+  __esModule: true,
+  MaterialCommunityIcons: () => null,
+  Ionicons: () => null,
+}));
 
 // The two environment gate probes, toggled per test.
 const isWebBrowserMock = jest.fn(() => true);
@@ -126,7 +152,7 @@ describe('OxyAuthChooser', () => {
     isOxyRpOriginMock.mockReturnValue(true);
   });
 
-  it('collapses to the current account by default and expands to reveal the rest', () => {
+  it('leads with the hero and collapses the switch list behind the "Switch account" row', () => {
     snapshot = makeSnapshot({
       activeAccountId: 'a',
       accounts: [
@@ -137,22 +163,24 @@ describe('OxyAuthChooser', () => {
 
     render(<OxyAuthChooser />);
 
-    // Collapsed by default (Google account-menu pattern): only the current
-    // account + the "Manage your Oxy account" button are shown; the rest of the
-    // list is hidden behind the expand chevron.
-    expect(screen.getByText('Alice')).toBeTruthy();
+    // The HERO leads: a greeting for the current account + the manage pill,
+    // outside any card. Below it a "Switch account" row toggles the list, which
+    // stays MOUNTED behind it (so it can animate open and closed) and repeats
+    // the CURRENT account — it is no longer a row of its own anywhere else.
+    expect(screen.getByText('Hi, Alice!')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Manage your Oxy account' })).toBeTruthy();
-    expect(screen.queryByText('Bob')).toBeNull();
-    expect(screen.queryByText('Add another account')).toBeNull();
+    const row = screen.getByRole('button', { name: 'Switch account' });
+    expect(row.getAttribute('aria-expanded')).toBe('false');
 
-    // Tapping the current-account row expands the full list.
-    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
+    fireEvent.click(row);
 
+    expect(
+      screen.getByRole('button', { name: 'Switch account' }).getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Alice' })).toBeTruthy();
     expect(screen.getByText('Bob')).toBeTruthy();
     expect(screen.getByText('Add another account')).toBeTruthy();
     expect(screen.getByText('Manage accounts on this device')).toBeTruthy();
-    // The current account is repeated first in the expanded list (checked row).
-    expect(screen.getAllByText('Alice')).toHaveLength(2);
   });
 
   it('toasts a failed account switch instead of rendering an inline banner', async () => {
@@ -170,8 +198,8 @@ describe('OxyAuthChooser', () => {
     });
 
     render(<OxyAuthChooser />);
-    // Expand the switcher first — the other accounts are collapsed by default.
-    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
+    // Expand the switcher first — the account rows are collapsed by default.
+    fireEvent.click(screen.getByRole('button', { name: 'Switch account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
     await waitFor(() =>
@@ -208,8 +236,8 @@ describe('OxyAuthChooser', () => {
     });
 
     render(<OxyAuthChooser />);
-    // Expand the switcher first — the other accounts are collapsed by default.
-    fireEvent.click(screen.getByRole('button', { name: 'Alice' }));
+    // Expand the switcher first — the account rows are collapsed by default.
+    fireEvent.click(screen.getByRole('button', { name: 'Switch account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
     await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
@@ -282,8 +310,36 @@ describe('OxyAuthChooser', () => {
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith('Sign-in was cancelled.'),
       );
+      expect(toast.error).toHaveBeenCalledTimes(1);
       expect(screen.queryByText('Sign-in was cancelled.')).toBeNull();
       expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    });
+
+    it('toasts the SAME sign-in error only once even if the controller re-notifies (deduped)', async () => {
+      // Capture the controller listener the chooser registers so we can replay a
+      // notification carrying the same error — it must NOT re-toast.
+      let notify: (() => void) | null = null;
+      controller.subscribe.mockImplementationOnce((listener: () => void) => {
+        notify = listener;
+        return () => undefined;
+      });
+      snapshot = makeSnapshot({
+        view: 'qr',
+        signIn: {
+          phase: 'error',
+          authorizeCode: null,
+          qrPayload: null,
+          expiresAt: null,
+          error: 'Sign-in was cancelled.',
+        },
+      });
+
+      render(<OxyAuthChooser />);
+      await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+
+      // Re-notify with the identical error phase/message — deduped, no second toast.
+      act(() => notify?.());
+      expect(toast.error).toHaveBeenCalledTimes(1);
     });
 
   describe('passkey link on the QR view', () => {

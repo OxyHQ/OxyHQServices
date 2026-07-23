@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
     View,
     Text,
@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { BREAKPOINTS } from '@oxyhq/bloom/styles';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import type { FileMetadata } from '@oxyhq/core';
 import { computePhotoGridLayout } from './photoGridLayout';
+import FileLibraryError from './FileLibraryError';
 
 /**
  * Haptic feedback wrapper. `expo-haptics` is an optional dependency — when not
@@ -130,6 +130,10 @@ export interface PhotoPickerViewProps {
      * and container width, not the browse file-manager chrome.
      */
     loading: boolean;
+    /** Terminal load failure (nothing cached) — renders a distinct error state. */
+    loadError: boolean;
+    /** Retry the failed list load (wired to the query's refetch). */
+    onRetry: () => void;
     reduceMotion: boolean;
     getThumbUrl: (file: FileMetadata) => string | undefined;
     primaryColor: string;
@@ -217,38 +221,35 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
 
     const delay = Math.min(enterIndex * STAGGER_PER_CELL_MS, MAX_TOTAL_STAGGER_MS);
 
-    // Entrance fade, staggered by the cell's grid index. Reduce-motion pins
+    // Entrance fade, staggered by the cell's grid index. Started from the wrapper's
+    // ref callback (fires on mount) rather than an effect. Reduce-motion pins
     // opacity at 1 and never animates.
     const opacity = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
-    useEffect(() => {
+    const startEntrance = useCallback((node: unknown) => {
+        if (!node) return; // unmount
         if (reduceMotion) {
             opacity.setValue(1);
             return;
         }
-        const entrance = Animated.timing(opacity, {
+        opacity.setValue(0);
+        Animated.timing(opacity, {
             toValue: 1,
             duration: ENTRANCE_DURATION_MS,
             delay,
             useNativeDriver: Platform.OS !== 'web',
-        });
-        entrance.start();
-        return () => entrance.stop();
+        }).start();
     }, [opacity, delay, reduceMotion]);
 
-    // Selection-ring pulse: a quick scale bump each time the cell transitions
-    // INTO the selected state, springing back to rest. Reduce-motion holds the
-    // ring at rest scale (still tracks selection state so a later un-reduce does
-    // not fire a stale pulse).
+    // Selection-ring pulse: a quick scale bump that springs back to rest. The ring
+    // renders ONLY while selected, so its own mount IS the "became selected"
+    // signal — driven from the ring's ref callback, not an effect. Reduce-motion
+    // holds the ring at rest scale.
     const ringScale = useRef(new Animated.Value(1)).current;
-    const prevSelected = useRef(isSelected);
-    useEffect(() => {
-        if (prevSelected.current === isSelected) return;
-        prevSelected.current = isSelected;
-        if (reduceMotion || !isSelected) {
-            ringScale.setValue(1);
-            return;
-        }
-        const pulse = Animated.sequence([
+    const startRingPulse = useCallback((node: unknown) => {
+        if (!node) return; // ring unmounting (deselected)
+        ringScale.setValue(1);
+        if (reduceMotion) return;
+        Animated.sequence([
             Animated.timing(ringScale, {
                 toValue: RING_PULSE_PEAK,
                 duration: RING_PULSE_UP_MS,
@@ -260,10 +261,8 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
                 tension: RING_SPRING_TENSION,
                 useNativeDriver: Platform.OS !== 'web',
             }),
-        ]);
-        pulse.start();
-        return () => pulse.stop();
-    }, [isSelected, ringScale, reduceMotion]);
+        ]).start();
+    }, [ringScale, reduceMotion]);
 
     return (
         // The animated wrapper carries the entrance opacity + the layout box as
@@ -271,6 +270,7 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
         // size/margins are runtime pixels className cannot express. `className`
         // drives the static chrome below (`flex-1` fills this fixed-size box).
         <Animated.View
+            ref={startEntrance}
             style={{
                 width: size,
                 height: size,
@@ -303,6 +303,7 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
                 </View>
                 {isSelected && (
                     <Animated.View
+                        ref={startRingPulse}
                         pointerEvents="none"
                         style={{
                             position: 'absolute',
@@ -346,6 +347,8 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     hasMore,
     loadingMore,
     loading,
+    loadError,
+    onRetry,
     reduceMotion,
     getThumbUrl,
     primaryColor,
@@ -376,24 +379,15 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
         setGridWidth((prev) => (prev === w ? prev : w));
     }, []);
 
-    // The hosting Dialog uses `{ base: 'bottom', md: 'center' }`. In BOTH
-    // placements the panel/sheet has no intrinsic height that a `flex: 1` root
-    // could fill down to the FlatList: the centered card hugs its content, and
-    // the bottom sheet's own `maxHeight` (several flex levels above this root)
-    // does not propagate a definite bound through the chain. So the root owns a
-    // `maxHeight` DIRECTLY — the FlatList then scrolls within it when the grid is
-    // long, and the panel hugs its content when the grid is short (no huge empty
-    // panel). The cap is tighter for the centered card (a floating modal reads
-    // better below full height); the bottom sheet may run taller. Keep this
-    // breakpoint in sync with `SHEET_PLACEMENT` in surfaces.ts.
-    const isCenteredPanel = windowWidth >= BREAKPOINTS.md;
-    const maxPanelHeight = useMemo(
-        () => (isCenteredPanel
-            ? Math.min(Math.round(windowHeight * 0.85), 720)
-            : Math.round(windowHeight * 0.9)),
-        [isCenteredPanel, windowHeight],
-    );
-    const rootStyle = useMemo(() => ({ maxHeight: maxPanelHeight }), [maxPanelHeight]);
+    // The picker FILLS its panel: the surface morphs the container UP to an
+    // explicit large target (`frameSize.heightRatio: 0.9` in `surfaceRegistry`),
+    // and this root takes that SAME 0.9-of-viewport height so the grid uses the
+    // whole grown card (a `flex: 1` root can't fill — no definite bound propagates
+    // through the sheet's flex chain, and the panel is pinned, not measured). The
+    // FlatList then scrolls within this fixed height. Keep the 0.9 ratio in sync
+    // with the picker's `frameSize` in `surfaceRegistry.ts`.
+    const panelHeight = useMemo(() => Math.round(windowHeight * 0.9), [windowHeight]);
+    const rootStyle = useMemo(() => ({ height: panelHeight }), [panelHeight]);
 
     const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
     const { columns, cellSize, gutter } = useMemo(
@@ -408,10 +402,10 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     const skeletonTileCount = useMemo(() => {
         const rowHeight = cellSize + gutter;
         if (rowHeight <= 0) return columns * SKELETON_MIN_ROWS;
-        const available = Math.max(0, maxPanelHeight - GRID_CONTENT_PADDING_TOP);
+        const available = Math.max(0, panelHeight - GRID_CONTENT_PADDING_TOP);
         const rows = Math.max(SKELETON_MIN_ROWS, Math.floor(available / rowHeight));
         return rows * columns;
-    }, [cellSize, gutter, columns, maxPanelHeight]);
+    }, [cellSize, gutter, columns, panelHeight]);
 
     // Map selectedIds → 1-based selection order for the badge. We freeze a
     // stable order at the time of selection: the order is the insertion
@@ -547,7 +541,23 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 where Yoga already defaults min-height to 0). */}
             <View className="flex-1 min-h-0 bg-black">
                 {/* Photo grid (renders behind the translucent header). */}
-                {isEmpty && loading ? (
+                {isEmpty && loadError ? (
+                    /* Terminal load failure — a DISTINCT error surface (not the
+                       empty state), pushed below the translucent header so Cancel
+                       stays reachable. Retry re-runs the list query. */
+                    <View className="flex-1 items-center justify-center pt-[60px]">
+                        <FileLibraryError
+                            title={t('fileManagement.loadError.title')}
+                            description={t('fileManagement.loadError.description')}
+                            retryLabel={t('fileManagement.retry')}
+                            onRetry={onRetry}
+                            iconColor="#FF6B6B"
+                            titleColor="#FFFFFF"
+                            descriptionColor="rgba(255,255,255,0.7)"
+                            buttonColor={primaryColor}
+                        />
+                    </View>
+                ) : isEmpty && loading ? (
                     /* Loading skeleton — the picker's OWN shape: shimmer tiles laid
                        out with the SAME placement-aware geometry the real grid uses
                        (`computePhotoGridLayout(effectiveWidth)`), pushed below the

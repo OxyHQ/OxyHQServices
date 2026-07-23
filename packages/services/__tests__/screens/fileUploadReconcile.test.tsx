@@ -1,40 +1,114 @@
 /**
- * Tests the optimistic-upload lifecycle in `useFileUploadState`, pinning Bug 2
- * (the `temp-` id leak):
+ * Covers the file library's React Query data layer (the zustand `fileStore` was
+ * retired — server pages live in the query cache):
  *
- *  - While an upload is in flight, the optimistic entry carries the LOCALLY
- *    PICKED uri as its preview and is flagged `uploading` — so the grid renders
- *    the picked image and never builds an asset URL from the `temp-…` id.
- *  - On success with a file payload, the optimistic entry is replaced by the
- *    real persisted file (its `temp-…` id disappears).
- *  - On success WITHOUT a file payload, the optimistic entry is reconciled
- *    (removed) rather than stranded with a `temp-…` id forever.
+ *  - Infinite paging: `useUserFilesInfinite` walks the offset cursor via
+ *    `getNextPageParam` and appends pages on `fetchNextPage`.
+ *  - The pure cache helpers (prepend / remove / replace / patch) that back
+ *    optimistic upload, delete, and visibility changes.
+ *  - The optimistic-upload lifecycle in `useFileUploadState`, pinning the
+ *    `temp-` id contract against the QUERY CACHE:
+ *      · in flight, the optimistic entry carries the picked uri + `uploading`
+ *        flag so the grid never builds an asset URL from a `temp-…` id;
+ *      · on success WITH a payload, the temp entry is replaced by the real file;
+ *      · on success WITHOUT a payload, the temp entry is removed (not stranded);
+ *      · on failure, the temp entry is removed.
  *
- * The document picker is stubbed; every other helper is the real module so the
- * store transitions under test are exercised end to end.
+ * The document picker is stubbed; every other helper is the real module.
  */
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { useFileStore } from '../../src/ui/stores/fileStore';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { FileMetadata } from '@oxyhq/core';
 import { fileThumbSource } from '../../src/ui/hooks/useResolvedFileUrls';
+import FileLibraryError from '../../src/ui/screens/fileManagement/FileLibraryError';
+import { queryKeys } from '../../src/ui/hooks/queries/queryKeys';
+import {
+  useUserFilesInfinite,
+  prependFileToCache,
+  removeFileFromCache,
+  replaceFileInCache,
+  patchFileMetadataInCache,
+  type UserFilesInfinite,
+  type RawUserFile,
+} from '../../src/ui/hooks/queries/useFileQueries';
 import type { useUploadFile } from '../../src/ui/hooks/mutations/useAccountMutations';
 
-// Keep every real helper; only stub the lazy document-picker loader.
+// Stub only the lazy document-picker loader; keep every other helper real.
 const getDocumentAsync = jest.fn();
 jest.mock('../../src/ui/screens/fileManagement/shared', () => {
   const actual = jest.requireActual('../../src/ui/screens/fileManagement/shared');
   return { __esModule: true, ...actual, loadDocumentPicker: () => Promise.resolve({ getDocumentAsync }) };
 });
 
+// `useUserFilesInfinite` reads oxyServices from context; the upload hook does not.
+const listUserFiles = jest.fn();
+jest.mock('../../src/ui/context/OxyContext', () => ({
+  useOxy: () => ({ oxyServices: { listUserFiles }, activeSessionId: 's1' }),
+}));
+
+// The error state renders vector icons, which don't parse under ts-jest.
+jest.mock('@expo/vector-icons', () => ({
+  __esModule: true,
+  Ionicons: () => null,
+  MaterialCommunityIcons: () => null,
+}));
+
 import { useFileUploadState } from '../../src/ui/screens/fileManagement/hooks/useFileUploadState';
 
+const OWNER = 'u1';
+const KEY = queryKeys.files.list(OWNER);
 const PICKED_URI = 'file:///picked-photo.png';
 
 type UploadMutation = ReturnType<typeof useUploadFile>;
 
+const makeClient = () =>
+  new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY }, mutations: { retry: false } } });
+
+const wrapper = (client: QueryClient) => {
+  const Wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+  return Wrapper;
+};
+
+const raw = (id: string): RawUserFile => ({
+  id,
+  originalName: `${id}.jpg`,
+  mime: 'image/jpeg',
+  size: 1024,
+  createdAt: '2026-01-01T00:00:00.000Z',
+});
+
+const file = (id: string): FileMetadata => ({
+  id,
+  filename: `${id}.jpg`,
+  contentType: 'image/jpeg',
+  length: 1024,
+  chunkSize: 0,
+  uploadDate: '2026-01-01T00:00:00.000Z',
+  metadata: {},
+  variants: [],
+});
+
+// Seed the cache with a single (optionally populated) first page so optimistic
+// prepends have somewhere to land.
+const seedCache = (client: QueryClient, files: FileMetadata[] = []) => {
+  const data: UserFilesInfinite = {
+    pageParams: [0],
+    pages: [{ files, total: files.length, hasMore: false, nextOffset: 40 }],
+  };
+  client.setQueryData(KEY, data);
+};
+
+const cachedFiles = (client: QueryClient): FileMetadata[] =>
+  (client.getQueryData(KEY) as UserFilesInfinite | undefined)?.pages.flatMap((p) => p.files) ?? [];
+
+const tempEntries = (client: QueryClient) => cachedFiles(client).filter((f) => f.id.startsWith('temp-'));
+
 const makeParams = (mutateAsync: jest.Mock) => ({
-  targetUserId: 'u1',
+  targetUserId: OWNER,
   uploadFileMutation: { mutateAsync } as unknown as UploadMutation,
   defaultVisibility: 'private' as const,
   selectMode: false,
@@ -45,7 +119,6 @@ const makeParams = (mutateAsync: jest.Mock) => ({
   onClose: jest.fn(),
   selectedIds: new Set<string>(),
   setSelectedIds: jest.fn(),
-  loadFiles: jest.fn(),
   t: (key: string) => key,
 });
 
@@ -56,31 +129,142 @@ const primePicker = () => {
   });
 };
 
-const tempEntries = () =>
-  Object.values(useFileStore.getState().files).filter((f) => f.id.startsWith('temp-'));
+describe('file query cache helpers', () => {
+  const base = (): UserFilesInfinite => ({
+    pageParams: [0],
+    pages: [{ files: [file('a'), file('b')], total: 2, hasMore: false, nextOffset: 40 }],
+  });
 
-describe('useFileUploadState optimistic lifecycle', () => {
+  it('prepend adds to the first page; remove drops by id', () => {
+    const client = makeClient();
+    client.setQueryData(KEY, base());
+    prependFileToCache(client, OWNER, file('new'));
+    expect(cachedFiles(client).map((f) => f.id)).toEqual(['new', 'a', 'b']);
+    removeFileFromCache(client, OWNER, 'a');
+    expect(cachedFiles(client).map((f) => f.id)).toEqual(['new', 'b']);
+  });
+
+  it('replace swaps one file for another; patch merges metadata', () => {
+    const client = makeClient();
+    client.setQueryData(KEY, base());
+    replaceFileInCache(client, OWNER, 'a', { ...file('real'), filename: 'real.jpg' });
+    expect(cachedFiles(client).map((f) => f.id)).toEqual(['real', 'b']);
+    patchFileMetadataInCache(client, OWNER, 'b', { visibility: 'public' });
+    const b = cachedFiles(client).find((f) => f.id === 'b');
+    expect((b?.metadata as { visibility?: string } | undefined)?.visibility).toBe('public');
+  });
+
+  it('helpers no-op when nothing is cached (upload before first page load)', () => {
+    const client = makeClient();
+    prependFileToCache(client, OWNER, file('x'));
+    expect(client.getQueryData(KEY)).toBeUndefined();
+  });
+});
+
+describe('useUserFilesInfinite paging', () => {
+  beforeEach(() => {
+    listUserFiles.mockReset();
+  });
+
+  it('walks the offset cursor across pages via getNextPageParam', async () => {
+    listUserFiles.mockImplementation(async (_limit: number, offset: number) =>
+      offset === 0
+        ? { files: [raw('a'), raw('b')], total: 3, hasMore: true }
+        : { files: [raw('c')], total: 3, hasMore: false },
+    );
+    const client = makeClient();
+    const { result } = renderHook(() => useUserFilesInfinite(OWNER), { wrapper: wrapper(client) });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].files.map((f) => f.id)).toEqual(['a', 'b']);
+    expect(result.current.hasNextPage).toBe(true);
+
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+
+    await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+    const all = result.current.data?.pages.flatMap((p) => p.files).map((f) => f.id);
+    expect(all).toEqual(['a', 'b', 'c']);
+    expect(listUserFiles).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('load error state (distinct from empty)', () => {
+  beforeEach(() => {
+    listUserFiles.mockReset();
+  });
+
+  it('a rejected fetch yields isError with no data — a resolved-empty fetch does not', async () => {
+    // Rejecting fetch → terminal error, no data (the render branches on this).
+    listUserFiles.mockRejectedValue(new Error('offline'));
+    const failClient = makeClient();
+    const { result: failed } = renderHook(() => useUserFilesInfinite(OWNER), {
+      wrapper: wrapper(failClient),
+    });
+    await waitFor(() => expect(failed.current.isError).toBe(true));
+    expect(failed.current.data).toBeUndefined();
+
+    // Resolving empty → NOT an error; an empty (but present) first page.
+    listUserFiles.mockResolvedValue({ files: [], total: 0, hasMore: false });
+    const emptyClient = makeClient();
+    const { result: empty } = renderHook(() => useUserFilesInfinite(OWNER), {
+      wrapper: wrapper(emptyClient),
+    });
+    await waitFor(() => expect(empty.current.isSuccess).toBe(true));
+    expect(empty.current.isError).toBe(false);
+    expect(empty.current.data?.pages[0].files).toEqual([]);
+  });
+
+  it('FileLibraryError renders the error copy and retries on press', () => {
+    const onRetry = jest.fn();
+    render(
+      createElement(FileLibraryError, {
+        title: 'Could not load files',
+        description: 'Check your connection.',
+        retryLabel: 'Try again',
+        onRetry,
+        iconColor: '#ff0000',
+        titleColor: '#000000',
+        descriptionColor: '#666666',
+        buttonColor: '#0000ff',
+      }),
+    );
+    // The error surface shows its own copy — not the "no files yet" empty text.
+    expect(screen.getByText('Could not load files')).toBeTruthy();
+    expect(screen.getByText('Check your connection.')).toBeTruthy();
+    expect(screen.queryByText(/no files/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useFileUploadState optimistic lifecycle (query cache)', () => {
   const originalOS = Platform.OS;
 
   beforeEach(() => {
     // Native path in convertDocumentPickerAssetToFile returns the descriptor
     // directly (no web fetch/Blob), which keeps this test hermetic.
     Platform.OS = 'ios';
-    useFileStore.getState().reset();
     getDocumentAsync.mockReset();
     primePicker();
   });
 
   afterEach(() => {
     Platform.OS = originalOS;
-    useFileStore.getState().reset();
   });
 
   it('shows the picked uri (never a temp asset URL) while uploading, then removes the temp entry when the response has no file payload', async () => {
+    const client = makeClient();
+    seedCache(client);
+
     let resolveUpload: (value: unknown) => void = () => undefined;
     const mutateAsync = jest.fn(() => new Promise((resolve) => { resolveUpload = resolve; }));
 
-    const { result } = renderHook(() => useFileUploadState(makeParams(mutateAsync)));
+    const { result } = renderHook(() => useFileUploadState(makeParams(mutateAsync)), {
+      wrapper: wrapper(client),
+    });
 
     await act(async () => {
       await result.current.handleFileUpload();
@@ -89,12 +273,12 @@ describe('useFileUploadState optimistic lifecycle', () => {
     let confirmPromise: Promise<void> = Promise.resolve();
     await act(async () => {
       confirmPromise = result.current.handleConfirmUpload();
-      // let the optimistic addFile + mutateAsync call run up to the await
+      // let the optimistic prepend + mutateAsync call run up to the await
       await Promise.resolve();
     });
 
-    // In flight: exactly one optimistic entry, flagged + carrying the picked uri.
-    const inFlight = tempEntries();
+    // In flight: exactly one optimistic entry in the cache, flagged + carrying the picked uri.
+    const inFlight = tempEntries(client);
     expect(inFlight).toHaveLength(1);
     const optimistic = inFlight[0];
     expect(optimistic.metadata?.uploading).toBe(true);
@@ -109,12 +293,15 @@ describe('useFileUploadState optimistic lifecycle', () => {
       await confirmPromise;
     });
 
-    // Reconciled: no stranded temp- entry remains.
-    expect(tempEntries()).toHaveLength(0);
+    // Reconciled: no stranded temp- entry remains in the cache.
+    expect(tempEntries(client)).toHaveLength(0);
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('replaces the optimistic entry with the persisted file on success', async () => {
+    const client = makeClient();
+    seedCache(client);
+
     const mutateAsync = jest.fn(async () => ({
       file: {
         id: 'real-42',
@@ -127,7 +314,9 @@ describe('useFileUploadState optimistic lifecycle', () => {
       },
     }));
 
-    const { result } = renderHook(() => useFileUploadState(makeParams(mutateAsync)));
+    const { result } = renderHook(() => useFileUploadState(makeParams(mutateAsync)), {
+      wrapper: wrapper(client),
+    });
 
     await act(async () => {
       await result.current.handleFileUpload();
@@ -136,8 +325,30 @@ describe('useFileUploadState optimistic lifecycle', () => {
       await result.current.handleConfirmUpload();
     });
 
-    const files = Object.values(useFileStore.getState().files);
-    expect(files.some((f) => f.id.startsWith('temp-'))).toBe(false);
-    expect(files.some((f) => f.id === 'real-42')).toBe(true);
+    const ids = cachedFiles(client).map((f) => f.id);
+    expect(ids.some((id) => id.startsWith('temp-'))).toBe(false);
+    expect(ids).toContain('real-42');
+  });
+
+  it('removes the optimistic entry when the upload throws', async () => {
+    const client = makeClient();
+    seedCache(client);
+
+    const mutateAsync = jest.fn(async () => {
+      throw new Error('network');
+    });
+
+    const { result } = renderHook(() => useFileUploadState(makeParams(mutateAsync)), {
+      wrapper: wrapper(client),
+    });
+
+    await act(async () => {
+      await result.current.handleFileUpload();
+    });
+    await act(async () => {
+      await result.current.handleConfirmUpload();
+    });
+
+    expect(tempEntries(client)).toHaveLength(0);
   });
 });
