@@ -224,9 +224,20 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
     // Entrance fade, staggered by the cell's grid index. Started from the wrapper's
     // ref callback (fires on mount) rather than an effect. Reduce-motion pins
     // opacity at 1 and never animates.
+    //
+    // CRITICAL: `Animated.View` rebuilds its merged ref on every render, so React
+    // re-invokes this callback on EVERY commit (not just mount) — and re-running
+    // `Animated.timing().start()`/`setValue` each time drives a web re-render that
+    // re-fires the ref → "Maximum update depth exceeded" once the grid has cells.
+    // The `startedRef` latch makes it genuinely run-once per mount, breaking the
+    // loop. (jest/react-test-renderer never exercises the Animated merged-ref path,
+    // so this only reproduces in a real browser.)
     const opacity = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
+    const startedRef = useRef(false);
     const startEntrance = useCallback((node: unknown) => {
         if (!node) return; // unmount
+        if (startedRef.current) return; // ref re-fired on a later commit — already ran
+        startedRef.current = true;
         if (reduceMotion) {
             opacity.setValue(1);
             return;
@@ -243,10 +254,18 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
     // Selection-ring pulse: a quick scale bump that springs back to rest. The ring
     // renders ONLY while selected, so its own mount IS the "became selected"
     // signal — driven from the ring's ref callback, not an effect. Reduce-motion
-    // holds the ring at rest scale.
+    // holds the ring at rest scale. Same run-once latch as the entrance (the ring's
+    // `Animated.View` re-fires this ref every commit too) — reset on unmount so a
+    // later re-selection pulses again.
     const ringScale = useRef(new Animated.Value(1)).current;
+    const pulsedRef = useRef(false);
     const startRingPulse = useCallback((node: unknown) => {
-        if (!node) return; // ring unmounting (deselected)
+        if (!node) {
+            pulsedRef.current = false; // ring unmounted (deselected) — arm the next pulse
+            return;
+        }
+        if (pulsedRef.current) return; // ref re-fired on a later commit — already pulsed
+        pulsedRef.current = true;
         ringScale.setValue(1);
         if (reduceMotion) return;
         Animated.sequence([
