@@ -60,9 +60,18 @@ export async function updateProfileWithAvatar(
   // Update authStore so frontend components see the changes immediately
   useAuthStore.getState().setUser(data);
 
-  // If avatar was updated, refresh accountStore with cache-busted URL
+  // If avatar was updated, refresh accountStore with a cache-busted URL. An
+  // EMPTY avatar is a removal: clear both fields so the switcher falls back to
+  // initials instead of pointing at a download URL for the empty file id.
   if (typeof updates.avatar === 'string' && activeSessionId) {
-    refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
+    if (updates.avatar) {
+      refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
+    } else {
+      useAccountStore.getState().updateAccount(activeSessionId, {
+        avatar: undefined,
+        avatarUrl: undefined,
+      });
+    }
   }
 
   // Invalidate all related queries to refresh everywhere

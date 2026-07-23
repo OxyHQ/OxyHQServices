@@ -39,7 +39,8 @@ export type RouteName =
     | 'CreateAccount' // Create a new account (organization / project / bot)
     | 'AccountMembers' // Manage an account's members (invite / roles / transfer)
     | 'AccountSettings' // Per-account profile edit + members + danger zone
-    | 'AvatarCrop' // Square-crop editor presented before avatar upload
+    | 'ChangeAvatar' // Profile-picture source list — the ONE entry into changing an avatar
+    | 'AvatarCrop' // Square-crop editor, reached by navigating within the ChangeAvatar surface
     | 'Notifications' // Per-channel notification preferences
     | 'ConnectedApps' // OAuth-authorized third-party apps the user can revoke
     | 'Preferences' // General user preferences (theme, reduce-motion, etc.)
@@ -83,6 +84,7 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     CreateAccount: () => require('../screens/CreateAccountScreen').default,
     AccountMembers: () => require('../screens/AccountMembersScreen').default,
     AccountSettings: () => require('../screens/AccountSettingsScreen').default,
+    ChangeAvatar: () => require('../screens/ChangeAvatarScreen').default,
     AvatarCrop: () => require('../screens/AvatarCropScreen').default,
     Notifications: () => require('../screens/NotificationsScreen').default,
     ConnectedApps: () => require('../screens/ConnectedAppsScreen').default,

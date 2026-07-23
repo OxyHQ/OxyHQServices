@@ -290,6 +290,8 @@
       "saving": "Guardando…",
       "helper": "El círculo recortado es lo que aparecerá en tu perfil. Pellizca para acercar, arrastra para colocar.",
       "zoom": "{{value}}×",
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
       "a11yImage": "Vista previa del recorte. Pellizca para acercar y arrastra para reposicionar la imagen.",
       "a11yReset": "Restablecer el recorte a la posición predeterminada",
       "a11yResetAnnouncement": "Recorte restablecido"
@@ -309,6 +311,47 @@
       "cropFailed": "No se pudo recortar la imagen"
     },
     "changeAvatar": "Cambiar avatar"
+  },
+  "changeAvatar": {
+    "title": "Cambiar foto de perfil",
+    "sources": {
+      "upload": {
+        "title": "Subir desde el dispositivo",
+        "description": "Elige una foto de tu galería"
+      },
+      "camera": {
+        "title": "Hacer una foto",
+        "description": "Usa tu cámara"
+      },
+      "files": {
+        "title": "Mis archivos de Oxy",
+        "description": "Elige una imagen que ya has subido"
+      },
+      "remove": {
+        "title": "Eliminar la foto actual",
+        "description": "Vuelve a tus iniciales"
+      }
+    },
+    "remove": {
+      "confirmTitle": "¿Eliminar la foto de perfil?",
+      "confirmMessage": "Tu perfil mostrará tus iniciales. Puedes añadir una foto nueva cuando quieras.",
+      "confirmLabel": "Eliminar"
+    },
+    "permission": {
+      "libraryDenied": "Oxy necesita acceso a tus fotos para subir una imagen.",
+      "cameraDenied": "Oxy necesita acceso a tu cámara para hacer una foto.",
+      "openSettings": "Abrir ajustes"
+    },
+    "errors": {
+      "pickerUnavailable": "La selección de fotos no está disponible en este dispositivo.",
+      "cameraUnavailable": "La cámara no está disponible en este dispositivo.",
+      "pickFailed": "No se pudo abrir el selector de fotos.",
+      "cameraFailed": "No se pudo abrir la cámara.",
+      "loadImageFailed": "No se pudo cargar la imagen seleccionada."
+    },
+    "a11y": {
+      "currentPhoto": "Tu foto de perfil actual"
+    }
   },
   "common": {
     "actions": {
@@ -1443,6 +1486,11 @@
     "uploadPhotos": "Subir fotos",
     "uploadFiles": "Subir archivos",
     "clearSearch": "Limpiar búsqueda",
+    "retry": "Reintentar",
+    "loadError": {
+      "title": "No se pudieron cargar tus archivos",
+      "description": "Algo salió mal. Comprueba tu conexión e inténtalo de nuevo."
+    },
     "choosePhoto": "Elegir foto",
     "done": "Listo",
     "doneWithCount": "Listo ({{count}})",
@@ -1616,6 +1664,8 @@
   "accountMenu": {
     "label": "Menú de cuenta",
     "manage": "Gestiona tu cuenta de Oxy",
+    "greeting": "¡Hola, {{name}}!",
+    "switchAccount": "Cambiar de cuenta",
     "viewProfile": "Ver perfil",
     "addAnother": "Añadir otra cuenta",
     "signOutAll": "Cerrar sesión en todas las cuentas",
@@ -1623,7 +1673,22 @@
     "openHint": "Abre el menú de cuenta",
     "openWithUser": "Menú de cuenta de {{name}}",
     "switching": "Cambiando de cuenta…",
-    "signOutAccount": "Cerrar sesión de {{name}}"
+    "signOutAccount": "Cerrar sesión de {{name}}",
+    "storage": {
+      "title": "Almacenamiento de Oxy",
+      "usage": "{{used}} de {{total}} en uso",
+      "used": "Usado",
+      "free": "Libre",
+      "unavailable": "Detalles de uso no disponibles",
+      "upgrade": "Mejorar plan",
+      "manage": "Gestionar almacenamiento"
+    },
+    "data": "Tus datos en Oxy",
+    "settings": "Ajustes de Oxy",
+    "help": "Ayuda y comentarios",
+    "signOut": "Cerrar sesión",
+    "privacy": "Política de privacidad",
+    "terms": "Términos del servicio"
   },
   "accounts": {
     "activeAccount": {

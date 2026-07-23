@@ -1,6 +1,6 @@
 import type { RouteName } from './routes';
 import { isValidRoute } from './routes';
-import { getSurfacePresentation } from './surfaceRegistry';
+import { getSurfaceConfig } from './surfaceRegistry';
 import { closeAllRouteSurfaces, presentRoute, topRouteSurface } from './surfaces';
 
 /**
@@ -16,11 +16,10 @@ import { closeAllRouteSurfaces, presentRoute, topRouteSurface } from './surfaces
  */
 
 /**
- * Open a bottom-sheet route. If the top-most active surface hosts the SAME
- * presentation (the common all-sheets case) the route is drilled into it; a route
- * with a different presentation (the image picker's full-bleed surface) is
- * presented as a NEW surface on top. Opening with no active surface presents the
- * first one.
+ * Open a bottom-sheet route. By DEFAULT it drills into the top-most active
+ * surface — morphing it in place (every screen morphs). A NEW surface is stacked
+ * on top only when the target route declares `stacks` (reserved for genuine
+ * overlays — none today). Opening with no active surface presents the first one.
  *
  * `fullScreen` is accepted for signature compatibility and ignored — a route's
  * surface is now derived from its registry config, not a per-call flag.
@@ -39,7 +38,7 @@ export const showBottomSheet = (
   }
 
   const top = topRouteSurface();
-  if (top && top.presentation === getSurfacePresentation(screen, props)) {
+  if (top && !getSurfaceConfig(screen, props).stacks) {
     top.navigate(screen, props);
   } else {
     presentRoute(screen, props);

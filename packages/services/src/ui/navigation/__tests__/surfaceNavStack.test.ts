@@ -44,6 +44,87 @@ describe('createSurfaceNavStack', () => {
     stack.requestDismiss('again');
     expect(stack.store.getState().closeResult).toBe('done');
   });
+
+  describe('result-bearing sub-flow (morphed-in avatar picker)', () => {
+    it('resolves with the descendant dismiss result and pops back to the caller frame', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const flow = stack.beginFlow('ChangeAvatar');
+      expect(stack.getTop().route).toBe('ChangeAvatar');
+      // Drill into the crop editor within the flow, then confirm.
+      stack.navigate('AvatarCrop', { imageUri: 'file:///x.jpg' });
+      stack.resolveFlowOrDismiss({ uri: 'file:///cropped.jpg' });
+      await expect(flow).resolves.toEqual({ uri: 'file:///cropped.jpg' });
+      // Popped back to the frame that started the flow — surface NOT dismissed.
+      expect(stack.getTop().route).toBe('EditProfile');
+      expect(stack.store.getState().closing).toBe(false);
+    });
+
+    it('resolves undefined when the flow entry frame is backed out of', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const flow = stack.beginFlow('ChangeAvatar');
+      stack.navigate('AvatarCrop');
+      expect(stack.goBack()).toBe(true); // crop -> list (still in flow)
+      expect(stack.goBack()).toBe(true); // list -> EditProfile (cancels flow)
+      await expect(flow).resolves.toBeUndefined();
+      expect(stack.getTop().route).toBe('EditProfile');
+      expect(stack.store.getState().closing).toBe(false);
+    });
+
+    it('resolveFlowOrDismiss with NO active flow dismisses the surface (cold present)', () => {
+      const stack = createSurfaceNavStack('ChangeAvatar');
+      stack.resolveFlowOrDismiss({ removed: true });
+      expect(stack.store.getState().closing).toBe(true);
+      expect(stack.store.getState().closeResult).toEqual({ removed: true });
+    });
+
+    it('abandons a pending flow (undefined) when the surface is torn down', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const flow = stack.beginFlow('ChangeAvatar');
+      stack.abandonActiveFlow();
+      await expect(flow).resolves.toBeUndefined();
+    });
+
+    it('NESTS flows: the inner selector resolves first, then the outer avatar flow', async () => {
+      // ChangeAvatar (outer) → "My Oxy files" FileManagement (inner) → back → crop.
+      const stack = createSurfaceNavStack('EditProfile');
+      const avatarFlow = stack.beginFlow('ChangeAvatar');
+      const fileFlow = stack.beginFlow('FileManagement');
+      expect(stack.getTop().route).toBe('FileManagement');
+      // Pick a file → inner flow resolves, pops back to ChangeAvatar (outer still open).
+      stack.resolveFlowOrDismiss({ id: 'file-1' });
+      await expect(fileFlow).resolves.toEqual({ id: 'file-1' });
+      expect(stack.getTop().route).toBe('ChangeAvatar');
+      expect(stack.store.getState().closing).toBe(false);
+      // Now drill to crop and confirm → outer flow resolves, pops to EditProfile.
+      stack.navigate('AvatarCrop');
+      stack.resolveFlowOrDismiss({ uri: 'file:///c.jpg' });
+      await expect(avatarFlow).resolves.toEqual({ uri: 'file:///c.jpg' });
+      expect(stack.getTop().route).toBe('EditProfile');
+    });
+
+    it('cancelling the inner selector returns to the outer flow, leaving it open', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const avatarFlow = stack.beginFlow('ChangeAvatar');
+      const fileFlow = stack.beginFlow('FileManagement');
+      expect(stack.goBack()).toBe(true); // FileManagement -> ChangeAvatar (cancels inner)
+      await expect(fileFlow).resolves.toBeUndefined();
+      expect(stack.getTop().route).toBe('ChangeAvatar');
+      // The outer avatar flow is still pending.
+      let outerSettled = false;
+      void avatarFlow.then(() => { outerSettled = true; });
+      await Promise.resolve();
+      expect(outerSettled).toBe(false);
+    });
+
+    it('tearing down the surface abandons ALL nested flows (undefined)', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const outer = stack.beginFlow('ChangeAvatar');
+      const inner = stack.beginFlow('FileManagement');
+      stack.abandonActiveFlow();
+      await expect(inner).resolves.toBeUndefined();
+      await expect(outer).resolves.toBeUndefined();
+    });
+  });
 });
 
 describe('pushSurfaceBackHandler', () => {

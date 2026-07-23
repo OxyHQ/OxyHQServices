@@ -1,10 +1,7 @@
 import type { Ionicons } from '@expo/vector-icons';
-import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
+import type { AssetUploadInput, RNFileDescriptor } from '@oxyhq/core';
 import type { ComponentProps } from 'react';
 import { Platform } from 'react-native';
-import { toast } from '@oxyhq/bloom';
-import type { RouteName } from '../navigation/routes';
-import { updateAvatarVisibility } from '@oxyhq/core';
 
 /**
  * Extended File interface that includes a `uri` property for mobile preview support.
@@ -155,100 +152,3 @@ export async function uploadFileRaw(
 ) {
     return await oxyServices.uploadRawFile(file, visibility);
 }
-
-/**
- * Configuration for creating an avatar picker handler
- */
-export interface AvatarPickerConfig {
-    /** Navigation function from BaseScreenProps */
-    navigate?: (screen: RouteName, props?: Record<string, unknown>) => void;
-    /** OxyServices instance */
-    // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
-    oxyServices: any;
-    /** TanStack Query mutation for updating profile */
-    updateProfileMutation: {
-        mutateAsync: (updates: { avatar: string }) => Promise<unknown>;
-    };
-    /** Callback to update local avatar state */
-    onAvatarSelected?: (fileId: string) => void;
-    /** i18n translation function */
-    t: (key: string) => string | undefined;
-    /** Optional context name for logging (e.g., 'AccountSettings', 'WelcomeNewUser') */
-    contextName?: string;
-}
-
-/**
- * Creates a reusable avatar picker handler function.
- * 
- * This function navigates to the FileManagement screen and handles:
- * - Image file validation
- * - File visibility update to public
- * - Profile avatar update via mutation
- * - Success/error toast notifications
- * 
- * @example
- * ```tsx
- * const openAvatarPicker = createAvatarPickerHandler({
- *   navigate,
- *   oxyServices,
- *   updateProfileMutation,
- *   onAvatarSelected: setAvatarFileId,
- *   t,
- *   contextName: 'AccountSettings'
- * });
- * 
- * <TouchableOpacity onPress={openAvatarPicker}>
- *   <Text>Change Avatar</Text>
- * </TouchableOpacity>
- * ```
- */
-export function createAvatarPickerHandler(config: AvatarPickerConfig): () => void {
-    const {
-        navigate,
-        oxyServices,
-        updateProfileMutation,
-        onAvatarSelected,
-        t,
-        contextName = 'AvatarPicker'
-    } = config;
-
-    return () => {
-        if (!navigate) {
-            console.warn(`[${contextName}] navigate function is not available`);
-            return;
-        }
-
-        navigate('FileManagement', {
-            selectMode: true,
-            multiSelect: false,
-            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-            afterSelect: 'none', // Don't navigate away - stay on current screen
-            onSelect: async (file: FileMetadata) => {
-                if (!file.contentType.startsWith('image/')) {
-                    toast.error(t('editProfile.toasts.selectImage'));
-                    return;
-                }
-                
-                try {
-                    // Update file visibility to public for avatar
-                    await updateAvatarVisibility(file.id, oxyServices, contextName);
-
-                    // Update local state if callback provided
-                    if (onAvatarSelected) {
-                        onAvatarSelected(file.id);
-                    }
-
-                    // Update user using TanStack Query mutation
-                    await updateProfileMutation.mutateAsync({ avatar: file.id });
-                    
-                    toast.success(t('editProfile.toasts.avatarUpdated'));
-                } catch (e: unknown) {
-                    toast.error(
-                        e instanceof Error ? e.message : t('editProfile.toasts.updateAvatarFailed'),
-                    );
-                }
-            }
-        });
-    };
-}
-

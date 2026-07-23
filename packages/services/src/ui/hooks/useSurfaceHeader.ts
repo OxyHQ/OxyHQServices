@@ -13,7 +13,7 @@ import type { DialogHeaderConfig } from '@oxyhq/bloom/dialog';
  */
 export type SurfaceHeaderContent = Pick<
   DialogHeaderConfig,
-  'title' | 'subtitle' | 'largeTitle' | 'left' | 'right' | 'onBack'
+  'title' | 'titleContent' | 'subtitle' | 'largeTitle' | 'left' | 'right' | 'onBack'
 >;
 
 interface SurfaceHeaderContextValue {
@@ -47,6 +47,7 @@ export function useSurfaceHeader(content: SurfaceHeaderContent | null | undefine
   }, [
     set,
     content?.title,
+    content?.titleContent,
     content?.subtitle,
     content?.largeTitle,
     content?.left,

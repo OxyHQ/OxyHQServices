@@ -28,9 +28,19 @@ import type { AccountDialogSnapshot } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import type { BaseScreenProps } from '../types/navigation';
+import LogoText from './logo/LogoText';
 import OxyAuthChooser from './OxyAuthChooser';
 
 type Translate = ReturnType<typeof useI18n>['t'];
+
+/**
+ * The account MENU's nav bar carries the Oxy wordmark instead of a title — the
+ * surface IS the Oxy account, so naming it in prose is redundant. A module-level
+ * element: it takes no props, so its identity is stable forever and the header's
+ * identity-compared slot never thrashes.
+ */
+const NAV_LOGO = <LogoText height={20} />;
 
 /**
  * The unified account dialog BODY — the header + `OxyAuthChooser` chooser.
@@ -45,7 +55,7 @@ type Translate = ReturnType<typeof useI18n>['t'];
  * `@oxyhq/core`. Closing routes through `useOxy().closeAccountDialog`, which
  * dismisses the surface and runs its exit animation.
  */
-const OxyAccountDialogScreen: React.FC = () => {
+const OxyAccountDialogScreen: React.FC<BaseScreenProps> = ({ canGoBack }) => {
   const { accountDialogController: controller, closeAccountDialog } = useOxy();
   const { t } = useI18n();
 
@@ -66,16 +76,25 @@ const OxyAccountDialogScreen: React.FC = () => {
   const showBack =
     view === 'qr' || view === 'signup' || (view === 'add' && snapshot.accounts.length > 0);
   const goToAccounts = useCallback(() => controller?.setView('accounts'), [controller]);
-  const { title, subtitle } = headerCopy(view, snapshot.accounts.length, t);
+  // An ENTRY view (accounts / signin — no in-dialog back of its own) that is
+  // MORPHED into a host surface (ManageAccount → switcher) has a frame beneath it,
+  // so its back CLOSES the dialog and reshapes back to the host — routed through
+  // `closeAccountDialog` so the pop + state teardown stay in one place. Opened
+  // cold (detached) it is the root frame → `canGoBack` is false → no back.
+  const backsToHost = !showBack && (canGoBack?.() ?? false);
+  // The account MENU is branded, not titled: its nav bar carries the Oxy
+  // wordmark and no large title. The current account is named by the HERO block
+  // `OxyAuthChooser` renders under it (email + large avatar + greeting), never
+  // by the bar. Every OTHER view keeps the SHARED Dialog nav header the rest of
+  // the SDK uses — a large in-content title/subtitle that collapses into the bar
+  // on scroll — because their copy is informative.
+  const copy = view === 'accounts' ? null : headerCopy(view, snapshot.accounts.length, t);
 
-  // The account dialog uses the SHARED Dialog nav header like every other screen
-  // (the base): the large in-content title/subtitle that collapses into the nav
-  // bar on scroll (default `largeTitle`), its per-view copy, and a per-view back
-  // that returns to the account list (the Dialog renders the frosted back/close).
   useSurfaceHeader({
-    title,
-    subtitle: subtitle ?? undefined,
-    onBack: showBack ? goToAccounts : undefined,
+    titleContent: copy ? undefined : NAV_LOGO,
+    title: copy?.title,
+    subtitle: copy?.subtitle ?? undefined,
+    onBack: showBack ? goToAccounts : backsToHost ? closeAccountDialog : undefined,
   });
 
   if (!controller) {
@@ -94,16 +113,11 @@ const OxyAccountDialogScreen: React.FC = () => {
 // ---------------------------------------------------------------------------
 
 function headerCopy(
-  view: AccountDialogSnapshot['view'],
+  view: Exclude<AccountDialogSnapshot['view'], 'accounts'>,
   accountCount: number,
   t: Translate,
 ): { title: string; subtitle: string | null } {
   switch (view) {
-    case 'accounts':
-      return {
-        title: t('accountSwitcher.sections.yourAccounts') || 'Your accounts',
-        subtitle: t('signin.chooser.subtitle') || 'Choose which account to continue with.',
-      };
     case 'qr':
       return {
         title: t('accountSwitcher.scanTitle') || 'Sign in with Oxy',
@@ -138,10 +152,19 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
   commonsAvailability: 'unknown',
 };
 
+/**
+ * The screen gutter. In the Dialog's nav-header mode the surface adds NO content
+ * padding of its own — the large title and each screen own theirs — so this must
+ * match Bloom's own large-title gutter (`screen-margin`, 20px) for the body to
+ * line up with the title above it.
+ */
+const SCREEN_MARGIN = 20;
+
 const styles = StyleSheet.create({
   bodyContent: {
     paddingTop: 4,
     paddingBottom: 4,
+    paddingHorizontal: SCREEN_MARGIN,
   },
 });
 

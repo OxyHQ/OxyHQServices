@@ -48,6 +48,27 @@ export interface SurfaceNavStack {
   setStep(step: number): void;
   /** Request dismissal of the whole surface, resolving its promise with `result`. */
   requestDismiss(result?: unknown): void;
+  /**
+   * Begin a result-bearing SUB-FLOW inside this surface: push `route` as a frame
+   * and return a promise that settles when the flow finishes — a descendant's
+   * `dismiss(result)` resolves it with `result`, backing out of the flow's entry
+   * frame resolves it with `undefined` (cancelled) — popping the surface back to
+   * the frame that started the flow WITHOUT dismissing it. This is how a screen
+   * already living inside a surface (EditProfile, ManageAccount, ChangeAvatar)
+   * opens the avatar picker / media selector as a MORPH instead of a stacked
+   * surface while still awaiting its result. Flows NEST (ChangeAvatar → the "My
+   * Oxy files" selector → back), maintained as a stack.
+   */
+  beginFlow(route: RouteName, props?: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Resolve the INNERMOST active sub-flow with `result` and pop back to its entry
+   * (the frame that called {@link beginFlow}), leaving the surface open. With NO
+   * active flow this falls back to {@link requestDismiss} — so a screen presented
+   * as its OWN surface still dismisses it. Wired to every screen's `dismiss` prop.
+   */
+  resolveFlowOrDismiss(result?: unknown): void;
+  /** Settle EVERY still-pending sub-flow with `undefined` (the surface is going away). */
+  abandonActiveFlow(): void;
   /** The current (top) frame. */
   getTop(): NavFrame;
 }
@@ -73,9 +94,41 @@ export function createSurfaceNavStack(
     return frames[frames.length - 1];
   };
 
+  // Result-bearing sub-flows currently running in this surface (the morphed-in
+  // avatar picker, and — NESTED within it — the "My Oxy files" media selector).
+  // A STACK: flows nest (ChangeAvatar → FileManagement → back to ChangeAvatar).
+  // Held OUTSIDE the store (resolvers are functions; flow presence must not
+  // re-render frames). Each flow's `returnLength` is the frame count BEFORE its
+  // entry frame was pushed, so settling pops back to exactly the frame that
+  // started it. `flowStack` is ordered outer → inner; the top is the innermost.
+  const flowStack: { returnLength: number; resolve: (result: unknown) => void }[] = [];
+
+  const requestDismiss = (result?: unknown): void => {
+    // Dismissing the whole surface abandons EVERY pending sub-flow — settle each
+    // promise so an awaiting caller (the avatar picker) never hangs.
+    while (flowStack.length) flowStack.pop()?.resolve(undefined);
+    if (store.getState().closing) return;
+    store.setState({ closing: true, closeResult: result });
+  };
+
+  const goBack = (): boolean => {
+    const { frames } = store.getState();
+    if (frames.length <= 1) return false;
+    const nextLength = frames.length - 1;
+    store.setState({ frames: frames.slice(0, -1) });
+    // Backing out past a sub-flow's entry frame cancels it (resolve undefined).
+    // A single pop crosses at most one boundary, but loop for safety.
+    while (flowStack.length && nextLength <= flowStack[flowStack.length - 1].returnLength) {
+      flowStack.pop()?.resolve(undefined);
+    }
+    return true;
+  };
+
   return {
     store,
     getTop,
+    requestDismiss,
+    goBack,
     navigate(nextRoute, nextProps) {
       store.setState((state) => ({ frames: [...state.frames, makeFrame(nextRoute, nextProps)] }));
     },
@@ -83,12 +136,6 @@ export function createSurfaceNavStack(
       store.setState((state) => ({
         frames: [...state.frames.slice(0, -1), makeFrame(nextRoute, nextProps)],
       }));
-    },
-    goBack() {
-      const { frames } = store.getState();
-      if (frames.length <= 1) return false;
-      store.setState({ frames: frames.slice(0, -1) });
-      return true;
     },
     canGoBack() {
       const { frames } = store.getState();
@@ -102,9 +149,25 @@ export function createSurfaceNavStack(
         return { frames };
       });
     },
-    requestDismiss(result) {
-      if (store.getState().closing) return;
-      store.setState({ closing: true, closeResult: result });
+    beginFlow(nextRoute, nextProps) {
+      const returnLength = store.getState().frames.length;
+      store.setState((state) => ({ frames: [...state.frames, makeFrame(nextRoute, nextProps)] }));
+      return new Promise<unknown>((resolve) => {
+        flowStack.push({ returnLength, resolve });
+      });
+    },
+    resolveFlowOrDismiss(result) {
+      const flow = flowStack.pop();
+      if (!flow) {
+        // No flow → this screen owns its surface; dismiss it as before.
+        requestDismiss(result);
+        return;
+      }
+      store.setState((state) => ({ frames: state.frames.slice(0, flow.returnLength) }));
+      flow.resolve(result);
+    },
+    abandonActiveFlow() {
+      while (flowStack.length) flowStack.pop()?.resolve(undefined);
     },
   };
 }

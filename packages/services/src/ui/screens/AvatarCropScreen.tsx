@@ -5,11 +5,17 @@
  * but before the avatar is uploaded. Inspired by iOS Photos, Google Photos and
  * Instagram crop tools.
  *
+ * Reached ONLY by navigating within a `ChangeAvatar` surface, so the panel
+ * morphs from the source list into the editor. The surface owns the chrome: this
+ * screen declares its title and its "Use photo" action through `useSurfaceHeader`
+ * and renders no bar of its own — the nav bar's back arrow is Cancel, and it
+ * returns to the source list.
+ *
  * Architecture:
- *  - Full-bleed black canvas, independent of theme, so photos always read well.
- *  - Translucent top bar with Cancel / Title / Done (primary CTA).
- *  - Circular viewport with white ring, outer 50% black mask, and a 3x3
- *    rule-of-thirds grid that appears during gestures and fades after 800ms.
+ *  - A dark crop stage, independent of theme, so photos always read well, inset
+ *    inside the surface's own themed panel.
+ *  - Circular viewport with white ring and a 3x3 rule-of-thirds grid that
+ *    appears during gestures and fades after 800ms.
  *  - Floating zoom chip during pinch.
  *  - Pan + pinch via Gesture Handler, transform driven by Reanimated.
  *  - Reduced-motion aware entrance animation.
@@ -21,13 +27,12 @@
  */
 
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     ActivityIndicator,
-    TouchableOpacity,
     Image,
     Platform,
     AccessibilityInfo,
@@ -43,10 +48,14 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Button } from '@oxyhq/bloom/button';
 import { logger } from '@oxyhq/core';
+import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useReduceMotion } from '../hooks/useReduceMotion';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { toast } from '@oxyhq/bloom';
 import type { BaseScreenProps } from '../types/navigation';
 
@@ -66,8 +75,15 @@ export interface AvatarCropResult {
 }
 
 export interface AvatarCropScreenProps extends BaseScreenProps {
-    /** URI of the source image to crop. */
+    /** URI of the source image to crop (device / camera sources pass this). */
     imageUri?: string;
+    /**
+     * ID of an existing Oxy file to crop (the "My Oxy files" source passes this
+     * instead of a URL). Its download URL is usually private, so it is resolved
+     * HERE — showing this screen's own loading state on the dark canvas — rather
+     * than in the source list, which would otherwise linger for the round-trip.
+     */
+    imageFileId?: string;
     /** Natural width of the source image (optional — measured if absent). */
     sourceWidth?: number;
     /** Natural height of the source image (optional — measured if absent). */
@@ -79,14 +95,20 @@ const VIEWPORT_SIZE = 320;
 const OUTPUT_SIZE = 512;
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
+/** Zoom increment per +/- button press (web, where there is no pinch). */
+const ZOOM_STEP = 0.5;
+/** Tween duration for a button-driven zoom (collapses to 0 under reduce-motion). */
+const ZOOM_BUTTON_DURATION_MS = 180;
 /** Duration (ms) that the rule-of-thirds grid lingers after a gesture ends. */
 const GRID_FADE_DELAY_MS = 800;
 const GRID_FADE_DURATION_MS = 220;
 /** Duration the zoom chip stays visible after a pinch ends. */
 const ZOOM_CHIP_FADE_DELAY_MS = 600;
 const ZOOM_CHIP_FADE_DURATION_MS = 200;
-/** Backdrop color is fixed independent of theme so the photo always reads well. */
+/** Stage color is fixed independent of theme so the photo always reads well. */
 const CANVAS_BG = '#000000';
+/** Corner radius of the dark stage block inside the surface's themed panel. */
+const STAGE_RADIUS = 24;
 const RING_COLOR = '#ffffff';
 const RING_WIDTH = 2;
 const REMOTE_HTTP_URI_PATTERN = /^https?:\/\//i;
@@ -117,6 +139,28 @@ function clampTranslation(
 interface ImageNaturalSize {
     width: number;
     height: number;
+}
+
+/**
+ * Measure an image's intrinsic size via `Image.getSize`, wrapped as a Promise so
+ * it can be a React Query `queryFn` (no component state / effects). Rejects on a
+ * platform failure or degenerate dimensions so the query surfaces `isError`.
+ * Mirrors the `measurePhotoDimensions` helper the photo grid uses.
+ */
+function measureImageSize(uri: string): Promise<ImageNaturalSize> {
+    return new Promise<ImageNaturalSize>((resolve, reject) => {
+        Image.getSize(
+            uri,
+            (width, height) => {
+                if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+                    reject(new Error('Image reported invalid dimensions'));
+                    return;
+                }
+                resolve({ width, height });
+            },
+            () => reject(new Error('Image measurement failed')),
+        );
+    });
 }
 
 /**
@@ -293,24 +337,83 @@ async function hapticSelection(): Promise<void> {
 
 const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     dismiss,
+    goBack,
     imageUri,
+    imageFileId,
     sourceWidth,
     sourceHeight,
 }) => {
     const theme = useTheme();
     const { t } = useI18n();
-    const insets = useSafeAreaInsets();
+    const { oxyServices } = useOxy();
+    // Reactive OS reduce-motion preference (useSyncExternalStore, no effect). Pins
+    // the entrance spring off. Declared before `entrance` so its initial rest value
+    // is correct under reduce-motion.
+    const reduceMotion = useReduceMotion();
 
-    // Natural size of the source image. May be known up front (passed in) or
-    // measured lazily via Image.getSize once the image loads.
-    const [naturalSize, setNaturalSize] = useState<ImageNaturalSize | null>(
-        sourceWidth && sourceHeight ? { width: sourceWidth, height: sourceHeight } : null,
-    );
+    // The "My Oxy files" source hands us a file ID instead of a ready URL. Its
+    // download URL is usually private, so it must be resolved through the SDK
+    // (which throws on failure). Resolving it HERE — not in the source list — is
+    // what keeps the list from lingering on screen for the round-trip: this screen
+    // shows its own spinner on the dark canvas while the URL resolves. A React
+    // Query read (not an effect) so it stays declarative and cached.
+    const shouldResolveFile = !imageUri && !!imageFileId;
+    const sourceQuery = useQuery({
+        queryKey: ['avatarCropSource', imageFileId],
+        enabled: shouldResolveFile,
+        staleTime: Number.POSITIVE_INFINITY,
+        retry: false,
+        queryFn: async () => {
+            if (!imageFileId) {
+                throw new Error('No file id to resolve for cropping');
+            }
+            const resolved = await oxyServices.assetGetUrl(imageFileId);
+            if (!resolved?.url) {
+                throw new Error('No download URL returned for the selected image');
+            }
+            return resolved.url;
+        },
+    });
+
+    // The URL the cropper actually loads: the passed `imageUri`, else the URL the
+    // file-ID query resolved. While it resolves, `effectiveUri` is undefined and
+    // the stage shows its own spinner (never the empty state).
+    const effectiveUri = imageUri ?? sourceQuery.data;
+    const isResolvingSource = shouldResolveFile && !sourceQuery.data && !sourceQuery.isError;
+    const sourceErrorMessage = sourceQuery.isError
+        ? t('changeAvatar.errors.loadImageFailed') || 'Could not load the selected image'
+        : null;
+
+    // Natural size of the source image. Known up front (device/camera sources pass
+    // the dimensions) OR measured lazily from `effectiveUri` via a React Query read
+    // (no effect) — the same Image.getSize→useQuery pattern the photo grid uses.
+    const hasPassedDimensions = !!(sourceWidth && sourceHeight);
+    const measureQuery = useQuery({
+        queryKey: ['avatarCropMeasure', effectiveUri],
+        enabled: !!effectiveUri && !hasPassedDimensions,
+        queryFn: () => {
+            if (!effectiveUri) {
+                throw new Error('No image to measure');
+            }
+            return measureImageSize(effectiveUri);
+        },
+        staleTime: Number.POSITIVE_INFINITY,
+        retry: false,
+        placeholderData: keepPreviousData,
+    });
+    const naturalSize = useMemo<ImageNaturalSize | null>(() => {
+        if (sourceWidth && sourceHeight) return { width: sourceWidth, height: sourceHeight };
+        return measureQuery.data ?? null;
+    }, [sourceWidth, sourceHeight, measureQuery.data]);
+    /** Measurement failed (bad dimensions / getSize error) — surfaced via the empty UI. */
+    const measureErrorMessage = measureQuery.isError
+        ? t('editProfile.toasts.cropMeasureFailed') || 'Could not measure the image'
+        : null;
+
     const [isProcessing, setIsProcessing] = useState(false);
     const [zoomLabel, setZoomLabel] = useState('1.0');
     /** True when scale != MIN_SCALE OR translate != 0 — used to reveal the reset link. */
     const [isModified, setIsModified] = useState(false);
-    const [reduceMotion, setReduceMotion] = useState(false);
 
     // Shared values for the active gesture transform.
     const scale = useSharedValue(MIN_SCALE);
@@ -354,111 +457,23 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         return { width: VIEWPORT_SIZE, height: VIEWPORT_SIZE / ratio };
     }, [naturalSize]);
 
-    // Track in-flight measurement to avoid duplicate Image.getSize calls when
-    // the component re-renders before the previous getSize callback fires.
-    const measuringUriRef = useRef<string | null>(null);
-    /** Failure state for measurement, surfaced to the user via the empty UI. */
-    const [measureError, setMeasureError] = useState<string | null>(null);
-
-    const handleImageMeasured = useCallback(
-        (uri: string) => {
-            if (measuringUriRef.current === uri) return;
-            measuringUriRef.current = uri;
-            // `logger.debug` is dev-gated upstream (no-op in production).
-            // We deliberately don't log the full file URI in any production
-            // path — only in debug builds — to avoid leaking on-device file
-            // paths into logcat / Sentry breadcrumbs.
-            logger.debug('Measuring image', { component: LOG_COMPONENT });
-            Image.getSize(
-                uri,
-                (w, h) => {
-                    logger.debug('Image measured', { component: LOG_COMPONENT }, { width: w, height: h });
-                    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-                        const message = t('editProfile.toasts.cropMeasureFailed') ||
-                            'Could not measure the image';
-                        setMeasureError(message);
-                        toast.error(message);
-                        measuringUriRef.current = null;
-                        return;
-                    }
-                    setMeasureError(null);
-                    setNaturalSize({ width: w, height: h });
-                },
-                () => {
-                    logger.error(
-                        'Image.getSize failed',
-                        new Error('Image measurement failed'),
-                        { component: LOG_COMPONENT },
-                    );
-                    const message = t('editProfile.toasts.cropMeasureFailed') ||
-                        'Could not measure the image';
-                    setMeasureError(message);
-                    toast.error(message);
-                    measuringUriRef.current = null;
-                },
-            );
+    // Entrance pulse, driven from the crop frame's ref callback (fires on mount)
+    // rather than an effect — the media-cleanup `startEntrance` pattern. Reduce
+    // motion pins the frame at rest; otherwise it springs in from 0.95→1. The
+    // callback depends on `reduceMotion`, so if that preference resolves/flips the
+    // callback re-runs with the node and re-pins (snap to 1) — matching the old
+    // effect that snapped the entrance to rest when reduce-motion turned on.
+    const startEntrance = useCallback(
+        (node: unknown): void => {
+            if (!node) return; // unmount
+            if (reduceMotion) {
+                entrance.value = 1;
+                return;
+            }
+            entrance.value = withSpring(1, { damping: 14, stiffness: 180, mass: 0.9 });
         },
-        [t],
+        [entrance, reduceMotion],
     );
-
-    // Kick off measurement once per imageUri. Using useEffect (not a render-body
-    // side effect) so the call is scheduled exactly when the URI changes,
-    // rather than being re-fired on every parent re-render.
-    useEffect(() => {
-        if (!imageUri) return;
-        if (sourceWidth && sourceHeight) return;
-        if (naturalSize) return;
-        handleImageMeasured(imageUri);
-    }, [handleImageMeasured, imageUri, naturalSize, sourceHeight, sourceWidth]);
-
-    // Dev-only one-time mount breadcrumb. `logger.debug` is dev-gated so
-    // this is a no-op in production releases; we additionally avoid logging
-    // the full `imageUri` to prevent leaking on-device file paths into any
-    // breadcrumb sink that picks up debug output.
-    useEffect(() => {
-        logger.debug(
-            'mount',
-            { component: LOG_COMPONENT },
-            {
-                hasImageUri: !!imageUri,
-                hasSourceDimensions: !!(sourceWidth && sourceHeight),
-            },
-        );
-    }, [imageUri, sourceHeight, sourceWidth]);
-
-    // Detect reduce-motion preference once on mount + subscribe to changes.
-    useEffect(() => {
-        let cancelled = false;
-        AccessibilityInfo.isReduceMotionEnabled()
-            .then((enabled) => {
-                if (cancelled) return;
-                setReduceMotion(enabled);
-                if (enabled) {
-                    entrance.value = 1;
-                }
-            })
-            .catch(() => {
-                // Best-effort — fall back to motion enabled.
-            });
-        const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
-            setReduceMotion(enabled);
-            if (enabled) entrance.value = 1;
-        });
-        return () => {
-            cancelled = true;
-            sub.remove();
-        };
-    }, [entrance]);
-
-    // Play the entrance pulse exactly once when motion is allowed.
-    useEffect(() => {
-        if (reduceMotion) return;
-        entrance.value = withSpring(1, {
-            damping: 14,
-            stiffness: 180,
-            mass: 0.9,
-        });
-    }, [entrance, reduceMotion]);
 
     const commitTransform = useCallback((s: number, tx: number, ty: number) => {
         committedScale.current = s;
@@ -628,17 +643,29 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         [panGesture, pinchGesture],
     );
 
-    const imageAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [
-            { translateX: translateX.value },
-            { translateY: translateY.value },
-            { scale: scale.value },
-        ],
-    }));
+    // Deps list every shared value the mapper reads so it re-runs on web (RN-Web
+    // has no worklets plugin — a mapper omitting its driver SVs freezes at the
+    // first frame, which would leave the button-driven zoom stuck). Native
+    // auto-tracks and ignores the extra deps, so this is safe cross-platform.
+    const imageAnimatedStyle = useAnimatedStyle(
+        () => ({
+            transform: [
+                { translateX: translateX.value },
+                { translateY: translateY.value },
+                { scale: scale.value },
+            ],
+        }),
+        [translateX, translateY, scale],
+    );
 
-    const cropFrameAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: entrance.value }],
-    }));
+    // `[entrance]` in deps so the ref-callback-driven entrance spring ticks on
+    // RN-Web (no worklets plugin); native auto-tracks and ignores the extra dep.
+    const cropFrameAnimatedStyle = useAnimatedStyle(
+        () => ({
+            transform: [{ scale: entrance.value }],
+        }),
+        [entrance],
+    );
 
     const gridAnimatedStyle = useAnimatedStyle(() => ({
         opacity: gridOpacity.value,
@@ -661,6 +688,61 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     }, [commitTransform, reduceMotion, scale, t, translateX, translateY]);
 
     /**
+     * Web zoom controls. A desktop pointer has no pinch, so the +/- buttons drive
+     * the SAME `scale` shared value the pinch gesture does — clamped to the same
+     * bounds, with translation re-clamped through the shared {@link clampTranslation}
+     * helper so the image never leaves the viewport. Native keeps pinch (the
+     * buttons are hidden there). Reduced motion collapses the tween to an instant
+     * set. Reads the committed transform (refs) at press time, never during render.
+     */
+    const applyZoom = useCallback(
+        (direction: 1 | -1) => {
+            if (!baseFit || isProcessing) return;
+            const current = committedScale.current;
+            const target = Math.min(
+                MAX_SCALE,
+                Math.max(MIN_SCALE, current + direction * ZOOM_STEP),
+            );
+            if (Math.abs(target - current) < 0.001) {
+                // Already at the bound — a soft selection tick, no transform change.
+                void hapticSelection();
+                return;
+            }
+            const clamped = clampTranslation(
+                committedTranslateX.current,
+                committedTranslateY.current,
+                target,
+                baseFit.width,
+                baseFit.height,
+            );
+            const duration = reduceMotion ? 0 : ZOOM_BUTTON_DURATION_MS;
+            scale.value = withTiming(target, { duration });
+            translateX.value = withTiming(clamped.tx, { duration });
+            translateY.value = withTiming(clamped.ty, { duration });
+            commitTransform(target, clamped.tx, clamped.ty);
+            void hapticImpact('light');
+            // Mirror the pinch's transient chrome so the buttons feel identical.
+            showGrid();
+            hideGrid();
+            showZoomChip();
+            hideZoomChip();
+        },
+        [
+            baseFit,
+            commitTransform,
+            hideGrid,
+            hideZoomChip,
+            isProcessing,
+            reduceMotion,
+            scale,
+            showGrid,
+            showZoomChip,
+            translateX,
+            translateY,
+        ],
+    );
+
+    /**
      * Convert the on-screen transform into pixel-space crop coordinates
      * relative to the source image, then invoke expo-image-manipulator to
      * crop + resize to 512x512 JPEG.
@@ -679,7 +761,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 committedTranslateY: committedTranslateY.current,
             },
         );
-        if (!imageUri || !baseFit || !naturalSize) {
+        if (!effectiveUri || !baseFit || !naturalSize) {
             toast.error(
                 t('editProfile.toasts.cropNotReady') || 'Image not ready yet',
             );
@@ -731,7 +813,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
             );
 
-            const preparedImage = await prepareImageForManipulator(imageUri);
+            const preparedImage = await prepareImageForManipulator(effectiveUri);
             preparedImageCleanup = preparedImage.cleanup;
             const result = await manipulateAsync(
                 preparedImage.uri,
@@ -778,86 +860,59 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             preparedImageCleanup?.();
             setIsProcessing(false);
         }
-    }, [baseFit, imageUri, naturalSize, dismiss, t]);
+    }, [baseFit, effectiveUri, naturalSize, dismiss, t]);
 
-    const handleCancel = useCallback(() => {
-        dismiss?.();
-    }, [dismiss]);
+    /**
+     * The surface's primary action, mounted into the Dialog nav bar's right slot
+     * (which is why it must stay referentially stable). While processing it keeps
+     * its width and shows a spinner; the a11y label carries the "Saving…" state
+     * the visible label can no longer show.
+     */
+    const doneAction = useMemo(
+        () => (
+            <Button
+                variant="primary"
+                size="small"
+                onPress={() => void handleConfirm()}
+                disabled={isProcessing || !baseFit}
+                loading={isProcessing}
+                accessibilityLabel={
+                    isProcessing ? t('editProfile.crop.saving') : t('editProfile.crop.confirm')
+                }
+            >
+                {t('editProfile.crop.confirm')}
+            </Button>
+        ),
+        [baseFit, handleConfirm, isProcessing, t],
+    );
 
-    const topInset = Platform.OS === 'ios' ? Math.max(insets.top, 12) : Math.max(insets.top, 16);
-    const bottomInset = Math.max(insets.bottom, 16);
+    // No bar of our own: the surface owns the chrome. `goBack` pops back to the
+    // ChangeAvatar source list (and dismisses the surface if this is somehow the
+    // root frame), which is exactly Cancel.
+    useSurfaceHeader({
+        title: t('editProfile.crop.title'),
+        largeTitle: false,
+        right: doneAction,
+        onBack: goBack,
+    });
 
     const styles = useMemo(
         () =>
             StyleSheet.create({
                 container: {
-                    flex: 1,
-                    backgroundColor: CANVAS_BG,
-                },
-                topBar: {
-                    paddingTop: topInset,
-                    paddingHorizontal: 12,
-                    paddingBottom: 10,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    backgroundColor: 'rgba(0,0,0,0.6)',
-                    zIndex: 10,
-                },
-                topBarTitleWrap: {
-                    flex: 1,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingHorizontal: 4,
-                },
-                topBarTitle: {
-                    color: '#ffffff',
-                    fontSize: 17,
-                    letterSpacing: -0.2,
-                    ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
-                },
-                cancelBtn: {
-                    minWidth: 64,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    borderRadius: 18,
-                    alignItems: 'flex-start',
-                    justifyContent: 'center',
-                },
-                cancelLabel: {
-                    color: '#ffffff',
-                    fontSize: 15,
-                    opacity: 0.85,
-                },
-                doneBtn: {
-                    minWidth: 76,
-                    paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderRadius: 18,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: theme.colors.primary,
-                },
-                doneBtnDisabled: {
-                    opacity: 0.5,
-                },
-                doneLabel: {
-                    color: '#ffffff',
-                    fontSize: 15,
-                    letterSpacing: -0.1,
-                    ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
-                },
-                doneLabelLoading: {
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
+                    backgroundColor: theme.colors.background,
                 },
                 stage: {
-                    flex: 1,
+                    backgroundColor: CANVAS_BG,
+                    borderRadius: STAGE_RADIUS,
+                    overflow: 'hidden',
+                    // Top padding clears the zoom chip, which floats 44dp above
+                    // the crop frame and would otherwise be clipped by `overflow`.
+                    paddingTop: 60,
+                    paddingBottom: 28,
+                    paddingHorizontal: 16,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    paddingHorizontal: 16,
                 },
                 cropFrame: {
                     width: VIEWPORT_SIZE,
@@ -942,17 +997,14 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     letterSpacing: 0.2,
                 },
                 helperBlock: {
-                    paddingHorizontal: 24,
-                    paddingTop: 24,
-                    paddingBottom: bottomInset,
+                    paddingTop: 16,
                     alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    gap: 10,
+                    gap: 8,
                 },
                 helper: {
                     fontSize: 13,
                     lineHeight: 18,
-                    color: 'rgba(255,255,255,0.6)',
+                    color: theme.colors.textSecondary,
                     textAlign: 'center',
                     maxWidth: 320,
                 },
@@ -962,55 +1014,50 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
                 resetLinkText: {
                     fontSize: 13,
-                    color: '#ffffff',
-                    opacity: 0.85,
+                    color: theme.colors.primary,
                     textDecorationLine: 'underline',
                 },
                 emptyState: {
-                    flex: 1,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: 24,
+                    paddingVertical: 48,
                 },
                 emptyLabel: {
                     fontSize: 14,
-                    color: 'rgba(255,255,255,0.7)',
+                    color: theme.colors.textSecondary,
                     textAlign: 'center',
                 },
             }),
-        [baseFit, bottomInset, theme, topInset],
+        [baseFit, theme],
     );
 
     // Reset link reveal — only show when the image is not at the default
     // transform. Use derived display state to avoid mounting/unmounting jank.
     const resetLinkOpacity = isModified ? 1 : 0;
 
-    // No image supplied OR measurement failed — render a minimal empty state.
-    if (!imageUri || measureError) {
-        const emptyMessage = !imageUri
-            ? (t('editProfile.crop.noImage') || 'No image to crop')
-            : measureError;
+    // Zoom-button state is derived from `zoomLabel` (reactive state, set on every
+    // commit) rather than the committed-scale ref, so it stays correct across
+    // renders without reading mutable state during render. The +/- pair is web-only
+    // (native has pinch).
+    const currentZoom = Number.parseFloat(zoomLabel) || MIN_SCALE;
+    const canZoomOut = currentZoom > MIN_SCALE + 0.001;
+    const canZoomIn = currentZoom < MAX_SCALE - 0.001;
+    const showZoomControls = Platform.OS === 'web';
+    const zoomOutDisabled = !canZoomOut || !baseFit || isProcessing;
+    const zoomInDisabled = !canZoomIn || !baseFit || isProcessing;
+
+    // No source at all (and none resolving), a resolution failure, or a
+    // measurement failure — render a minimal empty state. While a file ID is still
+    // resolving, fall THROUGH to the stage so its own spinner shows, not this.
+    // The surface's nav bar (back = cancel) is the only chrome needed here.
+    if ((!effectiveUri && !isResolvingSource) || sourceErrorMessage || measureErrorMessage) {
+        const emptyMessage = sourceErrorMessage
+            ? sourceErrorMessage
+            : measureErrorMessage
+                ? measureErrorMessage
+                : t('editProfile.crop.noImage');
         return (
-            <View style={styles.container}>
-                <View style={styles.topBar}>
-                    <TouchableOpacity
-                        accessibilityLabel={t('editProfile.crop.cancel') || 'Cancel'}
-                        accessibilityRole="button"
-                        style={styles.cancelBtn}
-                        onPress={handleCancel}
-                        activeOpacity={0.6}
-                    >
-                        <Text style={styles.cancelLabel}>
-                            {t('editProfile.crop.cancel') || 'Cancel'}
-                        </Text>
-                    </TouchableOpacity>
-                    <View style={styles.topBarTitleWrap}>
-                        <Text style={styles.topBarTitle}>
-                            {t('editProfile.crop.title') || 'Crop avatar'}
-                        </Text>
-                    </View>
-                    <View style={styles.cancelBtn} />
-                </View>
+            <View style={styles.container} className="px-screen-margin pb-space-24">
                 <View style={styles.emptyState}>
                     <Text style={styles.emptyLabel}>{emptyMessage}</Text>
                 </View>
@@ -1019,67 +1066,20 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     }
 
     return (
-        <View style={styles.container}>
-            <View style={styles.topBar}>
-                <TouchableOpacity
-                    accessibilityLabel={t('editProfile.crop.cancel') || 'Cancel'}
-                    accessibilityRole="button"
-                    style={styles.cancelBtn}
-                    onPress={handleCancel}
-                    disabled={isProcessing}
-                    activeOpacity={0.6}
-                >
-                    <Text style={styles.cancelLabel}>
-                        {t('editProfile.crop.cancel') || 'Cancel'}
-                    </Text>
-                </TouchableOpacity>
-                <View style={styles.topBarTitleWrap}>
-                    <Text style={styles.topBarTitle} numberOfLines={1}>
-                        {t('editProfile.crop.title') || 'Crop avatar'}
-                    </Text>
-                </View>
-                <TouchableOpacity
-                    accessibilityLabel={t('editProfile.crop.confirm') || 'Use photo'}
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: isProcessing || !baseFit, busy: isProcessing }}
-                    style={[
-                        styles.doneBtn,
-                        (isProcessing || !baseFit) && styles.doneBtnDisabled,
-                    ]}
-                    onPress={handleConfirm}
-                    disabled={isProcessing || !baseFit}
-                    activeOpacity={0.85}
-                >
-                    {isProcessing ? (
-                        <View style={styles.doneLabelLoading}>
-                            <ActivityIndicator size="small" color="#ffffff" />
-                            <Text style={styles.doneLabel}>
-                                {t('editProfile.crop.saving') || 'Saving…'}
-                            </Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.doneLabel}>
-                            {t('editProfile.crop.confirm') || 'Use photo'}
-                        </Text>
-                    )}
-                </TouchableOpacity>
-            </View>
-
+        <View style={styles.container} className="px-screen-margin pb-space-24">
             <View style={styles.stage}>
                 <Animated.View
+                    ref={startEntrance}
                     style={[styles.cropFrame, cropFrameAnimatedStyle]}
                     accessible
                     accessibilityRole="image"
-                    accessibilityLabel={
-                        t('editProfile.crop.a11yImage') ||
-                        'Crop preview. Pinch to zoom and drag to reposition the image.'
-                    }
+                    accessibilityLabel={t('editProfile.crop.a11yImage')}
                 >
                     <GestureDetector gesture={composedGesture}>
                         <View style={styles.viewport}>
-                            {baseFit ? (
+                            {baseFit && effectiveUri ? (
                                 <Animated.Image
-                                    source={{ uri: imageUri }}
+                                    source={{ uri: effectiveUri }}
                                     style={[styles.image, imageAnimatedStyle]}
                                     resizeMode="cover"
                                 />
@@ -1109,28 +1109,66 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                         style={[styles.zoomChip, zoomChipAnimatedStyle]}
                     >
                         <Text style={styles.zoomChipText}>
-                            {t('editProfile.crop.zoom', { value: zoomLabel }) || `${zoomLabel}×`}
+                            {t('editProfile.crop.zoom', { value: zoomLabel })}
                         </Text>
                     </Animated.View>
                 </Animated.View>
+
+                {/* Web-only +/- zoom controls (a desktop pointer has no pinch).
+                    Styled with NativeWind to match the translucent zoom-chip
+                    aesthetic; the full-width row is `box-none` so only the pill
+                    takes pointer events and the rest of the circle stays pannable. */}
+                {showZoomControls ? (
+                    <View
+                        className="absolute bottom-4 left-0 right-0 items-center"
+                        pointerEvents="box-none"
+                    >
+                        <View className="flex-row overflow-hidden rounded-full bg-black/70">
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={t('editProfile.crop.zoomOut')}
+                                accessibilityState={{ disabled: zoomOutDisabled }}
+                                disabled={zoomOutDisabled}
+                                onPress={() => applyZoom(-1)}
+                                className={`h-10 w-[52px] items-center justify-center active:bg-white/10${
+                                    zoomOutDisabled ? ' opacity-40' : ''
+                                }`}
+                            >
+                                <Text className="text-white text-[22px] font-medium leading-[24px]">
+                                    {'−'}
+                                </Text>
+                            </Pressable>
+                            <View className="w-px self-stretch bg-white/25" />
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel={t('editProfile.crop.zoomIn')}
+                                accessibilityState={{ disabled: zoomInDisabled }}
+                                disabled={zoomInDisabled}
+                                onPress={() => applyZoom(1)}
+                                className={`h-10 w-[52px] items-center justify-center active:bg-white/10${
+                                    zoomInDisabled ? ' opacity-40' : ''
+                                }`}
+                            >
+                                <Text className="text-white text-[22px] font-medium leading-[24px]">
+                                    {'+'}
+                                </Text>
+                            </Pressable>
+                        </View>
+                    </View>
+                ) : null}
             </View>
 
             <View style={styles.helperBlock}>
-                <Text style={styles.helper}>
-                    {t('editProfile.crop.helper') ||
-                        'The cropped circle is what will appear on your profile. Pinch to zoom, drag to position.'}
-                </Text>
+                <Text style={styles.helper}>{t('editProfile.crop.helper')}</Text>
                 <Pressable
-                    accessibilityLabel={t('editProfile.crop.a11yReset') || 'Reset crop to default position'}
+                    accessibilityLabel={t('editProfile.crop.a11yReset')}
                     accessibilityRole="button"
                     accessibilityState={{ disabled: !isModified || isProcessing }}
                     onPress={resetTransform}
                     disabled={!isModified || isProcessing}
                     style={[styles.resetLink, { opacity: isProcessing ? 0.3 : resetLinkOpacity }]}
                 >
-                    <Text style={styles.resetLinkText}>
-                        {t('editProfile.crop.resetToCenter') || 'Reset to center'}
-                    </Text>
+                    <Text style={styles.resetLinkText}>{t('editProfile.crop.resetToCenter')}</Text>
                 </Pressable>
             </View>
         </View>

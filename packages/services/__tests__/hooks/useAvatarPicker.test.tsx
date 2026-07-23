@@ -1,25 +1,20 @@
 /**
- * `useAvatarPicker` (P4) — the avatar flow now runs on typed promises over the
- * shared surface stack instead of `onSelect`/`onConfirm` callback props threaded
- * through `showBottomSheet`.
+ * `useAvatarPicker` — the ONE write path for a profile picture.
  *
- * These pin the orchestration:
- *   1. present('FileManagement') resolves with the picked file → its source URL
- *      is resolved → present('AvatarCrop') resolves with the cropped JPEG →
- *      the crop is uploaded and set as the avatar.
- *   2. Cancelling the picker (present resolves `undefined`) aborts before any
- *      URL resolve / crop.
- *   3. Cancelling the crop aborts before any upload.
- *   4. A non-image pick surfaces an error and never opens the crop editor.
+ * The hook no longer orchestrates picker→crop by hand: the whole
+ * choose-and-crop experience is a single `ChangeAvatar` flow (opened via
+ * `openWithinOrPresent`, which morphs into the caller's surface when one is open,
+ * else presents cold) that resolves with the cropped JPEG, with a removal, or
+ * `undefined`. These pin that contract, and that there is exactly ONE flow opened
+ * (any second call would mean a second route to the cropper had crept back in).
  */
 
 import { renderHook, act } from '@testing-library/react';
-import type { FileMetadata } from '@oxyhq/core';
 
-// Control what the SDK surface layer's present() resolves with per route.
-const present = jest.fn<Promise<unknown>, [string, ...unknown[]]>();
+// Control what the SDK surface layer's openWithinOrPresent() resolves with.
+const openWithinOrPresent = jest.fn<Promise<unknown>, [string, ...unknown[]]>();
 jest.mock('../../src/ui/navigation/surfaces', () => ({
-  surfaces: { present: (route: string, ...rest: unknown[]) => present(route, ...rest) },
+  openWithinOrPresent: (route: string, ...rest: unknown[]) => openWithinOrPresent(route, ...rest),
 }));
 
 // Avatar-set path is asserted, not exercised for real.
@@ -38,17 +33,12 @@ jest.mock('@oxyhq/core', () => ({
 import { toast } from '@oxyhq/bloom';
 import { useAvatarPicker } from '../../src/ui/hooks/useAvatarPicker';
 
-const imageFile: FileMetadata = {
-  id: 'file-1',
-  filename: 'pic.png',
-  contentType: 'image/png',
-  length: 1024,
-  chunkSize: 0,
-  uploadDate: '2026-01-01T00:00:00.000Z',
-  metadata: {},
-} as FileMetadata;
-
-const croppedResult = { uri: 'file:///cropped.jpg', width: 512, height: 512, mime: 'image/jpeg' as const };
+const croppedResult = {
+  uri: 'file:///cropped.jpg',
+  width: 512,
+  height: 512,
+  mime: 'image/jpeg' as const,
+};
 
 const makeOxyServices = () => ({
   assetGetUrl: jest.fn().mockResolvedValue({ url: 'https://cdn.example/pic.png' }),
@@ -71,14 +61,8 @@ beforeEach(() => {
 });
 
 describe('useAvatarPicker', () => {
-  it('picks → resolves URL → crops → uploads → sets avatar', async () => {
-    present.mockImplementation((route) =>
-      route === 'FileManagement'
-        ? Promise.resolve(imageFile)
-        : route === 'AvatarCrop'
-          ? Promise.resolve(croppedResult)
-          : Promise.resolve(undefined),
-    );
+  it('presents ChangeAvatar and uploads the crop it resolves with', async () => {
+    openWithinOrPresent.mockResolvedValue(croppedResult);
     const oxyServices = makeOxyServices();
     const { result } = renderPicker(oxyServices);
 
@@ -86,18 +70,16 @@ describe('useAvatarPicker', () => {
       await result.current.openAvatarPicker();
     });
 
-    // FileManagement was presented in image-only single-select picker mode.
-    expect(present).toHaveBeenNthCalledWith(1, 'FileManagement', {
-      selectMode: true,
-      multiSelect: false,
-      disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-    });
-    expect(oxyServices.assetGetUrl).toHaveBeenCalledWith('file-1');
-    // AvatarCrop was presented with the resolved private-safe source URL.
-    expect(present).toHaveBeenNthCalledWith(2, 'AvatarCrop', {
-      imageUri: 'https://cdn.example/pic.png',
-    });
+    // ONE flow — the source list and the cropper live inside it.
+    expect(openWithinOrPresent).toHaveBeenCalledTimes(1);
+    expect(openWithinOrPresent).toHaveBeenCalledWith('ChangeAvatar');
+
     expect(oxyServices.assetUpload).toHaveBeenCalledTimes(1);
+    expect(updateAvatarVisibility).toHaveBeenCalledWith(
+      'uploaded-1',
+      expect.anything(),
+      'useAvatarPicker',
+    );
     expect(updateProfileWithAvatar).toHaveBeenCalledWith(
       { avatar: 'uploaded-1' },
       expect.anything(),
@@ -107,8 +89,8 @@ describe('useAvatarPicker', () => {
     expect(toast.success).toHaveBeenCalled();
   });
 
-  it('aborts when the picker is cancelled (no url resolve, no crop)', async () => {
-    present.mockResolvedValue(undefined);
+  it('clears the avatar when the surface resolves with a removal', async () => {
+    openWithinOrPresent.mockResolvedValue({ removed: true });
     const oxyServices = makeOxyServices();
     const { result } = renderPicker(oxyServices);
 
@@ -116,44 +98,56 @@ describe('useAvatarPicker', () => {
       await result.current.openAvatarPicker();
     });
 
-    expect(present).toHaveBeenCalledTimes(1);
-    expect(oxyServices.assetGetUrl).not.toHaveBeenCalled();
+    // A removal writes an EMPTY avatar — it never uploads anything.
+    expect(oxyServices.assetUpload).not.toHaveBeenCalled();
+    expect(updateProfileWithAvatar).toHaveBeenCalledWith(
+      { avatar: '' },
+      expect.anything(),
+      'session-1',
+      expect.anything(),
+    );
+    expect(toast.success).toHaveBeenCalledWith('editProfile.toasts.avatarRemoved');
+  });
+
+  it('aborts when the surface is cancelled (no upload, no profile write)', async () => {
+    openWithinOrPresent.mockResolvedValue(undefined);
+    const oxyServices = makeOxyServices();
+    const { result } = renderPicker(oxyServices);
+
+    await act(async () => {
+      await result.current.openAvatarPicker();
+    });
+
+    expect(openWithinOrPresent).toHaveBeenCalledTimes(1);
     expect(oxyServices.assetUpload).not.toHaveBeenCalled();
     expect(updateProfileWithAvatar).not.toHaveBeenCalled();
   });
 
-  it('aborts when the crop is cancelled (no upload)', async () => {
-    present.mockImplementation((route) =>
-      route === 'FileManagement' ? Promise.resolve(imageFile) : Promise.resolve(undefined),
-    );
+  it('surfaces an error when the upload returns no file id', async () => {
+    openWithinOrPresent.mockResolvedValue(croppedResult);
     const oxyServices = makeOxyServices();
+    oxyServices.assetUpload.mockResolvedValue({});
     const { result } = renderPicker(oxyServices);
 
     await act(async () => {
       await result.current.openAvatarPicker();
     });
 
-    expect(present).toHaveBeenCalledTimes(2);
-    expect(oxyServices.assetGetUrl).toHaveBeenCalledTimes(1);
-    expect(oxyServices.assetUpload).not.toHaveBeenCalled();
     expect(updateProfileWithAvatar).not.toHaveBeenCalled();
-  });
-
-  it('rejects a non-image pick with an error and never opens the crop editor', async () => {
-    const textFile = { ...imageFile, contentType: 'text/plain' } as FileMetadata;
-    present.mockImplementation((route) =>
-      route === 'FileManagement' ? Promise.resolve(textFile) : Promise.resolve(undefined),
-    );
-    const oxyServices = makeOxyServices();
-    const { result } = renderPicker(oxyServices);
-
-    await act(async () => {
-      await result.current.openAvatarPicker();
-    });
-
-    expect(present).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalled();
-    expect(oxyServices.assetGetUrl).not.toHaveBeenCalled();
-    expect(oxyServices.assetUpload).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an error when clearing the avatar fails', async () => {
+    openWithinOrPresent.mockResolvedValue({ removed: true });
+    updateProfileWithAvatar.mockRejectedValueOnce(new Error('network down'));
+    const oxyServices = makeOxyServices();
+    const { result } = renderPicker(oxyServices);
+
+    await act(async () => {
+      await result.current.openAvatarPicker();
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('network down');
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

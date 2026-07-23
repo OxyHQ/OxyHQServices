@@ -47,6 +47,34 @@ export const Loading = () => createElement('span', null, 'loading');
  */
 export const Avatar = () => createElement('span', { 'aria-hidden': 'true' });
 
+/**
+ * `@oxyhq/bloom/avatar-group` stub — the account-menu facepile. The real group
+ * renders overlapping avatars plus a `+N` overflow chip; here we only need a
+ * queryable node per rendered member so a component under test can assert how
+ * many it previews and what the overflow says.
+ */
+export const AvatarGroup = ({
+  items,
+  max = 5,
+  testID,
+}: {
+  items?: Array<{ id?: string; displayName?: string }>;
+  max?: number;
+  testID?: string;
+} & Record<string, unknown>) => {
+  const list = items ?? [];
+  const shown = list.slice(0, max);
+  const overflow = list.length - shown.length;
+  return createElement(
+    'span',
+    { 'data-testid': testID, 'aria-hidden': 'true' },
+    shown.map((item, index) =>
+      createElement('span', { key: item.id ?? index, 'data-facepile': item.displayName }),
+    ),
+    overflow > 0 ? createElement('span', { key: 'overflow' }, `+${overflow}`) : null,
+  );
+};
+
 export const Text = ({
   children,
   testID,
@@ -167,14 +195,17 @@ export const useSurface = (): { dismiss: (result?: unknown) => void; present: ()
   present: () => new Promise<unknown>(() => {}),
 });
 
+// `jest.fn()`s rather than plain stubs: screens drive `confirm`/`prompt`
+// outcomes per test (a confirmed vs. declined destructive action) and assert the
+// options they were called with.
 export const surfaces = {
-  present: () => new Promise<unknown>(() => {}),
-  dismiss: () => {},
-  dismissById: () => {},
-  dismissToRoot: () => {},
-  dismissAll: () => {},
-  confirm: () => Promise.resolve(false),
-  prompt: () => Promise.resolve(null),
+  present: jest.fn(() => new Promise<unknown>(() => {})),
+  dismiss: jest.fn(),
+  dismissById: jest.fn(),
+  dismissToRoot: jest.fn(),
+  dismissAll: jest.fn(),
+  confirm: jest.fn(() => Promise.resolve(false)),
+  prompt: jest.fn(() => Promise.resolve(null)),
 };
 
 export const present = surfaces.present;
@@ -216,6 +247,7 @@ export const SettingsListItem = ({
   onPress,
   disabled,
   accessibilityLabel,
+  expanded,
   testID,
 }: {
   icon?: ReactNode;
@@ -226,6 +258,7 @@ export const SettingsListItem = ({
   onPress?: () => void;
   disabled?: boolean;
   accessibilityLabel?: string;
+  expanded?: boolean;
   testID?: string;
 } & Record<string, unknown>) => {
   const body = [
@@ -239,12 +272,48 @@ export const SettingsListItem = ({
   if (onPress) {
     return createElement(
       'button',
-      { type: 'button', 'aria-label': label, onClick: onPress, disabled, 'data-testid': testID },
+      {
+        type: 'button',
+        'aria-label': label,
+        'aria-expanded': expanded,
+        onClick: onPress,
+        disabled,
+        'data-testid': testID,
+      },
       body,
     );
   }
   return createElement('div', { 'aria-label': label, 'data-testid': testID }, body);
 };
+
+/**
+ * `@oxyhq/bloom/composition-bar` stub. The real bar renders one sized block per
+ * category; here we only need a queryable node per category so a component under
+ * test (the account menu's storage meter) can assert its segments.
+ */
+export const CompositionBar = ({
+  categories,
+  testID,
+}: {
+  categories?: Array<{ key: string; name: string; amount: number; color: string }>;
+  testID?: string;
+} & Record<string, unknown>) =>
+  createElement(
+    'div',
+    { 'data-testid': testID },
+    (categories ?? [])
+      .filter((category) => category.amount > 0)
+      .map((category) =>
+        createElement('span', {
+          key: category.key,
+          'data-segment': category.key,
+          'data-amount': category.amount,
+        }),
+      ),
+  );
+
+/** `@oxyhq/bloom/settings-list` hairline between rows. */
+export const SettingsListDivider = () => createElement('hr', { 'aria-hidden': 'true' });
 
 export const Switch = ({
   value,
@@ -282,5 +351,21 @@ export const AccordionTrigger = passthrough('button');
 export const AccordionContent = passthrough('div');
 export const SegmentedControl = passthrough('div');
 export const SegmentedControlItem = passthrough('button');
+
+/**
+ * `@oxyhq/bloom/admonition` stubs — the compound inline-notice primitives. The
+ * text must stay queryable (a denied-permission notice is asserted by its copy)
+ * and `AdmonitionButton` must stay pressable, so both forward their props
+ * instead of rendering opaque nodes.
+ */
+export const AdmonitionRoot = passthrough('div');
+export const AdmonitionRow = passthrough('div');
+export const AdmonitionContent = passthrough('div');
+export const AdmonitionIcon = () => createElement('span', { 'aria-hidden': 'true' });
+export const AdmonitionText = ({ children }: { children?: ReactNode }) =>
+  createElement('span', null, children);
+export const AdmonitionButton = Button;
+export const Admonition = ({ children }: { children?: ReactNode }) =>
+  createElement('div', null, createElement('span', null, children));
 
 export default toast;

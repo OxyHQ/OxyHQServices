@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "22.10.0",
+  "version": "22.11.0",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -127,7 +127,7 @@
   },
   "dependencies": {
     "@oxyhq/contracts": "workspace:*",
-    "@oxyhq/core": "^12.9.0",
+    "@oxyhq/core": "^12.10.1",
     "@simplewebauthn/browser": "^13.3.0",
     "color": "^4.2.3"
   },
@@ -187,14 +187,15 @@
     "@types/react": "*",
     "@types/react-native": "*",
     "expo": ">=56.0.0",
-    "expo-modules-core": "*",
     "expo-document-picker": ">=56.0.0",
     "expo-file-system": ">=56.0.0",
     "expo-font": ">=13.0.0",
     "expo-haptics": ">=56.0.0",
     "expo-image": ">=2.0.0",
     "expo-image-manipulator": ">=56.0.0",
+    "expo-image-picker": ">=56.0.0",
     "expo-linear-gradient": ">=56.0.0",
+    "expo-modules-core": "*",
     "nativewind": ">=5.0.0",
     "react": ">=18.0.0",
     "react-native": ">=0.85.0",
@@ -239,6 +240,9 @@
       "optional": true
     },
     "@tanstack/query-sync-storage-persister": {
+      "optional": true
+    },
+    "expo-image-picker": {
       "optional": true
     }
   },

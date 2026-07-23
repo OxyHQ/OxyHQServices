@@ -14,7 +14,7 @@ import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
-import { updateAvatarVisibility, getAccountDisplayName } from '@oxyhq/core';
+import { getAccountDisplayName } from '@oxyhq/core';
 
 const GAP = 12;
 const INNER_GAP = 8;
@@ -58,7 +58,6 @@ const AnimatedProgressDot: React.FC<{
  * - Only when the user presses "Continue" do we invoke onAuthenticated to finish flow & close sheet
  */
 const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
-    navigate,
     onAuthenticated,
     theme,
     newUser,
@@ -67,7 +66,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     // the ACTIVE account (the personal user during onboarding, but read through
     // `user` so this stays correct everywhere), with the freshly
     // registered `newUser` as the pre-store-hydration fallback.
-    const { user, oxyServices } = useOxy();
+    const { user, oxyServices, openAvatarPicker: openChangeAvatarSurface } = useOxy();
     const { t, locale } = useI18n();
     const updateProfileMutation = useUpdateProfile();
     const currentUser = user || newUser; // fallback
@@ -83,24 +82,19 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
     const [currentStep, setCurrentStep] = useState(0);
-    // Track avatar separately to ensure it updates immediately after selection
-    const [selectedAvatarId, setSelectedAvatarId] = useState<string | undefined>(currentUser?.avatar);
     // Name form state for the conditional "set your name" step. Lazy initializers
     // seed from the current user once; no useEffect prop→state sync.
     const [firstName, setFirstName] = useState(() => (currentUser?.name?.first ?? '').trim());
     const [lastName, setLastName] = useState(() => (currentUser?.name?.last ?? '').trim());
     const [savingName, setSavingName] = useState(false);
 
-    // Update selectedAvatarId when the active account's avatar changes
-    useEffect(() => {
-        if (user?.avatar) {
-            setSelectedAvatarId(user.avatar);
-        } else if (newUser?.avatar) {
-            setSelectedAvatarId(newUser.avatar);
-        }
-    }, [user?.avatar, newUser?.avatar]);
-
-    const avatarUri = selectedAvatarId ? oxyServices.getFileDownloadUrl(selectedAvatarId, 'thumb') : undefined;
+    // Derived, not mirrored: `openAvatarPicker` writes through the shared avatar
+    // path, which updates the active account — including CLEARING it when the
+    // user removes their photo, which a "last non-empty value" mirror could not
+    // represent.
+    const avatarUri = currentUser?.avatar
+        ? oxyServices.getFileDownloadUrl(currentUser.avatar, 'thumb')
+        : undefined;
 
     // Steps content. Use the canonical helper so partially-onboarded accounts
     // (publicKey only) still get a friendly greeting instead of a blank one.
@@ -186,43 +180,19 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             setSavingName(false);
         }
     }, [firstName, lastName, updateProfileMutation, animateToStepCallback, currentStep, t]);
+    /**
+     * Onboarding uses the SAME avatar flow as everywhere else — the ChangeAvatar
+     * surface (source list → crop → upload). It used to run its own
+     * pick-a-file-and-set-it path, which bypassed the cropper entirely.
+     */
     const openAvatarPicker = useCallback(() => {
-        // Ensure we're on the avatar step before opening picker
+        // Ensure we're on the avatar step, so the wizard shows the new photo
+        // when the surface closes.
         if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
             animateToStepCallback(avatarStepIndex);
         }
-
-        navigate?.('FileManagement', {
-            selectMode: true,
-            multiSelect: false,
-            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-            afterSelect: 'none', // Don't navigate away - stay on current screen
-            onSelect: async (file: any) => {
-                if (!file.contentType.startsWith('image/')) {
-                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
-                    return;
-                }
-                try {
-                    // Update file visibility to public for avatar
-                    await updateAvatarVisibility(file.id, oxyServices, 'WelcomeNewUser');
-
-                    // Update the avatar immediately in local state
-                    setSelectedAvatarId(file.id);
-
-                    // Update user using TanStack Query mutation
-                    await updateProfileMutation.mutateAsync({ avatar: file.id });
-                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-
-                    // Ensure we stay on the avatar step
-                    if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
-                        animateToStepCallback(avatarStepIndex);
-                    }
-                } catch (e: unknown) {
-                    toast.error((e instanceof Error ? e.message : null) || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
-                }
-            }
-        });
-    }, [navigate, updateProfileMutation, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
+        openChangeAvatarSurface();
+    }, [openChangeAvatarSurface, currentStep, avatarStepIndex, animateToStepCallback]);
 
     const step = steps[currentStep];
     const renderActionButtons = useCallback(() => {

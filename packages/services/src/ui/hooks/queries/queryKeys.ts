@@ -100,6 +100,13 @@ export const queryKeys = {
     usage: (accountScope?: string) => [...queryKeys.storage.all, 'usage', accountScope] as const,
   },
 
+  // User file library (infinite-paginated; owner-scoped so switching the active
+  // account shows that account's files without a manual reset)
+  files: {
+    all: ['files'] as const,
+    list: (ownerId?: string) => [...queryKeys.files.all, 'list', ownerId || 'anonymous'] as const,
+  },
+
   // Connected apps (OAuth grants the user has authorized)
   connectedApps: {
     all: ['connectedApps'] as const,
@@ -202,5 +209,13 @@ export const invalidatePaymentsQueries = (queryClient: QueryClient): void => {
  */
 export const invalidateConnectedAppsQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.connectedApps.all });
+};
+
+/**
+ * Helper to invalidate the user's file library (all owners). Pass an ownerId via
+ * `queryKeys.files.list(ownerId)` for a scoped invalidation instead.
+ */
+export const invalidateFileQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
 };
 
