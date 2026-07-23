@@ -396,7 +396,7 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
       onOpenSettings: () => openUrl(ACCOUNTS_APP_URL),
       onOpenData: () => openUrl(`${ACCOUNTS_APP_URL}/data`),
       onManageStorage: () => openUrl(`${ACCOUNTS_APP_URL}/storage`),
-      onUpgradeStorage: () => openUrl(`${ACCOUNTS_APP_URL}/storage`),
+      onUpgradeStorage: () => openUrl(`${ACCOUNTS_APP_URL}/payments`),
       onHelp: () => openSheet('HelpSupport'),
       onPrivacy: () => openSheet({ screen: 'LegalDocuments', props: { initialStep: 1 } }),
       onTerms: () => openSheet({ screen: 'LegalDocuments', props: { initialStep: 2 } }),
