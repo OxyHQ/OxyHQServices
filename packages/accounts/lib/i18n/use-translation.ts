@@ -13,8 +13,8 @@ import type {
 
 /**
  * Accounts-namespaced dictionaries loaded at module init. Only English and
- * Spanish are populated; other supported locales fall back to core's larger
- * dictionary and then to the raw key.
+ * Spanish are populated; other supported locales fall back to English for
+ * accounts-only keys, then to core's larger dictionary and then to the raw key.
  */
 const ACCOUNTS_DICTS: Partial<Record<Locale, LocaleDict>> = {
   'en-US': enAccounts as LocaleDict,
@@ -79,15 +79,19 @@ interface UseTranslationResult {
  *
  * Resolution order:
  *   1. Accounts-namespaced dict for the active locale (`en.json` / `es.json`)
- *   2. Core's `translate(locale, key, vars)` (covers all 11 locales for shared
+ *   2. English accounts dict when the active locale has no accounts overlay
+ *   3. Core's `translate(locale, key, vars)` (covers all 11 locales for shared
  *      strings like `signin.*`, `signup.*`, etc.)
- *   3. The raw key string, so missing translations surface visibly without
+ *   4. The raw key string, so missing translations surface visibly without
  *      breaking the UI.
  */
 export function useTranslation(): UseTranslationResult {
   const { locale, setLocale } = useLocale();
 
-  const dict = useMemo(() => ACCOUNTS_DICTS[locale], [locale]);
+  const dict = useMemo(
+    () => ACCOUNTS_DICTS[locale] ?? ACCOUNTS_DICTS['en-US'],
+    [locale],
+  );
 
   const t = useCallback<TranslateFn>(
     (key, vars) => {

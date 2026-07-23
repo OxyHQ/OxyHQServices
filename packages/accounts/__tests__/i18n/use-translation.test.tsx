@@ -54,6 +54,13 @@ describe('useTranslation', () => {
     expect(value).not.toBe('Save');
   });
 
+  it('falls back to English accounts strings for locales without an overlay', () => {
+    __setOxyState({ currentLanguage: 'fr-FR' });
+    const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });
+    expect(result.current.locale).toBe('fr-FR');
+    expect(result.current.t('common.save')).toBe('Save');
+  });
+
   it('exposes a setLocale that updates the active locale', async () => {
     __setOxyState({ currentLanguage: 'en-US' });
     const { result } = renderHook(() => useTranslation(), { wrapper: Wrapper });

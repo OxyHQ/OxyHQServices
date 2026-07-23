@@ -594,7 +594,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                     >
                         {Array.from({ length: skeletonTileCount }, (_, index) => (
                             <Skeleton.Box
-                                key={index}
+                                key={`skeleton-${index}`}
                                 width={cellSize}
                                 height={cellSize}
                                 borderRadius={CELL_CORNER_RADIUS}

@@ -55,6 +55,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs",
     "test": "echo \"@oxyhq/app-preset is a zero-build config package — no unit tests\" && exit 0"
   },
   "peerDependencies": {
