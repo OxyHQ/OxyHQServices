@@ -351,4 +351,60 @@ describe('useFileUploadState optimistic lifecycle (query cache)', () => {
 
     expect(tempEntries(client)).toHaveLength(0);
   });
+
+  it('does not call onPicked after unmount during the post-upload defer', async () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    seedCache(client);
+    const onPicked = jest.fn();
+    const mutateAsync = jest.fn(async () => ({
+      file: {
+        id: 'real-99',
+        originalName: 'picked-photo.png',
+        mime: 'image/png',
+        size: 2048,
+        createdAt: '2026-01-02T00:00:00.000Z',
+        metadata: {},
+        variants: [],
+      },
+    }));
+
+    const { result, unmount } = renderHook(
+      () => useFileUploadState({ ...makeParams(mutateAsync), selectMode: true, onPicked }),
+      { wrapper: wrapper(client) },
+    );
+
+    await act(async () => {
+      await result.current.handleFileUpload();
+    });
+    await act(async () => {
+      await result.current.handleConfirmUpload();
+    });
+
+    unmount();
+
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onPicked).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('restricts the document picker to images when imagesOnly is true', async () => {
+    const client = makeClient();
+    seedCache(client);
+    const mutateAsync = jest.fn(async () => ({ file: file('real-1') }));
+
+    const { result } = renderHook(
+      () => useFileUploadState({ ...makeParams(mutateAsync), imagesOnly: true }),
+      { wrapper: wrapper(client) },
+    );
+
+    await act(async () => {
+      await result.current.handleFileUpload();
+    });
+
+    expect(getDocumentAsync).toHaveBeenCalledWith(expect.objectContaining({ type: 'image/*' }));
+  });
 });

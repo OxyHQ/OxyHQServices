@@ -437,6 +437,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         onPicked,
         goBack,
         onClose,
+        imagesOnly: isImageOnlyPicker,
         selectedIds,
         setSelectedIds,
         t,

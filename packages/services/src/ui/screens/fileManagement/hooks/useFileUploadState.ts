@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import type { AssetUploadInput, FileMetadata } from '@oxyhq/core';
@@ -62,6 +62,8 @@ export interface UseFileUploadStateParams {
     onPicked?: (file: FileMetadata) => void;
     goBack?: () => void;
     onClose?: () => void;
+    /** When true, the document picker and pre-upload validation accept images only. */
+    imagesOnly?: boolean;
     selectedIds: Set<string>;
     setSelectedIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     t: (key: string, vars?: Record<string, string | number>) => string;
@@ -99,6 +101,7 @@ export const useFileUploadState = ({
     onPicked,
     goBack,
     onClose,
+    imagesOnly = false,
     selectedIds,
     setSelectedIds,
     t,
@@ -111,6 +114,23 @@ export const useFileUploadState = ({
 
     const queryClient = useQueryClient();
     const uploadStartRef = useRef<number | null>(null);
+    const postSelectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isActiveRef = useRef(true);
+
+    const clearPostSelectTimer = useCallback(() => {
+        if (postSelectTimerRef.current) {
+            clearTimeout(postSelectTimerRef.current);
+            postSelectTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        isActiveRef.current = true;
+        return () => {
+            isActiveRef.current = false;
+            clearPostSelectTimer();
+        };
+    }, [clearPostSelectTimer]);
 
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;
@@ -277,6 +297,11 @@ export const useFileUploadState = ({
 
             const fileType = candidateType(file);
 
+            if (imagesOnly && !fileType.startsWith('image/')) {
+                toast.error(t('fileManagement.toasts.imagesOnlyRequired'));
+                continue;
+            }
+
             // Generate preview for images - unified approach
             let preview: string | undefined;
             if (fileType.startsWith('image/')) {
@@ -311,7 +336,7 @@ export const useFileUploadState = ({
         // Show preview modal for user to review files before upload
         setPendingFiles(processedFiles);
         setShowUploadPreview(true);
-    }, [t]);
+    }, [imagesOnly, t]);
 
     const handleConfirmUpload = async () => {
         if (pendingFiles.length === 0) return;
@@ -335,7 +360,11 @@ export const useFileUploadState = ({
             // If in selectMode, automatically select the uploaded file(s)
             if (selectMode && uploadedFiles.length > 0) {
                 // Defer one tick so the query cache has settled before selecting.
-                setTimeout(() => {
+                clearPostSelectTimer();
+                postSelectTimerRef.current = setTimeout(() => {
+                    postSelectTimerRef.current = null;
+                    if (!isActiveRef.current) return;
+
                     const fileToSelect = uploadedFiles[0];
                     if (!multiSelect && fileToSelect) {
                         if (onPicked) {
@@ -371,6 +400,8 @@ export const useFileUploadState = ({
     };
 
     const handleCancelUpload = () => {
+        clearPostSelectTimer();
+
         // Cleanup preview URLs
         for (const pf of pendingFiles) {
             revokePreviewUrl(pf.preview);
@@ -412,7 +443,7 @@ export const useFileUploadState = ({
             // Use expo-document-picker (works on all platforms including web)
             // On web, it uses the native file input and provides File objects directly
             const result = await picker.getDocumentAsync({
-                type: '*/*',
+                type: imagesOnly ? 'image/*' : '*/*',
                 multiple: true,
                 copyToCacheDirectory: true,
             });
