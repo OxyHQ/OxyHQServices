@@ -1,10 +1,6 @@
 import type React from 'react';
-import { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  View,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import { useState, useCallback, useRef } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
 import { ORGANIZATION_CATEGORIES } from '@oxyhq/core';
@@ -15,6 +11,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '@oxyhq/bloom';
 
@@ -172,15 +169,6 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     checkUsername(cleaned);
   }, [checkUsername]);
 
-  // Cleanup debounce timer
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
-
   const canCreate = usernameStatus === 'available' && displayName.trim().length > 0 && !isCreating;
 
   const handleCreate = useCallback(async () => {
@@ -234,168 +222,136 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const title = t('accounts.create.title') || 'Create account';
 
   return (
-    <>
+    <View className="px-screen-margin pt-space-16 pb-space-32">
 
-      <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
+      {/* Account type — canonical grouped selection rows (checkmark on the chosen one) */}
+      <SettingsListGroup title={t('accounts.create.typeSection') || 'Account type'}>
+        {KIND_OPTIONS.map((option) => {
+          const selected = option.value === kind;
+          return (
+            <SettingsListItem
+              key={option.value}
+              icon={(
+                <Ionicons
+                  name={option.icon}
+                  size={22}
+                  color={selected ? bloomTheme.colors.primary : bloomTheme.colors.icon}
+                />
+              )}
+              title={kindLabel(t, option.value)}
+              description={kindDescription(t, option.value)}
+              onPress={() => setKind(option.value)}
+              showChevron={false}
+              rightElement={selected ? (
+                <Ionicons name="checkmark-circle" size={20} color={bloomTheme.colors.primary} />
+              ) : undefined}
+              accessibilityLabel={kindLabel(t, option.value)}
+            />
+          );
+        })}
+      </SettingsListGroup>
 
-          {/* Kind picker */}
+      {/* Organization category — grouped selection rows, shown only for organizations */}
+      {kind === 'organization' ? (
+        <SettingsListGroup title={t('accounts.create.organizationCategory.label')}>
+          {ORGANIZATION_CATEGORY_OPTIONS.map((option) => {
+            const selected = option === organizationCategory;
+            return (
+              <SettingsListItem
+                key={option}
+                title={organizationCategoryLabel(t, option)}
+                onPress={() => setOrganizationCategory(option)}
+                showChevron={false}
+                rightElement={selected ? (
+                  <Ionicons name="checkmark-circle" size={20} color={bloomTheme.colors.primary} />
+                ) : undefined}
+                accessibilityLabel={organizationCategoryLabel(t, option)}
+              />
+            );
+          })}
+        </SettingsListGroup>
+      ) : null}
+
+      {/* Details — a grouped section card hosting the form fields */}
+      <SettingsListGroup title={t('accounts.create.detailsSection') || 'Details'}>
+        <View className="p-space-16 gap-space-16">
+          {/* Username */}
           <View className="gap-space-8">
-            {KIND_OPTIONS.map((option) => {
-              const selected = option.value === kind;
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={kindLabel(t, option.value)}
-                  onPress={() => setKind(option.value)}
-                  activeOpacity={0.7}
-                  className="flex-row items-center gap-space-12 p-space-16 rounded-radius-20"
-                  style={{
-                    backgroundColor: selected ? bloomTheme.colors.primarySubtle : bloomTheme.colors.card,
-                    borderWidth: 1,
-                    borderColor: selected ? bloomTheme.colors.primary : bloomTheme.colors.border,
-                  }}
-                >
-                  <Ionicons
-                    name={option.icon}
-                    size={22}
-                    color={selected ? bloomTheme.colors.primary : bloomTheme.colors.icon}
-                  />
-                  <View className="flex-1">
-                    <Text
-                      className="text-body font-bodyBold"
-                      style={{ color: selected ? bloomTheme.colors.primary : bloomTheme.colors.text }}
-                    >
-                      {kindLabel(t, option.value)}
-                    </Text>
-                    <Text className="text-caption font-caption text-text-secondary">
-                      {kindDescription(t, option.value)}
-                    </Text>
-                  </View>
-                  {selected ? (
-                    <Ionicons name="checkmark-circle" size={20} color={bloomTheme.colors.primary} />
-                  ) : null}
-                </TouchableOpacity>
-              );
-            })}
+            <TextField isInvalid={usernameIsInvalid}>
+              <TextFieldInput
+                floatingLabel
+                label={t('accounts.create.username.label') || 'Username'}
+                value={username}
+                onChangeText={handleUsernameChange}
+                isInvalid={usernameIsInvalid}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                maxLength={USERNAME_MAX}
+              />
+            </TextField>
+            {(usernameStatus === 'checking' || usernameMessage) ? (
+              <View className="flex-row items-center gap-space-4 px-space-4">
+                {usernameStatus === 'checking' ? (
+                  <ActivityIndicator size="small" color={bloomTheme.colors.primary} />
+                ) : usernameStatus === 'available' ? (
+                  <Ionicons name="checkmark-circle" size={16} color={bloomTheme.colors.success} />
+                ) : usernameIsInvalid ? (
+                  <Ionicons name="alert-circle" size={16} color={bloomTheme.colors.negative} />
+                ) : null}
+                {usernameMessage ? (
+                  <Text className="text-caption font-caption" style={{ color: statusColor }}>
+                    {usernameMessage}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
           </View>
 
-          {kind === 'organization' ? (
-            <View className="gap-space-8">
-              <Text className="text-body font-bodyBold text-text">
-                {t('accounts.create.organizationCategory.label')}
-              </Text>
-              <View className="flex-row flex-wrap gap-space-8">
-                {ORGANIZATION_CATEGORY_OPTIONS.map((option) => {
-                  const selected = option === organizationCategory;
-                  return (
-                    <TouchableOpacity
-                      key={option}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={organizationCategoryLabel(t, option)}
-                      onPress={() => setOrganizationCategory(option)}
-                      activeOpacity={0.7}
-                      className="px-space-12 py-space-8 rounded-radius-full"
-                      style={{
-                        backgroundColor: selected ? bloomTheme.colors.primarySubtle : bloomTheme.colors.card,
-                        borderWidth: 1,
-                        borderColor: selected ? bloomTheme.colors.primary : bloomTheme.colors.border,
-                      }}
-                    >
-                      <Text
-                        className="text-caption font-captionBold"
-                        style={{ color: selected ? bloomTheme.colors.primary : bloomTheme.colors.text }}
-                      >
-                        {organizationCategoryLabel(t, option)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          ) : null}
+          {/* Display Name */}
+          <TextField>
+            <TextFieldInput
+              floatingLabel
+              label={t('accounts.create.displayName.label') || 'Display name'}
+              value={displayName}
+              onChangeText={setDisplayName}
+              maxLength={DISPLAY_NAME_MAX}
+            />
+          </TextField>
 
-          {/* Form Content */}
-          <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
-            {/* Username */}
-            <View className="gap-space-8">
-              <TextField isInvalid={usernameIsInvalid}>
-                <TextFieldInput
-                  floatingLabel
-                  label={t('accounts.create.username.label') || 'Username'}
-                  value={username}
-                  onChangeText={handleUsernameChange}
-                  isInvalid={usernameIsInvalid}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  maxLength={USERNAME_MAX}
-                />
-              </TextField>
-              {(usernameStatus === 'checking' || usernameMessage) ? (
-                <View className="flex-row items-center gap-space-4 px-space-4">
-                  {usernameStatus === 'checking' ? (
-                    <ActivityIndicator size="small" color={bloomTheme.colors.primary} />
-                  ) : usernameStatus === 'available' ? (
-                    <Ionicons name="checkmark-circle" size={16} color={bloomTheme.colors.success} />
-                  ) : usernameIsInvalid ? (
-                    <Ionicons name="alert-circle" size={16} color={bloomTheme.colors.negative} />
-                  ) : null}
-                  {usernameMessage ? (
-                    <Text className="text-caption font-caption" style={{ color: statusColor }}>
-                      {usernameMessage}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-            </View>
-
-            {/* Display Name */}
+          {/* Bio */}
+          <View className="gap-space-4">
             <TextField>
               <TextFieldInput
                 floatingLabel
-                label={t('accounts.create.displayName.label') || 'Display name'}
-                value={displayName}
-                onChangeText={setDisplayName}
-                maxLength={DISPLAY_NAME_MAX}
+                label={t('accounts.create.bio.label') || 'Bio (optional)'}
+                value={bio}
+                onChangeText={setBio}
+                maxLength={BIO_MAX}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
               />
             </TextField>
-
-            {/* Bio */}
-            <View className="gap-space-4">
-              <TextField>
-                <TextFieldInput
-                  floatingLabel
-                  label={t('accounts.create.bio.label') || 'Bio (optional)'}
-                  value={bio}
-                  onChangeText={setBio}
-                  maxLength={BIO_MAX}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </TextField>
-              <Text className="text-caption font-caption text-text-tertiary px-space-4 text-right">
-                {bio.length}/{BIO_MAX}
-              </Text>
-            </View>
+            <Text className="text-caption font-caption text-text-tertiary px-space-4 text-right">
+              {bio.length}/{BIO_MAX}
+            </Text>
           </View>
-
-          {/* Create Button */}
-          <Button
-            variant="primary"
-            onPress={handleCreate}
-            disabled={!canCreate}
-            loading={isCreating}
-            accessibilityLabel={title}
-            className="w-full"
-          >
-            {title}
-          </Button>
         </View>
-    </>
+      </SettingsListGroup>
+
+      {/* Create Button */}
+      <Button
+        variant="primary"
+        onPress={handleCreate}
+        disabled={!canCreate}
+        loading={isCreating}
+        accessibilityLabel={title}
+        className="w-full"
+      >
+        {title}
+      </Button>
+    </View>
   );
 };
 

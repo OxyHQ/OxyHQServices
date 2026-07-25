@@ -1761,7 +1761,9 @@
       "toasts": {
         "success": "Account created",
         "failed": "Failed to create account"
-      }
+      },
+      "typeSection": "Account type",
+      "detailsSection": "Details"
     },
     "manage": {
       "create": {
