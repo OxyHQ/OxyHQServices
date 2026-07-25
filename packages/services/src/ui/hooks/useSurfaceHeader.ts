@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef } from 'react';
 import type { DialogHeaderConfig } from '@oxyhq/bloom/dialog';
 
 /**
@@ -43,20 +43,77 @@ interface SurfaceHeaderContextValue {
 export const SurfaceHeaderContext = createContext<SurfaceHeaderContextValue | null>(null);
 
 /**
+ * Shallow value-equality for a surface's header contribution.
+ *
+ * Scalars (`title`/`subtitle`/`largeTitle`/`tone`) compare by value; the object
+ * and node fields (`titleContent`/`left`/`right`/`primaryAction`/`actions`/
+ * `search`/`segments`/`progress`) compare by identity — callers memoize them, per
+ * this hook's contract. Function-typed affordances compare by PRESENCE, never
+ * identity: `onBack` legitimately gets a fresh closure each render, and its
+ * identity never changes what the header renders, so it must not count as a
+ * change (that is exactly what would drive the update loop).
+ */
+function surfaceHeaderContentEqual(
+  a: SurfaceHeaderContent | null,
+  b: SurfaceHeaderContent | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.title === b.title &&
+    a.titleContent === b.titleContent &&
+    a.subtitle === b.subtitle &&
+    a.largeTitle === b.largeTitle &&
+    a.left === b.left &&
+    a.right === b.right &&
+    !!a.onBack === !!b.onBack &&
+    a.primaryAction === b.primaryAction &&
+    a.actions === b.actions &&
+    a.search === b.search &&
+    a.segments === b.segments &&
+    a.tone === b.tone &&
+    a.progress === b.progress
+  );
+}
+
+/**
  * Declare the Dialog nav header's content from within a surface screen — its
  * title/subtitle and any action slot. Merges over nothing (the host owns
  * back/close), replaces on change, and clears on unmount. Call it unconditionally;
  * it is a no-op outside a header-mode surface.
+ *
+ * Screens pass an INLINE `content` object (a fresh reference every render), so the
+ * push is guarded by {@link surfaceHeaderContentEqual}: the host's `setContent` is
+ * called only when the VALUE actually changes. Without that guard the setState
+ * would fire every render → the screen re-renders → the effect runs again → an
+ * infinite update loop (React error #185) in any consumer that does not memoize
+ * the object for us (i.e. anything not compiled by the React Compiler).
  */
 export function useSurfaceHeader(content: SurfaceHeaderContent | null | undefined): void {
   const ctx = useContext(SurfaceHeaderContext);
   const set = ctx?.setContent;
-  // Set synchronously in the commit's layout phase so the bar/title fill in
-  // BEFORE the browser paints — no first-frame flash of an empty bar.
+  const setRef = useRef(set);
+  setRef.current = set;
+  // The last value pushed to the host; `undefined` until the first push.
+  const lastRef = useRef<SurfaceHeaderContent | null | undefined>(undefined);
+
+  // Runs after EVERY commit (no deps array) so the bar/title fill in the same
+  // layout phase — but only pushes on a real value change, never on reference churn.
   useLayoutEffect(() => {
-    if (!set) return;
-    set(content ?? null);
-    return () => set(null);
-    // Callers must memoize `content` (especially slot nodes) so the header does not thrash.
-  }, [set, content]);
+    const s = setRef.current;
+    if (!s) return;
+    const next = content ?? null;
+    if (lastRef.current !== undefined && surfaceHeaderContentEqual(lastRef.current, next)) return;
+    lastRef.current = next;
+    s(next);
+  });
+
+  // Clear this surface's contribution when the screen unmounts.
+  useLayoutEffect(
+    () => () => {
+      lastRef.current = undefined;
+      setRef.current?.(null);
+    },
+    [],
+  );
 }

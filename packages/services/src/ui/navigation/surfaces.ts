@@ -5,7 +5,6 @@ import {
   type PresentOptions,
   type SurfaceControls,
 } from '@oxyhq/bloom/surfaces';
-import SurfaceScreen from '../components/SurfaceScreen';
 import type { RouteName } from './routes';
 import {
   getSurfaceConfig,
@@ -153,6 +152,15 @@ function presentInternal<K extends RouteName>(
   const navStack = createSurfaceNavStack(route, props);
   const config = getSurfaceConfig(route, props);
   const bloomOpts: PresentOptions = { label: route, ...bloomOptionsFor(config), ...opts };
+
+  // Lazy-resolved to break the surfaces.ts <-> SurfaceScreen module cycle: a
+  // mounted SurfaceScreen presents further surfaces (it imports these presenters),
+  // while presenting one renders a SurfaceScreen. Deferring the component to call
+  // time (both modules are initialized by then) makes the import graph one-way —
+  // the same idiom `routes.ts` uses to lazy-load screen components.
+  const SurfaceScreen = (
+    require('../components/SurfaceScreen') as typeof import('../components/SurfaceScreen')
+  ).default;
 
   const result = bloomSurfaces.present<SurfaceResult<K>>((surface: SurfaceControls) =>
     createElement(SurfaceScreen, {

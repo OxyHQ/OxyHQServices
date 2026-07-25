@@ -305,7 +305,6 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
                 {isSelected && (
                     <Animated.View
                         ref={startRingPulse}
-                        pointerEvents="none"
                         style={{
                             position: 'absolute',
                             top: 0,
@@ -316,14 +315,14 @@ const PhotoPickerCell = React.memo(function PhotoPickerCell(props: PhotoPickerCe
                             borderWidth: SELECTION_RING_WIDTH,
                             borderColor: primaryColor,
                             transform: [{ scale: ringScale }],
+                            pointerEvents: 'none',
                         }}
                     />
                 )}
                 {isSelected && (
                     <View
-                        pointerEvents="none"
                         className="absolute top-1.5 right-1.5 min-w-[22px] h-[22px] px-1.5 rounded-full items-center justify-center"
-                        style={{ backgroundColor: primaryColor }}
+                        style={{ backgroundColor: primaryColor, pointerEvents: 'none' }}
                     >
                         <Text className="text-white text-[12px] font-bold leading-[14px]">
                             {selectionIndex > 0 ? String(selectionIndex) : ''}
@@ -546,8 +545,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                        because the last tile in each row carries no right margin (a
                        full row + gutters fits the measured width by construction). */
                     <View
-                        style={{ flexDirection: 'row', flexWrap: 'wrap' }}
-                        pointerEvents="none"
+                        style={{ flexDirection: 'row', flexWrap: 'wrap', pointerEvents: 'none' }}
                         accessibilityElementsHidden
                         importantForAccessibility="no-hide-descendants"
                     >

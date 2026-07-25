@@ -1,5 +1,5 @@
 import type React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Platform, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface UploadBarProps {
@@ -13,15 +13,19 @@ export interface UploadBarProps {
 }
 
 // The banner drop-shadow has no Bloom/Tailwind token equivalent, so it stays an
-// inline style (genuinely-required exception).
+// inline style. `boxShadow` on web (RN-Web deprecated the `shadow*` props);
+// RN `shadow*`/`elevation` on native.
 const shadowStyle = StyleSheet.create({
-    banner: {
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
-    },
+    banner: Platform.select({
+        web: { boxShadow: '0px 2px 6px rgba(0, 0, 0, 0.1)' },
+        default: {
+            shadowColor: '#000',
+            shadowOpacity: 0.1,
+            shadowRadius: 6,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 2,
+        },
+    }) as ViewStyle,
 });
 
 /**
@@ -30,7 +34,10 @@ const shadowStyle = StyleSheet.create({
  * gates rendering on `!selectMode && uploading`.
  */
 const UploadBar: React.FC<UploadBarProps> = ({ uploadProgress, isDark, colors, t }) => (
-    <View pointerEvents="none" className="absolute top-[72px] left-0 right-0 items-center z-50">
+    <View
+        className="absolute top-[72px] left-0 right-0 items-center z-50"
+        style={{ pointerEvents: 'none' }}
+    >
         <View
             className="flex-row items-center px-3.5 py-2.5 rounded-[24px] gap-2.5 border min-w-[200px]"
             style={[shadowStyle.banner, { backgroundColor: isDark ? '#222831EE' : '#FFFFFFEE', borderColor: colors.border }]}
