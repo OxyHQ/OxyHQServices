@@ -3,8 +3,11 @@
  * profile picture.
  *
  * The contract these pin:
- *   - every source that yields an image NAVIGATES within this surface to
- *     `AvatarCrop` (never `present`s it), which is what makes the panel morph;
+ *   - device / camera sources NAVIGATE within this surface straight to
+ *     `AvatarCrop` (never `present` it), which is what makes the panel morph;
+ *   - the "My Oxy files" source navigates to the `FileManagement` picker frame
+ *     and hands it an `onPicked` callback that forward-navigates to the cropper on
+ *     selection (a three-frame stack: list → picker → cropper);
  *   - the camera is offered only where it exists;
  *   - removal is confirmed first, then resolves the surface (this screen writes
  *     nothing — `useAvatarPicker` owns the single write path);
@@ -29,13 +32,6 @@ jest.mock(
   }),
   { virtual: true },
 );
-
-// The Oxy-files media selector MORPHS into the caller's surface (a nested
-// sub-flow) via `openWithinOrPresent`, and resolves with the picked file.
-const openWithinOrPresent = jest.fn<Promise<unknown>, [string, ...unknown[]]>();
-jest.mock('../../src/ui/navigation/surfaces', () => ({
-  openWithinOrPresent: (route: string, ...rest: unknown[]) => openWithinOrPresent(route, ...rest),
-}));
 
 const assetGetUrl = jest.fn();
 jest.mock('../../src/ui/context/OxyContext', () => ({
@@ -137,7 +133,6 @@ describe('ChangeAvatarScreen', () => {
     // `navigate` (a push, NOT a stacked present) — Cancel on the cropper morphs
     // back here to re-pick; the push is flash-free because the cropper does its
     // own async work.
-    expect(openWithinOrPresent).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith('AvatarCrop', {
       imageUri: 'file:///picked.jpg',
       // The picker already knows the natural size, so the cropper skips its
@@ -166,31 +161,47 @@ describe('ChangeAvatarScreen', () => {
     );
   });
 
-  it('hands an Oxy file ID straight to the cropper without resolving its URL here', async () => {
-    openWithinOrPresent.mockResolvedValue({ id: 'file-9', contentType: 'image/png' });
+  /** The `onPicked` callback handed to the FileManagement picker frame. */
+  const capturedOnPicked = (): ((file: unknown) => void) => {
+    const call = navigate.mock.calls.find((c) => c[0] === 'FileManagement');
+    return call?.[1]?.onPicked as (file: unknown) => void;
+  };
+
+  it('opens the Oxy-files picker as a forward frame and forwards the pick to the cropper', async () => {
     renderScreen();
 
     await pressRow('changeAvatar.sources.files.title');
 
-    expect(openWithinOrPresent).toHaveBeenCalledWith('FileManagement', {
-      selectMode: true,
-      multiSelect: false,
-      disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-    });
-    // The URL is resolved by the cropper (on its own canvas), NOT here — so this
-    // list is not left on screen for the round-trip. It only forwards the file ID.
+    // Navigates WITHIN the surface to the image-only picker as a real frame (NOT a
+    // resolve-and-pop sub-flow), handing it an `onPicked` forward-nav callback.
+    expect(navigate).toHaveBeenCalledWith(
+      'FileManagement',
+      expect.objectContaining({
+        selectMode: true,
+        multiSelect: false,
+        disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
+        onPicked: expect.any(Function),
+      }),
+    );
+
+    // Selecting an image forward-navigates to the cropper with just the file ID —
+    // the URL is resolved by the cropper (on its own canvas), NOT here (so this
+    // list is never left on screen for the round-trip). `assetGetUrl` is untouched.
+    act(() => capturedOnPicked()({ id: 'file-9', contentType: 'image/png' }));
+
     expect(assetGetUrl).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith('AvatarCrop', { imageFileId: 'file-9' });
   });
 
-  it('rejects a non-image Oxy file and never opens the cropper', async () => {
-    openWithinOrPresent.mockResolvedValue({ id: 'file-9', contentType: 'text/plain' });
+  it('rejects a non-image pick from the Oxy-files picker and never opens the cropper', async () => {
     renderScreen();
 
     await pressRow('changeAvatar.sources.files.title');
+    act(() => capturedOnPicked()({ id: 'file-9', contentType: 'text/plain' }));
 
     expect(assetGetUrl).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
+    // Only the picker was opened; no forward-nav to the cropper.
+    expect(navigate).not.toHaveBeenCalledWith('AvatarCrop', expect.anything());
     expect(toast.error).toHaveBeenCalledWith('editProfile.toasts.selectImage');
   });
 

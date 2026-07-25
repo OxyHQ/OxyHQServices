@@ -58,6 +58,8 @@ export interface UseFileUploadStateParams {
     multiSelect: boolean;
     afterSelect: 'close' | 'back' | 'none';
     onSelect?: (file: FileMetadata) => void;
+    /** Forward-navigation picker: see {@link FileManagementScreenProps.onPicked}. */
+    onPicked?: (file: FileMetadata) => void;
     goBack?: () => void;
     onClose?: () => void;
     selectedIds: Set<string>;
@@ -94,6 +96,7 @@ export const useFileUploadState = ({
     multiSelect,
     afterSelect,
     onSelect,
+    onPicked,
     goBack,
     onClose,
     selectedIds,
@@ -335,12 +338,19 @@ export const useFileUploadState = ({
                 setTimeout(() => {
                     const fileToSelect = uploadedFiles[0];
                     if (!multiSelect && fileToSelect) {
-                        // Single select mode - directly call onSelect callback
-                        onSelect?.(fileToSelect);
-                        if (afterSelect === 'back') {
-                            goBack?.();
-                        } else if (afterSelect === 'close') {
-                            onClose?.();
+                        if (onPicked) {
+                            // Forward-navigation picker (avatar flow): hand the
+                            // freshly-uploaded file onward (to the cropper). No
+                            // dismiss/close — the picker frame stays below.
+                            onPicked(fileToSelect);
+                        } else {
+                            // Single select mode - directly call onSelect callback
+                            onSelect?.(fileToSelect);
+                            if (afterSelect === 'back') {
+                                goBack?.();
+                            } else if (afterSelect === 'close') {
+                                onClose?.();
+                            }
                         }
                     } else if (multiSelect) {
                         // Multi-select mode - add all uploaded files to selection

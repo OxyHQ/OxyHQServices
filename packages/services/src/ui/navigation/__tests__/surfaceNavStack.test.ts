@@ -45,8 +45,9 @@ describe('createSurfaceNavStack', () => {
     expect(stack.store.getState().closeResult).toBe('done');
   });
 
-  describe('result-bearing sub-flow (morphed-in avatar picker)', () => {
+  describe('result-bearing sub-flow (morphed-in avatar flow)', () => {
     it('resolves with the descendant dismiss result and pops back to the caller frame', async () => {
+      // Device / camera path: ChangeAvatar navigates straight to the cropper.
       const stack = createSurfaceNavStack('EditProfile');
       const flow = stack.beginFlow('ChangeAvatar');
       expect(stack.getTop().route).toBe('ChangeAvatar');
@@ -84,39 +85,70 @@ describe('createSurfaceNavStack', () => {
       await expect(flow).resolves.toBeUndefined();
     });
 
-    it('NESTS flows: the inner selector resolves first, then the outer avatar flow', async () => {
-      // ChangeAvatar (outer) → "My Oxy files" FileManagement (inner) → back → crop.
+    it('My Oxy files: the picker and cropper are FORWARD frames; the cropper confirm resolves the flow', async () => {
+      // EditProfile → (flow) ChangeAvatar → FileManagement picker → AvatarCrop, all
+      // plain forward frames in the ONE avatar flow. Selecting a file forward-
+      // navigates to the cropper (it does NOT resolve the flow); the cropper's
+      // confirm resolves the flow and pops all the way back to EditProfile.
       const stack = createSurfaceNavStack('EditProfile');
-      const avatarFlow = stack.beginFlow('ChangeAvatar');
-      const fileFlow = stack.beginFlow('FileManagement');
+      const flow = stack.beginFlow('ChangeAvatar');
+      stack.navigate('FileManagement', { selectMode: true }); // "My Oxy files" picker
+      stack.navigate('AvatarCrop', { imageFileId: 'file-1' }); // forward-nav on pick
+      stack.resolveFlowOrDismiss({ uri: 'file:///cropped.jpg' }); // cropper confirm
+      await expect(flow).resolves.toEqual({ uri: 'file:///cropped.jpg' });
+      expect(stack.getTop().route).toBe('EditProfile');
+      expect(stack.store.getState().closing).toBe(false);
+    });
+
+    it('My Oxy files: Back unwinds cropper → picker → list, then cancels the flow', async () => {
+      // The bug this fixes: Back from the cropper must return to the PICKER (re-pick),
+      // not straight to the ChangeAvatar list.
+      const stack = createSurfaceNavStack('EditProfile');
+      const flow = stack.beginFlow('ChangeAvatar');
+      stack.navigate('FileManagement', { selectMode: true });
+      stack.navigate('AvatarCrop', { imageFileId: 'file-1' });
+      expect(stack.goBack()).toBe(true); // crop -> picker (re-pick)
       expect(stack.getTop().route).toBe('FileManagement');
-      // Pick a file → inner flow resolves, pops back to ChangeAvatar (outer still open).
+      expect(stack.goBack()).toBe(true); // picker -> ChangeAvatar
+      expect(stack.getTop().route).toBe('ChangeAvatar');
+      expect(stack.goBack()).toBe(true); // ChangeAvatar -> EditProfile (cancels flow)
+      await expect(flow).resolves.toBeUndefined();
+      expect(stack.getTop().route).toBe('EditProfile');
+      expect(stack.store.getState().closing).toBe(false);
+    });
+
+    // The stack still supports NESTED flows generically, even though no current
+    // caller opens a flow inside another (the avatar flow uses one flow + forward
+    // frames). These guard that capability.
+    it('supports NESTED flows: the inner flow resolves first, then the outer one', async () => {
+      const stack = createSurfaceNavStack('EditProfile');
+      const outer = stack.beginFlow('ChangeAvatar');
+      const inner = stack.beginFlow('FileManagement');
+      expect(stack.getTop().route).toBe('FileManagement');
       stack.resolveFlowOrDismiss({ id: 'file-1' });
-      await expect(fileFlow).resolves.toEqual({ id: 'file-1' });
+      await expect(inner).resolves.toEqual({ id: 'file-1' });
       expect(stack.getTop().route).toBe('ChangeAvatar');
       expect(stack.store.getState().closing).toBe(false);
-      // Now drill to crop and confirm → outer flow resolves, pops to EditProfile.
       stack.navigate('AvatarCrop');
       stack.resolveFlowOrDismiss({ uri: 'file:///c.jpg' });
-      await expect(avatarFlow).resolves.toEqual({ uri: 'file:///c.jpg' });
+      await expect(outer).resolves.toEqual({ uri: 'file:///c.jpg' });
       expect(stack.getTop().route).toBe('EditProfile');
     });
 
-    it('cancelling the inner selector returns to the outer flow, leaving it open', async () => {
+    it('backing out of a NESTED inner flow leaves the outer flow pending', async () => {
       const stack = createSurfaceNavStack('EditProfile');
-      const avatarFlow = stack.beginFlow('ChangeAvatar');
-      const fileFlow = stack.beginFlow('FileManagement');
-      expect(stack.goBack()).toBe(true); // FileManagement -> ChangeAvatar (cancels inner)
-      await expect(fileFlow).resolves.toBeUndefined();
+      const outer = stack.beginFlow('ChangeAvatar');
+      const inner = stack.beginFlow('FileManagement');
+      expect(stack.goBack()).toBe(true); // inner entry backed out -> cancels inner only
+      await expect(inner).resolves.toBeUndefined();
       expect(stack.getTop().route).toBe('ChangeAvatar');
-      // The outer avatar flow is still pending.
       let outerSettled = false;
-      void avatarFlow.then(() => { outerSettled = true; });
+      void outer.then(() => { outerSettled = true; });
       await Promise.resolve();
       expect(outerSettled).toBe(false);
     });
 
-    it('tearing down the surface abandons ALL nested flows (undefined)', async () => {
+    it('tearing down the surface abandons ALL pending flows (undefined)', async () => {
       const stack = createSurfaceNavStack('EditProfile');
       const outer = stack.beginFlow('ChangeAvatar');
       const inner = stack.beginFlow('FileManagement');

@@ -54,10 +54,13 @@ export interface SurfaceNavStack {
    * `dismiss(result)` resolves it with `result`, backing out of the flow's entry
    * frame resolves it with `undefined` (cancelled) — popping the surface back to
    * the frame that started the flow WITHOUT dismissing it. This is how a screen
-   * already living inside a surface (EditProfile, ManageAccount, ChangeAvatar)
-   * opens the avatar picker / media selector as a MORPH instead of a stacked
-   * surface while still awaiting its result. Flows NEST (ChangeAvatar → the "My
-   * Oxy files" selector → back), maintained as a stack.
+   * already living inside a surface (EditProfile, ManageAccount) opens the avatar
+   * flow as a MORPH instead of a stacked surface while still awaiting its result.
+   * The avatar flow is ONE flow (`ChangeAvatar`) with plain forward frames pushed
+   * on top (the "My Oxy files" `FileManagement` picker, then `AvatarCrop`); the
+   * cropper's `dismiss(result)` resolves THIS flow. Flows are kept as a STACK so
+   * they can nest generically, even though no current caller opens a flow inside
+   * another.
    */
   beginFlow(route: RouteName, props?: Record<string, unknown>): Promise<unknown>;
   /**
@@ -94,13 +97,14 @@ export function createSurfaceNavStack(
     return frames[frames.length - 1];
   };
 
-  // Result-bearing sub-flows currently running in this surface (the morphed-in
-  // avatar picker, and — NESTED within it — the "My Oxy files" media selector).
-  // A STACK: flows nest (ChangeAvatar → FileManagement → back to ChangeAvatar).
-  // Held OUTSIDE the store (resolvers are functions; flow presence must not
-  // re-render frames). Each flow's `returnLength` is the frame count BEFORE its
-  // entry frame was pushed, so settling pops back to exactly the frame that
-  // started it. `flowStack` is ordered outer → inner; the top is the innermost.
+  // Result-bearing sub-flows currently running in this surface (e.g. the morphed-
+  // in avatar flow, whose `ChangeAvatar → FileManagement picker → AvatarCrop`
+  // frames are plain forward pushes ON TOP of the ONE flow entry frame). Held as a
+  // STACK so flows can nest generically, and OUTSIDE the store (resolvers are
+  // functions; flow presence must not re-render frames). Each flow's `returnLength`
+  // is the frame count BEFORE its entry frame was pushed, so settling pops back to
+  // exactly the frame that started it. `flowStack` is ordered outer → inner; the
+  // top is the innermost.
   const flowStack: { returnLength: number; resolve: (result: unknown) => void }[] = [];
 
   const requestDismiss = (result?: unknown): void => {

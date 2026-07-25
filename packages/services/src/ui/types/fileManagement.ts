@@ -14,6 +14,16 @@ export interface FileManagementScreenProps extends BaseScreenProps {
     multiSelect?: boolean;
     // Callback when a file is selected (single select mode)
     onSelect?: (file: FileMetadata) => void;
+    /**
+     * Forward-navigation picker: called with the picked file in single-select
+     * mode when the picker is one FRAME of a larger in-surface flow. Unlike
+     * {@link onSelect}, the caller is expected to NAVIGATE the surface onward
+     * (e.g. the avatar flow pushes the cropper on top of this picker) — so on
+     * select the picker neither dismisses nor closes the session, and its
+     * Cancel/back pops THIS frame (returning to the frame that opened the picker)
+     * rather than closing. Takes precedence over `onSelect`/`dismiss` when set.
+     */
+    onPicked?: (file: FileMetadata) => void;
     // Callback when confirm pressed in multi-select mode
     onConfirmSelection?: OnConfirmFileSelection;
     // Initial selected file IDs for multi-select

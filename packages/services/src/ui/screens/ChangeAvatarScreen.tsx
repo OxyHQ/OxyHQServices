@@ -4,11 +4,15 @@
  * Shows the current avatar large, then the four sources the user can pick from:
  * device gallery, camera, their existing Oxy files, and removing the current
  * photo. Every source that yields an image NAVIGATES WITHIN THIS SURFACE to
- * `AvatarCrop` (never presents it on top), so the panel morphs from this list's
- * size to the crop editor's and back — Cancel on the cropper returns here to
- * re-pick. One container reshaping, not two sheets. The forward morph is
- * flash-free because only the top frame renders and the cropper does all its own
- * async work (URL resolution + measurement), so this list is never left on screen
+ * `AvatarCrop` (never presents it on top), so the panel morphs from frame to
+ * frame instead of stacking sheets. The device / camera sources navigate straight
+ * to the cropper; the "My Oxy files" source first navigates to the `FileManagement`
+ * picker frame, which then forward-navigates to the cropper on selection — a real
+ * three-frame stack (this list → picker → cropper). So Cancel on the cropper
+ * returns to whichever frame opened it (the picker when re-picking from Oxy files,
+ * this list otherwise), and Cancel on the picker returns here. The forward morph
+ * is flash-free because only the top frame renders and the cropper does all its
+ * own async work (URL resolution + measurement), so no frame is left on screen
  * waiting.
  *
  * The surface resolves with an {@link AvatarCropResult} (the crop confirmed) or
@@ -37,10 +41,10 @@ import { surfaces as bloomSurfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { toast } from '@oxyhq/bloom';
 import { getAccountDisplayName, logger } from '@oxyhq/core';
+import type { FileMetadata } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
-import { openWithinOrPresent } from '../navigation/surfaces';
 import { SettingsIcon } from '../components/SettingsIcon';
 import type { BaseScreenProps } from '../types/navigation';
 
@@ -229,44 +233,47 @@ const ChangeAvatarScreen: React.FC<BaseScreenProps> = ({ navigate, dismiss }) =>
     );
 
     /**
-     * Pick from the files the user already has on Oxy. The image-only media
-     * selector MORPHS into this surface (a nested sub-flow) like every other
-     * screen and resolves with the chosen file; picking one then morphs on to the
-     * crop editor. When triggered with no surface open it presents cold instead.
+     * Forward the file the user picked from their Oxy library on to the crop
+     * editor. Given to the `FileManagement` picker as its `onPicked` handler, so
+     * SELECTING a file pushes the cropper ON TOP of the picker frame — the picker
+     * stays below, and Cancel on the cropper returns to it to re-pick.
+     *
+     * The file's ID is handed straight to the cropper WITHOUT resolving its
+     * (usually private) download URL here: the cropper resolves it and shows its
+     * own loading state on the dark canvas, so the picker never lingers for the
+     * network round-trip (the "flash back to the avatar screen" the resolve-here
+     * approach caused).
      */
-    const pickFromOxyFiles = useCallback(async () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const file = await openWithinOrPresent('FileManagement', {
-                selectMode: true,
-                multiSelect: false,
-                disabledMimeTypes: NON_IMAGE_MIME_TYPES,
-            });
-            if (!file) return;
-
+    const handleOxyFilePicked = useCallback(
+        (file: FileMetadata) => {
+            // The image-only picker never surfaces non-images, but guard
+            // defensively — a non-image would break the cropper.
             if (!file.contentType?.startsWith('image/')) {
                 toast.error(t('editProfile.toasts.selectImage'));
                 return;
             }
-
-            // Hand the file's ID straight to the cropper WITHOUT resolving its
-            // (usually private) download URL here. The cropper resolves it — and
-            // shows its own loading state on the dark canvas while it does — so
-            // this source list is never left on screen for the network round-trip
-            // that resolution takes (the "goes back to the avatar screen" flash).
             goToCrop({ imageFileId: file.id });
-        } catch (err) {
-            logger.error(
-                'Oxy files pick failed',
-                err instanceof Error ? err : new Error(String(err)),
-                { component: LOG_COMPONENT },
-            );
-            toast.error(t('changeAvatar.errors.loadImageFailed'));
-        } finally {
-            setBusy(false);
-        }
-    }, [busy, goToCrop, t]);
+        },
+        [goToCrop, t],
+    );
+
+    /**
+     * Pick from the files the user already has on Oxy. Navigates WITHIN this
+     * surface to the image-only `FileManagement` picker as a real frame (not a
+     * resolve-and-pop sub-flow): selecting a file forward-navigates to the crop
+     * editor via {@link handleOxyFilePicked}, giving a three-frame stack
+     * (ChangeAvatar → picker → crop). Back from the cropper returns to the picker
+     * to re-pick; back from the picker returns here. The cropper's confirm
+     * resolves the whole avatar flow with the crop result.
+     */
+    const pickFromOxyFiles = useCallback(() => {
+        navigate?.('FileManagement', {
+            selectMode: true,
+            multiSelect: false,
+            disabledMimeTypes: NON_IMAGE_MIME_TYPES,
+            onPicked: handleOxyFilePicked,
+        });
+    }, [navigate, handleOxyFilePicked]);
 
     /** Confirm, then resolve the surface with the removal so the caller writes it. */
     const removeCurrentPhoto = useCallback(async () => {
@@ -341,7 +348,7 @@ const ChangeAvatarScreen: React.FC<BaseScreenProps> = ({ navigate, dismiss }) =>
                     title={t('changeAvatar.sources.files.title')}
                     description={t('changeAvatar.sources.files.description')}
                     disabled={busy}
-                    onPress={() => void pickFromOxyFiles()}
+                    onPress={() => pickFromOxyFiles()}
                 />
                 <SettingsListItem
                     icon={<SettingsIcon name="trash-can-outline" color={bloomTheme.colors.error} />}

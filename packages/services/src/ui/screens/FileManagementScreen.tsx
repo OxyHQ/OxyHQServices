@@ -88,6 +88,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     selectMode = false,
     multiSelect = false,
     onSelect,
+    onPicked,
     onConfirmSelection,
     initialSelectedIds = [],
     maxSelection,
@@ -305,7 +306,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
 
         if (!multiSelect) {
-            if (onSelect) {
+            if (onPicked) {
+                // Forward-navigation picker (e.g. the avatar flow): hand the file
+                // to the caller, which pushes the NEXT frame (the cropper) on top
+                // of this picker. The picker frame stays below so Back returns here
+                // to re-pick — no dismiss, no session close.
+                onPicked(file);
+            } else if (onSelect) {
                 // Legacy callback caller (inbox, WelcomeNewUser): keep the
                 // callback + afterSelect behaviour unchanged.
                 onSelect(file);
@@ -315,8 +322,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     onClose?.();
                 }
             } else {
-                // Promise-based picker (avatar picker): resolve the surface's
-                // present() promise with the picked file.
+                // Promise-based picker: resolve the surface's present() promise
+                // with the picked file.
                 dismiss?.(file);
             }
             return;
@@ -336,7 +343,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             return next;
         });
         scrollToSelectedFile(file.id);
-    }, [multiSelect, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext, t, scrollToSelectedFile]);
+    }, [multiSelect, onPicked, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext, t, scrollToSelectedFile]);
 
     const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
@@ -427,6 +434,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         multiSelect,
         afterSelect,
         onSelect,
+        onPicked,
         goBack,
         onClose,
         selectedIds,
@@ -999,16 +1007,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const isOwner = user?.id === targetUserId;
     const allowUpload = isOwner && allowUploadInSelectMode;
 
-    // Cancel = the nav bar's back affordance. Legacy callback callers keep their
-    // close/back behaviour; the promise-based avatar picker dismisses its surface.
+    // Cancel = the nav bar's back affordance. A forward-nav picker (`onPicked`,
+    // e.g. the avatar flow) pops its own frame; legacy callback callers keep their
+    // close/back behaviour; a promise-based picker dismisses its surface.
     const pickerCancel = useCallback(() => {
-        if (onSelect || onConfirmSelection) {
+        if (onPicked) {
+            // Forward-nav picker: Cancel/back pops THIS frame, returning to the
+            // frame that opened the picker — never closes the whole session.
+            goBack?.();
+        } else if (onSelect || onConfirmSelection) {
             if (onClose) onClose();
             else goBack?.();
         } else {
             dismiss?.();
         }
-    }, [onSelect, onConfirmSelection, onClose, goBack, dismiss]);
+    }, [onPicked, onSelect, onConfirmSelection, onClose, goBack, dismiss]);
 
     // The picker's ONE trailing CTA, declared through the Dialog header's
     // `primaryAction` (a proper Bloom Button with loading/disabled) — the
