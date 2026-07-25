@@ -87,7 +87,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@radix-ui/react-slot": "1.2.3",
-    "@oxyhq/bloom": "^0.50.1",
+    "@oxyhq/bloom": "^0.50.2",
     "markdown-it": "12.3.2",
     "lightningcss": "1.30.1"
   },
