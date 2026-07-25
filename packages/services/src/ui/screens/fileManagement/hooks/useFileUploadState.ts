@@ -115,6 +115,7 @@ export const useFileUploadState = ({
     const queryClient = useQueryClient();
     const uploadStartRef = useRef<number | null>(null);
     const postSelectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const endUploadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isActiveRef = useRef(true);
 
     const clearPostSelectTimer = useCallback(() => {
@@ -124,23 +125,34 @@ export const useFileUploadState = ({
         }
     }, []);
 
+    const clearEndUploadTimer = useCallback(() => {
+        if (endUploadTimerRef.current) {
+            clearTimeout(endUploadTimerRef.current);
+            endUploadTimerRef.current = null;
+        }
+    }, []);
+
     useEffect(() => {
         isActiveRef.current = true;
         return () => {
             isActiveRef.current = false;
             clearPostSelectTimer();
+            clearEndUploadTimer();
         };
-    }, [clearPostSelectTimer]);
+    }, [clearPostSelectTimer, clearEndUploadTimer]);
 
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;
         const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
         const remaining = elapsed < MIN_BANNER_MS ? MIN_BANNER_MS - elapsed : 0;
-        setTimeout(() => {
+        clearEndUploadTimer();
+        endUploadTimerRef.current = setTimeout(() => {
+            endUploadTimerRef.current = null;
+            if (!isActiveRef.current) return;
             setUploading(false);
             uploadStartRef.current = null;
         }, remaining);
-    }, []);
+    }, [clearEndUploadTimer]);
 
     const processFileUploads = async (selectedFiles: UploadCandidate[]): Promise<FileMetadata[]> => {
         if (selectedFiles.length === 0) return [];

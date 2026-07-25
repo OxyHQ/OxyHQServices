@@ -118,8 +118,10 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const [isCreating, setIsCreating] = useState(false);
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usernameCheckSeqRef = useRef(0);
 
   useEffect(() => () => {
+    usernameCheckSeqRef.current += 1;
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
@@ -152,9 +154,11 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     setUsernameStatus('checking');
     setUsernameMessage('');
 
+    const seq = ++usernameCheckSeqRef.current;
     debounceTimerRef.current = setTimeout(async () => {
       try {
         const result = await oxyServices.checkUsernameAvailability(value);
+        if (seq !== usernameCheckSeqRef.current) return;
         setUsernameStatus(result.available ? 'available' : 'taken');
         setUsernameMessage(
           result.message
@@ -163,6 +167,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
             : (t('accounts.create.username.taken') || 'Username is taken')),
         );
       } catch {
+        if (seq !== usernameCheckSeqRef.current) return;
         setUsernameStatus('idle');
         setUsernameMessage(t('accounts.create.username.checkFailed') || 'Could not check availability');
       }

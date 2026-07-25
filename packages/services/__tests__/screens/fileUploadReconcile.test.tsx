@@ -391,6 +391,45 @@ describe('useFileUploadState optimistic lifecycle (query cache)', () => {
     jest.useRealTimers();
   });
 
+  it('does not clear the upload banner after unmount when endUpload delay is still pending', async () => {
+    jest.useFakeTimers();
+    const client = makeClient();
+    seedCache(client);
+
+    const mutateAsync = jest.fn(async () => ({
+      file: {
+        id: 'real-55',
+        originalName: 'picked-photo.png',
+        mime: 'image/png',
+        size: 2048,
+        createdAt: '2026-01-02T00:00:00.000Z',
+        metadata: {},
+        variants: [],
+      },
+    }));
+
+    const { result, unmount } = renderHook(() => useFileUploadState(makeParams(mutateAsync)), {
+      wrapper: wrapper(client),
+    });
+
+    await act(async () => {
+      await result.current.handleFileUpload();
+    });
+    await act(async () => {
+      await result.current.handleConfirmUpload();
+    });
+
+    expect(result.current.uploading).toBe(true);
+
+    unmount();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+
+    jest.useRealTimers();
+  });
+
   it('restricts the document picker to images when imagesOnly is true', async () => {
     const client = makeClient();
     seedCache(client);
