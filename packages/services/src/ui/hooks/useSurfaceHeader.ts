@@ -57,21 +57,6 @@ export function useSurfaceHeader(content: SurfaceHeaderContent | null | undefine
     if (!set) return;
     set(content ?? null);
     return () => set(null);
-    // Slot nodes (`left`/`right`) are compared by identity; callers memoize them.
-  }, [
-    set,
-    content?.title,
-    content?.titleContent,
-    content?.subtitle,
-    content?.largeTitle,
-    content?.left,
-    content?.right,
-    content?.onBack,
-    content?.primaryAction,
-    content?.actions,
-    content?.search,
-    content?.segments,
-    content?.tone,
-    content?.progress,
-  ]);
+    // Callers must memoize `content` (especially slot nodes) so the header does not thrash.
+  }, [set, content]);
 }

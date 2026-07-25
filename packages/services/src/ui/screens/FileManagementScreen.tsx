@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -1100,12 +1101,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Skeleton.Box width="100%" height={44} borderRadius={22} />
                 </View>
 
-                {/* Photo grid */}
+                {/* Photo grid — static skeleton placeholders; index keys are stable */}
                 <View style={{ padding: GRID_PADDING, gap: TILE_GAP }}>
                     {Array.from({ length: GRID_ROWS }, (_, row) => (
-                        <Skeleton.Row key={row} style={{ gap: TILE_GAP }}>
+                        // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size skeleton grid, order never changes
+                        <Skeleton.Row key={`skeleton-row-${row}`} style={{ gap: TILE_GAP }}>
                             {Array.from({ length: GRID_COLUMNS }, (_, col) => (
-                                <Skeleton.Box key={col} width={tileSize} height={tileSize} borderRadius={6} />
+                                // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size skeleton grid, order never changes
+                                <Skeleton.Box key={`skeleton-${row}-${col}`} width={tileSize} height={tileSize} borderRadius={6} />
                             ))}
                         </Skeleton.Row>
                     ))}
