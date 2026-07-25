@@ -74,26 +74,22 @@ const hapticSelection = async (): Promise<void> => {
 };
 
 /**
- * The picker renders inside a Bloom `<Dialog>` in NAV-HEADER mode (bottom-sheet on
- * narrow, centered card on `md+`). The Dialog owns the shared gradient nav bar
- * (Cancel / "Choose Photo" / Upload, wired by `FileManagementScreen` through
- * `useSurfaceHeader`) — the picker no longer paints a bar of its own. In this mode
- * the Dialog reserves a fixed nav-bar-height SPACER above the picker's content and
- * its gradient overlay fades a little further into the content; the grid's own
- * top padding just clears that fade so the first row reads cleanly. Two fixed
- * layout constants mirror Bloom internals:
- *  - `DIALOG_NAV_BAR_SPACER` mirrors Bloom's `DIALOG_NAV_BAR_HEIGHT` (not exported
- *    from `@oxyhq/bloom/dialog`) — the spacer the Dialog inserts above header-mode
- *    `scrollable:false` content. The picker's own height is reduced by it so the
- *    spacer + grid together fill the `frameSize` morph target (and never overflow
- *    the panel's `maxHeightRatio: 0.9` cap, which would clip the last row).
- *  - `HEADER_GRADIENT_FADE` is the gradient tail that bleeds past the bar into the
- *    content; the grid's `pt-[24px]` (fade + 4dp breathing room) clears it. The
- *    `GRID_CONTENT_PADDING_TOP` constant MUST stay in sync with that class.
+ * The picker renders inside a Bloom `<Dialog>` in NAV-HEADER mode with
+ * `tone: 'onImage'` (bottom-sheet on narrow, centered card on `md+`). The Dialog
+ * owns the shared gradient nav bar (Cancel / "Choose Photo" / Upload, wired by
+ * `FileManagementScreen` through `useSurfaceHeader`). Because the tone is
+ * `'onImage'`, the Dialog inserts NO nav-bar spacer above this content
+ * (`DialogNavBarSpacer` collapses to nothing), so the black photo grid slides UP
+ * under the floating translucent bar and reads EDGE-TO-EDGE — the Apple/Google
+ * Photos immersive picker. The grid therefore takes the FULL `frameSize` height
+ * and carries no top padding; only the pull-to-refresh spinner is offset so it
+ * lands below the floating bar.
+ *
+ * `FLOATING_NAV_BAR_HEIGHT` mirrors Bloom's `DIALOG_NAV_BAR_HEIGHT` (not exported
+ * from `@oxyhq/bloom/dialog`) — the height of the floating bar the refresh spinner
+ * must clear.
  */
-const DIALOG_NAV_BAR_SPACER = 52;
-const HEADER_GRADIENT_FADE = 20;
-const GRID_CONTENT_PADDING_TOP = HEADER_GRADIENT_FADE + 4; // 24 — matches `pt-[24px]`
+const FLOATING_NAV_BAR_HEIGHT = 52;
 
 /**
  * Props for the dedicated photo picker view. Used by FileManagementScreen
@@ -383,18 +379,15 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
 
     // The picker FILLS its panel: the surface morphs the container UP to an
     // explicit large target (`frameSize.heightRatio: 0.9` in `surfaceRegistry`),
-    // and this root takes that SAME 0.9-of-viewport height MINUS the Dialog's
-    // nav-bar spacer (which the Dialog inserts ABOVE this content in header mode).
-    // spacer + root then exactly fill the morph target and stay within the panel's
-    // `maxHeightRatio: 0.9` cap — without the subtraction the grid's last row would
-    // clip. A `flex: 1` root can't fill (no definite bound propagates through the
-    // sheet's flex chain at rest, where the panel is height:auto), so the fixed
-    // height is required; the FlatList scrolls within it. Keep the 0.9 ratio in
-    // sync with the picker's `frameSize` in `surfaceRegistry.ts`.
-    const panelHeight = useMemo(
-        () => Math.round(windowHeight * 0.9) - DIALOG_NAV_BAR_SPACER,
-        [windowHeight],
-    );
+    // and this root takes that SAME 0.9-of-viewport height. Under `tone:'onImage'`
+    // the Dialog inserts NO nav-bar spacer, so the grid uses the FULL morph target
+    // (no `-52`) and slides up under the floating bar, edge-to-edge, within the
+    // panel's `maxHeightRatio: 0.9` cap. A `flex: 1` root can't fill (no definite
+    // bound propagates through the sheet's flex chain at rest, where the panel is
+    // height:auto), so the fixed height is required; the FlatList scrolls within
+    // it. Keep the 0.9 ratio in sync with the picker's `frameSize` in
+    // `surfaceRegistry.ts`.
+    const panelHeight = useMemo(() => Math.round(windowHeight * 0.9), [windowHeight]);
     const rootStyle = useMemo(() => ({ height: panelHeight }), [panelHeight]);
 
     const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
@@ -410,7 +403,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     const skeletonTileCount = useMemo(() => {
         const rowHeight = cellSize + gutter;
         if (rowHeight <= 0) return columns * SKELETON_MIN_ROWS;
-        const available = Math.max(0, panelHeight - GRID_CONTENT_PADDING_TOP);
+        const available = Math.max(0, panelHeight - FLOATING_NAV_BAR_HEIGHT);
         const rows = Math.max(SKELETON_MIN_ROWS, Math.floor(available / rowHeight));
         return rows * columns;
     }, [cellSize, gutter, columns, panelHeight]);
@@ -531,9 +524,9 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                     clears that fade). */}
                 {isEmpty && loadError ? (
                     /* Terminal load failure — a DISTINCT error surface (not the
-                       empty state), cleared below the nav bar's gradient fade.
-                       Retry re-runs the list query. */
-                    <View className="flex-1 items-center justify-center pt-[24px]">
+                       empty state), centered in the immersive frame. Retry re-runs
+                       the list query. */
+                    <View className="flex-1 items-center justify-center">
                         <FileLibraryError
                             title={t('fileManagement.loadError.title')}
                             description={t('fileManagement.loadError.description')}
@@ -548,13 +541,11 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 ) : isEmpty && loading ? (
                     /* Loading skeleton — the picker's OWN shape: shimmer tiles laid
                        out with the SAME placement-aware geometry the real grid uses
-                       (`computePhotoGridLayout(effectiveWidth)`), cleared below the
-                       nav bar's gradient fade. `flexWrap` breaks rows exactly at
-                       `columns` because the last tile in each row carries no right
-                       margin (a full row + gutters fits the measured width by
-                       construction). */
+                       (`computePhotoGridLayout(effectiveWidth)`), edge-to-edge under
+                       the floating bar. `flexWrap` breaks rows exactly at `columns`
+                       because the last tile in each row carries no right margin (a
+                       full row + gutters fits the measured width by construction). */
                     <View
-                        className="pt-[24px]"
                         style={{ flexDirection: 'row', flexWrap: 'wrap' }}
                         pointerEvents="none"
                         accessibilityElementsHidden
@@ -575,7 +566,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                         ))}
                     </View>
                 ) : isEmpty ? (
-                    <View className="flex-1 items-center justify-center px-space-32 pt-[24px]">
+                    <View className="flex-1 items-center justify-center px-space-32">
                         <View className="opacity-30 mb-space-16">
                             <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />
                         </View>
@@ -616,7 +607,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             keyExtractor={keyExtractor}
                             numColumns={columns}
                             className="flex-1 min-h-0"
-                            contentContainerClassName="pt-[24px] pb-space-24"
+                            contentContainerClassName="pb-space-24"
                             showsVerticalScrollIndicator={false}
                             refreshControl={
                                 <RefreshControl
@@ -624,7 +615,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                                     onRefresh={onRefresh}
                                     tintColor="#FFFFFF"
                                     colors={[primaryColor]}
-                                    progressViewOffset={GRID_CONTENT_PADDING_TOP}
+                                    progressViewOffset={FLOATING_NAV_BAR_HEIGHT}
                                 />
                             }
                             onEndReached={handleEndReached}
