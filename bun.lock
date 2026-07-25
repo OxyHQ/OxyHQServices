@@ -678,7 +678,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "22.12.0",
+      "version": "22.12.1",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "^12.10.3",
@@ -912,7 +912,7 @@
     "react-native-hce@0.3.0": "patches/react-native-hce@0.3.0.patch",
   },
   "overrides": {
-    "@oxyhq/bloom": "^0.50.0",
+    "@oxyhq/bloom": "^0.50.1",
     "@radix-ui/react-slot": "1.2.3",
     "ioredis": "5.11.1",
     "lightningcss": "1.30.1",
@@ -1762,7 +1762,7 @@
 
     "@oxyhq/app-preset": ["@oxyhq/app-preset@workspace:packages/app-preset"],
 
-    "@oxyhq/bloom": ["@oxyhq/bloom@0.50.0", "", { "dependencies": { "@tanstack/react-virtual": "^3.14.3", "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-blur": "*", "expo-font": "*", "expo-haptics": "*", "expo-image": "*", "expo-router": ">=3.0.0", "nativewind": ">=5.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-haptics", "expo-router", "nativewind", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-SHqC/OeTF7rzRmKcSrBIuywaibYaVlvh6WWSadlO1428QoDgBzJBByhpwSZpwimBtgB01o6ZAcR5vzrkpw1Gbg=="],
+    "@oxyhq/bloom": ["@oxyhq/bloom@0.50.1", "", { "dependencies": { "@tanstack/react-virtual": "^3.14.3", "nanoid": "^5.1.5", "react-native-css": "3.0.7", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-blur": "*", "expo-font": "*", "expo-haptics": "*", "expo-image": "*", "expo-router": ">=3.0.0", "nativewind": ">=5.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-haptics", "expo-router", "nativewind", "react-dom", "react-native-svg", "sonner", "sonner-native"] }, "sha512-GeUd8zdRz/gTFvfQgXi8H3CCPH63Xrz8785JhBEkXqYc4QEqMbHUDJ41T/Azv/Qlfrx7X5xkq49fI+UCl1koag=="],
 
     "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 
