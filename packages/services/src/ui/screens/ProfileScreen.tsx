@@ -1,6 +1,7 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
@@ -14,7 +15,6 @@ import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { getAccountDisplayName, logger, normalizeProfileLinks } from '@oxyhq/core';
-import type { User, ProfileLink } from '@oxyhq/core';
 import { extractErrorMessage } from '../utils/errorHandlers';
 
 interface ProfileScreenProps extends BaseScreenProps {
@@ -33,13 +33,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // into), so previewing my profile while switched into an org/project/bot
     // resolves "this is mine" against that account, not the session owner.
     const { oxyServices, user: currentUser } = useOxy();
-    const [profile, setProfile] = useState<User | null>(null);
-    const [reputationTotal, setReputationTotal] = useState<number | null>(null);
-    const [postsCount, setPostsCount] = useState<number | null>(null);
-    const [commentsCount, setCommentsCount] = useState<number | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [links, setLinks] = useState<ProfileLink[]>([]);
 
     // Use the follow hook for real follower data
     const {
@@ -60,86 +53,81 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     const currentUserId = normalizeId(currentUser?.id);
     const targetUserId = normalizeId(userId);
-    const isOwnProfile = currentUserId && targetUserId && currentUserId === targetUserId;
+    const isOwnProfile = !!(currentUserId && targetUserId && currentUserId === targetUserId);
 
-    useEffect(() => {
-        if (!userId) {
-            setError('No user ID provided');
-            setIsLoading(false);
-            return;
+    // Profile + reputation + stats in ONE React Query (no data-fetch effect). The
+    // reputation/stats reads swallow their own failures; only `getUserById` can
+    // reject the query, and for MY OWN profile a failed fetch falls back to the
+    // active-account snapshot instead of erroring. The key includes both ids so a
+    // switch/own-profile change refetches.
+    const profileQuery = useQuery({
+        queryKey: ['profileScreen', targetUserId, currentUserId],
+        enabled: !!userId,
+        retry: false,
+        queryFn: async () => {
+            // Follower/following counts come from the `useFollow` hook; the stats
+            // read is kept for parity (it warms server-side counters) but its
+            // result is not surfaced in this view, so it is not bound.
+            const [profileRes, reputationRes] = await Promise.all([
+                oxyServices.getUserById(userId).catch((err: unknown) => {
+                    if (isOwnProfile) return currentUser;
+                    logger.error(
+                        'Profile loading error',
+                        err instanceof Error ? err : new Error(String(err)),
+                        { component: 'ProfileScreen' },
+                    );
+                    throw err;
+                }),
+                oxyServices.getReputationBalance(userId)
+                    .then((balance): { total: number | undefined } => ({ total: balance.total }))
+                    .catch((): { total: number | undefined } => ({ total: undefined })),
+                oxyServices.getUserStats
+                    ? oxyServices.getUserStats(userId).catch(() => ({ postCount: 0, commentCount: 0 }))
+                    : Promise.resolve({ postCount: 0, commentCount: 0 }),
+            ]);
+            if (!profileRes) {
+                throw new Error('Profile data is not available');
+            }
+            return {
+                profile: profileRes,
+                reputationTotal: typeof reputationRes.total === 'number' ? reputationRes.total : null,
+                links: normalizeProfileLinks(profileRes.linksMetadata, profileRes.links),
+            };
+        },
+    });
+
+    const profile = profileQuery.data?.profile ?? null;
+    const reputationTotal = profileQuery.data?.reputationTotal ?? null;
+    const links = profileQuery.data?.links ?? [];
+    const isLoading = !!userId && profileQuery.isLoading;
+
+    // Friendly, status-aware error copy derived from the query error (no effect).
+    const error = useMemo<string | null>(() => {
+        if (!userId) return 'No user ID provided';
+        if (!profileQuery.isError) return null;
+        const err = profileQuery.error;
+        const errorWithStatus =
+            err && typeof err === 'object' && 'status' in err
+                ? (err as { status?: number; message?: string })
+                : null;
+        const errorMessageText = extractErrorMessage(err, '');
+        if (
+            errorWithStatus?.status === 404 ||
+            errorMessageText.includes('not found') ||
+            errorMessageText.includes('Resource not found')
+        ) {
+            return isOwnProfile
+                ? 'Unable to load your profile from the server. This may be due to a temporary service issue.'
+                : 'This user profile could not be found or may have been removed.';
         }
-
-        setIsLoading(true);
-        setError(null);
-
-        // Load user profile, reputation total, and stats
-        Promise.all([
-            oxyServices.getUserById(userId).catch((err: unknown) => {
-                // If this is the current user and the API call fails, use current user data as fallback
-                const normalizedCurrentId = normalizeId(currentUser?.id);
-                const normalizedTargetId = normalizeId(userId);
-                if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
-                    return currentUser;
-                }
-                throw err;
-            }),
-            oxyServices.getReputationBalance(userId)
-                .then((balance): { total: number | undefined } => ({ total: balance.total }))
-                .catch((): { total: number | undefined } => ({ total: undefined })),
-            oxyServices.getUserStats ?
-                oxyServices.getUserStats(userId).catch(() => {
-                    return { postCount: 0, commentCount: 0 };
-                }) :
-                Promise.resolve({ postCount: 0, commentCount: 0 })
-        ])
-            .then(([profileRes, reputationRes, statsRes]) => {
-                if (!profileRes) {
-                    setError('Profile data is not available');
-                    setIsLoading(false);
-                    return;
-                }
-
-                setProfile(profileRes);
-                setReputationTotal(typeof reputationRes.total === 'number' ? reputationRes.total : null);
-
-                // Normalize profile links via the shared @oxyhq/core helper.
-                setLinks(normalizeProfileLinks(profileRes.linksMetadata, profileRes.links));
-
-                // Follower/following counts are managed by the `useFollow` hook.
-
-                // User stats from API
-                setPostsCount(statsRes?.postCount ?? 0);
-                setCommentsCount(statsRes?.commentCount ?? 0);
-            })
-            .catch((err: unknown) => {
-                logger.error('Profile loading error', err instanceof Error ? err : new Error(String(err)), { component: 'ProfileScreen' });
-                // Provide user-friendly error messages based on the error type
-                let errorMessage = 'Failed to load profile';
-
-                // Type guard for error with status property
-                const errorWithStatus = err && typeof err === 'object' && 'status' in err ? err as { status?: number; message?: string } : null;
-                const errorMessageText = extractErrorMessage(err, '');
-
-                if (errorWithStatus?.status === 404 || errorMessageText.includes('not found') || errorMessageText.includes('Resource not found')) {
-                    const normalizedCurrentId = normalizeId(currentUser?.id);
-                    const normalizedTargetId = normalizeId(userId);
-                    if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
-                        errorMessage = 'Unable to load your profile from the server. This may be due to a temporary service issue.';
-                    } else {
-                        errorMessage = 'This user profile could not be found or may have been removed.';
-                    }
-                } else if (errorWithStatus?.status === 403) {
-                    errorMessage = 'You do not have permission to view this profile.';
-                } else if (errorWithStatus?.status === 500) {
-                    errorMessage = 'Server error occurred while loading the profile. Please try again later.';
-                } else if (errorMessageText) {
-                    errorMessage = errorMessageText;
-                }
-
-                setError(errorMessage);
-            })
-            .finally(() => setIsLoading(false));
-    }, [userId, currentUser?.id, oxyServices]);
+        if (errorWithStatus?.status === 403) {
+            return 'You do not have permission to view this profile.';
+        }
+        if (errorWithStatus?.status === 500) {
+            return 'Server error occurred while loading the profile. Please try again later.';
+        }
+        return errorMessageText || 'Failed to load profile';
+    }, [userId, profileQuery.isError, profileQuery.error, isOwnProfile]);
 
     // Display name: the loaded profile's, else the passed handle. Also the nav-bar
     // title (a stable "Profile" fallback before it resolves), so the banner +

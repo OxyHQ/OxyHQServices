@@ -50,12 +50,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Button } from '@oxyhq/bloom/button';
 import { logger } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useReduceMotion } from '../hooks/useReduceMotion';
-import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { useSurfaceHeader, type SurfaceHeaderContent } from '../hooks/useSurfaceHeader';
 import { toast } from '@oxyhq/bloom';
 import type { BaseScreenProps } from '../types/navigation';
 
@@ -863,27 +862,19 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     }, [baseFit, effectiveUri, naturalSize, dismiss, t]);
 
     /**
-     * The surface's primary action, mounted into the Dialog nav bar's right slot
-     * (which is why it must stay referentially stable). While processing it keeps
-     * its width and shows a spinner; the a11y label carries the "Saving…" state
-     * the visible label can no longer show.
+     * The surface's "Use photo" CTA, declared through the Dialog header's
+     * `primaryAction` (a real Bloom Button with a loading spinner + disabled
+     * state) — the standardized trailing action, no bespoke node. Memoized so the
+     * header does not thrash.
      */
-    const doneAction = useMemo(
-        () => (
-            <Button
-                variant="primary"
-                size="small"
-                onPress={() => void handleConfirm()}
-                disabled={isProcessing || !baseFit}
-                loading={isProcessing}
-                accessibilityLabel={
-                    isProcessing ? t('editProfile.crop.saving') : t('editProfile.crop.confirm')
-                }
-            >
-                {t('editProfile.crop.confirm')}
-            </Button>
-        ),
-        [baseFit, handleConfirm, isProcessing, t],
+    const donePrimaryAction = useMemo<SurfaceHeaderContent['primaryAction']>(
+        () => ({
+            label: t('editProfile.crop.confirm'),
+            onPress: () => void handleConfirm(),
+            disabled: isProcessing || !baseFit,
+            loading: isProcessing,
+        }),
+        [t, handleConfirm, isProcessing, baseFit],
     );
 
     // No bar of our own: the surface owns the chrome. `goBack` pops back to the
@@ -892,7 +883,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     useSurfaceHeader({
         title: t('editProfile.crop.title'),
         largeTitle: false,
-        right: doneAction,
+        primaryAction: donePrimaryAction,
         onBack: goBack,
     });
 
