@@ -178,17 +178,14 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
 
   const isLoading = isSubmitting || isAnyLoading;
 
-  // Populate the store with each member's follow status once on mount and again
-  // only when the SET of target users changes. `fetchAllStatuses` is referentially
-  // stable (its useFollow useCallback deps are [canUsePrivateApi, userIds,
-  // oxyServices]; `userIds` inside useFollow is memoized, and the outer wrapper
-  // memoizes `multiUserIds`), so depending on it plus the stable joined-string
-  // key cannot self-retrigger — `allFollowing`/loading are intentionally NOT in
+  // Populate the store with each member's follow status on mount and whenever
+  // the target set changes. `fetchAllStatuses` is recreated when `userIds`
+  // changes inside `useFollow`, so it is the sole effect dependency — no need
+  // for a joined-string key. `allFollowing`/loading are intentionally NOT in
   // the deps.
-  const userIdsKey = useMemo(() => userIds.join(','), [userIds]);
   useEffect(() => {
     fetchAllStatuses?.();
-  }, [userIdsKey, fetchAllStatuses]);
+  }, [fetchAllStatuses]);
 
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event?.preventDefault) {
