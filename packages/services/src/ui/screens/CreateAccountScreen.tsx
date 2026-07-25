@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
@@ -119,6 +119,12 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+  }, []);
+
   // Debounced username availability check
   const checkUsername = useCallback((value: string) => {
     if (debounceTimerRef.current) {
@@ -222,7 +228,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const title = t('accounts.create.title') || 'Create account';
 
   return (
-    <View className="px-screen-margin pt-space-16 pb-space-32">
+    <View className="gap-space-16 px-screen-margin pt-space-16 pb-space-32">
 
       {/* Account type — canonical grouped selection rows (checkmark on the chosen one) */}
       <SettingsListGroup title={t('accounts.create.typeSection') || 'Account type'}>

@@ -1552,6 +1552,7 @@
       "fileEmpty": "File \"{{name}}\" is empty",
       "fileTooLarge": "\"{{name}}\" is too large. Maximum file size is {{maxSize}}",
       "noValidFiles": "No valid files to upload",
+      "imagesOnlyRequired": "Only image files can be selected",
       "waitForSelection": "Please wait for the current file selection to complete",
       "noFilesSelected": "No files were selected",
       "loadSomeFailed": "Failed to load some files:\n{{errors}}",

@@ -1552,6 +1552,7 @@
       "fileEmpty": "El archivo \"{{name}}\" está vacío",
       "fileTooLarge": "\"{{name}}\" es demasiado grande. El tamaño máximo es {{maxSize}}",
       "noValidFiles": "No hay archivos válidos para subir",
+      "imagesOnlyRequired": "Solo se pueden seleccionar archivos de imagen",
       "waitForSelection": "Espera a que se complete la selección actual",
       "noFilesSelected": "No se seleccionaron archivos",
       "loadSomeFailed": "Error al cargar algunos archivos:\n{{errors}}",

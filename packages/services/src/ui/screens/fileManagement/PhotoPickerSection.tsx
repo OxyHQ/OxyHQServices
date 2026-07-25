@@ -552,6 +552,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                         importantForAccessibility="no-hide-descendants"
                     >
                         {Array.from({ length: skeletonTileCount }, (_, index) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size skeleton grid, order never changes
                             <Skeleton.Box
                                 key={`skeleton-${index}`}
                                 width={cellSize}
