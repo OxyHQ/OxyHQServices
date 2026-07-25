@@ -130,6 +130,7 @@
     }
   },
   "profile": {
+    "title": "Perfil",
     "edit": "Editar perfil",
     "noBio": "Este usuario aún no tiene biografía.",
     "joinedOn": "Se unió el {{date}}",
@@ -947,6 +948,7 @@
     }
   },
   "welcomeNew": {
+    "navTitle": "Bienvenida",
     "welcome": {
       "titleWithName": "Te damos la bienvenida, {{username}} 👋",
       "title": "Te damos la bienvenida 👋",
@@ -1361,6 +1363,7 @@
     "footer": "¿Necesitas más ayuda? Visita nuestro Centro de Ayuda para información adicional."
   },
   "payment": {
+    "title": "Pago",
     "summary": {
       "title": "Resumen del pago",
       "orderSummary": "Resumen del pedido",

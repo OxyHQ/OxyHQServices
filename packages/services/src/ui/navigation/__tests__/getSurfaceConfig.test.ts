@@ -24,9 +24,12 @@ describe('getSurfaceConfig presentation', () => {
         expect(config.presentation).toBe('sheet');
         expect(config.stacks).toBe(false);
         // PhotoPickerView owns its own FlatList → the host must not wrap it in a
-        // ScrollView; and its own translucent bar → no Dialog nav header.
+        // ScrollView. It now renders the SHARED Dialog nav header (Cancel / title /
+        // Upload) like every other screen — its bespoke bar is gone.
         expect(config.scrollable).toBe(false);
-        expect(config.header).toBe(false);
+        expect(config.header).toBe(true);
+        // …and it grows to the large morph target so the grid has room.
+        expect(config.frameSize).toEqual({ heightRatio: 0.9, maxWidth: 640 });
     });
 
     it('morphs the surface for every route, the picker included', () => {
@@ -71,6 +74,17 @@ describe('getSurfaceConfig presentation', () => {
         // bars. Both frames declare their chrome through `useSurfaceHeader`.
         expect(getSurfaceConfig('ChangeAvatar', {}).header).toBe(true);
         expect(getSurfaceConfig('AvatarCrop', {}).header).toBe(true);
+    });
+
+    it('renders the shared nav header on every route — nothing is headerless', () => {
+        // The whole SDK UI is unified on the Dialog nav header. The last four
+        // holdouts (Profile / PaymentGateway / WelcomeNewUser + the image picker)
+        // now declare their chrome through `useSurfaceHeader` like every screen.
+        expect(getSurfaceConfig('Profile', {}).header).toBe(true);
+        expect(getSurfaceConfig('PaymentGateway', {}).header).toBe(true);
+        expect(getSurfaceConfig('WelcomeNewUser', {}).header).toBe(true);
+        expect(getSurfaceConfig('ManageAccount', {}).header).toBe(true);
+        expect(getSurfaceConfig('FileManagement', imageOnlyPickerProps).header).toBe(true);
     });
 
     it('keeps FileManagement on the sheet when it is not an image-only picker', () => {

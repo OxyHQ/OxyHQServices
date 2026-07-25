@@ -21,7 +21,7 @@ import { Pressable } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
 import { queryKeys } from '../hooks/queries/queryKeys';
 import { useUserFilesInfinite, removeFileFromCache, patchFileMetadataInCache } from '../hooks/queries/useFileQueries';
-import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { useSurfaceHeader, type SurfaceHeaderContent } from '../hooks/useSurfaceHeader';
 import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -990,6 +990,51 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         </Pressable>
     ), [handleCancelUpload, colors.text, t]);
 
+    // --- Image-only picker: shared-header chrome -----------------------------
+    // The flagship photo picker now rides the SAME Dialog nav header as every
+    // screen (Cancel / "Choose Photo" / Upload) instead of painting its own bar.
+    // Ownership + upload permission gate the Upload action, mirroring the picker's
+    // empty-state upload button.
+    const isOwner = user?.id === targetUserId;
+    const allowUpload = isOwner && allowUploadInSelectMode;
+
+    // Cancel = the nav bar's back affordance. Legacy callback callers keep their
+    // close/back behaviour; the promise-based avatar picker dismisses its surface.
+    const pickerCancel = useCallback(() => {
+        if (onSelect || onConfirmSelection) {
+            if (onClose) onClose();
+            else goBack?.();
+        } else {
+            dismiss?.();
+        }
+    }, [onSelect, onConfirmSelection, onClose, goBack, dismiss]);
+
+    // The picker's ONE trailing CTA, declared through the Dialog header's
+    // `primaryAction` (a proper Bloom Button with loading/disabled) — the
+    // multi-select confirm ("Done (N)") or, single-select, the Upload action whose
+    // loading state reflects an in-flight device upload. Memoized so the header
+    // does not thrash.
+    const pickerPrimaryAction = useMemo<SurfaceHeaderContent['primaryAction']>(() => {
+        if (multiSelect) {
+            return {
+                label: t('fileManagement.doneWithCount', { count: selectedIds.size }),
+                onPress: confirmMultiSelection,
+                disabled: selectedIds.size === 0,
+            };
+        }
+        if (isOwner && allowUpload) {
+            return {
+                label: t('fileManagement.upload'),
+                onPress: handleFileUpload,
+                loading: uploading || isPickingDocument,
+            };
+        }
+        return undefined;
+    }, [
+        multiSelect, selectedIds.size, confirmMultiSelection, isOwner, allowUpload,
+        t, handleFileUpload, uploading, isPickingDocument,
+    ]);
+
     useSurfaceHeader(
         showUploadPreview
             ? {
@@ -998,16 +1043,26 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 left: fmHeaderBack,
                 largeTitle: false,
             }
-            : {
-                title: selectMode
-                    ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile'))
-                    : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title')),
-                subtitle: selectMode
-                    ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect'))
-                    : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length })),
-                right: fmHeaderRight,
-                largeTitle: false,
-            },
+            : isImageOnlyPicker
+                ? {
+                    // ONE shared header — Cancel (back) / "Choose Photo" / Upload — in
+                    // `onImage` tone so the chrome stays legible over the black grid.
+                    title: t('fileManagement.choosePhoto'),
+                    largeTitle: false,
+                    onBack: pickerCancel,
+                    primaryAction: pickerPrimaryAction,
+                    tone: 'onImage',
+                }
+                : {
+                    title: selectMode
+                        ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile'))
+                        : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title')),
+                    subtitle: selectMode
+                        ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect'))
+                        : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length })),
+                    right: fmHeaderRight,
+                    largeTitle: false,
+                },
     );
 
     if (isLoadingFiles && !isImageOnlyPicker) {
@@ -1067,9 +1122,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const photosOnly = filteredFiles.filter(
             (file) => file.contentType.startsWith('image/'),
         );
-        const isOwner = user?.id === targetUserId;
-        const allowUpload = isOwner && allowUploadInSelectMode;
 
+        // Chrome (Cancel / "Choose Photo" / Upload) lives on the shared Dialog nav
+        // header (see the `useSurfaceHeader` call above); the picker owns only the
+        // full-bleed photo grid as content.
         return (
             <PhotoPickerView
                 photos={photosOnly}
@@ -1080,7 +1136,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 refreshing={isRefreshingFiles}
                 uploading={uploading}
                 isPickingDocument={isPickingDocument}
-                uploadProgress={uploadProgress}
                 hasMore={hasMoreFiles}
                 loadingMore={isFetchingMore}
                 loading={isLoadingFiles}
@@ -1096,17 +1151,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onUpload={handleFileUpload}
                 onRefresh={() => filesQuery.refetch()}
                 onLoadMore={() => filesQuery.fetchNextPage()}
-                onCancel={() => {
-                    if (onSelect || onConfirmSelection) {
-                        // Legacy callback caller: preserve close/back behaviour.
-                        if (onClose) onClose();
-                        else goBack?.();
-                    } else {
-                        // Promise picker (avatar): dismiss just this surface.
-                        dismiss?.();
-                    }
-                }}
-                onConfirm={confirmMultiSelection}
                 t={t}
             />
         );

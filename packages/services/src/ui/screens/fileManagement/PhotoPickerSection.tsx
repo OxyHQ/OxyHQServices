@@ -25,13 +25,10 @@ import FileLibraryError from './FileLibraryError';
  * import. Matches the pattern used by AvatarCropScreen.
  */
 type HapticImpact = 'light' | 'medium' | 'heavy';
-type HapticNotification = 'success' | 'warning' | 'error';
 interface HapticsModule {
     impactAsync: (style: unknown) => Promise<void>;
-    notificationAsync: (type: unknown) => Promise<void>;
     selectionAsync: () => Promise<void>;
     ImpactFeedbackStyle: { Light: unknown; Medium: unknown; Heavy: unknown };
-    NotificationFeedbackType: { Success: unknown; Warning: unknown; Error: unknown };
 }
 
 let hapticsModulePromise: Promise<HapticsModule | null> | null = null;
@@ -76,35 +73,27 @@ const hapticSelection = async (): Promise<void> => {
     }
 };
 
-const hapticNotification = async (type: HapticNotification): Promise<void> => {
-    const h = await getHaptics();
-    if (!h) return;
-    const typeEnum =
-        type === 'error'
-            ? h.NotificationFeedbackType.Error
-            : type === 'warning'
-                ? h.NotificationFeedbackType.Warning
-                : h.NotificationFeedbackType.Success;
-    try {
-        await h.notificationAsync(typeEnum);
-    } catch {
-        // Silent.
-    }
-};
-
 /**
- * The picker renders inside a Bloom `<Dialog>` (bottom-sheet on narrow, centered
- * card on `md+`). The Dialog owns its own chrome: it draws its OWN drag handle
- * in bottom placement (a floating 28dp pill that paints ABOVE this header via a
- * higher z-index) and none in center placement — so the picker's translucent
- * header no longer reserves the handle strip itself. The header is just the 56dp
- * app bar; grid content is pushed down by the app bar + 4dp of breathing room so
- * the first row clears it. These are fixed layout constants — the equivalent
- * `min-h-[56px]` / `pt-[60px]` utility classes in the JSX MUST stay in sync.
+ * The picker renders inside a Bloom `<Dialog>` in NAV-HEADER mode (bottom-sheet on
+ * narrow, centered card on `md+`). The Dialog owns the shared gradient nav bar
+ * (Cancel / "Choose Photo" / Upload, wired by `FileManagementScreen` through
+ * `useSurfaceHeader`) — the picker no longer paints a bar of its own. In this mode
+ * the Dialog reserves a fixed nav-bar-height SPACER above the picker's content and
+ * its gradient overlay fades a little further into the content; the grid's own
+ * top padding just clears that fade so the first row reads cleanly. Two fixed
+ * layout constants mirror Bloom internals:
+ *  - `DIALOG_NAV_BAR_SPACER` mirrors Bloom's `DIALOG_NAV_BAR_HEIGHT` (not exported
+ *    from `@oxyhq/bloom/dialog`) — the spacer the Dialog inserts above header-mode
+ *    `scrollable:false` content. The picker's own height is reduced by it so the
+ *    spacer + grid together fill the `frameSize` morph target (and never overflow
+ *    the panel's `maxHeightRatio: 0.9` cap, which would clip the last row).
+ *  - `HEADER_GRADIENT_FADE` is the gradient tail that bleeds past the bar into the
+ *    content; the grid's `pt-[24px]` (fade + 4dp breathing room) clears it. The
+ *    `GRID_CONTENT_PADDING_TOP` constant MUST stay in sync with that class.
  */
-const APP_BAR_HEIGHT = 56;
-const HEADER_HEIGHT = APP_BAR_HEIGHT; // 56
-const GRID_CONTENT_PADDING_TOP = HEADER_HEIGHT + 4; // 60
+const DIALOG_NAV_BAR_SPACER = 52;
+const HEADER_GRADIENT_FADE = 20;
+const GRID_CONTENT_PADDING_TOP = HEADER_GRADIENT_FADE + 4; // 24 — matches `pt-[24px]`
 
 /**
  * Props for the dedicated photo picker view. Used by FileManagementScreen
@@ -120,7 +109,6 @@ export interface PhotoPickerViewProps {
     refreshing: boolean;
     uploading: boolean;
     isPickingDocument: boolean;
-    uploadProgress: { current: number; total: number } | null;
     hasMore: boolean;
     loadingMore: boolean;
     /**
@@ -143,8 +131,6 @@ export interface PhotoPickerViewProps {
     onUpload: () => void;
     onRefresh: () => void;
     onLoadMore: () => void;
-    onCancel: () => void;
-    onConfirm: () => void;
     t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
@@ -362,7 +348,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     refreshing,
     uploading,
     isPickingDocument,
-    uploadProgress,
     hasMore,
     loadingMore,
     loading,
@@ -377,8 +362,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     onUpload,
     onRefresh,
     onLoadMore,
-    onCancel,
-    onConfirm,
     t,
 }) => {
     // Grid sizing width. We PREFER the measured grid-container width (the
@@ -400,12 +383,18 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
 
     // The picker FILLS its panel: the surface morphs the container UP to an
     // explicit large target (`frameSize.heightRatio: 0.9` in `surfaceRegistry`),
-    // and this root takes that SAME 0.9-of-viewport height so the grid uses the
-    // whole grown card (a `flex: 1` root can't fill — no definite bound propagates
-    // through the sheet's flex chain, and the panel is pinned, not measured). The
-    // FlatList then scrolls within this fixed height. Keep the 0.9 ratio in sync
-    // with the picker's `frameSize` in `surfaceRegistry.ts`.
-    const panelHeight = useMemo(() => Math.round(windowHeight * 0.9), [windowHeight]);
+    // and this root takes that SAME 0.9-of-viewport height MINUS the Dialog's
+    // nav-bar spacer (which the Dialog inserts ABOVE this content in header mode).
+    // spacer + root then exactly fill the morph target and stay within the panel's
+    // `maxHeightRatio: 0.9` cap — without the subtraction the grid's last row would
+    // clip. A `flex: 1` root can't fill (no definite bound propagates through the
+    // sheet's flex chain at rest, where the panel is height:auto), so the fixed
+    // height is required; the FlatList scrolls within it. Keep the 0.9 ratio in
+    // sync with the picker's `frameSize` in `surfaceRegistry.ts`.
+    const panelHeight = useMemo(
+        () => Math.round(windowHeight * 0.9) - DIALOG_NAV_BAR_SPACER,
+        [windowHeight],
+    );
     const rootStyle = useMemo(() => ({ height: panelHeight }), [panelHeight]);
 
     const effectiveWidth = gridWidth > 0 ? gridWidth : windowWidth;
@@ -440,9 +429,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
 
     const hasAnySelection = selectedIds.size > 0;
 
-    // Compact icon-only upload pill on narrow sheets; full pill otherwise.
-    const showUploadLabel = effectiveWidth >= 360;
-
     const isEmpty = photos.length === 0;
     const atSelectionLimit =
         multiSelect && maxSelection != null && selectedIds.size >= maxSelection;
@@ -466,16 +452,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
         },
         [onPreviewPhoto],
     );
-
-    const handleConfirm = useCallback(() => {
-        if (multiSelect) {
-            if (selectedIds.size === 0) return;
-            if (Platform.OS !== 'web') {
-                void hapticNotification('success');
-            }
-        }
-        onConfirm();
-    }, [multiSelect, selectedIds.size, onConfirm]);
 
     // FlatList renderItem: each cell knows its enterIndex (for stagger).
     const renderItem = useCallback(
@@ -537,16 +513,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
         onLoadMore();
     }, [loadingMore, hasMore, onLoadMore]);
 
-    const confirmDisabled = multiSelect && selectedIds.size === 0;
-    const confirmLabel = multiSelect
-        ? t('fileManagement.doneWithCount', { count: selectedIds.size })
-        : t('fileManagement.done');
-
-    // The progress fill width. Guard against zero division.
-    const progressFraction = uploadProgress && uploadProgress.total > 0
-        ? Math.min(1, Math.max(0, uploadProgress.current / uploadProgress.total))
-        : 0;
-
     return (
         // Measured wrapper: `style`-only (no className) so RN-Web fires onLayout.
         // `rootStyle` is placement-aware — a `maxHeight` cap that gives the
@@ -559,12 +525,15 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 root (the CSS flexbox `min-height:auto` trap; a no-op on native,
                 where Yoga already defaults min-height to 0). */}
             <View className="flex-1 min-h-0 bg-black">
-                {/* Photo grid (renders behind the translucent header). */}
+                {/* Photo grid — full-bleed black canvas CONTENT under the shared
+                    Dialog nav bar (the Dialog reserves the bar's height above this
+                    and its gradient fades a little further down; the top padding
+                    clears that fade). */}
                 {isEmpty && loadError ? (
                     /* Terminal load failure — a DISTINCT error surface (not the
-                       empty state), pushed below the translucent header so Cancel
-                       stays reachable. Retry re-runs the list query. */
-                    <View className="flex-1 items-center justify-center pt-[60px]">
+                       empty state), cleared below the nav bar's gradient fade.
+                       Retry re-runs the list query. */
+                    <View className="flex-1 items-center justify-center pt-[24px]">
                         <FileLibraryError
                             title={t('fileManagement.loadError.title')}
                             description={t('fileManagement.loadError.description')}
@@ -579,14 +548,13 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 ) : isEmpty && loading ? (
                     /* Loading skeleton — the picker's OWN shape: shimmer tiles laid
                        out with the SAME placement-aware geometry the real grid uses
-                       (`computePhotoGridLayout(effectiveWidth)`), pushed below the
-                       translucent header by the grid content padding. `flexWrap`
-                       breaks rows exactly at `columns` because the last tile in each
-                       row carries no right margin (a full row + gutters fits the
-                       measured width by construction). The real translucent header
-                       still floats on top, so Cancel stays reachable while loading. */
+                       (`computePhotoGridLayout(effectiveWidth)`), cleared below the
+                       nav bar's gradient fade. `flexWrap` breaks rows exactly at
+                       `columns` because the last tile in each row carries no right
+                       margin (a full row + gutters fits the measured width by
+                       construction). */
                     <View
-                        className="pt-[60px]"
+                        className="pt-[24px]"
                         style={{ flexDirection: 'row', flexWrap: 'wrap' }}
                         pointerEvents="none"
                         accessibilityElementsHidden
@@ -607,7 +575,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                         ))}
                     </View>
                 ) : isEmpty ? (
-                    <View className="flex-1 items-center justify-center px-space-32 pt-[60px]">
+                    <View className="flex-1 items-center justify-center px-space-32 pt-[24px]">
                         <View className="opacity-30 mb-space-16">
                             <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />
                         </View>
@@ -648,7 +616,7 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             keyExtractor={keyExtractor}
                             numColumns={columns}
                             className="flex-1 min-h-0"
-                            contentContainerClassName="pt-[60px] pb-space-24"
+                            contentContainerClassName="pt-[24px] pb-space-24"
                             showsVerticalScrollIndicator={false}
                             refreshControl={
                                 <RefreshControl
@@ -667,97 +635,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                             windowSize={9}
                         />
                 )}
-
-                {/* Translucent black header floating over the grid. The Dialog owns
-                    the drag handle (a floating pill above this bar in bottom
-                    placement, drawn at a higher z-index; none in center), so the
-                    header no longer reserves the 28dp handle strip — it is just the
-                    56dp app bar (`min-h-[56px]`). */}
-                <View className="absolute top-0 left-0 right-0 flex-row items-center justify-between px-space-12 z-30 bg-[#000000EB] min-h-[56px]">
-                    <View className="flex-row items-center justify-between w-full h-14">
-                        <View className="basis-0 grow flex-row items-center justify-start">
-                            <TouchableOpacity
-                                onPress={onCancel}
-                                className="px-1.5 py-space-8 min-h-9 min-w-11 justify-center"
-                                accessibilityRole="button"
-                                accessibilityLabel={t('fileManagement.a11y.cancelPicker')}
-                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                                <Text className="text-white text-[17px] font-medium">
-                                    {t('fileManagement.cancel')}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                        <View pointerEvents="none">
-                            <Text
-                                className="text-white text-[17px] font-semibold text-center"
-                                style={{ letterSpacing: -0.2 }}
-                                numberOfLines={1}
-                            >
-                                {t('fileManagement.choosePhoto')}
-                            </Text>
-                        </View>
-                        <View className="basis-0 grow flex-row items-center justify-end">
-                            {multiSelect ? (
-                                <TouchableOpacity
-                                    onPress={handleConfirm}
-                                    disabled={confirmDisabled}
-                                    className="flex-row items-center gap-1.5 px-3.5 py-space-8 rounded-full min-h-9"
-                                    style={{
-                                        backgroundColor: confirmDisabled
-                                            ? 'rgba(255,255,255,0.18)'
-                                            : primaryColor,
-                                        opacity: confirmDisabled ? 0.6 : 1,
-                                    }}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={t('fileManagement.a11y.confirmSelection')}
-                                    accessibilityState={{ disabled: confirmDisabled }}
-                                >
-                                    <Text className="text-white text-[15px] font-semibold">
-                                        {confirmLabel}
-                                    </Text>
-                                </TouchableOpacity>
-                            ) : (
-                                isOwner && allowUpload && (
-                                    <TouchableOpacity
-                                        onPress={onUpload}
-                                        disabled={uploading || isPickingDocument}
-                                        className={`flex-row items-center gap-1.5 py-space-8 rounded-full min-h-9${showUploadLabel ? ' px-3.5' : ' px-space-8 w-9 justify-center'}`}
-                                        style={{ backgroundColor: primaryColor }}
-                                        accessibilityRole="button"
-                                        accessibilityLabel={t('fileManagement.a11y.uploadFromDevice')}
-                                        accessibilityState={{ busy: uploading || isPickingDocument }}
-                                    >
-                                        {(uploading || isPickingDocument) ? (
-                                            <ActivityIndicator size="small" color="#FFFFFF" />
-                                        ) : (
-                                            <>
-                                                <Ionicons name="cloud-upload" size={16} color="#FFFFFF" />
-                                                {showUploadLabel && (
-                                                    <Text className="text-white text-[15px] font-semibold">
-                                                        {t('fileManagement.upload')}
-                                                    </Text>
-                                                )}
-                                            </>
-                                        )}
-                                    </TouchableOpacity>
-                                )
-                            )}
-                        </View>
-                    </View>
-                    {/* Subtle top progress bar during upload (non-blocking). */}
-                    {uploading && (
-                        <View className="absolute left-0 right-0 bottom-0 h-0.5 bg-[#FFFFFF1F]">
-                            <View
-                                className="h-full"
-                                style={{
-                                    width: `${Math.round(progressFraction * 100)}%`,
-                                    backgroundColor: primaryColor,
-                                }}
-                            />
-                        </View>
-                    )}
-                </View>
             </View>
         </View>
     );

@@ -12,6 +12,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { H4 } from '@oxyhq/bloom/typography';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import QRCode from 'react-native-qrcode-svg';
 
 import PaymentSummaryStep from '../components/payment/PaymentSummaryStep';
@@ -174,6 +175,16 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             goBack();
         }
     }, [onPaymentResult, onClose, goBack]);
+
+    // Shared Dialog nav header: a stable "Payment" title + a back affordance that
+    // steps the wizard back once past the first step (the step components keep
+    // their own bottom Back/Continue CTAs; the header's close dismisses, matching
+    // the pre-existing backdrop-dismiss).
+    useSurfaceHeader({
+        title: t('payment.title'),
+        largeTitle: false,
+        onBack: currentStep > 0 ? prevStep : undefined,
+    });
 
     // Validate amount
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {

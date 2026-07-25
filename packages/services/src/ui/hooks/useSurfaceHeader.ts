@@ -6,14 +6,28 @@ import type { DialogHeaderConfig } from '@oxyhq/bloom/dialog';
  * (translated) title/subtitle and optional slot nodes. Back/close affordances
  * are owned by the surface host (`SurfaceScreen`) — a screen never wires them.
  *
- * A `right` slot is the canonical place for a screen-state action (e.g. a Save
- * button whose disabled/loading state reflects the form). Slot nodes MUST be
- * referentially stable (memoize them with `useMemo`) so the header does not
- * thrash.
+ * Alongside the classic slots (`left`/`right`) a screen can declare the rich
+ * design-system fields Bloom's nav header supports: the single trailing
+ * `primaryAction` CTA (Upload / Save), a trailing icon `actions` row, a header
+ * `search` / `segments` in the large-title zone, an `onImage` `tone` over media,
+ * and a wizard `progress` bar. Object/slot fields MUST be referentially stable
+ * (memoize them with `useMemo`) so the header does not thrash.
  */
 export type SurfaceHeaderContent = Pick<
   DialogHeaderConfig,
-  'title' | 'titleContent' | 'subtitle' | 'largeTitle' | 'left' | 'right' | 'onBack'
+  | 'title'
+  | 'titleContent'
+  | 'subtitle'
+  | 'largeTitle'
+  | 'left'
+  | 'right'
+  | 'onBack'
+  | 'primaryAction'
+  | 'actions'
+  | 'search'
+  | 'segments'
+  | 'tone'
+  | 'progress'
 >;
 
 interface SurfaceHeaderContextValue {
@@ -53,5 +67,11 @@ export function useSurfaceHeader(content: SurfaceHeaderContent | null | undefine
     content?.left,
     content?.right,
     content?.onBack,
+    content?.primaryAction,
+    content?.actions,
+    content?.search,
+    content?.segments,
+    content?.tone,
+    content?.progress,
   ]);
 }

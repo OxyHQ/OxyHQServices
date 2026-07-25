@@ -11,6 +11,7 @@ import FollowButton from '../components/FollowButton';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { getAccountDisplayName, logger, normalizeProfileLinks } from '@oxyhq/core';
 import type { User, ProfileLink } from '@oxyhq/core';
@@ -140,6 +141,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
             .finally(() => setIsLoading(false));
     }, [userId, currentUser?.id, oxyServices]);
 
+    // Display name: the loaded profile's, else the passed handle. Also the nav-bar
+    // title (a stable "Profile" fallback before it resolves), so the banner +
+    // overlapping avatar scroll as content UNDER the shared gradient nav bar.
+    // `onImage` tone keeps the title + close legible over the colored banner.
+    const displayName = profile ? getAccountDisplayName(profile, locale) : username || '';
+    useSurfaceHeader({
+        title: displayName || t('profile.title'),
+        largeTitle: false,
+        tone: 'onImage',
+    });
+
     if (isLoading) {
         return (
             <View className="items-center py-space-40">
@@ -149,34 +161,20 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     }
 
     if (error) {
+        // The shared nav header owns back/close; the error body is just the alert.
         return (
-            <>
-                <View style={styles.errorHeader} className="px-screen-margin py-space-12 border-b border-border">
-                    {goBack && (
-                        <Button
-                            variant="icon"
-                            size="icon"
-                            onPress={goBack}
-                            accessibilityLabel={t('common.back') || 'Back'}
-                            icon={<Ionicons name="arrow-back" size={22} color={bloomTheme.colors.text} />}
-                        />
-                    )}
-                    <H2 style={styles.errorTitle} className="text-text">
-                        {t('profile.errorTitle') || 'Profile Error'}
-                    </H2>
-                </View>
-                <View style={styles.errorContent} className="px-space-32 gap-space-12 py-space-40">
-                    <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
-                    <Text style={styles.errorText} className="text-text">{error}</Text>
-                    <Text style={styles.errorSubtext} className="text-text-secondary">
-                        {t('profile.errorSubtext') || "This could happen if the user doesn't exist or the profile service is unavailable."}
-                    </Text>
-                </View>
-            </>
+            <View style={styles.errorContent} className="px-space-32 gap-space-12 py-space-40">
+                <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
+                <H2 style={styles.errorTitle} className="text-text text-center">
+                    {t('profile.errorTitle') || 'Profile Error'}
+                </H2>
+                <Text style={styles.errorText} className="text-text">{error}</Text>
+                <Text style={styles.errorSubtext} className="text-text-secondary">
+                    {t('profile.errorSubtext') || "This could happen if the user doesn't exist or the profile service is unavailable."}
+                </Text>
+            </View>
         );
     }
-
-    const displayName = profile ? getAccountDisplayName(profile, locale) : username || '';
 
     // The singular `location` field was removed from the User contract; derive
     // the primary place from the `locations` list instead. `locations` is only
@@ -362,7 +360,6 @@ const styles = StyleSheet.create({
     statLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center' },
     statAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
     // Error state layout
-    errorHeader: { flexDirection: 'row', alignItems: 'center', gap: 16 },
     errorTitle: { fontSize: 20 },
     errorContent: { justifyContent: 'center', alignItems: 'center' },
     errorText: { fontSize: 18, fontWeight: '600', textAlign: 'center' },

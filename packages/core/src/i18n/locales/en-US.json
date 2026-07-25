@@ -130,6 +130,7 @@
     }
   },
   "welcomeNew": {
+    "navTitle": "Welcome",
     "welcome": {
       "titleWithName": "Welcome, {{username}} 👋",
       "title": "Welcome 👋",
@@ -200,6 +201,7 @@
     "search": "Search languages"
   },
   "profile": {
+    "title": "Profile",
     "edit": "Edit Profile",
     "noBio": "This user has no bio yet.",
     "joinedOn": "Joined {{date}}",
@@ -1361,6 +1363,7 @@
     "footer": "Need more help? Visit our Help Center for additional information."
   },
   "payment": {
+    "title": "Payment",
     "summary": {
       "title": "Payment Summary",
       "orderSummary": "Order Summary",

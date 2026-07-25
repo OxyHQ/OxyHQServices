@@ -1,55 +1,22 @@
 import type React from 'react';
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Platform, Animated } from 'react-native';
-import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../types/navigation';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
-import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
-import { getAccountDisplayName } from '@oxyhq/core';
+import { getAccountDisplayName, type User } from '@oxyhq/core';
 
 const GAP = 12;
 const INNER_GAP = 8;
-
-// Individual animated progress dot
-const AnimatedProgressDot: React.FC<{
-    isActive: boolean;
-    colors: any;
-    styles: any;
-}> = ({ isActive, colors, styles }) => {
-    const width = useSharedValue(isActive ? 12 : 6);
-    const backgroundColor = useSharedValue(isActive ? colors.primary : colors.border);
-
-    useEffect(() => {
-        width.value = withTiming(isActive ? 12 : 6, { duration: 300 });
-        backgroundColor.value = withTiming(
-            isActive ? colors.primary : colors.border,
-            { duration: 300 }
-        );
-    }, [isActive, colors.primary, colors.border, width, backgroundColor]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        width: width.value,
-        backgroundColor: backgroundColor.value,
-    }));
-
-    return (
-        <AnimatedReanimated.View
-            style={[
-                styles.progressDot,
-                animatedStyle,
-            ]}
-        />
-    );
-};
 
 /**
  * Post-signup welcome & onboarding screen.
@@ -57,7 +24,7 @@ const AnimatedProgressDot: React.FC<{
  * - Lets them immediately set / change their avatar using existing FileManagement picker
  * - Only when the user presses "Continue" do we invoke onAuthenticated to finish flow & close sheet
  */
-const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
+const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: User }> = ({
     onAuthenticated,
     theme,
     newUser,
@@ -76,7 +43,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         border: bloomTheme.colors.border,
         text: bloomTheme.colors.text,
     };
-    const styles = useMemo(() => createStyles(bloomTheme.colors), [bloomTheme.colors]);
+    const styles = useMemo(() => createStyles(), []);
 
     // Animation state
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -194,6 +161,22 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         openChangeAvatarSurface();
     }, [openChangeAvatarSurface, currentStep, avatarStepIndex, animateToStepCallback]);
 
+    // Shared Dialog nav header: a stable "Welcome" title, the wizard `progress`
+    // bar (replacing the old in-content dots), and a back affordance that steps the
+    // wizard back once past the intro (the step CTAs keep their own
+    // Back/Skip/Next/Enter buttons as content; the header's close dismisses,
+    // matching the pre-existing backdrop-dismiss).
+    const progress = useMemo(
+        () => ({ step: currentStep + 1, total: totalSteps }),
+        [currentStep, totalSteps],
+    );
+    useSurfaceHeader({
+        title: t('welcomeNew.navTitle'),
+        largeTitle: false,
+        onBack: currentStep > 0 ? prevStep : undefined,
+        progress,
+    });
+
     const step = steps[currentStep];
     const renderActionButtons = useCallback(() => {
         if (currentStep === totalSteps - 1) {
@@ -260,16 +243,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
     return (
         <View style={styles.container}>
-            <View style={styles.progressContainer}>
-                {steps.map((s, i) => (
-                    <AnimatedProgressDot
-                        key={s.key}
-                        isActive={i === currentStep}
-                        colors={colors}
-                        styles={styles}
-                    />
-                ))}
-            </View>
+            {/* Step progress now lives in the shared Dialog header (`progress`). */}
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
@@ -337,7 +311,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
 };
 
-const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
+const createStyles = () => {
     return StyleSheet.create({
         container: {
             width: '100%',
@@ -399,20 +373,6 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
         },
         avatar: {
             marginBottom: INNER_GAP,
-        },
-        progressContainer: {
-            flexDirection: 'row',
-            width: '100%',
-            justifyContent: 'center',
-            marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
-            marginBottom: 24, // Equal spacing below dots
-        },
-        progressDot: {
-            height: 6,
-            width: 6,
-            borderRadius: 3,
-            marginHorizontal: 3,
-            backgroundColor: colors.border,
         },
     });
 };

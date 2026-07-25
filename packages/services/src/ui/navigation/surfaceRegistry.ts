@@ -181,10 +181,9 @@ export interface SurfaceRouteConfig {
   /**
    * Whether the surface renders the Dialog's OWN navigation header (sticky
    * gradient nav bar + large collapsing title over the surface's scroll content).
-   * `true` for every route screen — screens render NO header of their own and
-   * declare their title/subtitle (+ any action slot) via `useSurfaceHeader`.
-   * `false` for surfaces with their own chrome (the account dialog, the flagship
-   * full-bleed image picker).
+   * `true` for EVERY route — the whole SDK UI is unified on the shared header:
+   * screens render NO header of their own and declare their title/subtitle (+ any
+   * action slot / `onBack`) via `useSurfaceHeader`. No route opts out anymore.
    */
   header: boolean;
   /** Body-pan activation strategy — reserved (owned by Bloom's Dialog surface). */
@@ -205,30 +204,6 @@ const DEFAULT_SURFACE_CONFIG: SurfaceRouteConfig = {
   manualActivation: true,
   dynamicBackdrop: true,
 };
-
-/**
- * Routes that render NO Dialog nav header — they own their chrome:
- * - `PaymentGateway` — the payment surface owns its controls.
- * - `WelcomeNewUser` — a full-bleed onboarding wizard with its own step chrome.
- * - `Profile` — a full profile view, no nav-header chrome.
- * (The flagship full-bleed image picker is handled separately below.)
- *
- * `AccountDialog` used to be here — it now uses the SHARED Dialog nav header like
- * every other screen (its per-view title/subtitle + view-back go through
- * `useSurfaceHeader`), so the account/sign-in surface no longer feels bespoke.
- *
- * `AvatarCrop` used to be here too, for its own translucent Cancel/title/Done
- * bar. It is now reached ONLY by navigating within a `ChangeAvatar` surface, and
- * the Dialog's `header` is fixed for a surface's whole life — a headerless frame
- * inside a header-mode surface would stack two bars. So the crop declares its
- * title + its "Use photo" action through `useSurfaceHeader` like every other
- * screen, and keeps only its dark crop stage.
- */
-const HEADERLESS_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
-  'PaymentGateway',
-  'WelcomeNewUser',
-  'Profile',
-]);
 
 /**
  * Predicate matching `FileManagementScreen`'s internal `isImageOnlyPicker`
@@ -272,11 +247,11 @@ const OWN_SCROLL_CONTAINER_ROUTES: ReadonlySet<RouteName> = new Set<RouteName>([
 
 /**
  * Resolve the surface configuration for a route + props. Every route defaults to
- * the responsive sheet and MORPHS in place when navigated to from within a surface
- * (no route stacks — genuine overlays are Bloom-raw `surfaces.present`/`confirm`
- * calls, outside this registry). The image-only FileManagement picker is a normal
- * sheet that owns its own scroll + translucent bar (no Dialog nav header); every
- * other own-scroller is marked `scrollable: false`.
+ * the responsive sheet, renders the SHARED Dialog nav header, and MORPHS in place
+ * when navigated to from within a surface (no route stacks — genuine overlays are
+ * Bloom-raw `surfaces.present`/`confirm` calls, outside this registry). The
+ * image-only FileManagement picker is a normal sheet that owns its own scroll and
+ * grows to a large morph target; every other own-scroller is `scrollable: false`.
  */
 export const getSurfaceConfig = (
   route: RouteName,
@@ -284,20 +259,17 @@ export const getSurfaceConfig = (
 ): SurfaceRouteConfig => {
   if (route === 'FileManagement' && isFileManagementImageOnlyPicker(props)) {
     // The flagship photo picker MORPHS in place like every other screen. It is an
-    // own-scroller (`PhotoPickerView`'s FlatList) that paints its OWN full-bleed
-    // black canvas + translucent top bar INSIDE the themed panel, so it takes no
-    // Dialog nav header. It needs ROOM for the photo grid, so it declares an
-    // explicit LARGE morph target — the panel grows UP to a near-full-height,
-    // wider card on entry (and back down on pick→crop), the grid scrolling within.
+    // own-scroller (`PhotoPickerView`'s FlatList) that paints its full-bleed black
+    // photo canvas as CONTENT under the SHARED Dialog nav header (Cancel / title /
+    // Upload), exactly like the crop stage under the same bar. It needs ROOM for
+    // the photo grid, so it declares an explicit LARGE morph target — the panel
+    // grows UP to a near-full-height, wider card on entry (and back down on
+    // pick→crop), the grid scrolling within.
     return {
       ...DEFAULT_SURFACE_CONFIG,
       scrollable: false,
-      header: false,
       frameSize: { heightRatio: 0.9, maxWidth: 640 },
     };
-  }
-  if (HEADERLESS_ROUTES.has(route)) {
-    return { ...DEFAULT_SURFACE_CONFIG, header: false };
   }
   if (OWN_SCROLL_CONTAINER_ROUTES.has(route)) {
     // Own-scroller list screens keep the nav header (static, non-collapsing —
