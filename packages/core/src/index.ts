@@ -583,10 +583,13 @@ export {
     OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
     OXY_SILENT_OAUTH_ATTEMPTED_KEY,
     OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
+    OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
     normalizeOAuthRedirectUri,
     persistOAuthHandshake,
     readOAuthHandshake,
     clearOAuthHandshake,
+    persistOAuthReturnPath,
+    consumeOAuthReturnPath,
 } from './utils/oauthPkce';
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 

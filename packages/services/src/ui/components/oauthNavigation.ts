@@ -9,7 +9,7 @@
  */
 
 import { Linking } from 'react-native';
-import { logger } from '@oxyhq/core';
+import { logger, persistOAuthReturnPath } from '@oxyhq/core';
 
 /** Minimal shape of the optional `expo-web-browser` auth-session result. */
 interface WebBrowserAuthResult {
@@ -37,9 +37,19 @@ export interface OpenAuthorizeResult {
  * Web: hand the TOP-LEVEL document to the OAuth authorize URL (a full-page
  * redirect, not a popup) so the RP returns to its registered `redirect_uri`.
  * No-op where `location` is unavailable (SSR / non-browser hosts).
+ *
+ * Records the current page first. `redirect_uri` is a registered apex origin
+ * (see `normalizeOAuthRedirectUri`), so the IdP always returns the tab to `/`,
+ * and the return handlers restore this path. Doing it here rather than at each
+ * call site is deliberate: every web authorize redirect — silent restore,
+ * interactive sign-in, the passkey hub — funnels through this function, so a
+ * new flow cannot forget to preserve the page the visitor came from.
  */
 export function redirectToAuthorize(url: string): void {
-    (globalThis as { location?: Location }).location?.assign(url);
+    const location = (globalThis as { location?: Location }).location;
+    if (!location) return;
+    persistOAuthReturnPath(`${location.pathname}${location.search}${location.hash}`);
+    location.assign(url);
 }
 
 /**

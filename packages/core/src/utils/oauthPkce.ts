@@ -209,14 +209,88 @@ export const OXY_SILENT_OAUTH_ATTEMPTED_KEY = 'oxy.silent_oauth_attempted';
 export const OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY = 'oxy.cross_origin_restore_attempted';
 
 /**
+ * `sessionStorage` key for the in-app path to return to after an authorize
+ * round trip. See {@link persistOAuthReturnPath}.
+ */
+export const OXY_OAUTH_RETURN_PATH_STORAGE_KEY = 'oxy.oauth_return_path';
+
+/**
  * Normalize a redirect URI to its origin. Official Oxy apps register apex
  * origins (`https://inbox.oxy.so`) — never path-qualified URLs.
+ *
+ * This is why the path cannot ride along in `redirect_uri`, and why
+ * {@link persistOAuthReturnPath} exists: the authorize round trip always lands
+ * back on the bare origin, so the page the user was on has to be carried
+ * out-of-band and restored on return.
  */
 export function normalizeOAuthRedirectUri(input: string): string {
   try {
     return new URL(input).origin;
   } catch {
     return input;
+  }
+}
+
+/**
+ * Is this a safe same-origin path to restore into the address bar?
+ *
+ * Only site-relative paths are accepted. `//evil.com` and `/\evil.com` are
+ * rejected because browsers resolve both as protocol-relative *absolute* URLs —
+ * without this check, anything able to write one key of `sessionStorage` could
+ * turn the post-authorize restore into an open redirect.
+ */
+function isSafeReturnPath(value: string): boolean {
+  if (!value.startsWith('/')) return false;
+  if (value.startsWith('//') || value.startsWith('/\\')) return false;
+  if (value.length > 2048) return false;
+  return true;
+}
+
+/**
+ * Remember the page the user was on before a full-page authorize redirect.
+ *
+ * Silent cross-origin restore navigates the whole tab to the IdP and back, and
+ * `redirect_uri` must be a registered apex origin, so the browser returns to
+ * `/` no matter which page the visit started on. Without this, every deep link
+ * — a shared URL, a search result, an ad landing page — silently became the
+ * home page for signed-out visitors on their first navigation in a tab.
+ *
+ * Stored next to the PKCE handshake it belongs to, and cleared by
+ * {@link clearOAuthHandshake} so a stale entry can never be applied to an
+ * unrelated later navigation.
+ */
+export function persistOAuthReturnPath(path: string): void {
+  const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  if (!store || !isSafeReturnPath(path)) return;
+  try {
+    store.setItem(OXY_OAUTH_RETURN_PATH_STORAGE_KEY, path);
+  } catch (error) {
+    // Non-fatal: the round trip still completes, it just lands on the origin.
+    logger.warn(
+      'Could not persist OAuth return path to sessionStorage',
+      { component: 'oauthPkce' },
+      error,
+    );
+  }
+}
+
+/**
+ * Read and remove the persisted return path, or `null` when there is none or
+ * it failed validation.
+ *
+ * Single-use by design: it is consumed on the first return so a leftover value
+ * cannot redirect a later navigation in the same tab.
+ */
+export function consumeOAuthReturnPath(): string | null {
+  const store = (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  if (!store) return null;
+  try {
+    const value = store.getItem(OXY_OAUTH_RETURN_PATH_STORAGE_KEY);
+    store.removeItem(OXY_OAUTH_RETURN_PATH_STORAGE_KEY);
+    if (!value || !isSafeReturnPath(value)) return null;
+    return value;
+  } catch {
+    return null;
   }
 }
 
@@ -254,6 +328,9 @@ export function clearOAuthHandshake(): void {
   try {
     store?.removeItem(OXY_OAUTH_STATE_STORAGE_KEY);
     store?.removeItem(OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY);
+    // The return path belongs to this handshake. Leaving it behind would let a
+    // later, unrelated navigation in the same tab be redirected by it.
+    store?.removeItem(OXY_OAUTH_RETURN_PATH_STORAGE_KEY);
   } catch {
     // Best-effort cleanup only.
   }

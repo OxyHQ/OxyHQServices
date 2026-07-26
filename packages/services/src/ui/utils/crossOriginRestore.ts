@@ -9,6 +9,7 @@ import {
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   persistOAuthHandshake,
+  consumeOAuthReturnPath,
   normalizeOAuthRedirectUri,
   logger,
 } from '@oxyhq/core';
@@ -157,7 +158,15 @@ export function consumeSilentOAuthError(): 'login_required' | 'consent_required'
     url.searchParams.delete('error');
     url.searchParams.delete('error_description');
     url.searchParams.delete('state');
-    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    // Silent restore failed, but the visitor still asked for a specific page.
+    // Put them back on it rather than leaving them on the bare origin the IdP
+    // redirected to.
+    const returnPath = consumeOAuthReturnPath();
+    history.replaceState(
+      history.state,
+      '',
+      returnPath ?? `${url.pathname}${url.search}${url.hash}`,
+    );
   }
   return error;
 }

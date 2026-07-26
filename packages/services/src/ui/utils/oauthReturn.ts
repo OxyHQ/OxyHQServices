@@ -1,6 +1,7 @@
 import type { OxyServices } from '@oxyhq/core';
 import {
   clearOAuthHandshake,
+  consumeOAuthReturnPath,
   logger,
   normalizeOAuthRedirectUri,
   readOAuthHandshake,
@@ -100,7 +101,15 @@ function stripOAuthParamsFromUrl(): void {
   url.searchParams.delete('error');
   url.searchParams.delete('error_description');
   url.searchParams.delete('hub_sync');
-  history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  // The authorize round trip lands on the registered apex origin, so restore
+  // the page the visit started on. Applies to the success path too: signing in
+  // from a deep link should return you to that link, not to the home page.
+  const returnPath = consumeOAuthReturnPath();
+  history.replaceState(
+    history.state,
+    '',
+    returnPath ?? `${url.pathname}${url.search}${url.hash}`,
+  );
 }
 
 /**

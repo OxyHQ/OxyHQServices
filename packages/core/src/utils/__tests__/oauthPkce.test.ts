@@ -6,6 +6,10 @@ import {
   generateOAuthState,
   generatePkcePair,
   OXY_AUTHORIZE_URL,
+  OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
+  clearOAuthHandshake,
+  consumeOAuthReturnPath,
+  persistOAuthReturnPath,
 } from '../oauthPkce';
 
 /** RFC 7636 unreserved subset produced by base64url (no `+`, `/`, `=`). */
@@ -150,5 +154,68 @@ describe('buildOAuthAuthorizeUrl', () => {
     expect(url).not.toContain('redirect_uri=https://merchant.co');
     // Round-trips back to the exact original when parsed.
     expect(new URL(url).searchParams.get('redirect_uri')).toBe(redirectUri);
+  });
+});
+
+describe('OAuth return path', () => {
+  /** Minimal sessionStorage stand-in — jsdom is not assumed by this suite. */
+  function installSessionStorage(): Map<string, string> {
+    const map = new Map<string, string>();
+    (globalThis as { sessionStorage?: Storage }).sessionStorage = {
+      getItem: (k: string) => (map.has(k) ? (map.get(k) as string) : null),
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+      clear: () => map.clear(),
+      key: (i: number) => [...map.keys()][i] ?? null,
+      get length() {
+        return map.size;
+      },
+    } as unknown as Storage;
+    return map;
+  }
+
+  afterEach(() => {
+    delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
+  });
+
+  it('round-trips a deep path through persist/consume', () => {
+    installSessionStorage();
+    persistOAuthReturnPath('/company/team?tab=eng#lead');
+    expect(consumeOAuthReturnPath()).toBe('/company/team?tab=eng#lead');
+  });
+
+  it('is single-use, so a stale value cannot redirect a later navigation', () => {
+    installSessionStorage();
+    persistOAuthReturnPath('/pricing');
+    expect(consumeOAuthReturnPath()).toBe('/pricing');
+    expect(consumeOAuthReturnPath()).toBeNull();
+  });
+
+  it('rejects protocol-relative and absolute values (open-redirect guard)', () => {
+    const store = installSessionStorage();
+    for (const hostile of ['//evil.com', '/\\evil.com', 'https://evil.com/x', 'evil.com']) {
+      persistOAuthReturnPath(hostile);
+      expect(store.get(OXY_OAUTH_RETURN_PATH_STORAGE_KEY)).toBeUndefined();
+    }
+  });
+
+  it('rejects a hostile value written directly into storage', () => {
+    const store = installSessionStorage();
+    store.set(OXY_OAUTH_RETURN_PATH_STORAGE_KEY, '//evil.com');
+    expect(consumeOAuthReturnPath()).toBeNull();
+    // Consumed even when rejected, so it cannot be retried.
+    expect(store.get(OXY_OAUTH_RETURN_PATH_STORAGE_KEY)).toBeUndefined();
+  });
+
+  it('is cleared with the handshake it belongs to', () => {
+    const store = installSessionStorage();
+    persistOAuthReturnPath('/newsroom');
+    clearOAuthHandshake();
+    expect(store.get(OXY_OAUTH_RETURN_PATH_STORAGE_KEY)).toBeUndefined();
+  });
+
+  it('no-ops without sessionStorage instead of throwing', () => {
+    expect(() => persistOAuthReturnPath('/pricing')).not.toThrow();
+    expect(consumeOAuthReturnPath()).toBeNull();
   });
 });
