@@ -128,6 +128,7 @@ describe('pre-session public endpoints use skipAuth', () => {
     makeRequest.mockResolvedValueOnce({
       sessionId: 's1',
       deviceId: 'd1',
+      deviceSecret: 'ds_secret',
       accessToken: 'tok',
       user: { id: 'u1' },
     });
@@ -148,5 +149,22 @@ describe('pre-session public endpoints use skipAuth', () => {
       },
       expect.objectContaining({ skipAuth: true }),
     );
+  });
+
+  it('exchangeOAuthCode rejects a response without deviceSecret', async () => {
+    makeRequest.mockResolvedValueOnce({
+      sessionId: 's1',
+      deviceId: 'd1',
+      accessToken: 'tok',
+      user: { id: 'u1' },
+    });
+    await expect(
+      oxy.exchangeOAuthCode({
+        code: 'code-1',
+        clientId: 'oxy_dk_test',
+        redirectUri: 'https://app.example/callback',
+        codeVerifier: 'verifier',
+      }),
+    ).rejects.toThrow(/incomplete session payload/i);
   });
 });

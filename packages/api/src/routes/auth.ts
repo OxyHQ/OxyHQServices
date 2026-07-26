@@ -22,7 +22,7 @@ import { isTrustedApplication } from '../utils/trustedApplication';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
-import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/error';
+import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, InternalServerError } from '../utils/error';
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
@@ -2156,6 +2156,14 @@ router.post(
       session: { sessionId: session.sessionId, deviceId: session.deviceId },
       userId,
     });
+    if (!deviceExtras.deviceSecret) {
+      logger.error('[OAuth] Token exchange succeeded but deviceSecret mint failed', {
+        userId,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+      });
+      throw new InternalServerError('Failed to finalize device session');
+    }
 
     app.lastUsedAt = new Date();
     await app.save();
@@ -2168,7 +2176,7 @@ router.post(
       expires_in: 15 * 60,
       session_id: session.sessionId,
       deviceId: session.deviceId,
-      ...(deviceExtras.deviceSecret ? { deviceSecret: deviceExtras.deviceSecret } : {}),
+      deviceSecret: deviceExtras.deviceSecret,
       user: userData,
     });
   })

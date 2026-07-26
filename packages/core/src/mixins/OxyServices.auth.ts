@@ -1270,7 +1270,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         const deviceId = (record.deviceId ?? record.device_id) as string | undefined;
         const deviceSecret = (record.deviceSecret ?? record.device_secret) as string | undefined;
         const userRaw = record.user;
-        if (!sessionId || !deviceId || !userRaw || typeof userRaw !== 'object') {
+        if (!sessionId || !deviceId || !deviceSecret || !userRaw || typeof userRaw !== 'object') {
           throw new Error('auth/oauth/token returned an incomplete session payload');
         }
         const userObj = userRaw as Record<string, unknown>;
