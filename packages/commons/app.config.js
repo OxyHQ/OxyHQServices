@@ -4,9 +4,9 @@ const { oxySplashScreenPlugin } = require('@oxyhq/expo-splash/config');
 // SAME device by giving it a distinct applicationId/bundleId + name.
 // Build the dev variant with `APP_VARIANT=development` (e.g.
 // `APP_VARIANT=development npx expo run:android`); production is the default.
-// The URL scheme is intentionally shared, so the NFC/deep-link plumbing
-// (`plugins/with-hce.js`, the `oxycommons://` payloads in @oxyhq/core) keeps
-// working unchanged — Android just shows an app chooser when both are installed.
+// The URL scheme is intentionally shared, so the deep-link plumbing (the
+// `oxycommons://` payloads minted in @oxyhq/core) keeps working unchanged —
+// Android just shows an app chooser when both are installed.
 const IS_DEV_VARIANT = process.env.APP_VARIANT === 'development';
 const APP_ID = IS_DEV_VARIANT ? 'so.oxy.commons.dev' : 'so.oxy.commons';
 const APP_NAME = IS_DEV_VARIANT ? 'Commons (Dev)' : 'Commons by Oxy';
@@ -89,13 +89,6 @@ module.exports = {
           cameraPermission: 'Allow $(PRODUCT_NAME) to scan sign-in QR codes.',
         },
       ],
-      [
-        'react-native-nfc-manager',
-        {
-          nfcPermission: 'Allow $(PRODUCT_NAME) to read attestation cards from nearby phones.',
-        },
-      ],
-      './plugins/with-hce',
       // Android sharedUserId 'so.oxy.shared' — Commons is the identity vault; it
       // must be in the same shared-keychain UID as the other Oxy apps so
       // "Sign in with Oxy" shares the session across apps (requires all Oxy apps
