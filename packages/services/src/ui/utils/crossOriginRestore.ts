@@ -8,6 +8,7 @@ import {
   isOfficialWebOrigin,
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
+  clearOAuthHandshake,
   persistOAuthHandshake,
   normalizeOAuthRedirectUri,
   logger,
@@ -163,5 +164,6 @@ export function consumeSilentOAuthError(): 'login_required' | 'consent_required'
     // redirected to.
     replaceUrlAfterOAuthReturn(`${url.pathname}${url.search}${url.hash}`);
   }
+  clearOAuthHandshake();
   return error;
 }

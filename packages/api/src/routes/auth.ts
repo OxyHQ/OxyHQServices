@@ -1471,7 +1471,7 @@ router.post(
 //   4. UI redirects the browser to `redirectUri?code=<code>&state=<state>`.
 //   5. The third-party app's backend (or a public client with the matching
 //      PKCE `code_verifier`) POSTs `/auth/oauth/token` to exchange the code
-//      for `{ accessToken, refreshToken, sessionId, user }`.
+//      for `{ access_token, deviceId, deviceSecret, session_id, user }`.
 //
 // Access tokens never appear in the URL bar.
 
@@ -2027,9 +2027,9 @@ router.delete(
  *     summary: Exchange an OAuth2 authorization code for tokens
  *     description: >
  *       Single-use exchange of an authorization code (from
- *       `POST /auth/oauth/authorize`) for a bearer access token, refresh
- *       token, and session ID. Either `clientSecret` (confidential clients)
- *       or `codeVerifier` (public clients with PKCE) is required.
+ *       `POST /auth/oauth/authorize`) for a bearer access token, rotating
+ *       device credentials, and session ID. Either `clientSecret` (confidential
+ *       clients) or `codeVerifier` (public clients with PKCE) is required.
  *
  *       Replaying an already-used code, sending a code past its 60-second
  *       TTL, or mismatching the `redirectUri` returns 401 with no detail
@@ -2164,7 +2164,6 @@ router.post(
 
     sendSuccess(res, {
       access_token: session.accessToken,
-      refresh_token: session.refreshToken,
       token_type: 'Bearer',
       expires_in: 15 * 60,
       session_id: session.sessionId,

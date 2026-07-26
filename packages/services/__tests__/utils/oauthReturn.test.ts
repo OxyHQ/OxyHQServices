@@ -17,6 +17,7 @@ describe('tryCompleteOAuthReturn', () => {
   });
 
   test('strips OAuth error params from the URL without exchanging', async () => {
+    persistOAuthHandshake('state-abc', 'verifier-abc');
     const replaceState = jest
       .spyOn(window.history, 'replaceState')
       .mockImplementation(() => undefined);
@@ -34,6 +35,7 @@ describe('tryCompleteOAuthReturn', () => {
     const cleanedUrl = String(replaceState.mock.calls[0]?.[2] ?? '');
     expect(cleanedUrl).not.toContain('error=');
     expect(cleanedUrl).not.toContain('state=');
+    expect(window.sessionStorage.getItem('oxy_oauth_state')).toBeNull();
     replaceState.mockRestore();
   });
 });
@@ -46,6 +48,7 @@ describe('consumeSilentOAuthError', () => {
 
   test('returns the visitor to the page they started on after silent restore fails', () => {
     persistOAuthReturnPath('/pricing');
+    persistOAuthHandshake('state-abc', 'verifier-abc');
 
     const replaceState = jest
       .spyOn(window.history, 'replaceState')
@@ -53,6 +56,7 @@ describe('consumeSilentOAuthError', () => {
 
     expect(consumeSilentOAuthError()).toBe('login_required');
     expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/pricing');
+    expect(window.sessionStorage.getItem('oxy_oauth_state')).toBeNull();
     replaceState.mockRestore();
   });
 });
@@ -74,6 +78,19 @@ describe('consumeHubSyncFailure', () => {
     const cleanedUrl = String(replaceState.mock.calls[0]?.[2] ?? '');
     expect(cleanedUrl).not.toContain('hub_sync=');
     replaceState.mockRestore();
+  });
+
+  test('dispatches popstate when hub sync failure lands on a different path', () => {
+    persistOAuthReturnPath('/pricing');
+    window.history.replaceState(null, '', '/?hub_sync=failed');
+    const seen: string[] = [];
+    const onPopState = () => seen.push('popstate');
+    window.addEventListener('popstate', onPopState);
+
+    consumeHubSyncFailure();
+
+    expect(seen).toEqual(['popstate']);
+    window.removeEventListener('popstate', onPopState);
   });
 
   test('returns false when hub_sync param is absent', () => {

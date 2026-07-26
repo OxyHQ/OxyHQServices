@@ -37,6 +37,7 @@ export async function tryCompleteOAuthReturn(opts: {
   const oauthError = params.get('error');
   if (oauthError) {
     stripOAuthParamsFromUrl();
+    clearOAuthHandshake();
     return false;
   }
   if (!code) return false;
@@ -45,6 +46,7 @@ export async function tryCompleteOAuthReturn(opts: {
   if (!clientId) {
     logger.warn('OAuth return ignored: missing clientId', { component: 'oauthReturn' });
     stripOAuthParamsFromUrl();
+    clearOAuthHandshake();
     return false;
   }
 
@@ -157,8 +159,7 @@ function stripOAuthParamsFromUrl(): void {
  */
 export function consumeHubSyncFailure(): boolean {
   if (!isWebBrowser()) return false;
-  const location = (globalThis as { location?: Location; history?: History }).location;
-  const history = (globalThis as { history?: History }).history;
+  const location = (globalThis as { location?: Location }).location;
   if (!location) return false;
 
   const params = new URLSearchParams(location.search);
@@ -168,10 +169,8 @@ export function consumeHubSyncFailure(): boolean {
     component: 'hubSync',
   });
 
-  if (history?.replaceState) {
-    const url = new URL(location.href);
-    url.searchParams.delete('hub_sync');
-    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
-  }
+  const url = new URL(location.href);
+  url.searchParams.delete('hub_sync');
+  replaceUrlAfterOAuthReturn(`${url.pathname}${url.search}${url.hash}`);
   return true;
 }
