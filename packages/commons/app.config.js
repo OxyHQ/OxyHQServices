@@ -15,7 +15,7 @@ module.exports = {
   expo: {
     name: APP_NAME,
     slug: 'commons',
-    version: '1.0.0',
+    version: '1.1.0',
     orientation: 'portrait',
     icon: './assets/images/icon.png',
     scheme: ['commons', 'oxycommons'],
@@ -28,6 +28,7 @@ module.exports = {
         backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
+      versionCode: 2,
       predictiveBackGestureEnabled: true,
       softwareKeyboardLayoutMode: 'resize',
       permissions: [
