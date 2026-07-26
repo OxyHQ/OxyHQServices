@@ -41,6 +41,34 @@ export type { VerifyOptions } from './chain/verify';
 export { verifyAndAppend } from './chain/engine';
 
 // ---------------------------------------------------------------------------
+// Transparency — Merkle commitment over chain heads + co-signable checkpoints
+// ---------------------------------------------------------------------------
+export {
+  EMPTY_TRANSPARENCY_ROOT,
+  transparencyLeafHash,
+  buildTransparencyTree,
+  buildTransparencyTreeFromHeads,
+  inclusionProof,
+  verifyInclusionProof,
+} from './transparency/tree';
+export type {
+  TransparencyHeadEntry,
+  TransparencyTree,
+  TransparencyTreeFromHeads,
+  InclusionProofCheck,
+} from './transparency/tree';
+export {
+  checkpointSigningInput,
+  checkpointHash,
+  signCheckpoint,
+  verifyCheckpointSignature,
+} from './transparency/checkpoint';
+export type {
+  TransparencyCheckpointFields,
+  TransparencyCheckpointSignature,
+} from './transparency/checkpoint';
+
+// ---------------------------------------------------------------------------
 // Identity — injected verification-method resolution + authorization rule
 // ---------------------------------------------------------------------------
 export { isAuthorizedKey } from './identity/resolver';
