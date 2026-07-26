@@ -1,5 +1,9 @@
 import { describe, expect, test, jest, beforeEach } from '@jest/globals';
-import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../../src/ui/utils/oauthReturn';
+import {
+  tryCompleteOAuthReturn,
+  consumeHubSyncFailure,
+  replaceUrlAfterOAuthReturn,
+} from '../../src/ui/utils/oauthReturn';
 import { consumeSilentOAuthError } from '../../src/ui/utils/crossOriginRestore';
 import {
   OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
@@ -170,5 +174,41 @@ describe('deep-link preservation across the authorize round trip', () => {
     expect(commitSession).toHaveBeenCalled();
     expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/newsroom');
     replaceState.mockRestore();
+  });
+});
+
+/**
+ * `history.replaceState` fires no event. Cold boot runs inside the mounted app,
+ * so the router has already rendered the route for the URL the IdP landed on —
+ * without a `popstate` the address bar shows the deep link while the page still
+ * shows the home page.
+ */
+describe('router notification after restoring the URL', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('dispatches popstate so a history router re-reads location', () => {
+    persistOAuthReturnPath('/newsroom');
+    const seen: string[] = [];
+    const onPopState = () => seen.push('popstate');
+    window.addEventListener('popstate', onPopState);
+
+    replaceUrlAfterOAuthReturn('/');
+
+    expect(seen).toEqual(['popstate']);
+    window.removeEventListener('popstate', onPopState);
+  });
+
+  test('stays silent when the URL did not actually change', () => {
+    const seen: string[] = [];
+    const onPopState = () => seen.push('popstate');
+    window.addEventListener('popstate', onPopState);
+
+    replaceUrlAfterOAuthReturn('/');
+
+    expect(seen).toEqual([]);
+    window.removeEventListener('popstate', onPopState);
   });
 });

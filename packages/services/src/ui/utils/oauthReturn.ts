@@ -94,6 +94,49 @@ export async function tryCompleteOAuthReturn(opts: {
   }
 }
 
+/**
+ * Rewrite the address bar after an authorize round trip, and tell the router.
+ *
+ * Prefers the page the visit started on (see `persistOAuthReturnPath`) over the
+ * bare origin the IdP redirected to, falling back to `fallbackUrl` when nothing
+ * was recorded.
+ *
+ * The `popstate` dispatch is the load-bearing part. `history.replaceState`
+ * fires no event, and cold boot runs *inside* the mounted app — by the time
+ * this executes, a history-based router (React Router, Vue Router, …) has
+ * already read `location` and rendered the route for `/`. Without a
+ * notification the address bar would show the restored deep link while the page
+ * still displayed the home page. `popstate` is the event the History API
+ * defines for exactly this, and it is what those routers subscribe to.
+ *
+ * Only dispatched when the URL actually changed, so the common no-op case does
+ * not push a spurious event at every listener on the page.
+ */
+export function replaceUrlAfterOAuthReturn(fallbackUrl: string): void {
+  const location = (globalThis as { location?: Location }).location;
+  const history = (globalThis as { history?: History }).history;
+  if (!location || !history?.replaceState) return;
+
+  const current = `${location.pathname}${location.search}${location.hash}`;
+  const target = consumeOAuthReturnPath() ?? fallbackUrl;
+  history.replaceState(history.state, '', target);
+  if (target === current) return;
+
+  const dispatch = (globalThis as { dispatchEvent?: (event: Event) => boolean }).dispatchEvent;
+  if (typeof dispatch !== 'function') return;
+  try {
+    // `PopStateEvent` is web-only; plain `Event` is a good enough carrier for
+    // any host that lacks it (routers read `location`, not `event.state`).
+    const event =
+      typeof PopStateEvent === 'function'
+        ? new PopStateEvent('popstate', { state: history.state })
+        : new Event('popstate');
+    dispatch.call(globalThis, event);
+  } catch (error) {
+    logger.warn('Could not notify router of restored URL', { component: 'oauthReturn' }, error);
+  }
+}
+
 function stripOAuthParamsFromUrl(): void {
   const location = (globalThis as { location?: Location; history?: History }).location;
   const history = (globalThis as { history?: History }).history;
@@ -104,15 +147,7 @@ function stripOAuthParamsFromUrl(): void {
   url.searchParams.delete('error');
   url.searchParams.delete('error_description');
   url.searchParams.delete('hub_sync');
-  // The authorize round trip lands on the registered apex origin, so restore
-  // the page the visit started on. Applies to the success path too: signing in
-  // from a deep link should return you to that link, not to the home page.
-  const returnPath = consumeOAuthReturnPath();
-  history.replaceState(
-    history.state,
-    '',
-    returnPath ?? `${url.pathname}${url.search}${url.hash}`,
-  );
+  replaceUrlAfterOAuthReturn(`${url.pathname}${url.search}${url.hash}`);
 }
 
 /**

@@ -9,11 +9,11 @@ import {
   OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   persistOAuthHandshake,
-  consumeOAuthReturnPath,
   normalizeOAuthRedirectUri,
   logger,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
+import { replaceUrlAfterOAuthReturn } from './oauthReturn';
 import { redirectToAuthorize } from '../components/oauthNavigation';
 
 function sessionStore(): Storage | undefined {
@@ -161,12 +161,7 @@ export function consumeSilentOAuthError(): 'login_required' | 'consent_required'
     // Silent restore failed, but the visitor still asked for a specific page.
     // Put them back on it rather than leaving them on the bare origin the IdP
     // redirected to.
-    const returnPath = consumeOAuthReturnPath();
-    history.replaceState(
-      history.state,
-      '',
-      returnPath ?? `${url.pathname}${url.search}${url.hash}`,
-    );
+    replaceUrlAfterOAuthReturn(`${url.pathname}${url.search}${url.hash}`);
   }
   return error;
 }
