@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Linking,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -14,7 +13,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import { parseScan, type ScanResult } from '@/lib/commons-signin/parse-scan';
-import { useNfcReader } from '@/hooks/nfc/useNfcReader';
 import { useAttestFlow } from '@/hooks/civic/useAttestFlow';
 import { AttestReviewSheet, type AttestReviewStatus } from '@/components/civic/AttestReviewSheet';
 import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometricAuth';
@@ -41,8 +39,6 @@ export default function ScanSignInScreen() {
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
   const [scanError, setScanError] = useState<'invalid' | 'expired' | null>(null);
-  const { available: nfcAvailable, readOnce } = useNfcReader();
-  const [nfcReading, setNfcReading] = useState(false);
   const attest = useAttestFlow();
   // True while B's device biometric gate is running (before the signed submit).
   const [confirming, setConfirming] = useState(false);
@@ -56,14 +52,12 @@ export default function ScanSignInScreen() {
     setScanned(false);
     setScanError(null);
     setConfirming(false);
-    setNfcReading(false);
     setFlashOn(false);
   }, [attest.reset]);
 
   useFocusEffect(resetScannerSession);
 
-  // Shared routing for anything `parseScan` can resolve, regardless of
-  // whether the raw string came from the camera or an NFC read.
+  // Shared routing for anything `parseScan` can resolve.
   const routeParsed = useCallback(
     (parsed: ScanResult) => {
       // `replace` so the hardware back button doesn't return to the camera.
@@ -86,7 +80,7 @@ export default function ScanSignInScreen() {
         // Real-life attestation: HOLD the parsed payload and resolve A's card so
         // B can review who they're vouching for BEFORE anything is signed (the
         // review sheet). Nothing is submitted until B confirms + passes biometrics.
-        setScanned(true); // freeze the camera behind the sheet (NFC hasn't yet)
+        setScanned(true); // freeze the camera behind the sheet
         attest.prepare({
           subjectDid: parsed.subjectDid,
           context: parsed.context,
@@ -95,9 +89,9 @@ export default function ScanSignInScreen() {
         });
         return;
       }
-      // Freeze the camera behind the error overlay for BOTH entry paths (the
-      // barcode handler already set `scanned`; an NFC-triggered invalid parse
-      // hasn't) so "Scan Again" resets the same state either way.
+      // Freeze the camera behind the error overlay (idempotent — the barcode
+      // handler already set `scanned`) so "Scan Again" always resets from the
+      // same state, whichever branch routed here.
       setScanned(true);
       setScanError(parsed.reason);
     },
@@ -112,21 +106,6 @@ export default function ScanSignInScreen() {
     },
     [scanned, routeParsed],
   );
-
-  // `useNfcReader` already no-ops concurrent calls (module-level busy guard →
-  // `{ok:false, reason:'cancelled'}`); `nfcReading` is caller-side defense in
-  // depth plus the pending visual on the button.
-  const handleNfcRead = useCallback(async () => {
-    if (nfcReading) return;
-    setNfcReading(true);
-    try {
-      const read = await readOnce();
-      if (!read.ok) return; // cancelled/empty — stay on the scanner
-      routeParsed(parseScan(read.uri));
-    } finally {
-      setNfcReading(false);
-    }
-  }, [nfcReading, readOnce, routeParsed]);
 
   const handleScanAgain = useCallback(() => {
     attest.reset();
@@ -273,39 +252,20 @@ export default function ScanSignInScreen() {
             ) : (
               <>
                 <Text style={styles.instructionText}>{t('signInApproval.scan.instructions')}</Text>
-                <View style={styles.controlsRow}>
-                  <TouchableOpacity
-                    style={styles.controlButton}
-                    onPress={toggleFlash}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      flashOn ? t('signInApproval.scan.a11y.flashOff') : t('signInApproval.scan.a11y.flashOn')
-                    }
-                    accessibilityState={{ selected: flashOn }}
-                  >
-                    <MaterialCommunityIcons name={flashOn ? 'flash' : 'flash-off'} size={28} color="#fff" />
-                    <Text style={styles.controlText}>
-                      {flashOn ? t('signInApproval.scan.flashOn') : t('signInApproval.scan.flashOff')}
-                    </Text>
-                  </TouchableOpacity>
-                  {nfcAvailable && (
-                    <TouchableOpacity
-                      style={styles.controlButton}
-                      onPress={handleNfcRead}
-                      disabled={nfcReading}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('civic.nfc.read')}
-                      accessibilityState={{ disabled: nfcReading, busy: nfcReading }}
-                    >
-                      {nfcReading ? (
-                        <ActivityIndicator size="small" color="#fff" style={styles.controlSpinner} />
-                      ) : (
-                        <MaterialCommunityIcons name="nfc" size={28} color="#fff" />
-                      )}
-                      <Text style={styles.controlText}>{t('civic.nfc.read')}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <TouchableOpacity
+                  style={styles.controlButton}
+                  onPress={toggleFlash}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    flashOn ? t('signInApproval.scan.a11y.flashOff') : t('signInApproval.scan.a11y.flashOn')
+                  }
+                  accessibilityState={{ selected: flashOn }}
+                >
+                  <MaterialCommunityIcons name={flashOn ? 'flash' : 'flash-off'} size={28} color="#fff" />
+                  <Text style={styles.controlText}>
+                    {flashOn ? t('signInApproval.scan.flashOn') : t('signInApproval.scan.flashOff')}
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
           </View>
@@ -398,14 +358,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
     marginBottom: 24,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    gap: 32,
-  },
-  controlSpinner: {
-    // Matches the 28dp icon slot so the pending swap doesn't shift layout.
-    height: 28,
   },
   controlButton: {
     alignItems: 'center',

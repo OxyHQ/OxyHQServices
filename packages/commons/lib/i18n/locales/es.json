@@ -1219,10 +1219,6 @@
       "didLabel": "ID descentralizado (DID)",
       "pendingNote": "Este dispositivo guarda tus claves, pero tu cuenta aún no está registrada en Oxy. Tu tarjeta y QR funcionan sin conexión; completaremos el registro cuando vuelvas a estar en línea."
     },
-    "nfc": {
-      "active": "NFC activo — acerca los móviles para verificar",
-      "read": "Acerca el móvil al otro dispositivo"
-    },
     "card": {
       "title": "Tarjeta de ciudadanía",
       "verified": "Verificado",

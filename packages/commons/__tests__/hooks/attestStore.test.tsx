@@ -261,7 +261,7 @@ describe('useAttestFlow', () => {
     const { result } = renderHook(() => useAttestFlow(), { wrapper: makeWrapper() });
     expect(result.current.status).toBe('idle');
 
-    // The trigger is the scan/NFC EVENT (here: this act call) — no mount effect.
+    // The trigger is the scan EVENT (here: this act call) — no mount effect.
     act(() => result.current.submit(PARAMS));
 
     await waitFor(() => expect(result.current.status).toBe('done'));

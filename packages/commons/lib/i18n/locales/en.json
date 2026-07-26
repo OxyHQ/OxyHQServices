@@ -1219,10 +1219,6 @@
       "didLabel": "Decentralized ID (DID)",
       "pendingNote": "This device holds your keys, but your account isn't registered with Oxy yet. Your card and QR work offline; we'll finish registration when you're back online."
     },
-    "nfc": {
-      "active": "NFC active — hold phones together to verify",
-      "read": "Hold near the other phone"
-    },
     "card": {
       "title": "Citizen card",
       "verified": "Verified",

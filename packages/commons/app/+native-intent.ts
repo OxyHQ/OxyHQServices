@@ -6,7 +6,7 @@ import { parseIdPayload } from '@oxyhq/core';
  * `useEffect`); it maps an external/system deep link onto an in-app route
  * before the router resolves it.
  *
- * FIX (card deep link): a shared Oxy ID QR / NFC tag is
+ * FIX (card deep link): a shared Oxy ID QR is
  * `commons://card?did=<did>&v=1` (or `oxycommons://…`) — the DID rides in a
  * QUERY param. But the card view is the PATH-param route
  * `app/(tabs)/(id)/card/[did].tsx` (URL `/card/<did>`). With the scheme

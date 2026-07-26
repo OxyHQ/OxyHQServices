@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Platform, AppState, AccessibilityInfo } from 'react-native';
+import { View, StyleSheet, Platform, AccessibilityInfo } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import {
-  Easing,
   useReducedMotion,
   useSharedValue,
   withDelay,
@@ -26,8 +25,6 @@ import { AttestQrSheet } from '@/components/civic/AttestQrSheet';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
-import { useAttestQr } from '@/hooks/useAttestQr';
-import { useNfcAttestEmitter } from '@/hooks/nfc/useNfcAttestEmitter';
 import { useAttestedEvent, type AttestedEventPayload } from '@/hooks/civic/useAttestedEvent';
 import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
@@ -110,56 +107,9 @@ export default function IdScreen() {
     }
   }, [oxyServices, userId]);
 
-  // ---- NFC attest emission + card feedback -------------------------------
-  const scanPulse = useSharedValue(0);
+  // ---- Attestation-confirmed card feedback --------------------------------
   const attestGlow = useSharedValue(0);
   const reducedMotion = useReducedMotion();
-
-  const [focused, setFocused] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      setFocused(true);
-      return () => setFocused(false);
-    }, []),
-  );
-
-  // NFC emission must stop the moment the app leaves the foreground (locked,
-  // backgrounded, task-switched) — a stale HCE session would keep answering
-  // APDU reads with the attestation payload while the device is out of the
-  // user's hands. The emitter's own blur/unmount disarm logic handles the
-  // `focused`/`enabled` transition; this only tracks OS-level foreground state.
-  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      setAppActive(nextState === 'active');
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Same payload the attest-me QR uses; one interaction id per screen session.
-  const attestContext = useMemo(() => `irl-nfc-${Date.now().toString(36)}`, []);
-  const { payload: attestPayload, exp: attestExp, regenerate: regenerateAttest } = useAttestQr(attestContext);
-
-  // Single-use nonce: re-mint when it expires while we are emitting.
-  useEffect(() => {
-    if (!focused || !appActive || !attestExp) return;
-    const ms = attestExp - Date.now();
-    if (ms <= 0) {
-      regenerateAttest();
-      return;
-    }
-    const id = setTimeout(regenerateAttest, ms);
-    return () => clearTimeout(id);
-  }, [focused, appActive, attestExp, regenerateAttest]);
-
-  const triggerScanPulse = useCallback(() => {
-    void Haptics.selectionAsync();
-    if (reducedMotion) return;
-    scanPulse.value = 0;
-    scanPulse.value = withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }, (finished) => {
-      if (finished) scanPulse.value = 0;
-    });
-  }, [scanPulse, reducedMotion]);
 
   const [attestedVisible, setAttestedVisible] = useState(false);
   const attestedBadgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -180,15 +130,6 @@ export default function IdScreen() {
       withDelay(1000, withTiming(0, { duration: 1400 })),
     );
   }, [attestGlow, reducedMotion, t]);
-
-  const { state: nfcState } = useNfcAttestEmitter({
-    payload: attestPayload,
-    enabled: focused && appActive,
-    onRead: () => {
-      triggerScanPulse();
-      regenerateAttest();
-    },
-  });
 
   const handleAttestedEvent = useCallback(
     (payload: AttestedEventPayload) => {
@@ -232,7 +173,6 @@ export default function IdScreen() {
           <OxyID
             width={CARD_WIDTH}
             height={CARD_HEIGHT}
-            scanPulse={scanPulse}
             attestGlow={attestGlow}
             frontSide={
               <FrontSide
@@ -267,7 +207,7 @@ export default function IdScreen() {
             </View>
           )}
           <ThemedText style={[styles.flipHint, { color: colors.textSecondary }]}>
-            {nfcState === 'emitting' ? t('civic.nfc.active') : t('civic.id.flipHint')}
+            {t('civic.id.flipHint')}
           </ThemedText>
         </View>
 
