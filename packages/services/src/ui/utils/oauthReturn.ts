@@ -54,8 +54,10 @@ export async function tryCompleteOAuthReturn(opts: {
     logger.warn('OAuth return ignored: missing or mismatched handshake', {
       component: 'oauthReturn',
     });
-    clearOAuthHandshake();
+    // Consume the return path before clearing the handshake — clearOAuthHandshake
+    // drops the persisted path along with the PKCE keys.
     stripOAuthParamsFromUrl();
+    clearOAuthHandshake();
     return false;
   }
 
@@ -71,8 +73,9 @@ export async function tryCompleteOAuthReturn(opts: {
       codeVerifier: handshake.codeVerifier,
     });
     // Strip OAuth params before commit so a stale `?code=` cannot re-enter the exchange loop.
-    clearOAuthHandshake();
+    // Read the return path first — clearOAuthHandshake drops it with the PKCE keys.
     stripOAuthParamsFromUrl();
+    clearOAuthHandshake();
     await opts.commitSession({
       sessionId: result.sessionId,
       accessToken: result.accessToken,
@@ -85,8 +88,8 @@ export async function tryCompleteOAuthReturn(opts: {
     return true;
   } catch (error) {
     logger.warn('OAuth return exchange failed', { component: 'oauthReturn' }, error);
-    clearOAuthHandshake();
     stripOAuthParamsFromUrl();
+    clearOAuthHandshake();
     return false;
   }
 }

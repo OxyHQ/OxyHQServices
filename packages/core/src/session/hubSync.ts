@@ -51,7 +51,7 @@ export async function syncHubAfterSignIn(
 
   const hubOrigin = buildIdpHubOrigin();
   const issued = await oxy.issueHubTicket(hubOrigin);
-  const returnUrl = `${location.origin}${location.pathname}${location.search}`;
+  const returnUrl = `${location.origin}${location.pathname}${location.search}${location.hash}`;
   const syncUrl = buildHubSyncUrl(issued.ticket, returnUrl);
 
   window.location.assign(syncUrl);

@@ -1,6 +1,11 @@
 import { describe, expect, test, jest, beforeEach } from '@jest/globals';
 import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../../src/ui/utils/oauthReturn';
-import { OXY_OAUTH_RETURN_PATH_STORAGE_KEY, persistOAuthReturnPath } from '@oxyhq/core';
+import { consumeSilentOAuthError } from '../../src/ui/utils/crossOriginRestore';
+import {
+  OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
+  persistOAuthHandshake,
+  persistOAuthReturnPath,
+} from '@oxyhq/core';
 
 describe('tryCompleteOAuthReturn', () => {
   beforeEach(() => {
@@ -25,6 +30,25 @@ describe('tryCompleteOAuthReturn', () => {
     const cleanedUrl = String(replaceState.mock.calls[0]?.[2] ?? '');
     expect(cleanedUrl).not.toContain('error=');
     expect(cleanedUrl).not.toContain('state=');
+    replaceState.mockRestore();
+  });
+});
+
+describe('consumeSilentOAuthError', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState(null, '', '/?error=login_required&state=abc');
+  });
+
+  test('returns the visitor to the page they started on after silent restore fails', () => {
+    persistOAuthReturnPath('/pricing');
+
+    const replaceState = jest
+      .spyOn(window.history, 'replaceState')
+      .mockImplementation(() => undefined);
+
+    expect(consumeSilentOAuthError()).toBe('login_required');
+    expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/pricing');
     replaceState.mockRestore();
   });
 });
@@ -114,6 +138,37 @@ describe('deep-link preservation across the authorize round trip', () => {
     });
 
     expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/');
+    replaceState.mockRestore();
+  });
+
+  test('restores the deep link on a successful code exchange', async () => {
+    window.sessionStorage.clear();
+    persistOAuthHandshake('state-xyz', 'verifier-abc');
+    persistOAuthReturnPath('/newsroom');
+    window.history.replaceState(null, '', '/?code=auth-code&state=state-xyz');
+
+    const replaceState = jest
+      .spyOn(window.history, 'replaceState')
+      .mockImplementation(() => undefined);
+    const commitSession = jest.fn().mockResolvedValue(undefined);
+    const exchangeOAuthCode = jest.fn().mockResolvedValue({
+      sessionId: 'sess-1',
+      accessToken: 'token',
+      deviceId: 'dev-1',
+      deviceSecret: 'secret',
+      user: { id: 'user-1' },
+    });
+
+    const result = await tryCompleteOAuthReturn({
+      oxyServices: { exchangeOAuthCode } as never,
+      clientId: 'oxy_dk_test',
+      commitSession,
+    });
+
+    expect(result).toBe(true);
+    expect(exchangeOAuthCode).toHaveBeenCalled();
+    expect(commitSession).toHaveBeenCalled();
+    expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/newsroom');
     replaceState.mockRestore();
   });
 });
