@@ -163,8 +163,8 @@ setInterval(() => {
 
 // ─── Response Helpers ─────────────────────────────────────────────
 
-/** Empty 404 for an unservable font — see `wantsFont`. */
-function sendMissingFont(res: ExpressResponse, cacheTime = 86400): void {
+/** Empty 404 for a resource the upstream does not have. */
+function sendNotFound(res: ExpressResponse, cacheTime = 86400): void {
   res.setHeader('Cache-Control', `public, max-age=${cacheTime}`);
   res.status(404).end();
 }
@@ -221,7 +221,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
   // Block tracking URLs
   if (isTrackingUrl(url)) {
     logger.debug('Blocked tracking URL', { url: decodedUrl });
-    return wantsFont ? sendMissingFont(res) : sendTransparentGif(res);
+    return wantsFont ? sendNotFound(res) : sendTransparentGif(res);
   }
 
   // Check cache
@@ -246,7 +246,13 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
 
     try {
       if (status < 200 || status >= 300) {
-        return wantsFont ? sendMissingFont(res, 3600) : sendTransparentGif(res, 3600);
+        // The upstream does not have this resource. Answering with the
+        // transparent GIF would be a successful-looking image, which is how a
+        // sender avatar whose /favicon.ico 404s ends up as an invisible pixel
+        // painted over the initials placeholder — the caller never learns the
+        // fetch failed. The GIF stays reserved for what it is for: a tracking
+        // pixel we deliberately blocked.
+        return sendNotFound(res, 3600);
       }
 
       const contentTypeHeader = headers['content-type'];
@@ -272,7 +278,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
       // Block tracking pixels (very small images)
       if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
         logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
-        return wantsFont ? sendMissingFont(res) : sendTransparentGif(res);
+        return wantsFont ? sendNotFound(res) : sendTransparentGif(res);
       }
 
       // Use correct MIME when upstream sends generic octet-stream for fonts
@@ -301,7 +307,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
     }
 
     if (wantsFont) {
-      sendMissingFont(res);
+      sendNotFound(res);
       return;
     }
     sendTransparentGif(res);
