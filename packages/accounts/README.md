@@ -29,7 +29,7 @@ bun run typecheck    # tsc --noEmit
 Accounts is a standard official relying party:
 
 - Cold boot restores the session silently from the server-side device session (see [docs/auth/device-session.md](../../docs/auth/device-session.md)); it never redirects to a login page.
-- Logged-out users see `(auth)/index.tsx`, which opens the SDK sign-in surface (`OxyAccountDialog`): Commons QR / deep-link first, password collapsed under "Sign in without the app".
+- Logged-out users see `(auth)/index.tsx`, which opens the SDK sign-in surface (`OxyAccountDialog`): ONE primary "Continue with Oxy" action (issue #691, Phase 5) that Oxy automatically routes to Commons (same-device deep link / known-install push / QR); there is no password option in this dialog.
 - Identity **creation** is in `Commons by Oxy` (`packages/commons`), NOT in this app — Accounts is management-only on all platforms.
 - `(auth)`↔`(tabs)` routing keys purely on session state (`isAuthResolved` / `isAuthenticated`); there is no identity-key gate here.
 

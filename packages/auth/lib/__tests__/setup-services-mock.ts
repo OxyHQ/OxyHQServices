@@ -35,6 +35,7 @@ export function createServicesMock(
         useOxy: () => Record<string, unknown>
         useSwitchableAccounts: typeof defaultSwitchableAccounts
         OxyAuthChooser: React.ComponentType<{ onComplete?: () => void }>
+        OxyConsentScreen: React.ComponentType<Record<string, unknown>>
     }> = {},
 ) {
     return {
@@ -42,6 +43,13 @@ export function createServicesMock(
         useSwitchableAccounts: overrides.useSwitchableAccounts ?? defaultSwitchableAccounts,
         OxyAuthChooser:
             overrides.OxyAuthChooser ??
+            (() => null as React.ReactElement | null),
+        // `authorize.tsx` imports this statically, so once ANY suite has loaded
+        // that page the export must exist in every later mock of this specifier
+        // — otherwise bun cannot re-link the page and falls back to the real
+        // (react-native-importing) module.
+        OxyConsentScreen:
+            overrides.OxyConsentScreen ??
             (() => null as React.ReactElement | null),
     }
 }

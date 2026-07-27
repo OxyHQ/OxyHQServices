@@ -3,6 +3,8 @@
 > **Estado:** ✅ **IMPLEMENTADO — proyecto cerrado (2026-07-07).** Fases 0–7 + 2c en `main` y en producción (core 9 / services 19 / contracts 0.13; sesión device-first cero-cookie; IdP device-first sin excepción de transporte/chooser). Este documento es el plan maestro de referencia; el estado de ejecución y el cierre están en [`oxy-auth-audit.md`](./oxy-auth-audit.md) → "🏁 PROYECTO AUTH-PLATFORM CERRADO". Aprobado para ejecución 2026-07-05 (Nate + agente planificación).  
 > **Ubicación canónica:** `docs/architecture/oxy-auth-platform.md`  
 > **Handoff agente implementador (archivado):** [`docs/architecture/archive/oxy-auth-agent-handoff.md`](./archive/oxy-auth-agent-handoff.md) — checklist, gates, subagentes, inventario borrado  
+>
+> **Addendum — issue #691 (2026-07-27), posterior al cierre:** cinco fases adicionales sobre esta base, todas mergeadas a `main`. No reescriben este plan (queda como registro histórico) — la fuente viva es [`SESSION-ARCHITECTURE.md`](../SESSION-ARCHITECTURE.md), [`docs/auth/device-session.md`](../auth/device-session.md) y [`docs/auth/integration-guide.md`](../auth/integration-guide.md), y las reglas durables están en el `AGENTS.md` raíz del repo. Resumen: **Fase 1** — `OxyProvider` gana `sessionMode: 'account' | 'identity'`; Commons monta `'identity'` para que su sesión quede fijada PERMANENTEMENTE al dueño de la clave primaria del dispositivo, nunca al `activeAccountId` mutable del `DeviceSession` (pin cliente + mint pineado vía `accountId` opcional en `POST /session/device/token`). **Fase 2** — transporte OAuth web `webAuthMode: 'popup' | 'redirect'` (default `'redirect'`, sin cambios): en modo popup la pestaña de la RP nunca navega — el IdP relaya `{code, state}` por `postMessage` al origen exacto del `redirect_uri` y se cierra. **Fase 3** — `AuthSession` gana `purpose: 'device_sign_in' | 'oauth_authorization'`, permitiendo que el mismo modelo (create → approve → finalize) mine un código OAuth de un solo uso vía Commons; primitiva de API/SDK sin UI todavía (ningún flujo actual crea una solicitud `oauth`-bound). **Fase 4** — entrega automática: push tokens escopados por dispositivo/app, `POST /auth/session/deliver` (bearer obligatorio) dirigido solo a instalaciones con la capability staff-only `identity:approval`, y `selectCommonsDelivery` elige UNA ruta primaria (deep-link → push conocido → QR). **Fase 5** — UI simplificada: el diálogo de cuenta muestra una sola acción primaria "Continue with Oxy" (sin contraseña), con QR/passkey/Get-Commons detrás de "Having trouble?"; la pantalla de aprobación de Commons es UNA confirmación (biometría directa, o "This wasn't me"). **Fase 7a** — en modo popup, el SDK deja de ejecutar sus propias navegaciones automáticas de página completa hacia el IdP (el restore silencioso `prompt=none` y el hub-sync post-login), gateadas tras `allowsAutomaticIdpRedirect(webAuthMode)`; el modo redirect sigue igual.
 
 ---
 
@@ -365,7 +367,7 @@ flowchart LR
 |--|-------------------|----------------------------------|
 | Registro | Console, `type: first_party\|internal\|system` o `isOfficial` | Console, `type: third_party` |
 | Consent OAuth | **No** — confianza por registro interno | **Sí** — pantalla consent + `AppGrant` |
-| UI sign-in | Dialog embebido (Commons QR / keychain / password) | **Redirect** a `auth.oxy.so` (o in-app browser en native) |
+| UI sign-in | Dialog embebido, una acción primaria "Continue with Oxy" (sin password — issue #691 Fase 5) | **Redirect** a `auth.oxy.so` (o in-app browser en native); web también soporta `webAuthMode: 'popup'` (issue #691 Fase 2) sin salir de la pestaña de la RP |
 | Sesión cross-app | **Sí** — mismo `deviceId` sincroniza vía socket entre apps Oxy | **No** — sesión por `client_id` + origen; independiente de otras webs |
 | Persistencia | `deviceId` + `deviceSecret` + DeviceSession | Tokens OAuth en storage first-party del RP (localStorage / SecureStore) |
 | Revocación usuario | Sign-out device / connected apps | Revoke en Accounts → desaparece `AppGrant`; próximo login pide consent de nuevo |
@@ -504,7 +506,7 @@ Comportamiento del botón según Application resuelta vía `GET /auth/oauth/clie
 | `type` / flags | Acción al click |
 |----------------|-----------------|
 | `first_party` / `internal` / `system` / `isOfficial` | Abre **OxySignInDialog** in-app (Commons-first) |
-| `third_party` | **Redirect OAuth** a `auth.oxy.so/authorize` (PKCE generado por SDK) |
+| `third_party` | **OAuth** con PKCE (generado por SDK) hacia `auth.oxy.so/authorize` — redirect de página completa por defecto, o `webAuthMode: 'popup'` (issue #691 Fase 2) que abre una ventana y nunca navega la pestaña de la RP |
 
 Branding: logo Oxy + texto **"Sign in with Oxy"** (nunca "Sign in with Commons"). Assets en `@oxyhq/services` / Bloom.
 

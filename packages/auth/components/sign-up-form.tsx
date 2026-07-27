@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { Check, KeyRound, X, Loader2 } from "lucide-react"
@@ -66,6 +66,17 @@ function useAvailabilityCheck(endpoint: string) {
         if (controllerRef.current) controllerRef.current.abort()
         setStatus("idle")
     }, [])
+
+    // Tear down on unmount: a debounce that survives the form fires its request
+    // several hundred milliseconds after the screen is gone, against whatever
+    // the page has become by then.
+    useEffect(
+        () => () => {
+            if (timerRef.current) clearTimeout(timerRef.current)
+            if (controllerRef.current) controllerRef.current.abort()
+        },
+        [],
+    )
 
     return { status, check, reset }
 }

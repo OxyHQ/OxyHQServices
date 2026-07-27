@@ -42,6 +42,8 @@ Default ports:
 3. The auth gateway signs in the user and authorizes the session.
 4. The app receives the session token/access token and completes login.
 
+**Popup delivery (issue #691, Phase 2):** when the relying party asked for `response_mode=web_message` and `/authorize` has a real `window.opener`, step 4 is a `postMessage` relay — `{code, state}` or a typed OAuth error posted to the opener at the redirect URI's EXACT origin (never `*`), followed by `window.close()` — instead of a redirect to `redirect_uri`. `lib/oauth-web-message.ts` owns this decision; every other request (no opener, or no `response_mode=web_message`) redirects exactly as before.
+
 ## Deploy Safety (IdP is production-only — there is NO staging)
 
 `auth.oxy.so` is the OAuth authorize/consent IdP for the entire Oxy ecosystem and has **no staging environment** — every push to `main` deploys straight to production for all users. The IdP is a **pure-static Vite SPA** deployed to Cloudflare Pages — no Pages Function, no `_worker.js`, no server directory. It authenticates device-first through the same `OxyProvider` (`@oxyhq/services`) every Oxy app uses; the device-account chooser enumerates accounts via the shared device-first SDK (`useSwitchableAccounts`), not a bespoke feed. FedCM and the legacy `/sso` bounce machinery were removed from the IdP entirely. A broken IdP build (blank SPA, or a regression that re-adds the FedCM manifest) takes "Sign in with Oxy" down everywhere.

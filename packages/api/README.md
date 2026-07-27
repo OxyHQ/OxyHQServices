@@ -80,7 +80,7 @@ Routes are mounted without a prefix (e.g. `POST /auth/login`). A leading `/api/`
 ### Device sessions (server session authority, zero-cookie)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/session/device/token` | POST | Zero-cookie mint: `{ deviceId, deviceSecret }` (no bearer, no cookies) → short access token + rotated `deviceSecret` |
+| `/session/device/token` | POST | Zero-cookie mint: `{ deviceId, deviceSecret, accountId? }` (no bearer, no cookies) → short access token + rotated `deviceSecret`. Optional `accountId` pins the mint to one device account without touching `activeAccountId` (`sessionMode: 'identity'`, issue #691 Phase 1) |
 | `/session/device/state` | GET | Current `DeviceSession` state (accounts, active account, revision) — token-free |
 | `/session/device/add` | POST | Add the bearer's account to the device session |
 | `/session/device/switch` | POST | Switch the active account (`revision++`, socket broadcast) |
@@ -96,6 +96,19 @@ Every device-session mutation broadcasts a `session_state` event to the Socket.I
 | `/auth/oauth/authorize` | POST | Mint a single-use authorization code (IdP-side, Bearer) |
 | `/auth/oauth/token` | POST | Exchange code (+ PKCE verifier or client secret) for tokens |
 | `/auth/grants` | GET/DELETE | List / revoke the user's connected-app grants |
+
+### Sign in with Oxy — Commons QR handoff + automatic delivery
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/auth/session/create` | POST | Start a request: `{ sessionToken, clientId, oauth? }` → public `authorizeCode` + `qrPayload`. `oauth` (issue #691 Phase 3) binds the request to a third-party authorization instead of a device sign-in |
+| `/auth/session/approve-info/:authorizeCode` | GET | Server-resolved Application identity + scopes + requester label, for Commons to render |
+| `/auth/session/authorize-signed/:authorizeCode` | POST | Key-signed approval (no bearer) — resolves the user by the signing public key |
+| `/auth/session/deny/:authorizeCode` | POST | Deny, with an optional reason from a closed set (`'declined' \| 'not_me'`) |
+| `/auth/session/status/:sessionToken` | GET | Poll status + `pushSentAt`/`openedAt` progress timestamps |
+| `/auth/session/claim/:sessionToken` | POST | Claim the first access token after a `device_sign_in` approval (refuses an `oauth_authorization` one) |
+| `/auth/session/deliver/:authorizeCode` | POST | **Bearer required.** Push the pending request to the authenticated caller's own `identity:approval`-capable installs (issue #691 Phase 4) |
+| `/auth/session/opened/:authorizeCode` | POST | No bearer — records `openedAt` progress only, never advances `status` |
+| `/auth/session/finalize/:sessionToken` | POST | No bearer — mints the single-use OAuth `AuthCode` for an approved `oauth_authorization` request (issue #691 Phase 3) |
 
 ### Two-Factor (TOTP)
 | Endpoint | Method | Description |

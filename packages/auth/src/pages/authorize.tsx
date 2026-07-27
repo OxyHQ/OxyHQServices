@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
 import type { PublicApplication, SwitchableAccount } from "@oxyhq/core";
 import { OxyConsentScreen, useOxy, useSwitchableAccounts } from "@oxyhq/services";
@@ -12,6 +12,7 @@ import {
   tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
+import { CommonsOAuthLane } from "@/components/commons-oauth-request";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   sessionStatusSchema,
@@ -26,6 +27,10 @@ import {
 } from "@/lib/oxy-api-client";
 import { safeRedirectUrl } from "@/lib/oauth-redirect";
 import { deliverOAuthResult, type OAuthResult } from "@/lib/oauth-web-message";
+import {
+  buildCommonsOAuthBinding,
+  type CommonsOAuthOutcome,
+} from "@/lib/commons-oauth-request";
 
 /**
  * The requesting-application + auth-request resolution state. The signed-in
@@ -171,6 +176,24 @@ export function AuthorizePage() {
 
   const isSilentPrompt = prompt === "none";
 
+  // The additional no-session lane (issue #691). A request that carries a full
+  // PKCE binding can be created with its OAuth context already attached, be
+  // approved directly in Commons, and be finalized into an authorization code
+  // HERE — so a visitor with no session on this origin never has to sign in on
+  // it first. `null` means the lane does not apply to this request at all and
+  // the session-bearing path below stays exactly as it was.
+  const commonsBinding = useMemo(
+    () =>
+      buildCommonsOAuthBinding({
+        clientId,
+        safeRedirectUri: safeRedirectUrl(redirectUri),
+        codeChallenge,
+        codeChallengeMethod,
+        scope,
+      }),
+    [clientId, redirectUri, codeChallenge, codeChallengeMethod, scope]
+  );
+
   /**
    * Hand an authorization result (code or OAuth error) to the relying party.
    * Popup mode (`response_mode=web_message` + a real opener) posts it to the
@@ -205,6 +228,41 @@ export function AuthorizePage() {
       return;
     }
     deliverToRelyingParty({ kind: "error", error: errorCode, state }, safeRedirect);
+  }
+
+  /**
+   * The Commons lane settled. Both outcomes go through the SAME delivery funnel
+   * the session-bearing path uses, so the popup relay and the redirect fallback
+   * stay ONE decision (`lib/oauth-web-message.ts`) — the code is never handed
+   * to the relying party by a second, parallel mechanism.
+   *
+   * A finalization FAILURE is deliberately not an outcome: the lane keeps it on
+   * its own surface so the user can start a fresh request, rather than ending
+   * the relying party's whole flow (and it is never retried against the spent
+   * request).
+   */
+  function handleCommonsOutcome(outcome: CommonsOAuthOutcome): void {
+    const safeRedirect = safeRedirectUrl(redirectUri);
+    if (!safeRedirect) {
+      // Unreachable in practice — the lane only exists once the binding built,
+      // which already required a usable redirect target — but a result is never
+      // delivered without one. Recording the error also retires the lane (its
+      // branch below requires `!data.error`), so the visitor falls back to
+      // signing in here rather than sitting on a surface that can never settle.
+      setData((prev) => ({ ...prev, error: "Authorization failed" }));
+      return;
+    }
+    if (outcome.kind === "code") {
+      deliverToRelyingParty(
+        { kind: "code", code: outcome.code, state },
+        safeRedirect
+      );
+      return;
+    }
+    deliverToRelyingParty(
+      { kind: "error", error: "access_denied", state },
+      safeRedirect
+    );
   }
 
   // Silent restore: when prompt=none and the IdP has no session, bounce
@@ -884,8 +942,8 @@ export function AuthorizePage() {
     );
   }
 
-  // No session on this device (cold boot has resolved and found none) — redirect
-  // to login carrying the full request context. Skip for `prompt=none` (handled above).
+  // No session on this device (cold boot has resolved and found none).
+  // Skipped for `prompt=none`, which must never show UI (handled above).
   if (
     !isSilentPrompt &&
     isAuthResolved &&
@@ -893,6 +951,33 @@ export function AuthorizePage() {
     !currentSessionId &&
     deviceAccounts.length === 0
   ) {
+    // FIRST the additional lane (issue #691): when the request carries a full
+    // PKCE binding, its application resolved cleanly, and the request is still
+    // actionable, the authorization can be approved directly in Commons and
+    // finalized into a code right here — one continuous action, with no sign-in
+    // step on this origin. A request that fails ANY of those (no PKCE, an
+    // unknown or suspended application, an expired/cancelled request) falls
+    // through to the unchanged redirect below rather than creating a request
+    // the server would refuse.
+    if (
+      commonsBinding &&
+      !data.error &&
+      data.application &&
+      (!data.sessionStatus || data.sessionStatus === "pending")
+    ) {
+      return (
+        <CommonsOAuthLane
+          binding={commonsBinding}
+          client={oxyServices}
+          appName={data.application.name}
+          onOutcome={handleCommonsOutcome}
+          onSignInHere={() => gotoLoginWithHint()}
+        />
+      );
+    }
+
+    // Everything else redirects to /login carrying the full request context, so
+    // the user lands back on this consent screen after authenticating here.
     return (
       <Navigate
         to={buildRelativeUrl("/login", {

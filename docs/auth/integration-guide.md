@@ -264,7 +264,27 @@ Notes:
 
 - For a `third_party` app, `oauthRedirectUri` is **required**; without it the button logs an error and does nothing (it never invents a redirect URI).
 - If the application lookup fails, the button falls back to the in-app dialog rather than breaking sign-in.
-- Branding is always **"Sign in with Oxy"** — never "Sign in with Commons". The underlying mechanism (QR, keychain, password) is invisible plumbing.
+- Branding is always **"Sign in with Oxy"** — never "Sign in with Commons". The underlying mechanism (QR, keychain, popup, redirect) is invisible plumbing.
+
+### Popup mode — keep your page mounted (issue #691, Phase 2)
+
+By default (`webAuthMode="redirect"`, unchanged from Step 2's manual flow) `OxySignInButton` performs the full-page redirect described above. Setting `webAuthMode="popup"` on `<OxyProvider>` switches to a small `auth.oxy.so` window instead:
+
+```tsx
+<OxyProvider clientId="oxy_dk_your_client_id" baseURL="https://api.oxy.so" webAuthMode="popup">
+  <OxySignInButton oauthRedirectUri="https://merchant.example/auth/callback" />
+</OxyProvider>
+```
+
+What changes:
+
+- The window is opened synchronously on the click (so the browser attributes it to a real user gesture) and asks the IdP with `response_mode=web_message`. The IdP relays `{code, state}` (or a typed OAuth error) to `window.opener` via `postMessage` **at your registered redirect URI's exact origin** — never `*` — and closes itself.
+- **Your registered `redirectUri` page is never navigated to or loaded** in popup mode — the popup relays and closes before ever reaching it. Register it as usual (it is still validated for its origin and still used by the fallback below); just don't expect its code to run.
+- The SDK performs the PKCE exchange and commits the session itself, in the SAME window your button lives in — your page's route, scroll position, and any unsaved state survive because the tab never navigates.
+- If the browser blocks the popup (or `window.open` fails), the SDK automatically falls back to the ordinary full-page redirect — you don't need to handle that case.
+- Only the authorization code, your `state`, and a standard OAuth error code ever cross the popup boundary. The PKCE `code_verifier` never leaves the opener's memory.
+- Popup mode is an `@oxyhq/services` (`OxyProvider` + `OxySignInButton`, or `useOxy().startWebOAuthSignIn`) feature — the manual `fetch`-based flow in [Step 2](#step-2--web-spa-public-client--pkce) is redirect-only.
+- Popup mode also disables the SDK's own automatic silent-restore redirect on cold boot (see item 1 below) — a domain with no local session simply starts signed out, and your sign-in button opens the popup from the user's next explicit click.
 
 ---
 
@@ -308,9 +328,9 @@ Design your app so a revoked grant simply means the user is signed out of it unt
 
 Third-party integration is **standard OAuth only**. Do not expect — or try to rebuild — any of the following:
 
-1. **Silent restore after first consent (Google-style).** After the user approves once, Oxy persists an `AppGrant`. On subsequent visits the SDK cold-boots with `prompt=none` against `auth.oxy.so` — no consent screen, no re-login — as long as the grant remains and scopes are unchanged. Revoke the grant in Connected apps (`DELETE /auth/grants/:applicationId`) to force re-consent. First visit still requires the full interactive authorize + consent flow.
+1. **Silent restore after first consent (Google-style) — `webAuthMode="redirect"` only (the default).** After the user approves once, Oxy persists an `AppGrant`. On subsequent visits the SDK cold-boots with `prompt=none` against `auth.oxy.so` — no consent screen, no re-login — as long as the grant remains and scopes are unchanged. Revoke the grant in Connected apps (`DELETE /auth/grants/:applicationId`) to force re-consent. First visit still requires the full interactive authorize + consent flow. **`webAuthMode="popup"` (issue #691, Phase 7a) disables this automatic redirect entirely** — a popup-mode app with no local device session simply starts signed out on every visit, and the user re-triggers sign-in (the popup, not a full-page bounce) from your button.
 2. **No Oxy session cookies on your domain.** Oxy's device transport (`deviceId` + `deviceSecret` in your origin's `localStorage`) never uses cookies. Never read, set, or depend on Oxy cookies; never send `credentials: 'include'` to Oxy APIs expecting a session to appear.
-3. **No browser federated-identity or hidden iframe tricks.** FedCM and iframe session probes were removed. The only cross-origin hops are top-level redirects: interactive authorize (first visit) and silent authorize (`prompt=none`, reloads).
+3. **No browser federated-identity or hidden iframe tricks.** FedCM and iframe session probes were removed. The only cross-origin hops are a visible, user-gesture-triggered window and standard top-level redirects: interactive authorize (first visit, as a top-level redirect or — with `webAuthMode="popup"` — a small window that relays back via `postMessage`, never a hidden iframe) and silent authorize (`prompt=none`, reloads, `webAuthMode="redirect"` only).
 4. **No Oxy-internal callback routes.** Your callback is the plain OAuth `redirectUri` you registered in Console. Do not register Oxy-internal callback paths in your app or expect an injected bootstrap script to consume the redirect — those mechanisms no longer exist.
 5. **No client secret in a browser or app bundle.** SPAs and native apps use `public` credentials + PKCE. Only a server may hold a `confidential` secret.
 6. **No skipping `state` validation.** Always generate `state` with `generateOAuthState()` and reject any callback whose `state` doesn't match — this is your CSRF defense across the redirect.
@@ -325,7 +345,7 @@ Third-party integration is **standard OAuth only**. Do not expect — or try to 
 
 | Method | Endpoint | Auth | Purpose |
 |--------|----------|------|---------|
-| GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `prompt=none` for silent restore |
+| GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `prompt=none` for silent restore, optional `response_mode=web_message` to request popup delivery (issue #691 Phase 2 — falls back to a redirect with no opener) |
 | GET | `api.oxy.so/auth/oauth/client/:clientId` | none | Public, sanitized application metadata (name, icon, type, scopes, legal URLs). Generic 404 for unknown/revoked clients |
 | POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, refresh_token, token_type, expires_in, session_id, user } }` |
 | GET | `api.oxy.so/auth/grants` | Bearer | User's connected apps |

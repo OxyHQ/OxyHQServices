@@ -117,6 +117,25 @@ const es: LocaleDict = {
     noRequestDesc:
       'Abre la app en la que quieres iniciar sesión e inténtalo de nuevo. La solicitud de autorización empieza ahí.',
     goToSignIn: 'Ir a iniciar sesión',
+    // La vía de Commons: aprobar la autorización directamente en Oxy, sin
+    // iniciar sesión antes en este sitio. El titular y los mensajes de progreso
+    // vienen del diccionario compartido `accountSwitcher.*` de `@oxyhq/core`,
+    // así que aquí solo viven las cadenas propias de esta vía.
+    commons: {
+      description:
+        'Apruébalo en Oxy desde tu móvil. No hace falta que inicies sesión aquí primero.',
+      openOnThisDevice: 'Tengo Oxy en este dispositivo',
+      signInHere: 'Iniciar sesión en este dispositivo',
+      errors: {
+        startFailed: 'No pudimos iniciar esta solicitud. Inténtalo de nuevo.',
+        requestExpired: 'Esta solicitud caducó antes de que se aprobara.',
+        unreachable: 'Perdimos el contacto con esta solicitud y no pudimos saber si se aprobó.',
+        finalizeFailed:
+          'No pudimos completar esta autorización. Inicia una solicitud nueva para volver a intentarlo.',
+        redirectMismatch:
+          'Esta autorización no se pudo entregar de forma segura. Vuelve a la app y empieza de nuevo.',
+      },
+    },
   },
 };
 
