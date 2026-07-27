@@ -1,10 +1,9 @@
 /**
  * Notifications subscreen — push, digest, and sound preferences.
  *
- * Toggles persist via `useInboxPrefs` (local-device storage). NOTE: these
- * preferences are not yet wired to device notification delivery — Expo
- * Notifications registration and digest/sound routing land in Phase 4. Until
- * then these switches only record the user's intent locally.
+ * Toggles persist via `useInboxPrefs` (local-device storage). Push
+ * registration is wired to the "Push notifications" toggle via
+ * `usePushRegistration`; digest and sound routing are still local-only.
  *
  * Layout: small icon-eyebrow subsections each with two or three visual
  * toggles — not the iOS row-spam pattern.

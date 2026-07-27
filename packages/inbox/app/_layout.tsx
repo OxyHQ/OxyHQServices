@@ -27,6 +27,8 @@ import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
+import { useEmailPushNotifications } from '@/hooks/notifications/useEmailPushNotifications';
+import { useForegroundNotificationHandler } from '@/hooks/notifications/useForegroundNotificationHandler';
 import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { clearQueue } from '@/utils/offlineQueue';
@@ -190,7 +192,7 @@ function BloomImageResolver({ children }: { children: ReactNode }) {
  */
 function RootEffects() {
   const { t } = useTranslation();
-  const { user, activeSessionId } = useOxy();
+  const { user, activeSessionId, canUsePrivateApi } = useOxy();
   const queryClient = useQueryClient();
 
   // Reset account-scoped cache/UI state DURING render (not in an effect) the
@@ -219,6 +221,10 @@ function RootEffects() {
   // Register the device push token with the backend when the user has push
   // notifications enabled (native only). No-op on web / signed-out.
   usePushRegistration();
+
+  // Route tapped / cold-launched mail pushes into the conversation screen.
+  useEmailPushNotifications(canUsePrivateApi);
+  useForegroundNotificationHandler();
 
   // Register service worker on web
   useEffect(() => {

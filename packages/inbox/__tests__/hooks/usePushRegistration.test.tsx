@@ -32,6 +32,15 @@ jest.mock('@/contexts/inbox-prefs-context', () => ({
   useInboxPrefs: () => ({ prefs: { pushNotifications }, setPref: jest.fn(), loaded: true }),
 }));
 
+jest.mock('@/lib/i18n', () => ({
+  useTranslation: () => ({
+    t: (key: string) =>
+      key === 'notifications.push.channel.name' ? 'Email' : 'New mail notifications',
+    locale: 'en-US',
+    setLocale: jest.fn(),
+  }),
+}));
+
 function installSession(
   overrides: { canUsePrivateApi?: boolean; userId?: string; deviceId?: string } = {},
 ): MockOxyServices {

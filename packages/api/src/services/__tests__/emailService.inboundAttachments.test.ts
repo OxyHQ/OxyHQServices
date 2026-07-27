@@ -77,8 +77,8 @@ jest.mock('../smtp.outbound', () => ({
   smtpOutbound: { send: jest.fn() },
   default: { send: jest.fn() },
 }));
-jest.mock('../push.service', () => ({
-  pushService: { sendPushNotification: jest.fn().mockResolvedValue(undefined) },
+jest.mock('../emailPushDelivery.service', () => ({
+  sendInboxEmailPush: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../utils/logger', () => ({

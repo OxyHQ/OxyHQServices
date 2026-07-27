@@ -20,11 +20,13 @@ import { useOxy } from '@oxyhq/services';
 import { logger } from '@oxyhq/core';
 
 import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
+import { useTranslation } from '@/lib/i18n';
 import { registerInboxPushToken } from '@/lib/notifications/push-registration';
 
 const LOG_CONTEXT = { component: 'usePushRegistration' } as const;
 
 export function usePushRegistration(): void {
+  const { t } = useTranslation();
   const { prefs } = useInboxPrefs();
   const { canUsePrivateApi, user, oxyServices, sessionClient } = useOxy();
 
@@ -63,6 +65,10 @@ export function usePushRegistration(): void {
       try {
         const outcome = await registerInboxPushToken(
           oxyServices,
+          {
+            name: t('notifications.push.channel.name'),
+            description: t('notifications.push.channel.description'),
+          },
           sessionClient?.getState()?.deviceId,
         );
 
@@ -99,5 +105,5 @@ export function usePushRegistration(): void {
         retire(expoPushToken);
       }
     };
-  }, [enabled, canUsePrivateApi, userId, oxyServices, sessionClient]);
+  }, [enabled, canUsePrivateApi, userId, oxyServices, sessionClient, t]);
 }

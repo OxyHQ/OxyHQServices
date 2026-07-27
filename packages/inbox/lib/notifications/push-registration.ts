@@ -26,7 +26,9 @@
  */
 
 import type { PushTokenPlatform, RegisterPushTokenInput } from '@oxyhq/core';
+import { INBOX_EMAIL_PUSH_CHANNEL } from '@oxyhq/contracts';
 import {
+  ensureNotificationChannel,
   getExpoPushToken,
   pushTokenPlatform,
   requestNotificationPermission,
@@ -43,6 +45,11 @@ import { OXY_CLIENT_ID } from '@/constants/oxy';
  */
 export interface PushTokenRegistrar {
   registerPushToken: (input: RegisterPushTokenInput) => Promise<void>;
+}
+
+export interface EmailChannelCopy {
+  name: string;
+  description: string;
 }
 
 /** Device facts the orchestration reads. Injected so tests need no native modules. */
@@ -76,7 +83,7 @@ export type PushRegistrationOutcome =
 export async function registerInstallationPushToken(
   registrar: PushTokenRegistrar,
   environment: PushTokenEnvironment,
-  options: { clientId: string; deviceId?: string },
+  options: { clientId: string; deviceId?: string; channel: EmailChannelCopy },
 ): Promise<PushRegistrationOutcome> {
   const platform = environment.pushTokenPlatform();
   if (!platform) {
@@ -97,6 +104,13 @@ export async function registerInstallationPushToken(
     // The adapter has already logged WHY (no project id, denied, offline).
     return { status: 'skipped', reason: 'no-token' };
   }
+
+  await ensureNotificationChannel({
+    id: INBOX_EMAIL_PUSH_CHANNEL,
+    name: options.channel.name,
+    description: options.channel.description,
+    importance: 'high',
+  });
 
   const input: RegisterPushTokenInput = {
     expoPushToken,
@@ -122,10 +136,12 @@ const deviceEnvironment: PushTokenEnvironment = {
  */
 export function registerInboxPushToken(
   registrar: PushTokenRegistrar,
+  channel: EmailChannelCopy,
   deviceId?: string,
 ): Promise<PushRegistrationOutcome> {
   return registerInstallationPushToken(registrar, deviceEnvironment, {
     clientId: OXY_CLIENT_ID,
+    channel,
     ...(deviceId ? { deviceId } : {}),
   });
 }

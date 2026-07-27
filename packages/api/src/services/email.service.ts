@@ -36,7 +36,7 @@ import { EmailFilter } from '../models/EmailFilter';
 import { aiLabelingService } from './aiLabeling.service';
 import { cardExtractionService } from './cardExtraction.service';
 import { smtpOutbound } from './smtp.outbound';
-import { pushService } from './push.service';
+import { sendInboxEmailPush } from './emailPushDelivery.service';
 import { assetService } from './assetServiceSingleton';
 import { simpleParser } from 'mailparser';
 
@@ -910,17 +910,12 @@ class EmailService {
     if (!isSpam) {
       const senderName = params.from.name || params.from.address;
       const pushBody = params.subject || '(no subject)';
-      pushService.sendPushNotification({
+      void sendInboxEmailPush({
         userId,
         title: senderName,
         body: pushBody,
-        channelId: 'email',
-        data: {
-          messageId: message._id.toString(),
-          mailboxId: mailbox._id.toString(),
-        },
-      }).catch((err) => {
-        logger.warn('Push notification failed', { userId, error: String(err) });
+        messageId: message._id.toString(),
+        mailboxId: mailbox._id.toString(),
       });
     }
 

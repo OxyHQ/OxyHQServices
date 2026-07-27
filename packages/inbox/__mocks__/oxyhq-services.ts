@@ -109,9 +109,12 @@ export const getExpoPushToken = jest.fn<Promise<string | null>, []>(
   async () => MOCK_EXPO_PUSH_TOKEN,
 );
 
+export const ensureNotificationChannel = jest.fn<Promise<void>, [unknown]>(async () => undefined);
+
 /** Restore the "supported platform, permission granted, token available" default. */
 export function __resetNotificationAdapter(): void {
   pushTokenPlatform.mockReset().mockReturnValue('ios');
   requestNotificationPermission.mockReset().mockResolvedValue(true);
   getExpoPushToken.mockReset().mockResolvedValue(MOCK_EXPO_PUSH_TOKEN);
+  ensureNotificationChannel.mockReset().mockResolvedValue(undefined);
 }

@@ -31,9 +31,7 @@ import {
   type UnregisterPushTokenBody,
 } from '../schemas/notifications.schemas';
 import { PushToken } from '../models/PushToken';
-import { Application } from '../models/Application';
-import { ApplicationCredential } from '../models/ApplicationCredential';
-import { isCredentialUsable } from '../utils/credentialUsability';
+import { resolveApplicationIdFromClientId } from '../utils/resolveApplicationFromClientId';
 import { logger } from '../utils/logger';
 import type mongoose from 'mongoose';
 import type { NextFunction, Response } from 'express';
@@ -89,30 +87,6 @@ interface PushTokenWrite {
   platform: 'ios' | 'android' | 'web';
   deviceId?: string;
   applicationId?: mongoose.Types.ObjectId;
-}
-
-/**
- * Resolve a caller-supplied `clientId` (an `ApplicationCredential.publicKey`) to
- * the active `Application` it belongs to, through the SAME usable-credential
- * predicate every other credential-resolution site uses. Returns null when the
- * credential is unknown, revoked / out of its rotation grace, or its application
- * is not active — the caller REJECTS in that case rather than silently storing
- * an unscoped token.
- */
-async function resolveApplicationIdFromClientId(
-  clientId: string,
-): Promise<mongoose.Types.ObjectId | null> {
-  const credential = await ApplicationCredential.findOne({ publicKey: clientId });
-  if (!credential || !isCredentialUsable(credential)) {
-    return null;
-  }
-
-  const application = await Application.findById(credential.applicationId);
-  if (!application || application.status !== 'active') {
-    return null;
-  }
-
-  return application._id;
 }
 
 // Register a push token

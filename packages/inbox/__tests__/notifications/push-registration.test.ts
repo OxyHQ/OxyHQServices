@@ -20,10 +20,12 @@ import {
   MOCK_EXPO_PUSH_TOKEN,
   __resetNotificationAdapter,
   getExpoPushToken as sdkGetExpoPushToken,
+  ensureNotificationChannel as sdkEnsureNotificationChannel,
   pushTokenPlatform as sdkPushTokenPlatform,
   requestNotificationPermission as sdkRequestNotificationPermission,
 } from '@/__mocks__/oxyhq-services';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
+import { INBOX_EMAIL_PUSH_CHANNEL } from '@oxyhq/contracts';
 import {
   registerInboxPushToken,
   registerInstallationPushToken,
@@ -66,12 +68,14 @@ function harness(
   };
 }
 
+const CHANNEL = { name: 'Email', description: 'New mail notifications' };
+
 describe('registerInstallationPushToken', () => {
   it('registers the Expo push token through the SDK, scoped to the app', async () => {
     const { registrar, environment } = harness();
 
     await expect(
-      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID }),
+      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL }),
     ).resolves.toEqual({ status: 'registered', expoPushToken: EXPO_TOKEN });
 
     expect(registrar.registerPushToken).toHaveBeenCalledTimes(1);
@@ -87,6 +91,7 @@ describe('registerInstallationPushToken', () => {
 
     await registerInstallationPushToken(registrar, environment, {
       clientId: OXY_CLIENT_ID,
+      channel: CHANNEL,
       deviceId: 'device-9',
     });
 
@@ -98,7 +103,7 @@ describe('registerInstallationPushToken', () => {
   it('omits deviceId entirely rather than sending an empty one', async () => {
     const { registrar, environment } = harness();
 
-    await registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID });
+    await registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL });
 
     expect(registrar.registerPushToken.mock.calls[0][0]).not.toHaveProperty('deviceId');
   });
@@ -106,7 +111,7 @@ describe('registerInstallationPushToken', () => {
   it('only ever sends an Expo push token — the shape the push service accepts', async () => {
     const { registrar, environment } = harness();
 
-    await registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID });
+    await registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL });
 
     const sent: unknown = registrar.registerPushToken.mock.calls[0][0];
     const token = (sent as { expoPushToken: string }).expoPushToken;
@@ -117,7 +122,7 @@ describe('registerInstallationPushToken', () => {
     const { registrar, environment, requestNotificationPermission } = harness({ platform: null });
 
     await expect(
-      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID }),
+      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL }),
     ).resolves.toEqual({ status: 'skipped', reason: 'unsupported-platform' });
 
     expect(requestNotificationPermission).not.toHaveBeenCalled();
@@ -128,7 +133,7 @@ describe('registerInstallationPushToken', () => {
     const { registrar, environment, getExpoPushToken } = harness({ permission: false });
 
     await expect(
-      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID }),
+      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL }),
     ).resolves.toEqual({ status: 'skipped', reason: 'permission-not-granted' });
 
     expect(getExpoPushToken).not.toHaveBeenCalled();
@@ -139,7 +144,7 @@ describe('registerInstallationPushToken', () => {
     const { registrar, environment } = harness({ token: null });
 
     await expect(
-      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID }),
+      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL }),
     ).resolves.toEqual({ status: 'skipped', reason: 'no-token' });
 
     expect(registrar.registerPushToken).not.toHaveBeenCalled();
@@ -150,7 +155,7 @@ describe('registerInstallationPushToken', () => {
     registrar.registerPushToken.mockRejectedValue(new Error('not an Expo push token'));
 
     await expect(
-      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID }),
+      registerInstallationPushToken(registrar, environment, { clientId: OXY_CLIENT_ID, channel: CHANNEL }),
     ).rejects.toThrow('not an Expo push token');
   });
 });
@@ -163,7 +168,7 @@ describe('registerInboxPushToken', () => {
   it("reads the device through the SDK's adapter and scopes it to the Inbox client id", async () => {
     const registrar = { registerPushToken: jest.fn(async () => undefined) };
 
-    await expect(registerInboxPushToken(registrar)).resolves.toEqual({
+    await expect(registerInboxPushToken(registrar, CHANNEL)).resolves.toEqual({
       status: 'registered',
       expoPushToken: MOCK_EXPO_PUSH_TOKEN,
     });
@@ -173,6 +178,12 @@ describe('registerInboxPushToken', () => {
     expect(sdkPushTokenPlatform).toHaveBeenCalledTimes(1);
     expect(sdkRequestNotificationPermission).toHaveBeenCalledTimes(1);
     expect(sdkGetExpoPushToken).toHaveBeenCalledTimes(1);
+    expect(sdkEnsureNotificationChannel).toHaveBeenCalledWith({
+      id: INBOX_EMAIL_PUSH_CHANNEL,
+      name: CHANNEL.name,
+      description: CHANNEL.description,
+      importance: 'high',
+    });
 
     expect(registrar.registerPushToken).toHaveBeenCalledWith({
       expoPushToken: MOCK_EXPO_PUSH_TOKEN,
@@ -184,7 +195,7 @@ describe('registerInboxPushToken', () => {
   it('threads the device session id it is handed', async () => {
     const registrar = { registerPushToken: jest.fn(async () => undefined) };
 
-    await registerInboxPushToken(registrar, 'device-9');
+    await registerInboxPushToken(registrar, CHANNEL, 'device-9');
 
     expect(registrar.registerPushToken).toHaveBeenCalledWith(
       expect.objectContaining({ deviceId: 'device-9' }),
@@ -195,7 +206,7 @@ describe('registerInboxPushToken', () => {
     sdkPushTokenPlatform.mockReturnValue(null);
     const registrar = { registerPushToken: jest.fn(async () => undefined) };
 
-    await expect(registerInboxPushToken(registrar)).resolves.toEqual({
+    await expect(registerInboxPushToken(registrar, CHANNEL)).resolves.toEqual({
       status: 'skipped',
       reason: 'unsupported-platform',
     });
@@ -211,7 +222,7 @@ describe('registerInboxPushToken', () => {
     sdkGetExpoPushToken.mockResolvedValue(null);
     const registrar = { registerPushToken: jest.fn(async () => undefined) };
 
-    await expect(registerInboxPushToken(registrar)).resolves.toEqual({
+    await expect(registerInboxPushToken(registrar, CHANNEL)).resolves.toEqual({
       status: 'skipped',
       reason: 'no-token',
     });

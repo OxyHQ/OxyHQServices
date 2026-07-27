@@ -578,6 +578,15 @@ const es: LocaleDict = {
       footer: 'Al iniciar sesión aceptas nuestros Términos y reconoces nuestra Política de Privacidad.',
     },
   },
+
+  notifications: {
+    push: {
+      channel: {
+        name: 'Correo',
+        description: 'Notificaciones de correo nuevo',
+      },
+    },
+  },
 };
 
 export default es;

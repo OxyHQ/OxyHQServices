@@ -579,6 +579,15 @@ const en: LocaleDict = {
       footer: 'By signing in you agree to our Terms and acknowledge our Privacy Policy.',
     },
   },
+
+  notifications: {
+    push: {
+      channel: {
+        name: 'Email',
+        description: 'New mail notifications',
+      },
+    },
+  },
 };
 
 export default en;
