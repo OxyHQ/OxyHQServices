@@ -383,7 +383,11 @@ export function createNodeApp(deps: NodeAppDependencies): NodeApp {
   // ── Serve a content-addressed blob ───────────────────────────────────────────
   app.get(`${NODE_BLOBS_PATH}/:hash`, async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const hash = req.params.hash.toLowerCase();
+      // Express 5 types a route param as `string | string[]` (a pattern can bind
+      // repeats), so narrow before use — a non-string can only come from a
+      // malformed match and falls through to the hex check below as invalid.
+      const rawHash = req.params.hash;
+      const hash = typeof rawHash === 'string' ? rawHash.toLowerCase() : '';
       if (!SHA256_HEX.test(hash)) {
         res.status(400).json({ error: 'invalid_hash' });
         return;

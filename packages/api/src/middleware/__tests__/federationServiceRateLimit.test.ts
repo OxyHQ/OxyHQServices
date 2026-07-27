@@ -91,7 +91,7 @@ describe('general limiter (rl:general) exempts federation service paths', () => 
   beforeAll(async () => {
     const app = express();
     app.use(rateLimiter);
-    app.all('*', (_req, res) => res.json({ ok: true }));
+    app.all('/*splat', (_req, res) => res.json({ ok: true }));
     server = await listen(app);
   });
 
@@ -128,7 +128,7 @@ describe('federationServiceLimiter (rl:federation:service) is the dedicated high
   beforeAll(async () => {
     const app = express();
     app.use(federationServiceLimiter);
-    app.all('*', (_req, res) => res.json({ ok: true }));
+    app.all('/*splat', (_req, res) => res.json({ ok: true }));
     server = await listen(app);
   });
 
