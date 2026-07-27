@@ -1046,6 +1046,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           followingIds: graph?.followingIds || [],
           mutualIds: graph?.mutualIds || [],
           blockedIds: graph?.blockedIds || [],
+          restrictedIds: graph?.restrictedIds || [],
         };
       } catch (error) {
         throw this.handleError(error);
