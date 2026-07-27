@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { ApiError, AuthStateStore, SessionClient, User } from '@oxyhq/core';
+import type { ApiError, AuthStateStore, IdentityBinding, SessionClient, User } from '@oxyhq/core';
 import type { AuthState } from '../../stores/authStore';
 import type { ClientSession, SessionLoginResponse } from '@oxyhq/core';
 import { DeviceManager } from '@oxyhq/core';
@@ -43,6 +43,15 @@ export interface UseAuthOperationsOptions {
   logoutStore: () => void;
   setAuthState: (state: Partial<AuthState>) => void;
   logger?: (message: string, error?: unknown) => void;
+  /**
+   * Identity-bound session (`sessionMode: 'identity'`). When set, a successful
+   * key sign-in writes the durable `{publicKey, accountId}` pin so pinned
+   * re-mints and projections bind immediately instead of waiting for a second
+   * `establishIdentitySession` round-trip.
+   */
+  identityBinding?: IdentityBinding;
+  /** Refreshes the provider's memoised pinned account id after the pin lands. */
+  refreshPinnedAccountId?: () => Promise<string | null>;
 }
 
 export interface UseAuthOperationsResult {
@@ -97,6 +106,8 @@ export const useAuthOperations = ({
   logoutStore,
   setAuthState,
   logger,
+  identityBinding,
+  refreshPinnedAccountId,
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
   /**
    * Internal function to perform challenge-response sign in.
@@ -152,6 +163,18 @@ export const useAuthOperations = ({
           });
         } catch (persistError) {
           logger?.('Failed to persist auth state after sign-in', persistError);
+        }
+      }
+
+      if (identityBinding) {
+        try {
+          await identityBinding.pinStore.save({
+            publicKey: publicKey.toLowerCase(),
+            accountId: sessionResponse.user.id,
+          });
+          await refreshPinnedAccountId?.();
+        } catch (pinError) {
+          logger?.('Failed to persist identity pin after sign-in', pinError);
         }
       }
 
@@ -237,6 +260,8 @@ export const useAuthOperations = ({
       switchSession,
       syncFromClient,
       updateSessions,
+      identityBinding,
+      refreshPinnedAccountId,
     ],
   );
 

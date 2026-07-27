@@ -494,6 +494,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutStore,
     setAuthState,
     logger,
+    ...(identity
+      ? {
+          identityBinding: identity.binding,
+          refreshPinnedAccountId: () => identity.refreshPinnedAccountId(),
+        }
+      : {}),
   });
 
   // "That wasn't me": repudiating a flagged sign-in IS revoking the device

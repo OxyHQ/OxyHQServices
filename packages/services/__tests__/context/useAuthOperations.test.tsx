@@ -141,6 +141,10 @@ interface SetupOpts {
   sessionClient?: ReturnType<typeof buildFakeSessionClient>;
   store?: ReturnType<typeof buildFakeStore>;
   syncFromClient?: jest.Mock<Promise<void>, []>;
+  identityBinding?: {
+    pinStore: { save: jest.Mock; load: jest.Mock; clear: jest.Mock };
+  };
+  refreshPinnedAccountId?: jest.Mock<Promise<string | null>, []>;
 }
 
 const setup = (opts: SetupOpts = {}) => {
@@ -190,6 +194,8 @@ const setup = (opts: SetupOpts = {}) => {
       logoutStore,
       setAuthState,
       logger,
+      identityBinding: opts.identityBinding as never,
+      refreshPinnedAccountId: opts.refreshPinnedAccountId,
     }),
   );
 
@@ -256,6 +262,30 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(signedInUser?.id).toBe('user-1');
     expect(helpers.setAuthState).toHaveBeenCalledWith({ isLoading: true, error: null });
     expect(helpers.setAuthState).toHaveBeenLastCalledWith({ isLoading: false });
+  });
+
+  it('persists the identity pin when identityBinding is provided', async () => {
+    (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValueOnce([
+      { sessionId: 'new-session', deviceId: 'device-1', userId: 'user-1', isCurrent: true },
+    ]);
+
+    const pinStore = {
+      load: jest.fn(async () => null),
+      save: jest.fn(async () => true),
+      clear: jest.fn(async () => undefined),
+    };
+    const refreshPinnedAccountId = jest.fn(async () => 'user-1');
+    const helpers = setup({ identityBinding: { pinStore }, refreshPinnedAccountId });
+
+    await act(async () => {
+      await helpers.result.current.signIn('AbC123');
+    });
+
+    expect(pinStore.save).toHaveBeenCalledWith({
+      publicKey: 'abc123',
+      accountId: 'user-1',
+    });
+    expect(refreshPinnedAccountId).toHaveBeenCalledTimes(1);
   });
 
   it('does not fail sign-in when device-session registration fails (best-effort)', async () => {
