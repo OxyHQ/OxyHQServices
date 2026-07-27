@@ -42,11 +42,6 @@ export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 export { IdentityBoundSessionError } from './ui/session/identityBinding';
 
 // ---------------------------------------------------------------------------
-// Font loading
-// ---------------------------------------------------------------------------
-export { FontLoader, setupFonts } from './ui/components/FontLoader';
-
-// ---------------------------------------------------------------------------
 // Zustand stores
 // ---------------------------------------------------------------------------
 export { useAuthStore } from './ui/stores/authStore';

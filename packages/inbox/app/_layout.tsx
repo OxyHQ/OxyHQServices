@@ -33,11 +33,10 @@ import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import { OXY_CLIENT_ID, OXY_AUTH_REDIRECT_URI } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Hide the native splash immediately on import. `BloomThemeProvider` configures
-// the Inter font synchronously via `Text.defaultProps`, and `OxyProvider`'s
-// internal `FontLoader` loads custom font weights in the background without
-// blocking children (system font is used as fallback). No artificial wait is
-// required before unhiding the splash.
+// Hide the native splash immediately on import. Font loading is owned entirely
+// by `BloomThemeProvider`'s `FontLoader`, which gates its own subtree and
+// applies the default family via `Text.defaultProps` once the bundled families
+// are ready. No artificial wait is required here before unhiding the splash.
 SplashScreen.hideAsync().catch(() => {
   // hideAsync rejects if the splash has already been hidden (e.g. during a
   // fast-refresh re-import). The state is idempotent, so swallow this case.
