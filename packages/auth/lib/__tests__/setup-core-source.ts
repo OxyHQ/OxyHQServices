@@ -19,6 +19,7 @@ import { isOxyRpOrigin } from "../../../core/src/utils/webauthnOrigin"
 import { getAccountDisplayName } from "../../../core/src/utils/accountUtils"
 import { translate } from "../../../core/src/i18n"
 import { getBaseLanguage, normalizeLocale } from "../../../core/src/utils/languageUtils"
+import { selectCommonsDelivery } from "../../../core/src/utils/commonsDelivery"
 
 mock.module("@oxyhq/core", () => ({
     isOxyRpOrigin,
@@ -27,4 +28,7 @@ mock.module("@oxyhq/core", () => ({
     translate,
     getBaseLanguage,
     normalizeLocale,
+    // The shared "one primary delivery route" decision the OAuth-bound Commons
+    // lane (`lib/commons-oauth-request.ts`) reuses rather than re-deciding.
+    selectCommonsDelivery,
 }))

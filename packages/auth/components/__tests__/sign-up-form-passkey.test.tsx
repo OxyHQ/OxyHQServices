@@ -29,10 +29,13 @@ mock.module("@oxyhq/services", () => ({
         switchToAccount: async () => undefined,
     }),
     useSwitchableAccounts: () => ({ isLoading: false, currentSessionId: null, accounts: [] }),
-    // No-op stub — this suite never renders it, but hub-passkey.test.tsx's
-    // mock of the SAME process-global specifier needs this export defined
-    // regardless of which file's mock.module call is currently active.
+    // No-op stubs — this suite never renders them, but `mock.module` is
+    // process-global (last writer wins across files), so every export a
+    // sibling suite's page imports statically must be defined here too:
+    // `OxyAuthChooser` for hub-passkey.test.tsx, `OxyConsentScreen` for
+    // authorize-commons-lane.test.tsx.
     OxyAuthChooser: () => null,
+    OxyConsentScreen: () => null,
 }))
 
 const { SignUpForm } = await import("@/components/sign-up-form")

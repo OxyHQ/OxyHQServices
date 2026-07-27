@@ -100,44 +100,93 @@ The transport that carries "which device is this?" across reloads is **`deviceId
      `deviceId`, and persists locally. Realtime changes propagate over Socket.IO
      `session_state` on `device:<deviceId>` once each app holds a bearer.
 
+   Both hops are FULL-PAGE, non-gesture navigations, so both are gated on
+   `webAuthMode: 'redirect'` (`OxyProvider` prop, default; issue #691 Phases 2/7a) —
+   `webAuthMode: 'popup'` disables both (`allowsAutomaticIdpRedirect`), trading
+   cross-domain silent sync for a tab that never leaves the relying party's route. See
+   "Cold boot" below.
+
 ## Cold boot
 
 `runSessionColdBoot` (`packages/core/src/boot/sessionColdBoot.ts`, exported from
 `@oxyhq/core`) is a pure ordered short-circuit: the first step that yields a session
-wins. It is invoked by `OxyProvider` on mount — apps never implement restore themselves.
+wins. `@oxyhq/services`' `runProviderColdBoot` (`packages/services/src/ui/boot/`) wraps
+it with the web-only OAuth-return and silent-restore lanes described below. It is
+invoked by `OxyProvider` on mount — apps never implement restore themselves.
 
-1. **`device-secret-mint`** (web + native) — when the origin persisted a `deviceId` +
+**Two session modes** (`OxyProvider` prop `sessionMode: 'account' | 'identity'`, default
+`'account'`; issue #691 Phase 1): `'account'` is every ordinary Oxy app — the device's
+active account owns the session. `'identity'` is Commons — the owner of THIS device's
+PRIMARY identity key owns the session PERMANENTLY, independent of the device's mutable
+`activeAccountId`. Each step below is bound to a persisted `{publicKey, accountId}` pin
+(`packages/core/src/session/identityPin.ts`) reconciled against the live
+`KeyManager.getPublicKey()`; `switchToAccount`/`switchSession` throw
+`IdentityBoundSessionError` in this mode instead of switching.
+
+`runSessionColdBoot` steps, in order:
+
+1. **`warm-token-plant`** (web + native) — when the persisted store already holds a
+   still-valid access token (expiry more than the refresh-lead window away) plant it
+   AS-IS with zero network round-trip. In `'identity'` mode the token is only accepted
+   when it belongs to the PINNED account (checked against both the stored `userId` and
+   the token's own identity-tag claim).
+2. **`device-secret-mint`** (web + native) — when the origin persisted a `deviceId` +
    `deviceSecret`, mint a short access token with a single bearer-less POST to
-   `/session/device/token`, persist the rotated secret, plant the token. A
+   `/session/device/token`, persist the rotated secret, plant the token. In `'account'`
+   mode this mints for the device's active account; in `'identity'` mode it passes the
+   pinned `accountId` as the optional `accountId` field of that same request (see
+   [device-session.md](./auth/device-session.md)) — a rejected pin
+   (`account_not_on_device`) falls through to step 3 without dropping the secret. A
    `no_active_session` 401 is an authoritative signed-out; an `invalid_device_secret` 401
-   drops the (diverged) secret and falls through to silent OAuth on web.
-2. **`silent-oauth-restore`** (web only, in `@oxyhq/services`) — when local mint finds no
-   credential (or the secret was stale), redirect to `auth.oxy.so/authorize?prompt=none`
-   + PKCE. The IdP hub auto-approves when it has a session + grant; the RP exchanges the
-   returned code for tokens on the **same** `deviceId`. One attempt per navigation
-   (`sessionStorage.oxy.silent_oauth_attempted`); `error=login_required` ends signed-out
-   silently.
-3. **`shared-key-signin`** (native) — re-mint from the shared Commons identity in the
-   app-group keychain.
+   drops the (diverged) secret and falls through.
+3. **`shared-key-signin`** (native, `'account'` mode) — re-mint from the shared Commons
+   identity in the app-group keychain — **replaced by `identity-key-signin`** in
+   `'identity'` mode, which re-mints from THIS device's PRIMARY key
+   (`KeyManager.getPublicKey()` → challenge → sign → `verifyChallenge`) and
+   (re)establishes the identity pin. Both are network steps, gated on the same
+   best-effort offline hint as step 2, and both run with `{ retry: false }` (the proactive
+   refresh scheduler and the reactive 401 lane own retries).
 
-If nothing yields a session, the app is silently signed out — no redirect, no dialog.
+If nothing yields a session, `runSessionColdBoot` resolves signed out. Two more lanes run
+around it, in `@oxyhq/services`, for WEB apps in `'account'` mode only (both are inert in
+`sessionMode: 'identity'`, and gated on the transport described below):
+
+4. **OAuth authorization-code return** (`tryCompleteOAuthReturn`) — consumes a `?code=`
+   already on the URL from a redirect-mode third-party sign-in return trip, BEFORE
+   `runSessionColdBoot` runs. Always enabled — this is the user's own explicit sign-in
+   completing, not an automatic navigation.
+5. **Silent cross-origin OAuth restore** (`maybeStartSilentOAuthRestore`) — when
+   `runSessionColdBoot` found no session, a full-page `prompt=none` bounce to
+   `auth.oxy.so/authorize` + PKCE lets an official web origin pick up a session another
+   official origin already established. **Gated on `webAuthMode`** (`OxyProvider` prop,
+   default `'redirect'`; issue #691 Phases 2/7a): `'redirect'` reaches this lane
+   unchanged; `'popup'` FORBIDS it (`allowsAutomaticIdpRedirect`) — it is a top-level
+   navigation with no user gesture behind it, exactly what popup mode exists to
+   eliminate. A popup-mode domain with no local credential simply resolves signed out;
+   the user's next explicit "Continue with Oxy" click opens the popup instead.
+
 The proactive scheduler + the reactive 401 handler both re-mint via the same
 `deviceSecret` path (`refreshPersistedSession`), so a long-lived session stays alive past
 the short access-token TTL without any refresh token.
 
 ```mermaid
 flowchart TD
-  Mount["OxyProvider mount"] --> CB["runSessionColdBoot"]
-  CB --> Secret{"persisted deviceId + deviceSecret?"}
+  Mount["OxyProvider mount"] --> Return{"?code= on URL? (redirect-mode OAuth return)"}
+  Return -->|yes| Exchange["Exchange code -> commit session"] --> In["Authenticated — no UI"]
+  Return -->|no| Warm{"warm access token still valid?"}
+  Warm -->|yes| In
+  Warm -->|no| Secret{"persisted deviceId + deviceSecret?"}
   Secret -->|yes| Mint["POST /session/device/token"]
-  Mint -->|session| In["Authenticated — no UI"]
-  Mint -->|"401 no_active_session"| Out["Signed out — silent"]
+  Mint -->|session| In
+  Mint -->|"401 no_active_session"| Native
   Mint -->|"401 invalid_device_secret / transient"| Native
-  Secret -->|no| Native{"native + Commons key?"}
-  Native -->|yes| Shared["signInWithSharedIdentity"]
+  Secret -->|no| Native{"account mode: native + Commons key? / identity mode: primary key"}
+  Native -->|yes| Shared["shared-key-signin (account) / identity-key-signin (identity)"]
   Shared --> In
-  Native -->|"no / web"| Out
-  Out --> Btn["User taps profile button → OxyAccountDialog"]
+  Native -->|"no / web"| Out["Signed out — silent"]
+  Out --> Popup{"account mode + webAuthMode=redirect + official web origin?"}
+  Popup -->|yes| Silent["prompt=none silent restore"] --> In
+  Popup -->|no| Btn["User taps Continue with Oxy -> OxyAccountDialog / OxySignInButton"]
 ```
 
 ## `SessionClient` (`@oxyhq/core`)
@@ -257,15 +306,22 @@ function Home() {
 
 - **`useAuth().signIn()`** opens the in-app dialog — interactive sign-in is never a
   redirect to a login page.
-- **`OxyAccountDialog`** — the single account surface (switcher + Commons QR sign-in +
-  collapsed password), built on Bloom
-  `<Dialog placement={{ base: 'bottom', md: 'center' }}>`. Opened via
-  `useOxy().openAccountDialog()`.
+- **`OxyAccountDialog`** — the single account surface (switcher + sign-in), built on
+  Bloom `<Dialog placement={{ base: 'bottom', md: 'center' }}>`. Opened via
+  `useOxy().openAccountDialog()`. Its sign-in entry (issue #691, Phase 5) shows existing
+  device accounts plus ONE primary "Continue with Oxy" action — Oxy picks the delivery
+  route automatically (same-device Commons deep link → known-install push → QR; see
+  [device-session.md](./auth/device-session.md) § Automatic delivery). There is no
+  password option; scan-QR / passkey-on-this-device / "Get Commons" sit behind a
+  collapsed "Having trouble?" disclosure.
 - **`OxySignInButton`** resolves the registered Application via
   `GET /auth/oauth/client/:clientId`: official apps open the dialog in-app;
-  `third_party` apps perform a standard OAuth redirect with PKCE (`generatePkcePair`,
-  `generateOAuthState`, `buildOAuthAuthorizeUrl` from `@oxyhq/core`). See the
-  [integration guide](./auth/integration-guide.md).
+  `third_party` apps sign in via OAuth + PKCE (`generatePkcePair`, `generateOAuthState`,
+  `buildOAuthAuthorizeUrl` from `@oxyhq/core`). On web the transport is `OxyProvider`
+  prop `webAuthMode: 'popup' | 'redirect'` (default `'redirect'`; issue #691 Phase 2) —
+  `'popup'` opens a small `auth.oxy.so` window and relays the result via `postMessage`
+  instead of navigating the relying party's tab, falling back to a full-page redirect if
+  the browser blocks it. See the [integration guide](./auth/integration-guide.md).
 - **`OxyConsentScreen`** — the IdP's OAuth consent surface, exported from
   `@oxyhq/services` and mounted by auth.oxy.so.
 
