@@ -1,5 +1,5 @@
 /**
- * Message row shared by the inbox list and the Today screen.
+ * Message row shared by the inbox list and search results.
  *
  * The row is `[avatar] [block]`, where the block is two stacked lines:
  * a headline row carrying the sender and, as its sibling, the timestamp —
@@ -436,17 +436,36 @@ export function MessageRowExtras({ message, sentiment }: { message: Message; sen
 }
 
 export const MessageRow = React.memo(MessageRowInner, (prev, next) => {
+  if (
+    prev.isSelected !== next.isSelected ||
+    prev.isMultiSelected !== next.isMultiSelected ||
+    prev.isSelectionMode !== next.isSelectionMode ||
+    prev.isPinPending !== next.isPinPending ||
+    prev.showSnoozeTime !== next.showSnoozeTime
+  ) {
+    return false;
+  }
+
+  const pm = prev.message;
+  const nm = next.message;
   return (
-    prev.message._id === next.message._id &&
-    prev.message.flags.starred === next.message.flags.starred &&
-    prev.message.flags.seen === next.message.flags.seen &&
-    prev.message.flags.pinned === next.message.flags.pinned &&
-    prev.message.threadCount === next.message.threadCount &&
-    prev.message.labels === next.message.labels &&
-    prev.isSelected === next.isSelected &&
-    prev.isMultiSelected === next.isMultiSelected &&
-    prev.isSelectionMode === next.isSelectionMode &&
-    prev.isPinPending === next.isPinPending
+    pm._id === nm._id &&
+    pm.flags.starred === nm.flags.starred &&
+    pm.flags.seen === nm.flags.seen &&
+    pm.flags.pinned === nm.flags.pinned &&
+    pm.threadCount === nm.threadCount &&
+    pm.subject === nm.subject &&
+    pm.text === nm.text &&
+    pm.date === nm.date &&
+    pm.from.address === nm.from.address &&
+    pm.from.name === nm.from.name &&
+    pm.senderAvatarPath === nm.senderAvatarPath &&
+    pm.snoozedUntil === nm.snoozedUntil &&
+    (pm.labels?.length ?? 0) === (nm.labels?.length ?? 0) &&
+    (pm.labels?.every((label, i) => label === nm.labels?.[i]) ?? true) &&
+    (pm.attachments?.length ?? 0) === (nm.attachments?.length ?? 0) &&
+    Boolean(pm.card) === Boolean(nm.card) &&
+    pm.card?.type === nm.card?.type
   );
 });
 

@@ -32,7 +32,11 @@ function formatCadence(subscription: Subscription): string | null {
   if (!Number.isFinite(oldest) || !Number.isFinite(latest)) return null;
 
   const weeks = (latest - oldest) / MS_PER_WEEK;
-  if (weeks <= 0) return null;
+  if (weeks <= 0) {
+    // Same-day bursts still read as high-volume; label them daily when there
+    // is enough mail to qualify as a subscription.
+    return subscription.messageCount >= 3 ? 'daily' : null;
+  }
 
   const perWeek = subscription.messageCount / weeks;
   if (perWeek >= 5) return 'daily';

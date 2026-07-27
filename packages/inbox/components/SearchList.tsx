@@ -23,7 +23,7 @@ import { useColors } from '@/constants/theme';
 import { CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
-import { MessageRow } from '@/components/MessageRow';
+import { MessageRow, MessageRowExtras } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -312,7 +312,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     [router, replaceNavigation, messageActions],
   );
 
-  const handleBack = useGoBack();
+  const handleBack = useGoBack('/search');
 
   const handleClear = useCallback(() => {
     if (debounceRef.current) {
@@ -347,11 +347,14 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
-      <MessageRow
-        message={item}
-        onSelect={handleMessagePress}
-        isSelected={item._id === selectedMessageId}
-      />
+      <View>
+        <MessageRow
+          message={item}
+          onSelect={handleMessagePress}
+          isSelected={item._id === selectedMessageId}
+        />
+        <MessageRowExtras message={item} />
+      </View>
     ),
     [handleMessagePress, selectedMessageId],
   );

@@ -45,8 +45,12 @@ export default function InboxLayout() {
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
 
   const { data: mailboxes = [] } = useMailboxes();
+  const inboxMailboxId = useMemo(
+    () => mailboxes.find((m) => m.specialUse === SPECIAL_USE.INBOX)?._id,
+    [mailboxes],
+  );
   const { data: messagesData } = useMessages({
-    mailboxId: currentMailbox?._id,
+    mailboxId: currentMailbox?._id ?? inboxMailboxId,
   });
   const messages = useMemo(() => messagesData?.pages.flatMap((p) => p.data) ?? [], [messagesData]);
 

@@ -43,6 +43,7 @@ import {
   PrinterIcon,
 } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePathname } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 
 import { useGoBack } from '@/hooks/useGoBack';
@@ -120,6 +121,7 @@ export function MessageDetail(props: MessageDetailProps) {
 
 function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
   const { width } = useWindowDimensions();
   const colors = useColors();
 
@@ -159,7 +161,8 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   // driven by the markReadOnOpen preference. The detail view intentionally does
   // not mark read on open — a single, predictable path avoids double writes.
 
-  const handleBack = useGoBack();
+  const backFallback = pathname.startsWith('/search') ? '/search' : '/';
+  const handleBack = useGoBack(backFallback);
 
   const handleStar = useCallback(() => {
     if (!messageId || !currentMessage || toggleStar.isPending) return;

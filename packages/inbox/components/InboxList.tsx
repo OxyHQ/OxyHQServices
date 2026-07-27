@@ -618,7 +618,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       }
       return renderMessageRow(item.data);
     },
-    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeAction, prefs.leftSwipeAction, prefs.rightSwipeAction, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, handleToggleReminderComplete, handleDeleteReminder, handleReminderPress, colors.border, colors.secondaryText, sentimentMap],
+    [renderMessageRow, expandedBundles, toggleBundle, handleToggleReminderComplete, handleDeleteReminder, handleReminderPress, colors.secondaryText],
   );
 
   const getItemType = useCallback((item: ListItem) => item.type, []);
@@ -702,7 +702,9 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
-            ListHeaderComponent={<InboxGreeting messages={messages} />}
+            ListHeaderComponent={
+              isInboxView ? <InboxGreeting messages={messages} /> : null
+            }
             ListEmptyComponent={renderEmpty}
             ListFooterComponent={renderFooter}
             onEndReached={handleLoadMore}

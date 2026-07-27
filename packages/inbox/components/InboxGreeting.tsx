@@ -60,7 +60,7 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
     [today],
   );
 
-  const greetingName = user?.name.displayName ?? '';
+  const greetingName = user?.name?.displayName ?? '';
   const greetingLine = greetingName ? `${getGreeting()} ${greetingName}` : getGreeting();
 
   /**

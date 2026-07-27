@@ -124,6 +124,16 @@ export function SubscriptionsScreen() {
     [subscriptions],
   );
 
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      listRef.current?.scrollToOffset({
+        offset: info.averageItemLength * info.index,
+        animated: true,
+      });
+    },
+    [],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: Subscription }) => (
       <SubscriptionRow
@@ -247,6 +257,8 @@ export function SubscriptionsScreen() {
         <FlashList
           ref={listRef}
           data={subscriptions}
+          estimatedItemSize={88}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
           renderItem={renderItem}
           ItemSeparatorComponent={renderSeparator}
           ListHeaderComponent={

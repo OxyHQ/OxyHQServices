@@ -2328,17 +2328,19 @@ class EmailService {
           mailboxId: { $in: mailboxIds },
         },
       },
+      // Newest message first so $first picks the latest name + id for headers.
+      { $sort: { date: -1 } },
       {
         $group: {
           _id: '$from.address',
-          name: { $last: '$from.name' },
+          name: { $first: '$from.name' },
           messageCount: { $sum: 1 },
           // Same pass as the count: how many of this sender's messages were
           // ever opened. A sender you never read is the one worth dropping.
           readCount: { $sum: { $cond: [{ $eq: ['$flags.seen', true] }, 1, 0] } },
           latestDate: { $max: '$date' },
           oldestDate: { $min: '$date' },
-          latestMessageId: { $last: '$_id' },
+          latestMessageId: { $first: '$_id' },
         },
       },
       { $match: { messageCount: { $gte: 3 } } },
