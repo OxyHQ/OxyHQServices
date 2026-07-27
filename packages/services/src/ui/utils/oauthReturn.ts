@@ -6,27 +6,26 @@ import {
   normalizeOAuthRedirectUri,
   readOAuthHandshake,
 } from '@oxyhq/core';
+import { completeOAuthCode } from '../oauth/completeOAuthCode';
+import type { OAuthSessionCommitInput } from '../oauth/types';
 import { isWebBrowser } from './isWebBrowser';
 
-export interface OAuthReturnCommitInput {
-  sessionId: string;
-  accessToken?: string;
-  deviceId?: string;
-  deviceSecret?: string;
-  userId: string;
-  expiresAt?: string;
-  user?: { id: string; username?: string; avatar?: string };
-}
-
 /**
- * When the RP lands with `?code=` after password sign-in at auth.oxy.so, exchange
- * the code for a device-first session before cold boot runs.
+ * When the RP lands with `?code=` after signing in at auth.oxy.so, exchange the
+ * code for a device-first session before cold boot runs.
+ *
+ * This is the REDIRECT transport's return leg. It owns only what is specific to
+ * a full-page round trip — reading the code off the URL, recovering the
+ * handshake `sessionStorage` carried across the navigation, and cleaning both up
+ * afterwards — and delegates state validation, the PKCE exchange, and the
+ * session commit to `completeOAuthCode`, the same function the popup transport
+ * runs.
  */
 export async function tryCompleteOAuthReturn(opts: {
   oxyServices: OxyServices;
   clientId?: string | null;
   authRedirectUri?: string;
-  commitSession: (input: OAuthReturnCommitInput) => Promise<void>;
+  commitSession: (input: OAuthSessionCommitInput) => Promise<void>;
 }): Promise<boolean> {
   if (!isWebBrowser()) return false;
   const location = (globalThis as { location?: Location }).location;
@@ -50,50 +49,23 @@ export async function tryCompleteOAuthReturn(opts: {
     return false;
   }
 
-  const returnedState = params.get('state');
-  const handshake = readOAuthHandshake();
-  if (!handshake || !returnedState || handshake.state !== returnedState) {
-    logger.warn('OAuth return ignored: missing or mismatched handshake', {
-      component: 'oauthReturn',
-    });
-    // Consume the return path before clearing the handshake — clearOAuthHandshake
-    // drops the persisted path along with the PKCE keys.
-    stripOAuthParamsFromUrl();
-    clearOAuthHandshake();
-    return false;
-  }
-
-  const redirectUri = normalizeOAuthRedirectUri(
-    opts.authRedirectUri ?? location.origin,
-  );
-
-  try {
-    const result = await opts.oxyServices.exchangeOAuthCode({
-      code,
-      clientId,
-      redirectUri,
-      codeVerifier: handshake.codeVerifier,
-    });
-    // Strip OAuth params before commit so a stale `?code=` cannot re-enter the exchange loop.
-    // Read the return path first — clearOAuthHandshake drops it with the PKCE keys.
-    stripOAuthParamsFromUrl();
-    clearOAuthHandshake();
-    await opts.commitSession({
-      sessionId: result.sessionId,
-      accessToken: result.accessToken,
-      deviceId: result.deviceId,
-      deviceSecret: result.deviceSecret,
-      userId: result.user.id,
-      expiresAt: result.expiresAt,
-      user: result.user,
-    });
-    return true;
-  } catch (error) {
-    logger.warn('OAuth return exchange failed', { component: 'oauthReturn' }, error);
-    stripOAuthParamsFromUrl();
-    clearOAuthHandshake();
-    return false;
-  }
+  const result = await completeOAuthCode({
+    oxyServices: opts.oxyServices,
+    clientId,
+    code,
+    returnedState: params.get('state'),
+    handshake: readOAuthHandshake(),
+    redirectUri: normalizeOAuthRedirectUri(opts.authRedirectUri ?? location.origin),
+    commitSession: opts.commitSession,
+    // Strip the params before the commit so a stale `?code=` cannot re-enter the
+    // exchange loop, and read the return path FIRST — clearOAuthHandshake drops
+    // it along with the PKCE keys.
+    cleanup: () => {
+      stripOAuthParamsFromUrl();
+      clearOAuthHandshake();
+    },
+  });
+  return result.ok;
 }
 
 /**

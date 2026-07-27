@@ -21,6 +21,12 @@ type SignUpFormProps = React.ComponentProps<"div"> & {
     codeChallenge?: string
     codeChallengeMethod?: string
     scope?: string
+    /**
+     * `response_mode=web_message` (popup sign-in), carried through to
+     * `/authorize` so the result is posted to the opener rather than navigating
+     * this popup to the relying party.
+     */
+    responseMode?: string
 }
 
 type AvailabilityStatus = "idle" | "checking" | "available" | "taken"
@@ -81,6 +87,7 @@ export function SignUpForm({
     codeChallenge,
     codeChallengeMethod,
     scope,
+    responseMode,
     ...props
 }: SignUpFormProps) {
     const navigate = useNavigate()
@@ -132,6 +139,7 @@ export function SignUpForm({
                 codeChallenge,
                 codeChallengeMethod,
                 scope,
+                responseMode,
             }))
         } catch (err) {
             const message = describePasskeyError(err)

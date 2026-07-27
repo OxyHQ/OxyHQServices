@@ -214,6 +214,21 @@ export {
 } from '@oxyhq/core';
 export { default as OxySignInButton } from './ui/components/OxySignInButton';
 export type { OxySignInButtonProps, OxyOAuthResult } from './ui/components/OxySignInButton';
+
+// Web OAuth transport (popup / redirect). RPs that ship their own sign-in
+// button call `useOxy().startWebOAuthSignIn(...)`; only the popup opener is
+// exported, because it MUST run synchronously inside the press handler to keep
+// the browser's user-gesture attribution.
+export { openOAuthPopup } from './ui/oauth/oauthPopup';
+export type { StartWebOAuthSignInOptions } from './ui/oauth/browserAuthTransport';
+export type {
+  WebAuthMode,
+  WebOAuthSignInResult,
+  WebOAuthRedirectReason,
+  WebOAuthFailureReason,
+  WebOAuthUnsupportedReason,
+  OAuthPopupHandle,
+} from './ui/oauth/types';
 export { OxyAuthPrompt } from './ui/components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './ui/components/OxyAuthPrompt';
 export { OxyOAuthCallback } from './ui/components/OxyOAuthCallback';
