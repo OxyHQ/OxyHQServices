@@ -34,17 +34,25 @@ import { Tabs } from 'expo-router/tabs';
 import { TabBarMinimizeProvider } from '@oxyhq/bloom/tab-bar';
 
 import { InboxTabBar } from '@/components/InboxTabBar';
+import { SearchFocusProvider } from '@/contexts/search-focus-context';
 
 export default function TabsLayout() {
   return (
     <TabBarMinimizeProvider>
-      <Tabs tabBar={(props) => <InboxTabBar {...props} />} screenOptions={{ headerShown: false }}>
-        <Tabs.Screen name="(inbox)" />
-        <Tabs.Screen name="search" />
-        <Tabs.Screen name="settings" />
-        <Tabs.Screen name="for-you" options={{ href: null }} />
-        <Tabs.Screen name="today" options={{ href: null }} />
-      </Tabs>
+      {/*
+        Wraps the navigator so it is an ancestor of both the tab bar (rendered
+        inside `BottomTabView`) and the search screen that owns the input. That
+        is what lets a tap on the search tab focus it — see `InboxTabBar`.
+      */}
+      <SearchFocusProvider>
+        <Tabs tabBar={(props) => <InboxTabBar {...props} />} screenOptions={{ headerShown: false }}>
+          <Tabs.Screen name="(inbox)" />
+          <Tabs.Screen name="search" />
+          <Tabs.Screen name="settings" />
+          <Tabs.Screen name="for-you" options={{ href: null }} />
+          <Tabs.Screen name="today" options={{ href: null }} />
+        </Tabs>
+      </SearchFocusProvider>
     </TabBarMinimizeProvider>
   );
 }

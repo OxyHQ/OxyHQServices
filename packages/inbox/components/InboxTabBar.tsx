@@ -12,6 +12,7 @@ import {
 } from '@oxyhq/bloom/icons';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 
+import { useSearchFocus } from '@/contexts/search-focus-context';
 import { useIsDesktopLayout } from '@/hooks/useIsDesktopLayout';
 import { useTranslation } from '@/lib/i18n';
 
@@ -99,14 +100,32 @@ export function InboxTabBar({ state, navigation }: BottomTabBarProps) {
   const focusedRouteName = state.routes[state.index]?.name;
   const activeIndex = TAB_ROUTES.findIndex((name) => name === focusedRouteName);
 
+  const { focusInput } = useSearchFocus();
+
   const handleIndexChange = useCallback(
     (index: number) => {
       const route = TAB_ROUTES[index];
-      if (route !== undefined) {
-        navigation.navigate(route);
+      if (route === undefined) return;
+
+      navigation.navigate(route);
+
+      // Tapping Search puts the caret in the search field. The bar fires this
+      // on EVERY tap, including one on the tab that is already focused, so the
+      // same signal covers both arriving at search and re-tapping while already
+      // there — no separate re-tap mechanism is needed.
+      //
+      // Ordering matters: `navigate` first, then focus. When the user is
+      // already on search the input is mounted and this focuses it right away.
+      // When arriving from another tab the screen has not mounted yet, so this
+      // finds no input and no-ops; `SearchHeader`'s own `autoFocus` handles
+      // that case, as it already does for `/search` reached from the inbox
+      // screen's search affordance or a deep link. One mechanism per case
+      // rather than a queue that would duplicate what mounting already does.
+      if (route === 'search') {
+        focusInput();
       }
     },
-    [navigation],
+    [navigation, focusInput],
   );
 
   if (isDesktopLayout || keyboardVisible) return null;
