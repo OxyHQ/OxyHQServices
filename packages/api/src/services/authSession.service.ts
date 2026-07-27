@@ -37,6 +37,7 @@ import { AppGrant } from '../models/AppGrant';
 import SignatureService from './signature.service';
 import sessionService from './session.service';
 import { issueAuthCode, AUTH_CODE_TTL_MS } from './oauthCode.service';
+import { intersectScopes } from '../utils/applicationScopes';
 import { isAllowedRedirectUri } from '../utils/oauthRedirect';
 import { isTrustedApplication } from '../utils/trustedApplication';
 import { isValidObjectId } from '../utils/validation';
@@ -155,7 +156,7 @@ async function gateApprovalDelegation(
  * identity on the RP's device, and would let the surface that only needs a code
  * pick up an access token instead.
  */
-function approvalMintsSession(authSession: Pick<IAuthSession, 'purpose'>): boolean {
+export function approvalMintsSession(authSession: Pick<IAuthSession, 'purpose'>): boolean {
   return authSession.purpose !== 'oauth_authorization';
 }
 
@@ -595,6 +596,12 @@ export async function finalizeOAuthAuthorization(
 
   const grantUserId = subjectAccountId || identityUserId;
 
+  const appScopes = Array.isArray(app.scopes) ? [...app.scopes] : [];
+  const effectiveScopes =
+    oauth.scopes && oauth.scopes.length > 0
+      ? intersectScopes(oauth.scopes, appScopes)
+      : appScopes;
+
   try {
     const { code } = await issueAuthCode({
       codeId,
@@ -603,7 +610,7 @@ export async function finalizeOAuthAuthorization(
       redirectUri: oauth.redirectUri,
       codeChallenge: oauth.codeChallenge,
       codeChallengeMethod: 'S256',
-      scopes: oauth.scopes ?? [],
+      scopes: effectiveScopes,
       ...(subjectAccountId ? { operatedByUserId: identityUserId } : {}),
       // Thread the originating RP device so the token exchange lands on the same
       // DeviceSession the flow started from instead of sprawling a new device.
@@ -620,7 +627,7 @@ export async function finalizeOAuthAuthorization(
           { userId: grantUserId, applicationId: app._id },
           {
             $set: { lastUsedAt: now },
-            $addToSet: { scopes: { $each: oauth.scopes ?? [] } },
+            $addToSet: { scopes: { $each: effectiveScopes } },
             $setOnInsert: { firstGrantedAt: now },
           },
           { upsert: true, new: true }

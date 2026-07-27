@@ -286,4 +286,42 @@ describe('POST /auth/session/authorize/:sessionToken (C2)', () => {
     );
     expect(authSession.save).toHaveBeenCalled();
   });
+
+  it('does NOT mint a session for oauth_authorization purpose even when oauth binding is missing', async () => {
+    const authenticatedUserId = '64f7c2a1b8e9d3f4a1c2b3d4';
+    mockAuthMiddleware.mockImplementationOnce(
+      (req: { user?: unknown }, _res: unknown, next: () => void) => {
+        req.user = {
+          _id: { toString: () => authenticatedUserId },
+          publicKey: 'pk-of-real-user',
+          username: 'real-user',
+        };
+        next();
+      }
+    );
+
+    const authSession = {
+      sessionToken: 'token-oauth',
+      applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3aa' },
+      status: 'pending',
+      purpose: 'oauth_authorization',
+      oauth: undefined,
+      expiresAt: new Date(Date.now() + 60_000),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+    mockAuthSessionFindOne.mockResolvedValueOnce(authSession);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session/authorize/token-oauth',
+      {},
+      { Authorization: 'Bearer valid-bearer-token' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(authSession.save).toHaveBeenCalled();
+    expect(res.body.data?.sessionId).toBeUndefined();
+  });
 });

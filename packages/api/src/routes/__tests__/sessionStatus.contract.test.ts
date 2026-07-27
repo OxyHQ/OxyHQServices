@@ -341,4 +341,33 @@ describe('GET /auth/session/status/:sessionToken → @oxyhq/contracts sessionSta
     expect(parsed).not.toBeNull();
     expect(parsed?.application).toBeNull();
   });
+
+  it('emits purpose for OAuth-bound sessions', async () => {
+    mockAuthSessionFindOne.mockResolvedValueOnce({
+      sessionToken: 'tok-oauth',
+      applicationId: { toString: () => OFFICIAL_APP_ID },
+      status: 'authorized',
+      purpose: 'oauth_authorization',
+      authorizedSessionId: null,
+      authorizedBy: '02pk',
+      authorizedUserId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3d4' },
+      expiresAt: new Date(Date.now() + 60_000),
+      save: jest.fn(),
+    });
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await getStatus(server, 'tok-oauth');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      status: 'authorized',
+      authorized: true,
+      purpose: 'oauth_authorization',
+      sessionId: null,
+    });
+
+    const parsed = safeParseContract(sessionStatusSchema, res.body.data);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.purpose).toBe('oauth_authorization');
+  });
 });

@@ -421,6 +421,34 @@ describe('finalizeOAuthAuthorization — issued code stays single-use + PKCE bou
     expect(replay).toEqual({ ok: false, reason: 'invalid_grant' });
   });
 
+  it('intersects requested scopes with the application registered scopes', async () => {
+    seedOAuthSession({
+      oauth: {
+        redirectUri: REDIRECT_URI,
+        codeChallenge: CODE_CHALLENGE,
+        codeChallengeMethod: 'S256',
+        scopes: ['user:read', 'signals:write', 'bogus:scope'],
+      },
+    });
+    mockApplicationFindOne.mockResolvedValue(
+      activeApp({ scopes: ['user:read', 'signals:write'] })
+    );
+
+    const outcome = await finalizeOAuthAuthorization({ sessionToken: 'secret-session-token' });
+    if (!outcome.ok) throw new Error('expected finalization to succeed');
+
+    expect(mockAuthCodeCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ scopes: ['user:read', 'signals:write'] })
+    );
+    expect(mockAppGrantFindOneAndUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        $addToSet: { scopes: { $each: ['user:read', 'signals:write'] } },
+      }),
+      expect.anything()
+    );
+  });
+
   it('refuses the exchange when the redirect URI does not match the binding', async () => {
     seedOAuthSession();
     const outcome = await finalizeOAuthAuthorization({ sessionToken: 'secret-session-token' });

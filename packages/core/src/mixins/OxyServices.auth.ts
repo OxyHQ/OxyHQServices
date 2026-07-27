@@ -132,12 +132,17 @@ export interface CommonsSignInHandle {
 export interface CommonsSignInStatus {
   /** True once an approver has authorized the session. */
   authorized: boolean;
-  /** The authorized session id (present once `authorized`). */
+  /** The authorized session id (present once `authorized` for device sign-in). */
   sessionId?: string;
   /** The approving identity's public key (present once `authorized`). */
   publicKey?: string;
   /** Lifecycle status (`'pending'` | `'authorized'` | `'cancelled'` | `'expired'`). */
   status?: string;
+  /**
+   * How this request finalizes. Unrecognized/missing values degrade to
+   * `device_sign_in` so an older API never misroutes an OAuth finalize.
+   */
+  purpose?: CommonsSignInPurpose;
 }
 
 /**

@@ -895,6 +895,14 @@ export class AccountDialogController {
       try {
         const status = await this.oxyServices.pollCommonsSignIn(sessionToken);
         if (this.signInToken !== sessionToken) return; // cancelled mid-request
+        const purpose = status.purpose === 'oauth_authorization' ? 'oauth_authorization' : 'device_sign_in';
+        if (status.authorized && purpose === 'oauth_authorization') {
+          // OAuth-bound sessions mint no sessionId on approval — they finalize
+          // into an authorization code. The account dialog only starts device
+          // sign-in today; stop rather than poll until expiry.
+          this.failSignIn('This sign-in flow cannot be completed here. Use the app\'s OAuth sign-in instead.');
+          return;
+        }
         if (status.authorized && status.sessionId) {
           this.clearPollTimer();
           await this.claimAndComplete(status.sessionId, sessionToken);

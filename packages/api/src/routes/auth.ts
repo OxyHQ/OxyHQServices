@@ -34,6 +34,7 @@ import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import {
+  approvalMintsSession,
   claimAuthSession,
   authorizeSessionWithSignedChallenge,
   authorizeSessionWithBearer,
@@ -908,6 +909,8 @@ router.get('/session/status/:sessionToken', validate({ params: authSessionTokenP
     sessionId: authSession.authorizedSessionId || null,
     publicKey: authSession.authorizedBy || null,
     userId: authSession.authorizedUserId ? authSession.authorizedUserId.toString() : null,
+    // Lets poll clients distinguish device sign-in (claim) from OAuth (finalize).
+    purpose: authSession.purpose ?? 'device_sign_in',
   });
 }));
 
@@ -1010,9 +1013,11 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
 
   // An OAuth authorization request mints NO session on approval — its result is
   // the single-use authorization code produced by
-  // `POST /auth/session/finalize/:sessionToken`.
+  // `POST /auth/session/finalize/:sessionToken`. Key off `purpose`, not the
+  // presence of an `oauth` binding: a corrupt/missing binding must not mint a
+  // device session for an OAuth-purpose row.
   let newSessionId: string | undefined;
-  if (!oauthContext) {
+  if (approvalMintsSession(authSession)) {
     // Resolve the bound Application for the device-name label. The session can't
     // exist without a valid applicationId; fall back to a generic label only if
     // the app was hard-deleted between create and authorize.

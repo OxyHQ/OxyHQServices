@@ -975,6 +975,25 @@ describe('AccountDialogController — /auth-session socket (instant QR wake)', (
     await flush();
     expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
   });
+
+  it('stops polling when an OAuth-bound session is authorized without a sessionId', async () => {
+    const { controller, oxy, created } = makeSocketHarness();
+    oxy.pollCommonsSignIn.mockResolvedValue({
+      authorized: true,
+      purpose: 'oauth_authorization',
+      status: 'authorized',
+    });
+
+    await controller.showQr();
+    const sock = created();
+    if (!sock) throw new Error('socket not created');
+    sock.server('auth_update', { status: 'authorized' });
+    await flush();
+
+    expect(oxy.claimSessionByToken).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.phase).toBe('error');
+    expect(controller.getSnapshot().signIn.error).toContain('OAuth sign-in');
+  });
 });
 
 describe('AccountDialogController — lifecycle', () => {
