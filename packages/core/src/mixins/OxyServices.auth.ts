@@ -224,6 +224,18 @@ export interface CommonsApprovalInfo {
    */
   originVerified: boolean;
   /**
+   * COARSE, display-only label of the client that STARTED the request
+   * (`"Chrome on Windows"`), resolved server-side from the requesting browser —
+   * NEVER from the QR payload. Render it verbatim as a secondary line under the
+   * origin; it is the whole descriptor the platform has (no raw User-Agent, no
+   * IP, no location is ever collected for it).
+   *
+   * `null` whenever the server has no browser context to describe: native
+   * requesters, unidentifiable User-Agents, and any API that predates the field.
+   * Omit the line entirely in that case — never substitute a guess.
+   */
+  requesterLabel: string | null;
+  /**
    * How this request finalizes. Always present — an unrecognized or missing
    * server value degrades to `'device_sign_in'`, the behaviour every server has
    * always had, so an older API never makes the approver believe it is granting
@@ -254,10 +266,28 @@ interface CommonsApprovalInfoResponse {
   scopes: string[];
   boundOrigin?: string;
   originVerified?: unknown;
+  requesterLabel?: unknown;
   purpose?: unknown;
   subjectAccount?: unknown;
   expiresAt: number | string;
   status: string;
+}
+
+/**
+ * @internal Narrow an untrusted `requesterLabel` from the approve-info response.
+ *
+ * Returns the trimmed label only when the server sent a real, non-empty string;
+ * everything else — absent (an API that predates the field), `null` (a native
+ * requester the server could not describe), or a non-string — degrades to
+ * `null`, so the approval UI drops the line instead of rendering a blank or a
+ * coerced value under the app it is about to authorize.
+ */
+function parseCommonsRequesterLabel(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const label = value.trim();
+  return label.length > 0 ? label : null;
 }
 
 /**
@@ -305,6 +335,18 @@ function parseCommonsProgressTimestamp(value: unknown): string | null {
 export interface CommonsSignInActionResult {
   success: boolean;
 }
+
+/**
+ * Why the approver denied a "Sign in with Oxy" request. A CLOSED set — the deny
+ * endpoint is unauthenticated, so it accepts no free-form text:
+ *
+ *  - `'declined'` the approver rejected a request they recognised ("Not now").
+ *  - `'not_me'`   the approver did not start the request ("This wasn't me").
+ *                 The only value that records the denial as suspicious rather
+ *                 than an ordinary cancel, so a UI may only offer it where the
+ *                 user genuinely said so.
+ */
+export type CommonsDenyReason = 'declined' | 'not_me';
 
 /**
  * Result of finalizing an approved, OAuth-bound "Sign in with Oxy" request.
@@ -1262,6 +1304,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           // missing or non-boolean value (older server, malformed response)
           // coerces to `false` so a stale server can never imply trust.
           originVerified: raw.originVerified === true,
+          // Same discipline: a missing/blank/non-string label degrades to null
+          // (an older API, or a native requester with no browser to describe),
+          // and the approver simply omits the "where from" line.
+          requesterLabel: parseCommonsRequesterLabel(raw.requesterLabel),
           // Same discipline: only the literal OAuth purpose opts into OAuth
           // finalization. Anything else — including a server that predates this
           // field — is the plain device sign-in it has always been.
@@ -1330,13 +1376,21 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * device-flow session so the RP stops waiting.
      *
      * @param authorizeCode - The public code being denied.
+     * @param reason - Optional closed-set reason ({@link CommonsDenyReason}).
+     *   Pass `'not_me'` ONLY when the user actually reported the request as one
+     *   they did not start — the server records it as a suspicious denial rather
+     *   than an ordinary cancel. Omitting it sends the exact body this endpoint
+     *   has always received.
      */
-    async denyCommonsSignIn(authorizeCode: string): Promise<CommonsSignInActionResult> {
+    async denyCommonsSignIn(
+      authorizeCode: string,
+      reason?: CommonsDenyReason,
+    ): Promise<CommonsSignInActionResult> {
       try {
         return await this.makeRequest<CommonsSignInActionResult>(
           'POST',
           `/auth/session/deny/${encodeURIComponent(authorizeCode)}`,
-          undefined,
+          reason ? { reason } : undefined,
           // Public (no auth required) — skip the bearer preflight.
           { cache: false, skipAuth: true }
         );

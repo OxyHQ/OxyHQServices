@@ -59,6 +59,7 @@ export type {
     CommonsApprovalInfo,
     CommonsApprovalSubjectAccount,
     CommonsSignInActionResult,
+    CommonsDenyReason,
     CommonsOAuthFinalizeResult,
     CommonsDeliveryResult,
 } from './mixins/OxyServices.auth';

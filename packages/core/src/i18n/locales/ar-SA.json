@@ -124,7 +124,19 @@
     "commonsNotInstalled": "لا تملك Commons؟ احصل على التطبيق لتسجيل الدخول بمعرّف Oxy الخاص بك.",
     "showQrAnyway": "لدي Commons على جهاز آخر",
     "switchWhileSignedInAs": "تبديل الحساب، مسجّل الدخول باسم {{name}}",
-    "manageOnDevice": "إدارة الحسابات على هذا الجهاز"
+    "manageOnDevice": "إدارة الحسابات على هذا الجهاز",
+    "continueWithOxy": "المتابعة باستخدام Oxy",
+    "havingTrouble": "هل تواجه مشكلة؟",
+    "progress": {
+      "preparing": "جارٍ تحضير الطلب",
+      "awaitingApproval": "في انتظار الموافقة",
+      "scanWithCommons": "امسح الرمز باستخدام Commons على هاتفك",
+      "continueInCommons": "تابع في Commons",
+      "checkCommons": "تحقّق من Commons على هاتفك",
+      "openedInCommons": "تم الفتح في Commons",
+      "confirming": "جارٍ تأكيد الهوية",
+      "confirmed": "تم تأكيد الهوية"
+    }
   },
   "common": {
     "actions": {

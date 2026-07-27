@@ -124,7 +124,19 @@
     "commonsNotInstalled": "No tens Commons? Descarrega l'app per iniciar sessió amb el teu Oxy ID.",
     "showQrAnyway": "Tinc Commons en un altre dispositiu",
     "switchWhileSignedInAs": "Canvia de compte, amb la sessió iniciada com a {{name}}",
-    "manageOnDevice": "Gestionar comptes en aquest dispositiu"
+    "manageOnDevice": "Gestionar comptes en aquest dispositiu",
+    "continueWithOxy": "Continua amb Oxy",
+    "havingTrouble": "Algun problema?",
+    "progress": {
+      "preparing": "Preparant la sol·licitud",
+      "awaitingApproval": "Esperant l'aprovació",
+      "scanWithCommons": "Escaneja amb Commons al teu mòbil",
+      "continueInCommons": "Continua a Commons",
+      "checkCommons": "Revisa Commons al teu mòbil",
+      "openedInCommons": "Obert a Commons",
+      "confirming": "Confirmant la identitat",
+      "confirmed": "Identitat confirmada"
+    }
   },
   "common": {
     "actions": {

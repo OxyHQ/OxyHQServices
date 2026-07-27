@@ -13,6 +13,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button, type ButtonVariant } from '@oxyhq/bloom/button';
 import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
 import { LogoIcon } from './logo/LogoIcon';
 import { subscribeToAccountDialog } from '../navigation/accountDialogManager';
 import { openAuthorizeUrlNative } from './oauthNavigation';
@@ -58,8 +59,12 @@ export interface OxySignInButtonProps {
     textStyle?: StyleProp<TextStyle>;
 
     /**
-     * Custom button text
-     * @default 'Sign in with Oxy'
+     * Overrides the button label. When omitted the button renders the ONE
+     * primary relying-party action, localized: `accountSwitcher.continueWithOxy`
+     * ("Continue with Oxy" in English). "Sign in with Oxy" remains the name of
+     * the MECHANISM — only this surface's label is "Continue with Oxy".
+     *
+     * @default localized `accountSwitcher.continueWithOxy`
      */
     text?: string;
 
@@ -137,13 +142,14 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     onPress,
     style,
     textStyle,
-    text = 'Sign in with Oxy',
+    text,
     disabled = false,
     showWhenAuthenticated = false,
     oauthRedirectUri,
     onOAuthResult,
 }) => {
     const theme = useTheme();
+    const { t } = useI18n();
     const { openAccountDialog, oxyServices, clientId, webAuthMode, startWebOAuthSignIn } = useOxy();
     const { isAuthenticated, isLoading } = useAuthStore(
         useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
@@ -345,6 +351,10 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     const logoColor = isContained ? '#ffffff' : theme.colors.primary;
     const logoLetterColor = isContained ? theme.colors.primary : '#ffffff';
 
+    // The relying party surfaces exactly ONE primary action, and it reads
+    // "Continue with Oxy" (issue #691). A caller-supplied `text` still wins.
+    const label = text ?? t('accountSwitcher.continueWithOxy');
+
     return (
         <Button
             variant={buttonVariant}
@@ -361,7 +371,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                 />
             }
         >
-            {isLoading || isModalOpen ? 'Signing in...' : text}
+            {isLoading || isModalOpen ? t('signin.status.signingIn') : label}
         </Button>
     );
 };

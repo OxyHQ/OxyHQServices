@@ -1,4 +1,8 @@
 import mongoose, { type Document, Schema } from "mongoose";
+import {
+  AUTH_SESSION_DENY_REASONS,
+  type AuthSessionDenyReason,
+} from "../schemas/auth.schemas";
 
 /**
  * AuthSession Model
@@ -89,6 +93,21 @@ export interface IAuthSession extends Document {
    * gate by itself — every device-flow session is still approved interactively.
    */
   originVerified: boolean;
+  /**
+   * COARSE, display-only label of the client that STARTED this request
+   * (`"Chrome on Windows"`), so the approval screen can say WHERE the request
+   * came from. Derived server-side from the request User-Agent by
+   * `deriveCoarseClientLabel` — never from the QR / deep-link payload, which the
+   * requester controls and which must therefore never be displayed.
+   *
+   * PRIVACY: this is the WHOLE requester descriptor. The raw User-Agent is never
+   * stored, and no IP address, geolocation, or country is stored anywhere on
+   * this path (platform-wide no-IP-at-rest invariant). Do not widen it into a
+   * fingerprint. `null` for native callers (no browser context) and for any
+   * User-Agent no browser can be identified from — the UI omits the line rather
+   * than showing an invented one.
+   */
+  requesterLabel?: string | null;
   /** Random nonce embedded in the QR payload (audit only; not a binding check). */
   challengeNonce?: string;
   applicationId: mongoose.Types.ObjectId; // Canonical, required reference to a registered Application
@@ -114,6 +133,14 @@ export interface IAuthSession extends Document {
    * under concurrent finalize calls.
    */
   finalizedAuthCodeId?: mongoose.Types.ObjectId;
+  /**
+   * Why a PENDING request was denied, from the closed
+   * {@link AUTH_SESSION_DENY_REASONS} set. `null` when the request was never
+   * denied, or when it was denied without a reason (an older approver). The
+   * distinction that matters: `'not_me'` marks a denial the approver reported as
+   * one they never started — an ordinary cancel is `'declined'` / absent.
+   */
+  deniedReason?: AuthSessionDenyReason | null;
   authorizedBy?: string;     // Public key of the user who authorized
   authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing IDENTITY
   authorizedSessionId?: string; // The actual session ID after authorization (device sign-in only)
@@ -177,6 +204,16 @@ const AuthSessionSchema: Schema = new Schema(
       type: Boolean,
       default: false,
     },
+    // Coarse browser/OS label only ("Chrome on Windows"), or null. `maxlength`
+    // is a fail-closed guard, not a formatting nicety: every derived label is a
+    // handful of characters, so a future writer that tried to persist a full
+    // User-Agent string here would fail validation instead of silently turning
+    // this field into a fingerprint.
+    requesterLabel: {
+      type: String,
+      default: null,
+      maxlength: 64,
+    },
     challengeNonce: {
       type: String,
       default: null,
@@ -206,6 +243,14 @@ const AuthSessionSchema: Schema = new Schema(
     finalizedAuthCodeId: {
       type: Schema.Types.ObjectId,
       ref: 'AuthCode',
+      default: null,
+    },
+    // Closed-set denial reason. The `enum` is the storage-level guarantee that
+    // an unauthenticated caller can never write free-form text here — the route
+    // already rejects anything outside the set at the edge.
+    deniedReason: {
+      type: String,
+      enum: [...AUTH_SESSION_DENY_REASONS, null],
       default: null,
     },
     authorizedBy: {

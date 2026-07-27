@@ -2,6 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Linking, Platform, BackHandler } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
+import type { CommonsDenyReason } from '@oxyhq/core';
 import { Dialog, useDialogControl } from '@oxyhq/bloom/dialog';
 import { useColors } from '@/hooks/useColors';
 import { CenteredState } from '@/components/ui/centered-state';
@@ -41,7 +42,8 @@ const APPROVED_RETURN_DELAY_MS = 1000;
  * explicit close all fire `onClose` — Bloom's CONTROLLED bottom placement
  * swallows those gestures. Any dismissal is a CANCEL: it never calls deny (parity
  * with the previous screen's back behavior). Only the explicit "This wasn't me"
- * action calls `deny()`.
+ * action calls `deny()`, and it carries the `'not_me'` reason — the one value
+ * that records the denial as suspicious rather than as an ordinary cancel.
  *
  * On a SUCCESSFUL approve the success state lingers ~1s, then Commons either
  * returns the user to the caller (same-device deep-link handoff on Android, via
@@ -60,7 +62,7 @@ export default function ApproveSignInScreen() {
   const { code, source } = useLocalSearchParams<{ code?: string; source?: string }>();
   const control = useDialogControl();
 
-  const { state, info, confirmationIssue, errorMessage, approve, deny, reload } =
+  const { state, info, confirmationIssue, errorMessage, denialReason, approve, deny, reload } =
     useCommonsApproval(code, t('signInApproval.approve.biometricReason'));
 
   // Present the sheet on mount. Imperative dialog refs bind during the commit's
@@ -94,9 +96,14 @@ export default function ApproveSignInScreen() {
     void approve();
   }, [approve]);
 
-  const reject = useCallback(() => {
-    void deny();
-  }, [deny]);
+  // The sheet reports WHICH answer was given; this only forwards it. A
+  // dismissal never reaches here — it is a cancel, and denies nothing.
+  const reject = useCallback(
+    (reason: CommonsDenyReason) => {
+      void deny(reason);
+    },
+    [deny],
+  );
 
   // After a successful approve: briefly show the confirmation, then return to
   // the caller (deep-link handoff on Android) or close the sheet (scanner / iOS).
@@ -137,7 +144,14 @@ export default function ApproveSignInScreen() {
           body={
             approved
               ? t('signInApproval.approve.approvedBody')
-              : t('signInApproval.approve.deniedBody')
+              : // Honest about what was actually recorded: a `not_me` denial is
+                // stored on the request and flagged for Oxy, which is all that
+                // happens — no investigation is opened, so none is promised.
+                t(
+                  denialReason === 'not_me'
+                    ? 'signInApproval.approve.deniedNotMeBody'
+                    : 'signInApproval.approve.deniedBody',
+                )
           }
           action={
             approved ? undefined : (

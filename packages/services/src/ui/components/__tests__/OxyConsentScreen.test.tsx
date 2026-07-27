@@ -43,6 +43,33 @@ describe('OxyConsentScreen', () => {
     expect(getByTestId('consent-scope-custom:thing').textContent).toContain('custom:thing');
   });
 
+  it('renders human labels for the scope ids the API actually issues (profile:read / email:read)', () => {
+    const { getByTestId } = renderScreen({ scopes: ['profile:read', 'email:read'] });
+
+    const profileRow = getByTestId('consent-scope-profile:read');
+    const emailRow = getByTestId('consent-scope-email:read');
+    expect(profileRow.textContent).toContain('Read your basic profile');
+    expect(emailRow.textContent).toContain('Read your email address');
+    // The raw scope id never reaches the person deciding what to grant.
+    expect(profileRow.textContent).not.toContain('profile:read');
+    expect(emailRow.textContent).not.toContain('email:read');
+  });
+
+  it('collapses scopes that resolve to the same permission into a single row', () => {
+    const { getByTestId, queryByTestId } = renderScreen({ scopes: ['profile', 'profile:read'] });
+
+    // First scope wins the row; the synonym does not add a duplicate sentence.
+    expect(getByTestId('consent-scope-profile').textContent).toContain('Read your basic profile');
+    expect(queryByTestId('consent-scope-profile:read')).toBeNull();
+  });
+
+  it('keeps an unknown scope alongside known ones instead of dropping the permission', () => {
+    const { getByTestId } = renderScreen({ scopes: ['profile:read', 'acme:teleport'] });
+
+    expect(getByTestId('consent-scope-profile:read').textContent).toContain('Read your basic profile');
+    expect(getByTestId('consent-scope-acme:teleport').textContent).toContain('acme:teleport');
+  });
+
   it('shows the basic-permissions fallback when no scopes are requested', () => {
     const { getByTestId, queryByTestId } = renderScreen({ scopes: [] });
     expect(getByTestId('consent-scope-basic').textContent).toContain('Sign you in and read your basic profile');
