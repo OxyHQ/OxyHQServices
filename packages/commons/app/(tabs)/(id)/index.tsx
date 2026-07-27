@@ -13,6 +13,7 @@ import {
 import { useOxy, useCurrentUser } from '@oxyhq/services';
 import { buildUserDid } from '@oxyhq/core';
 import { Fab } from '@oxyhq/bloom/fab';
+import { useTabBarFootprint } from '@oxyhq/bloom/tab-bar';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -59,6 +60,7 @@ const CARD_HEIGHT = 380;
 export default function IdScreen() {
   const colors = useColors();
   const router = useRouter();
+  const tabBarFootprint = useTabBarFootprint();
   const { t } = useTranslation();
   const { user, oxyServices } = useOxy();
   // Hydrate the user record (createdAt + fields missing from a cached signIn).
@@ -264,10 +266,18 @@ export default function IdScreen() {
         )}
       </Screen>
 
-      {/* QR scanner is an action, not a tab — opens the root full-screen modal. */}
+      {/*
+        QR scanner is an action, not a tab — opens the root full-screen modal.
+
+        `offset` lifts the FAB clear of the floating tab bar. It is the bar's RAW
+        footprint: `Fab` supplies its own gap from that anchor, and the bottom
+        safe-area inset is already folded into the footprint, so adding
+        `insets.bottom` here would count the home indicator twice.
+      */}
       <Fab
         variant="primary"
         placement="bottom-right"
+        offset={tabBarFootprint}
         onPress={handleScan}
         accessibilityLabel={t('civic.id.scanAction')}
         icon={<MaterialCommunityIcons name="qrcode-scan" size={26} color={colors.primaryForeground} />}
