@@ -24,10 +24,8 @@ import { useTranslation } from '@/lib/i18n';
  * highlight correct through deep links and the back gesture, which move the
  * navigator without going through the bar.
  *
- * `for-you` and `today` are deliberately absent — they live under the tabs but
- * are reached from the drawer, exactly as they were when the native bar
- * registered `for-you` as a hidden trigger. On those routes no entry matches,
- * `activeIndex` is -1, and the bar shows no selection.
+ * Routes with no matching entry (a conversation, compose) leave `activeIndex`
+ * at -1, and the bar shows no selection.
  */
 const TAB_ROUTES = ['(inbox)', 'search', 'settings'] as const;
 
@@ -36,6 +34,26 @@ const TAB_ROUTES = ['(inbox)', 'search', 'settings'] as const;
  * which is what the bar's own 21px glyph box is built around.
  */
 const ICON_SIZE = 'md';
+
+/**
+ * Ceiling on the pill's width, in points.
+ *
+ * The desktop layout hides the bar above 900pt, but two common iPads sit BELOW
+ * that and so still get it: iPad mini portrait (744pt) and iPad 11" portrait
+ * (834pt), where an unconstrained bar spans 720pt and 810pt respectively and
+ * leaves three 21pt glyphs adrift in cells hundreds of points wide. Bloom
+ * derives the item width from the window, so this cannot be fixed with a
+ * `style` override: the highlight and the scrub hit-testing would still divide
+ * the WINDOW width.
+ *
+ * 440 is the width of the largest phone screen currently shipping (iPhone 16
+ * Pro Max), so the pill can never be wider than a big phone's whole display.
+ * `maxWidth` is a CEILING and never a floor, so no phone is affected: the
+ * widest phone pill is 416pt (440 minus the bar's 12pt margin per side), which
+ * is under this and therefore stays full-bleed. Matches the value commons uses
+ * — same three-tab bar, same design language, no reason for them to differ.
+ */
+const TAB_BAR_MAX_WIDTH = 440;
 
 /**
  * The Inbox bottom bar: Bloom's floating glass pill, driven by the tab
@@ -132,7 +150,18 @@ export function InboxTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={styles.host}>
-      <TabBar activeIndex={activeIndex} onIndexChange={handleIndexChange}>
+      <TabBar
+        activeIndex={activeIndex}
+        onIndexChange={handleIndexChange}
+        maxWidth={TAB_BAR_MAX_WIDTH}
+        // The blur band is 114pt tall and full-bleed, so the inbox screen's
+        // Compose and Alia FABs sit inside it and would be blurred and tinted.
+        // No z-order can lift a screen's FAB above the bar's host — it is
+        // inside an earlier sibling — so switching the band off is the only
+        // fix. It stays ON for search and settings, which float nothing at the
+        // bottom edge and where dissolving content behind the pill is the point.
+        blur={focusedRouteName !== '(inbox)'}
+      >
         {items.map((item, index) => (
           <TabBarButton key={item.name} item={item} index={index} />
         ))}
