@@ -3,7 +3,7 @@ import {
   clearOAuthHandshake,
   consumeOAuthReturnPath,
   logger,
-  normalizeOAuthRedirectUri,
+  canonicalizeOAuthRedirectUri,
   readOAuthHandshake,
 } from '@oxyhq/core';
 import { completeOAuthCode } from '../oauth/completeOAuthCode';
@@ -49,13 +49,18 @@ export async function tryCompleteOAuthReturn(opts: {
     return false;
   }
 
+  const handshake = readOAuthHandshake();
+  const redirectUri = canonicalizeOAuthRedirectUri(
+    handshake?.redirectUri ?? opts.authRedirectUri ?? location.origin,
+  );
+
   const result = await completeOAuthCode({
     oxyServices: opts.oxyServices,
     clientId,
     code,
     returnedState: params.get('state'),
-    handshake: readOAuthHandshake(),
-    redirectUri: normalizeOAuthRedirectUri(opts.authRedirectUri ?? location.origin),
+    handshake,
+    redirectUri,
     commitSession: opts.commitSession,
     // Strip the params before the commit so a stale `?code=` cannot re-enter the
     // exchange loop, and read the return path FIRST — clearOAuthHandshake drops

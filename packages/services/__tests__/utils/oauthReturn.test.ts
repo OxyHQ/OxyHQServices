@@ -192,6 +192,38 @@ describe('deep-link preservation across the authorize round trip', () => {
     expect(String(replaceState.mock.calls[0]?.[2] ?? '')).toBe('/newsroom');
     replaceState.mockRestore();
   });
+
+  test('replays the exact path-qualified redirect_uri stored in the handshake', async () => {
+    window.sessionStorage.clear();
+    const redirectUri = 'https://app.example/oauth/callback';
+    persistOAuthHandshake('state-xyz', 'verifier-abc', redirectUri);
+    persistOAuthReturnPath('/newsroom');
+    window.history.replaceState(null, '', '/oauth/callback?code=auth-code&state=state-xyz');
+
+    const replaceState = jest
+      .spyOn(window.history, 'replaceState')
+      .mockImplementation(() => undefined);
+    const commitSession = jest.fn().mockResolvedValue(undefined);
+    const exchangeOAuthCode = jest.fn().mockResolvedValue({
+      sessionId: 'sess-1',
+      accessToken: 'token',
+      deviceId: 'dev-1',
+      deviceSecret: 'secret',
+      user: { id: 'user-1' },
+    });
+
+    const result = await tryCompleteOAuthReturn({
+      oxyServices: { exchangeOAuthCode } as never,
+      clientId: 'oxy_dk_test',
+      commitSession,
+    });
+
+    expect(result).toBe(true);
+    expect(exchangeOAuthCode).toHaveBeenCalledWith(
+      expect.objectContaining({ redirectUri }),
+    );
+    replaceState.mockRestore();
+  });
 });
 
 /**
