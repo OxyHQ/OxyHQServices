@@ -16,6 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSearchFocus } from '@/contexts/search-focus-context';
+import { useFloatingHeader } from '@/hooks/useFloatingHeader';
 import { useGoBack } from '@/hooks/useGoBack';
 import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 
@@ -23,7 +24,7 @@ import { useColors } from '@/constants/theme';
 import { CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
-import { MessageRow, MessageRowExtras } from '@/components/MessageRow';
+import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -139,7 +140,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const [filterHasAttachment, setFilterHasAttachment] = useState(false);
   // Measured height of the floating header stack, reused as the list's top
   // padding so the first result starts just below it.
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const { headerHeight, onHeaderLayout, floatingHeaderStyle } = useFloatingHeader();
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState('');
   const [nlInterpretation, setNlInterpretation] = useState('');
@@ -312,7 +313,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     [router, replaceNavigation, messageActions],
   );
 
-  const handleBack = useGoBack('/search');
+  const handleBack = useGoBack();
 
   const handleClear = useCallback(() => {
     if (debounceRef.current) {
@@ -347,14 +348,11 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
-      <View>
-        <MessageRow
-          message={item}
-          onSelect={handleMessagePress}
-          isSelected={item._id === selectedMessageId}
-        />
-        <MessageRowExtras message={item} />
-      </View>
+      <MessageRow
+        message={item}
+        onSelect={handleMessagePress}
+        isSelected={item._id === selectedMessageId}
+      />
     ),
     [handleMessagePress, selectedMessageId],
   );
@@ -384,12 +382,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
       {/* Same scroll treatment as the inbox: the header (and the filter chips
           under it) float over the results, which scroll behind the header's
           gradient. The measured height becomes the list's top padding. */}
-      <View
-        style={styles.floatingHeader}
-        onLayout={(e) => {
-          const next = Math.round(e.nativeEvent.layout.height);
-          setHeaderHeight((prev) => (prev === next ? prev : next));
-        }}
+      <View style={floatingHeaderStyle} onLayout={onHeaderLayout}
       >
       <SearchHeader
         ref={setInputRef}
@@ -557,13 +550,6 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
   },
   listContent: {
     width: '100%',

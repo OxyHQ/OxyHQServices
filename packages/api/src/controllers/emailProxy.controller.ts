@@ -211,17 +211,21 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
   const normalizedUrl = parseProxyUrl(decodedUrl);
   const url = new URL(normalizedUrl);
 
-  // A font request that cannot be served must end with no body at all. The
-  // transparent GIF is a fallback for IMAGES: handed back for a `@font-face`
-  // src, the browser decodes it as a font and reports `OTS parsing error:
-  // invalid sfntVersion` (0x47494638 — the literal bytes "GIF8"). A 404 makes
-  // the browser drop that @font-face and fall back to the next family.
+  // What to answer when the resource is deliberately withheld — a blocked
+  // tracker, or a fetch that never completed. An image gets the transparent
+  // GIF so the mail's layout survives; a font must get nothing at all, because
+  // a browser handed a GIF for a `@font-face` src decodes it as a font and
+  // reports `OTS parsing error: invalid sfntVersion` (0x47494638 — the literal
+  // bytes "GIF8"). With no body it drops that @font-face and falls back to the
+  // next family.
   const wantsFont = FONT_EXTENSIONS.test(url.pathname);
+  const sendWithheld = (cacheTime?: number): void =>
+    wantsFont ? sendNotFound(res, cacheTime) : sendTransparentGif(res, cacheTime);
 
   // Block tracking URLs
   if (isTrackingUrl(url)) {
     logger.debug('Blocked tracking URL', { url: decodedUrl });
-    return wantsFont ? sendNotFound(res) : sendTransparentGif(res);
+    return sendWithheld();
   }
 
   // Check cache
@@ -278,7 +282,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
       // Block tracking pixels (very small images)
       if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
         logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
-        return wantsFont ? sendNotFound(res) : sendTransparentGif(res);
+        return sendWithheld();
       }
 
       // Use correct MIME when upstream sends generic octet-stream for fonts
@@ -306,10 +310,6 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
       logger.error('Proxy request failed', { url: decodedUrl, error });
     }
 
-    if (wantsFont) {
-      sendNotFound(res);
-      return;
-    }
-    sendTransparentGif(res);
+    sendWithheld();
   }
 }

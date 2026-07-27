@@ -131,25 +131,6 @@ const ca: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Per a tu',
-    starred: 'Destacats',
-    unread: 'Sense llegir',
-    attachments: 'Adjunts',
-    empty: {
-      title: 'Tot al dia',
-      subtitle: 'No hi ha res destacat per a tu ara mateix.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} i {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} i {{count}} més',
-      fromManyOther: 'De {{a}}, {{b}} i {{count}} més',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' i més',
-    },
-  },
 
   inbox: {
     title: 'Safata',

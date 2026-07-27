@@ -3,9 +3,8 @@
  * feed).
  *
  * These exist so alignment is a property of the system rather than of each
- * component: a row, a card header and a card item all inset by `SPACING.lg`,
- * and everything that has to sit on a row's first line is exactly `LINE_BOX`
- * tall. Changing the rhythm means changing it here, once.
+ * component: a row, a card header and a card item all inset by `SPACING.lg`.
+ * Changing the rhythm means changing it here, once.
  */
 
 /** 4dp-based spacing steps. Anything in between is a bug, not a decision. */
@@ -17,15 +16,7 @@ export const SPACING = {
   xl: 24,
 } as const;
 
-/**
- * Height of a row's first line — sender, timestamp, avatar, row actions and
- * the unread dot all share it, so their boxes line up regardless of font size.
- * Sized to the tallest occupant (the avatar); a shorter box lets the avatar
- * poke above the text.
- */
-export const LINE_BOX = 24;
-
-/** Avatar diameter in a message row. Must not exceed `LINE_BOX`. */
+/** Avatar diameter in a message row. */
 export const AVATAR_SIZE = 24;
 
 /** Radii, from the tightest (chips) to the widest (cards). */

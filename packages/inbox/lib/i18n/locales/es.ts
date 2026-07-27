@@ -131,25 +131,6 @@ const es: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Para ti',
-    starred: 'Destacados',
-    unread: 'Sin leer',
-    attachments: 'Adjuntos',
-    empty: {
-      title: 'Todo al día',
-      subtitle: 'No hay nada destacado para ti ahora mismo.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} y {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} y {{count}} más',
-      fromManyOther: 'De {{a}}, {{b}} y {{count}} más',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' y más',
-    },
-  },
 
   inbox: {
     title: 'Bandeja',

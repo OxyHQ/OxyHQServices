@@ -129,25 +129,6 @@ const ja: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'あなた向け',
-    starred: 'スター付き',
-    unread: '未読',
-    attachments: '添付ファイル',
-    empty: {
-      title: 'すべて処理済み',
-      subtitle: '現在ハイライトされているものはありません。',
-    },
-    summary: {
-      fromOne: '{{a}} から',
-      fromTwo: '{{a}} と {{b}} から',
-      fromManyOne: '{{a}}、{{b}}、他 {{count}} 人から',
-      fromManyOther: '{{a}}、{{b}}、他 {{count}} 人から',
-      aboutOne: ' — {{topic}} について',
-      aboutTwo: ' — {{a}}、{{b}} について',
-      aboutMore: ' ほか',
-    },
-  },
 
   inbox: {
     title: '受信箱',

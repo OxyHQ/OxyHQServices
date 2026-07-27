@@ -130,25 +130,6 @@ const pt: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Para ti',
-    starred: 'Com estrela',
-    unread: 'Por ler',
-    attachments: 'Anexos',
-    empty: {
-      title: 'Tudo em dia',
-      subtitle: 'De momento, nada em destaque para ti.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} e {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} e mais {{count}}',
-      fromManyOther: 'De {{a}}, {{b}} e mais {{count}}',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' e mais',
-    },
-  },
 
   inbox: {
     title: 'Caixa de entrada',

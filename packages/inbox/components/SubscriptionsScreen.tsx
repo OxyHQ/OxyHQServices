@@ -19,6 +19,7 @@ import {
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { useFloatingHeader } from '@/hooks/useFloatingHeader';
 import { SubscriptionStacks } from '@/components/SubscriptionStacks';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -113,7 +114,7 @@ export function SubscriptionsScreen() {
    * Tapping a pile scrolls the list to that sender — the pile is a jump target,
    * matching the header's "Scroll to <sender>" affordance.
    */
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const { headerHeight, onHeaderLayout, floatingHeaderStyle } = useFloatingHeader();
   const listRef = useRef<FlashListRef<Subscription>>(null);
   const handleSelectSubscription = useCallback(
     (subscriptionId: string) => {
@@ -122,16 +123,6 @@ export function SubscriptionsScreen() {
       listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
     },
     [subscriptions],
-  );
-
-  const handleScrollToIndexFailed = useCallback(
-    (info: { index: number; averageItemLength: number }) => {
-      listRef.current?.scrollToOffset({
-        offset: info.averageItemLength * info.index,
-        animated: true,
-      });
-    },
-    [],
   );
 
   const renderItem = useCallback(
@@ -205,12 +196,7 @@ export function SubscriptionsScreen() {
           measured height becomes the list's top padding. Before this the header
           was a solid bar with a border that pushed the list down — a second,
           unrelated scroll treatment in the same app. */}
-      <View
-        style={styles.floatingHeader}
-        onLayout={(e) => {
-          const next = Math.round(e.nativeEvent.layout.height);
-          setHeaderHeight((prev) => (prev === next ? prev : next));
-        }}
+      <View style={floatingHeaderStyle} onLayout={onHeaderLayout}
       >
       <LinearGradient
         colors={[colors.background, fadeOut(colors.background)]}
@@ -257,8 +243,6 @@ export function SubscriptionsScreen() {
         <FlashList
           ref={listRef}
           data={subscriptions}
-          estimatedItemSize={88}
-          onScrollToIndexFailed={handleScrollToIndexFailed}
           renderItem={renderItem}
           ItemSeparatorComponent={renderSeparator}
           ListHeaderComponent={
@@ -306,13 +290,6 @@ const styles = StyleSheet.create({
   },
   // `paddingLeft` / `paddingRight` are applied inline so they can include
   // landscape `insets.left` / `insets.right` for notch protection.
-  floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

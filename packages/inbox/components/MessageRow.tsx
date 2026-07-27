@@ -47,7 +47,7 @@ import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
 import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
-import { SPACING, LINE_BOX, AVATAR_SIZE, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
+import { SPACING, AVATAR_SIZE, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
 import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import { useEmailStore } from '@/hooks/useEmail';
 import { emailKeys } from '@/hooks/queries/queryKeys';
@@ -66,6 +66,17 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
  *   this year  → Jul 22
  *   older      → Jul 22, 24
  */
+/**
+ * Built once and reused. `toLocaleTimeString(undefined, {...})` constructs a
+ * new `Intl.DateTimeFormat` on every call — the options path defeats the
+ * engine's format cache — and a list mounts one row per message.
+ */
+const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const WEEKDAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const MONTH_DAY_YEAR_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+const WEEKDAY_MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -74,15 +85,15 @@ function formatDate(dateStr: string): string {
   const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return TIME_FORMAT.format(date);
   }
   if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return date.toLocaleDateString(undefined, { weekday: 'short' });
+  if (diffDays < 7) return WEEKDAY_FORMAT.format(date);
 
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return MONTH_DAY_FORMAT.format(date);
   }
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+  return MONTH_DAY_YEAR_FORMAT.format(date);
 }
 
 function getSenderName(message: Message): string {
@@ -125,11 +136,11 @@ function formatSnoozeTime(dateStr: string): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const snoozeDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffDays = Math.floor((snoozeDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = TIME_FORMAT.format(date);
 
   if (diffDays === 0) return `Today, ${time}`;
   if (diffDays === 1) return `Tomorrow, ${time}`;
-  return `${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`;
+  return `${WEEKDAY_MONTH_DAY_FORMAT.format(date)}, ${time}`;
 }
 
 interface MessageRowProps {
@@ -228,7 +239,6 @@ function MessageRowInner({
   const senderName = getSenderName(message);
   const preview = getPreview(message);
   const dateStr = formatDate(message.date);
-  const hasAttachments = message.attachments.length > 0;
 
   // Unread is carried by the row background alone: a tinted row reads at a
   // glance across a whole list, which a 6dp dot does not, and it keeps the
@@ -239,18 +249,23 @@ function MessageRowInner({
       ? colors.surface
       : 'transparent';
 
+  // Only built when it is about to be shown. These are a web hover affordance,
+  // so on native — and for every row the pointer is not over — the whole list
+  // would otherwise be allocated and thrown away unread, once per render.
   const rowActions: { key: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; onPress: () => void; active?: boolean }[] = [];
-  if (onArchive) rowActions.push({ key: 'archive', icon: 'archive-arrow-down-outline', label: 'Archive', onPress: handleArchive });
-  if (onDelete) rowActions.push({ key: 'trash', icon: 'delete-outline', label: 'Move to Trash', onPress: handleDelete });
-  if (onToggleRead) {
-    rowActions.push({
-      key: 'read',
-      icon: isUnread ? 'email-open-outline' : 'email-outline',
-      label: isUnread ? 'Mark as read' : 'Mark as unread',
-      onPress: handleToggleRead,
-    });
+  if (showRowActions) {
+    if (onArchive) rowActions.push({ key: 'archive', icon: 'archive-arrow-down-outline', label: 'Archive', onPress: handleArchive });
+    if (onDelete) rowActions.push({ key: 'trash', icon: 'delete-outline', label: 'Move to Trash', onPress: handleDelete });
+    if (onToggleRead) {
+      rowActions.push({
+        key: 'read',
+        icon: isUnread ? 'email-open-outline' : 'email-outline',
+        label: isUnread ? 'Mark as read' : 'Mark as unread',
+        onPress: handleToggleRead,
+      });
+    }
+    if (onPin) rowActions.push({ key: 'pin', icon: message.flags.pinned ? 'pin' : 'pin-outline', label: 'Pin thread', onPress: handlePin, active: message.flags.pinned });
   }
-  if (onPin) rowActions.push({ key: 'pin', icon: message.flags.pinned ? 'pin' : 'pin-outline', label: 'Pin thread', onPress: handlePin, active: message.flags.pinned });
 
   return (
     <Pressable
@@ -358,7 +373,7 @@ function MessageRowInner({
  * preview, attachment thumbnails. Rendered by the list under the row so the
  * row itself stays exactly one line tall.
  */
-export function MessageRowExtras({ message, sentiment }: { message: Message; sentiment?: SentimentResult | null }) {
+function MessageRowExtrasInner({ message, sentiment }: { message: Message; sentiment?: SentimentResult | null }) {
   const colors = useColors();
   const hasAttachments = message.attachments.length > 0;
   const hasChips = message.labels.length > 0 || Boolean(sentiment);
@@ -579,3 +594,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+
+/**
+ * Memoized for the same reason `MessageRow` is: it renders beside one for every
+ * row, and the list re-renders mounted items on each selection toggle
+ * (`extraData`). Without this, the row's comparator only halves the work.
+ */
+export const MessageRowExtras = React.memo(
+  MessageRowExtrasInner,
+  (prev, next) => prev.message === next.message && prev.sentiment?.type === next.sentiment?.type,
+);

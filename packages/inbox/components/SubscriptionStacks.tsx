@@ -45,6 +45,8 @@ const ENVELOPE_WIDTH = 60;
 const ENVELOPE_HEIGHT = 40;
 /** Vertical step between envelopes. Smaller than the image, hence the overlap. */
 const ENVELOPE_STEP = 6;
+/** Resolved once: a pile can hold 60 of these, and every column draws a pile. */
+const ENVELOPE_SOURCE = require('@/assets/images/envelope.png');
 
 function EnvelopePile({ count }: { count: number }) {
   const envelopes = useMemo(
@@ -61,7 +63,7 @@ function EnvelopePile({ count }: { count: number }) {
       {envelopes.map((i) => (
         <Image
           key={i}
-          source={require('@/assets/images/envelope.png')}
+          source={ENVELOPE_SOURCE}
           style={[styles.envelope, { bottom: i * ENVELOPE_STEP }]}
           resizeMode="contain"
         />
@@ -79,40 +81,67 @@ export function SubscriptionStacks({ subscriptions, onSelect }: SubscriptionStac
   const colors = useColors();
   const scrollRef = useRef<ScrollView>(null);
 
-  // Enough scroll geometry to know which arrows are worth showing. An arrow
-  // that scrolls nowhere is worse than no arrow.
-  const [viewportWidth, setViewportWidth] = useState(0);
-  const [contentWidth, setContentWidth] = useState(0);
-  const [offset, setOffset] = useState(0);
+  // Only what the arrows need: whether there is anywhere to go in each
+  // direction. The geometry itself lives in a ref — `scrollEventThrottle={16}`
+  // means a state write here would be a React commit on every frame of every
+  // drag, re-rendering the whole rail of piles.
+  const geometry = useRef({ offset: 0, viewport: 0, content: 0 });
+  const [edges, setEdges] = useState({ left: false, right: false });
 
   const ordered = useMemo(
     () => [...subscriptions].sort((a, b) => b.messageCount - a.messageCount),
     [subscriptions],
   );
 
-  const maxOffset = Math.max(0, contentWidth - viewportWidth);
-  const canScrollLeft = offset > 1;
-  const canScrollRight = offset < maxOffset - 1;
+  const scrollBy = useCallback((direction: -1 | 1) => {
+    const { offset, viewport, content } = geometry.current;
+    // Move by most of a screenful, keeping a sliver of context on screen.
+    const step = Math.max(viewport * 0.8, 160);
+    const maxOffset = Math.max(0, content - viewport);
+    scrollRef.current?.scrollTo({
+      x: Math.min(Math.max(offset + direction * step, 0), maxOffset),
+      animated: true,
+    });
+  }, []);
 
-  const scrollBy = useCallback(
-    (direction: -1 | 1) => {
-      // Move by most of a screenful, keeping a sliver of context on screen.
-      const step = Math.max(viewportWidth * 0.8, 160);
-      const next = Math.min(Math.max(offset + direction * step, 0), maxOffset);
-      scrollRef.current?.scrollTo({ x: next, animated: true });
+  /** Recompute which arrows apply; commit only when the answer changes. */
+  const syncEdges = useCallback(() => {
+    const { offset, viewport, content } = geometry.current;
+    const maxOffset = Math.max(0, content - viewport);
+    const next = { left: offset > 1, right: offset < maxOffset - 1 };
+    setEdges((prev) => (prev.left === next.left && prev.right === next.right ? prev : next));
+  }, []);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // The event already carries the viewport and content widths, so this is
+      // also what keeps them current — no onLayout/onContentSizeChange pair.
+      const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+      geometry.current = {
+        offset: contentOffset.x,
+        viewport: layoutMeasurement.width,
+        content: contentSize.width,
+      };
+      syncEdges();
     },
-    [offset, viewportWidth, maxOffset],
+    [syncEdges],
   );
 
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setOffset(e.nativeEvent.contentOffset.x);
-  }, []);
+  const handleLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      geometry.current.viewport = e.nativeEvent.layout.width;
+      syncEdges();
+    },
+    [syncEdges],
+  );
 
-  const handleLayout = useCallback((e: LayoutChangeEvent) => {
-    setViewportWidth(e.nativeEvent.layout.width);
-  }, []);
-
-  const handleContentSizeChange = useCallback((w: number) => setContentWidth(w), []);
+  const handleContentSizeChange = useCallback(
+    (w: number) => {
+      geometry.current.content = w;
+      syncEdges();
+    },
+    [syncEdges],
+  );
 
   if (ordered.length === 0) return null;
 
@@ -132,12 +161,8 @@ export function SubscriptionStacks({ subscriptions, onSelect }: SubscriptionStac
         ))}
       </ScrollView>
 
-      {canScrollLeft && (
-        <ScrollArrow direction="left" onPress={() => scrollBy(-1)} colors={colors} />
-      )}
-      {canScrollRight && (
-        <ScrollArrow direction="right" onPress={() => scrollBy(1)} colors={colors} />
-      )}
+      {edges.left && <ScrollArrow direction="left" onPress={() => scrollBy(-1)} colors={colors} />}
+      {edges.right && <ScrollArrow direction="right" onPress={() => scrollBy(1)} colors={colors} />}
     </View>
   );
 }
