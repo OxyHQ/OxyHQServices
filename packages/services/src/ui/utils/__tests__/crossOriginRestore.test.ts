@@ -25,6 +25,7 @@ import {
   isLoopbackOrigin,
   isOfficialWebOrigin,
   isIdpHubOrigin,
+  OXY_OAUTH_REDIRECT_URI_STORAGE_KEY,
 } from '@oxyhq/core';
 import { redirectToAuthorize } from '../../components/oauthNavigation';
 import {
@@ -138,6 +139,22 @@ describe('crossOriginRestore', () => {
       const params = new URL(url).searchParams;
       expect(params.get('client_id')).toBe('oxy_dk_test');
       expect(params.get('prompt')).toBe('none');
+    });
+
+    it('persists the path-qualified redirect_uri in the handshake for token exchange', async () => {
+      makeOriginEligible();
+      const redirectUri = 'https://app.example/oauth/callback';
+      const redirected = await maybeStartSilentOAuthRestore({
+        oxyServices: OXY_SERVICES_STUB,
+        clientId: 'oxy_dk_test',
+        redirectUri,
+      });
+      expect(redirected).toBe(true);
+      expect(globalThis.sessionStorage?.getItem(OXY_OAUTH_REDIRECT_URI_STORAGE_KEY)).toBe(
+        redirectUri,
+      );
+      const url = mockRedirect.mock.calls[0][0] as string;
+      expect(new URL(url).searchParams.get('redirect_uri')).toBe(redirectUri);
     });
   });
 });

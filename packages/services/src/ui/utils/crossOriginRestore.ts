@@ -10,7 +10,7 @@ import {
   OXY_SILENT_OAUTH_ATTEMPTED_KEY,
   clearOAuthHandshake,
   persistOAuthHandshake,
-  normalizeOAuthRedirectUri,
+  canonicalizeOAuthRedirectUri,
   logger,
 } from '@oxyhq/core';
 import { isWebBrowser } from './isWebBrowser';
@@ -109,13 +109,12 @@ export async function maybeStartSilentOAuthRestore(
   try {
     const { codeVerifier, codeChallenge } = await generatePkcePair();
     const state = await generateOAuthState();
-    if (!persistOAuthHandshake(state, codeVerifier)) {
-      return false;
-    }
-
-    const redirectUri = normalizeOAuthRedirectUri(
+    const redirectUri = canonicalizeOAuthRedirectUri(
       opts.redirectUri ?? location.origin,
     );
+    if (!persistOAuthHandshake(state, codeVerifier, redirectUri)) {
+      return false;
+    }
 
     const authorizeUrl = buildOAuthAuthorizeUrl({
       authorizeBaseUrl: opts.authorizeBaseUrl,
