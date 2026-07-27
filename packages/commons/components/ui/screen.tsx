@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { useTabBarFootprint } from '@oxyhq/bloom/tab-bar';
 import { useColors } from '@/hooks/useColors';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
@@ -7,8 +8,31 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 export const SCREEN_PADDING = 22;
 /** Vertical air between top-level sections. */
 export const SECTION_GAP = 32;
-/** Bottom inset that clears the native tab bar / FAB. */
-export const SCREEN_BOTTOM_PAD = 120;
+
+/**
+ * Air between the end of a screen's content and the top of the floating bar.
+ *
+ * Sized so the last row also clears the ID screen's FAB, which sits in the same
+ * corner one footprint up — the same job the single hardcoded 120 used to do
+ * for the native bar and the FAB together.
+ */
+const SCREEN_BOTTOM_CLEARANCE = 44;
+
+/**
+ * Bottom inset every Commons screen leaves free for the floating tab bar.
+ *
+ * A hook rather than the constant it replaced, because the footprint depends on
+ * the device's bottom safe-area inset. `useTabBarFootprint()` is the bar's own
+ * measurement — its expanded height plus the gap it holds off the window edge —
+ * so this can never drift from where the bar actually sits.
+ *
+ * NEVER add `insets.bottom` to the result: Bloom folds the inset into the bar's
+ * own gap, so adding it again counts the home indicator twice and strands a
+ * visible band of dead space under every screen.
+ */
+export function useScreenBottomPad(): number {
+  return useTabBarFootprint() + SCREEN_BOTTOM_CLEARANCE;
+}
 
 interface ScreenProps {
   children: React.ReactNode;
@@ -40,12 +64,15 @@ export function Screen({
   contentStyle,
 }: ScreenProps) {
   const colors = useColors();
+  const bottomPad = useScreenBottomPad();
 
   return (
     <ScreenContentWrapper refreshing={refreshing} onRefresh={onRefresh}>
       <View style={[styles.flex, { backgroundColor: colors.background }]}>
         {padded ? (
-          <View style={[styles.content, { gap }, contentStyle]}>{children}</View>
+          <View style={[styles.content, { gap, paddingBottom: bottomPad }, contentStyle]}>
+            {children}
+          </View>
         ) : (
           children
         )}
@@ -60,6 +87,5 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: SCREEN_PADDING,
     paddingTop: 8,
-    paddingBottom: SCREEN_BOTTOM_PAD,
   },
 });

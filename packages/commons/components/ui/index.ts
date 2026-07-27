@@ -7,7 +7,7 @@ export { ImportantBanner } from './important-banner';
 export { CircleIconBadge } from './circle-icon-badge';
 
 // Flat-aesthetic primitives (the validated reputation-screen design language).
-export { Screen, SCREEN_PADDING, SECTION_GAP, SCREEN_BOTTOM_PAD } from './screen';
+export { Screen, SCREEN_PADDING, SECTION_GAP, useScreenBottomPad } from './screen';
 export { StackHeader } from './stack-header';
 export { Section, SectionHeader } from './section';
 export { ListRow } from './list-row';

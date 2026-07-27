@@ -2,8 +2,14 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { StyleSheet, RefreshControl, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedScrollHandler, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
+import { setMinimized, useMinimizeState } from '@oxyhq/bloom/tab-bar';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useColors } from '@/hooks/useColors';
+
+/** Scroll offset below which the tab bar is always expanded (px). */
+const MINIMIZE_TOP_ZONE = 24;
+/** Per-event scroll delta that counts as a deliberate direction change (px). */
+const MINIMIZE_DIRECTION_THRESHOLD = 3;
 
 interface ScreenContentWrapperProps {
   children: React.ReactNode;
@@ -19,6 +25,15 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
   // Check if we're on mobile (header is absolutely positioned on mobile)
   const isMobile = Platform.OS !== 'web' || (Platform.OS === 'web' && width < 768);
 
+  // The floating tab bar minimizes as this scroller moves. Bloom ships
+  // `useMinimizeOnScroll()` for exactly this, but it returns a SECOND
+  // `useAnimatedScrollHandler` and this ScrollView already has one — two
+  // handlers cannot both own `onScroll`. So the signal is driven from the
+  // handler that is already here, using Bloom's `setMinimized`, which no-ops
+  // when the spring is already heading to the requested target and therefore
+  // never restarts (and visibly stutters) mid-scroll.
+  const minimizeState = useMinimizeState();
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       const currentY = event.contentOffset.y;
@@ -33,12 +48,26 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
         scrollDirection.value = 'up';
       }
 
+      // Clamp to the scrollable range so rubber-band overscroll can't flip the
+      // direction for a frame and flicker the bar.
+      const maxY = Math.max(event.contentSize.height - event.layoutMeasurement.height, 0);
+      const clampedY = Math.min(Math.max(currentY, 0), maxY);
+      const delta = clampedY - Math.min(Math.max(previousY, 0), maxY);
+
+      if (clampedY < MINIMIZE_TOP_ZONE) {
+        setMinimized(minimizeState, 0);
+      } else if (delta > MINIMIZE_DIRECTION_THRESHOLD) {
+        setMinimized(minimizeState, 1);
+      } else if (delta < -MINIMIZE_DIRECTION_THRESHOLD) {
+        setMinimized(minimizeState, 0);
+      }
+
       // Update isScrolled state on JS thread
       if (currentY > 10 !== (previousY > 10)) {
         runOnJS(setIsScrolled)(currentY > 10);
       }
     },
-  }, []);
+  }, [minimizeState]);
 
   const insets = useSafeAreaInsets();
   
