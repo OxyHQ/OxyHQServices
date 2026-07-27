@@ -1,4 +1,4 @@
-import { Platform, useWindowDimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 
 /**
  * Viewport width (px) at or above which the app lays out as a desktop: the
@@ -16,12 +16,23 @@ export const DESKTOP_BREAKPOINT = 900;
  * with both a permanent sidebar and a floating bar, or with neither.
  *
  * `useWindowDimensions()` re-renders on resize, so a browser window dragged
- * across the breakpoint gains and loses the bar — and the space reserved for it
- * — cleanly, rather than keeping whatever was true at mount.
+ * across the breakpoint — or a tablet rotated across it — gains and loses the
+ * bar, and the space reserved for it, cleanly rather than keeping whatever was
+ * true at mount.
  *
- * Native is never desktop: a phone or tablet always gets the bar.
+ * There is deliberately NO platform check. A wide native tablet is a wide
+ * layout: it gets the permanent drawer and no bar, exactly as the web does at
+ * the same width. Gating this on `Platform.OS === 'web'` would leave an iPad
+ * with a floating pill stretched across the full screen, since Bloom derives
+ * the bar's item width from the window width. Phones never reach the
+ * breakpoint, so they are unaffected.
+ *
+ * `drawerType: 'permanent'` is fully supported on native — react-native-drawer-
+ * layout's `Drawer.native.tsx` branches on it in nine places: the pan gesture
+ * is disabled, the drawer is laid out in flow (`position: 'relative'`) beside
+ * the content instead of over it, and no dimming overlay is rendered.
  */
 export function useIsDesktopLayout(): boolean {
   const { width } = useWindowDimensions();
-  return Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
+  return width >= DESKTOP_BREAKPOINT;
 }
