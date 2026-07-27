@@ -14,16 +14,33 @@
  * Registration additionally requires a SESSION — `registerPushToken` is
  * bearer-authed — which is the caller's precondition (`usePushRegistration`
  * gates on `canUsePrivateApi`).
+ *
+ * The device half — OS permission, platform tag, and the Expo push token itself
+ * — is the shared `@oxyhq/services` adapter, the one place in the ecosystem that
+ * touches `expo-notifications`. What stays here is Commons policy: the ORDER the
+ * preconditions are checked in, and the Commons `clientId` the registration is
+ * scoped to.
  */
 
 import type { PushTokenPlatform, RegisterPushTokenInput } from '@oxyhq/core';
-import { OXY_CLIENT_ID } from '@/constants/oxy';
+import { IDENTITY_APPROVAL_PUSH_CHANNEL } from '@oxyhq/contracts';
 import {
-  ensureAuthApprovalNotificationChannel,
+  ensureNotificationChannel,
   getExpoPushToken,
   hasNotificationPermission,
   pushTokenPlatform,
-} from './device-notifications';
+} from '@oxyhq/services';
+import { OXY_CLIENT_ID } from '@/constants/oxy';
+
+/**
+ * The channel's user-visible copy. Injected rather than read here: this module
+ * is not a component, and Commons' translations are only reachable through a
+ * hook — so the two hook call sites localize it and hand it down.
+ */
+export interface ApprovalChannelCopy {
+  name: string;
+  description: string;
+}
 
 /** The `@oxyhq/core` surface this module drives (satisfied by `OxyServices`). */
 export interface PushTokenRegistry {
@@ -37,12 +54,27 @@ export interface PushTokenEnvironment {
   hasNotificationPermission: () => Promise<boolean>;
   /** This installation's Expo push token, or null when one cannot be minted. */
   getExpoPushToken: () => Promise<string | null>;
-  /** Platform tag for the registry, or null on an unsupported platform. */
+  /**
+   * Platform tag for the registry, or null on a platform Oxy does not deliver
+   * push to — which the shared adapter defines as everything except iOS and
+   * Android. Web is null there on purpose: browser push would need a VAPID key
+   * and a service-worker subscription no Oxy app has wired, so there is no token
+   * to register.
+   */
   pushTokenPlatform: () => PushTokenPlatform | null;
 }
 
 export type PushRegistrationOutcome =
   | { status: 'registered'; expoPushToken: string }
+  /**
+   * Every reason is an expected steady state, not an error:
+   * - `unsupported-platform` — no push transport exists here at all (see
+   *   {@link PushTokenEnvironment.pushTokenPlatform}). Checked FIRST, so this
+   *   short-circuits before anything asks the OS about permission.
+   * - `permission-not-granted` — the user has not (yet) agreed.
+   * - `no-token` — permission is granted but no Expo push token could be minted
+   *   (no EAS project id in the build, or the Expo push service was unreachable).
+   */
   | { status: 'skipped'; reason: 'unsupported-platform' | 'permission-not-granted' | 'no-token' };
 
 export type PushRetirementOutcome =
@@ -66,7 +98,7 @@ export type PushRetirementOutcome =
 export async function registerInstallationPushToken(
   registry: PushTokenRegistry,
   environment: PushTokenEnvironment,
-  options: { clientId: string; deviceId?: string },
+  options: { clientId: string; deviceId?: string; channel: ApprovalChannelCopy },
 ): Promise<PushRegistrationOutcome> {
   const platform = environment.pushTokenPlatform();
   if (!platform) {
@@ -84,7 +116,15 @@ export async function registerInstallationPushToken(
     return { status: 'skipped', reason: 'no-token' };
   }
 
-  await ensureAuthApprovalNotificationChannel();
+  // Before the token, never after: the very first request the server sends must
+  // already have a channel to land on, or Android 8+ drops it with no error.
+  // The id is the wire contract; the name and description are Commons copy.
+  await ensureNotificationChannel({
+    id: IDENTITY_APPROVAL_PUSH_CHANNEL,
+    name: options.channel.name,
+    description: options.channel.description,
+    importance: 'high',
+  });
 
   const input: RegisterPushTokenInput = {
     expoPushToken,
@@ -126,7 +166,7 @@ export async function retireInstallationPushToken(
   return { status: 'retired', expoPushToken };
 }
 
-/** The real device environment, bound once so call sites stay declarative. */
+/** The shared SDK adapter, bound once so call sites stay declarative. */
 const deviceEnvironment: PushTokenEnvironment = {
   hasNotificationPermission,
   getExpoPushToken,
@@ -139,10 +179,12 @@ const deviceEnvironment: PushTokenEnvironment = {
  */
 export function registerVaultPushToken(
   registry: PushTokenRegistry,
+  channel: ApprovalChannelCopy,
   deviceId?: string,
 ): Promise<PushRegistrationOutcome> {
   return registerInstallationPushToken(registry, deviceEnvironment, {
     clientId: OXY_CLIENT_ID,
+    channel,
     ...(deviceId ? { deviceId } : {}),
   });
 }
