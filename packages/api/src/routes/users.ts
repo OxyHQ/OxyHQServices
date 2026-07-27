@@ -706,7 +706,7 @@ router.get(
  *
  * The authenticated VIEWER's OWN social graph — the accounts they follow, the
  * subset who follow back (mutuals), and the accounts they have blocked — as ONE
- * ids-only payload `{ followingIds, mutualIds, blockedIds }`. Consolidates the
+ * ids-only payload `{ followingIds, mutualIds, blockedIds, restrictedIds }`. Consolidates the
  * three per-viewer graph reads consuming apps (Mention, Allo, Homiio) otherwise
  * make as separate round trips on nearly every feed request.
  *
@@ -723,7 +723,7 @@ router.get(
  * Registered as a two-segment `/me/graph` path (distinct from the single-segment
  * `/:userId` param route) so Express never treats it as a `:userId` value.
  *
- * @returns {ViewerGraph} `{ followingIds, mutualIds, blockedIds }`.
+ * @returns {ViewerGraph} `{ followingIds, mutualIds, blockedIds, restrictedIds }`.
  */
 router.get(
   '/me/graph',

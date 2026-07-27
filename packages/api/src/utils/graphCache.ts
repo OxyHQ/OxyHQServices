@@ -2,7 +2,7 @@
  * Viewer-Graph Cache
  *
  * Short-TTL, Redis-backed cache for the consolidated per-viewer social graph
- * (`GET /users/me/graph` → `{ followingIds, mutualIds, blockedIds }`). The graph
+ * (`GET /users/me/graph` → `{ followingIds, mutualIds, blockedIds, restrictedIds }`). The graph
  * is read on nearly every feed/timeline request by consuming apps (Mention,
  * Allo, Homiio), so caching the ids-only payload for a short window removes the
  * three Mongo round trips it otherwise costs on each request.
@@ -46,7 +46,8 @@ function isViewerGraph(value: unknown): value is ViewerGraph {
   return (
     Array.isArray(graph.followingIds) &&
     Array.isArray(graph.mutualIds) &&
-    Array.isArray(graph.blockedIds)
+    Array.isArray(graph.blockedIds) &&
+    Array.isArray(graph.restrictedIds)
   );
 }
 
