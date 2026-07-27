@@ -38,6 +38,9 @@ jest.mock('../aiLabeling.service', () => ({ aiLabelingService: {} }));
 jest.mock('../cardExtraction.service', () => ({ cardExtractionService: {} }));
 jest.mock('../smtp.outbound', () => ({ smtpOutbound: {} }));
 jest.mock('../push.service', () => ({ pushService: {} }));
+jest.mock('../emailPushDelivery.service', () => ({
+  sendInboxEmailPush: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../assetServiceSingleton', () => ({ assetService: {} }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() } }));
 
