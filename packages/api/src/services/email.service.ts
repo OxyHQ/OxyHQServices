@@ -1454,11 +1454,14 @@ class EmailService {
   }
 
   async updateMessageLabels(userId: string, messageId: string, add: string[], remove: string[]): Promise<any> {
-    // Validate that labels being added actually exist for this user
-    if (add.length > 0) {
-      const existingLabels = await Label.find({ userId, name: { $in: add } }).select('name').lean();
+    // Validate that labels being added actually exist for this user. A system
+    // label is valid without a row behind it — that is the whole point of it
+    // being a constant — so only the rest are looked up.
+    const unknown = add.filter((name) => !isSystemLabel(name));
+    if (unknown.length > 0) {
+      const existingLabels = await Label.find({ userId, name: { $in: unknown } }).select('name').lean();
       const existingNames = new Set(existingLabels.map((l) => l.name));
-      const missing = add.filter((name) => !existingNames.has(name));
+      const missing = unknown.filter((name) => !existingNames.has(name));
       if (missing.length > 0) {
         throw new BadRequestError(`Labels not found: ${missing.join(', ')}`);
       }
