@@ -15,6 +15,8 @@ import {
 } from '../utils/crossOriginRestore';
 import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../utils/oauthReturn';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import { allowsAutomaticIdpRedirect } from '../oauth/legacyRedirectLanes';
+import type { WebAuthMode } from '../oauth/types';
 import type { CommitInput } from '../context/oxyContextTypes';
 
 /** How long the cold boot waits for the post-boot SessionClient handoff (ms). */
@@ -94,6 +96,17 @@ export interface RunProviderColdBootOptions {
   sessionMode?: SessionMode;
   /** The identity binding required by `sessionMode: 'identity'`. */
   identity?: IdentityBinding;
+  /**
+   * How this provider's WEB sign-in reaches the IdP
+   * (`OxyProviderProps.webAuthMode`).
+   *
+   * A first-class INPUT to the boot, not a UI-only concern: `'popup'` forbids
+   * the automatic full-page `prompt=none` restore in step 3, so a domain with no
+   * local credential resolves SIGNED OUT instead of bouncing the top-level
+   * window to `auth.oxy.so`. See `allowsAutomaticIdpRedirect`.
+   * @default 'redirect'
+   */
+  webAuthMode?: WebAuthMode;
   sessionClient: SessionClient;
   syncDeviceCredentialToHost: () => Promise<void>;
   commitSession: (
@@ -116,6 +129,11 @@ export interface RunProviderColdBootOptions {
  * Steps 1 and 3 are ACCOUNT-MODE ONLY: both commit whichever account the IdP
  * resolves, which for an identity-bound client is somebody else's account by
  * construction. In `'identity'` mode the boot is exactly step 2.
+ *
+ * Step 3 is additionally REDIRECT-MODE ONLY: it navigates the top-level window
+ * with no user gesture behind it, which `webAuthMode: 'popup'` exists to
+ * eliminate. In popup mode the boot is steps 1 and 2, and a domain with no local
+ * credential simply resolves signed out. See `allowsAutomaticIdpRedirect`.
  */
 export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Promise<void> {
   const {
@@ -126,6 +144,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     authorizeBaseUrl,
     sessionMode = 'account',
     identity,
+    webAuthMode = 'redirect',
     sessionClient,
     syncDeviceCredentialToHost,
     commitSession,
@@ -138,9 +157,21 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
   setTokenReady(false);
 
   try {
+    // MODE-INDEPENDENT URL cleanup, deliberately so: both consume query params a
+    // PREVIOUS redirect-mode session left in the address bar (`?error=login_required`
+    // from a silent authorize, `?hub_sync=failed` from the hub) and restore the
+    // page the visit started on. Flipping an app to popup mode must not strand
+    // those params, so neither is gated on `webAuthMode`. Neither starts a
+    // navigation — they only rewrite the URL via `history.replaceState`.
     consumeSilentOAuthError();
     consumeHubSyncFailure();
 
+    // The redirect transport's RETURN leg — also NOT gated on `webAuthMode`. A
+    // popup-mode app legitimately lands here with `?code=` whenever the browser
+    // blocked the popup and `startWebOAuthSignIn` fell back to a full-page
+    // redirect (`popup-blocked` / `popup-navigation-failed`), and an app that
+    // switched modes mid-flight must not be stranded with a dead `?code=`
+    // either. It consumes a code already on the URL; it never starts one.
     const oauthCompleted = identityBound
       ? false
       : await tryCompleteOAuthReturn({
@@ -229,17 +260,30 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       },
     });
 
-    // Silent cross-origin OAuth restore (web cross-app SSO). Gate it the SAME
-    // way the hub-sync WRITE side (`syncHubAfterSignIn`) gates: official web
-    // origins only, never the IdP hub itself, and — unlike the write side —
-    // never a loopback / local-dev origin (which must not be bounced to a hosted
-    // IdP on cold boot). The authorize endpoint is env-configurable so a
-    // local/staging app targets its own IdP instead of production.
+    // Silent cross-origin OAuth restore (web cross-app SSO): a full-page
+    // `prompt=none` bounce to the IdP when the mint found no local session.
+    //
+    // TRANSPORT gate (`allowsAutomaticIdpRedirect`): `webAuthMode: 'popup'`
+    // FORBIDS this lane. It navigates the top-level window with no user gesture
+    // behind it, which is precisely what popup mode exists to eliminate — a
+    // popup-mode domain without a local credential resolves signed out right
+    // here and waits for the user's next explicit "Continue with Oxy" (issue
+    // #691, "Cold boot and cross-domain behavior"). `'redirect'` — still the
+    // default and the compatibility path — reaches this lane unchanged, and this
+    // whole block disappears with the transport in phase 7b.
+    //
+    // ORIGIN gate: same as the hub-sync WRITE side (`syncHubAfterSignIn`) —
+    // official web origins only, never the IdP hub itself, and — unlike the
+    // write side — never a loopback / local-dev origin (which must not be
+    // bounced to a hosted IdP on cold boot). The authorize endpoint is
+    // env-configurable so a local/staging app targets its own IdP instead of
+    // production.
     const webOrigin = isWebBrowser()
       ? (globalThis as { location?: Location }).location?.origin
       : undefined;
     if (
       !identityBound &&
+      allowsAutomaticIdpRedirect(webAuthMode) &&
       clientId &&
       outcome.kind !== 'session' &&
       webOrigin &&
