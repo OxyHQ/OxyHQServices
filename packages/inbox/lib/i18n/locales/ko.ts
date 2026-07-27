@@ -43,16 +43,12 @@ const ko: LocaleDict = {
   },
 
   tabs: {
-    home: '홈',
     inbox: '받은편지함',
     search: '검색',
     settings: '설정',
-    forYou: '추천',
   },
 
   drawer: {
-    home: '홈',
-    forYou: '추천',
     starred: '별표',
     snoozed: '다시 알림',
     subscriptions: '구독',

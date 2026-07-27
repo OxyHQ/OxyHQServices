@@ -44,16 +44,12 @@ const ca: LocaleDict = {
   },
 
   tabs: {
-    home: 'Inici',
     inbox: 'Safata',
     search: 'Cerca',
     settings: 'Configuració',
-    forYou: 'Per a tu',
   },
 
   drawer: {
-    home: 'Inici',
-    forYou: 'Per a tu',
     starred: 'Destacats',
     snoozed: 'Posposats',
     subscriptions: 'Subscripcions',

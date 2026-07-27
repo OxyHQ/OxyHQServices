@@ -2333,13 +2333,20 @@ class EmailService {
           _id: '$from.address',
           name: { $last: '$from.name' },
           messageCount: { $sum: 1 },
+          // Same pass as the count: how many of this sender's messages were
+          // ever opened. A sender you never read is the one worth dropping.
+          readCount: { $sum: { $cond: [{ $eq: ['$flags.seen', true] }, 1, 0] } },
           latestDate: { $max: '$date' },
           oldestDate: { $min: '$date' },
           latestMessageId: { $last: '$_id' },
         },
       },
       { $match: { messageCount: { $gte: 3 } } },
-      { $sort: { messageCount: -1 } },
+      // `_id` (the sender address) breaks ties. Sorting on `messageCount`
+      // alone leaves equal-count senders in an arbitrary order that can
+      // differ between two offset pages, so the same sender comes back twice
+      // while another is skipped entirely.
+      { $sort: { messageCount: -1, _id: 1 } },
       {
         $facet: {
           data: [{ $skip: offset }, { $limit: limit }],
@@ -2396,6 +2403,7 @@ class EmailService {
         _id: sender._id,
         name: sender.name || sender._id.split('@')[0],
         messageCount: sender.messageCount,
+        readCount: sender.readCount ?? 0,
         latestDate: sender.latestDate,
         oldestDate: sender.oldestDate,
         latestMessageId: sender.latestMessageId,

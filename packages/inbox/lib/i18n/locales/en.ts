@@ -50,16 +50,12 @@ const en: LocaleDict = {
   },
 
   tabs: {
-    home: 'Home',
     inbox: 'Inbox',
     search: 'Search',
     settings: 'Settings',
-    forYou: 'For You',
   },
 
   drawer: {
-    home: 'Home',
-    forYou: 'For You',
     starred: 'Starred',
     snoozed: 'Snoozed',
     subscriptions: 'Subscriptions',

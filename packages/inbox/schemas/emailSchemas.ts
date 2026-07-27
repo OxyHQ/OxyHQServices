@@ -180,6 +180,8 @@ export const SubscriptionSchema = z.object({
   _id: z.string(),
   name: z.string(),
   messageCount: z.number(),
+  /** How many of those messages were opened. Defaults to 0 on older APIs. */
+  readCount: z.number().default(0),
   latestDate: z.string(),
   oldestDate: z.string(),
   latestMessageId: z.string(),
