@@ -221,6 +221,15 @@ function thirdPartyApp(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function officialApp(overrides: Record<string, unknown> = {}) {
+  return thirdPartyApp({
+    type: 'first_party',
+    isOfficial: true,
+    name: 'Accounts',
+    ...overrides,
+  });
+}
+
 function usableCredential() {
   return {
     _id: { toString: () => 'cred-1' },
@@ -391,6 +400,49 @@ describe('POST /auth/session/create — OAuth binding', () => {
     const created = mockAuthSessionCreate.mock.calls[0][0] as Record<string, unknown>;
     expect(created.purpose).toBe('device_sign_in');
     expect(created).not.toHaveProperty('oauth');
+  });
+
+  it('allows an OAuth-bound session from the IdP shell for an official app', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential());
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      'POST',
+      '/auth/session/create',
+      {
+        sessionToken: 'tok-oauth-idp-official',
+        clientId: 'oxy_dk_client',
+        oauth: oauthBinding(),
+      },
+      { origin: 'https://auth.oxy.so' },
+    );
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as {
+      purpose: string;
+      boundOrigin: string;
+      originVerified: boolean;
+    };
+    expect(created.purpose).toBe('oauth_authorization');
+    expect(created.boundOrigin).toBe('https://mention.earth');
+    expect(created.originVerified).toBe(true);
+  });
+
+  it('still rejects a trusted device sign-in from an unregistered browser origin', async () => {
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(
+      'POST',
+      '/auth/session/create',
+      {
+        sessionToken: 'tok-device-bad-origin',
+        applicationId: APP_ID,
+      },
+      { origin: 'https://evil.example' },
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 });
 

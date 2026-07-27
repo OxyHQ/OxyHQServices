@@ -486,6 +486,22 @@ describe("AuthorizePage — Commons lane for a visitor with no session here", ()
 
     unmount()
   })
+
+  test("stale device accounts without a bearer still open the Commons lane", async () => {
+    sessionState = {
+      isAuthenticated: false,
+      currentSessionId: null,
+      accounts: [{ accountId: "acct-1", displayName: "Stale" }],
+      accessToken: null,
+    }
+
+    const { container, unmount } = await renderAuthorize(OAUTH_PARAMS)
+
+    expect(oxyServices.startCommonsSignIn).toHaveBeenCalledTimes(1)
+    expect(container.querySelector("[data-testid='login-page']")).toBeNull()
+
+    unmount()
+  })
 })
 
 describe("AuthorizePage — a visitor who already has a session here", () => {
