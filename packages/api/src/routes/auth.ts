@@ -645,9 +645,49 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     throw new ForbiddenError('Application is not available');
   }
 
+  // OAuth binding (optional). When present this request stops being a device
+  // sign-in and becomes an OAuth authorization request that finalizes into a
+  // single-use AuthCode. The redirect URI is validated against the SAME exact,
+  // constant-time allowlist check `POST /auth/oauth/authorize` uses — and a
+  // failure is surfaced as an error, NEVER a redirect (RFC 6749 §3.1.2.4).
+  // Parsed before origin binding so the IdP shell (auth.oxy.so) can start an
+  // OAuth-bound flow for official apps without its own Origin being registered.
+  let oauthContext:
+    | {
+        redirectUri: string;
+        codeChallenge: string;
+        codeChallengeMethod: 'S256';
+        scopes: string[];
+        subjectAccountId?: string;
+      }
+    | undefined;
+  if (oauth) {
+    if (!isAllowedRedirectUri(resolvedApp, oauth.redirectUri)) {
+      logger.warn('[OAuth] Rejected unregistered redirect_uri on session/create', {
+        applicationId: resolvedApp._id.toString(),
+      });
+      throw new ForbiddenError('redirect_uri is not registered for this client');
+    }
+    if (oauth.subjectAccountId && !isValidObjectId(oauth.subjectAccountId)) {
+      throw new BadRequestError('Invalid subjectAccountId');
+    }
+    oauthContext = {
+      redirectUri: oauth.redirectUri,
+      codeChallenge: oauth.codeChallenge,
+      codeChallengeMethod: 'S256',
+      // Normalized exactly like POST /auth/oauth/authorize.
+      scopes: oauth.scope ? oauth.scope.split(/\s+/).filter(Boolean) : [],
+      ...(oauth.subjectAccountId ? { subjectAccountId: oauth.subjectAccountId } : {}),
+    };
+  }
+
   // The browser Origin the session was created from (null for native callers).
-  // Captured for the approval UI and bound into the QR payload.
-  const boundOrigin = requestOrigin(req);
+  // For OAuth-bound requests the relying-party redirect origin is what the
+  // approver must see — the IdP shell's Origin (auth.oxy.so) is not the RP.
+  const requestOriginHeader = requestOrigin(req);
+  const boundOrigin = oauthContext
+    ? originFromRedirectUri(oauthContext.redirectUri) ?? requestOriginHeader
+    : requestOriginHeader;
 
   // Public OAuth client IDs are routing identifiers, not authenticators. For
   // trusted first-party/internal app identities, a browser caller must prove it
@@ -655,8 +695,13 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   // device-consent UI shows official branding. Native clients attach no Origin /
   // Referer header (no browser context) and cannot prove an origin, so they are
   // accepted as-is — the device-flow consent screen still authorises every
-  // session interactively.
-  if (isTrustedApplication(resolvedApp) && hasBrowserContext(req)) {
+  // session interactively. OAuth-bound requests skip this gate: the redirect_uri
+  // was already exact-matched above and the caller may legitimately be the IdP.
+  if (
+    !oauthContext &&
+    isTrustedApplication(resolvedApp) &&
+    hasBrowserContext(req)
+  ) {
     // Loopback dev origins (http://localhost, 127.0.0.1, [::1] on any port) are
     // allowed to START the QR flow for a trusted app even though they are not
     // registered redirect origins — otherwise no local dev server could sign in.
@@ -691,40 +736,6 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const requesterLabel = hasBrowserContext(req)
     ? deriveCoarseClientLabel(req.headers['user-agent'])
     : null;
-
-  // OAuth binding (optional). When present this request stops being a device
-  // sign-in and becomes an OAuth authorization request that finalizes into a
-  // single-use AuthCode. The redirect URI is validated against the SAME exact,
-  // constant-time allowlist check `POST /auth/oauth/authorize` uses — and a
-  // failure is surfaced as an error, NEVER a redirect (RFC 6749 §3.1.2.4).
-  let oauthContext:
-    | {
-        redirectUri: string;
-        codeChallenge: string;
-        codeChallengeMethod: 'S256';
-        scopes: string[];
-        subjectAccountId?: string;
-      }
-    | undefined;
-  if (oauth) {
-    if (!isAllowedRedirectUri(resolvedApp, oauth.redirectUri)) {
-      logger.warn('[OAuth] Rejected unregistered redirect_uri on session/create', {
-        applicationId: resolvedApp._id.toString(),
-      });
-      throw new ForbiddenError('redirect_uri is not registered for this client');
-    }
-    if (oauth.subjectAccountId && !isValidObjectId(oauth.subjectAccountId)) {
-      throw new BadRequestError('Invalid subjectAccountId');
-    }
-    oauthContext = {
-      redirectUri: oauth.redirectUri,
-      codeChallenge: oauth.codeChallenge,
-      codeChallengeMethod: 'S256',
-      // Normalized exactly like POST /auth/oauth/authorize.
-      scopes: oauth.scope ? oauth.scope.split(/\s+/).filter(Boolean) : [],
-      ...(oauth.subjectAccountId ? { subjectAccountId: oauth.subjectAccountId } : {}),
-    };
-  }
 
   // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });

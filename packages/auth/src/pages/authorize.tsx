@@ -176,6 +176,13 @@ export function AuthorizePage() {
 
   const isSilentPrompt = prompt === "none";
 
+  // A usable session for OAuth consent requires an active bearer — switchable
+  // device rows alone are not enough (stale accounts after a failed mint).
+  const hasUsableBearer =
+    isAuthenticated ||
+    !!currentSessionId ||
+    !!oxyServices.getAccessToken();
+
   // The additional no-session lane (issue #691). A request that carries a full
   // PKCE binding can be created with its OAuth context already attached, be
   // approved directly in Commons, and be finalized into an authorization code
@@ -270,14 +277,12 @@ export function AuthorizePage() {
   // Wait until device-first cold boot finishes so we don't race a slow mint.
   useEffect(() => {
     if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
-    if (isAuthenticated || currentSessionId || deviceAccounts.length > 0) return;
+    if (hasUsableBearer) return;
     deliverOAuthError("login_required");
   }, [
     isSilentPrompt,
     isAuthResolved,
-    isAuthenticated,
-    currentSessionId,
-    deviceAccounts.length,
+    hasUsableBearer,
     deviceAccountsLoading,
     redirectUri,
     state,
@@ -286,7 +291,7 @@ export function AuthorizePage() {
   // Silent restore: invalid/missing OAuth params must fail closed — never spin forever.
   useEffect(() => {
     if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
-    if (!isAuthenticated && !currentSessionId && deviceAccounts.length === 0) return;
+    if (!hasUsableBearer) return;
     if (!clientId) {
       deliverOAuthError("invalid_request");
       return;
@@ -298,9 +303,7 @@ export function AuthorizePage() {
     isSilentPrompt,
     isAuthResolved,
     deviceAccountsLoading,
-    isAuthenticated,
-    currentSessionId,
-    deviceAccounts.length,
+    hasUsableBearer,
     clientId,
     redirectUri,
     state,
@@ -947,9 +950,7 @@ export function AuthorizePage() {
   if (
     !isSilentPrompt &&
     isAuthResolved &&
-    !isAuthenticated &&
-    !currentSessionId &&
-    deviceAccounts.length === 0
+    !hasUsableBearer
   ) {
     // FIRST the additional lane (issue #691): when the request carries a full
     // PKCE binding, its application resolved cleanly, and the request is still
