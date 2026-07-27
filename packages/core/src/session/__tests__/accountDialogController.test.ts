@@ -77,6 +77,8 @@ interface OxyMock {
   switchToAccount: jest.Mock;
   startCommonsSignIn: jest.Mock;
   pollCommonsSignIn: jest.Mock;
+  deliverCommonsSignIn: jest.Mock;
+  denyCommonsSignIn: jest.Mock;
   claimSessionByToken: jest.Mock;
   signInWithSharedIdentity: jest.Mock;
   /**
@@ -104,6 +106,10 @@ function makeOxy(): OxyMock {
     switchToAccount: jest.fn(),
     startCommonsSignIn: jest.fn(),
     pollCommonsSignIn: jest.fn(),
+    // Default: no capable Commons installation is registered. A NORMAL outcome
+    // that resolves the primary route to QR — never an error.
+    deliverCommonsSignIn: jest.fn().mockResolvedValue({ delivered: false, targets: 0 }),
+    denyCommonsSignIn: jest.fn().mockResolvedValue({ success: true }),
     claimSessionByToken: jest.fn(),
     signInWithSharedIdentity: jest.fn().mockResolvedValue(null),
     emitTokenChange: (token: string | null) => {
@@ -131,6 +137,9 @@ function makeHarness(
     clientId: string | null;
     openPopup: () => import('../accountDialogController').PopupWindowHandle | null;
     hubBaseUrl: string;
+    platform: import('../../utils/commonsDelivery').CommonsDeliveryPlatform;
+    openUrl: (url: string) => void;
+    canOpenApp: (url: string) => Promise<boolean>;
   }> = {},
 ): Harness {
   const oxy = makeOxy();
@@ -146,6 +155,9 @@ function makeHarness(
     pollIntervalMs: 1000,
     openPopup: over.openPopup,
     hubBaseUrl: over.hubBaseUrl,
+    platform: over.platform,
+    openUrl: over.openUrl,
+    canOpenApp: over.canOpenApp,
   });
   return { controller, oxy, sc, commitSession, onSignedIn };
 }
@@ -160,6 +172,11 @@ describe('AccountDialogController — initial + views', () => {
     expect(snap.loading).toBe(false);
     expect(snap.switchingAccountId).toBeNull();
     expect(snap.signIn.phase).toBe('idle');
+    expect(snap.signIn.route).toBeNull();
+    expect(snap.signIn.routeFailed).toBe(false);
+    expect(snap.signIn.pushSentAt).toBeNull();
+    expect(snap.signIn.openedAt).toBeNull();
+    expect(snap.signIn.progress).toBe('idle');
     expect(snap.commonsAvailability).toBe('unknown');
   });
 
@@ -518,8 +535,16 @@ describe('AccountDialogController — sign in with Oxy', () => {
     expect(commitSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'sess-shared' }));
     expect(onSignedIn).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1' }));
     expect(controller.getSnapshot().view).toBe('accounts');
-    expect(controller.getSnapshot().signIn.phase).toBe('idle');
+    // Terminal SUCCESS — the surface gets one frame to show "Identity confirmed".
+    expect(controller.getSnapshot().signIn.phase).toBe('completed');
+    expect(controller.getSnapshot().signIn.progress).toBe('identity-confirmed');
     expect(oxy.startCommonsSignIn).not.toHaveBeenCalled();
+
+    // …and a new intention clears it, so the next entry never opens on the
+    // previous sign-in's terminal state.
+    controller.add();
+    expect(controller.getSnapshot().signIn.phase).toBe('idle');
+    expect(controller.getSnapshot().signIn.progress).toBe('idle');
   });
 
   it('falls through to the QR handoff when no shared identity is present', async () => {
@@ -640,6 +665,10 @@ describe('AccountDialogController — sign in with Oxy', () => {
       await controller.showQr();
       controller.cancelSignIn();
       expect(controller.getSnapshot().signIn.phase).toBe('idle');
+      expect(controller.getSnapshot().signIn.progress).toBe('idle');
+      // Cancellation converges server-side too: the abandoned request is
+      // withdrawn so a stale QR can never be approved later.
+      expect(oxy.denyCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
 
       await jest.advanceTimersByTimeAsync(5000);
       expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
@@ -796,6 +825,9 @@ describe('AccountDialogController — Commons availability (canOpenApp)', () => 
       pollIntervalMs: 1000,
       openUrl: opts.openUrl,
       canOpenApp: opts.canOpenApp,
+      // The deep-link route is mobile-only (`selectCommonsDelivery`), and a
+      // `canOpenApp` probe is only ever injected by a native (mobile) host.
+      platform: 'mobile',
     });
     return { controller, oxy };
   }
@@ -974,6 +1006,722 @@ describe('AccountDialogController — /auth-session socket (instant QR wake)', (
     sock.server('auth_update', { status: 'authorized' });
     await flush();
     expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// Issue #691, Phase 5 — automatic delivery selection + honest progress
+// ===========================================================================
+
+type DeliveryPlatform = import('../../utils/commonsDelivery').CommonsDeliveryPlatform;
+
+const DELIVERY_HANDLE = {
+  sessionToken: 'secret-tok',
+  authorizeCode: 'AUTH-CODE',
+  qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+  status: 'pending' as const,
+};
+
+function makeDeliveryHarness(opts: {
+  platform?: DeliveryPlatform;
+  canOpenApp?: jest.Mock;
+  openUrl?: jest.Mock;
+  /** Default `true` — a planted bearer, the only state that may push. */
+  authenticated?: boolean;
+  pollIntervalMs?: number;
+}): { controller: AccountDialogController; oxy: OxyMock } {
+  const oxy = makeOxy();
+  oxy.startCommonsSignIn.mockResolvedValue({ ...DELIVERY_HANDLE, expiresAt: Date.now() + 600_000 });
+  oxy.pollCommonsSignIn.mockResolvedValue({
+    authorized: false,
+    status: 'pending',
+    pushSentAt: null,
+    openedAt: null,
+  });
+  if (opts.authenticated === false) oxy.emitTokenChange(null);
+  const controller = new AccountDialogController({
+    oxyServices: oxy as unknown as OxyServices,
+    sessionClient: new TestSessionClient(host()),
+    clientId: 'oxy_dk_test',
+    // Every real consumer wires the provider's commit funnel; without it the
+    // controller falls back to `SessionClient.registerAndActivate`, which opens
+    // a BroadcastChannel this harness has no reason to exercise.
+    commitSession: jest.fn().mockResolvedValue(undefined),
+    pollIntervalMs: opts.pollIntervalMs ?? 1000,
+    platform: opts.platform,
+    canOpenApp: opts.canOpenApp,
+    openUrl: opts.openUrl,
+  });
+  return { controller, oxy };
+}
+
+describe('AccountDialogController — automatic delivery selection (#691 phase 5)', () => {
+  it('chooses open-commons on mobile with a verified Commons link, and never pushes as well', async () => {
+    const openUrl = jest.fn();
+    const { controller, oxy } = makeDeliveryHarness({
+      platform: 'mobile',
+      canOpenApp: jest.fn().mockResolvedValue(true),
+      openUrl,
+    });
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(snap.signIn.route).toBe('open-commons');
+    expect(snap.signIn.routeFailed).toBe(false);
+    expect(openUrl).toHaveBeenCalledWith('oxycommons://approve?v=1&code=AUTH-CODE');
+    // The identity is reachable on THIS device — pushing would light up a second
+    // surface for a request the user is about to confirm here.
+    expect(oxy.deliverCommonsSignIn).not.toHaveBeenCalled();
+    expect(snap.signIn.progress).toBe('awaiting-approval');
+    controller.cancelSignIn();
+  });
+
+  it('chooses await-push when the server delivered to at least one known Commons installation', async () => {
+    const openUrl = jest.fn();
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop', openUrl });
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: true, targets: 2 });
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(oxy.deliverCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
+    expect(snap.signIn.route).toBe('await-push');
+    expect(snap.signIn.routeFailed).toBe(false);
+    // "Check Commons on your phone" — the server CONFIRMED the dispatch.
+    expect(snap.signIn.progress).toBe('delivered-to-commons');
+    expect(openUrl).not.toHaveBeenCalled();
+    controller.cancelSignIn();
+  });
+
+  it('falls through to QR when the delivery reached zero installations — no error surfaced', async () => {
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: false, targets: 0 });
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(snap.signIn.route).toBe('qr');
+    expect(snap.signIn.routeFailed).toBe(false);
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.error).toBeNull();
+    expect(snap.error).toBeNull();
+    expect(snap.signIn.progress).toBe('awaiting-approval');
+    controller.cancelSignIn();
+  });
+
+  it('falls through to QR when the delivery call FAILS — silently, as a normal outcome', async () => {
+    const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+    oxy.deliverCommonsSignIn.mockRejectedValue(new Error('delivery boom'));
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(snap.signIn.route).toBe('qr');
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.error).toBeNull();
+    expect(snap.error).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(
+      '[AccountDialogController] Commons delivery unavailable (QR route)',
+      { component: 'AccountDialogController' },
+      expect.any(Error),
+    );
+    controller.cancelSignIn();
+    debugSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('treats a delivered:false response with a non-zero target count as zero targets (fail-safe to QR)', async () => {
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: false, targets: 3 });
+
+    await controller.showQr();
+    await flush();
+
+    expect(controller.getSnapshot().signIn.route).toBe('qr');
+    controller.cancelSignIn();
+  });
+
+  it('NEVER attempts delivery without a bearer — the unauthenticated surface cannot ring a phone', async () => {
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop', authenticated: false });
+
+    await controller.showQr();
+    await flush();
+
+    expect(oxy.deliverCommonsSignIn).not.toHaveBeenCalled();
+    const snap = controller.getSnapshot();
+    expect(snap.signIn.route).toBe('qr');
+    expect(snap.signIn.error).toBeNull();
+    controller.cancelSignIn();
+  });
+
+  it('pushes on mobile when no verified Commons link is available on this device', async () => {
+    const openUrl = jest.fn();
+    const { controller, oxy } = makeDeliveryHarness({
+      platform: 'mobile',
+      canOpenApp: jest.fn().mockResolvedValue(false),
+      openUrl,
+    });
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: true, targets: 1 });
+
+    await controller.showQr();
+    await flush();
+
+    expect(oxy.deliverCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
+    expect(controller.getSnapshot().signIn.route).toBe('await-push');
+    expect(openUrl).not.toHaveBeenCalled();
+    controller.cancelSignIn();
+  });
+
+  it('never deep-links from an unclassified surface, even with Commons installed', async () => {
+    const openUrl = jest.fn();
+    const { controller } = makeDeliveryHarness({
+      // No `platform` supplied → 'unknown': the controller says so rather than
+      // guessing, and an unresolved custom-scheme navigation is a dead end.
+      canOpenApp: jest.fn().mockResolvedValue(true),
+      openUrl,
+    });
+
+    await controller.showQr();
+    await flush();
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.route).toBe('qr');
+    expect(controller.getSnapshot().commonsAvailability).toBe('available');
+    controller.cancelSignIn();
+  });
+
+  it('marks the primary route FAILED (never auto-cascades) when the Commons link cannot be opened', async () => {
+    // Route chosen: open-commons. No URL opener was injected, so the one action
+    // the route implies cannot happen — the UI needs that fact to reveal
+    // "Having trouble?"; the controller must not silently switch to another route.
+    const { controller } = makeDeliveryHarness({
+      platform: 'mobile',
+      canOpenApp: jest.fn().mockResolvedValue(true),
+    });
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(snap.signIn.route).toBe('open-commons');
+    expect(snap.signIn.routeFailed).toBe(true);
+    // Still a live request — the QR beneath it stays valid.
+    expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    controller.cancelSignIn();
+  });
+
+  it('marks the primary route FAILED when opening the Commons link throws', async () => {
+    const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const openUrl = jest.fn(() => {
+      throw new Error('no handler for scheme');
+    });
+    const { controller } = makeDeliveryHarness({
+      platform: 'mobile',
+      canOpenApp: jest.fn().mockResolvedValue(true),
+      openUrl,
+    });
+
+    await controller.showQr();
+    await flush();
+
+    expect(controller.getSnapshot().signIn.route).toBe('open-commons');
+    expect(controller.getSnapshot().signIn.routeFailed).toBe(true);
+    expect(controller.getSnapshot().signIn.error).toBeNull();
+    controller.cancelSignIn();
+    debugSpy.mockRestore();
+  });
+
+  it('reports "preparing" until a route is actually resolved — it is never guessed', async () => {
+    let releaseDelivery: () => void = () => undefined;
+    const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+    oxy.deliverCommonsSignIn.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDelivery = () => resolve({ delivered: true, targets: 1 });
+        }),
+    );
+
+    await controller.showQr();
+    // The request exists and the QR is renderable, but no route has been chosen.
+    expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+    expect(controller.getSnapshot().signIn.route).toBeNull();
+    expect(controller.getSnapshot().signIn.progress).toBe('preparing');
+
+    releaseDelivery();
+    await flush();
+    expect(controller.getSnapshot().signIn.route).toBe('await-push');
+    expect(controller.getSnapshot().signIn.progress).toBe('delivered-to-commons');
+    controller.cancelSignIn();
+  });
+
+  it('abandons route resolution when the flow was cancelled while it was in flight', async () => {
+    const openUrl = jest.fn();
+    let releaseProbe: (installed: boolean) => void = () => undefined;
+    const { controller, oxy } = makeDeliveryHarness({
+      platform: 'mobile',
+      canOpenApp: jest.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            releaseProbe = resolve;
+          }),
+      ),
+      openUrl,
+    });
+
+    await controller.showQr();
+    controller.cancelSignIn();
+    releaseProbe(true);
+    await flush();
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(oxy.deliverCommonsSignIn).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.route).toBeNull();
+  });
+
+  it('abandons route resolution when the request was approved while it was in flight', async () => {
+    jest.useFakeTimers();
+    try {
+      const openUrl = jest.fn();
+      let releaseProbe: (installed: boolean) => void = () => undefined;
+      const { controller, oxy } = makeDeliveryHarness({
+        platform: 'mobile',
+        canOpenApp: jest.fn(
+          () =>
+            new Promise<boolean>((resolve) => {
+              releaseProbe = resolve;
+            }),
+        ),
+        openUrl,
+      });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: true, sessionId: 'sess-1', status: 'authorized' });
+      oxy.claimSessionByToken.mockResolvedValue({
+        accessToken: 'access-1',
+        sessionId: 'sess-1',
+        deviceId: 'device-1',
+        expiresAt: '2030-01-01T00:00:00Z',
+        user: user('a1'),
+      });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000); // approval lands first
+      expect(controller.getSnapshot().signIn.phase).toBe('completed');
+
+      releaseProbe(true);
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Opening Commons after the session is already signed in would be a
+      // pointless app switch — the resolution must abandon itself.
+      expect(openUrl).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().signIn.route).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not run automatic delivery for the passkey hub flow (the popup is the primary surface)', async () => {
+    const popup = fakePopup();
+    const oxy = makeOxy();
+    oxy.startCommonsSignIn.mockResolvedValue({ ...DELIVERY_HANDLE, expiresAt: Date.now() + 600_000 });
+    oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: true, targets: 1 });
+    const controller = new AccountDialogController({
+      oxyServices: oxy as unknown as OxyServices,
+      sessionClient: new TestSessionClient(host()),
+      clientId: 'oxy_dk_test',
+      pollIntervalMs: 1000,
+      platform: 'desktop',
+      openPopup: () => popup,
+      hubBaseUrl: 'https://auth.oxy.so',
+    });
+
+    await controller.startPasskeyHubSignIn();
+    await flush();
+
+    expect(oxy.deliverCommonsSignIn).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.route).toBe('qr');
+    controller.cancelSignIn();
+  });
+
+  it('never leaks the secret device-flow token into the snapshot', async () => {
+    const { controller } = makeDeliveryHarness({ platform: 'desktop' });
+
+    await controller.showQr();
+    await flush();
+
+    const snap = controller.getSnapshot();
+    expect(JSON.stringify(snap)).not.toContain('secret-tok');
+    expect(Object.keys(snap.signIn)).toEqual([
+      'phase',
+      'authorizeCode',
+      'qrPayload',
+      'expiresAt',
+      'error',
+      'route',
+      'routeFailed',
+      'pushSentAt',
+      'openedAt',
+      'progress',
+    ]);
+    // Only the PUBLIC handles are exposed.
+    expect(snap.signIn.authorizeCode).toBe('AUTH-CODE');
+    controller.cancelSignIn();
+  });
+});
+
+describe('AccountDialogController — sign-in progress (#691 phase 5)', () => {
+  it('advances only on real signals, in order, to "Identity confirmed"', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: true, targets: 1 });
+      oxy.pollCommonsSignIn
+        // 1st tick: still nothing but the confirmed push.
+        .mockResolvedValueOnce({
+          authorized: false,
+          status: 'pending',
+          pushSentAt: '2026-07-27T10:00:00.000Z',
+          openedAt: null,
+        })
+        // 2nd tick: the approver opened the request.
+        .mockResolvedValueOnce({
+          authorized: false,
+          status: 'pending',
+          pushSentAt: '2026-07-27T10:00:00.000Z',
+          openedAt: '2026-07-27T10:00:12.000Z',
+        })
+        // 3rd tick: approved.
+        .mockResolvedValue({
+          authorized: true,
+          sessionId: 'sess-1',
+          status: 'authorized',
+          pushSentAt: '2026-07-27T10:00:00.000Z',
+          openedAt: '2026-07-27T10:00:12.000Z',
+        });
+      let releaseClaim: () => void = () => undefined;
+      oxy.claimSessionByToken.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            releaseClaim = () =>
+              resolve({
+                accessToken: 'access-1',
+                sessionId: 'sess-1',
+                deviceId: 'device-1',
+                expiresAt: '2030-01-01T00:00:00Z',
+                user: user('a1'),
+              });
+          }),
+      );
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(0); // let the route resolve
+      expect(controller.getSnapshot().signIn.progress).toBe('delivered-to-commons');
+
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(controller.getSnapshot().signIn.pushSentAt).toBe('2026-07-27T10:00:00.000Z');
+      expect(controller.getSnapshot().signIn.progress).toBe('delivered-to-commons');
+
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(controller.getSnapshot().signIn.openedAt).toBe('2026-07-27T10:00:12.000Z');
+      expect(controller.getSnapshot().signIn.progress).toBe('opened-in-commons');
+
+      await jest.advanceTimersByTimeAsync(1000);
+      // Approved: the claim/commit is running — "Confirming identity".
+      expect(controller.getSnapshot().signIn.phase).toBe('authorized');
+      expect(controller.getSnapshot().signIn.progress).toBe('confirming-identity');
+
+      releaseClaim();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(controller.getSnapshot().signIn.phase).toBe('completed');
+      expect(controller.getSnapshot().signIn.progress).toBe('identity-confirmed');
+      expect(controller.getSnapshot().view).toBe('accounts');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not advance without a signal — repeated empty polls keep it waiting', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: false, targets: 0 });
+      oxy.pollCommonsSignIn.mockResolvedValue({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: null,
+        openedAt: null,
+      });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(controller.getSnapshot().signIn.progress).toBe('awaiting-approval');
+
+      await jest.advanceTimersByTimeAsync(5000); // five fallback polls
+      expect(oxy.pollCommonsSignIn).toHaveBeenCalledTimes(5);
+      expect(controller.getSnapshot().signIn.progress).toBe('awaiting-approval');
+      expect(controller.getSnapshot().signIn.pushSentAt).toBeNull();
+      expect(controller.getSnapshot().signIn.openedAt).toBeNull();
+
+      controller.cancelSignIn();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('is monotone — a later, emptier status response never walks progress backwards', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: false, targets: 0 });
+      oxy.pollCommonsSignIn
+        .mockResolvedValueOnce({
+          authorized: false,
+          status: 'pending',
+          pushSentAt: '2026-07-27T10:00:00.000Z',
+          openedAt: '2026-07-27T10:00:12.000Z',
+        })
+        // An older API build (or a partial payload) omits the progress fields.
+        .mockResolvedValue({ authorized: false, status: 'pending' });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(controller.getSnapshot().signIn.progress).toBe('opened-in-commons');
+
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(controller.getSnapshot().signIn.openedAt).toBe('2026-07-27T10:00:12.000Z');
+      expect(controller.getSnapshot().signIn.progress).toBe('opened-in-commons');
+
+      controller.cancelSignIn();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('treats "opened in Commons" as progress only — it never claims a session', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.pollCommonsSignIn.mockResolvedValue({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: '2026-07-27T10:00:00.000Z',
+        openedAt: '2026-07-27T10:00:12.000Z',
+      });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(3000);
+
+      expect(controller.getSnapshot().signIn.progress).toBe('opened-in-commons');
+      expect(oxy.claimSessionByToken).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+
+      controller.cancelSignIn();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('AccountDialogController — cancellation converges (#691 phase 5)', () => {
+  it('a denial in Commons converges on the waiting surface and stops the flow', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'cancelled' });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000);
+
+      const snap = controller.getSnapshot();
+      expect(snap.signIn.phase).toBe('error');
+      expect(snap.signIn.error).toMatch(/denied/i);
+      expect(snap.signIn.progress).toBe('idle');
+
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(oxy.pollCommonsSignIn).toHaveBeenCalledTimes(1);
+      expect(oxy.claimSessionByToken).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a server-reported expiry converges and stops the flow', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'expired' });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000);
+
+      expect(controller.getSnapshot().signIn.phase).toBe('error');
+      expect(controller.getSnapshot().signIn.error).toMatch(/expired/i);
+
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(oxy.pollCommonsSignIn).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a locally-observed expiry converges without even asking the server', async () => {
+    jest.useFakeTimers();
+    try {
+      const oxy = makeOxy();
+      oxy.startCommonsSignIn.mockResolvedValue({
+        ...DELIVERY_HANDLE,
+        expiresAt: Date.now() + 500, // expires before the first fallback poll
+      });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+      const controller = new AccountDialogController({
+        oxyServices: oxy as unknown as OxyServices,
+        sessionClient: new TestSessionClient(host()),
+        clientId: 'oxy_dk_test',
+        pollIntervalMs: 1000,
+        platform: 'desktop',
+      });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000);
+
+      expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
+      expect(controller.getSnapshot().signIn.phase).toBe('error');
+      expect(controller.getSnapshot().signIn.error).toMatch(/expired/i);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('closing the surface withdraws the request server-side and stops every timer', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+
+      controller.cancelSignIn();
+
+      expect(oxy.denyCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
+      expect(controller.getSnapshot().signIn).toEqual({
+        phase: 'idle',
+        authorizeCode: null,
+        qrPayload: null,
+        expiresAt: null,
+        error: null,
+        route: null,
+        routeFailed: false,
+        pushSentAt: null,
+        openedAt: null,
+        progress: 'idle',
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not withdraw a request that already reached a terminal state', async () => {
+    jest.useFakeTimers();
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'cancelled' });
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(controller.getSnapshot().signIn.phase).toBe('error');
+
+      controller.cancelSignIn();
+      // Commons already cancelled it — nothing left to withdraw.
+      expect(oxy.denyCommonsSignIn).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('swallows a failed withdrawal (an approval may have raced it) without surfacing an error', async () => {
+    jest.useFakeTimers();
+    const debugSpy = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    try {
+      const { controller, oxy } = makeDeliveryHarness({ platform: 'desktop' });
+      oxy.denyCommonsSignIn.mockRejectedValue(new Error('already authorized'));
+
+      await controller.showQr();
+      await jest.advanceTimersByTimeAsync(0);
+      controller.cancelSignIn();
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(controller.getSnapshot().signIn.phase).toBe('idle');
+      expect(controller.getSnapshot().error).toBeNull();
+      expect(debugSpy).toHaveBeenCalledWith(
+        '[AccountDialogController] request withdrawal failed',
+        { component: 'AccountDialogController' },
+        expect.any(Error),
+      );
+    } finally {
+      jest.useRealTimers();
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('destroy tears down the poll timer, the auth-session socket, and the popup watcher', async () => {
+    jest.useFakeTimers();
+    try {
+      const popup = fakePopup();
+      const oxy = makeOxy();
+      oxy.startCommonsSignIn.mockResolvedValue({ ...DELIVERY_HANDLE, expiresAt: Date.now() + 600_000 });
+      oxy.pollCommonsSignIn.mockResolvedValue({ authorized: false, status: 'pending' });
+      let socket: { disconnected: boolean } | null = null;
+      const factory = jest.fn((): MinimalSocket => {
+        const s: MinimalSocket & { disconnected: boolean } = {
+          connected: true,
+          disconnected: false,
+          on: () => undefined,
+          off: () => undefined,
+          emit: () => undefined,
+          connect: () => undefined,
+          disconnect() {
+            this.disconnected = true;
+          },
+        };
+        socket = s;
+        return s;
+      });
+      const controller = new AccountDialogController({
+        oxyServices: oxy as unknown as OxyServices,
+        sessionClient: new TestSessionClient(host()),
+        clientId: 'oxy_dk_test',
+        pollIntervalMs: 1000,
+        platform: 'desktop',
+        openPopup: () => popup,
+        socketFactory: factory as unknown as SocketIOFactory,
+      });
+
+      await controller.startPasskeyHubSignIn();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(controller.getSnapshot().signIn.phase).toBe('waiting');
+
+      controller.destroy();
+
+      expect(socket).not.toBeNull();
+      expect(socket?.disconnected).toBe(true);
+      expect(popup.close).toHaveBeenCalled();
+      // No poll timer and no popup watchdog survive the teardown.
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(oxy.pollCommonsSignIn).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

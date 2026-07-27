@@ -684,6 +684,7 @@ export type {
     PopupWindowHandle,
     SignInFlowPhase,
     SignInFlowState,
+    SignInProgress,
 } from './session/accountDialogController';
 
 // ---------------------------------------------------------------------------

@@ -1,12 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
+import type { LocalConfirmationResult } from '@/lib/biometricAuth';
 
-const authenticateMock = jest.fn<Promise<{ success: boolean; error?: string }>, [string?]>();
+const requestLocalConfirmationMock = jest.fn<Promise<LocalConfirmationResult>, [string]>();
 
-// Replace the biometric helper entirely so the test controls the gate result
-// and never loads `expo-local-authentication`.
+// Replace the local-confirmation helper entirely so the test controls the gate
+// outcome and never loads `expo-local-authentication`.
 jest.mock('@/lib/biometricAuth', () => ({
-  authenticate: (...args: [string?]) => authenticateMock(...args),
+  requestLocalConfirmation: (reason: string) => requestLocalConfirmationMock(reason),
 }));
 
 // Imported AFTER jest.mock so the hook sees the patched biometric helper.
@@ -25,6 +26,9 @@ const SAMPLE_INFO = {
   },
   scopes: ['profile:read', 'email:read'],
   boundOrigin: 'https://mention.earth',
+  originVerified: true,
+  purpose: 'device_sign_in',
+  subjectAccount: null,
   expiresAt: Date.now() + 300_000,
   status: 'pending',
 };
@@ -55,7 +59,8 @@ function installServices(overrides: ServiceOverrides = {}) {
 describe('useCommonsApproval', () => {
   beforeEach(() => {
     __resetOxyState();
-    authenticateMock.mockReset();
+    requestLocalConfirmationMock.mockReset();
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'confirmed' });
   });
 
   it('resolves the server-side application identity on mount', async () => {
@@ -64,8 +69,26 @@ describe('useCommonsApproval', () => {
 
     await waitFor(() => expect(result.current.state).toBe('ready'));
     expect(services.getCommonsApprovalInfo).toHaveBeenCalledWith('code-1');
-    expect(result.current.info?.application.name).toBe('Mention');
-    expect(result.current.info?.application.isOfficial).toBe(true);
+    expect(result.current.info?.application?.name).toBe('Mention');
+    expect(result.current.info?.application?.isOfficial).toBe(true);
+  });
+
+  it('surfaces the delegated subject account exactly as the server resolved it', async () => {
+    installServices({
+      getCommonsApprovalInfo: jest.fn(async () => ({
+        ...SAMPLE_INFO,
+        purpose: 'oauth_authorization',
+        subjectAccount: { id: 'acct-9', username: 'oxycollective', displayName: 'The Oxy Collective' },
+      })),
+    });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+    expect(result.current.info?.subjectAccount).toEqual({
+      id: 'acct-9',
+      username: 'oxycollective',
+      displayName: 'The Oxy Collective',
+    });
   });
 
   it('enters the error state when the code cannot be resolved', async () => {
@@ -87,9 +110,8 @@ describe('useCommonsApproval', () => {
     await waitFor(() => expect(result.current.state).toBe('error'));
   });
 
-  it('approves only AFTER the biometric gate passes', async () => {
+  it('opens the device confirmation DIRECTLY from the single primary action', async () => {
     const services = installServices();
-    authenticateMock.mockResolvedValue({ success: true });
     const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
     await waitFor(() => expect(result.current.state).toBe('ready'));
 
@@ -97,14 +119,47 @@ describe('useCommonsApproval', () => {
       await result.current.approve();
     });
 
-    expect(authenticateMock).toHaveBeenCalledWith('reason');
+    // One call to `approve()` prompted the device and completed the approval —
+    // there is no intermediate step to pass through first.
+    expect(requestLocalConfirmationMock).toHaveBeenCalledTimes(1);
+    expect(requestLocalConfirmationMock).toHaveBeenCalledWith('reason');
     expect(services.approveCommonsSignIn).toHaveBeenCalledWith({ authorizeCode: 'code-1' });
     expect(result.current.state).toBe('approved');
   });
 
-  it('does NOT call approveCommonsSignIn when the biometric gate fails', async () => {
+  it('signs only AFTER the confirmation resolves', async () => {
     const services = installServices();
-    authenticateMock.mockResolvedValue({ success: false, error: 'user_cancel' });
+    let confirm: ((result: LocalConfirmationResult) => void) | null = null;
+    requestLocalConfirmationMock.mockImplementation(
+      () =>
+        new Promise<LocalConfirmationResult>((resolve) => {
+          confirm = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    act(() => {
+      void result.current.approve();
+    });
+
+    await waitFor(() => expect(result.current.state).toBe('confirming'));
+    expect(services.approveCommonsSignIn).not.toHaveBeenCalled();
+
+    await act(async () => {
+      confirm?.({ outcome: 'confirmed' });
+    });
+
+    await waitFor(() => expect(result.current.state).toBe('approved'));
+    expect(services.approveCommonsSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('never approves on a device with no enrolled biometrics — and says why', async () => {
+    const services = installServices();
+    requestLocalConfirmationMock.mockResolvedValue({
+      outcome: 'unavailable',
+      reason: 'no_enrollment',
+    });
     const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
     await waitFor(() => expect(result.current.state).toBe('ready'));
 
@@ -113,8 +168,94 @@ describe('useCommonsApproval', () => {
     });
 
     expect(services.approveCommonsSignIn).not.toHaveBeenCalled();
-    expect(result.current.biometricFailed).toBe(true);
+    expect(services.denyCommonsSignIn).not.toHaveBeenCalled();
+    expect(result.current.confirmationIssue).toEqual({
+      kind: 'unavailable',
+      reason: 'no_enrollment',
+    });
+    // The request is left pending and retryable, not silently approved.
     expect(result.current.state).toBe('ready');
+  });
+
+  it('reports a device with no biometric hardware distinctly', async () => {
+    const services = installServices();
+    requestLocalConfirmationMock.mockResolvedValue({
+      outcome: 'unavailable',
+      reason: 'no_hardware',
+    });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    await act(async () => {
+      await result.current.approve();
+    });
+
+    expect(result.current.confirmationIssue).toEqual({
+      kind: 'unavailable',
+      reason: 'no_hardware',
+    });
+    expect(services.approveCommonsSignIn).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes a cancelled prompt from a failed one and from a lockout', async () => {
+    const services = installServices();
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'declined' });
+    await act(async () => {
+      await result.current.approve();
+    });
+    expect(result.current.confirmationIssue).toEqual({ kind: 'declined' });
+
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'lockout' });
+    await act(async () => {
+      await result.current.approve();
+    });
+    expect(result.current.confirmationIssue).toEqual({ kind: 'lockout' });
+
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'failed' });
+    await act(async () => {
+      await result.current.approve();
+    });
+    expect(result.current.confirmationIssue).toEqual({ kind: 'failed' });
+
+    expect(services.approveCommonsSignIn).not.toHaveBeenCalled();
+    expect(result.current.state).toBe('ready');
+  });
+
+  it('clears a previous confirmation issue when the user retries successfully', async () => {
+    const services = installServices();
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'declined' });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    await act(async () => {
+      await result.current.approve();
+    });
+    expect(result.current.confirmationIssue).toEqual({ kind: 'declined' });
+
+    requestLocalConfirmationMock.mockResolvedValue({ outcome: 'confirmed' });
+    await act(async () => {
+      await result.current.approve();
+    });
+
+    expect(result.current.confirmationIssue).toBeNull();
+    expect(services.approveCommonsSignIn).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBe('approved');
+  });
+
+  it('approves once even when the primary action is double-tapped', async () => {
+    const services = installServices();
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    await act(async () => {
+      await Promise.all([result.current.approve(), result.current.approve()]);
+    });
+
+    expect(requestLocalConfirmationMock).toHaveBeenCalledTimes(1);
+    expect(services.approveCommonsSignIn).toHaveBeenCalledTimes(1);
   });
 
   it('denies via denyCommonsSignIn', async () => {
@@ -128,6 +269,23 @@ describe('useCommonsApproval', () => {
 
     expect(services.denyCommonsSignIn).toHaveBeenCalledWith('code-1');
     expect(result.current.state).toBe('denied');
+    // Denying never asks the device to confirm — it is not an authorization.
+    expect(requestLocalConfirmationMock).not.toHaveBeenCalled();
+  });
+
+  it('never denies as a side effect of anything else', async () => {
+    const services = installServices();
+    const { result, unmount } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    await act(async () => {
+      await result.current.approve();
+    });
+    unmount();
+
+    // Only the explicit `deny()` call denies: not approving, not unmounting
+    // (the screen's dismissal path), not the progress signal.
+    expect(services.denyCommonsSignIn).not.toHaveBeenCalled();
   });
 
   it('enters the error state when the application cannot be resolved', async () => {
@@ -167,7 +325,6 @@ describe('useCommonsApproval', () => {
         throw new Error('progress endpoint down');
       }),
     });
-    authenticateMock.mockResolvedValue({ success: true });
     const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
 
     await waitFor(() => expect(result.current.state).toBe('ready'));

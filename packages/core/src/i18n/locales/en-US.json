@@ -424,7 +424,19 @@
     "commonsNotInstalled": "Don't have Commons? Get the app to sign in with your Oxy ID.",
     "showQrAnyway": "I have Commons on another device",
     "switchWhileSignedInAs": "Switch account, signed in as {{name}}",
-    "manageOnDevice": "Manage accounts on this device"
+    "manageOnDevice": "Manage accounts on this device",
+    "continueWithOxy": "Continue with Oxy",
+    "havingTrouble": "Having trouble?",
+    "progress": {
+      "preparing": "Preparing request",
+      "awaitingApproval": "Waiting for approval",
+      "scanWithCommons": "Scan with Commons on your phone",
+      "continueInCommons": "Continue in Commons",
+      "checkCommons": "Check Commons on your phone",
+      "openedInCommons": "Opened in Commons",
+      "confirming": "Confirming identity",
+      "confirmed": "Identity confirmed"
+    }
   },
   "reputation": {
     "faq": {

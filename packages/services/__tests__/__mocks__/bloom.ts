@@ -6,7 +6,7 @@
  * can spy on the exported `toast` object directly.
  */
 
-import { createElement, Fragment, type ReactNode } from 'react';
+import { createElement, Fragment, useState, type ReactNode } from 'react';
 
 type ToastFn = (message: string, options?: Record<string, unknown>) => void;
 
@@ -37,6 +37,37 @@ export const Button = ({
   );
 
 export const Loading = () => createElement('span', null, 'loading');
+
+/**
+ * `@oxyhq/bloom/collapsible` stub — Bloom's uncontrolled disclosure. Mirrors the
+ * real behaviour the auth chooser's "Having trouble?" affordance depends on: the
+ * trigger is always rendered, and the CHILDREN are mounted only while open (so a
+ * test can assert an alternative is genuinely absent until disclosed). Starts
+ * from `defaultOpen`, exactly like the real component.
+ */
+export const Collapsible = ({
+  title,
+  children,
+  defaultOpen = false,
+  testID,
+}: {
+  title?: string;
+  children?: ReactNode;
+  defaultOpen?: boolean;
+  testID?: string;
+} & Record<string, unknown>) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return createElement(
+    'div',
+    { 'data-testid': testID },
+    createElement(
+      'button',
+      { type: 'button', key: 'trigger', onClick: () => setOpen(!open) },
+      title,
+    ),
+    open ? createElement(Fragment, { key: 'content' }, children) : null,
+  );
+};
 
 /**
  * Minimal stubs for the Bloom primitives the account switchers render

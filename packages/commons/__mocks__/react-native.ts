@@ -46,6 +46,22 @@ export const Text = ({ children, ...rest }: StubProps): React.ReactElement =>
 export const ScrollView = ({ children, ...rest }: StubProps): React.ReactElement =>
   React.createElement('div', domProps(rest), children as React.ReactNode);
 
+interface ImageStubProps extends StubProps {
+  source?: { uri?: string } | number;
+}
+
+/**
+ * Renders as an `<img>` carrying the resolved remote `uri`, so a test can assert
+ * WHICH image a screen chose to display (e.g. that an app logo came from the
+ * server-resolved record). Local `require()`d assets have no uri.
+ */
+export const Image = ({ source, ...rest }: ImageStubProps): React.ReactElement =>
+  React.createElement('img', {
+    ...domProps(rest),
+    src: typeof source === 'object' && source !== null ? source.uri : undefined,
+    alt: '',
+  });
+
 export const ActivityIndicator = (props: StubProps): React.ReactElement =>
   React.createElement('div', { role: 'progressbar', ...domProps(props) });
 

@@ -21,6 +21,17 @@
  *   - the "Sign in with Oxy" device flow (same-device shared-keychain via
  *     `oxyServices.signInWithSharedIdentity`, else the cross-device QR handoff
  *     via `startCommonsSignIn` → poll → `claimSessionByToken`);
+ *   - AUTOMATIC delivery selection for that flow (issue #691): the user presses
+ *     ONE primary action and the controller — not the user — picks how the
+ *     request reaches their Commons identity, by gathering the facts
+ *     (`platform`, `commonsAvailability`, and the `targets` a bearer-authorized
+ *     `deliverCommonsSignIn` reached) and handing them to the pure
+ *     `selectCommonsDelivery`. Exactly one route is primary; alternatives are
+ *     never chained behind it, they are state (`signIn.route`,
+ *     `signIn.routeFailed`) the UI reveals on its own terms;
+ *   - honest, non-sensitive PROGRESS for that flow (`signIn.progress`), derived
+ *     only from real signals — the chosen route, `pushSentAt`, `openedAt`,
+ *     `authorized`, and the commit — never from an optimistic timeline;
  *   - `commonsAvailability` — whether Commons is installed on this device
  *     (native only, via the injected `canOpenApp` probe), so the QR view can
  *     offer a "Get Commons" fallback instead of a same-device dead end.
@@ -59,6 +70,11 @@ import {
 } from './accountProjection';
 import type { AccountNode } from '../mixins/OxyServices.accounts';
 import type { CommonsSignInHandle } from '../mixins/OxyServices.auth';
+import {
+  selectCommonsDelivery,
+  type CommonsDeliveryPlatform,
+  type CommonsDeliveryRoute,
+} from '../utils/commonsDelivery';
 
 /** The dialog's top-level view. */
 export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add' | 'signup';
@@ -76,8 +92,54 @@ export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add' | 'signup';
  */
 export type CommonsAvailability = 'unknown' | 'checking' | 'available' | 'unavailable';
 
-/** Lifecycle phase of the "Sign in with Oxy" device flow. */
-export type SignInFlowPhase = 'idle' | 'starting' | 'waiting' | 'authorized' | 'error';
+/**
+ * Lifecycle phase of the "Sign in with Oxy" device flow — the RESOURCE state
+ * (is there a live request, a claim in flight, a terminal outcome), as opposed
+ * to {@link SignInProgress}, which is what the user is told.
+ *
+ * `'completed'` is terminal-but-successful: the session was claimed and
+ * committed, nothing is in flight, and the surface may show "Identity
+ * confirmed" before it goes away. It is cleared back to `'idle'` the moment the
+ * dialog moves to another view (a new intention), so a later sign-in entry can
+ * never inherit the previous flow's terminal state.
+ */
+export type SignInFlowPhase =
+  | 'idle'
+  | 'starting'
+  | 'waiting'
+  | 'authorized'
+  | 'completed'
+  | 'error';
+
+/**
+ * Ordered, non-sensitive progress of the active request — the ONE thing the
+ * sign-in surface renders its status line from (issue #691, Phase 5).
+ *
+ * Every step is DERIVED from a real fact the controller observed; there is no
+ * optimistic sequence and no timer that advances it. The mapping the UI is
+ * expected to render (copy lives in the UI layer, never here):
+ *
+ * | value                  | shown as                       | advanced by |
+ * |------------------------|--------------------------------|-------------|
+ * | `idle`                 | (nothing)                      | no live request, or a terminal error |
+ * | `preparing`            | "Preparing request"            | the request is being created / its route is still being resolved |
+ * | `awaiting-approval`    | route-specific waiting copy    | the primary route is known (`qr` → the QR itself, `open-commons` → "Continue in Commons") |
+ * | `delivered-to-commons` | "Check Commons on your phone"  | the server confirmed a push to ≥1 known Commons install (`await-push`, or `pushSentAt`) |
+ * | `opened-in-commons`    | "Opened in Commons"            | the approver reported `openedAt` |
+ * | `confirming-identity`  | "Confirming identity"          | the request reported `authorized`; the claim/commit is running |
+ * | `identity-confirmed`   | "Identity confirmed"           | the session was claimed and committed |
+ *
+ * `opened-in-commons` and `delivered-to-commons` are PROGRESS only — neither is
+ * evidence of an approval. Only `authorized` moves the flow forward.
+ */
+export type SignInProgress =
+  | 'idle'
+  | 'preparing'
+  | 'awaiting-approval'
+  | 'delivered-to-commons'
+  | 'opened-in-commons'
+  | 'confirming-identity'
+  | 'identity-confirmed';
 
 /**
  * Minimal structural handle over a popup `Window` — just enough for the
@@ -93,7 +155,14 @@ export interface PopupWindowHandle {
   location: { href: string };
 }
 
-/** State of the "Sign in with Oxy" (shared-key / QR) device flow. */
+/**
+ * State of the "Sign in with Oxy" (shared-key / QR) device flow.
+ *
+ * Everything here is safe to render. The flow's SECRET credential (the
+ * device-flow `sessionToken`) is deliberately absent — it never leaves the
+ * controller's private field, so no surface, log, or serialized snapshot can
+ * leak it.
+ */
 export interface SignInFlowState {
   phase: SignInFlowPhase;
   /**
@@ -110,6 +179,82 @@ export interface SignInFlowState {
   expiresAt: number | null;
   /** Human-readable error for the retry UI, or `null`. */
   error: string | null;
+  /**
+   * The ONE primary delivery route the controller chose for this request
+   * ({@link selectCommonsDelivery}), or `null` while it is still being resolved.
+   *
+   * There is no chain: exactly one route is primary, and the UI renders exactly
+   * one action for it. Alternatives stay behind a "Having trouble?" affordance
+   * that the UI reveals on its own terms — see {@link routeFailed}.
+   */
+  route: CommonsDeliveryRoute | null;
+  /**
+   * `true` when the chosen primary route could NOT be carried out on this
+   * device — today only `'open-commons'` can fail this way (no URL opener was
+   * injected, or opening the verified Commons link threw). It is the signal the
+   * UI needs to reveal its alternatives; the controller never cascades to
+   * another route by itself.
+   *
+   * A push that reached zero installations is NOT a failure: no capable Commons
+   * install is a normal outcome that simply resolves the primary route to
+   * `'qr'`.
+   */
+  routeFailed: boolean;
+  /**
+   * Server-reported ISO-8601 timestamp of when the request was pushed to a
+   * known Commons installation, or `null`. Progress only — never evidence of an
+   * approval. Monotone: once observed it is never cleared by a later, emptier
+   * poll response.
+   */
+  pushSentAt: string | null;
+  /**
+   * Server-reported ISO-8601 timestamp of when the approval route was OPENED in
+   * Commons, or `null`. Progress only — never evidence of an approval. Monotone,
+   * like {@link pushSentAt}.
+   */
+  openedAt: string | null;
+  /**
+   * The derived, ordered progress the surface renders. Always computed from the
+   * facts above by {@link deriveSignInProgress} — never assigned directly, so it
+   * cannot drift from them or run ahead of a real signal.
+   */
+  progress: SignInProgress;
+}
+
+/**
+ * The observable FACTS of a device flow — {@link SignInFlowState} minus the
+ * value derived from them. Every mutation of the flow goes through this shape,
+ * which is what makes `progress` structurally impossible to set by hand.
+ */
+type SignInFlowFacts = Omit<SignInFlowState, 'progress'>;
+
+/**
+ * Derive the surface-facing progress from the flow's real facts. Pure, total,
+ * and the single place the ladder is defined.
+ *
+ * Ordering within `'waiting'` is most-specific-first, so a late-arriving weaker
+ * signal can never pull the display backwards.
+ */
+function deriveSignInProgress(facts: SignInFlowFacts): SignInProgress {
+  switch (facts.phase) {
+    case 'idle':
+    case 'error':
+      return 'idle';
+    case 'starting':
+      return 'preparing';
+    case 'authorized':
+      return 'confirming-identity';
+    case 'completed':
+      return 'identity-confirmed';
+    case 'waiting':
+      if (facts.openedAt !== null) return 'opened-in-commons';
+      // `route === 'await-push'` is itself a server-confirmed dispatch (the
+      // route is only chosen when `deliverCommonsSignIn` reported ≥1 target),
+      // so it is a real signal — not an optimistic assumption that a push will
+      // arrive. `pushSentAt` is the same fact re-confirmed by the status poll.
+      if (facts.pushSentAt !== null || facts.route === 'await-push') return 'delivered-to-commons';
+      return facts.route === null ? 'preparing' : 'awaiting-approval';
+  }
 }
 
 /** Immutable snapshot consumed by `useSyncExternalStore`. */
@@ -224,6 +369,18 @@ export interface AccountDialogControllerOptions {
    * `https://auth.${CENTRAL_IDP_APEX}`). Overridable for local/staging testing.
    */
   hubBaseUrl?: string;
+  /**
+   * Which surface the sign-in is initiated from — a FACT supplied by the
+   * consumer, because only the consumer can classify its own environment
+   * (native → `'mobile'`; web → `'mobile'` for a mobile browser, `'desktop'`
+   * otherwise). Headless core never sniffs a user agent or a platform global.
+   *
+   * Feeds {@link selectCommonsDelivery} verbatim. Defaults to `'unknown'`,
+   * which is a first-class value there: an unclassified surface never opts into
+   * the deep-link route, because a custom-scheme navigation that does not
+   * resolve is a dead end with no automatic way back.
+   */
+  platform?: CommonsDeliveryPlatform;
 }
 
 /**
@@ -244,12 +401,32 @@ const AUTH_SESSION_NAMESPACE = '/auth-session';
  */
 const COMMONS_APP_SCHEME = 'oxycommons://';
 
-const IDLE_SIGN_IN: SignInFlowState = {
+const IDLE_SIGN_IN_FACTS: SignInFlowFacts = {
   phase: 'idle',
   authorizeCode: null,
   qrPayload: null,
   expiresAt: null,
   error: null,
+  route: null,
+  routeFailed: false,
+  pushSentAt: null,
+  openedAt: null,
+};
+
+const IDLE_SIGN_IN: SignInFlowState = {
+  ...IDLE_SIGN_IN_FACTS,
+  progress: deriveSignInProgress(IDLE_SIGN_IN_FACTS),
+};
+
+/**
+ * Terminal SUCCESS state: the session was claimed and committed. Holds no live
+ * resources and no request handles — only the terminal progress the surface
+ * shows ("Identity confirmed") before it closes.
+ */
+const COMPLETED_SIGN_IN: SignInFlowState = {
+  ...IDLE_SIGN_IN_FACTS,
+  phase: 'completed',
+  progress: deriveSignInProgress({ ...IDLE_SIGN_IN_FACTS, phase: 'completed' }),
 };
 
 function errorMessage(error: unknown): string {
@@ -272,6 +449,7 @@ export class AccountDialogController {
   private readonly socketFactory?: SocketIOFactory;
   private readonly openPopup?: () => PopupWindowHandle | null;
   private readonly hubBaseUrl: string;
+  private readonly platform: CommonsDeliveryPlatform;
 
   private readonly listeners = new Set<SnapshotListener>();
 
@@ -329,6 +507,7 @@ export class AccountDialogController {
     this.socketFactory = options.socketFactory;
     this.openPopup = options.openPopup;
     this.hubBaseUrl = options.hubBaseUrl ?? `https://auth.${CENTRAL_IDP_APEX}`;
+    this.platform = options.platform ?? 'unknown';
     this.snapshot = this.computeSnapshot();
   }
 
@@ -466,6 +645,13 @@ export class AccountDialogController {
   setView(view: AccountDialogView): void {
     if (this.view === view) return;
     this.view = view;
+    // A `'completed'` flow owns no timers, socket, popup, or token — it is only
+    // the terminal "Identity confirmed" the finished surface showed. Moving to
+    // another view is a NEW intention, so drop it; otherwise a later `add()`
+    // would open on the previous sign-in's terminal state.
+    if (this.signIn.phase === 'completed') {
+      this.signIn = IDLE_SIGN_IN;
+    }
     this.emit();
   }
 
@@ -652,7 +838,7 @@ export class AccountDialogController {
    */
   async signInWithOxy(): Promise<void> {
     this.setView('qr');
-    this.setSignIn({ ...IDLE_SIGN_IN, phase: 'starting' });
+    this.setSignIn({ ...IDLE_SIGN_IN_FACTS, phase: 'starting' });
     try {
       const session = await this.oxyServices.signInWithSharedIdentity();
       if (session) {
@@ -676,7 +862,7 @@ export class AccountDialogController {
   async showQr(): Promise<void> {
     this.cancelSignIn();
     this.setView('qr');
-    await this.startDeviceFlowSession();
+    await this.startDeviceFlowSession({ deliver: true });
   }
 
   /**
@@ -703,10 +889,16 @@ export class AccountDialogController {
     this.setView('qr');
     const popup = this.openPopup?.() ?? null;
     if (!popup) {
-      await this.startDeviceFlowSession();
+      await this.startDeviceFlowSession({ deliver: true });
       return;
     }
-    const handle = await this.startDeviceFlowSession();
+    // The hub popup IS the primary surface here, chosen explicitly by the user —
+    // so this flow does NOT run automatic Commons delivery (ringing the user's
+    // phone because they asked for a passkey would be exactly the "menu of
+    // methods" the one-primary-action rule forbids). The underlying request is
+    // the same `AuthSession`, and its Commons route stays the QR the view
+    // renders beneath the popup.
+    const handle = await this.startDeviceFlowSession({ deliver: false });
     if (!handle) {
       popup.close();
       return;
@@ -729,39 +921,151 @@ export class AccountDialogController {
    * same `startCommonsSignIn` → poll/socket wiring either way. Returns the
    * handle on success (already reflected in `signIn`), or `null` on failure
    * (already set as `signIn.error`).
+   *
+   * @param opts.deliver - Whether to run automatic Commons delivery selection
+   *   ({@link resolveDeliveryRoute}). `true` for the normal one-primary-action
+   *   entry; `false` when the caller already owns the primary surface (the
+   *   passkey hub popup), where the request's Commons route is simply the QR.
    */
-  private async startDeviceFlowSession(): Promise<CommonsSignInHandle | null> {
+  private async startDeviceFlowSession(opts: { deliver: boolean }): Promise<CommonsSignInHandle | null> {
     if (!this.clientId) {
-      this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: 'This app is not configured for sign-in (missing clientId).' });
+      this.setSignIn({ ...IDLE_SIGN_IN_FACTS, phase: 'error', error: 'This app is not configured for sign-in (missing clientId).' });
       return null;
     }
-    this.setSignIn({ ...IDLE_SIGN_IN, phase: 'starting' });
+    this.setSignIn({ ...IDLE_SIGN_IN_FACTS, phase: 'starting' });
     try {
       const handle = await this.oxyServices.startCommonsSignIn({ clientId: this.clientId });
       this.signInToken = handle.sessionToken;
       this.setSignIn({
+        ...IDLE_SIGN_IN_FACTS,
         phase: 'waiting',
         authorizeCode: handle.authorizeCode,
         qrPayload: handle.qrPayload,
         expiresAt: handle.expiresAt,
-        error: null,
+        // No route yet: the surface shows "Preparing request" until the primary
+        // route is resolved below. It is never guessed in the meantime.
+        route: opts.deliver ? null : 'qr',
       });
       // Primary path: an instant `auth_update` wake over the `/auth-session`
       // socket. The poll below is only the fallback for when the socket can't
       // connect, so it now runs at the slow fallback cadence.
       this.openAuthSessionSocket(handle.sessionToken);
       this.scheduleNextPoll(handle.sessionToken);
-      // Same-device convenience: if Commons is confirmed installed (native
-      // only — stays `'unknown'` on web, where this never opens anything),
-      // deep-link straight into its approve screen with the same
-      // `oxycommons://approve?...` payload the QR encodes. The QR + polling
-      // stay live as the fallback, so a user who dismisses the app-open still
-      // completes the sign-in by scanning.
-      void this.deepLinkIntoCommonsIfAvailable(handle.qrPayload);
+      if (opts.deliver) {
+        // Non-blocking on purpose: the QR/authorizeCode are already renderable
+        // and the popup caller can navigate immediately, while the route (a
+        // local probe plus at most one delivery round-trip) resolves behind it.
+        void this.resolveDeliveryRoute(handle);
+      }
       return handle;
     } catch (error) {
-      this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: errorMessage(error) });
+      this.setSignIn({ ...IDLE_SIGN_IN_FACTS, phase: 'error', error: errorMessage(error) });
       return null;
+    }
+  }
+
+  /**
+   * Choose and carry out the ONE primary delivery route for the active request
+   * (issue #691, "Automatic delivery selection").
+   *
+   * The controller gathers the facts — is a verified Commons link openable on
+   * THIS device, and how many known Commons installations did Oxy actually push
+   * to — and hands them to the pure {@link selectCommonsDelivery}. The selector
+   * owns the decision; this method owns only the observations and the single
+   * action the chosen route implies. It never cascades: a route that yields
+   * nothing resolves to QR *before* a route is chosen, never after.
+   */
+  private async resolveDeliveryRoute(handle: CommonsSignInHandle): Promise<void> {
+    if (!this.isAwaitingApproval(handle.sessionToken)) return;
+
+    // Fact 1 — a VERIFIED Commons link openable on this very device. Native
+    // only; on web `commonsAvailability` stays `'unknown'` (a browser cannot be
+    // asked whether a custom scheme is registered) and this is simply `false`.
+    if (
+      this.canOpenApp &&
+      (this.commonsAvailability === 'unknown' || this.commonsAvailability === 'checking')
+    ) {
+      await this.resolveCommonsAvailability();
+      if (!this.isAwaitingApproval(handle.sessionToken)) return;
+    }
+    const commonsAvailable = this.commonsAvailability === 'available';
+
+    // Fact 2 — how many known Commons installations the server pushed to.
+    const pushTargets = await this.deliverToKnownCommons(handle.authorizeCode, commonsAvailable);
+    if (!this.isAwaitingApproval(handle.sessionToken)) return;
+
+    const route = selectCommonsDelivery({ platform: this.platform, commonsAvailable, pushTargets });
+    // The only route that has an action to perform on this device — and the only
+    // one that can fail here. `'await-push'` was already dispatched server-side;
+    // `'qr'` is rendered by the surface from `qrPayload`.
+    const routeFailed = route === 'open-commons' ? !this.openCommonsLink(handle.qrPayload) : false;
+    this.patchSignIn({ route, routeFailed });
+  }
+
+  /**
+   * Whether `sessionToken` is still THE request this surface is waiting on.
+   *
+   * Guards every step of the asynchronous route resolution: a cancelled,
+   * superseded, failed, or already-approved flow must neither open Commons nor
+   * mutate the surface — an approval that lands mid-resolution would otherwise
+   * be followed by a pointless app switch.
+   */
+  private isAwaitingApproval(sessionToken: string): boolean {
+    return this.signInToken === sessionToken && this.signIn.phase === 'waiting';
+  }
+
+  /**
+   * Ask Oxy to deliver the pending request to the identity's known Commons
+   * installations, returning how many it reached (`0` when delivery is not
+   * applicable, not permitted, or reached nobody).
+   *
+   * Two hard rules, both from the issue:
+   *  - **Never push from an unauthenticated surface.** `deliverCommonsSignIn`
+   *    is bearer-required precisely because a request that merely carries a
+   *    typed-in username must never be able to ring somebody's phone. Without a
+   *    planted bearer the call is not made AT ALL — not made-and-failed.
+   *  - **Zero targets and a failed delivery are the same normal outcome.** Both
+   *    return `0`, which resolves the primary route to QR silently. Neither is
+   *    surfaced as an error: there is nothing the user did wrong and nothing for
+   *    them to fix.
+   */
+  private async deliverToKnownCommons(authorizeCode: string, commonsAvailable: boolean): Promise<number> {
+    // Route 1 (mobile with a verified local Commons link) reaches the identity
+    // on this very device — pushing as well would notify a second surface for a
+    // request the user is about to confirm here.
+    if (this.platform === 'mobile' && commonsAvailable) return 0;
+    if (!this.isAuthenticated()) return 0;
+    try {
+      const result = await this.oxyServices.deliverCommonsSignIn(authorizeCode);
+      return result.delivered ? result.targets : 0;
+    } catch (error) {
+      logger.debug(
+        '[AccountDialogController] Commons delivery unavailable (QR route)',
+        { component: 'AccountDialogController' },
+        error,
+      );
+      return 0;
+    }
+  }
+
+  /**
+   * Open the verified Commons link for the `'open-commons'` route. Returns
+   * whether the navigation was actually handed off, so a missing opener or a
+   * throwing one becomes an observable `routeFailed` instead of a silent dead
+   * end the user stares at.
+   */
+  private openCommonsLink(qrPayload: string): boolean {
+    if (!this.openUrl) return false;
+    try {
+      this.openUrl(qrPayload);
+      return true;
+    } catch (error) {
+      logger.debug(
+        '[AccountDialogController] Commons deep link failed',
+        { component: 'AccountDialogController' },
+        error,
+      );
+      return false;
     }
   }
 
@@ -778,7 +1082,12 @@ export class AccountDialogController {
       if (!popup.closed) return;
       this.clearPopupWatchTimer();
       if (this.signIn.phase === 'starting' || this.signIn.phase === 'waiting') {
+        // Closing the surface cancels the REQUEST too, not just this listener.
+        const pendingCode = this.signIn.authorizeCode;
         this.failSignIn('Sign-in was cancelled.');
+        if (pendingCode) {
+          void this.withdrawRequest(pendingCode);
+        }
       }
     }, 1000);
   }
@@ -835,32 +1144,48 @@ export class AccountDialogController {
   }
 
   /**
-   * When Commons is confirmed installed, deep-link straight into its approve
-   * screen via the injected `openUrl` with the same `oxycommons://approve?...`
-   * payload the QR encodes. Best-effort and non-blocking — the QR/polling
-   * fallback stays live regardless of the outcome here.
+   * Tear down the active sign-in device flow (timers + socket + popup + token),
+   * WITHDRAW the request server-side, and reset to idle.
+   *
+   * Cancellation has to converge in both directions: the surface closing must
+   * cancel the request, not just stop listening to it. Without the withdrawal a
+   * dismissed QR would stay approvable until it expired, so a later scan of a
+   * stale code could authorize a session nobody is waiting for.
    */
-  private async deepLinkIntoCommonsIfAvailable(qrPayload: string): Promise<void> {
-    if (!this.openUrl) return;
-    if (this.commonsAvailability === 'unknown' || this.commonsAvailability === 'checking') {
-      // The eager `start()` probe hasn't resolved yet (or was never run, e.g.
-      // `showQr` called without a prior `start()`) — resolve it now rather
-      // than skipping the deep link.
-      await this.resolveCommonsAvailability();
-    }
-    if (this.commonsAvailability === 'available') {
-      this.openUrl(qrPayload);
-    }
-  }
-
-  /** Tear down the active sign-in device flow (timers + socket + popup + token) and reset to idle. */
   cancelSignIn(): void {
+    // Capture before the teardown clears it, and only for a request that can
+    // still be approved — a completed/failed flow has nothing to withdraw.
+    const pendingCode =
+      this.signIn.phase === 'starting' || this.signIn.phase === 'waiting'
+        ? this.signIn.authorizeCode
+        : null;
     this.clearPollTimer();
     this.closeAuthSessionSocket();
     this.closeActivePopup();
     this.signInToken = null;
     if (this.signIn !== IDLE_SIGN_IN) {
-      this.setSignIn(IDLE_SIGN_IN);
+      this.setSignIn(IDLE_SIGN_IN_FACTS);
+    }
+    if (pendingCode) {
+      void this.withdrawRequest(pendingCode);
+    }
+  }
+
+  /**
+   * Best-effort server-side withdrawal of a request this surface abandoned
+   * (`POST /auth/session/deny/:authorizeCode`). Fire-and-forget by design: the
+   * local teardown already happened, and a race with an approval that just
+   * landed legitimately rejects here — neither outcome is worth surfacing.
+   */
+  private async withdrawRequest(authorizeCode: string): Promise<void> {
+    try {
+      await this.oxyServices.denyCommonsSignIn(authorizeCode);
+    } catch (error) {
+      logger.debug(
+        '[AccountDialogController] request withdrawal failed',
+        { component: 'AccountDialogController' },
+        error,
+      );
     }
   }
 
@@ -895,6 +1220,10 @@ export class AccountDialogController {
       try {
         const status = await this.oxyServices.pollCommonsSignIn(sessionToken);
         if (this.signInToken !== sessionToken) return; // cancelled mid-request
+        // Delivery PROGRESS first: it is reported alongside every status, and
+        // recording it before the terminal branches means a poll that also
+        // carries the approval still leaves an honest trail behind it.
+        this.recordDeliveryProgress(status.pushSentAt, status.openedAt);
         if (status.authorized && status.sessionId) {
           this.clearPollTimer();
           await this.claimAndComplete(status.sessionId, sessionToken);
@@ -920,8 +1249,23 @@ export class AccountDialogController {
     }
   }
 
+  /**
+   * Record server-reported delivery progress on the active flow.
+   *
+   * Monotone and additive: a timestamp is only ever adopted, never replaced or
+   * cleared, so an older API build (or a partial payload) that omits a field can
+   * at most fail to advance the surface — it can never walk it backwards.
+   * Emits only on a real change, so a steady poll does not churn the snapshot.
+   */
+  private recordDeliveryProgress(pushSentAt: string | null, openedAt: string | null): void {
+    const nextPushSentAt = this.signIn.pushSentAt ?? pushSentAt ?? null;
+    const nextOpenedAt = this.signIn.openedAt ?? openedAt ?? null;
+    if (nextPushSentAt === this.signIn.pushSentAt && nextOpenedAt === this.signIn.openedAt) return;
+    this.patchSignIn({ pushSentAt: nextPushSentAt, openedAt: nextOpenedAt });
+  }
+
   private async claimAndComplete(sessionId: string, sessionToken: string): Promise<void> {
-    this.setSignIn({ ...this.signIn, phase: 'authorized' });
+    this.patchSignIn({ phase: 'authorized' });
     let claimed: {
       accessToken: string;
       sessionId: string;
@@ -979,7 +1323,9 @@ export class AccountDialogController {
     this.clearPollTimer();
     this.closeAuthSessionSocket();
     this.closeActivePopup();
-    this.signIn = IDLE_SIGN_IN;
+    // Terminal SUCCESS, not idle: the surface gets one honest frame to show
+    // "Identity confirmed" before it closes. Cleared on the next view change.
+    this.signIn = COMPLETED_SIGN_IN;
     this.view = 'accounts';
     this.emit();
     this.onSignedIn?.(user);
@@ -1017,7 +1363,7 @@ export class AccountDialogController {
     this.closeAuthSessionSocket();
     this.closeActivePopup();
     this.signInToken = null;
-    this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: message });
+    this.setSignIn({ ...IDLE_SIGN_IN_FACTS, phase: 'error', error: message });
   }
 
   private clearPollTimer(): void {
@@ -1097,9 +1443,42 @@ export class AccountDialogController {
   // Snapshot plumbing
   // =========================================================================
 
-  private setSignIn(next: SignInFlowState): void {
-    this.signIn = next;
+  /**
+   * Replace the device-flow state from its FACTS, re-deriving `progress`. The
+   * only writer of `this.signIn` besides the two terminal constants — which is
+   * what keeps `progress` impossible to set by hand, and therefore impossible
+   * to advance without a fact behind it.
+   */
+  private setSignIn(facts: SignInFlowFacts): void {
+    this.signIn = { ...facts, progress: deriveSignInProgress(facts) };
     this.emit();
+  }
+
+  /** Update a subset of the device-flow facts, re-deriving `progress`. */
+  private patchSignIn(patch: Partial<SignInFlowFacts>): void {
+    const {
+      phase,
+      authorizeCode,
+      qrPayload,
+      expiresAt,
+      error,
+      route,
+      routeFailed,
+      pushSentAt,
+      openedAt,
+    } = this.signIn;
+    this.setSignIn({
+      phase,
+      authorizeCode,
+      qrPayload,
+      expiresAt,
+      error,
+      route,
+      routeFailed,
+      pushSentAt,
+      openedAt,
+      ...patch,
+    });
   }
 
   private computeSnapshot(): AccountDialogSnapshot {
