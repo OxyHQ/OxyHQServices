@@ -25,6 +25,7 @@ import { OxyServicesUtilityMixin } from './OxyServices.utility';
 import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
+import { OxyServicesNotificationsMixin } from './OxyServices.notifications';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
@@ -60,6 +61,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesFeaturesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesTopicsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesNotificationsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
@@ -126,6 +128,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesFeaturesMixin,
     OxyServicesTopicsMixin,
     OxyServicesContactsMixin,
+    // Push-token registration: the one SDK-owned register/unregister pair every
+    // Oxy app uses, and what lets a "Sign in with Oxy" request be delivered to a
+    // known Commons installation instead of falling back to a QR.
+    OxyServicesNotificationsMixin,
     OxyServicesAppDataMixin,
     // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)
     OxyServicesCivicMixin,

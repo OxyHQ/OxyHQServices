@@ -5,13 +5,20 @@
  * run with no network. We assert the exact request bodies the RP and the
  * approver send — these are the load-bearing coordination points with the C2
  * server endpoints — plus the native-vs-web behaviour of the shared-key SSO.
+ *
+ * Also covers Phase 4 (automatic delivery, issue #691): push-token
+ * registration, the bearer-authenticated `deliver` call, the un-authenticated
+ * `opened` progress signal, and the pure route selector — including the
+ * degrade-to-QR behaviour every ambiguous input must produce.
  */
 
 import type { SessionLoginResponse } from '../../models/session';
 import type { ChallengeResponse } from '../OxyServices.auth';
+import type { CommonsDeliveryPlatform } from '../../utils/commonsDelivery';
 import { OxyServices } from '../../OxyServices';
 import { KeyManager } from '../../crypto/keyManager';
 import { SignatureService } from '../../crypto/signatureService';
+import { selectCommonsDelivery } from '../../utils/commonsDelivery';
 
 const challengeFixture: ChallengeResponse = {
   challenge: 'chal-xyz',
@@ -171,12 +178,224 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
 
       const result = await oxy.pollCommonsSignIn('secret-session-token');
 
-      expect(result).toEqual({ authorized: true, sessionId: 's1' });
+      // Delivery progress degrades to null on a server that reports none.
+      expect(result).toEqual({
+        authorized: true,
+        sessionId: 's1',
+        pushSentAt: null,
+        openedAt: null,
+      });
       expect(makeRequestSpy).toHaveBeenCalledWith(
         'GET',
         '/auth/session/status/secret-session-token',
         undefined,
         expect.objectContaining({ cache: false, retry: false }),
+      );
+    });
+
+    it('carries delivery progress timestamps through unchanged', async () => {
+      makeRequestSpy.mockResolvedValue({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: '2026-07-27T10:00:00.000Z',
+        openedAt: '2026-07-27T10:00:12.000Z',
+      });
+
+      const result = await oxy.pollCommonsSignIn('secret-session-token');
+
+      expect(result).toEqual({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: '2026-07-27T10:00:00.000Z',
+        openedAt: '2026-07-27T10:00:12.000Z',
+      });
+    });
+
+    it('degrades safely when an older API omits the progress timestamps entirely', async () => {
+      makeRequestSpy.mockResolvedValue({ authorized: false, status: 'pending' });
+
+      const result = await oxy.pollCommonsSignIn('secret-session-token');
+
+      expect(result.pushSentAt).toBeNull();
+      expect(result.openedAt).toBeNull();
+      // The pre-existing contract is untouched by the addition.
+      expect(result.authorized).toBe(false);
+      expect(result.status).toBe('pending');
+    });
+
+    it.each([
+      ['an explicit null', null],
+      ['an empty string', ''],
+      ['an unparseable string', 'soon'],
+      ['a number (epoch ms, not the ISO contract)', 1700000000000],
+      ['an object', { at: '2026-07-27T10:00:00.000Z' }],
+      ['a boolean', true],
+    ])('drops %s progress timestamp rather than surfacing it', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: value,
+        openedAt: value,
+      });
+
+      const result = await oxy.pollCommonsSignIn('secret-session-token');
+
+      expect(result.pushSentAt).toBeNull();
+      expect(result.openedAt).toBeNull();
+    });
+
+    it('parses each progress timestamp independently', async () => {
+      makeRequestSpy.mockResolvedValue({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: '2026-07-27T10:00:00.000Z',
+        openedAt: 'not-a-date',
+      });
+
+      const result = await oxy.pollCommonsSignIn('secret-session-token');
+
+      expect(result.pushSentAt).toBe('2026-07-27T10:00:00.000Z');
+      expect(result.openedAt).toBeNull();
+    });
+
+    it('counts only a literal true as authorized and drops empty identifiers', async () => {
+      makeRequestSpy.mockResolvedValue({
+        authorized: 'yes',
+        sessionId: '',
+        publicKey: 42,
+        status: 'pending',
+      });
+
+      const result = await oxy.pollCommonsSignIn('secret-session-token');
+
+      expect(result).toEqual({
+        authorized: false,
+        status: 'pending',
+        pushSentAt: null,
+        openedAt: null,
+      });
+    });
+
+    it.each([
+      ['a non-object body', 'pending'],
+      ['a null body', null],
+    ])('rejects %s rather than returning a half-parsed status', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue(value);
+
+      await expect(oxy.pollCommonsSignIn('secret-session-token')).rejects.toThrow(
+        /unexpected response shape/,
+      );
+    });
+  });
+
+  describe('deliverCommonsSignIn (relying party)', () => {
+    it('POSTs the deliver path WITH a bearer (never skipAuth)', async () => {
+      makeRequestSpy.mockResolvedValue({ delivered: true, targets: 2 });
+
+      const result = await oxy.deliverCommonsSignIn('code with/slash');
+
+      expect(result).toEqual({ delivered: true, targets: 2 });
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/auth/session/deliver/code%20with%2Fslash',
+        undefined,
+        { cache: false },
+      );
+      // Delivery only happens for an identity Oxy already knows from a trusted
+      // authenticated context, so the bearer preflight must NOT be skipped.
+      expect(makeRequestSpy.mock.calls[0][3]).not.toHaveProperty('skipAuth');
+    });
+
+    it('treats zero targets as a normal outcome, not a failure', async () => {
+      makeRequestSpy.mockResolvedValue({ delivered: false, targets: 0 });
+
+      const result = await oxy.deliverCommonsSignIn('code-1');
+
+      // No throw, no coercion — the caller routes this to QR.
+      expect(result).toEqual({ delivered: false, targets: 0 });
+      expect(selectCommonsDelivery({
+        platform: 'desktop',
+        commonsAvailable: false,
+        pushTargets: result.targets,
+      })).toBe('qr');
+    });
+
+    it('routes a positive target count to the push wait', async () => {
+      makeRequestSpy.mockResolvedValue({ delivered: true, targets: 1 });
+
+      const result = await oxy.deliverCommonsSignIn('code-1');
+
+      expect(selectCommonsDelivery({
+        platform: 'desktop',
+        commonsAvailable: false,
+        pushTargets: result.targets,
+      })).toBe('await-push');
+    });
+
+    it.each([
+      ['a non-object body', 'delivered'],
+      ['a null body', null],
+    ])('rejects %s rather than returning it', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue(value);
+
+      await expect(oxy.deliverCommonsSignIn('code-1')).rejects.toThrow(
+        /unexpected response shape/,
+      );
+    });
+
+    it.each([
+      ['a missing delivered', { targets: 1 }],
+      ['a non-boolean delivered', { delivered: 'true', targets: 1 }],
+      ['a missing targets', { delivered: true }],
+      ['a non-numeric targets', { delivered: true, targets: '1' }],
+      ['a fractional targets', { delivered: true, targets: 1.5 }],
+      ['a NaN targets', { delivered: true, targets: Number.NaN }],
+      ['a non-finite targets', { delivered: true, targets: Number.POSITIVE_INFINITY }],
+      ['a negative targets', { delivered: true, targets: -1 }],
+    ])('rejects %s rather than returning a half-parsed result', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue(value);
+
+      await expect(oxy.deliverCommonsSignIn('code-1')).rejects.toThrow(
+        /incomplete delivery result/,
+      );
+    });
+
+    it('surfaces a server rejection through the shared error handler', async () => {
+      makeRequestSpy.mockRejectedValue(new Error('Invalid or expired sign-in request'));
+
+      await expect(oxy.deliverCommonsSignIn('code-1')).rejects.toThrow(
+        'Invalid or expired sign-in request',
+      );
+    });
+  });
+
+  describe('markCommonsApprovalOpened (approver)', () => {
+    it('POSTs /auth/session/opened/:authorizeCode with NO bearer', async () => {
+      makeRequestSpy.mockResolvedValue(undefined);
+
+      await expect(oxy.markCommonsApprovalOpened('code-1')).resolves.toBeUndefined();
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/auth/session/opened/code-1',
+        undefined,
+        { cache: false, skipAuth: true },
+      );
+    });
+
+    it('encodes the public code in the path', async () => {
+      makeRequestSpy.mockResolvedValue(undefined);
+
+      await oxy.markCommonsApprovalOpened('code with/slash');
+
+      expect(makeRequestSpy.mock.calls[0][1]).toBe('/auth/session/opened/code%20with%2Fslash');
+    });
+
+    it('surfaces a server rejection through the shared error handler', async () => {
+      makeRequestSpy.mockRejectedValue(new Error('Sign-in request is not pending'));
+
+      await expect(oxy.markCommonsApprovalOpened('code-1')).rejects.toThrow(
+        'Sign-in request is not pending',
       );
     });
   });
@@ -617,5 +836,205 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
       expect(result).toBeNull();
       expect(verifyChallengeSpy).not.toHaveBeenCalled();
     });
+  });
+
+  describe('registerPushToken / unregisterPushToken', () => {
+    const expoToken = 'ExponentPushToken[abc123XYZ]';
+
+    it('POSTs the Expo push token with a bearer', async () => {
+      makeRequestSpy.mockResolvedValue({ registered: true });
+
+      await expect(
+        oxy.registerPushToken({ expoPushToken: expoToken, platform: 'ios' }),
+      ).resolves.toBeUndefined();
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/notifications/push-token',
+        { token: expoToken, platform: 'ios' },
+        { cache: false },
+      );
+      // Push registration is per-identity — the bearer preflight must run.
+      expect(makeRequestSpy.mock.calls[0][3]).not.toHaveProperty('skipAuth');
+    });
+
+    it('omits deviceId/clientId entirely when not provided', async () => {
+      makeRequestSpy.mockResolvedValue({ registered: true });
+
+      await oxy.registerPushToken({ expoPushToken: expoToken, platform: 'android' });
+
+      // `toHaveBeenCalledWith` ignores explicitly-undefined keys, so assert the
+      // literal key set: the server reads PRESENCE of these optional fields.
+      expect(Object.keys(makeRequestSpy.mock.calls[0][2])).toEqual(['token', 'platform']);
+    });
+
+    it('sends deviceId and clientId when provided', async () => {
+      makeRequestSpy.mockResolvedValue({ registered: true });
+
+      await oxy.registerPushToken({
+        expoPushToken: expoToken,
+        platform: 'ios',
+        deviceId: 'dev-1',
+        clientId: 'oxy_dk_commons',
+      });
+
+      expect(makeRequestSpy.mock.calls[0][2]).toEqual({
+        token: expoToken,
+        platform: 'ios',
+        deviceId: 'dev-1',
+        clientId: 'oxy_dk_commons',
+      });
+    });
+
+    it('accepts the ExpoPushToken spelling as well', async () => {
+      makeRequestSpy.mockResolvedValue({ registered: true });
+
+      await oxy.registerPushToken({ expoPushToken: 'ExpoPushToken[abc123]', platform: 'web' });
+
+      expect(makeRequestSpy).toHaveBeenCalled();
+    });
+
+    it.each([
+      // The exact inbox hazard: getDevicePushTokenAsync's raw FCM/APNs token.
+      ['a raw FCM token', 'fMEP0vJqS0y5:APA91bH-longopaquestring'],
+      ['a raw APNs hex token', '740f4707bebcf74f9b7c25d48e3358945f6aa01da5ddb387462c7eaf61bb78ad'],
+      ['an empty string', ''],
+      ['a truncated wrapper', 'ExponentPushToken['],
+      ['an empty wrapper', 'ExponentPushToken[]'],
+      ['a token with whitespace inside', 'ExponentPushToken[abc 123]'],
+      ['surrounding whitespace', ' ExponentPushToken[abc123] '],
+    ])('rejects %s without sending a request', async (_label, token) => {
+      await expect(
+        oxy.registerPushToken({ expoPushToken: token, platform: 'ios' }),
+      ).rejects.toThrow(/Expo push token/);
+
+      expect(makeRequestSpy).not.toHaveBeenCalled();
+    });
+
+    it('DELETEs the token on unregister', async () => {
+      makeRequestSpy.mockResolvedValue({ unregistered: true });
+
+      await expect(oxy.unregisterPushToken(expoToken)).resolves.toBeUndefined();
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'DELETE',
+        '/notifications/push-token',
+        { token: expoToken },
+        { cache: false },
+      );
+    });
+
+    it('surfaces a server rejection through the shared error handler', async () => {
+      makeRequestSpy.mockRejectedValue(new Error('Unknown client'));
+
+      await expect(
+        oxy.registerPushToken({ expoPushToken: expoToken, platform: 'ios' }),
+      ).rejects.toThrow('Unknown client');
+    });
+  });
+});
+
+describe('selectCommonsDelivery — automatic delivery selection', () => {
+  const platforms: CommonsDeliveryPlatform[] = ['mobile', 'desktop', 'unknown'];
+
+  it('opens Commons on mobile when a verified Commons link is available', () => {
+    expect(
+      selectCommonsDelivery({ platform: 'mobile', commonsAvailable: true, pushTargets: 0 }),
+    ).toBe('open-commons');
+  });
+
+  it('prefers opening Commons over a push that also has targets', () => {
+    // Rule 1 wins outright — the identity is already reachable on this device,
+    // so nobody's other phone should ring.
+    expect(
+      selectCommonsDelivery({ platform: 'mobile', commonsAvailable: true, pushTargets: 3 }),
+    ).toBe('open-commons');
+  });
+
+  it('awaits the push on mobile without a verified Commons link', () => {
+    expect(
+      selectCommonsDelivery({ platform: 'mobile', commonsAvailable: false, pushTargets: 1 }),
+    ).toBe('await-push');
+  });
+
+  it('awaits the push on a desktop with a known Commons installation', () => {
+    expect(
+      selectCommonsDelivery({ platform: 'desktop', commonsAvailable: false, pushTargets: 2 }),
+    ).toBe('await-push');
+  });
+
+  it('shows the QR on an unknown desktop browser', () => {
+    expect(
+      selectCommonsDelivery({ platform: 'desktop', commonsAvailable: false, pushTargets: 0 }),
+    ).toBe('qr');
+  });
+
+  it('never deep-links from desktop even when a Commons link is claimed available', () => {
+    // A custom-scheme navigation that does not resolve is a dead end, so a
+    // desktop caller falls through to push/QR regardless.
+    expect(
+      selectCommonsDelivery({ platform: 'desktop', commonsAvailable: true, pushTargets: 0 }),
+    ).toBe('qr');
+    expect(
+      selectCommonsDelivery({ platform: 'desktop', commonsAvailable: true, pushTargets: 1 }),
+    ).toBe('await-push');
+  });
+
+  it('never deep-links from an unknown platform (degrades to push, then QR)', () => {
+    expect(
+      selectCommonsDelivery({ platform: 'unknown', commonsAvailable: true, pushTargets: 0 }),
+    ).toBe('qr');
+    expect(
+      selectCommonsDelivery({ platform: 'unknown', commonsAvailable: true, pushTargets: 1 }),
+    ).toBe('await-push');
+    expect(
+      selectCommonsDelivery({ platform: 'unknown', commonsAvailable: false, pushTargets: 0 }),
+    ).toBe('qr');
+  });
+
+  it('treats zero targets as QR on every platform (a normal outcome, not an error)', () => {
+    for (const platform of platforms) {
+      expect(selectCommonsDelivery({ platform, commonsAvailable: false, pushTargets: 0 })).toBe(
+        'qr',
+      );
+    }
+  });
+
+  it.each([
+    ['a negative count', -1],
+    ['a fractional count', 0.5],
+    ['a fractional count above one', 1.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])('degrades %s to QR rather than a push nobody will answer', (_label, pushTargets) => {
+    expect(selectCommonsDelivery({ platform: 'desktop', commonsAvailable: false, pushTargets })).toBe(
+      'qr',
+    );
+  });
+
+  it('is pure — the same facts always yield the same route', () => {
+    const facts = {
+      platform: 'desktop' as const,
+      commonsAvailable: false,
+      pushTargets: 1,
+    };
+
+    expect(selectCommonsDelivery(facts)).toBe('await-push');
+    expect(selectCommonsDelivery(facts)).toBe('await-push');
+    // ...and it does not mutate the caller's facts.
+    expect(facts).toEqual({ platform: 'desktop', commonsAvailable: false, pushTargets: 1 });
+  });
+
+  it('covers every (platform × commonsAvailable × targets) combination with one route', () => {
+    const routes = new Set<string>();
+    for (const platform of platforms) {
+      for (const commonsAvailable of [true, false]) {
+        for (const pushTargets of [0, 1]) {
+          routes.add(selectCommonsDelivery({ platform, commonsAvailable, pushTargets }));
+        }
+      }
+    }
+    // Exactly the three primary routes — no chained/compound outcome exists.
+    expect([...routes].sort()).toEqual(['await-push', 'open-commons', 'qr']);
   });
 });

@@ -41,6 +41,14 @@ export {
   getCommonsApprovalBlockingReason,
   parseCommonsApprovalExpiresAt,
 } from './utils/commonsApproval';
+// Automatic "Sign in with Oxy" delivery selection — ONE pure decision that maps
+// the caller's facts onto exactly one primary route (open Commons / await push / QR).
+export { selectCommonsDelivery } from './utils/commonsDelivery';
+export type {
+    CommonsDeliveryFacts,
+    CommonsDeliveryPlatform,
+    CommonsDeliveryRoute,
+} from './utils/commonsDelivery';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)
 export type {
@@ -52,7 +60,13 @@ export type {
     CommonsApprovalSubjectAccount,
     CommonsSignInActionResult,
     CommonsOAuthFinalizeResult,
+    CommonsDeliveryResult,
 } from './mixins/OxyServices.auth';
+// Push-token registration (Expo push tokens — never raw APNs/FCM device tokens).
+export type {
+    PushTokenPlatform,
+    RegisterPushTokenInput,
+} from './mixins/OxyServices.notifications';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type {
     ContactDiscoveryMatch,

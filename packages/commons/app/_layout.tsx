@@ -35,6 +35,11 @@ import {
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
+import { usePushRegistration } from '@/hooks/notifications/usePushRegistration';
+import {
+  coldLaunchApprovalCode,
+  useAuthRequestNotifications,
+} from '@/hooks/notifications/useAuthRequestNotifications';
 import {
   preventNativeSplashAutoHide,
   useHideNativeSplashWhenReady,
@@ -120,6 +125,39 @@ function scanTargetFromColdLaunch(url: string): ScanReplayHref | null {
   return segment === 'approve'
     ? { pathname: '/approve', params }
     : { pathname: '/(scan)/attest', params };
+}
+
+/**
+ * The cold-launch handoff target, from EITHER source that can start Commons
+ * with an intent: a system deep link, or a tapped "Sign in with Oxy" push
+ * (issue #691, Phase 4).
+ *
+ * One resolver feeding the ONE replay below, so the push path inherits the
+ * "wait until the routing gate settles, then navigate exactly once" behavior
+ * instead of growing a parallel mechanism. The deep link wins when both are
+ * present: it is the more specific intent (it can also address `attest`), and
+ * the push only ever carries an approval code the link form already covers.
+ *
+ * Never rejects — both sources swallow their own failures — so the replay's
+ * readiness flag always flips.
+ */
+async function resolveColdLaunchTarget(): Promise<ScanReplayHref | null> {
+  let url: string | null = null;
+  try {
+    url = await Linking.getInitialURL();
+  } catch (error) {
+    logger.warn('[commons] cold-launch deep link could not be read', {
+      component: 'AppStackContent',
+    }, error);
+  }
+
+  const fromDeepLink = url ? scanTargetFromColdLaunch(url) : null;
+  if (fromDeepLink) {
+    return fromDeepLink;
+  }
+
+  const code = await coldLaunchApprovalCode();
+  return code ? { pathname: '/approve', params: { code } } : null;
 }
 
 export default function RootLayout() {
@@ -303,30 +341,35 @@ function AppStackContent() {
   const splashReady = appReady || fallbackElapsed;
   useHideNativeSplashWhenReady(splashReady);
 
-  // ── Cold-start `(scan)` deep-link replay ───────────────────────────────────
+  // ── Cold-start handoff replay (deep link OR tapped auth-request push) ──────
   // On a warm start the `(scan)` redirect gate is already resolved, so an
   // `oxycommons://approve|attest` link routes straight through. On a COLD start
   // the gate is `needsAuth === true` while `status === 'checking'`, so the root
   // Stack bounces `(scan)` → `(auth)` and the incoming intent is discarded once
-  // the gate settles. We capture the cold-launch URL once, then — after the gate
-  // has resolved to an authenticated device — `router.replace()` to it exactly
-  // once. If the gate instead resolves to `needsAuth` (no local identity), we
-  // drop the intent and let the normal onboarding flow proceed.
+  // the gate settles. We capture the cold-launch target once, then — after the
+  // gate has resolved to an authenticated device — `router.replace()` to it
+  // exactly once. If the gate instead resolves to `needsAuth` (no local
+  // identity), we drop the intent and let the normal onboarding flow proceed.
   //
-  // `getInitialURL()` is cold-launch-only. Capturing into a ref + a resolved
-  // flag (state) makes the replay race-free: it fires only once BOTH the initial
-  // URL has been read AND the gate has settled, guarded by a ref so later
-  // renders never re-navigate.
+  // `resolveColdLaunchTarget()` is cold-launch-only and covers BOTH intent
+  // sources (see its doc). Capturing into a ref + a resolved flag (state) makes
+  // the replay race-free: it fires only once BOTH the launch target has been
+  // read AND the gate has settled, guarded by a ref so later renders never
+  // re-navigate.
   const pendingScanTargetRef = useRef<ScanReplayHref | null>(null);
   const scanReplayDoneRef = useRef(false);
   const [initialUrlResolved, setInitialUrlResolved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void Linking.getInitialURL()
-      .then((url) => {
-        if (cancelled) return;
-        pendingScanTargetRef.current = url ? scanTargetFromColdLaunch(url) : null;
+    void resolveColdLaunchTarget()
+      .then((target) => {
+        if (!cancelled) pendingScanTargetRef.current = target;
+      })
+      .catch((error: unknown) => {
+        logger.error('[commons] cold-launch handoff resolution failed', error, {
+          component: 'AppStackContent',
+        });
       })
       .finally(() => {
         if (!cancelled) setInitialUrlResolved(true);
@@ -339,7 +382,7 @@ function AppStackContent() {
   useEffect(() => {
     if (scanReplayDoneRef.current) return;
     if (!initialUrlResolved || !splashReady) return;
-    // Both the captured URL and the routing gate are now settled — act once.
+    // Both the captured target and the routing gate are now settled — act once.
     scanReplayDoneRef.current = true;
     const target = pendingScanTargetRef.current;
     pendingScanTargetRef.current = null;
@@ -347,6 +390,17 @@ function AppStackContent() {
       router.replace(target);
     }
   }, [initialUrlResolved, splashReady, needsAuth]);
+
+  // Keep this installation reachable by push for the signed-in vault identity,
+  // so "Continue with Oxy" on a desktop can wake the phone instead of falling
+  // back to a QR. No-ops until a session + the OS permission both exist.
+  usePushRegistration();
+
+  // Warm auth-request pushes. Gated on the SAME settled signal the replay uses:
+  // before that, `/approve` would be bounced by the `needsAuth` guard, and the
+  // cold-launch path (which has already claimed the launching tap's code by the
+  // time `initialUrlResolved` flips) owns that window.
+  useAuthRequestNotifications(initialUrlResolved && splashReady && !needsAuth);
 
   return (
     <SafeAreaProvider>

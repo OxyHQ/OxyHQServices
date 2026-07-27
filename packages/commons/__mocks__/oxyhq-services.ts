@@ -12,8 +12,11 @@ import { useEffect, useSyncExternalStore } from 'react';
 interface MockOxyServices {
   updateProfile?: jest.Mock;
   getCommonsApprovalInfo?: jest.Mock;
+  markCommonsApprovalOpened?: jest.Mock;
   approveCommonsSignIn?: jest.Mock;
   denyCommonsSignIn?: jest.Mock;
+  registerPushToken?: jest.Mock;
+  unregisterPushToken?: jest.Mock;
   getPublicKey?: jest.Mock;
   getPublicCard?: jest.Mock;
   getReputationBalance?: jest.Mock;
@@ -42,10 +45,22 @@ interface MockOxyServices {
   notifyNodeIngest?: jest.Mock;
 }
 
+interface MockSessionClient {
+  getState: () => { deviceId: string } | null;
+}
+
 interface MockOxyState {
   user: { id?: string; username?: string; languages?: string[]; avatar?: string | null } | null;
   isAuthenticated: boolean;
   isAuthResolved: boolean;
+  /**
+   * The SDK's "a usable bearer is planted" verdict — the gate consumer apps use
+   * before any private (bearer-authed) call. Defaults to `false`; tests that
+   * exercise a private-API path set it explicitly.
+   */
+  canUsePrivateApi: boolean;
+  /** Device-session client; `null` when no device state has been resolved. */
+  sessionClient: MockSessionClient | null;
   isLoading: boolean;
   /** The active UI locale, as the real SDK derives it. */
   currentLanguage: string;
@@ -64,6 +79,8 @@ function makeDefaultState(): MockOxyState {
     // i.e. after the SDK's device-first cold boot has concluded. Set it to
     // `false` explicitly to exercise the still-resolving ("checking") window.
     isAuthResolved: true,
+    canUsePrivateApi: false,
+    sessionClient: null,
     isLoading: false,
     currentLanguage: 'en-US',
     currentLanguages: [],

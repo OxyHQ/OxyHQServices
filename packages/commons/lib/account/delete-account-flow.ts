@@ -2,8 +2,11 @@
  * Account-deletion sequence (identity-safety critical).
  *
  * Encapsulates the exact ordering required to delete an Oxy account without
- * leaving "zombie" key material on the device:
+ * leaving "zombie" key material — or a "zombie" push registration — on the
+ * device:
  *
+ *   0. Retire this installation's push token, while the outgoing identity's
+ *      bearer is still valid.
  *   1. Delete the account server-side (signed request).
  *   2. ONLY if (1) succeeded — purge the local identity key AND its backup.
  *   3. Sign out of all local sessions.
@@ -13,6 +16,16 @@
  * native screen or mocking the entire UI tree. The screen is a thin caller.
  *
  * INVARIANTS (enforced + tested):
+ *   - `retirePushToken` runs **first**, before the account is deleted and long
+ *     before sign-out. `DELETE /notifications/push-token` is scoped to the
+ *     identity holding the bearer, so this is the only moment at which the
+ *     outgoing identity's registration can actually be removed. Retiring it
+ *     later (or after the vault has been re-onboarded with a different
+ *     identity) would delete the wrong row and leave this device woken by
+ *     sign-in requests for an identity it no longer holds.
+ *   - A `retirePushToken` failure is **non-fatal** and never blocks deletion —
+ *     an unreachable push registry must not trap a user who wants their account
+ *     gone. Deleting the account also makes the stale row undeliverable.
  *   - The local identity is purged **only** inside the success branch of the
  *     server delete. If the server delete throws/rejects, `purgeIdentity` is
  *     NEVER called — the user keeps the keys for an account that still exists.
@@ -33,6 +46,12 @@ import { logger } from '@oxyhq/core';
  * native modules, and so the screen wires in the live SDK / KeyManager.
  */
 export interface AccountDeletionDeps {
+  /**
+   * Retire this installation's push token for the identity being deleted.
+   * Runs FIRST, while that identity's bearer is still valid — see the
+   * invariants above. Failures are swallowed.
+   */
+  retirePushToken: () => Promise<unknown>;
   /**
    * Delete the account server-side. Must reject if the server did not delete
    * the account — rejection is the signal that the local identity MUST be
@@ -73,6 +92,21 @@ export async function runAccountDeletion(
   confirmText: string,
   deps: AccountDeletionDeps,
 ): Promise<AccountDeletionResult> {
+  // Step 0: stop this installation from being woken for an identity it is about
+  // to give up. This has to happen while the outgoing bearer is still valid —
+  // the registry scopes the delete to the authenticated identity, so there is
+  // no later moment at which this row can be removed. Best-effort: a push
+  // registry that is down must never block a deletion the user asked for.
+  try {
+    await deps.retirePushToken();
+  } catch (error) {
+    logger.warn(
+      'Could not retire this device\'s push token before deleting the account. It may keep receiving sign-in requests until it expires.',
+      { component: 'DeleteAccountScreen' },
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+
   // Step 1: server-side delete. If this throws, it propagates to the caller
   // and NOTHING below runs — the local identity is left fully intact.
   await deps.deleteAccount(confirmText);
