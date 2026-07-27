@@ -1,15 +1,18 @@
 import { Drawer } from 'expo-router/drawer';
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { useColors } from '@/constants/theme';
 import { MailboxDrawer } from '@/components/MailboxDrawer';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useIsDesktopLayout } from '@/hooks/useIsDesktopLayout';
 
 export default function DrawerLayout() {
-  const { width } = useWindowDimensions();
   const colors = useColors();
-  const isDesktop = Platform.OS === 'web' && width >= 900;
+  // Shared with the floating tab bar, which renders exactly when this is false.
+  // One condition for both, so a viewport can never end up with a permanent
+  // sidebar AND a floating bar, or with neither.
+  const isDesktop = useIsDesktopLayout();
   const { isAuthenticated, oxyServices } = useOxy();
   const _initApi = useEmailStore((s) => s._initApi);
   const hasApi = useEmailStore((s) => s._api !== null);
