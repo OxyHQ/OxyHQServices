@@ -59,6 +59,12 @@ import {
 } from './accountProjection';
 import type { AccountNode } from '../mixins/OxyServices.accounts';
 import type { CommonsSignInHandle } from '../mixins/OxyServices.auth';
+import {
+  commonsDeliveryPlatform,
+  pushTargetsFromDelivery,
+  selectCommonsDelivery,
+  type CommonsDeliveryRoute,
+} from '../utils/commonsDelivery';
 
 /** The dialog's top-level view. */
 export type AccountDialogView = 'accounts' | 'signin' | 'qr' | 'add' | 'signup';
@@ -110,6 +116,15 @@ export interface SignInFlowState {
   expiresAt: number | null;
   /** Human-readable error for the retry UI, or `null`. */
   error: string | null;
+  /**
+   * The ONE primary delivery route chosen for this request (`open-commons` /
+   * `await-push` / `qr`), or `null` while the session is being created.
+   */
+  deliveryRoute: CommonsDeliveryRoute | null;
+  /** ISO-8601 delivery progress from the server, or `null`. */
+  pushSentAt: string | null;
+  /** ISO-8601 open progress from the server, or `null`. */
+  openedAt: string | null;
 }
 
 /** Immutable snapshot consumed by `useSyncExternalStore`. */
@@ -250,6 +265,9 @@ const IDLE_SIGN_IN: SignInFlowState = {
   qrPayload: null,
   expiresAt: null,
   error: null,
+  deliveryRoute: null,
+  pushSentAt: null,
+  openedAt: null,
 };
 
 function errorMessage(error: unknown): string {
@@ -739,12 +757,46 @@ export class AccountDialogController {
     try {
       const handle = await this.oxyServices.startCommonsSignIn({ clientId: this.clientId });
       this.signInToken = handle.sessionToken;
+
+      if (
+        this.commonsAvailability === 'unknown' ||
+        this.commonsAvailability === 'checking'
+      ) {
+        await this.resolveCommonsAvailability();
+      }
+
+      const commonsAvailable = this.commonsAvailability === 'available';
+      let pushTargets = 0;
+      if (this.isAuthenticated()) {
+        try {
+          const delivery = await this.oxyServices.deliverCommonsSignIn(handle.authorizeCode);
+          pushTargets = pushTargetsFromDelivery(delivery);
+        } catch (error) {
+          // Delivery is best-effort — a bearer-less or transient failure simply
+          // falls back to the QR surface rather than failing the whole flow.
+          logger.debug(
+            '[AccountDialogController] deliverCommonsSignIn failed (falling back to QR)',
+            { component: 'AccountDialogController' },
+            error,
+          );
+        }
+      }
+
+      const deliveryRoute = selectCommonsDelivery({
+        platform: commonsDeliveryPlatform(),
+        commonsAvailable,
+        pushTargets,
+      });
+
       this.setSignIn({
         phase: 'waiting',
         authorizeCode: handle.authorizeCode,
         qrPayload: handle.qrPayload,
         expiresAt: handle.expiresAt,
         error: null,
+        deliveryRoute,
+        pushSentAt: null,
+        openedAt: null,
       });
       // Primary path: an instant `auth_update` wake over the `/auth-session`
       // socket. The poll below is only the fallback for when the socket can't
@@ -757,7 +809,9 @@ export class AccountDialogController {
       // `oxycommons://approve?...` payload the QR encodes. The QR + polling
       // stay live as the fallback, so a user who dismisses the app-open still
       // completes the sign-in by scanning.
-      void this.deepLinkIntoCommonsIfAvailable(handle.qrPayload);
+      if (deliveryRoute === 'open-commons') {
+        void this.deepLinkIntoCommonsIfAvailable(handle.qrPayload);
+      }
       return handle;
     } catch (error) {
       this.setSignIn({ ...IDLE_SIGN_IN, phase: 'error', error: errorMessage(error) });
@@ -895,6 +949,20 @@ export class AccountDialogController {
       try {
         const status = await this.oxyServices.pollCommonsSignIn(sessionToken);
         if (this.signInToken !== sessionToken) return; // cancelled mid-request
+
+        const nextPushSentAt = status.pushSentAt ?? this.signIn.pushSentAt;
+        const nextOpenedAt = status.openedAt ?? this.signIn.openedAt;
+        if (
+          nextPushSentAt !== this.signIn.pushSentAt ||
+          nextOpenedAt !== this.signIn.openedAt
+        ) {
+          this.setSignIn({
+            ...this.signIn,
+            pushSentAt: nextPushSentAt,
+            openedAt: nextOpenedAt,
+          });
+        }
+
         const purpose = status.purpose === 'oauth_authorization' ? 'oauth_authorization' : 'device_sign_in';
         if (status.authorized && purpose === 'oauth_authorization') {
           // OAuth-bound sessions mint no sessionId on approval — they finalize

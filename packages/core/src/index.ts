@@ -43,7 +43,7 @@ export {
 } from './utils/commonsApproval';
 // Automatic "Sign in with Oxy" delivery selection — ONE pure decision that maps
 // the caller's facts onto exactly one primary route (open Commons / await push / QR).
-export { selectCommonsDelivery } from './utils/commonsDelivery';
+export { selectCommonsDelivery, pushTargetsFromDelivery, commonsDeliveryPlatform } from './utils/commonsDelivery';
 export type {
     CommonsDeliveryFacts,
     CommonsDeliveryPlatform,

@@ -1071,7 +1071,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         if (res === null || typeof res !== 'object') {
           throw new Error('auth/session/status returned an unexpected response shape');
         }
-        const { authorized, sessionId, publicKey, status, pushSentAt, openedAt } =
+        const { authorized, sessionId, publicKey, status, purpose, pushSentAt, openedAt } =
           res as Record<string, unknown>;
 
         return {
@@ -1079,6 +1079,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           ...(typeof sessionId === 'string' && sessionId ? { sessionId } : {}),
           ...(typeof publicKey === 'string' && publicKey ? { publicKey } : {}),
           ...(typeof status === 'string' && status ? { status } : {}),
+          purpose: purpose === 'oauth_authorization' ? 'oauth_authorization' : 'device_sign_in',
           pushSentAt: parseCommonsProgressTimestamp(pushSentAt),
           openedAt: parseCommonsProgressTimestamp(openedAt),
         };

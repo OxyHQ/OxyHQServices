@@ -131,7 +131,10 @@ async function dispatch(
             (ticket.details as Record<string, unknown>).error === 'DeviceNotRegistered'
           ) {
             const invalidToken = chunk[i].to;
-            logger.info('Removing invalid push token', { userId, token: invalidToken });
+            logger.info('Removing invalid push token', {
+              userId,
+              tokenPrefix: invalidToken.slice(0, 12),
+            });
             await PushToken.deleteOne({ userId, token: invalidToken });
           }
         }

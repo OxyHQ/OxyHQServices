@@ -6,6 +6,7 @@ import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import { SessionClient, type SessionClientHost } from '../SessionClient';
 import type { MinimalSocket, SocketIOFactory } from '../socketLoader';
 import { logger } from '../../logger';
+import { setPlatformOS } from '../../utils/platform';
 import {
   AccountDialogController,
   createAccountDialogController,
@@ -76,6 +77,7 @@ interface OxyMock {
   getFileDownloadUrl: jest.Mock;
   switchToAccount: jest.Mock;
   startCommonsSignIn: jest.Mock;
+  deliverCommonsSignIn: jest.Mock;
   pollCommonsSignIn: jest.Mock;
   claimSessionByToken: jest.Mock;
   signInWithSharedIdentity: jest.Mock;
@@ -103,6 +105,7 @@ function makeOxy(): OxyMock {
     getFileDownloadUrl: jest.fn((id: string) => `https://cdn/${id}`),
     switchToAccount: jest.fn(),
     startCommonsSignIn: jest.fn(),
+    deliverCommonsSignIn: jest.fn().mockResolvedValue({ delivered: false, targets: 0 }),
     pollCommonsSignIn: jest.fn(),
     claimSessionByToken: jest.fn(),
     signInWithSharedIdentity: jest.fn().mockResolvedValue(null),
@@ -541,6 +544,44 @@ describe('AccountDialogController — sign in with Oxy', () => {
     expect(snap.signIn.phase).toBe('waiting');
     expect(snap.signIn.authorizeCode).toBe('AUTH-CODE');
     expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
+    expect(oxy.deliverCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
+    expect(snap.signIn.deliveryRoute).toBe('qr');
+    controller.cancelSignIn();
+  });
+
+  it('selects await-push when delivery succeeds for a signed-in user', async () => {
+    const { controller, oxy } = makeHarness();
+    oxy.deliverCommonsSignIn.mockResolvedValue({ delivered: true, targets: 1 });
+    oxy.startCommonsSignIn.mockResolvedValue({
+      sessionToken: 'secret-tok',
+      authorizeCode: 'AUTH-CODE',
+      qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+      expiresAt: Date.now() + 300_000,
+      status: 'pending',
+    });
+
+    await controller.showQr();
+
+    expect(oxy.deliverCommonsSignIn).toHaveBeenCalledWith('AUTH-CODE');
+    expect(controller.getSnapshot().signIn.deliveryRoute).toBe('await-push');
+    controller.cancelSignIn();
+  });
+
+  it('skips deliver when no bearer is planted', async () => {
+    const { controller, oxy } = makeHarness();
+    oxy.emitTokenChange(null);
+    oxy.startCommonsSignIn.mockResolvedValue({
+      sessionToken: 'secret-tok',
+      authorizeCode: 'AUTH-CODE',
+      qrPayload: 'oxycommons://approve?v=1&code=AUTH-CODE',
+      expiresAt: Date.now() + 300_000,
+      status: 'pending',
+    });
+
+    await controller.showQr();
+
+    expect(oxy.deliverCommonsSignIn).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().signIn.deliveryRoute).toBe('qr');
     controller.cancelSignIn();
   });
 
@@ -801,6 +842,7 @@ describe('AccountDialogController — Commons availability (canOpenApp)', () => 
   }
 
   it('deep-links into Commons via openUrl when canOpenApp reports it installed, keeping the QR/polling fallback', async () => {
+    setPlatformOS('ios');
     const openUrl = jest.fn();
     const canOpenApp = jest.fn().mockResolvedValue(true);
     const { controller } = makeController({ openUrl, canOpenApp });
@@ -814,9 +856,11 @@ describe('AccountDialogController — Commons availability (canOpenApp)', () => 
     const snap = controller.getSnapshot();
     expect(snap.view).toBe('qr');
     expect(snap.signIn.phase).toBe('waiting');
+    expect(snap.signIn.deliveryRoute).toBe('open-commons');
     expect(snap.signIn.qrPayload).toBe('oxycommons://approve?v=1&code=AUTH-CODE');
     expect(snap.commonsAvailability).toBe('available');
     controller.cancelSignIn();
+    setPlatformOS('web');
   });
 
   it('does NOT open Commons when canOpenApp reports it absent (renders QR only)', async () => {

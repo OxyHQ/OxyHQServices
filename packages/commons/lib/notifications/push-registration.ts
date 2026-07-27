@@ -19,6 +19,7 @@
 import type { PushTokenPlatform, RegisterPushTokenInput } from '@oxyhq/core';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
 import {
+  ensureAuthApprovalNotificationChannel,
   getExpoPushToken,
   hasNotificationPermission,
   pushTokenPlatform,
@@ -82,6 +83,8 @@ export async function registerInstallationPushToken(
   if (!expoPushToken) {
     return { status: 'skipped', reason: 'no-token' };
   }
+
+  await ensureAuthApprovalNotificationChannel();
 
   const input: RegisterPushTokenInput = {
     expoPushToken,

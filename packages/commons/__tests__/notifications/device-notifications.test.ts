@@ -18,6 +18,8 @@ jest.mock(
     getLastNotificationResponse: jest.fn(),
     clearLastNotificationResponse: jest.fn(),
     addNotificationResponseReceivedListener: jest.fn(),
+    setNotificationChannelAsync: jest.fn(),
+    AndroidImportance: { HIGH: 4 },
   }),
   { virtual: true },
 );
@@ -30,12 +32,15 @@ interface NotificationsStub {
   getLastNotificationResponse: jest.Mock;
   clearLastNotificationResponse: jest.Mock;
   addNotificationResponseReceivedListener: jest.Mock;
+  setNotificationChannelAsync: jest.Mock;
 }
 
 const notifications = jest.requireMock('expo-notifications') as NotificationsStub;
 
 // eslint-disable-next-line import/first
 import {
+  AUTH_APPROVAL_NOTIFICATION_CHANNEL,
+  ensureAuthApprovalNotificationChannel,
   getExpoPushToken,
   hasNotificationPermission,
   pushTokenPlatform,
@@ -63,6 +68,7 @@ describe('device notifications adapter', () => {
     notifications.getLastNotificationResponse.mockReset();
     notifications.clearLastNotificationResponse.mockReset();
     notifications.addNotificationResponseReceivedListener.mockReset();
+    notifications.setNotificationChannelAsync.mockReset();
 
     notifications.getPermissionsAsync.mockResolvedValue({ granted: true, status: 'granted' });
     notifications.requestPermissionsAsync.mockResolvedValue({ granted: true, status: 'granted' });
@@ -70,6 +76,7 @@ describe('device notifications adapter', () => {
     notifications.getDevicePushTokenAsync.mockResolvedValue({ type: 'apns', data: RAW_DEVICE_TOKEN });
     notifications.getLastNotificationResponse.mockReturnValue(null);
     notifications.addNotificationResponseReceivedListener.mockReturnValue({ remove: jest.fn() });
+    notifications.setNotificationChannelAsync.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -186,6 +193,27 @@ describe('device notifications adapter', () => {
       expect(notifications.getPermissionsAsync).not.toHaveBeenCalled();
       expect(notifications.getExpoPushTokenAsync).not.toHaveBeenCalled();
       expect(notifications.addNotificationResponseReceivedListener).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ensureAuthApprovalNotificationChannel', () => {
+    it('creates the auth-approval channel on Android', async () => {
+      Platform.OS = 'android';
+
+      await ensureAuthApprovalNotificationChannel();
+
+      expect(notifications.setNotificationChannelAsync).toHaveBeenCalledWith(
+        AUTH_APPROVAL_NOTIFICATION_CHANNEL,
+        expect.objectContaining({ name: 'Sign-in requests' }),
+      );
+    });
+
+    it('is a no-op on iOS', async () => {
+      Platform.OS = 'ios';
+
+      await ensureAuthApprovalNotificationChannel();
+
+      expect(notifications.setNotificationChannelAsync).not.toHaveBeenCalled();
     });
   });
 });

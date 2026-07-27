@@ -25,6 +25,9 @@ type NotificationsModule = typeof import('expo-notifications');
 
 const LOG_CONTEXT = { component: 'device-notifications' } as const;
 
+/** Must match `IDENTITY_APPROVAL_PUSH_CHANNEL` on the API push sender. */
+export const AUTH_APPROVAL_NOTIFICATION_CHANNEL = 'auth-approval';
+
 /**
  * Load `expo-notifications`, or `null` when it cannot serve this platform/build.
  *
@@ -100,6 +103,29 @@ export async function requestNotificationPermission(): Promise<boolean> {
   } catch (error) {
     logger.warn('[commons] notification permission request failed', LOG_CONTEXT, error);
     return false;
+  }
+}
+
+/**
+ * Ensure the Android channel used for sign-in approval pushes exists.
+ *
+ * Without this, Android 8+ may drop notifications sent to an unknown channel id.
+ */
+export async function ensureAuthApprovalNotificationChannel(): Promise<void> {
+  const notifications = await loadNotifications();
+  if (!notifications || Platform.OS !== 'android') {
+    return;
+  }
+  try {
+    await notifications.setNotificationChannelAsync(AUTH_APPROVAL_NOTIFICATION_CHANNEL, {
+      name: 'Sign-in requests',
+      importance: notifications.AndroidImportance.HIGH,
+      description: 'Alerts when another device requests approval to sign in',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  } catch (error) {
+    logger.warn('[commons] could not create the auth-approval notification channel', LOG_CONTEXT, error);
   }
 }
 

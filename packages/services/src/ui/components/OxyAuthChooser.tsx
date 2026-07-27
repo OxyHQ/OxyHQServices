@@ -1332,6 +1332,30 @@ const QrView: React.FC<QrViewProps> = ({
     );
   }
 
+  if (signIn.deliveryRoute === 'await-push' && !showQrAnyway) {
+    const progressLabel = signIn.openedAt
+      ? t('accountSwitcher.commonsOpened') || 'Opened in Commons — approve the request to continue.'
+      : signIn.pushSentAt
+        ? t('accountSwitcher.commonsPushSent') || 'Sent to Commons on your phone.'
+        : t('accountSwitcher.awaitCommonsPush') || 'Check Commons on your phone to approve this sign-in.';
+    return (
+      <View style={styles.centeredBlock}>
+        <MaterialCommunityIcons name="cellphone-message" size={32} color={theme.colors.primary} />
+        <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
+          {t('accountSwitcher.awaitCommonsHeadline') || 'Approve in Commons'}
+        </Text>
+        <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>{progressLabel}</Text>
+        <Pressable onPress={() => setShowQrAnyway(true)} accessibilityRole="button" style={styles.footerLink}>
+          <Text style={[styles.linkText, { color: theme.colors.textSecondary }]}>
+            {t('accountSwitcher.showQrFallback') || 'Having trouble? Scan a QR instead'}
+          </Text>
+        </Pressable>
+        {passkeyLink}
+        <SignUpFooterLink theme={theme} t={t} onPress={onCreateAccount} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.centeredBlock}>
       <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
