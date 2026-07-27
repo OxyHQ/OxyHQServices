@@ -532,6 +532,7 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
       expect(result).toEqual({
         ...baseInfo,
         originVerified: true,
+        requesterLabel: null,
         purpose: 'device_sign_in',
         subjectAccount: null,
       });
@@ -637,6 +638,50 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
 
       expect(result.originVerified).toBe(false);
     });
+
+    it('carries the coarse requester label through verbatim', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, requesterLabel: 'Chrome on Windows' });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.requesterLabel).toBe('Chrome on Windows');
+    });
+
+    it('trims surrounding whitespace off the label', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, requesterLabel: '  Safari on iOS  ' });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.requesterLabel).toBe('Safari on iOS');
+    });
+
+    it.each([
+      ['omitted (an API that predates the field)', undefined],
+      ['an explicit null (native requester)', null],
+      ['an empty string', ''],
+      ['whitespace only', '   '],
+      ['a non-string', 42],
+      ['an object', { browser: 'Chrome' }],
+    ])('degrades %s requesterLabel to null (the UI omits the line)', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, requesterLabel: value });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.requesterLabel).toBeNull();
+    });
+
+    it('parses BOTH new fields fail-safe when the API omits them entirely', async () => {
+      // An older API sends neither `requesterLabel` nor the fields around it —
+      // the approval info must still resolve, never throw.
+      makeRequestSpy.mockResolvedValue(baseInfo);
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.requesterLabel).toBeNull();
+      expect(result.originVerified).toBe(false);
+      expect(result.purpose).toBe('device_sign_in');
+      expect(result.subjectAccount).toBeNull();
+    });
   });
 
   describe('approveCommonsSignIn (approver)', () => {
@@ -722,6 +767,30 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
         undefined,
         expect.objectContaining({ cache: false }),
       );
+    });
+
+    it.each([['declined'], ['not_me']] as const)(
+      'sends the closed-set reason %s in the body',
+      async (reason) => {
+        makeRequestSpy.mockResolvedValue({ success: true });
+
+        await oxy.denyCommonsSignIn('code-1', reason);
+
+        expect(makeRequestSpy).toHaveBeenCalledWith(
+          'POST',
+          '/auth/session/deny/code-1',
+          { reason },
+          expect.objectContaining({ cache: false }),
+        );
+      },
+    );
+
+    it('sends no body at all when no reason is given (byte-identical to the old call)', async () => {
+      makeRequestSpy.mockResolvedValue({ success: true });
+
+      await oxy.denyCommonsSignIn('code-1');
+
+      expect(makeRequestSpy.mock.calls[0][2]).toBeUndefined();
     });
   });
 

@@ -124,7 +124,19 @@
     "commonsNotInstalled": "Commonsがありませんか？アプリを入手してOxy IDでサインインしましょう。",
     "showQrAnyway": "別のデバイスにCommonsがあります",
     "switchWhileSignedInAs": "アカウントを切り替え（{{name}} としてログイン中）",
-    "manageOnDevice": "このデバイスのアカウントを管理"
+    "manageOnDevice": "このデバイスのアカウントを管理",
+    "continueWithOxy": "Oxyで続ける",
+    "havingTrouble": "うまくいきませんか？",
+    "progress": {
+      "preparing": "リクエストを準備しています",
+      "awaitingApproval": "承認を待っています",
+      "scanWithCommons": "スマートフォンのCommonsでスキャンしてください",
+      "continueInCommons": "Commonsで続けてください",
+      "checkCommons": "スマートフォンのCommonsを確認してください",
+      "openedInCommons": "Commonsで開きました",
+      "confirming": "本人確認をしています",
+      "confirmed": "本人確認が完了しました"
+    }
   },
   "common": {
     "actions": {

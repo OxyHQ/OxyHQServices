@@ -4,24 +4,34 @@
  *
  * These tests isolate the RN binding over the headless `AccountDialogController`
  * (mocked): the chooser renders the correct view from `snapshot.view`, taps a row
- * through `controller.switchTo`, auto-starts "Sign in with Oxy" on web when the
- * sign-in entry is reached, and offers the passkey link/CTA alongside the QR and
- * signup views on EVERY web origin — direct on a first-party Oxy origin
- * (`signInWithPasskey`/`registerWithPasskey`), routed through the auth.oxy.so
- * hub popup elsewhere (`controller.startPasskeyHubSignIn`, b2). The
- * controller's own state machine + projection are unit-tested in `@oxyhq/core`.
+ * through `controller.switchTo`, and auto-starts "Sign in with Oxy" on web when
+ * the sign-in entry is reached. The controller's own state machine + projection
+ * are unit-tested in `@oxyhq/core`.
+ *
+ * ONE PRIMARY ACTION (issue #691, Phase 5). The normal surface never presents a
+ * menu of authentication methods:
+ *  - the sign-in entry renders exactly one primary CTA, "Continue with Oxy";
+ *  - the active request renders the route-appropriate primary surface (the QR
+ *    plate, or a glyph for a route that lives on the phone) plus a status line
+ *    derived ONLY from `snapshot.signIn.progress` — never a timed sequence;
+ *  - every alternative (a QR from another device, a passkey on this device,
+ *    getting Commons) stays behind "Having trouble?" until the user asks or
+ *    `signIn.routeFailed` says the chosen route could not be carried out.
  *
  * Error-surfacing contract (owner mandate: NO error renders inline inside the
  * dialog): every failure — account-switch, passkey sign-in ceremony, passkey
  * account creation, username-availability check — fires a Bloom `toast.error(...)`
- * at the point of failure and paints NO inline banner/text. The `toast` here is
- * the shared `@oxyhq/bloom` jest.fn mock; the removed inline `ErrorBanner` is
- * asserted absent.
+ * at the point of failure and paints NO inline banner/text.
  */
 
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { toast } from '@oxyhq/bloom';
-import type { AccountDialogSnapshot, SwitchableAccount, User } from '@oxyhq/core';
+import type {
+  AccountDialogSnapshot,
+  SignInFlowState,
+  SwitchableAccount,
+  User,
+} from '@oxyhq/core';
 
 const makeUser = (id: string): User => ({ id, username: id, name: { displayName: id } } as unknown as User);
 
@@ -36,6 +46,19 @@ const makeAccount = (
   ...over,
 });
 
+const IDLE_SIGN_IN: SignInFlowState = {
+  phase: 'idle',
+  authorizeCode: null,
+  qrPayload: null,
+  expiresAt: null,
+  error: null,
+  route: null,
+  routeFailed: false,
+  pushSentAt: null,
+  openedAt: null,
+  progress: 'idle',
+};
+
 const makeSnapshot = (over?: Partial<AccountDialogSnapshot>): AccountDialogSnapshot => ({
   view: 'accounts',
   accounts: [],
@@ -43,10 +66,33 @@ const makeSnapshot = (over?: Partial<AccountDialogSnapshot>): AccountDialogSnaps
   loading: false,
   error: null,
   switchingAccountId: null,
-  signIn: { phase: 'idle', authorizeCode: null, qrPayload: null, expiresAt: null, error: null },
+  signIn: IDLE_SIGN_IN,
   commonsAvailability: 'unknown',
   ...over,
 });
+
+/** An active request on the `qr` view, with a live device-flow session. */
+const requestSnapshot = (
+  signIn: Partial<SignInFlowState>,
+  over?: Partial<AccountDialogSnapshot>,
+): AccountDialogSnapshot =>
+  makeSnapshot({
+    view: 'qr',
+    signIn: {
+      ...IDLE_SIGN_IN,
+      phase: 'waiting',
+      authorizeCode: 'CODE',
+      qrPayload: 'oxycommons://approve?code=CODE',
+      expiresAt: Date.now() + 60_000,
+      progress: 'awaiting-approval',
+      ...signIn,
+    },
+    ...over,
+  });
+
+/** Every button currently on screen, in DOM order, by its visible label. */
+const buttonLabels = (): (string | null)[] =>
+  screen.getAllByRole('button').map((button) => button.textContent);
 
 let snapshot = makeSnapshot();
 const controller = {
@@ -71,10 +117,13 @@ const logout = jest.fn(async () => undefined);
 const invalidateQueries = jest.fn();
 const checkUsernameAvailability = jest.fn(async () => ({ available: true, message: '' }));
 
+/** `null` reproduces `sessionMode: 'identity'`, where no controller is built. */
+let mockController: typeof controller | null = controller;
+
 jest.mock('../../src/ui/context/OxyContext', () => ({
   __esModule: true,
   useOxy: () => ({
-    accountDialogController: controller,
+    accountDialogController: mockController,
     isAccountDialogOpen: true,
     closeAccountDialog,
     showBottomSheet,
@@ -97,9 +146,9 @@ jest.mock('../../src/ui/hooks/queries/useServicesQueries', () => ({
 }));
 
 // Resolve REAL copy from the shipped dictionaries rather than stubbing `t` to a
-// blank string: the account menu renders `t(key)` with no inline English
-// fallback, so a key that is missing (or renamed) surfaces here as its raw
-// dotted path and fails the assertions below.
+// blank string: every view renders `t(key)` with no inline English fallback, so
+// a key that is missing (or renamed) surfaces here as its raw dotted path and
+// fails the assertions below.
 jest.mock('../../src/ui/hooks/useI18n', () => {
   const { translate } = jest.requireActual('@oxyhq/core');
   return {
@@ -152,9 +201,20 @@ describe('OxyAuthChooser', () => {
   });
   beforeEach(() => {
     snapshot = makeSnapshot();
+    mockController = controller;
     jest.clearAllMocks();
     isWebBrowserMock.mockReturnValue(true);
     isOxyRpOriginMock.mockReturnValue(true);
+  });
+
+  it('renders NOTHING without a controller (sessionMode: "identity" has no account dialog)', () => {
+    mockController = null;
+    snapshot = makeSnapshot({ view: 'signin' });
+
+    const { container } = render(<OxyAuthChooser />);
+
+    expect(container.innerHTML).toBe('');
+    expect(screen.queryByTestId('continue-with-oxy')).toBeNull();
   });
 
   it('leads with the hero and collapses the switch list behind the "Switch account" row', () => {
@@ -284,21 +344,10 @@ describe('OxyAuthChooser', () => {
     expect(controller.signInWithOxy).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT auto-start on native — stays button-driven', () => {
-    isWebBrowserMock.mockReturnValue(false);
-    snapshot = makeSnapshot({ view: 'signin' });
-
-    render(<OxyAuthChooser />);
-    expect(controller.signInWithOxy).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in with Oxy' }));
-    expect(controller.signInWithOxy).toHaveBeenCalledTimes(1);
-  });
-
   it('does not re-trigger the auto-start once a flow is already in flight', () => {
     snapshot = makeSnapshot({
       view: 'signin',
-      signIn: { phase: 'waiting', authorizeCode: 'C', qrPayload: 'oxycommons://approve?code=C', expiresAt: null, error: null },
+      signIn: { ...IDLE_SIGN_IN, phase: 'waiting', authorizeCode: 'C', qrPayload: 'oxycommons://approve?code=C' },
     });
 
     render(<OxyAuthChooser />);
@@ -306,43 +355,260 @@ describe('OxyAuthChooser', () => {
     expect(controller.signInWithOxy).not.toHaveBeenCalled();
   });
 
-    it('renders the QR payload while awaiting approval', () => {
-      snapshot = makeSnapshot({
-        view: 'qr',
-        signIn: {
-          phase: 'waiting',
-          authorizeCode: 'CODE',
-          qrPayload: 'oxycommons://approve?code=CODE',
-          expiresAt: Date.now() + 60_000,
-          error: null,
-        },
-      });
+  describe('sign-in entry — one primary action', () => {
+    beforeEach(() => {
+      // Native: the entry stays button-driven (web auto-starts straight past it).
+      isWebBrowserMock.mockReturnValue(false);
+      isOxyRpOriginMock.mockReturnValue(false);
+      snapshot = makeSnapshot({ view: 'signin' });
+    });
 
+    it('renders exactly ONE primary action and no competing method buttons', () => {
       render(<OxyAuthChooser />);
+
+      // The full inventory: the one primary CTA, the subordinate account-creation
+      // link, and the disclosure trigger. Nothing else — no "Scan QR", no
+      // "Use a passkey", no "Get Commons" as co-equal buttons.
+      expect(buttonLabels()).toEqual([
+        'Continue with Oxy',
+        'New to Oxy? Create one',
+        'Having trouble?',
+      ]);
+      expect(screen.queryByTestId('scan-qr-link')).toBeNull();
+      expect(screen.queryByTestId('passkey-signin-link')).toBeNull();
+      expect(screen.queryByTestId('get-commons-link')).toBeNull();
+    });
+
+    it('starts the flow — and lets Oxy pick the route — from that one action', () => {
+      render(<OxyAuthChooser />);
+      expect(controller.signInWithOxy).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId('continue-with-oxy'));
+
+      expect(controller.signInWithOxy).toHaveBeenCalledTimes(1);
+      // The chooser never picks a route itself.
+      expect(controller.showQr).not.toHaveBeenCalled();
+    });
+
+    it('reveals the alternatives only after "Having trouble?" is opened', () => {
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+
+      expect(screen.getByTestId('scan-qr-link')).toBeTruthy();
+      expect(screen.getByTestId('get-commons-link')).toBeTruthy();
+      fireEvent.click(screen.getByTestId('scan-qr-link'));
+      expect(controller.showQr).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the passkey fallback in that disclosure on web, and never before it', () => {
+      isWebBrowserMock.mockReturnValue(true);
+      isOxyRpOriginMock.mockReturnValue(true);
+      // Web auto-start is gated on an idle flow — a live one keeps the entry up.
+      snapshot = makeSnapshot({
+        view: 'signin',
+        signIn: { ...IDLE_SIGN_IN, phase: 'waiting', authorizeCode: 'C' },
+      });
+      render(<OxyAuthChooser />);
+
+      expect(screen.queryByTestId('passkey-signin-link')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      expect(signInWithPasskey).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('active request — one surface per route', () => {
+    it('shows "Preparing request" while the route is still being resolved — never a guessed QR', () => {
+      snapshot = requestSnapshot({ route: null, progress: 'preparing', phase: 'starting' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.getByTestId('signin-progress').textContent).toBe('Preparing request');
+      // The payload exists, but presenting it before Oxy chose the route would be
+      // guessing — and would flash-then-replace once the real route lands.
+      expect(screen.queryByTestId('qrcode')).toBeNull();
+    });
+
+    it('renders the QR plate for the qr route', () => {
+      snapshot = requestSnapshot({ route: 'qr' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.getByTestId('qrcode')).toBeTruthy();
+      expect(screen.getByTestId('signin-progress').textContent).toBe(
+        'Scan with Commons on your phone',
+      );
+    });
+
+    it('renders the delivered-to-Commons surface for the await-push route — no QR', () => {
+      snapshot = requestSnapshot({ route: 'await-push', progress: 'delivered-to-commons' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.queryByTestId('qrcode')).toBeNull();
+      expect(screen.getByTestId('signin-progress').textContent).toBe(
+        'Check Commons on your phone',
+      );
+    });
+
+    it('renders the hand-off surface for the open-commons route — no QR', () => {
+      snapshot = requestSnapshot({ route: 'open-commons' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.queryByTestId('qrcode')).toBeNull();
+      expect(screen.getByTestId('signin-progress').textContent).toBe('Continue in Commons');
+    });
+
+    it('replaces the route surface with the confirmation ladder once the request is authorized', () => {
+      snapshot = requestSnapshot({
+        route: 'qr',
+        phase: 'authorized',
+        progress: 'confirming-identity',
+      });
+      render(<OxyAuthChooser />);
+
+      expect(screen.queryByTestId('qrcode')).toBeNull();
+      expect(screen.getByTestId('signin-progress').textContent).toBe('Confirming identity');
+    });
+
+    it('shows the terminal "Identity confirmed" frame', () => {
+      snapshot = requestSnapshot({ phase: 'completed', progress: 'identity-confirmed' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.getByTestId('signin-progress').textContent).toBe('Identity confirmed');
+    });
+
+    it('keeps the alternatives hidden while the chosen route is working', () => {
+      snapshot = requestSnapshot({ route: 'qr' });
+      render(<OxyAuthChooser />);
+
+      expect(buttonLabels()).toEqual(['New to Oxy? Create one', 'Having trouble?']);
+      expect(screen.queryByTestId('passkey-signin-link')).toBeNull();
+      expect(screen.queryByTestId('get-commons-link')).toBeNull();
+    });
+
+    it('advances the progress line ONLY with the snapshot — never on a timer', () => {
+      jest.useFakeTimers();
+      try {
+        let notify: (() => void) | null = null;
+        controller.subscribe.mockImplementationOnce((listener: () => void) => {
+          notify = listener;
+          return () => undefined;
+        });
+        snapshot = requestSnapshot({ route: 'await-push', progress: 'delivered-to-commons' });
+        render(<OxyAuthChooser />);
+        expect(screen.getByTestId('signin-progress').textContent).toBe(
+          'Check Commons on your phone',
+        );
+
+        // A full minute of wall clock with no new fact changes nothing.
+        act(() => {
+          jest.advanceTimersByTime(60_000);
+        });
+        expect(screen.getByTestId('signin-progress').textContent).toBe(
+          'Check Commons on your phone',
+        );
+
+        // A real signal (the approver reported `openedAt`) is what moves it.
+        snapshot = requestSnapshot({
+          route: 'await-push',
+          openedAt: '2026-07-27T10:00:00.000Z',
+          pushSentAt: '2026-07-27T09:59:00.000Z',
+          progress: 'opened-in-commons',
+        });
+        act(() => notify?.());
+        expect(screen.getByTestId('signin-progress').textContent).toBe('Opened in Commons');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('reveals the fallback affordance without a tap when the chosen route failed', () => {
+      snapshot = requestSnapshot({ route: 'open-commons', routeFailed: true });
+      render(<OxyAuthChooser />);
+
+      // No "Having trouble?" gate any more — the alternatives ARE the content.
+      expect(screen.queryByRole('button', { name: 'Having trouble?' })).toBeNull();
+      expect(screen.getByTestId('scan-qr-link')).toBeTruthy();
+      expect(screen.getByTestId('passkey-signin-link')).toBeTruthy();
+      expect(screen.getByTestId('get-commons-link')).toBeTruthy();
+    });
+
+    it('keeps the passkey path reachable after disclosure, on a first-party Oxy origin', async () => {
+      snapshot = requestSnapshot({ route: 'qr' });
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      await waitFor(() => expect(signInWithPasskey).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(closeAccountDialog).not.toHaveBeenCalled()); // onComplete is not wired without a host
+    });
+
+    it('routes the disclosed passkey link through the auth.oxy.so hub on a non-Oxy origin', () => {
+      isOxyRpOriginMock.mockReturnValue(false);
+      snapshot = requestSnapshot({ route: 'qr' });
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      expect(controller.startPasskeyHubSignIn).toHaveBeenCalledTimes(1);
+      expect(signInWithPasskey).not.toHaveBeenCalled();
+    });
+
+    it('toasts the ceremony error (never inline) when the direct passkey sign-in fails', async () => {
+      signInWithPasskey.mockRejectedValueOnce(new Error('The passkey request was cancelled.'));
+      snapshot = requestSnapshot({ route: 'qr' });
+      render(<OxyAuthChooser />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+      fireEvent.click(screen.getByTestId('passkey-signin-link'));
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('The passkey request was cancelled.'),
+      );
+      expect(screen.queryByText('The passkey request was cancelled.')).toBeNull();
+    });
+
+    it('leads with "Get Commons" — the genuine primary route — when Commons is not installed', () => {
+      isWebBrowserMock.mockReturnValue(false);
+      isOxyRpOriginMock.mockReturnValue(false);
+      snapshot = requestSnapshot({ route: 'qr' }, { commonsAvailability: 'unavailable' });
+      render(<OxyAuthChooser />);
+
+      expect(screen.getByTestId('get-commons-button')).toBeTruthy();
+      // A same-device QR would be a dead end, so it is demoted behind the
+      // disclosure rather than shown next to the acquisition CTA.
+      expect(screen.queryByTestId('qrcode')).toBeNull();
+      expect(screen.queryByTestId('show-qr-anyway-link')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Having trouble?' }));
+      fireEvent.click(screen.getByTestId('show-qr-anyway-link'));
 
       expect(screen.getByTestId('qrcode')).toBeTruthy();
     });
 
     it('toasts a sign-in device-flow failure instead of rendering inline error copy', async () => {
-      snapshot = makeSnapshot({
-        view: 'qr',
-        signIn: {
-          phase: 'error',
-          authorizeCode: null,
-          qrPayload: null,
-          expiresAt: null,
-          error: 'Sign-in was cancelled.',
-        },
+      snapshot = requestSnapshot({
+        phase: 'error',
+        authorizeCode: null,
+        qrPayload: null,
+        expiresAt: null,
+        error: 'Sign-in was cancelled.',
+        progress: 'idle',
       });
 
       render(<OxyAuthChooser />);
 
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith('Sign-in was cancelled.'),
-      );
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Sign-in was cancelled.'));
       expect(toast.error).toHaveBeenCalledTimes(1);
       expect(screen.queryByText('Sign-in was cancelled.')).toBeNull();
       expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+      // A failed request has no working primary route, so the alternatives are
+      // already revealed rather than parked behind the disclosure.
+      expect(screen.queryByRole('button', { name: 'Having trouble?' })).toBeNull();
+      expect(screen.getByTestId('passkey-signin-link')).toBeTruthy();
     });
 
     it('toasts the SAME sign-in error only once even if the controller re-notifies (deduped)', async () => {
@@ -353,15 +619,13 @@ describe('OxyAuthChooser', () => {
         notify = listener;
         return () => undefined;
       });
-      snapshot = makeSnapshot({
-        view: 'qr',
-        signIn: {
-          phase: 'error',
-          authorizeCode: null,
-          qrPayload: null,
-          expiresAt: null,
-          error: 'Sign-in was cancelled.',
-        },
+      snapshot = requestSnapshot({
+        phase: 'error',
+        authorizeCode: null,
+        qrPayload: null,
+        expiresAt: null,
+        error: 'Sign-in was cancelled.',
+        progress: 'idle',
       });
 
       render(<OxyAuthChooser />);
@@ -370,71 +634,6 @@ describe('OxyAuthChooser', () => {
       // Re-notify with the identical error phase/message — deduped, no second toast.
       act(() => notify?.());
       expect(toast.error).toHaveBeenCalledTimes(1);
-    });
-
-  describe('passkey link on the QR view', () => {
-    const qrSnapshot = (): AccountDialogSnapshot =>
-      makeSnapshot({
-        view: 'qr',
-        signIn: {
-          phase: 'waiting',
-          authorizeCode: 'CODE',
-          qrPayload: 'oxycommons://approve?code=CODE',
-          expiresAt: Date.now() + 60_000,
-          error: null,
-        },
-      });
-
-    it('offers "use the identity on this device" on a first-party Oxy origin, alongside the QR', () => {
-      snapshot = qrSnapshot();
-      render(<OxyAuthChooser />);
-
-      expect(screen.getByTestId('qrcode')).toBeTruthy();
-      expect(screen.getByTestId('passkey-signin-link')).toBeTruthy();
-    });
-
-    it('drives signInWithPasskey and completes on a successful press', async () => {
-      snapshot = qrSnapshot();
-      render(<OxyAuthChooser />);
-
-      fireEvent.click(screen.getByTestId('passkey-signin-link'));
-
-      await waitFor(() => expect(signInWithPasskey).toHaveBeenCalledTimes(1));
-      await waitFor(() => expect(closeAccountDialog).not.toHaveBeenCalled()); // onComplete is not wired without a host
-    });
-
-    it('toasts the ceremony error (never inline) when the direct passkey sign-in fails', async () => {
-      signInWithPasskey.mockRejectedValueOnce(new Error('The passkey request was cancelled.'));
-      snapshot = qrSnapshot();
-      render(<OxyAuthChooser />);
-
-      fireEvent.click(screen.getByTestId('passkey-signin-link'));
-
-      await waitFor(() =>
-        expect(toast.error).toHaveBeenCalledWith('The passkey request was cancelled.'),
-      );
-      // The QR view keeps its own state; the failure never renders inline.
-      expect(screen.queryByText('The passkey request was cancelled.')).toBeNull();
-    });
-
-    it('still offers the link on a non-Oxy origin, alongside the QR (b2 hub popup)', () => {
-      isOxyRpOriginMock.mockReturnValue(false);
-      snapshot = qrSnapshot();
-      render(<OxyAuthChooser />);
-
-      expect(screen.getByTestId('qrcode')).toBeTruthy();
-      expect(screen.getByTestId('passkey-signin-link')).toBeTruthy();
-    });
-
-    it('drives controller.startPasskeyHubSignIn (not the direct ceremony) on a non-Oxy origin', () => {
-      isOxyRpOriginMock.mockReturnValue(false);
-      snapshot = qrSnapshot();
-      render(<OxyAuthChooser />);
-
-      fireEvent.click(screen.getByTestId('passkey-signin-link'));
-
-      expect(controller.startPasskeyHubSignIn).toHaveBeenCalledTimes(1);
-      expect(signInWithPasskey).not.toHaveBeenCalled();
     });
   });
 

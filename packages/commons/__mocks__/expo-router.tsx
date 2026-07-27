@@ -20,6 +20,7 @@ export interface MockRouter {
   replace: jest.Mock;
   back: jest.Mock;
   navigate: jest.Mock;
+  canGoBack: jest.Mock;
 }
 
 const router: MockRouter = {
@@ -27,6 +28,7 @@ const router: MockRouter = {
   replace: jest.fn(),
   back: jest.fn(),
   navigate: jest.fn(),
+  canGoBack: jest.fn(() => false),
 };
 
 export function useRouter(): MockRouter {
@@ -39,4 +41,16 @@ export function usePathname(): string {
 
 export function __getMockRouter(): MockRouter {
   return router;
+}
+
+/** Route params a screen under test reads via `useLocalSearchParams()`. */
+let searchParams: Record<string, string | undefined> = {};
+
+export function useLocalSearchParams(): Record<string, string | undefined> {
+  return searchParams;
+}
+
+/** Set (or clear, with no argument) the params the next render will read. */
+export function __setMockSearchParams(next: Record<string, string | undefined> = {}): void {
+  searchParams = next;
 }

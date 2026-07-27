@@ -7,6 +7,10 @@ const QR_PLATE_BG = '#FFFFFF';
  * Shared styles for `OxyAuthChooser`'s views. Extracted from `OxyAccountDialogScreen`
  * so both the Dialog-wrapped host and any bare host (e.g. a future
  * auth.oxy.so hub page) render identically without duplicating a StyleSheet.
+ *
+ * Only what NativeWind cannot express lives here: the animated collapse, the
+ * fixed-contrast QR plate, per-account accent rings, and the small subordinate
+ * text-link rhythm every view's fallback affordances share.
  */
 export const authChooserStyles = StyleSheet.create({
   rows: {
@@ -191,5 +195,19 @@ export const authChooserStyles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     backgroundColor: QR_PLATE_BG,
+  },
+  /**
+   * The revealed "Having trouble?" alternatives — a tight stack of subordinate
+   * text links. They share `footerLink`'s rhythm, so the stack itself only has
+   * to stop them drifting apart.
+   */
+  troubleActions: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  /** The disclosure trigger, aligned with the subordinate links it reveals. */
+  troubleTrigger: {
+    alignSelf: 'center',
+    marginTop: 12,
   },
 });

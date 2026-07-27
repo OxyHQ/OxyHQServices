@@ -40,6 +40,7 @@ import {
 } from '../oauth/browserAuthTransport';
 import type { WebOAuthSignInResult } from '../oauth/types';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import { resolveDeliveryPlatform } from '../utils/deliveryPlatform';
 import { runProviderColdBoot } from '../boot/runProviderColdBoot';
 import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
 import { useAuthStore, type AuthState } from '../stores/authStore';
@@ -862,6 +863,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // popup concept there, and off-origin passkey sign-in isn't reachable
       // (Commons owns the native flow).
       openPopup: isWebBrowser() ? openPasskeyHubPopup : undefined,
+      // Which surface a sign-in starts from — a FACT only this consumer can
+      // supply (headless core never touches a platform global). It decides
+      // whether automatic delivery may take the same-device Commons deep link;
+      // without it the controller stays `'unknown'` and that route never fires.
+      platform: resolveDeliveryPlatform(),
     });
   }
   const accountDialogController = accountDialogControllerRef.current;

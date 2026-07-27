@@ -40,6 +40,13 @@ export interface DeviceInfo {
 const PRE_AUTH_USER_SCOPE = 'pre-auth';
 
 /**
+ * The bucket both User-Agent parsers fall back to when nothing matches. Callers
+ * that must not display a guess (see {@link deriveCoarseClientLabel}) compare
+ * against this instead of the bare string.
+ */
+const UNKNOWN_USER_AGENT_BUCKET = 'Unknown';
+
+/**
  * Resolve the server-side device-id salt at call time.
  *
  * Read at call time (not module load) so tests and runtime config reloads
@@ -260,6 +267,43 @@ export const generateDefaultDeviceName = (browser?: string, os?: string): string
 };
 
 /**
+ * Derive a COARSE, display-only client label (`"Chrome on Windows"`) from a
+ * request User-Agent, for approval surfaces that must tell the approver WHERE a
+ * request came from without trusting anything the requester can assert.
+ *
+ * **Privacy invariant (owner-mandated).** The output is one of the small closed
+ * set of labels composable from the buckets {@link parseUserAgentBrowser} and
+ * {@link parseUserAgentOS} recognise. The raw User-Agent is NEVER returned and
+ * never persisted, and no IP address, geolocation, or country ever enters this
+ * path (see `docs/superpowers/specs/2026-07-14-no-ip-storage-design.md`). It is
+ * deliberately too coarse to fingerprint with — do NOT widen it with versions,
+ * device models, screen data, or locale.
+ *
+ * Returns `null` — never a guessed or half-filled label — whenever no browser
+ * can be identified. Native callers (whose User-Agent is an HTTP client string,
+ * not a browser) and absent/garbage User-Agents both land there, and the UI
+ * simply omits the line.
+ */
+export function deriveCoarseClientLabel(userAgent: string | undefined | null): string | null {
+  if (typeof userAgent !== 'string') {
+    return null;
+  }
+  const ua = userAgent.trim();
+  if (!ua || ua === 'unknown') {
+    return null;
+  }
+  const browser = parseUserAgentBrowser(ua);
+  // No recognisable browser → native client or junk UA. Never invent a label.
+  if (browser === UNKNOWN_USER_AGENT_BUCKET) {
+    return null;
+  }
+  const os = parseUserAgentOS(ua);
+  // A known browser on an unrecognised platform is still useful ("Firefox"),
+  // and is strictly less specific than the two-part label — never "X on Unknown".
+  return os === UNKNOWN_USER_AGENT_BUCKET ? browser : generateDefaultDeviceName(browser, os);
+}
+
+/**
  * Find existing device ID for a device fingerprint
  * This helps reuse device IDs for the same physical device
  */
@@ -443,16 +487,32 @@ function parseUserAgentBrowser(userAgent: string): string {
   if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return 'Safari';
   if (userAgent.includes('Edge')) return 'Edge';
   if (userAgent.includes('Opera')) return 'Opera';
-  return 'Unknown';
+  return UNKNOWN_USER_AGENT_BUCKET;
 }
 
+/**
+ * ORDER IS SIGNIFICANT. Mobile platforms are checked BEFORE the desktop
+ * platform whose token their User-Agent also contains, because both nest:
+ * every iPhone/iPad UA carries `like Mac OS X`, and every Android UA carries
+ * `Linux`. Checking desktop first reported an iPhone as macOS and an Android
+ * phone as Linux — a wrong label, not merely a coarse one, on surfaces (device
+ * lists, the sign-in approval screen) where the user is being asked to
+ * recognise their own device.
+ */
 function parseUserAgentOS(userAgent: string): string {
   if (userAgent.includes('Windows')) return 'Windows';
+  if (
+    userAgent.includes('iPhone') ||
+    userAgent.includes('iPad') ||
+    userAgent.includes('iPod') ||
+    userAgent.includes('iOS')
+  ) {
+    return 'iOS';
+  }
+  if (userAgent.includes('Android')) return 'Android';
   if (userAgent.includes('Mac OS')) return 'macOS';
   if (userAgent.includes('Linux')) return 'Linux';
-  if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
-  return 'Unknown';
+  return UNKNOWN_USER_AGENT_BUCKET;
 }
 
 function parseDeviceType(userAgent: string): string {

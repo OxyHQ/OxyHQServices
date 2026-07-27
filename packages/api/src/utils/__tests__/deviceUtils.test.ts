@@ -22,6 +22,7 @@ jest.mock('../userTransform', () => ({ formatUserResponse: jest.fn() }));
 import crypto from 'crypto';
 import type { Request } from 'express';
 import {
+  deriveCoarseClientLabel,
   deriveStableDeviceId,
   deriveServiceDeviceId,
   extractDeviceInfo,
@@ -223,6 +224,82 @@ describe('deriveServiceDeviceId', () => {
   it('THROWS (fail-closed) when DEVICE_ID_SALT is empty', () => {
     process.env.DEVICE_ID_SALT = '';
     expect(() => deriveServiceDeviceId('user-1', RP_A)).toThrow(/DEVICE_ID_SALT/);
+  });
+});
+
+/**
+ * deviceUtils — `deriveCoarseClientLabel` tests (issue #691).
+ *
+ * The approval screen's "where did this come from" line. The label is COARSE by
+ * design: a browser bucket plus an OS bucket, nothing else. These tests pin the
+ * two properties that make it safe to store and display — the raw User-Agent
+ * never survives the derivation, and anything unidentifiable degrades to `null`
+ * instead of a guessed label.
+ */
+describe('deriveCoarseClientLabel', () => {
+  it.each([
+    [
+      'Chrome on Windows',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.127 Safari/537.36',
+    ],
+    [
+      'Firefox on macOS',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0',
+    ],
+    [
+      'Safari on iOS',
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    ],
+    ['Firefox on Linux', 'Mozilla/5.0 (X11; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0'],
+    [
+      // Android UAs also contain "Linux"; the mobile platform must win.
+      'Chrome on Android',
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+    ],
+  ])('derives %s', (expected, userAgent) => {
+    expect(deriveCoarseClientLabel(userAgent)).toBe(expected);
+  });
+
+  it('never leaks the raw User-Agent or any version detail into the label', () => {
+    const userAgent =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.127 Safari/537.36';
+    const label = deriveCoarseClientLabel(userAgent);
+
+    expect(label).toBe('Chrome on Windows');
+    expect(label).not.toContain('126.0.6478.127');
+    expect(label).not.toContain('AppleWebKit');
+    expect(label).not.toContain('Win64');
+    expect((label ?? '').length).toBeLessThanOrEqual(64);
+  });
+
+  it('drops the platform half rather than labelling it "Unknown"', () => {
+    // A recognised browser on an unrecognised platform is still useful on its
+    // own; "Chrome on Unknown" would be a junk label.
+    const label = deriveCoarseClientLabel('Mozilla/5.0 (SomeFuturePlatform) Chrome/200.0');
+    expect(label).toBe('Chrome');
+  });
+
+  it.each([
+    ['a native okhttp client (React Native / Android)', 'okhttp/4.12.0'],
+    ['a native iOS URLSession client', 'MyApp/1.0 CFNetwork/1494.0.7 Darwin/23.4.0'],
+    ['a command-line HTTP client', 'curl/8.4.0'],
+    ['junk', '!!!! 12345 ????'],
+    ['a platform with no identifiable browser', 'SomeBot/1.0 (Windows NT 10.0)'],
+    ['the literal "unknown" placeholder', 'unknown'],
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+    ['undefined', undefined],
+    ['null', null],
+  ])('returns null for %s (never invents a label)', (_label, userAgent) => {
+    expect(deriveCoarseClientLabel(userAgent)).toBeNull();
+  });
+
+  it('never derives anything from an IP, country, or language header value', () => {
+    // The derivation reads ONE input — the User-Agent. Values that would be
+    // network/geo signals are not browser strings and yield nothing.
+    expect(deriveCoarseClientLabel('203.0.113.7')).toBeNull();
+    expect(deriveCoarseClientLabel('ES')).toBeNull();
+    expect(deriveCoarseClientLabel('en-US,en;q=0.9')).toBeNull();
   });
 });
 

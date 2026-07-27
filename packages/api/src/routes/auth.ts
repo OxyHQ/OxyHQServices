@@ -62,6 +62,8 @@ import {
   authorizeSessionBodySchema,
   authorizeCodeParams,
   authSessionAuthorizeSignedSchema,
+  authSessionDenySchema,
+  type AuthSessionDenyReason,
   authSessionClaimSchema,
   serviceTokenSchema,
   oauthAuthorizeSchema,
@@ -72,6 +74,7 @@ import {
 } from '../schemas/auth.schemas';
 import { AppGrant } from '../models/AppGrant';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
+import { deriveCoarseClientLabel } from '../utils/deviceUtils';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
 import { formatUserNameResponse } from '../utils/displayName';
@@ -677,6 +680,18 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     !!boundOrigin &&
     applicationAllowsOrigin(resolvedApp, boundOrigin);
 
+  // COARSE requester descriptor for the approval screen ("Chrome on Windows"),
+  // so the approver can see WHERE the request came from. It is derived
+  // SERVER-side from the request's own User-Agent: the QR / deep-link payload is
+  // requester-controlled and must never be a display source. Native callers have
+  // no browser context at all, so they persist `null` and the approval UI omits
+  // the line instead of inventing one. The label is the entire descriptor — no
+  // User-Agent string, no IP, no geolocation is captured here or anywhere on
+  // this path (platform-wide no-IP-at-rest invariant).
+  const requesterLabel = hasBrowserContext(req)
+    ? deriveCoarseClientLabel(req.headers['user-agent'])
+    : null;
+
   // OAuth binding (optional). When present this request stops being a device
   // sign-in and becomes an OAuth authorization request that finalizes into a
   // single-use AuthCode. The redirect URI is validated against the SAME exact,
@@ -733,6 +748,7 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     authorizeCode,
     boundOrigin: boundOrigin ?? null,
     originVerified,
+    requesterLabel,
     challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
@@ -1427,6 +1443,12 @@ router.get(
       // session NOT proven to originate from a trusted app's own registered
       // origin), Commons warns the approver that the source is unverifiable.
       originVerified: authSession.originVerified ?? false,
+      // COARSE, display-only requester label ("Chrome on Windows"), captured
+      // server-side at create time, or `null` (native callers, unidentifiable
+      // User-Agents, rows that predate the field). This is the ONLY requester
+      // descriptor this endpoint exposes: never the raw User-Agent, never an IP
+      // or location, never the originating deviceId.
+      requesterLabel: authSession.requesterLabel ?? null,
       // What approving this request does. Legacy rows read as a device sign-in.
       purpose: authSession.purpose ?? 'device_sign_in',
       subjectAccount,
@@ -1605,6 +1627,16 @@ router.post(
   }),
 );
 
+// Public denial keyed on the PUBLIC authorizeCode. Same tight budget as its
+// approval siblings: a legitimate flow denies once, and the cap blunts brute
+// force against the authorizeCode space through this endpoint — an unlimited
+// denial route is an unauthenticated oracle AND a cancellation amplifier.
+const authSessionDenyLimiter = rateLimit({
+  prefix: 'rl:auth:session-deny:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
 /**
  * POST /auth/session/deny/:authorizeCode
  *
@@ -1612,12 +1644,21 @@ router.post(
  * `sessionToken`, so it cannot use `/session/cancel/:sessionToken`; it cancels
  * by the public `authorizeCode` instead. Only a PENDING session can be denied
  * (so a knower of the code cannot cancel an already-authorized session).
+ *
+ * The OPTIONAL `reason` comes from the closed `AUTH_SESSION_DENY_REASONS` set —
+ * this endpoint is unauthenticated, so free-form text is rejected at the edge
+ * rather than persisted. Recording it makes "This wasn't me" (`not_me`) a
+ * distinguishable, honest record instead of an ordinary cancel.
  */
 router.post(
   '/session/deny/:authorizeCode',
-  validate({ params: authorizeCodeParams }),
+  authSessionDenyLimiter,
+  validate({ params: authorizeCodeParams, body: authSessionDenySchema }),
   asyncHandler(async (req, res) => {
     const { authorizeCode } = req.params;
+    // Whitelisted single field off the VALIDATED body — never a spread of
+    // `req.body` onto the document.
+    const { reason } = req.body as { reason?: AuthSessionDenyReason };
 
     const authSession = await AuthSession.findOne({ authorizeCode });
     if (!authSession) {
@@ -1626,7 +1667,25 @@ router.post(
 
     if (authSession.status === 'pending') {
       authSession.status = 'cancelled';
+      if (reason) {
+        authSession.deniedReason = reason;
+      }
       await authSession.save();
+
+      if (reason === 'not_me') {
+        // The "flag it as suspicious" half of the contract: someone was shown a
+        // sign-in request they say they never started. Recorded as a coarse,
+        // non-identifying fact — application + truncated approval handle, no
+        // User-Agent, no IP, no location.
+        logger.warn('Auth session denied as not-me', {
+          authorizeCode: `${authorizeCode.substring(0, 8)}...`,
+          applicationId: authSession.applicationId?.toString(),
+        });
+      }
+
+      // The waiting originator learns only that it was cancelled. The reason is
+      // the approver's report about the requester and is deliberately NOT
+      // broadcast back to it — a hostile RP must not learn it was suspected.
       emitAuthSessionUpdate(authSession.sessionToken, { status: 'cancelled' });
     }
 

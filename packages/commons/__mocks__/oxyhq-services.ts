@@ -7,7 +7,7 @@
  * via `__setOnlineStatus(...)`.
  */
 
-import { useEffect, useSyncExternalStore } from 'react';
+import { createElement, useEffect, useSyncExternalStore, type ReactElement } from 'react';
 
 interface MockOxyServices {
   updateProfile?: jest.Mock;
@@ -50,7 +50,14 @@ interface MockSessionClient {
 }
 
 interface MockOxyState {
-  user: { id?: string; username?: string; languages?: string[]; avatar?: string | null } | null;
+  user: {
+    id?: string;
+    username?: string;
+    /** Structured name; `displayName` is optional, exactly as the SDK types it. */
+    name?: { displayName?: string };
+    languages?: string[];
+    avatar?: string | null;
+  } | null;
   isAuthenticated: boolean;
   isAuthResolved: boolean;
   /**
@@ -178,6 +185,10 @@ export const handleAuthError = jest.fn(
 
 /** Hydration hook — a no-op in tests. */
 export const useCurrentUser = (): { data: undefined } => ({ data: undefined });
+
+/** Brand mark — a marker element; the real SVG needs the native renderer. */
+export const LogoIcon = (): ReactElement =>
+  createElement('span', { 'data-testid': 'oxy-logo-icon' });
 
 /* -------------------------------------------------------------------------- */
 /*  Online status                                                             */

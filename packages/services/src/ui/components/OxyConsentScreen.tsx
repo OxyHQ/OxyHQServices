@@ -76,13 +76,20 @@ export interface OxyConsentScreenProps {
 /**
  * Friendly-label i18n keys for the scopes the platform issues. Standard OIDC
  * scopes (`openid` / `profile` / `email` / `offline_access`) and the Oxy scope
- * set both map to a curated `consent.scopes.*` sentence. Unknown scopes fall
- * back to the raw scope string so the user always sees something concrete.
+ * set — including the `<resource>:read` ids the API actually issues
+ * (`profile:read`, `email:read`) — map to a curated `consent.scopes.*` sentence
+ * that already ships in `@oxyhq/core` for all 11 locales. This is the SAME
+ * vocabulary the Commons approval screen uses
+ * (`packages/commons/lib/commons-signin/scope-summary.ts`), so one permission
+ * reads identically wherever it is granted. Unknown scopes fall back to the raw
+ * scope string so the user always sees something concrete.
  */
-const SCOPE_LABEL_KEYS: Record<string, string> = {
+const SCOPE_LABEL_KEYS: Readonly<Record<string, string>> = {
   openid: 'consent.scopes.openid',
   profile: 'consent.scopes.profile',
+  'profile:read': 'consent.scopes.profile',
   email: 'consent.scopes.email',
+  'email:read': 'consent.scopes.email',
   offline_access: 'consent.scopes.offlineAccess',
   'user:read': 'consent.scopes.userRead',
   'files:read': 'consent.scopes.filesRead',
@@ -96,9 +103,47 @@ const SCOPE_LABEL_KEYS: Record<string, string> = {
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
-function scopeLabel(scope: string, t: Translate): string {
-  const key = SCOPE_LABEL_KEYS[scope];
-  return key ? t(key) : scope;
+/** One permission row of the "Permissions requested" list. */
+interface PermissionRow {
+  /** Stable list key / testID suffix — the first scope that produced this row. */
+  scope: string;
+  /** Shared `consent.scopes.*` key, absent when this build has no sentence for the scope. */
+  labelKey?: string;
+}
+
+/**
+ * Resolve the requested scopes into the rows the user actually reads.
+ *
+ * De-duplicates by RESOLVED MEANING rather than by raw string — `profile` and
+ * `profile:read` are one permission and must not render as two identical rows —
+ * while preserving the server's ordering. An unknown scope is never dropped: it
+ * keeps its own row and renders verbatim, so a permission this build has no
+ * sentence for is still shown to the person granting it.
+ */
+function resolvePermissionRows(scopes: readonly string[]): PermissionRow[] {
+  const rows: PermissionRow[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of scopes) {
+    // The caller resolves scopes from the network; a non-string entry must not
+    // take the whole consent surface down with a `.trim()` on it.
+    if (typeof raw !== 'string') continue;
+    const scope = raw.trim();
+    if (!scope) continue;
+
+    const labelKey = SCOPE_LABEL_KEYS[scope];
+    const identity = labelKey ?? `raw:${scope}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+
+    rows.push(labelKey ? { scope, labelKey } : { scope });
+  }
+
+  return rows;
+}
+
+function permissionRowLabel(row: PermissionRow, t: Translate): string {
+  return row.labelKey ? t(row.labelKey) : row.scope;
 }
 
 /** A tappable legal/website link that opens the URL in the platform browser. */
@@ -150,9 +195,7 @@ export function OxyConsentScreen({
   const theme = useTheme();
   const { t } = useI18n();
   const appName = application.name;
-  // Scopes key the permission rows — a duplicate in the request would mean
-  // duplicate React keys and redundant rows.
-  const uniqueScopes = [...new Set(scopes)];
+  const permissionRows = resolvePermissionRows(scopes);
 
   const provenanceLabel = application.isOfficial
     ? t('consent.provenance.official')
@@ -217,12 +260,12 @@ export function OxyConsentScreen({
           {t('consent.permissions.title')}
         </Text>
         <View style={[styles.card, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}>
-          {uniqueScopes.length > 0 ? (
-            uniqueScopes.map((scope) => (
-              <View key={scope} testID={`consent-scope-${scope}`} style={styles.row}>
+          {permissionRows.length > 0 ? (
+            permissionRows.map((row) => (
+              <View key={row.scope} testID={`consent-scope-${row.scope}`} style={styles.row}>
                 <View style={[styles.bullet, { backgroundColor: theme.colors.primary }]} />
                 <Text style={[styles.rowText, { color: theme.colors.text }]}>
-                  {scopeLabel(scope, t)}
+                  {permissionRowLabel(row, t)}
                 </Text>
               </View>
             ))

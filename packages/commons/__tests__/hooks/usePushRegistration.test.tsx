@@ -12,6 +12,11 @@ jest.mock('@/lib/notifications/device-notifications', () => ({
   getExpoPushToken: () => mockGetExpoPushToken(),
   pushTokenPlatform: () => 'android',
   requestNotificationPermission: () => Promise.resolve(false),
+  // The stand-in must expose the WHOLE adapter surface: the orchestration
+  // awaits the Android channel step before it ever asks for a token, so a
+  // missing export here aborts registration and the failure reads as "the
+  // hook stopped registering" rather than "the mock is incomplete".
+  ensureAuthApprovalNotificationChannel: () => Promise.resolve(),
 }));
 
 // Imported AFTER jest.mock so the hook sees the patched adapter.

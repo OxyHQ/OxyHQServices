@@ -59,6 +59,7 @@ export type {
     CommonsApprovalInfo,
     CommonsApprovalSubjectAccount,
     CommonsSignInActionResult,
+    CommonsDenyReason,
     CommonsOAuthFinalizeResult,
     CommonsDeliveryResult,
 } from './mixins/OxyServices.auth';
@@ -686,6 +687,7 @@ export type {
     PopupWindowHandle,
     SignInFlowPhase,
     SignInFlowState,
+    SignInProgress,
 } from './session/accountDialogController';
 
 // ---------------------------------------------------------------------------
