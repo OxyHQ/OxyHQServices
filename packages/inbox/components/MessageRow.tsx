@@ -325,7 +325,7 @@ function MessageRowInner({
             {senderName}
           </Text>
           {(message.threadCount ?? 0) > 1 && (
-            <Badge variant="subtle" color="default" content={message.threadCount!} size="small" />
+            <Badge variant="subtle" color="default" content={message.threadCount ?? 0} size="small" />
           )}
 
           {showRowActions && rowActions.length > 0 ? (
