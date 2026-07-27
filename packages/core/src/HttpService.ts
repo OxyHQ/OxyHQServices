@@ -143,11 +143,31 @@ const CSRF_FETCH_RETRY_DELAY_MS = 500;
 
 /**
  * Cooldown (ms) applied after a failed access-token refresh before another
- * refresh is attempted. Prevents a refresh storm (and server hammering) when
+ * refresh is attempted while the CURRENT token is still valid (a proactive,
+ * near-expiry refresh). Prevents a refresh storm (and server hammering) when
  * the auth refresh handler is failing — every in-flight request that
- * hits a 401 would otherwise trigger its own refresh.
+ * hits a 401 would otherwise trigger its own refresh. A still-valid token can
+ * afford to wait this out; the request keeps carrying it in the meantime.
  */
 const TOKEN_REFRESH_COOLDOWN_MS = 15000;
+
+/**
+ * Cooldown (ms) applied after a failed refresh when the CURRENT access token is
+ * already past its `exp`. Much shorter than {@link TOKEN_REFRESH_COOLDOWN_MS}:
+ * an expired token is UNUSABLE, so the client must re-mint as soon as the mint
+ * endpoint is reachable again (e.g. a few seconds after an ECS rolling-deploy
+ * blip drains/restarts a task) instead of waiting out the full proactive
+ * cooldown while every request forwards or omits a stale bearer → server 401.
+ *
+ * Still NON-ZERO on purpose: it bounds the request-driven retry rate to at most
+ * one attempt per this interval so a PROLONGED outage cannot become a tight
+ * network storm. Combined with the process-wide single-flight below (concurrent
+ * requests coalesce to one in-flight mint) and the refresh handler's own
+ * terminal-state handling (a genuinely revoked session clears its device
+ * credential and stops issuing network mints), this recovers a transient blip
+ * ~15× faster without weakening the storm guard.
+ */
+const EXPIRED_TOKEN_REFRESH_COOLDOWN_MS = 1000;
 
 /**
  * Lead time (seconds) before access-token expiry at which a preflight refresh
@@ -247,7 +267,15 @@ export class HttpService {
   private logger: SimpleLogger;
   private config: OxyConfig;
   private tokenRefreshPromise: Promise<string | null> | null = null;
-  private tokenRefreshCooldownUntil = 0;
+  /**
+   * Epoch ms of the last FAILED refresh (0 = none since the last success). The
+   * post-failure cooldown is measured from here; its length depends on whether
+   * the current token is still valid ({@link TOKEN_REFRESH_COOLDOWN_MS}) or
+   * already expired ({@link EXPIRED_TOKEN_REFRESH_COOLDOWN_MS}), so an expired
+   * token recovers promptly the instant it crosses `exp` — without storing a
+   * fixed deadline that could not shrink once the token expired mid-cooldown.
+   */
+  private lastRefreshFailureAt = 0;
   private authRefreshHandler: AuthRefreshHandler | null = null;
   private accessTokenProvider: AccessTokenProvider | null = null;
   private deviceSecretMintInFlight: Promise<DeviceSecretMintOutcome> | null = null;
@@ -1058,7 +1086,16 @@ export class HttpService {
       return null;
     }
 
-    if (Date.now() < this.tokenRefreshCooldownUntil) {
+    // Post-failure cooldown. A genuinely EXPIRED current token uses a much
+    // shorter cooldown than a still-valid (proactive, near-expiry) one: an
+    // expired token is unusable, so re-mint as soon as the endpoint is reachable
+    // again rather than waiting out the full window while requests carry a stale
+    // bearer. Both cooldowns are measured from the last failure, so the moment a
+    // still-valid token crosses `exp` mid-cooldown the shorter window applies.
+    const cooldownMs = this.isAccessTokenExpired()
+      ? EXPIRED_TOKEN_REFRESH_COOLDOWN_MS
+      : TOKEN_REFRESH_COOLDOWN_MS;
+    if (Date.now() - this.lastRefreshFailureAt < cooldownMs) {
       return null;
     }
 
@@ -1066,19 +1103,22 @@ export class HttpService {
       this.tokenRefreshPromise = this.authRefreshHandler(reason)
         .then((newToken) => {
           if (!newToken) {
-            this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
+            this.lastRefreshFailureAt = Date.now();
             return null;
           }
           if (this.tokenStore.getAccessToken() !== newToken) {
             this.tokenStore.setTokens(newToken);
             this.notifyTokenChange();
           }
+          // A success clears the failure timestamp so the next refresh is never
+          // throttled by a stale cooldown.
+          this.lastRefreshFailureAt = 0;
           this.logger.debug('Token refreshed via the auth refresh handler');
           return newToken;
         })
         .catch((error) => {
           this.logger.warn('Token refresh failed:', error);
-          this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
+          this.lastRefreshFailureAt = Date.now();
           return null;
         })
         .finally(() => {
@@ -1087,6 +1127,27 @@ export class HttpService {
     }
 
     return this.tokenRefreshPromise;
+  }
+
+  /**
+   * Whether the CURRENT stored access token is already past its `exp`. Drives
+   * the shorter post-failure refresh cooldown ({@link EXPIRED_TOKEN_REFRESH_COOLDOWN_MS}):
+   * a still-valid (near-expiry) token can wait out the full cooldown, but an
+   * expired one must re-mint promptly. Returns `false` for an absent or
+   * opaque/no-`exp` token — no proof it is expired, so keep the conservative
+   * (longer) cooldown and avoid an unnecessary retry loop.
+   */
+  private isAccessTokenExpired(): boolean {
+    const token = this.tokenStore.getAccessToken();
+    if (!token) {
+      return false;
+    }
+    try {
+      const decoded = jwtDecode<JwtPayload>(token);
+      return typeof decoded.exp === 'number' && decoded.exp <= Math.floor(Date.now() / 1000);
+    } catch {
+      return false;
+    }
   }
 
   /**
