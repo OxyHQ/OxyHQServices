@@ -6,6 +6,12 @@ type PostLoginRedirectParams = {
     codeChallenge?: string
     codeChallengeMethod?: string
     scope?: string
+    /**
+     * `response_mode=web_message` (popup sign-in). Carried across the sign-in
+     * hop so a popup that had to authenticate still delivers its result to the
+     * opener instead of navigating itself to the relying party.
+     */
+    responseMode?: string
 }
 
 /**
@@ -28,6 +34,7 @@ export function buildPostLoginRedirect({
     codeChallenge,
     codeChallengeMethod,
     scope,
+    responseMode,
 }: PostLoginRedirectParams): string {
     const nextUrl = new URL("/authorize", window.location.origin)
     if (sessionToken) nextUrl.searchParams.set("token", sessionToken)
@@ -37,6 +44,7 @@ export function buildPostLoginRedirect({
     if (codeChallenge) nextUrl.searchParams.set("code_challenge", codeChallenge)
     if (codeChallengeMethod) nextUrl.searchParams.set("code_challenge_method", codeChallengeMethod)
     if (scope) nextUrl.searchParams.set("scope", scope)
+    if (responseMode) nextUrl.searchParams.set("response_mode", responseMode)
     if (!sessionToken && !redirectUri && !clientId) {
         nextUrl.searchParams.set(
             "error",

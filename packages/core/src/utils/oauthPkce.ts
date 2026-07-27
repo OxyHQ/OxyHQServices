@@ -66,6 +66,18 @@ export interface BuildOAuthAuthorizeUrlParams {
    * (no UI when the IdP hub already has a session + grant).
    */
   prompt?: 'none' | 'login' | 'consent';
+  /**
+   * How the IdP should deliver the authorization response. Omitted (the
+   * default) means the ordinary top-level redirect back to `redirectUri`.
+   *
+   * `web_message` asks the IdP to `postMessage` the result to its opener
+   * instead, so a popup sign-in never navigates the relying party's tab. It is
+   * a REQUEST, not a guarantee: an IdP with no opener still redirects, which is
+   * why the popup transport must handle both outcomes. Only the authorization
+   * code, the `state`, and a typed OAuth error ever cross that channel — never
+   * a token, device secret, or the PKCE verifier, which the opener keeps.
+   */
+  responseMode?: 'web_message';
 }
 
 /**
@@ -191,6 +203,9 @@ export function buildOAuthAuthorizeUrl(params: BuildOAuthAuthorizeUrlParams): st
   url.searchParams.set('code_challenge_method', 'S256');
   if (params.prompt) {
     url.searchParams.set('prompt', params.prompt);
+  }
+  if (params.responseMode) {
+    url.searchParams.set('response_mode', params.responseMode);
   }
 
   return url.toString();

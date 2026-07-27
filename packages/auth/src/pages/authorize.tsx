@@ -25,6 +25,7 @@ import {
   getAvatarUrl,
 } from "@/lib/oxy-api-client";
 import { safeRedirectUrl } from "@/lib/oauth-redirect";
+import { deliverOAuthResult, type OAuthResult } from "@/lib/oauth-web-message";
 
 /**
  * The requesting-application + auth-request resolution state. The signed-in
@@ -39,8 +40,20 @@ type AuthorizeData = {
   error: string | null;
 };
 
+/**
+ * Terminal state of a popup ("web message") delivery: the result has already
+ * been posted to the opener and this window asked to close.
+ */
+type RelayOutcome = "approved" | "denied" | "failed";
+
 /** Error shown when the requesting application cannot be resolved. */
 const UNRESOLVED_APP_ERROR = "Unable to identify the requesting application.";
+
+/** Which terminal message a delivered popup result should leave on screen. */
+function relayOutcomeFor(result: OAuthResult): RelayOutcome {
+  if (result.kind === "code") return "approved";
+  return result.error === "access_denied" ? "denied" : "failed";
+}
 
 /**
  * Resolve a `client_id` to its public application identity via the unauthenticated
@@ -98,6 +111,11 @@ export function AuthorizePage() {
   const prompt = searchParams.get("prompt");
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
+  // Popup sign-in: `response_mode=web_message` asks us to post the result to
+  // `window.opener` instead of navigating this window to `redirect_uri`. It is a
+  // request, not a guarantee — with no opener we still redirect (see
+  // `lib/oauth-web-message.ts`).
+  const responseMode = searchParams.get("response_mode");
 
   // Device-first SDK: the signed-in user + active bearer + device account set.
   // The bearer for the OAuth authorize call is ALWAYS the SDK's active-account
@@ -145,22 +163,48 @@ export function AuthorizePage() {
   >(null);
   // The auto-approve probe runs at most once per mount for the active account.
   const autoApproveAttemptedRef = useRef(false);
+  // Set once a result has been posted to the opener in popup mode. The window is
+  // asked to close immediately after the post, so this only ever becomes visible
+  // when the browser refuses that close — it keeps the user from staring at a
+  // dead consent screen.
+  const [relayOutcome, setRelayOutcome] = useState<RelayOutcome | null>(null);
 
   const isSilentPrompt = prompt === "none";
 
+  /**
+   * Hand an authorization result (code or OAuth error) to the relying party.
+   * Popup mode (`response_mode=web_message` + a real opener) posts it to the
+   * opener at the redirect URI's exact origin and closes this window; every
+   * other request redirects to `redirect_uri` as before. The caller must not
+   * navigate afterwards — delivery is complete either way.
+   */
+  function deliverToRelyingParty(
+    result: OAuthResult,
+    safeRedirect: string
+  ): void {
+    const delivery = deliverOAuthResult({
+      result,
+      safeRedirectUri: safeRedirect,
+      responseMode,
+      window,
+    });
+    if (delivery.mode === "web_message") {
+      setRelayOutcome(relayOutcomeFor(result));
+    }
+  }
+
   // OAuth `prompt=none`: silent cross-origin restore — never show login UI.
-  // Fail with standard OAuth errors back to the RP redirect_uri.
-  function redirectOAuthError(errorCode: string): void {
+  // Fail with standard OAuth errors back to the RP (posted to the opener in
+  // popup mode, otherwise redirected to `redirect_uri`). With no usable redirect
+  // target the error is surfaced on this page instead.
+  function deliverOAuthError(errorCode: string): void {
     setAutoApproving(false);
     const safeRedirect = safeRedirectUrl(redirectUri);
     if (!safeRedirect) {
       setData((prev) => ({ ...prev, error: errorCode }));
       return;
     }
-    const url = new URL(safeRedirect);
-    url.searchParams.set("error", errorCode);
-    if (state) url.searchParams.set("state", state);
-    window.location.href = url.toString();
+    deliverToRelyingParty({ kind: "error", error: errorCode, state }, safeRedirect);
   }
 
   // Silent restore: when prompt=none and the IdP has no session, bounce
@@ -169,7 +213,7 @@ export function AuthorizePage() {
   useEffect(() => {
     if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
     if (isAuthenticated || currentSessionId || deviceAccounts.length > 0) return;
-    redirectOAuthError("login_required");
+    deliverOAuthError("login_required");
   }, [
     isSilentPrompt,
     isAuthResolved,
@@ -186,11 +230,11 @@ export function AuthorizePage() {
     if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
     if (!isAuthenticated && !currentSessionId && deviceAccounts.length === 0) return;
     if (!clientId) {
-      redirectOAuthError("invalid_request");
+      deliverOAuthError("invalid_request");
       return;
     }
     if (!safeRedirectUrl(redirectUri)) {
-      redirectOAuthError("invalid_request");
+      deliverOAuthError("invalid_request");
     }
   }, [
     isSilentPrompt,
@@ -221,12 +265,12 @@ export function AuthorizePage() {
     void (async () => {
       const token = oxyServices.getAccessToken();
       if (!token) {
-        redirectOAuthError("login_required");
+        deliverOAuthError("login_required");
         return;
       }
       const safeRedirect = safeRedirectUrl(redirectUri);
       if (!safeRedirect) {
-        redirectOAuthError("invalid_request");
+        deliverOAuthError("invalid_request");
         return;
       }
 
@@ -247,22 +291,22 @@ export function AuthorizePage() {
         if (!response.ok) {
           setAutoApproving(false);
           if (response.status === 403 || response.status === 400) {
-            redirectOAuthError("invalid_request");
+            deliverOAuthError("invalid_request");
           } else {
-            redirectOAuthError("server_error");
+            deliverOAuthError("server_error");
           }
           return;
         }
         body = await response.json().catch(() => null);
       } catch {
         setAutoApproving(false);
-        redirectOAuthError("server_error");
+        deliverOAuthError("server_error");
         return;
       }
 
       if (consentRequiredFromBody(body)) {
         setAutoApproving(false);
-        redirectOAuthError("consent_required");
+        deliverOAuthError("consent_required");
         return;
       }
 
@@ -423,6 +467,7 @@ export function AuthorizePage() {
         code_challenge: codeChallenge || undefined,
         code_challenge_method: codeChallengeMethod || undefined,
         scope: scope || undefined,
+        response_mode: responseMode || undefined,
         login_hint: hint || undefined,
       })
     );
@@ -504,7 +549,7 @@ export function AuthorizePage() {
 
     if (codeResponse.status === 401) {
       if (isSilentPrompt) {
-        redirectOAuthError("login_required");
+        deliverOAuthError("login_required");
         return;
       }
       navigate(
@@ -516,6 +561,7 @@ export function AuthorizePage() {
           code_challenge: codeChallenge || undefined,
           code_challenge_method: codeChallengeMethod || undefined,
           scope: scope || undefined,
+          response_mode: responseMode || undefined,
           error: "Session expired. Please sign in again.",
         })
       );
@@ -528,7 +574,7 @@ export function AuthorizePage() {
           codeResponse.status === 403 || codeResponse.status === 400
             ? "invalid_request"
             : "server_error";
-        redirectOAuthError(oauthError);
+        deliverOAuthError(oauthError);
         return;
       }
       const errPayload = await codeResponse.json().catch(() => ({}));
@@ -545,11 +591,24 @@ export function AuthorizePage() {
     }
 
     const codeResult = await codeResponse.json();
-    const codeData = codeResult.data || codeResult;
-    const url = new URL(safeRedirect);
-    url.searchParams.set("code", codeData.code);
-    if (state) url.searchParams.set("state", state);
-    window.location.href = url.toString();
+    const codeData = codeResult?.data ?? codeResult;
+    const code: unknown = codeData?.code;
+    if (typeof code !== "string" || code.length === 0) {
+      // A 2xx without a code violates the authorize contract — fail closed
+      // rather than handing the relying party an empty credential.
+      if (isSilentPrompt) {
+        deliverOAuthError("server_error");
+        return;
+      }
+      setAutoApproving(false);
+      setSubmitting(false);
+      setData((prev) => ({ ...prev, error: "Authorization failed" }));
+      return;
+    }
+
+    // Popup mode posts `{code, state}` to the opener and closes this window;
+    // every other request redirects to `redirect_uri?code=&state=` as before.
+    deliverToRelyingParty({ kind: "code", code, state }, safeRedirect);
   }
 
   // Ask the server whether the OAuth consent screen must be shown for this
@@ -633,10 +692,13 @@ export function AuthorizePage() {
         }
       }
       if (safeRedirect) {
-        const url = new URL(safeRedirect);
-        url.searchParams.set("error", "access_denied");
-        if (state) url.searchParams.set("state", state);
-        window.location.href = url.toString();
+        // Same delivery contract as the approve path: popup mode posts
+        // `access_denied` to the opener and closes; otherwise we redirect to
+        // `redirect_uri?error=access_denied`.
+        deliverToRelyingParty(
+          { kind: "error", error: "access_denied", state },
+          safeRedirect
+        );
       } else {
         navigate(
           buildRelativeUrl("/authorize", {
@@ -708,6 +770,7 @@ export function AuthorizePage() {
             code_challenge: codeChallenge || undefined,
             code_challenge_method: codeChallengeMethod || undefined,
             scope: scope || undefined,
+            response_mode: responseMode || undefined,
             error: "Session expired. Please sign in again.",
           })
         );
@@ -740,6 +803,27 @@ export function AuthorizePage() {
       setData((prev) => ({ ...prev, error: msg }));
       setSubmitting(false);
     }
+  }
+
+  // Popup delivery is terminal: the result is already posted to the opener and
+  // this window asked to close. Rendering this state at all means the browser
+  // refused the close, so tell the user they can close it themselves rather than
+  // leaving a dead consent screen (or a spinner) on screen.
+  if (relayOutcome) {
+    return (
+      <AuthFormLayout>
+        <AuthFormHeader
+          title={
+            relayOutcome === "approved"
+              ? t("authorize.completeTitle")
+              : relayOutcome === "denied"
+                ? t("authorize.deniedTitle")
+                : t("authorize.silentFailedTitle")
+          }
+          description={t("authorize.completeDesc")}
+        />
+      </AuthFormLayout>
+    );
   }
 
   if (loading || deviceAccountsLoading) {
@@ -819,6 +903,7 @@ export function AuthorizePage() {
           code_challenge: codeChallenge || undefined,
           code_challenge_method: codeChallengeMethod || undefined,
           scope: scope || undefined,
+          response_mode: responseMode || undefined,
         })}
         replace
       />

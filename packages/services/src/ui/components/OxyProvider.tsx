@@ -96,6 +96,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authRedirectUri,
     authorizeBaseUrl,
     sessionMode = 'account',
+    webAuthMode = 'redirect',
     queryClient: providedQueryClient,
     requireAuth = 'off',
     hubSync = true,
@@ -295,6 +296,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     storageKeyPrefix={storageKeyPrefix}
                     clientId={clientId}
                     sessionMode={sessionMode}
+                    webAuthMode={webAuthMode}
                     hubSync={hubSync}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
