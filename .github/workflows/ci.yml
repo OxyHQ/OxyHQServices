@@ -50,8 +50,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      # api tests resolve `@oxyhq/core` (e.g. `registrableApex` in
-      # fedcm.service.ts) from its published `dist`, like any normal dependency.
+      # api tests resolve `@oxyhq/core` (e.g. `registrableApex` in federation
+      # helpers) from its published `dist`, like any normal dependency.
       # This job does not build workspace deps, so core's `dist` is absent on a
       # fresh checkout → `Cannot find module '@oxyhq/core'`. Build core (and its
       # own deps `@oxyhq/contracts` and `@oxyhq/protocol`, which core's tsc build
@@ -265,6 +265,25 @@ jobs:
           bun run --filter @oxyhq/expo-splash build
       - run: bun run test
         working-directory: ./packages/commons
+
+  # Inbox app tests (Jest — email push routing + notification registration)
+  inbox-test:
+    name: Inbox Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+          bun run --filter @oxyhq/core build
+          bun run --filter @oxyhq/services build
+          bun run --filter @oxyhq/expo-splash build
+      - run: bun run test
+        working-directory: ./packages/inbox
 
   # Security audit
   security-audit:
