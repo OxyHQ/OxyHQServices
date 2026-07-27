@@ -31,6 +31,7 @@ const SAMPLE_INFO = {
 
 interface ServiceOverrides {
   getCommonsApprovalInfo?: jest.Mock;
+  markCommonsApprovalOpened?: jest.Mock;
   approveCommonsSignIn?: jest.Mock;
   denyCommonsSignIn?: jest.Mock;
 }
@@ -38,6 +39,7 @@ interface ServiceOverrides {
 function installServices(overrides: ServiceOverrides = {}) {
   const services = {
     getCommonsApprovalInfo: jest.fn(async () => SAMPLE_INFO),
+    markCommonsApprovalOpened: jest.fn(async () => undefined),
     approveCommonsSignIn: jest.fn(async () => ({ success: true })),
     denyCommonsSignIn: jest.fn(async () => ({ success: true })),
     ...overrides,
@@ -139,6 +141,44 @@ describe('useCommonsApproval', () => {
 
     await waitFor(() => expect(result.current.state).toBe('error'));
     expect(result.current.errorMessage).toMatch(/could not be resolved/i);
+  });
+
+  it('reports the approval screen as OPENED so the waiting desktop can show progress', async () => {
+    const services = installServices();
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+    expect(services.markCommonsApprovalOpened).toHaveBeenCalledWith('code-1');
+  });
+
+  it('does not report progress when there is no code to report', async () => {
+    const services = installServices();
+    renderHook(() => useCommonsApproval(undefined, 'reason'));
+
+    await waitFor(() => expect(services.getCommonsApprovalInfo).not.toHaveBeenCalled());
+    expect(services.markCommonsApprovalOpened).not.toHaveBeenCalled();
+  });
+
+  it('approves normally even when the progress signal fails', async () => {
+    // The progress line is best-effort: losing it must never cost the user the
+    // approval itself.
+    const services = installServices({
+      markCommonsApprovalOpened: jest.fn(async () => {
+        throw new Error('progress endpoint down');
+      }),
+    });
+    authenticateMock.mockResolvedValue({ success: true });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+    expect(result.current.errorMessage).toBeNull();
+
+    await act(async () => {
+      await result.current.approve();
+    });
+
+    expect(services.approveCommonsSignIn).toHaveBeenCalledWith({ authorizeCode: 'code-1' });
+    expect(result.current.state).toBe('approved');
   });
 
   it('enters the error state when the session is no longer pending', async () => {

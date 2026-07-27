@@ -18,6 +18,7 @@ describe('runAccountDeletion', () => {
 
   function makeDeps() {
     return {
+      retirePushToken: jest.fn<Promise<unknown>, []>(async () => ({ status: 'retired' })),
       deleteAccount: jest.fn<Promise<unknown>, [string]>(async () => ({ message: 'ok' })),
       purgeIdentity: jest.fn<Promise<void>, []>(async () => undefined),
       signOutAll: jest.fn<Promise<void>, []>(async () => undefined),
@@ -35,9 +36,13 @@ describe('runAccountDeletion', () => {
     expect(result.localIdentityPurged).toBe(true);
   });
 
-  it('purges the local identity BEFORE signing out', async () => {
+  it('retires the push token first, then purges the local identity BEFORE signing out', async () => {
     const deps = makeDeps();
     const order: string[] = [];
+    deps.retirePushToken.mockImplementation(async () => {
+      order.push('retirePushToken');
+      return { status: 'retired' };
+    });
     deps.deleteAccount.mockImplementation(async () => {
       order.push('deleteAccount');
       return { message: 'ok' };
@@ -51,7 +56,23 @@ describe('runAccountDeletion', () => {
 
     await runAccountDeletion(CONFIRM, deps);
 
-    expect(order).toEqual(['deleteAccount', 'purgeIdentity', 'signOutAll']);
+    // The push registry scopes a retirement to the identity holding the bearer,
+    // so it MUST happen before the account is deleted and the session dropped —
+    // otherwise this device keeps a live registration for an identity it no
+    // longer holds and gets woken by that identity's sign-in requests.
+    expect(order).toEqual(['retirePushToken', 'deleteAccount', 'purgeIdentity', 'signOutAll']);
+  });
+
+  it('still deletes the account when retiring the push token fails', async () => {
+    const deps = makeDeps();
+    deps.retirePushToken.mockRejectedValue(new Error('push registry unreachable'));
+
+    const result = await runAccountDeletion(CONFIRM, deps);
+
+    expect(deps.deleteAccount).toHaveBeenCalledTimes(1);
+    expect(deps.purgeIdentity).toHaveBeenCalledTimes(1);
+    expect(deps.signOutAll).toHaveBeenCalledTimes(1);
+    expect(result.localIdentityPurged).toBe(true);
   });
 
   it('does NOT purge the local identity when the server delete fails', async () => {
@@ -65,6 +86,14 @@ describe('runAccountDeletion', () => {
     // the user must NOT be signed out.
     expect(deps.purgeIdentity).not.toHaveBeenCalled();
     expect(deps.signOutAll).not.toHaveBeenCalled();
+  });
+
+  it('retires the push token exactly once', async () => {
+    const deps = makeDeps();
+
+    await runAccountDeletion(CONFIRM, deps);
+
+    expect(deps.retirePushToken).toHaveBeenCalledTimes(1);
   });
 
   it('still signs out and reports a non-fatal warning when the local purge fails after a successful delete', async () => {

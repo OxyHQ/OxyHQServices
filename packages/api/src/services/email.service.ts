@@ -947,9 +947,15 @@ class EmailService {
     if (!isSpam) {
       const senderName = params.from.name || params.from.address;
       const pushBody = params.subject || '(no subject)';
-      pushService.sendPushNotification(userId, senderName, pushBody, {
-        messageId: message._id.toString(),
-        mailboxId: mailbox._id.toString(),
+      pushService.sendPushNotification({
+        userId,
+        title: senderName,
+        body: pushBody,
+        channelId: 'email',
+        data: {
+          messageId: message._id.toString(),
+          mailboxId: mailbox._id.toString(),
+        },
       }).catch((err) => {
         logger.warn('Push notification failed', { userId, error: String(err) });
       });

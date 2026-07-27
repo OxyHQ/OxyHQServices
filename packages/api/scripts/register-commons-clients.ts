@@ -22,6 +22,12 @@
  *                            credential carries NO secret. Existing active public
  *                            production credentials are REUSED — never re-minted.
  *
+ * It also grants Commons the staff-only `identity:approval` capability, which is
+ * what makes its installs eligible targets for
+ * `POST /auth/session/deliver/:authorizeCode` (automatic push delivery of a
+ * pending sign-in request). Capabilities are UNIONed into an existing record,
+ * never stripped.
+ *
  * The "Oxy Auth" app is the SAME record seeded by
  * `scripts/seed-oxy-applications.ts` (idempotency key is name + owner). This
  * script reuses that record and its credential; the only delta is that it UNIONS
@@ -61,6 +67,10 @@ import { User } from '../src/models/User';
 import { permissionsForAccountRole } from '../src/utils/accountRoles';
 import { logger } from '../src/utils/logger';
 import type { ApplicationScope } from '../src/utils/applicationScopes';
+import {
+  IDENTITY_APPROVAL_CAPABILITY,
+  type ApplicationCapability,
+} from '../src/utils/applicationCapabilities';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -88,6 +98,12 @@ interface ClientSpec {
   type: IApplication['type'];
   redirectUris: string[];
   scopes: ApplicationScope[];
+  /**
+   * Staff-only platform capability flags. UNIONed into an existing record, never
+   * stripped. This is what makes a platform behaviour registry-driven instead of
+   * keyed off a hardcoded client id.
+   */
+  capabilities: ApplicationCapability[];
 }
 
 const CLIENTS: ClientSpec[] = [
@@ -102,6 +118,11 @@ const CLIENTS: ClientSpec[] = [
     // surface is the app's two deep-link schemes from packages/commons/app.json.
     redirectUris: ['commons://', 'oxycommons://'],
     scopes: ['user:read'],
+    // Commons IS the identity vault: it holds the local key and signs approvals,
+    // so its installs are the ones an authorization request may be pushed to.
+    // `POST /auth/session/deliver/:authorizeCode` resolves its targets from this
+    // capability — never from a hardcoded client id or bundle id.
+    capabilities: [IDENTITY_APPROVAL_CAPABILITY],
   },
   {
     key: 'AUTH_IDP_CLIENT_ID',
@@ -114,6 +135,9 @@ const CLIENTS: ClientSpec[] = [
     // origin as the redirect surface. UNIONed into any existing redirectUris.
     redirectUris: ['https://auth.oxy.so'],
     scopes: ['user:read'],
+    // The IdP is a browser shell, not an identity vault — it never holds a key
+    // and must never be a push-approval target.
+    capabilities: [],
   },
 ];
 
@@ -244,7 +268,7 @@ async function register(): Promise<void> {
           status: 'active',
           isOfficial: true,
           isInternal: spec.type === 'internal',
-          capabilities: [],
+          capabilities: spec.capabilities,
           redirectUris: spec.redirectUris,
           scopes: spec.scopes,
           ownerAccountId,
@@ -276,6 +300,13 @@ async function register(): Promise<void> {
       );
       if (mergedScopes.length !== (application.scopes ?? []).length) {
         application.scopes = mergedScopes;
+      }
+
+      const mergedCapabilities = Array.from(
+        new Set<string>([...(application.capabilities ?? []), ...spec.capabilities])
+      );
+      if (mergedCapabilities.length !== (application.capabilities ?? []).length) {
+        application.capabilities = mergedCapabilities;
       }
 
       if (application.isModified()) {

@@ -25,7 +25,7 @@ import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, InternalServerError } from '../utils/error';
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
-import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
+import { emitAuthSessionUpdate, emitAuthSessionProgress } from '../utils/authSessionSocket';
 import { broadcastSessionAccountsChanged } from '../utils/socket';
 import webauthnRouter from './webauthn';
 import { validate } from '../middleware/validate';
@@ -42,6 +42,10 @@ import {
   resolveOAuthContext,
   verifyDelegatedSubject,
 } from '../services/authSession.service';
+import {
+  deliverAuthRequestToIdentityApps,
+  markAuthRequestOpened,
+} from '../services/authSessionDelivery.service';
 import { isAllowedRedirectUri } from '../utils/oauthRedirect';
 import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
@@ -827,6 +831,21 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
  *                 expiresAt:
  *                   type: string
  *                   format: date-time
+ *                 pushSentAt:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                   description: >
+ *                     Delivery progress, not a status: when the pending request
+ *                     was pushed to the approving identity's capable installs.
+ *                     Null when no push was delivered.
+ *                 openedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                   description: >
+ *                     Delivery progress, not a status: when the approval surface
+ *                     first opened the request. Written at most once.
  *                 sessionId:
  *                   type: string
  *                   nullable: true
@@ -906,6 +925,12 @@ router.get('/session/status/:sessionToken', validate({ params: authSessionTokenP
     sessionToken: authSession.sessionToken,
     application,
     expiresAt: authSession.expiresAt.toISOString(),
+    // Delivery progress as TIMESTAMPS — never statuses. This is the
+    // authoritative read-back for the socket's payload-free wake signal: the
+    // waiting client learns "pushed" / "opened in the vault" from here, so no
+    // progress data has to travel as trusted data on the socket.
+    pushSentAt: authSession.pushSentAt ? authSession.pushSentAt.toISOString() : null,
+    openedAt: authSession.openedAt ? authSession.openedAt.toISOString() : null,
     sessionId: authSession.authorizedSessionId || null,
     publicKey: authSession.authorizedBy || null,
     userId: authSession.authorizedUserId ? authSession.authorizedUserId.toString() : null,
@@ -1603,6 +1628,118 @@ router.post(
       authSession.status = 'cancelled';
       await authSession.save();
       emitAuthSessionUpdate(authSession.sessionToken, { status: 'cancelled' });
+    }
+
+    sendSuccess(res, { success: true });
+  }),
+);
+
+// ============================================
+// Automatic delivery to the identity vault
+// ============================================
+
+// Push delivery of a pending request. A legitimate flow hits this once (with at
+// most a retry or two if the user reloads the popup), so the cap is tight —
+// push is an outbound side effect and must not be cheaply amplifiable.
+const authSessionDeliverLimiter = rateLimit({
+  prefix: 'rl:auth:session-deliver:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 15,
+});
+
+// Progress ping from the approval surface. Public (keyed on the approval
+// handle), writes only a timestamp, so a slightly looser cap than the approval
+// endpoints it accompanies.
+const authSessionOpenedLimiter = rateLimit({
+  prefix: 'rl:auth:session-opened:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * POST /auth/session/deliver/:authorizeCode
+ *
+ * Bearer REQUIRED — and the bearer is the SECURITY CONTROL, not a convenience.
+ * Delivery targets the AUTHENTICATED user's own approval-capable installs and
+ * nothing else: the target identity is never resolved from the request body, the
+ * QR payload, or the bound `AuthSession`. That makes it impossible to make Oxy
+ * push a sign-in prompt at someone by typing their username or email into an
+ * unauthenticated browser.
+ *
+ * Eligible installs are those registered by an `Application` carrying the
+ * staff-controlled `identity:approval` capability — a registry decision, never a
+ * hardcoded client id or bundle id.
+ *
+ * The payload is exactly `{ type, approvalUrl }`: a type discriminator plus the
+ * PUBLIC approval handle. No application name, no origin, no scopes, no secrets
+ * — the vault re-fetches all authoritative display data from
+ * `GET /auth/session/approve-info/:authorizeCode`. The notification carries no
+ * action buttons, so it can only be opened or dismissed; approval always happens
+ * inside the vault, behind biometrics and a local-key signature.
+ *
+ * Responds with COUNTS only (`{ delivered, targets }`) — never device names,
+ * platforms, or any other install detail. `targets: 0` is a normal outcome (no
+ * vault install on any device) and the client falls back to the QR surface; a
+ * push transport failure degrades to exactly the same shape and never fails the
+ * auth flow.
+ */
+router.post(
+  '/session/deliver/:authorizeCode',
+  authMiddleware,
+  authSessionDeliverLimiter,
+  validate({ params: authorizeCodeParams }),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { authorizeCode } = req.params;
+
+    const authenticatedUser = req.user;
+    if (!authenticatedUser?._id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const outcome = await deliverAuthRequestToIdentityApps({
+      authorizeCode,
+      identityUserId: authenticatedUser._id.toString(),
+    });
+
+    if (!outcome.ok) {
+      if (outcome.status === 404) throw new NotFoundError(outcome.message);
+      throw new BadRequestError(outcome.message);
+    }
+
+    if (outcome.delivered) {
+      // Pure wake signal on the originator's secret channel — the authoritative
+      // `pushSentAt` is read back from GET /auth/session/status.
+      emitAuthSessionProgress(outcome.sessionToken);
+    }
+
+    sendSuccess(res, { delivered: outcome.delivered, targets: outcome.targets });
+  }),
+);
+
+/**
+ * POST /auth/session/opened/:authorizeCode
+ *
+ * NO bearer — like `approve-info`, the PUBLIC single-use approval handle IS the
+ * credential. Records delivery progress only: `openedAt` is written at most once,
+ * only while the request is still pending and unexpired, and NEVER touches
+ * `status`. The authoritative state machine stays exactly
+ * `pending -> authorized -> consumed` / `cancelled` / `expired`.
+ */
+router.post(
+  '/session/opened/:authorizeCode',
+  authSessionOpenedLimiter,
+  validate({ params: authorizeCodeParams }),
+  asyncHandler(async (req, res) => {
+    const { authorizeCode } = req.params;
+
+    const outcome = await markAuthRequestOpened(authorizeCode);
+
+    if (!outcome.ok) {
+      throw new NotFoundError(outcome.message);
+    }
+
+    if (outcome.recorded) {
+      emitAuthSessionProgress(outcome.sessionToken);
     }
 
     sendSuccess(res, { success: true });

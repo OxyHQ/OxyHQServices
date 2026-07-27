@@ -128,7 +128,16 @@ export interface CommonsSignInHandle {
   status: string;
 }
 
-/** Poll result for a "Sign in with Oxy" device-flow session (`GET /auth/session/status`). */
+/**
+ * Poll result for a "Sign in with Oxy" device-flow session
+ * (`GET /auth/session/status`).
+ *
+ * The authoritative state machine stays small — `pending → authorized →
+ * consumed`, plus `cancelled` / `expired` — and lives in `status`. Delivery
+ * PROGRESS (`pushSentAt`, `openedAt`) is carried as timestamps beside it, never
+ * as competing statuses, so a progress signal can never be mistaken for an
+ * authorization.
+ */
 export interface CommonsSignInStatus {
   /** True once an approver has authorized the session. */
   authorized: boolean;
@@ -143,6 +152,37 @@ export interface CommonsSignInStatus {
    * `device_sign_in` so an older API never misroutes an OAuth finalize.
    */
   purpose?: CommonsSignInPurpose;
+  /**
+   * ISO-8601 timestamp of when the request was pushed to a known Commons
+   * installation, or `null` when no push has been sent (including on a server
+   * that predates delivery progress). Progress only — it never implies the push
+   * was received, opened, or approved.
+   */
+  pushSentAt: string | null;
+  /**
+   * ISO-8601 timestamp of when the approval route was opened in Commons, or
+   * `null` when it has not been opened. Reported by the approver via
+   * {@link OxyServicesAuthMixin.markCommonsApprovalOpened}; it is an
+   * un-authenticated progress hint used only to advance the waiting UI, and is
+   * NEVER evidence that the request was approved.
+   */
+  openedAt: string | null;
+}
+
+/**
+ * Outcome of asking Oxy to deliver a pending sign-in request to the identity's
+ * known Commons installations (`POST /auth/session/deliver/:authorizeCode`).
+ *
+ * `targets: 0` is a NORMAL outcome, not a failure: it simply means no capable
+ * Commons installation is registered, so push is not a usable route and the
+ * caller shows the QR instead. Feed `targets` into `selectCommonsDelivery`
+ * (`utils/commonsDelivery`) rather than branching on it ad hoc.
+ */
+export interface CommonsDeliveryResult {
+  /** Whether the server dispatched the request to at least one installation. */
+  delivered: boolean;
+  /** How many eligible Commons installations it was dispatched to (`0` is normal). */
+  targets: number;
 }
 
 /**
@@ -242,6 +282,23 @@ function parseCommonsSubjectAccount(value: unknown): CommonsApprovalSubjectAccou
     username,
     ...(typeof displayName === 'string' ? { displayName } : {}),
   };
+}
+
+/**
+ * @internal Narrow an untrusted delivery-progress timestamp from the status
+ * response.
+ *
+ * Returns the ISO-8601 string unchanged when it is a real, parseable instant,
+ * and `null` for everything else — absent (an older API that has no delivery
+ * progress at all), empty, non-string, or unparseable. Progress is advisory, so
+ * degrading to "no progress yet" is always safe; surfacing a garbage timestamp
+ * to the waiting UI is not.
+ */
+function parseCommonsProgressTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) {
+    return null;
+  }
+  return Number.isFinite(Date.parse(value)) ? value : null;
 }
 
 /** Result of approving / denying a "Sign in with Oxy" request. */
@@ -991,11 +1048,17 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * caller finalizes: `claimSessionByToken` for a `device_sign_in` request,
      * {@link finalizeCommonsOAuth} for an `oauth_authorization` one.
      *
+     * Every field is narrowed fail-safe. `authorized` counts only as a literal
+     * `true`, the identifiers only as non-empty strings, and the delivery
+     * progress timestamps degrade to `null` when absent or unparseable — so a
+     * partial or older-API payload can advance the waiting UI at most, never
+     * make it believe a request was approved.
+     *
      * @param sessionToken - The secret token from {@link startCommonsSignIn}.
      */
     async pollCommonsSignIn(sessionToken: string): Promise<CommonsSignInStatus> {
       try {
-        return await this.makeRequest<CommonsSignInStatus>(
+        const res = await this.makeRequest<unknown>(
           'GET',
           `/auth/session/status/${encodeURIComponent(sessionToken)}`,
           undefined,
@@ -1003,6 +1066,105 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           // if ever reached while a refresh is pending, would re-enter
           // refreshAccessToken and await the very promise it runs inside.
           { cache: false, retry: false, skipAuth: true }
+        );
+
+        if (res === null || typeof res !== 'object') {
+          throw new Error('auth/session/status returned an unexpected response shape');
+        }
+        const { authorized, sessionId, publicKey, status, pushSentAt, openedAt } =
+          res as Record<string, unknown>;
+
+        return {
+          authorized: authorized === true,
+          ...(typeof sessionId === 'string' && sessionId ? { sessionId } : {}),
+          ...(typeof publicKey === 'string' && publicKey ? { publicKey } : {}),
+          ...(typeof status === 'string' && status ? { status } : {}),
+          pushSentAt: parseCommonsProgressTimestamp(pushSentAt),
+          openedAt: parseCommonsProgressTimestamp(openedAt),
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (relying party) — ask Oxy to DELIVER a pending sign-in request
+     * to the identity's known Commons installations.
+     *
+     * This is the automatic half of "one intention, one primary action": rather
+     * than offering the user a menu of transports, the caller asks for delivery
+     * and lets the answer pick the route. Pass the returned `targets` to
+     * `selectCommonsDelivery` (`utils/commonsDelivery`) — `targets: 0` means no
+     * capable Commons installation is registered, which is a NORMAL outcome that
+     * resolves to the QR route, not an error to surface.
+     *
+     * **Requires a bearer.** Delivery is only allowed when Oxy already knows the
+     * intended identity from a trusted authenticated context — a request that
+     * merely carries a username or email typed into an unauthenticated browser
+     * must never be able to ring somebody's phone.
+     *
+     * The push it sends carries only `{ type, approvalUrl }` where the URL holds
+     * the public `authorizeCode` — no display data, no secrets. Commons resolves
+     * everything it shows from `getCommonsApprovalInfo`.
+     *
+     * @param authorizeCode - The public code from {@link startCommonsSignIn}.
+     */
+    async deliverCommonsSignIn(authorizeCode: string): Promise<CommonsDeliveryResult> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          `/auth/session/deliver/${encodeURIComponent(authorizeCode)}`,
+          undefined,
+          // Bearer REQUIRED (unlike its public siblings): the identity to
+          // deliver to comes from the authenticated caller, never the code.
+          { cache: false },
+        );
+
+        if (res === null || typeof res !== 'object') {
+          throw new Error('auth/session/deliver returned an unexpected response shape');
+        }
+        const { delivered, targets } = res as Record<string, unknown>;
+        // Both fields drive the route choice, so a partial payload is rejected
+        // outright rather than defaulted into a route the server never chose.
+        if (
+          typeof delivered !== 'boolean' ||
+          typeof targets !== 'number' ||
+          !Number.isInteger(targets) ||
+          targets < 0
+        ) {
+          throw new Error('auth/session/deliver returned an incomplete delivery result');
+        }
+
+        return { delivered, targets };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * MECHANISM B (approver / Commons) — report that the approval route was
+     * OPENED, so the waiting relying party can show "Opened in Commons".
+     *
+     * Progress only. It is idempotent, applies to a `pending` request alone, and
+     * records a timestamp (`openedAt`) — it never approves, authorizes, or
+     * advances the authorization state machine. Public, like the other approver
+     * handles: the approver has only the public `authorizeCode` at this point
+     * and has not yet signed anything.
+     *
+     * Best-effort by nature — a failure here costs the user only a progress
+     * line, so callers are free to ignore a rejection and continue to the
+     * approval screen.
+     *
+     * @param authorizeCode - The public code scanned from the QR / deep-link / push.
+     */
+    async markCommonsApprovalOpened(authorizeCode: string): Promise<void> {
+      try {
+        await this.makeRequest<unknown>(
+          'POST',
+          `/auth/session/opened/${encodeURIComponent(authorizeCode)}`,
+          undefined,
+          // Public (no bearer) — skip the preflight, exactly like approve-info.
+          { cache: false, skipAuth: true },
         );
       } catch (error) {
         throw this.handleError(error);

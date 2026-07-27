@@ -117,6 +117,19 @@ export interface IAuthSession extends Document {
   authorizedBy?: string;     // Public key of the user who authorized
   authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing IDENTITY
   authorizedSessionId?: string; // The actual session ID after authorization (device sign-in only)
+  /**
+   * DELIVERY PROGRESS — timestamps, never statuses. When the pending request was
+   * pushed to the approving identity's capable installs
+   * (`POST /auth/session/deliver/:authorizeCode`). Absent means no push was ever
+   * delivered (no capable install, or the client chose QR / deep link).
+   */
+  pushSentAt?: Date;
+  /**
+   * DELIVERY PROGRESS — when the approval surface first opened the request
+   * (`POST /auth/session/opened/:authorizeCode`). Written once, never cleared,
+   * and never a gate: the authoritative state machine is untouched by it.
+   */
+  openedAt?: Date;
   consumedAt?: Date;         // Timestamp when the sessionToken was exchanged for a token
   expiresAt: Date;
   createdAt: Date;
@@ -210,6 +223,17 @@ const AuthSessionSchema: Schema = new Schema(
     },
     deviceId: {
       type: String,
+      default: null,
+    },
+    // Delivery progress. Both default to null so the atomic "record once"
+    // updates can match on `null` (which also matches a missing field, so legacy
+    // rows behave as un-delivered / un-opened).
+    pushSentAt: {
+      type: Date,
+      default: null,
+    },
+    openedAt: {
+      type: Date,
       default: null,
     },
     consumedAt: {

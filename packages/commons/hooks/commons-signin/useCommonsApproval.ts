@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useOxy } from '@oxyhq/services';
-import { getCommonsApprovalBlockingReason, type CommonsApprovalInfo } from '@oxyhq/core';
+import { getCommonsApprovalBlockingReason, logger, type CommonsApprovalInfo } from '@oxyhq/core';
 import { authenticate } from '@/lib/biometricAuth';
 
 /**
@@ -76,6 +76,21 @@ export function useCommonsApproval(
     let cancelled = false;
     setState('loading');
     setErrorMessage(null);
+
+    // Progress-only signal so the waiting relying party can show "Opened in
+    // Commons" the moment the user actually lands here (issue #691, Phase 4).
+    // It never approves and never advances the authorization state machine, so
+    // it is fired alongside — never before or instead of — the identity fetch,
+    // is never awaited, and a rejection is logged and otherwise ignored: a
+    // missed progress line must never cost the user their approval.
+    void oxyServices.markCommonsApprovalOpened(code).catch((error: unknown) => {
+      logger.warn(
+        '[commons] could not report the approval screen as opened',
+        { component: 'useCommonsApproval' },
+        error,
+      );
+    });
+
     oxyServices
       .getCommonsApprovalInfo(code)
       .then((result) => {
