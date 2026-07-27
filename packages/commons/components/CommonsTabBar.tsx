@@ -30,6 +30,24 @@ const TAB_ROUTES = ['(id)', '(reputation)', '(settings)'] as const;
 const ICON_SIZE = 'md';
 
 /**
+ * Ceiling on the pill's width, in points.
+ *
+ * Commons ships to iPad (`supportsTablet: true`), where an unconstrained bar
+ * spans the whole screen — 810pt at 11" portrait, 1342pt in landscape — leaving
+ * three 21pt glyphs adrift in cells hundreds of points wide. Bloom derives the
+ * item width from the window, so this cannot be fixed with a `style` override:
+ * the highlight and the scrub hit-testing would still divide the WINDOW width.
+ *
+ * 440 is the width of the largest phone screen currently shipping (iPhone 16
+ * Pro Max), so the pill can never be wider than a big phone's whole display.
+ * `maxWidth` is a CEILING and never a floor, so no phone is affected: the
+ * widest phone pill is 416pt (440 minus the bar's 12pt margin per side), which
+ * is under this and therefore stays full-bleed. Every tablet size is over it
+ * and gets constrained and centred.
+ */
+const TAB_BAR_MAX_WIDTH = 440;
+
+/**
  * The Commons bottom bar: Bloom's floating glass pill, driven by the tab
  * navigator's own state.
  *
@@ -93,7 +111,18 @@ export function CommonsTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <View style={styles.host}>
-      <TabBar activeIndex={activeIndex} onIndexChange={handleIndexChange}>
+      <TabBar
+        activeIndex={activeIndex}
+        onIndexChange={handleIndexChange}
+        maxWidth={TAB_BAR_MAX_WIDTH}
+        // The blur band is 114pt tall and full-bleed, so the ID screen's
+        // QR-scan FAB sits inside it and would be blurred and tinted. No
+        // z-order can lift a screen's FAB above the bar's host — it is inside
+        // an earlier sibling — so switching the band off is the only fix.
+        // It stays ON for the other two tabs, where nothing floats at the
+        // bottom edge and dissolving content behind the pill is the point.
+        blur={focusedRouteName !== '(id)'}
+      >
         {items.map((item, index) => (
           <TabBarButton key={item.name} item={item} index={index} />
         ))}
