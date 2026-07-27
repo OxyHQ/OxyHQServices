@@ -735,7 +735,7 @@ router.get(
     // Anonymous / no-user-context callers have no graph. Short-circuit with the
     // empty graph and never touch the cache (its keys are strictly per-viewer).
     if (!viewerId) {
-      sendSuccess(res, { followingIds: [], mutualIds: [], blockedIds: [] });
+      sendSuccess(res, { followingIds: [], mutualIds: [], blockedIds: [], restrictedIds: [] });
       return;
     }
 

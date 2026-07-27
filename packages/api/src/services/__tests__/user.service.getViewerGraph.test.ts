@@ -5,6 +5,7 @@
  *   - `followingIds` — the accounts the viewer follows (eligibility-filtered aggregate)
  *   - `mutualIds`    — the subset who follow back, REUSING `getMutualUserIds`
  *   - `blockedIds`   — the accounts the viewer has blocked (`Block.find({ userId })`)
+ *   - `restrictedIds` — the accounts the viewer has restricted (`Restricted.find({ userId })`)
  */
 
 jest.mock('mongoose', () => {
@@ -34,6 +35,14 @@ const blockQuery = {
 };
 const mockBlockFind = jest.fn(() => blockQuery);
 
+const mockRestrictedLean = jest.fn();
+const restrictedQuery = {
+  select: jest.fn(() => restrictedQuery),
+  limit: jest.fn(() => restrictedQuery),
+  lean: mockRestrictedLean,
+};
+const mockRestrictedFind = jest.fn(() => restrictedQuery);
+
 const mockUserFindLean = jest.fn();
 const mockUserFind = jest.fn(() => ({
   select: jest.fn(() => ({
@@ -58,6 +67,13 @@ jest.mock('../../models/Block', () => ({
   __esModule: true,
   default: {
     find: mockBlockFind,
+  },
+}));
+
+jest.mock('../../models/Restricted', () => ({
+  __esModule: true,
+  default: {
+    find: mockRestrictedFind,
   },
 }));
 
@@ -114,6 +130,7 @@ describe('UserService.getViewerGraph', () => {
     const f1 = new Types.ObjectId();
     const f2 = new Types.ObjectId();
     const b1 = new Types.ObjectId();
+    const r1 = new Types.ObjectId();
 
     mockFollowAggregate
       .mockResolvedValueOnce([{ total: 2 }])
@@ -125,6 +142,7 @@ describe('UserService.getViewerGraph', () => {
 
     mockUserFindLean.mockResolvedValueOnce([{ _id: f1 }]);
     mockBlockLean.mockResolvedValueOnce([{ blockedId: b1 }]);
+    mockRestrictedLean.mockResolvedValueOnce([{ restrictedId: r1 }]);
 
     const result = await new UserService().getViewerGraph(viewerId);
 
@@ -132,19 +150,22 @@ describe('UserService.getViewerGraph', () => {
       followingIds: [f1.toString(), f2.toString()],
       mutualIds: [f1.toString()],
       blockedIds: [b1.toString()],
+      restrictedIds: [r1.toString()],
     });
 
     expect(mockBlockFind).toHaveBeenCalledWith({ userId: viewerId });
+    expect(mockRestrictedFind).toHaveBeenCalledWith({ userId: viewerId });
     expect(mockFollowAggregate).toHaveBeenCalledTimes(2);
   });
 
   it('returns an all-empty graph for an anonymous viewer without querying the database', async () => {
     const result = await new UserService().getViewerGraph(undefined);
 
-    expect(result).toEqual({ followingIds: [], mutualIds: [], blockedIds: [] });
+    expect(result).toEqual({ followingIds: [], mutualIds: [], blockedIds: [], restrictedIds: [] });
     expect(mockFollowFind).not.toHaveBeenCalled();
     expect(mockFollowAggregate).not.toHaveBeenCalled();
     expect(mockBlockFind).not.toHaveBeenCalled();
+    expect(mockRestrictedFind).not.toHaveBeenCalled();
   });
 
   it('bounds the following and blocked scans by their caps', async () => {
@@ -156,6 +177,7 @@ describe('UserService.getViewerGraph', () => {
       .mockResolvedValueOnce([{ userId: f1 }]);
     mockFollowLean.mockResolvedValueOnce([]);
     mockBlockLean.mockResolvedValueOnce([]);
+    mockRestrictedLean.mockResolvedValueOnce([]);
 
     await new UserService().getViewerGraph(viewerId, {
       followingLimit: MAX_FOLLOWING_IDS * 10,
@@ -165,5 +187,6 @@ describe('UserService.getViewerGraph', () => {
     const pagePipeline = mockFollowAggregate.mock.calls[1]?.[0] as Array<{ $limit?: number }>;
     expect(pagePipeline?.find((stage) => stage.$limit !== undefined)?.$limit).toBe(MAX_FOLLOWING_IDS);
     expect(blockQuery.limit).toHaveBeenCalledWith(MAX_BLOCKED_IDS);
+    expect(restrictedQuery.limit).toHaveBeenCalledWith(MAX_BLOCKED_IDS);
   });
 });

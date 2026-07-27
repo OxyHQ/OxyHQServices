@@ -92,6 +92,8 @@ export interface ViewerGraph {
   mutualIds: string[];
   /** Accounts the viewer has blocked (bounded). */
   blockedIds: string[];
+  /** Accounts the viewer has restricted (bounded). */
+  restrictedIds: string[];
 }
 
 /** Per-user outcome returned by `POST /users/unfollow/bulk`. */

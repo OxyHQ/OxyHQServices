@@ -880,7 +880,7 @@ export class UserService {
     } = {}
   ): Promise<ViewerGraph> {
     if (!viewerId) {
-      return { followingIds: [], mutualIds: [], blockedIds: [] };
+      return { followingIds: [], mutualIds: [], blockedIds: [], restrictedIds: [] };
     }
 
     const followingLimit = Math.min(
@@ -896,7 +896,7 @@ export class UserService {
       MAX_BLOCKED_IDS
     );
 
-    const [followingPage, mutualIds, blockedIds] = await Promise.all([
+    const [followingPage, mutualIds, blockedIds, restrictedIds] = await Promise.all([
       // Following — same eligibility filter as getUserFollowing, ids-only.
       paginateActiveFollowUserIds(
         { followerUserId: new Types.ObjectId(viewerId), followType: FollowType.USER },
@@ -921,9 +921,24 @@ export class UserService {
             .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
             .map((id) => id.toString())
         ),
+
+      // Restricted — the asymmetric counterpart of the block list, read the
+      // same way. Delegated callers have no user token for `/privacy/restricted`
+      // (that router is user-auth only), so this is the only server-side read
+      // of the viewer's restrictions they can make.
+      Restricted.find({ userId: viewerId })
+        .select('restrictedId')
+        .limit(blockedLimit)
+        .lean()
+        .then((rows) =>
+          rows
+            .map((row) => row.restrictedId)
+            .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+            .map((id) => id.toString())
+        ),
     ]);
 
-    return { followingIds: followingPage, mutualIds, blockedIds };
+    return { followingIds: followingPage, mutualIds, blockedIds, restrictedIds };
   }
 
   /**

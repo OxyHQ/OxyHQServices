@@ -12,7 +12,7 @@
  *    the empty graph WITHOUT invoking the service or touching the cache
  *  - a cache HIT returns the cached graph and never recomputes from the service
  *  - a cache MISS recomputes via the service and writes the result back to cache
- *  - the response is the `{ data: { followingIds, mutualIds, blockedIds } }`
+ *  - the response is the `{ data: { followingIds, mutualIds, blockedIds, restrictedIds } }`
  *    envelope
  *
  * The router is mounted on a minimal Express app and exercised via `node:http`
@@ -105,7 +105,7 @@ interface JsonResponse {
   body: {
     error?: string;
     message?: string;
-    data?: { followingIds?: string[]; mutualIds?: string[]; blockedIds?: string[] };
+    data?: { followingIds?: string[]; mutualIds?: string[]; blockedIds?: string[]; restrictedIds?: string[] };
   };
 }
 
@@ -156,7 +156,7 @@ beforeEach(() => {
 
 describe('GET /users/me/graph', () => {
   const VIEWER = '5f000000000000000000000b';
-  const GRAPH = { followingIds: ['f1'], mutualIds: ['m1'], blockedIds: ['b1'] };
+  const GRAPH = { followingIds: ['f1'], mutualIds: ['m1'], blockedIds: ['b1'], restrictedIds: ['r1'] };
 
   it('recomputes from the service on a cache miss and writes back to cache', async () => {
     currentViewerId = VIEWER;
@@ -206,7 +206,7 @@ describe('GET /users/me/graph', () => {
     const res = await getJson(server, '/users/me/graph');
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ followingIds: [], mutualIds: [], blockedIds: [] });
+    expect(res.body.data).toEqual({ followingIds: [], mutualIds: [], blockedIds: [], restrictedIds: [] });
     expect(mockGraphCacheGet).not.toHaveBeenCalled();
     expect(mockGetViewerGraph).not.toHaveBeenCalled();
     expect(mockGraphCacheSet).not.toHaveBeenCalled();

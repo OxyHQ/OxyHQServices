@@ -148,6 +148,10 @@ const createUserActionHandler = <T extends Document>(
       // Restrict is asymmetric: only the restricter's media is hidden from the
       // restricted user, so bust the single (owner, viewer) cache key.
       restrictCache.invalidate(authUser.id, targetId);
+
+      // The restriction changed the restricter's cached `restrictedIds`. Only
+      // their own graph carries it (asymmetric), so bust just that one.
+      await graphCache.invalidate(authUser.id);
     }
 
     res.json({ message: `User ${actionName === 'block' ? 'blocked' : 'restricted'} successfully` });
@@ -191,6 +195,7 @@ const createUserRemoveHandler = <T extends Document>(
       ]);
     } else if (fieldName === 'restrictedId') {
       restrictCache.invalidate(authUser.id, targetId);
+      await graphCache.invalidate(authUser.id);
     }
 
     res.json({ message: `User ${actionName === 'unblock' ? 'unblocked' : 'unrestricted'} successfully` });
