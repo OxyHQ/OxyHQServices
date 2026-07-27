@@ -12,6 +12,7 @@ import {
 } from '@oxyhq/bloom/icons';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 
+import { useIsDesktopLayout } from '@/hooks/useIsDesktopLayout';
 import { useTranslation } from '@/lib/i18n';
 
 /**
@@ -53,6 +54,14 @@ const ICON_SIZE = 'md';
  */
 export function InboxTabBar({ state, navigation }: BottomTabBarProps) {
   const { t } = useTranslation();
+
+  // The bar is for NARROW layouts only. On a wide viewport the mailbox drawer
+  // is `permanent` and is the whole navigation, exactly as before this bar
+  // existed — so the bar would be a second, redundant navigation next to it.
+  // Both read the SAME `useIsDesktopLayout()`, which is what stops a viewport
+  // from ever showing both or neither, and it re-renders on resize so dragging
+  // a window across the breakpoint gains and loses the bar cleanly.
+  const isDesktopLayout = useIsDesktopLayout();
 
   // The native bar hid itself while the OS keyboard was up (`NativeTabs`'
   // `hidden` prop). Bloom's bar has no such prop, so the host unmounts it
@@ -100,7 +109,7 @@ export function InboxTabBar({ state, navigation }: BottomTabBarProps) {
     [navigation],
   );
 
-  if (keyboardVisible) return null;
+  if (isDesktopLayout || keyboardVisible) return null;
 
   return (
     <View style={styles.host}>
