@@ -71,6 +71,86 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
       expect(handle.qrPayload).not.toContain('secret-session-token');
     });
 
+    it('omits the oauth key entirely when no OAuth binding is given (body byte-identical to a plain device sign-in)', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('tok');
+      makeRequestSpy.mockResolvedValue({
+        authorizeCode: 'code-1',
+        qrPayload: 'oxycommons://approve?v=1&code=code-1',
+        status: 'pending',
+      });
+
+      await oxy.startCommonsSignIn({ clientId: 'oxy_dk_test' });
+
+      // `toHaveBeenCalledWith` ignores explicitly-undefined keys, so assert the
+      // literal key set: the server decides the request's purpose from the
+      // PRESENCE of `oauth`, and an `oauth: undefined` key would still serialize
+      // differently from the body this endpoint has always received.
+      const body = makeRequestSpy.mock.calls[0][2];
+      expect(Object.keys(body)).toEqual(['sessionToken', 'expiresAt', 'clientId']);
+    });
+
+    it('sends the OAuth binding verbatim when provided', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('secret-session-token');
+      makeRequestSpy.mockResolvedValue({
+        authorizeCode: 'code-oauth',
+        qrPayload: 'oxycommons://approve?v=1&code=code-oauth',
+        status: 'pending',
+      });
+
+      const oauth = {
+        redirectUri: 'https://mention.earth',
+        codeChallenge: 'chal-s256',
+        codeChallengeMethod: 'S256' as const,
+        scope: 'openid profile',
+        subjectAccountId: 'acct-org',
+      };
+
+      const handle = await oxy.startCommonsSignIn({ clientId: 'oxy_dk_test', oauth });
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        '/auth/session/create',
+        {
+          sessionToken: 'secret-session-token',
+          expiresAt: 1700000300000,
+          clientId: 'oxy_dk_test',
+          oauth,
+        },
+        expect.objectContaining({ cache: false, skipAuth: true }),
+      );
+      // The PKCE verifier and the secret token never leave the initiator, and
+      // the QR still only carries the public code.
+      expect(JSON.stringify(makeRequestSpy.mock.calls[0][2])).not.toContain('codeVerifier');
+      expect(handle.qrPayload).not.toContain('secret-session-token');
+    });
+
+    it('carries an OAuth binding without a scope or delegated account unchanged', async () => {
+      jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+      jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('tok');
+      makeRequestSpy.mockResolvedValue({
+        authorizeCode: 'code-oauth',
+        qrPayload: 'oxycommons://approve?v=1&code=code-oauth',
+        status: 'pending',
+      });
+
+      await oxy.startCommonsSignIn({
+        clientId: 'oxy_dk_test',
+        oauth: {
+          redirectUri: 'https://mention.earth',
+          codeChallenge: 'chal-s256',
+          codeChallengeMethod: 'S256',
+        },
+      });
+
+      expect(makeRequestSpy.mock.calls[0][2].oauth).toEqual({
+        redirectUri: 'https://mention.earth',
+        codeChallenge: 'chal-s256',
+        codeChallengeMethod: 'S256',
+      });
+    });
+
     it('falls back to the client-proposed expiry when the server omits it', async () => {
       jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
       jest.spyOn(SignatureService, 'generateChallenge').mockResolvedValue('tok');
@@ -101,6 +181,86 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
     });
   });
 
+  describe('finalizeCommonsOAuth (relying party)', () => {
+    it('POSTs the finalize path with the SECRET sessionToken and no bearer', async () => {
+      makeRequestSpy.mockResolvedValue({
+        code: 'authcode-1',
+        redirectUri: 'https://mention.earth',
+        expiresIn: 60,
+      });
+
+      const result = await oxy.finalizeCommonsOAuth('secret session/token');
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'POST',
+        // The secret token is the credential in the path — encoded, never raw.
+        '/auth/session/finalize/secret%20session%2Ftoken',
+        undefined,
+        expect.objectContaining({ cache: false, skipAuth: true }),
+      );
+      // An authorization CODE, never a token: the caller still runs the PKCE
+      // exchange with the verifier it never sent.
+      expect(result).toEqual({
+        code: 'authcode-1',
+        redirectUri: 'https://mention.earth',
+        expiresIn: 60,
+      });
+    });
+
+    it('does not plant any token (finalization is not a session)', async () => {
+      makeRequestSpy.mockResolvedValue({
+        code: 'authcode-1',
+        redirectUri: 'https://mention.earth',
+        expiresIn: 60,
+      });
+
+      await oxy.finalizeCommonsOAuth('secret-session-token');
+
+      expect(oxy.getAccessToken()).toBeNull();
+    });
+
+    it.each([
+      ['a non-object body', 'authcode-1'],
+      ['a null body', null],
+    ])('rejects %s rather than returning it', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue(value);
+
+      await expect(oxy.finalizeCommonsOAuth('secret-session-token')).rejects.toThrow(
+        /unexpected response shape/,
+      );
+    });
+
+    it.each([
+      ['a missing code', { redirectUri: 'https://mention.earth', expiresIn: 60 }],
+      ['an empty code', { code: '', redirectUri: 'https://mention.earth', expiresIn: 60 }],
+      ['a missing redirectUri', { code: 'authcode-1', expiresIn: 60 }],
+      ['an empty redirectUri', { code: 'authcode-1', redirectUri: '', expiresIn: 60 }],
+      ['a missing expiresIn', { code: 'authcode-1', redirectUri: 'https://mention.earth' }],
+      [
+        'a non-numeric expiresIn',
+        { code: 'authcode-1', redirectUri: 'https://mention.earth', expiresIn: '60' },
+      ],
+      [
+        'a non-finite expiresIn',
+        { code: 'authcode-1', redirectUri: 'https://mention.earth', expiresIn: Number.NaN },
+      ],
+    ])('rejects %s rather than returning a half-parsed result', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue(value);
+
+      await expect(oxy.finalizeCommonsOAuth('secret-session-token')).rejects.toThrow(
+        /incomplete authorization code/,
+      );
+    });
+
+    it('surfaces a server rejection through the shared error handler', async () => {
+      makeRequestSpy.mockRejectedValue(new Error('Invalid or expired sign-in request'));
+
+      await expect(oxy.finalizeCommonsOAuth('secret-session-token')).rejects.toThrow(
+        'Invalid or expired sign-in request',
+      );
+    });
+  });
+
   describe('getCommonsApprovalInfo (approver)', () => {
     const baseInfo = {
       application: {
@@ -122,7 +282,12 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
 
       const result = await oxy.getCommonsApprovalInfo('code-1');
 
-      expect(result).toEqual({ ...baseInfo, originVerified: true });
+      expect(result).toEqual({
+        ...baseInfo,
+        originVerified: true,
+        purpose: 'device_sign_in',
+        subjectAccount: null,
+      });
       expect(makeRequestSpy).toHaveBeenCalledWith(
         'GET',
         '/auth/session/approve-info/code-1',
@@ -137,6 +302,77 @@ describe('OxyServices — "Sign in with Oxy" handoff', () => {
       const result = await oxy.getCommonsApprovalInfo('code-1');
 
       expect(result.originVerified).toBe(false);
+    });
+
+    it('parses an OAuth-bound request with its delegated subject account', async () => {
+      makeRequestSpy.mockResolvedValue({
+        ...baseInfo,
+        originVerified: true,
+        purpose: 'oauth_authorization',
+        subjectAccount: { id: 'acct-org', username: 'oxy', displayName: 'The Oxy Collective' },
+      });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.purpose).toBe('oauth_authorization');
+      expect(result.subjectAccount).toEqual({
+        id: 'acct-org',
+        username: 'oxy',
+        displayName: 'The Oxy Collective',
+      });
+    });
+
+    it('keeps a delegated account without a displayName (omits the key rather than blanking it)', async () => {
+      makeRequestSpy.mockResolvedValue({
+        ...baseInfo,
+        subjectAccount: { id: 'acct-org', username: 'oxy' },
+      });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.subjectAccount).toEqual({ id: 'acct-org', username: 'oxy' });
+    });
+
+    it('degrades a server that omits purpose/subjectAccount to a plain device sign-in', async () => {
+      makeRequestSpy.mockResolvedValue(baseInfo);
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.purpose).toBe('device_sign_in');
+      expect(result.subjectAccount).toBeNull();
+    });
+
+    it('coerces an unrecognized purpose to device_sign_in (never implies an OAuth grant)', async () => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, purpose: 'something_else' });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.purpose).toBe('device_sign_in');
+    });
+
+    it.each([
+      ['a half-populated object', { id: 'acct-org' }],
+      ['a non-string id', { id: 7, username: 'oxy' }],
+      ['an empty username', { id: 'acct-org', username: '' }],
+      ['a non-object', 'acct-org'],
+      ['an explicit null', null],
+    ])('rejects %s subjectAccount whole (fail-safe to "no delegation")', async (_label, value) => {
+      makeRequestSpy.mockResolvedValue({ ...baseInfo, subjectAccount: value });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.subjectAccount).toBeNull();
+    });
+
+    it('drops a non-string displayName rather than rendering it', async () => {
+      makeRequestSpy.mockResolvedValue({
+        ...baseInfo,
+        subjectAccount: { id: 'acct-org', username: 'oxy', displayName: 42 },
+      });
+
+      const result = await oxy.getCommonsApprovalInfo('code-1');
+
+      expect(result.subjectAccount).toEqual({ id: 'acct-org', username: 'oxy' });
     });
 
     it('coerces a non-boolean originVerified to false', async () => {

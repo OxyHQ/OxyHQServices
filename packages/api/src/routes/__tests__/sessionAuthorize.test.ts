@@ -57,7 +57,11 @@ jest.mock('../../models/Session', () => ({
 
 // authSession.service is consumed by `/auth/session/claim` only; we
 // mock it to avoid the model import chain.
+// Partial mock: `claimAuthSession` is stubbed, but the module's PURE helpers
+// (`resolveOAuthContext`, …) stay real so the authorize route's OAuth-purpose
+// branching is exercised rather than silently short-circuited by an undefined.
 jest.mock('../../services/authSession.service', () => ({
+  ...jest.requireActual('../../services/authSession.service'),
   claimAuthSession: jest.fn(),
 }));
 

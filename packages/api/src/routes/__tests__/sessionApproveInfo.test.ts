@@ -32,7 +32,11 @@ jest.mock('../../models/AuthSession', () => ({
   AuthSession: { findOne: mockAuthSessionFindOne },
 }));
 jest.mock('../../models/Session', () => ({ __esModule: true, default: { findOne: jest.fn() } }));
+// Partial mock: the approval-flow entry points are stubbed, but the module's
+// PURE helpers (`resolveOAuthContext`, …) stay real so the route's OAuth-purpose
+// branching is exercised rather than silently short-circuited by an undefined.
 jest.mock('../../services/authSession.service', () => ({
+  ...jest.requireActual('../../services/authSession.service'),
   claimAuthSession: jest.fn(),
   authorizeSessionWithSignedChallenge: jest.fn(),
 }));

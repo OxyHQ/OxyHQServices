@@ -32,8 +32,16 @@ import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import { formatUserResponse } from '../utils/userTransform';
-import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS, canonicalizeOAuthRedirectUri } from '../services/oauthCode.service';
-import { claimAuthSession, authorizeSessionWithSignedChallenge, authorizeSessionWithBearer } from '../services/authSession.service';
+import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
+import {
+  claimAuthSession,
+  authorizeSessionWithSignedChallenge,
+  authorizeSessionWithBearer,
+  finalizeOAuthAuthorization,
+  resolveOAuthContext,
+  verifyDelegatedSubject,
+} from '../services/authSession.service';
+import { isAllowedRedirectUri } from '../utils/oauthRedirect';
 import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
@@ -567,12 +575,19 @@ import AuthSession from '../models/AuthSession';
  *         description: Application is not available (suspended/deleted/pending review).
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, clientId, applicationId, deviceId } = req.body as {
+  const { sessionToken, expiresAt, clientId, applicationId, deviceId, oauth } = req.body as {
     sessionToken: string;
     clientId?: string;
     applicationId?: string;
     expiresAt?: string | number;
     deviceId?: string;
+    oauth?: {
+      redirectUri: string;
+      codeChallenge: string;
+      codeChallengeMethod: string;
+      scope?: string;
+      subjectAccountId?: string;
+    };
   };
 
   if (!sessionToken) {
@@ -580,6 +595,15 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   }
   if (!clientId && !applicationId) {
     throw new BadRequestError('Either clientId or applicationId is required');
+  }
+  // An OAuth-bound request is matched against the OAuth CLIENT's registered
+  // redirect allowlist, so it must be identified by its client_id.
+  if (oauth && !clientId) {
+    throw new BadRequestError('clientId is required for an OAuth-bound session');
+  }
+  // Only S256 — `plain` is rejected outright, matching POST /auth/oauth/authorize.
+  if (oauth && oauth.codeChallengeMethod !== 'S256') {
+    throw new BadRequestError('Only S256 code_challenge_method is supported');
   }
 
   const now = Date.now();
@@ -648,6 +672,40 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     !!boundOrigin &&
     applicationAllowsOrigin(resolvedApp, boundOrigin);
 
+  // OAuth binding (optional). When present this request stops being a device
+  // sign-in and becomes an OAuth authorization request that finalizes into a
+  // single-use AuthCode. The redirect URI is validated against the SAME exact,
+  // constant-time allowlist check `POST /auth/oauth/authorize` uses — and a
+  // failure is surfaced as an error, NEVER a redirect (RFC 6749 §3.1.2.4).
+  let oauthContext:
+    | {
+        redirectUri: string;
+        codeChallenge: string;
+        codeChallengeMethod: 'S256';
+        scopes: string[];
+        subjectAccountId?: string;
+      }
+    | undefined;
+  if (oauth) {
+    if (!isAllowedRedirectUri(resolvedApp, oauth.redirectUri)) {
+      logger.warn('[OAuth] Rejected unregistered redirect_uri on session/create', {
+        applicationId: resolvedApp._id.toString(),
+      });
+      throw new ForbiddenError('redirect_uri is not registered for this client');
+    }
+    if (oauth.subjectAccountId && !isValidObjectId(oauth.subjectAccountId)) {
+      throw new BadRequestError('Invalid subjectAccountId');
+    }
+    oauthContext = {
+      redirectUri: oauth.redirectUri,
+      codeChallenge: oauth.codeChallenge,
+      codeChallengeMethod: 'S256',
+      // Normalized exactly like POST /auth/oauth/authorize.
+      scopes: oauth.scope ? oauth.scope.split(/\s+/).filter(Boolean) : [],
+      ...(oauth.subjectAccountId ? { subjectAccountId: oauth.subjectAccountId } : {}),
+    };
+  }
+
   // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });
   if (existing) {
@@ -662,7 +720,8 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const authorizeCode = crypto.randomBytes(16).toString('hex');
   const qrNonce = crypto.randomBytes(8).toString('hex');
 
-  // Create new auth session
+  // Create new auth session. Every field is written from a SERVER-resolved value
+  // or an explicitly whitelisted one — `req.body` is never spread in.
   const authSession = await AuthSession.create({
     sessionToken,
     applicationId: resolvedApp._id,
@@ -672,6 +731,8 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     challengeNonce: qrNonce,
     expiresAt: expiresAtDate,
     status: 'pending',
+    purpose: oauthContext ? 'oauth_authorization' : 'device_sign_in',
+    ...(oauthContext ? { oauth: oauthContext } : {}),
     ...(typeof deviceId === 'string' && deviceId.trim() ? { deviceId: deviceId.trim() } : {}),
   });
 
@@ -929,33 +990,60 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
 
   const authenticatedUserId = authenticatedUser._id.toString();
 
-  // Resolve the bound Application for the device-name label. The session can't
-  // exist without a valid applicationId; fall back to a generic label only if
-  // the app was hard-deleted between create and authorize.
-  const app = await Application.findById(authSession.applicationId);
-  const appLabel = app ? app.name : 'App';
-
-  // Create a new session for the third-party app, owned by the
-  // authenticated user identified via the bearer token. When the flow was
-  // started with a device binding (`deviceId` persisted at create time), pass it
-  // as the explicit deviceId so the session lands on the originating device.
-  const newSession = await sessionService.createSession(
-    authenticatedUserId,
-    req,
-    {
-      deviceName: deviceName || `${appLabel} App`,
-      deviceFingerprint,
-      ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
+  // Delegated subject gate: approving an app acting AS another account requires
+  // the authenticated identity to hold `account:act_as` over it (the same
+  // predicate `POST /accounts/:id/switch` uses). The identity never becomes the
+  // account — it authorises the app to act as it.
+  const oauthContext = resolveOAuthContext(authSession);
+  const subjectAccountId = oauthContext?.subjectAccountId?.toString();
+  if (subjectAccountId) {
+    const delegation = await verifyDelegatedSubject(authenticatedUserId, subjectAccountId);
+    if (!delegation.ok) {
+      logger.warn('Delegated subject refused on session authorize', {
+        sessionToken: sessionToken.substring(0, 8) + '...',
+        userId: authenticatedUserId,
+        reason: delegation.reason,
+      });
+      throw new ForbiddenError('Not authorized to act as the requested account');
     }
-  );
+  }
 
-  // Update auth session
+  // An OAuth authorization request mints NO session on approval — its result is
+  // the single-use authorization code produced by
+  // `POST /auth/session/finalize/:sessionToken`.
+  let newSessionId: string | undefined;
+  if (!oauthContext) {
+    // Resolve the bound Application for the device-name label. The session can't
+    // exist without a valid applicationId; fall back to a generic label only if
+    // the app was hard-deleted between create and authorize.
+    const app = await Application.findById(authSession.applicationId);
+    const appLabel = app ? app.name : 'App';
+
+    // Create a new session for the third-party app, owned by the
+    // authenticated user identified via the bearer token. When the flow was
+    // started with a device binding (`deviceId` persisted at create time), pass it
+    // as the explicit deviceId so the session lands on the originating device.
+    const newSession = await sessionService.createSession(
+      authenticatedUserId,
+      req,
+      {
+        deviceName: deviceName || `${appLabel} App`,
+        deviceFingerprint,
+        ...(authSession.deviceId ? { deviceId: authSession.deviceId } : {}),
+      }
+    );
+    newSessionId = newSession.sessionId;
+  }
+
+  // Update auth session — including WHICH identity approved.
   authSession.status = 'authorized';
   if (authenticatedUser.publicKey) {
     authSession.authorizedBy = authenticatedUser.publicKey;
   }
   authSession.authorizedUserId = authenticatedUser._id;
-  authSession.authorizedSessionId = newSession.sessionId;
+  if (newSessionId) {
+    authSession.authorizedSessionId = newSessionId;
+  }
   await authSession.save();
 
   logger.info('Auth session authorized', {
@@ -967,7 +1055,7 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
   // Emit socket event to notify the waiting client
   emitAuthSessionUpdate(sessionToken, {
     status: 'authorized',
-    sessionId: newSession.sessionId,
+    sessionId: newSessionId,
     publicKey: authenticatedUser.publicKey,
     userId: authenticatedUserId,
     username: authenticatedUser.username,
@@ -975,12 +1063,15 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
 
   // A1: a brand-new session was minted for this user — signal all of their other
   // connected sockets (across devices/origins) to refetch. No device mutation
-  // happens here, so the revision hint is 0.
-  broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+  // happens here, so the revision hint is 0. Nothing was minted for an OAuth
+  // authorization request, so there is nothing to refetch.
+  if (newSessionId) {
+    broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+  }
 
   sendSuccess(res, {
     success: true,
-    sessionId: newSession.sessionId,
+    sessionId: newSessionId,
     user: {
       id: authenticatedUserId,
       username: authenticatedUser.username,
@@ -1221,11 +1312,24 @@ const authSessionAuthorizeSignedLimiter = rateLimit({
 });
 
 /**
+ * Sanitized identity of a DELEGATED subject account for the approval screen —
+ * id + handle + display name and NOTHING else. Enough for Commons to render
+ * "Mention will act as: The Oxy Collective"; never a channel for account
+ * internals (kind, membership, owner, status) on a public endpoint.
+ */
+interface SanitizedSubjectAccount {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+}
+
+/**
  * GET /auth/session/approve-info/:authorizeCode
  *
  * PUBLIC. Returns the server-resolved, sanitized Application identity (never the
- * QR's self-asserted strings) plus the bound origin and status, so the Commons
- * approval screen renders the TRUE app. Never leaks the secret `sessionToken`.
+ * QR's self-asserted strings) plus the bound origin, purpose, delegated subject
+ * and status, so the Commons approval screen renders the TRUE request. Never
+ * leaks the secret `sessionToken`, tokens, or the PKCE binding.
  */
 router.get(
   '/session/approve-info/:authorizeCode',
@@ -1244,13 +1348,45 @@ router.get(
       await authSession.save();
     }
 
+    const oauthContext = resolveOAuthContext(authSession);
+
     let application = null;
     let scopes: string[] = [];
     const app = await Application.findById(authSession.applicationId);
     if (app && app.status === 'active') {
       const developerName = await resolveDeveloperName(app);
       application = serializePublicApplication(app, developerName);
-      scopes = Array.isArray(app.scopes) ? [...app.scopes] : [];
+      const appScopes = Array.isArray(app.scopes) ? [...app.scopes] : [];
+      // What the app will ACTUALLY receive if this is approved. For an OAuth
+      // request that is the requested set narrowed to the app's registered
+      // scopes (an app can never receive more than it is registered for); a
+      // device sign-in has no per-request scope set, so it is the app's own.
+      scopes =
+        oauthContext && oauthContext.scopes.length > 0
+          ? intersectScopes(oauthContext.scopes, appScopes)
+          : appScopes;
+    }
+
+    // Delegated subject: "who will the app act as". Resolved SERVER-side from
+    // the bound id — the QR/deep link never carries display data.
+    let subjectAccount: SanitizedSubjectAccount | null = null;
+    const subjectAccountId = oauthContext?.subjectAccountId?.toString();
+    if (subjectAccountId) {
+      const subject = await User.findById(subjectAccountId)
+        .select('username name')
+        .lean<{
+          _id: mongoose.Types.ObjectId;
+          username?: string;
+          name?: { first?: string; last?: string; full?: string; displayName?: string };
+        } | null>();
+      if (subject) {
+        const name = formatUserNameResponse({ name: subject.name, username: subject.username });
+        subjectAccount = {
+          id: subject._id.toString(),
+          username: typeof subject.username === 'string' ? subject.username : null,
+          displayName: name.displayName ?? null,
+        };
+      }
     }
 
     sendSuccess(res, {
@@ -1261,6 +1397,9 @@ router.get(
       // session NOT proven to originate from a trusted app's own registered
       // origin), Commons warns the approver that the source is unverifiable.
       originVerified: authSession.originVerified ?? false,
+      // What approving this request does. Legacy rows read as a device sign-in.
+      purpose: authSession.purpose ?? 'device_sign_in',
+      subjectAccount,
       expiresAt: authSession.expiresAt.toISOString(),
       status: authSession.status,
     });
@@ -1307,6 +1446,7 @@ router.post(
 
     if (!outcome.ok) {
       if (outcome.status === 401) throw new UnauthorizedError(outcome.message);
+      if (outcome.status === 403) throw new ForbiddenError(outcome.message);
       if (outcome.status === 404) throw new NotFoundError(outcome.message);
       throw new BadRequestError(outcome.message);
     }
@@ -1327,8 +1467,11 @@ router.post(
 
     // A1: a brand-new session was minted for the signer via the QR handoff —
     // signal all of their other connected sockets to refetch. No device mutation
-    // happens here, so the revision hint is 0.
-    broadcastSessionAccountsChanged(outcome.userId, 0, 'login');
+    // happens here, so the revision hint is 0. An OAuth authorization request
+    // mints no session, so there is nothing to refetch.
+    if (outcome.sessionId) {
+      broadcastSessionAccountsChanged(outcome.userId, 0, 'login');
+    }
 
     sendSuccess(res, {
       success: true,
@@ -1392,6 +1535,7 @@ router.post(
     });
 
     if (!outcome.ok) {
+      if (outcome.status === 403) throw new ForbiddenError(outcome.message);
       if (outcome.status === 404) throw new NotFoundError(outcome.message);
       throw new BadRequestError(outcome.message);
     }
@@ -1413,8 +1557,11 @@ router.post(
 
     // A1: a brand-new session was minted for this user — signal all of their
     // other connected sockets (across devices/origins) to refetch. No device
-    // mutation happens here, so the revision hint is 0.
-    broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+    // mutation happens here, so the revision hint is 0. An OAuth authorization
+    // request mints no session, so there is nothing to refetch.
+    if (outcome.sessionId) {
+      broadcastSessionAccountsChanged(authenticatedUserId, 0, 'login');
+    }
 
     sendSuccess(res, {
       success: true,
@@ -1457,6 +1604,95 @@ router.post(
   }),
 );
 
+// Finalization of an OAuth-bound request. Tight, like the claim limiter — a
+// legitimate flow hits this exactly once (the request is single-use), so the cap
+// only blunts brute force against the 128-bit sessionToken.
+const authSessionFinalizeLimiter = rateLimit({
+  prefix: 'rl:auth:session-finalize:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * @openapi
+ * /auth/session/finalize/{sessionToken}:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Finalize an approved OAuth-bound auth session into an authorization code
+ *     description: >
+ *       Terminal step of an OAuth authorization request created with
+ *       `POST /auth/session/create` + an `oauth` binding and approved through any
+ *       delivery surface (popup, push, QR, verified app link). Mints the ONE
+ *       single-use `AuthCode` the relying party redeems at
+ *       `POST /auth/oauth/token` with its PKCE verifier.
+ *
+ *       No `Authorization` header: the 128-bit `sessionToken` — held only by the
+ *       originating client, never echoed to observers — IS the credential,
+ *       exactly as on `POST /auth/session/claim`. No access token is ever handed
+ *       out here.
+ *
+ *       Atomic and single-use: the authorization code's identity is reserved by
+ *       the same update that spends the request, so a request can never mint a
+ *       second code, even under concurrent calls. Every failure mode collapses to
+ *       one generic `invalid_grant` (RFC 6749 §5.2) — nothing enumerates which
+ *       precondition failed.
+ *     parameters:
+ *       - name: sessionToken
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Authorization code issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: string
+ *                 redirectUri:
+ *                   type: string
+ *                   format: uri
+ *                 expiresIn:
+ *                   type: integer
+ *                   example: 60
+ *       401:
+ *         description: >
+ *           Unknown, not an OAuth request, not approved, expired, already
+ *           finalized, no longer permitted, or its application/redirect binding
+ *           is no longer valid.
+ */
+router.post(
+  '/session/finalize/:sessionToken',
+  authSessionFinalizeLimiter,
+  validate({ params: authSessionTokenParams }),
+  asyncHandler(async (req, res) => {
+    const { sessionToken } = req.params;
+
+    const outcome = await finalizeOAuthAuthorization({ sessionToken });
+
+    if (!outcome.ok) {
+      // One generic error for every rejection — the precise reason stays in the
+      // server log so a caller cannot probe the request's state.
+      logger.warn('[AuthSession] Finalize rejected', {
+        reason: outcome.reason,
+        sessionToken: sessionToken.substring(0, 8) + '...',
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    sendSuccess(res, {
+      code: outcome.code,
+      redirectUri: outcome.redirectUri,
+      expiresIn: outcome.expiresIn,
+    });
+  }),
+);
+
 // ============================================
 // OAuth2 Authorization Code Flow (with PKCE)
 // ============================================
@@ -1474,29 +1710,6 @@ router.post(
 //      for `{ access_token, deviceId, deviceSecret, session_id, user }`.
 //
 // Access tokens never appear in the URL bar.
-
-/**
- * Validate a redirect URI against the Application allowlist using an exact
- * match (per OAuth2 RFC 6749 §3.1.2). Partial / prefix matching is the
- * source of countless open-redirect vulnerabilities — we never normalise
- * away path or query for the comparison. Constant-time equality keeps the
- * comparison from leaking the allowlist contents via timing.
- *
- * Origin-only https URLs are canonicalized so `https://app.example` and
- * `https://app.example/` match the same registered apex origin.
- */
-function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: string): boolean {
-  const allowlist = app.redirectUris ?? [];
-  if (allowlist.length === 0) return false;
-  const provided = Buffer.from(canonicalizeOAuthRedirectUri(redirectUri));
-  for (const allowed of allowlist) {
-    const allowedBuf = Buffer.from(canonicalizeOAuthRedirectUri(allowed));
-    if (allowedBuf.length === provided.length && crypto.timingSafeEqual(allowedBuf, provided)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 /**
  * Resolve an OAuth `clientId` (= ApplicationCredential.publicKey) to its
@@ -2143,12 +2356,22 @@ router.post(
         ? exchange.code.deviceId.trim()
         : undefined;
 
+    // A DELEGATED code authorises the app to act as `userId` on behalf of the
+    // approving identity. Carry that operator onto the session so its validity
+    // stays bound to their live `account:act_as` membership — revoking the
+    // membership kills the session (re-checked on validate + refresh), exactly
+    // like a managed-account switch.
+    const operatedByUserId = exchange.code.operatedByUserId
+      ? exchange.code.operatedByUserId.toString()
+      : undefined;
+
     const session = await sessionService.createSession(
       userId,
       req,
       {
         deviceName: `${app.name} OAuth`,
         ...(sharedDeviceId ? { deviceId: sharedDeviceId } : {}),
+        ...(operatedByUserId ? { operatedByUserId } : {}),
       },
     );
 

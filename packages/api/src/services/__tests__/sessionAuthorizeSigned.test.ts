@@ -16,9 +16,11 @@ const mockChallengeFindOne = jest.fn();
 const mockChallengeFindOneAndUpdate = jest.fn();
 const mockAuthSessionFindOne = jest.fn();
 const mockUserFindOne = jest.fn();
+const mockUserFindById = jest.fn();
 const mockApplicationFindById = jest.fn();
 const mockCreateSession = jest.fn();
 const mockVerifyChallengeResponse = jest.fn();
+const mockVerifyActingAs = jest.fn();
 
 jest.mock('../../models/AuthChallenge', () => ({
   __esModule: true,
@@ -34,8 +36,20 @@ jest.mock('../../models/AuthSession', () => ({
 }));
 jest.mock('../../models/User', () => ({
   __esModule: true,
-  User: { findOne: (...args: unknown[]) => mockUserFindOne(...args) },
-  default: { findOne: (...args: unknown[]) => mockUserFindOne(...args) },
+  User: {
+    findOne: (...args: unknown[]) => mockUserFindOne(...args),
+    findById: (...args: unknown[]) => mockUserFindById(...args),
+  },
+  default: {
+    findOne: (...args: unknown[]) => mockUserFindOne(...args),
+    findById: (...args: unknown[]) => mockUserFindById(...args),
+  },
+}));
+// The delegated-subject gate reuses the EXISTING act-as mechanism, imported
+// lazily by the service (mirroring session.service's managed-session re-check).
+jest.mock('../account.service', () => ({
+  __esModule: true,
+  accountService: { verifyActingAs: (...args: unknown[]) => mockVerifyActingAs(...args) },
 }));
 jest.mock('../../models/Application', () => ({
   __esModule: true,
@@ -213,5 +227,84 @@ describe('authorizeSessionWithSignedChallenge', () => {
     const second = await authorizeSessionWithSignedChallenge(baseInput({ challenge: 'chal-2' }));
 
     expect(second).toEqual({ ok: false, status: 404, message: 'Auth session not found or already processed' });
+  });
+});
+
+/**
+ * The Commons vault is the PRIMARY approval surface, so the delegated-subject
+ * permission gate has to hold here — not just on the bearer approval paths. The
+ * identity never becomes the organisation; it authorises the app to act as it,
+ * and only when it actually holds `account:act_as`.
+ */
+describe('authorizeSessionWithSignedChallenge — delegated subject (OAuth request)', () => {
+  const ORG_ID = '64f7c2a1b8e9d3f4a1c2b402';
+
+  function delegatedOAuthSession() {
+    return {
+      ...pendingSession(),
+      purpose: 'oauth_authorization',
+      oauth: {
+        redirectUri: 'https://mention.earth/oauth/callback',
+        codeChallenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+        codeChallengeMethod: 'S256',
+        scopes: ['user:read'],
+        subjectAccountId: { toString: () => ORG_ID },
+      },
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function primeVerifiedSigner(session: unknown) {
+    mockChallengeFindOne.mockReturnValueOnce(leanChallenge());
+    mockVerifyChallengeResponse.mockReturnValueOnce(true);
+    mockChallengeFindOneAndUpdate.mockResolvedValueOnce({ _id: 'chal-id' });
+    mockAuthSessionFindOne.mockResolvedValueOnce(session);
+    mockUserFindOne.mockReturnValueOnce(leanUser({ _id: { toString: () => 'user-123' }, username: 'nate' }));
+  }
+
+  it('refuses (403) when the signer cannot act as the delegated subject', async () => {
+    const session = delegatedOAuthSession();
+    primeVerifiedSigner(session);
+    mockUserFindById.mockReturnValueOnce({
+      select: () => ({ lean: () => Promise.resolve({ kind: 'organization', accountStatus: 'active' }) }),
+    });
+    mockVerifyActingAs.mockResolvedValueOnce(null);
+
+    const outcome = await authorizeSessionWithSignedChallenge(baseInput());
+
+    expect(outcome).toEqual({
+      ok: false,
+      status: 403,
+      message: 'Not authorized to act as the requested account',
+    });
+    expect(mockVerifyActingAs).toHaveBeenCalledWith('user-123', ORG_ID);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(session.save).not.toHaveBeenCalled();
+    expect(session.status).toBe('pending');
+  });
+
+  it('approves a permitted delegated subject and mints NO session (the result is a code)', async () => {
+    const session = delegatedOAuthSession();
+    primeVerifiedSigner(session);
+    mockUserFindById.mockReturnValueOnce({
+      select: () => ({ lean: () => Promise.resolve({ kind: 'organization', accountStatus: 'active' }) }),
+    });
+    mockVerifyActingAs.mockResolvedValueOnce('admin');
+
+    const outcome = await authorizeSessionWithSignedChallenge(baseInput());
+
+    expect(outcome).toEqual({
+      ok: true,
+      sessionToken: 'secret-token',
+      userId: 'user-123',
+      username: 'nate',
+      publicKey: PUBLIC_KEY,
+    });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    // WHICH identity approved is recorded on the request.
+    expect(session.status).toBe('authorized');
+    expect(session.authorizedBy).toBe(PUBLIC_KEY);
+    expect(session.authorizedSessionId).toBeNull();
+    expect(session.save).toHaveBeenCalledTimes(1);
   });
 });
