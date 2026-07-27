@@ -2,10 +2,12 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import type { OxyServices, User } from '@oxyhq/core';
-import { KeyManager } from '@oxyhq/core';
+import { KeyManager, logger } from '@oxyhq/core';
 import { useAuthStore, useUpdateProfile } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
+import { requestNotificationPermission } from '@/lib/notifications/device-notifications';
+import { registerVaultPushToken } from '@/lib/notifications/push-registration';
 import { STORE_UPDATE_DELAY_MS } from '@/constants/auth';
 import { useTranslation } from '@/lib/i18n';
 
@@ -213,8 +215,15 @@ export function useAuthHandlers({
   }, [completeSignIn]);
 
   /**
-   * Handle notification permission request and complete onboarding
-   * User should already be authenticated at this point
+   * Handle the notification permission request and complete onboarding.
+   * The user is authenticated by this point (we sign in first if not).
+   *
+   * This is the ONE place Commons prompts for notifications, and it is also
+   * where a fresh grant is turned into a real push registration: without a
+   * registered Expo push token the platform cannot wake this vault, so
+   * "Continue with Oxy" on a desktop would have no way to reach the phone
+   * (issue #691, Phase 4). The root-level `usePushRegistration` re-checks on
+   * every later cold boot — it never prompts, so the user is never asked twice.
    */
   const handleRequestNotifications = useCallback(async () => {
     if (!isAuthenticated) {
@@ -224,32 +233,36 @@ export function useAuthHandlers({
       }
     }
 
+    // Push notifications don't exist in Expo Go (SDK 53+) — skip straight to
+    // the vault rather than prompting for a permission that buys nothing.
     if (isExpoGo()) {
       router.push('/(tabs)/(id)');
       return;
     }
 
+    setIsRequestingNotifications(true);
+    setAuthError(null);
     try {
-      setIsRequestingNotifications(true);
-      setAuthError(null);
-
-      const Notifications: typeof import('expo-notifications') = await import('expo-notifications');
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-
-      if (existingStatus === 'granted') {
-        router.push('/(tabs)/(id)');
-        return;
+      // Short-circuits when already granted, so a resumed onboarding shows at
+      // most one system dialog.
+      const granted = await requestNotificationPermission();
+      if (granted && oxyServices) {
+        // Fire-and-forget: a failed registration costs the user the push
+        // convenience, never their onboarding. The QR handoff still works.
+        void registerVaultPushToken(oxyServices).catch((error: unknown) => {
+          logger.warn(
+            '[commons] onboarding push token registration failed',
+            { component: 'useAuthHandlers' },
+            error,
+          );
+        });
       }
-
-      await Notifications.requestPermissionsAsync();
-      router.push('/(tabs)/(id)');
-    } catch (err: unknown) {
-      handleAuthError(err, 'requestNotifications');
-      router.push('/(tabs)/(id)');
     } finally {
       setIsRequestingNotifications(false);
     }
-  }, [isAuthenticated, router, setAuthError, completeSignIn]);
+
+    router.push('/(tabs)/(id)');
+  }, [isAuthenticated, router, setAuthError, completeSignIn, oxyServices]);
 
   return {
     handleSignIn,

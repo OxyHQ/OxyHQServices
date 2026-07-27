@@ -98,6 +98,14 @@ export type PublicApplicationResponse = z.infer<typeof publicApplicationSchema>;
  * current producer and are never `null`, but stay `.optional()` so the contract
  * tolerates leaner shapes from other producers of this same payload without a
  * coordinated bump.
+ *
+ * `pushSentAt` / `openedAt` are DELIVERY PROGRESS, not authorization state: they
+ * let a waiting surface render "Check Commons on your phone" → "Opened in
+ * Commons" without inventing competing statuses. `status` remains the only
+ * authority on whether the request is pending, authorized, cancelled or expired.
+ * Both are `.nullable().optional()` for the same reason as `sessionId` — the
+ * producer always emits the key with `null` until that step happens, and an
+ * older API that omits them entirely must degrade, not fail the parse.
  */
 export const sessionStatusSchema = z.object({
     status: z.string(),
@@ -113,6 +121,8 @@ export const sessionStatusSchema = z.object({
      * OAuth-bound sessions finalize into an authorization code (no `sessionId`).
      */
     purpose: z.enum(['device_sign_in', 'oauth_authorization']).optional(),
+    pushSentAt: z.string().nullable().optional(),
+    openedAt: z.string().nullable().optional(),
 });
 
 export type SessionStatusResponse = z.infer<typeof sessionStatusSchema>;

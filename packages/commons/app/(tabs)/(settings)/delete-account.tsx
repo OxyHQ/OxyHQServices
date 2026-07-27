@@ -13,6 +13,7 @@ import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { runAccountDeletion } from '@/lib/account/delete-account-flow';
+import { retireVaultPushToken } from '@/lib/notifications/push-registration';
 import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from '@/hooks/useOnboardingStatus';
 import { persistOnboardingComplete, persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
@@ -65,11 +66,16 @@ export default function DeleteAccountScreen() {
         return;
       }
 
-      // Server-side delete → purge the local identity (primary + backup) →
-      // sign out. The purge runs ONLY after the server confirms deletion, so a
-      // failed delete never strands the user without their keys. See
-      // `runAccountDeletion` for the full ordering/safety contract.
+      // Retire the push token (bearer still valid) → server-side delete → purge
+      // the local identity (primary + backup) → sign out. The purge runs ONLY
+      // after the server confirms deletion, so a failed delete never strands the
+      // user without their keys. See `runAccountDeletion` for the full
+      // ordering/safety contract.
       const { localIdentityPurged } = await runAccountDeletion(confirmText, {
+        // Must precede the delete: the registry scopes the retirement to the
+        // authenticated identity, so this device would otherwise keep a live
+        // registration for the account being destroyed.
+        retirePushToken: () => retireVaultPushToken(oxyServices),
         deleteAccount: (text) => oxyServices.deleteAccount(text),
         // skipBackup=true (no point backing up keys for a deleted account),
         // force=true (also purges the backup slot, no re-prompt), and

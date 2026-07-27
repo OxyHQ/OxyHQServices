@@ -12,6 +12,10 @@ const schemaInstance = {
   post: jest.fn(),
   virtual: jest.fn(() => ({ get: jest.fn() })),
   index: jest.fn(),
+  // `Schema.prototype.set` — used by models that configure `toJSON` transforms
+  // (e.g. PushToken). Without it, importing such a model throws at module load
+  // in any suite that does not explicitly mock it.
+  set: jest.fn(),
   methods: {},
   statics: {},
 };
