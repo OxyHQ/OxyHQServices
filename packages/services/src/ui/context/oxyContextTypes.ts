@@ -3,6 +3,8 @@ import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccoun
 import type { UseFollowHook } from '../hooks/useFollow.types';
 import type { useLanguageManagement } from '../hooks/useLanguageManagement';
 import type { RouteName } from '../navigation/routes';
+import type { StartWebOAuthSignInOptions } from '../oauth/browserAuthTransport';
+import type { WebAuthMode, WebOAuthSignInResult } from '../oauth/types';
 
 export interface OxyContextState {
   user: User | null;
@@ -37,6 +39,8 @@ export interface OxyContextState {
    * while `accounts` stays empty and the account dialog never opens.
    */
   sessionMode: SessionMode;
+  /** How web third-party sign-in reaches the IdP (see `OxyProviderProps.webAuthMode`). */
+  webAuthMode: WebAuthMode;
   error: string | null;
   /** Active UI locale (`language-REGION`): the account's primary locale when signed in, else the guest/device locale. */
   currentLanguage: string;
@@ -89,6 +93,24 @@ export interface OxyContextState {
 
   revokeSuspiciousSignIn: () => Promise<void>;
   handleWebSession: (session: SessionLoginResponse) => Promise<void>;
+
+  /**
+   * Run a WEB third-party OAuth sign-in (authorization code + PKCE) end to end
+   * using this provider's `webAuthMode`, and commit the resulting session.
+   *
+   * This is the shared operation `OxySignInButton` delegates to; RPs that ship
+   * their own button call it directly and never implement popup listeners, a
+   * token exchange, or `state` validation themselves. Returns a typed result —
+   * closing the popup and running out of time are values, not exceptions.
+   *
+   * In popup mode the window MUST be opened during the user's click: either
+   * call this synchronously from the press handler (it opens one itself), or
+   * call `openOAuthPopup()` there and pass the handle as `popup`.
+   *
+   * No-op outside a browser and in `sessionMode: 'identity'`, both of which
+   * resolve to `{ status: 'unsupported' }`.
+   */
+  startWebOAuthSignIn: (options: StartWebOAuthSignInOptions) => Promise<WebOAuthSignInResult>;
 
   logout: (targetSessionId?: string) => Promise<void>;
   logoutAll: () => Promise<void>;
@@ -150,6 +172,11 @@ export interface OxyContextProviderProps {
    * @default 'account'
    */
   sessionMode?: SessionMode;
+  /**
+   * Transport for WEB third-party sign-in. See `OxyProviderProps.webAuthMode`.
+   * @default 'redirect'
+   */
+  webAuthMode?: WebAuthMode;
   /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
   hubSync?: boolean;
   onAuthStateChange?: (user: User | null) => void;

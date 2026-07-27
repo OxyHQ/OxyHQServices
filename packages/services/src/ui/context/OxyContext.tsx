@@ -34,6 +34,11 @@ import {
 } from '../navigation/accountDialogManager';
 import { redirectToAuthorize } from '../components/oauthNavigation';
 import { openPasskeyHubPopup } from '../components/passkeyHubPopup';
+import {
+  startWebOAuthSignIn,
+  type StartWebOAuthSignInOptions,
+} from '../oauth/browserAuthTransport';
+import type { WebOAuthSignInResult } from '../oauth/types';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { runProviderColdBoot } from '../boot/runProviderColdBoot';
 import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
@@ -97,6 +102,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
   sessionMode = 'account',
+  webAuthMode = 'redirect',
   hubSync = true,
   onAuthStateChange,
   onError,
@@ -748,6 +754,33 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [commitSession],
   );
 
+  // ── Web third-party OAuth sign-in ──────────────────────────────────────────
+  // The shared operation `OxySignInButton` (and any RP-owned button) delegates
+  // to, so no consumer ever writes popup listeners or a token exchange. The
+  // transport picks popup vs redirect from `webAuthMode`; both lanes land on the
+  // SAME completion path (`completeOAuthCode`) and the same commit funnel here.
+  //
+  // `hubSync: false` is deliberate: hub sync is a full-page redirect to
+  // auth.oxy.so, which would undo the one thing popup mode exists to guarantee —
+  // that the relying party never leaves its route. It matches how the redirect
+  // lane's return leg commits (see `runProviderColdBoot`).
+  const startWebOAuthSignInForContext = useCallback(
+    (options: StartWebOAuthSignInOptions): Promise<WebOAuthSignInResult> =>
+      startWebOAuthSignIn(
+        {
+          mode: webAuthMode,
+          oxyServices,
+          clientId,
+          authorizeBaseUrl,
+          identityBound: isIdentityBound,
+          commitSession: (input) =>
+            commitSessionRef.current(input, { activate: true, hubSync: false }),
+        },
+        options,
+      ),
+    [webAuthMode, oxyServices, clientId, authorizeBaseUrl, isIdentityBound],
+  );
+
   // ── Unified account dialog ─────────────────────────────────────────────────
   // The single account-chooser + sign-in surface. Built ONCE per provider mount
   // and bound to the live `oxyServices` + `sessionClient` + this provider's
@@ -1197,6 +1230,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       isAuthResolved: authResolved,
       isStorageReady: storage !== null,
       sessionMode: isIdentityBound ? 'identity' : 'account',
+      webAuthMode,
       error,
       currentLanguage,
       currentLanguages,
@@ -1212,6 +1246,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       removePasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
+      startWebOAuthSignIn: startWebOAuthSignInForContext,
       logout,
       logoutAll,
       switchSession: switchSessionForContext,
@@ -1252,6 +1287,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       authResolved,
       storage,
       isIdentityBound,
+      webAuthMode,
       error,
       currentLanguage,
       currentLanguages,
@@ -1267,6 +1303,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       removePasskey,
       revokeSuspiciousSignIn,
       handleWebSession,
+      startWebOAuthSignInForContext,
       logout,
       logoutAll,
       switchSessionForContext,
@@ -1325,6 +1362,7 @@ const LOADING_STATE: OxyContextState = {
   isAuthResolved: false,
   isStorageReady: false,
   sessionMode: 'account',
+  webAuthMode: 'redirect',
   error: null,
   currentLanguage: 'en-US',
   currentLanguages: [],
@@ -1340,6 +1378,7 @@ const LOADING_STATE: OxyContextState = {
   removePasskey: () => rejectMissingProvider<void>(),
   revokeSuspiciousSignIn: () => rejectMissingProvider<void>(),
   handleWebSession: () => rejectMissingProvider<void>(),
+  startWebOAuthSignIn: () => rejectMissingProvider<WebOAuthSignInResult>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),
   switchSession: () => rejectMissingProvider<User>(),

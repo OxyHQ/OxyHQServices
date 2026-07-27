@@ -26,6 +26,12 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     codeChallengeMethod?: string
     scope?: string
     /**
+     * `response_mode=web_message` (popup sign-in), carried through to
+     * `/authorize` so the result is posted to the opener rather than navigating
+     * this popup to the relying party.
+     */
+    responseMode?: string
+    /**
      * Username to pre-fill and re-authenticate. Set via `?login_hint=` when a
      * caller (e.g. the OAuth consent page's re-auth fallback) routes a specific
      * account here for explicit sign-in — pre-fills the handle so the user can
@@ -55,6 +61,7 @@ export function LoginForm({
     codeChallenge,
     codeChallengeMethod,
     scope,
+    responseMode,
     loginHint,
     ...props
 }: LoginFormProps) {
@@ -68,6 +75,7 @@ export function LoginForm({
         if (codeChallenge) params.set("code_challenge", codeChallenge)
         if (codeChallengeMethod) params.set("code_challenge_method", codeChallengeMethod)
         if (scope) params.set("scope", scope)
+        if (responseMode) params.set("response_mode", responseMode)
         const qs = params.toString()
         return qs ? `/signup?${qs}` : "/signup"
     })()
@@ -187,6 +195,7 @@ export function LoginForm({
             codeChallenge,
             codeChallengeMethod,
             scope,
+            responseMode,
         }))
     }
 

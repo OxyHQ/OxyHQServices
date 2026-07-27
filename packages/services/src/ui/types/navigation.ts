@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { RouteName } from '../navigation/routes';
 import type { User } from '@oxyhq/core';
 import type { ClientSession, SessionMode } from '@oxyhq/core';
+import type { WebAuthMode } from '../oauth/types';
 
 export interface StepController {
     canGoBack: () => boolean;
@@ -106,6 +107,22 @@ export interface OxyProviderProps {
      * @default 'account'
      */
     sessionMode?: SessionMode;
+    /**
+     * How a WEB third-party "Sign in with Oxy" hands the user to the IdP.
+     *
+     * - `'redirect'` (default) — a full-page navigation to `auth.oxy.so`, which
+     *   returns to the registered `redirect_uri` with `?code=`. The tab unmounts
+     *   and remounts, so route and unsaved state are lost.
+     * - `'popup'` — a small `auth.oxy.so` window opened from the user's click.
+     *   The app stays MOUNTED and becomes authenticated without a reload; the
+     *   IdP delivers only the authorization code + `state` back to the opener
+     *   via `postMessage` (never a token, device secret, or PKCE verifier). A
+     *   blocked popup falls back to the redirect automatically.
+     *
+     * Native is unaffected — it always uses an in-app auth session.
+     * @default 'redirect'
+     */
+    webAuthMode?: WebAuthMode;
     queryClient?: QueryClient;
     /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
     hubSync?: boolean;
