@@ -6,9 +6,10 @@
  * before proceeding. The actual sign-in (post-gate) is the silent core from
  * {@link useSilentKeySignIn} — composed here, not duplicated.
  *
- * NON-interactive callers (the vault restoring its own session at boot) must NOT
- * use this — a headless biometric prompt during boot never resolves and hangs
- * forever. They call `useSilentKeySignIn` directly. See `useSyncIdentity`.
+ * Callers that run OUTSIDE a user gesture (the network-reconnect scheduler's
+ * register-and-connect sync) must NOT use this — a headless biometric prompt
+ * with nobody in front of the device never resolves and hangs forever. They call
+ * `useSilentKeySignIn` directly. See `useSyncIdentity`.
  */
 
 import { useCallback } from 'react';

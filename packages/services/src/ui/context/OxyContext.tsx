@@ -21,6 +21,7 @@ import type {
 } from '@oxyhq/core';
 import {
   KeyManager,
+  establishIdentitySession,
   installAuthRefreshHandler,
   startTokenRefreshScheduler,
   createAccountDialogController,
@@ -57,11 +58,14 @@ import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
 import {
   createSessionClient,
+  createIdentitySessionBinding,
   createPlatformAuthStateStore,
   deviceStateToClientSessions,
   activeSessionIdOf,
   activeUserOf,
   accountIdsOf,
+  IdentityBoundSessionError,
+  type IdentitySessionBinding,
 } from '../session';
 import type {
   OxyContextState,
@@ -92,6 +96,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authorizeBaseUrl,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
+  sessionMode = 'account',
   hubSync = true,
   onAuthStateChange,
   onError,
@@ -118,6 +123,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     authStoreRef.current = createPlatformAuthStateStore();
   }
   const authStore = authStoreRef.current;
+
+  // Identity-bound session binding (`sessionMode: 'identity'`) — the platform pin
+  // store plus the memoised pinned account id every lane below binds to. Built
+  // ONCE per provider mount and ONLY in identity mode: an account-mode provider
+  // never constructs one, so `identity` is `null` there and every branch keyed on
+  // it collapses to today's behaviour.
+  //
+  // Like `oxyServices` / `baseURL`, `sessionMode` is mount-time configuration: it
+  // is read once and a later change does not re-bind the provider. Latching it
+  // this way also fails SAFE — a provider that started identity-bound can never
+  // be downgraded mid-flight into following the device's active account.
+  const identityRef = useRef<IdentitySessionBinding | null>(null);
+  if (sessionMode === 'identity' && !identityRef.current) {
+    identityRef.current = createIdentitySessionBinding();
+  }
+  const identity = identityRef.current;
+  const isIdentityBound = identity !== null;
 
   const {
     user,
@@ -309,9 +331,64 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           logger('Failed to clear local state on remote sign-out', clearError);
         });
       },
+      // `null` for every account-mode provider — identical to omitting the
+      // option — and the pinned account id once an identity-bound provider has
+      // resolved its pin. Read through the ref so the resolver stays stable for
+      // the client's lifetime while still seeing later resolutions.
+      () => identityRef.current?.getPinnedAccountId() ?? null,
     );
   }
   const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
+
+  // Re-establishment lane for an identity-bound provider whose pin is missing or
+  // whose pinned account is no longer part of this device's session set (another
+  // app signed it out, or the device was re-provisioned). Adopting whichever
+  // account the device is currently switched to is exactly the drift
+  // `sessionMode: 'identity'` exists to prevent, so the only correct answer is to
+  // re-derive the session from the local identity key.
+  //
+  // Bounded on purpose: at most ONE attempt per applied device revision, and
+  // never two concurrently — a repeated failure (locked keychain, offline, no
+  // local identity) must never spin a sign-in loop against the server. Nothing
+  // awaits it, so it can never deadlock against the projection that triggers it;
+  // the `bootstrap()` below re-applies device state, whose notify re-runs the
+  // projection with the pin now resolved.
+  const identityEstablishRef = useRef<{ revision: number | null; inFlight: boolean }>({
+    revision: null,
+    inFlight: false,
+  });
+
+  const reestablishIdentitySession = useCallback(
+    (binding: IdentitySessionBinding, revision: number): void => {
+      const tracker = identityEstablishRef.current;
+      if (tracker.inFlight || tracker.revision === revision) {
+        return;
+      }
+      tracker.revision = revision;
+      tracker.inFlight = true;
+      void (async () => {
+        const established = await establishIdentitySession({
+          oxy: oxyServices,
+          store: authStore,
+          binding: binding.binding,
+        });
+        if (!established) {
+          return;
+        }
+        // The verify wrote a fresh pin; adopt it before re-reading device state
+        // so the notify that follows projects against the new binding.
+        await binding.refreshPinnedAccountId();
+        await sessionClient.bootstrap();
+      })()
+        .catch((establishError) => {
+          logger('Failed to re-establish the identity-bound session', establishError);
+        })
+        .finally(() => {
+          tracker.inFlight = false;
+        });
+    },
+    [oxyServices, authStore, sessionClient, logger],
+  );
 
   // Projects `client.getState()` onto the exposed `sessions`/`activeSessionId`/
   // `user`. Sole authority for both locally-initiated mutations (switch/logout)
@@ -334,6 +411,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Last-write-wins guard: capture the revision this projection is for, then
     // after the async profile fetch bail if a fresher state has landed.
     const capturedRevision = state.revision;
+    // Resolve the pin BEFORE the profile fetch (memoised: one storage + keychain
+    // read per boot) so every projection below is bound on the FIRST pass over a
+    // freshly applied state. Deferring it would let a sibling app's switch render
+    // once as this client's user before the pin corrected it. `null` for every
+    // account-mode provider, where each projection falls back to the device's
+    // active account exactly as before.
+    const pinnedAccountId = identity ? await identity.ensurePinnedAccountId() : null;
     const ids = accountIdsOf(state);
     let users: User[] = [];
     try {
@@ -346,16 +430,29 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!latest || latest.revision !== capturedRevision) {
       return;
     }
+    if (identity && (pinnedAccountId === null || activeSessionIdOf(latest, pinnedAccountId) === null)) {
+      // Either no verified pin, or the pinned account left this device's session
+      // set. Projecting anything here would mean projecting SOMEBODY ELSE's
+      // account, so leave the current projection untouched and re-derive the
+      // session from the local identity key instead.
+      reestablishIdentitySession(identity, latest.revision);
+      return;
+    }
     const usersById = new Map(users.map((resolvedUser) => [resolvedUser.id, resolvedUser]));
-    updateSessions(deviceStateToClientSessions(latest, usersById));
-    setActiveSessionId(activeSessionIdOf(latest));
-    const activeUser = activeUserOf(latest, usersById);
+    updateSessions(deviceStateToClientSessions(latest, usersById, pinnedAccountId));
+    setActiveSessionId(activeSessionIdOf(latest, pinnedAccountId));
+    const activeUser = activeUserOf(latest, usersById, pinnedAccountId);
     if (activeUser) {
       loginSuccess(activeUser);
     }
-    sessionClientHost.setCurrentAccountId(latest.activeAccountId);
+    // The host's current account feeds the socket handshake and the bearer's
+    // token-account comparisons, so it tracks the PIN — never the account another
+    // app switched the device to.
+    sessionClientHost.setCurrentAccountId(pinnedAccountId ?? latest.activeAccountId);
   }, [
+    identity,
     oxyServices,
+    reestablishIdentitySession,
     sessionClient,
     sessionClientHost,
     updateSessions,
@@ -483,14 +580,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // credential via `POST /session/device/token`) plus the proactive scheduler
   // that refreshes ~60s before expiry and on tab-focus. Replaces the deleted
   // services-local `inSessionTokenRefresh` module.
+  // An identity binding turns every re-mint pinned: it targets the pinned
+  // account instead of the device's active one, and its recovery arm becomes the
+  // PRIMARY-key identity sign-in rather than the cross-app shared keychain.
   useEffect(() => {
-    const dispose = installAuthRefreshHandler({ oxy: oxyServices, store: authStore });
+    const dispose = installAuthRefreshHandler({
+      oxy: oxyServices,
+      store: authStore,
+      ...(identity ? { identity: identity.binding } : {}),
+    });
     const scheduler = startTokenRefreshScheduler(oxyServices);
     return () => {
       scheduler.dispose();
       dispose();
     };
-  }, [oxyServices, authStore]);
+  }, [oxyServices, authStore, identity]);
 
   // ── Session commit funnel ────────────────────────────────────────────────
   // The single place a session becomes committed: plant tokens, persist the
@@ -679,8 +783,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     accountDialogSurfaceRef.current?.dismiss();
   }, []);
 
+  // Never built while identity-bound: the dialog exists to CHOOSE an account,
+  // and an identity-bound client has exactly one — the owner of the local
+  // identity key. Leaving it `null` (the same shape consumers see with no
+  // provider mounted) keeps its QR/polling machinery off entirely instead of
+  // relying on UI-level filtering to hide it.
   const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
-  if (!accountDialogControllerRef.current) {
+  if (!isIdentityBound && !accountDialogControllerRef.current) {
     accountDialogControllerRef.current = createAccountDialogController({
       oxyServices,
       sessionClient,
@@ -719,6 +828,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const accountDialogController = accountDialogControllerRef.current;
 
   const openAccountDialog = useCallback((view?: AccountDialogView): void => {
+    if (isIdentityBound) {
+      // No controller was built, and there is nothing to choose: this app's user
+      // is fixed to the owner of the local identity key.
+      if (__DEV__) {
+        loggerUtil.warn(
+          'openAccountDialog ignored: the session is identity-bound (sessionMode: "identity")',
+          { component: 'OxyContext', method: 'openAccountDialog' },
+        );
+      }
+      return;
+    }
     const nextView = view ?? 'accounts';
     accountDialogControllerRef.current?.setView(nextView);
 
@@ -762,7 +882,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     });
     setAccountDialogOpen(true);
-  }, []);
+  }, [isIdentityBound]);
 
   const closeAccountDialog = useCallback((): void => {
     accountDialogControllerRef.current?.cancelSignIn();
@@ -867,24 +987,41 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // ── Cold boot ────────────────────────────────────────────────────────────
   // Device-first session restore via `runProviderColdBoot` (see boot/runProviderColdBoot.ts).
   const runColdBoot = useCallback(async (): Promise<void> => {
+    // Resolve the pin BEFORE any boot lane runs: `getPinnedAccountId()` is a
+    // SYNCHRONOUS read on `SessionClient`'s apply path, and a stale `null` there
+    // would let a pinned client behave like an account-mode one for the first
+    // state it applies (including re-electing the device's active account).
+    if (identity) {
+      await identity.ensurePinnedAccountId();
+    }
     await runProviderColdBoot({
       oxyServices,
       authStore,
       clientId: clientIdProp,
       authRedirectUri,
       authorizeBaseUrl,
+      sessionMode,
+      identity: identity?.binding,
       sessionClient,
       syncDeviceCredentialToHost,
       commitSession: (input, options) => commitSessionRef.current(input, options),
       markAuthResolved: () => markAuthResolvedRef.current(),
       setTokenReady,
     });
+    // The boot may have (re-)established the identity session or cleared a pin
+    // whose key no longer exists, so re-resolve rather than trusting the memo
+    // taken before it ran.
+    if (identity) {
+      await identity.refreshPinnedAccountId();
+    }
   }, [
     oxyServices,
     authStore,
     clientIdProp,
     authRedirectUri,
     authorizeBaseUrl,
+    sessionMode,
+    identity,
     syncDeviceCredentialToHost,
     sessionClient,
   ]);
@@ -974,8 +1111,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Exposed `switchSession`: route through the server-authoritative
   // `SessionClient`. Resolve the target account from the current device state,
   // ask the server to switch, reproject, and return the now-active user.
+  //
+  // Identity-bound providers reject: this is the session-keyed twin of
+  // `switchToAccount`, so leaving it live would be a bypass around the same rule.
   const switchSessionForContext = useCallback(
     async (sessionId: string): Promise<User> => {
+      if (isIdentityBound) {
+        throw new IdentityBoundSessionError('switchSession');
+      }
       const targetAccountId = sessionClient
         .getState()
         ?.accounts.find((account) => account.sessionId === sessionId)?.accountId;
@@ -990,7 +1133,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
       return activeUser;
     },
-    [sessionClient, syncFromClient],
+    [isIdentityBound, sessionClient, syncFromClient],
   );
 
   // Thin passthroughs to the platform-agnostic KeyManager. NOTE: both now THROW
@@ -1021,6 +1164,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     tokenReady,
     initialized,
+    identityBound: isIdentityBound,
     oxyServices,
     sessionClient,
     syncFromClient,
@@ -1046,6 +1190,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       isPrivateApiPending,
       isAuthResolved: authResolved,
       isStorageReady: storage !== null,
+      sessionMode: isIdentityBound ? 'identity' : 'account',
       error,
       currentLanguage,
       currentLanguages,
@@ -1100,6 +1245,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       isPrivateApiPending,
       authResolved,
       storage,
+      isIdentityBound,
       error,
       currentLanguage,
       currentLanguages,
@@ -1172,6 +1318,7 @@ const LOADING_STATE: OxyContextState = {
   isPrivateApiPending: true,
   isAuthResolved: false,
   isStorageReady: false,
+  sessionMode: 'account',
   error: null,
   currentLanguage: 'en-US',
   currentLanguages: [],

@@ -79,6 +79,22 @@ export interface SessionClientOptions {
    * absent it falls back to `getSocketIO()`.
    */
   socketFactory?: SocketIOFactory;
+  /**
+   * The PINNED account id for an IDENTITY-BOUND client (the identity vault),
+   * or `null` for every ordinary account-mode client. Read as a function because
+   * the pin is resolved asynchronously at boot and can move when the identity
+   * session is re-established.
+   *
+   * While pinned this client tracks device state TRUTHFULLY — other apps'
+   * accounts and the device's real `activeAccountId` stay visible in `getState()`
+   * — but it NEVER re-binds its bearer to that active account: no `activeToken`
+   * is planted for a non-pinned account (from a sync response or a pushed
+   * `session_state`), the `TokenTransport` (whose entire job is converging on
+   * `activeAccountId`) is bypassed, and a push that switches the device does not
+   * trigger a token re-fetch. The pinned token's lifecycle belongs solely to the
+   * cold boot / re-mint lane, which mints it with an explicit `accountId`.
+   */
+  getPinnedAccountId?: () => string | null;
 }
 
 type StateListener = (state: DeviceSessionState | null) => void;
@@ -120,6 +136,16 @@ export class SessionClient {
 
   getState(): DeviceSessionState | null {
     return this.state;
+  }
+
+  /**
+   * The account this client's bearer is pinned to, or `null` when it follows the
+   * device's active account (the default). Resolvers are expected to be a plain
+   * synchronous read of already-resolved state (see
+   * {@link SessionClientOptions.getPinnedAccountId}).
+   */
+  private pinnedAccountId(): string | null {
+    return this.options.getPinnedAccountId?.() ?? null;
   }
 
   subscribe(listener: StateListener): () => void {
@@ -212,15 +238,28 @@ export class SessionClient {
     }
     const previousState = this.state;
     this.state = next;
+    const pinnedAccountId = this.pinnedAccountId();
     // Plant the sync-supplied active token (it is for `next.activeAccountId`)
     // now — before the notify below — so the bearer matches the new active
     // account when subscribers observe it. Guarded on difference to avoid a
     // redundant token-change notification on an unchanged token (bootstrap
-    // restate).
-    if (activeToken && next.activeAccountId !== null && activeToken !== this.host.getAccessToken()) {
+    // restate). An identity-bound client only accepts it when the active account
+    // IS its pinned account — otherwise the token belongs to somebody else's
+    // switch and must never displace the pinned bearer.
+    if (
+      activeToken &&
+      next.activeAccountId !== null &&
+      (pinnedAccountId === null || next.activeAccountId === pinnedAccountId) &&
+      activeToken !== this.host.getAccessToken()
+    ) {
       this.host.setTokens(activeToken);
     }
-    const transport = this.options.transport;
+    // The transport's entire job is converging the bearer on `activeAccountId`,
+    // which is precisely what an identity-bound client must not do: its token is
+    // minted for the pinned account by the cold boot / re-mint lane. Bypass it
+    // while pinned (also removing the mint-before-notify gate, which exists only
+    // to keep the bearer and the ACTIVE account in step).
+    const transport = pinnedAccountId === null ? this.options.transport : null;
     const activeAccountId = next.activeAccountId;
     // Mint before notifying when the bearer does not already belong to the new
     // active account: no bearer at all, an opaque bearer, OR a bearer for a
@@ -296,13 +335,16 @@ export class SessionClient {
     // socket push): `applyState` no-ops without planting, but the token still
     // needs planting. Guard on the sync's active account STILL being the current
     // active account so a stale response cannot adopt a token for an account a
-    // newer state already switched away from.
+    // newer state already switched away from — and, when pinned, on that account
+    // being the PINNED one (same rule as the applied path in `applyState`).
+    const pinnedAccountId = this.pinnedAccountId();
     if (
       !applied &&
       sync.activeToken &&
       this.state &&
       sync.state.activeAccountId !== null &&
       sync.state.activeAccountId === this.state.activeAccountId &&
+      (pinnedAccountId === null || sync.state.activeAccountId === pinnedAccountId) &&
       sync.activeToken.accessToken !== this.host.getAccessToken()
     ) {
       this.host.setTokens(sync.activeToken.accessToken);
@@ -342,12 +384,18 @@ export class SessionClient {
    * sign-in. This adds, then switches to the target so the UI lands on the
    * account the user just authenticated.
    *
+   * An identity-bound (pinned) client only ADDS: its own session is minted for
+   * the pinned account explicitly, so switching the device would gratuitously
+   * re-elect the active account under every OTHER app on this device — a
+   * mutation a pinned client must never make.
+   *
    * @param accountId - The signed-in account id (e.g. `session.user.id`). When
    *   omitted, falls back to the host's current-account ref. If neither
    *   resolves, the add still applies and no switch is performed.
    */
   async registerAndActivate(accountId?: string): Promise<void> {
     await this.addCurrentAccount();
+    if (this.pinnedAccountId() !== null) return;
     const target = accountId ?? this.host.getCurrentAccountId();
     if (target && this.state?.activeAccountId !== target) {
       await this.switchAccount(target);
@@ -449,6 +497,11 @@ export class SessionClient {
       // empty state here must not erase the durable device credential.
       const applied = this.applyState(payload, 'push');
       if (!applied) return;
+      // An identity-bound client tracks the pushed state but NEVER chases the
+      // device's active account: re-fetching here would only pull an
+      // `activeToken` for somebody else's switch, which the plant guards would
+      // then discard. Skip the round-trip entirely.
+      if (this.pinnedAccountId() !== null) return;
       // A push changed the active account on another device/tab — re-fetch state
       // to plant the access token for the newly-active account. When this tab is
       // still signed out, applyState mints via ensureActiveToken first; bootstrap

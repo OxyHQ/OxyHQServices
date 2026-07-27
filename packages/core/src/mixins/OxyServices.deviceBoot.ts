@@ -24,6 +24,42 @@ import {
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 
+/**
+ * The server's `401 account_not_on_device` for a PINNED mint: the requested
+ * `accountId` is not (or is no longer) a live account of this device session.
+ *
+ * Distinguished from every other mint 401 because the remedy is different: the
+ * device secret is FINE — it is the identity binding that went stale (the
+ * account was signed out on this device, or revoked). An identity-bound caller
+ * must re-establish its session from the local key rather than drop/clear the
+ * device credential.
+ */
+export class AccountNotOnDeviceError extends Error {
+  override readonly name = 'AccountNotOnDeviceError';
+  /** HTTP status of the originating response; mirrors the ApiError shape. */
+  readonly status = 401;
+  constructor(readonly accountId: string, readonly cause?: unknown) {
+    super(
+      `account_not_on_device: ${accountId} is not a live account of this device session`,
+    );
+  }
+}
+
+/**
+ * Structural (never `instanceof`) read of a normalized mint error: the thrown
+ * value may be a plain ApiError-shaped object or come from another realm.
+ */
+function isAccountNotOnDevice(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const { status, message } = error as { status?: unknown; message?: unknown };
+  if (status !== 401) {
+    return false;
+  }
+  return typeof message === 'string' && message.includes('account_not_on_device');
+}
+
 export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     /**
@@ -47,17 +83,29 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
      * boot's worst-case time-to-route. A transient failure surfaces once and the
      * scheduler/401 path retries it later.
      *
+     * `options.accountId` PINS the mint to one account of the device instead of
+     * whichever account is currently active. It exists for identity-bound
+     * clients (Commons), whose authenticated user is fixed by a local
+     * cryptographic key and must never follow an account switch made by another
+     * app on the same device. The server never mutates `activeAccountId` for a
+     * pinned mint — the returned `state` still reports the device's true active
+     * account — and rejects a non-member/dead account with
+     * `401 account_not_on_device`, surfaced here as {@link AccountNotOnDeviceError}.
+     *
+     * @throws {AccountNotOnDeviceError} when a pinned mint's account is not on the device.
      * @throws if the response does not match {@link deviceTokenMintResponseSchema}.
      */
     async mintFromDeviceSecret(
       deviceId: string,
       deviceSecret: string,
+      options?: { accountId?: string },
     ): Promise<DeviceTokenMintResponse> {
+      const accountId = options?.accountId;
       try {
         const res = await this.makeRequest<unknown>(
           'POST',
           '/session/device/token',
-          { deviceId, deviceSecret },
+          { deviceId, deviceSecret, ...(accountId ? { accountId } : {}) },
           // `bypassQueue`: this mint is the control-plane call the auth lane
           // depends on — it must run even when every RequestQueue slot is parked
           // awaiting it, or the whole client deadlocks. See RequestOptions.bypassQueue.
@@ -69,7 +117,11 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
         }
         return parsed;
       } catch (error) {
-        throw this.handleError(error);
+        const normalized = this.handleError(error);
+        if (accountId && isAccountNotOnDevice(normalized)) {
+          throw new AccountNotOnDeviceError(accountId, normalized);
+        }
+        throw normalized;
       }
     }
 

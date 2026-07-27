@@ -2,7 +2,9 @@ import {
   logger as loggerUtil,
   runSessionColdBoot,
   type AuthStateStore,
+  type IdentityBinding,
   type OxyServices,
+  type SessionMode,
 } from '@oxyhq/core';
 import type { SessionClient } from '@oxyhq/core';
 import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
@@ -82,6 +84,16 @@ export interface RunProviderColdBootOptions {
    * silent-restore redirect targets its own IdP, never production.
    */
   authorizeBaseUrl?: string;
+  /**
+   * Who owns the session this boot resolves. `'account'` (the default) is the
+   * device's active account — every ordinary Oxy app. `'identity'` binds the
+   * boot to the owner of this device's PRIMARY identity key and REQUIRES
+   * {@link identity}; it also disables the two web OAuth lanes below, which
+   * commit whatever account the IdP hands back.
+   */
+  sessionMode?: SessionMode;
+  /** The identity binding required by `sessionMode: 'identity'`. */
+  identity?: IdentityBinding;
   sessionClient: SessionClient;
   syncDeviceCredentialToHost: () => Promise<void>;
   commitSession: (
@@ -97,8 +109,13 @@ export interface RunProviderColdBootOptions {
  *
  * Ordered pipeline:
  * 1. Complete OAuth authorization-code return (web)
- * 2. `runSessionColdBoot` — device-secret mint (+ native shared-key)
+ * 2. `runSessionColdBoot` — device-secret mint (+ native shared-key, or the
+ *    primary-identity-key lane in `sessionMode: 'identity'`)
  * 3. Silent OAuth for all web apps when mint finds no session
+ *
+ * Steps 1 and 3 are ACCOUNT-MODE ONLY: both commit whichever account the IdP
+ * resolves, which for an identity-bound client is somebody else's account by
+ * construction. In `'identity'` mode the boot is exactly step 2.
  */
 export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Promise<void> {
   const {
@@ -107,6 +124,8 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     clientId,
     authRedirectUri,
     authorizeBaseUrl,
+    sessionMode = 'account',
+    identity,
     sessionClient,
     syncDeviceCredentialToHost,
     commitSession,
@@ -114,18 +133,22 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
     setTokenReady,
   } = opts;
 
+  const identityBound = sessionMode === 'identity';
+
   setTokenReady(false);
 
   try {
     consumeSilentOAuthError();
     consumeHubSyncFailure();
 
-    const oauthCompleted = await tryCompleteOAuthReturn({
-      oxyServices,
-      clientId,
-      authRedirectUri,
-      commitSession: (input) => commitSession(input, { activate: true, hubSync: false }),
-    });
+    const oauthCompleted = identityBound
+      ? false
+      : await tryCompleteOAuthReturn({
+          oxyServices,
+          clientId,
+          authRedirectUri,
+          commitSession: (input) => commitSession(input, { activate: true, hubSync: false }),
+        });
     if (oauthCompleted) {
       setTokenReady(true);
       markAuthResolved();
@@ -142,6 +165,8 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       oxy: oxyServices,
       store: authStore,
       platform: { isWeb: isWebBrowser(), isNative: !isWebBrowser() },
+      sessionMode,
+      identity,
       overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE_MS,
       isOffline: () => offline,
       onStepDeadline: (stepId) => {
@@ -214,6 +239,7 @@ export async function runProviderColdBoot(opts: RunProviderColdBootOptions): Pro
       ? (globalThis as { location?: Location }).location?.origin
       : undefined;
     if (
+      !identityBound &&
       clientId &&
       outcome.kind !== 'session' &&
       webOrigin &&

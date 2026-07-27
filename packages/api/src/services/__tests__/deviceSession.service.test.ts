@@ -398,6 +398,66 @@ describe('resolveActiveToken', () => {
   });
 });
 
+describe('resolveTokenForAccount', () => {
+  // a1 is the device's active account; a2 is a second registered account (the
+  // one an identity-bound client pins to).
+  const STATE = {
+    deviceId: 'd1',
+    accounts: [
+      { accountId: 'a1', sessionId: 's1', authuser: 0 },
+      { accountId: 'a2', sessionId: 's2', authuser: 1 },
+    ],
+    activeAccountId: 'a1',
+    revision: 7,
+    updatedAt: 1720000000000,
+  };
+
+  it('mints the token of a NON-active member account after re-validating its session', async () => {
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'jwt-a2', expiresAt: new Date('2026-07-07T00:00:00.000Z') });
+    expect(await deviceSessionService.resolveTokenForAccount(STATE as never, 'a2')).toEqual({
+      accessToken: 'jwt-a2',
+      expiresAt: '2026-07-07T00:00:00.000Z',
+    });
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s2', false);
+    expect(mockGetAccessToken).toHaveBeenCalledWith('s2');
+  });
+
+  it('is READ-ONLY: resolving a pinned account performs no device-doc write at all', async () => {
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'jwt-a2', expiresAt: new Date('2026-07-07T00:00:00.000Z') });
+    await deviceSessionService.resolveTokenForAccount(STATE as never, 'a2');
+    // No activeAccountId write, no revision bump — nothing another app on this
+    // device could observe.
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('returns null for an account that is not registered on the device, without validating or minting', async () => {
+    expect(await deviceSessionService.resolveTokenForAccount(STATE as never, 'ghost')).toBeNull();
+    expect(mockValidateSessionById).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('returns null for a member account whose session no longer validates (never mints)', async () => {
+    mockValidateSessionById.mockResolvedValueOnce(null);
+    expect(await deviceSessionService.resolveTokenForAccount(STATE as never, 'a2')).toBeNull();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the member session cannot mint a token', async () => {
+    mockGetAccessToken.mockResolvedValueOnce(null);
+    expect(await deviceSessionService.resolveTokenForAccount(STATE as never, 'a2')).toBeNull();
+  });
+
+  it('resolveActiveToken is the active-account case of it (same session lookup path)', async () => {
+    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'jwt-a1', expiresAt: new Date('2026-07-07T00:00:00.000Z') });
+    expect(await deviceSessionService.resolveActiveToken(STATE as never)).toEqual({
+      accessToken: 'jwt-a1',
+      expiresAt: '2026-07-07T00:00:00.000Z',
+    });
+    expect(mockValidateSessionById).toHaveBeenCalledWith('s1', false);
+  });
+});
+
 describe('detachMigratedAccount', () => {
   it('drops the account entry WITHOUT deactivating the migrated (preserved) session', async () => {
     mockFindOne.mockReturnValueOnce(lean({

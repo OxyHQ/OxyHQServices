@@ -36,6 +36,10 @@ export { useOxy } from './ui/context/OxyContext';
 export type { OxyContextState } from './ui/context/OxyContext';
 export { useAuth } from './ui/hooks/useAuth';
 export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
+// Thrown by `switchToAccount` / `switchSession` while `OxyProvider` runs with
+// `sessionMode="identity"` — an identity-bound app authenticates as the owner of
+// the local identity key and cannot switch accounts.
+export { IdentityBoundSessionError } from './ui/session/identityBinding';
 
 // ---------------------------------------------------------------------------
 // Font loading

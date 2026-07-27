@@ -55,6 +55,16 @@ const hubTicketRedeemLimiter = rateLimit({
  * out). A dead/absent active session returns `no_active_session` WITHOUT rotating
  * — the client must re-authenticate and keeps its still-valid secret. Per-device
  * lockout + rate limiting blunt online secret-guessing.
+ *
+ * An optional `accountId` PINS the mint to one account of that device instead of
+ * whichever one is currently active. It exists for identity-bound clients
+ * (Commons), whose authenticated user is fixed by a local cryptographic key and
+ * must not follow an account switch made by another app sharing the same
+ * `DeviceSession`. A pinned mint is READ-ONLY with respect to device state: it
+ * never writes `activeAccountId`, never bumps `revision` and never broadcasts —
+ * the returned `state` therefore still reports the device's TRUE active account.
+ * Rotation is unchanged. A pin that names an account which is not on the device,
+ * or whose session is dead, answers `account_not_on_device` without rotating.
  */
 router.post(
   '/token',
@@ -65,7 +75,7 @@ router.post(
       res.status(400).json({ error: 'deviceId and deviceSecret are required' });
       return;
     }
-    const { deviceId, deviceSecret } = parsed.data;
+    const { deviceId, deviceSecret, accountId } = parsed.data;
 
     const lockout = await isLockedOut({ scope: DEVICE_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
     if (lockout.locked) {
@@ -87,11 +97,18 @@ router.post(
     // device currently has a live active session.
     await clearFailures({ scope: DEVICE_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
 
-    const activeToken = await deviceSessionService.resolveActiveToken(state);
-    if (!activeToken) {
-      // Known device, but no live active session to mint for. Do NOT rotate — the
-      // client re-authenticates and keeps its still-valid secret.
-      res.status(401).json({ error: 'no_active_session' });
+    // A pinned mint resolves the named account instead of the active one. The
+    // resolver returns null both when the account is not registered on this
+    // device and when its session is dead — deliberately indistinguishable: the
+    // secret is already proven at this point, so a pinned miss must not become
+    // an account-existence oracle.
+    const mintedToken = accountId
+      ? await deviceSessionService.resolveTokenForAccount(state, accountId)
+      : await deviceSessionService.resolveActiveToken(state);
+    if (!mintedToken) {
+      // Known device, but nothing live to mint for. Do NOT rotate — the client
+      // re-authenticates (or drops its pin) and keeps its still-valid secret.
+      res.status(401).json({ error: accountId ? 'account_not_on_device' : 'no_active_session' });
       return;
     }
 
@@ -104,12 +121,16 @@ router.post(
       return;
     }
 
-    logger.info('device.token.mint', { mint_source: 'secret', deviceId });
+    // Telemetry carries the lane and the pin discriminator only — never the
+    // pinned accountId, the secret, or any other user-identifying value.
+    logger.info('device.token.mint', { mint_source: 'secret', deviceId, ...(accountId ? { pinned: true } : {}) });
     res.json({
       data: {
-        accessToken: activeToken.accessToken,
-        expiresAt: activeToken.expiresAt,
+        accessToken: mintedToken.accessToken,
+        expiresAt: mintedToken.expiresAt,
         nextDeviceSecret,
+        // The device's TRUE state — a pin never rewrites `activeAccountId`, and
+        // the response must not pretend otherwise.
         state,
       },
     });

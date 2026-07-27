@@ -6,12 +6,19 @@ import { useAuthStore } from '../stores/authStore';
 import { isUnauthorizedStatus } from './oxyContextHelpers';
 import { resetSessionScopedStores } from '../stores/resetSessionScopedStores';
 import { ASSET_DOWNLOAD_URLS_QUERY_KEY } from '../hooks/useResolvedFileUrls';
+import { IdentityBoundSessionError } from '../session';
 import type { CommitInput } from './oxyContextTypes';
 
 interface UseOxyAccountGraphParams {
   isAuthenticated: boolean;
   tokenReady: boolean;
   initialized: boolean;
+  /**
+   * `sessionMode: 'identity'`. The account graph is a switcher surface, and an
+   * identity-bound client authenticates as the owner of the local identity key —
+   * permanently. The graph is therefore never fetched and every switch rejects.
+   */
+  identityBound: boolean;
   oxyServices: OxyServices;
   sessionClient: SessionClient;
   syncFromClient: () => Promise<void>;
@@ -25,6 +32,7 @@ export function useOxyAccountGraph({
   isAuthenticated,
   tokenReady,
   initialized,
+  identityBound,
   oxyServices,
   sessionClient,
   syncFromClient,
@@ -36,7 +44,7 @@ export function useOxyAccountGraph({
   const [accounts, setAccounts] = useState<AccountNode[]>([]);
 
   const refreshAccounts = useCallback(async (): Promise<void> => {
-    if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
+    if (identityBound || !isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
       setAccounts([]);
       return;
     }
@@ -53,14 +61,14 @@ export function useOxyAccountGraph({
         loggerUtil.debug('Failed to load accounts', { component: 'OxyContext' }, err as unknown);
       }
     }
-  }, [isAuthenticated, oxyServices, tokenReady, clearSessionStateRef]);
+  }, [identityBound, isAuthenticated, oxyServices, tokenReady, clearSessionStateRef]);
 
   useEffect(() => {
-    if (isAuthenticated && initialized && tokenReady) {
+    if (!identityBound && isAuthenticated && initialized && tokenReady) {
       refreshAccounts();
       void accountDialogControllerRef.current?.refresh();
     }
-  }, [isAuthenticated, initialized, tokenReady, refreshAccounts, accountDialogControllerRef]);
+  }, [identityBound, isAuthenticated, initialized, tokenReady, refreshAccounts, accountDialogControllerRef]);
 
   const runPostAccountSwitchSideEffects = useCallback(async (): Promise<void> => {
     resetSessionScopedStores();
@@ -74,6 +82,12 @@ export function useOxyAccountGraph({
 
   const switchToAccount = useCallback(
     async (accountId: string): Promise<void> => {
+      if (identityBound) {
+        // Loud rejection, never a silent no-op: a resolved promise here would
+        // read to the caller as a completed switch that simply left the user
+        // unchanged, which is exactly the confusion this mode must avoid.
+        throw new IdentityBoundSessionError('switchToAccount');
+      }
       const deviceState = sessionClient.getState();
       if (deviceState?.accounts.some((account) => account.accountId === accountId)) {
         await sessionClient.switchAccount(accountId);
@@ -102,7 +116,7 @@ export function useOxyAccountGraph({
       );
       await runPostAccountSwitchSideEffects();
     },
-    [oxyServices, sessionClient, syncFromClient, commitSession, runPostAccountSwitchSideEffects],
+    [identityBound, oxyServices, sessionClient, syncFromClient, commitSession, runPostAccountSwitchSideEffects],
   );
 
   const createAccount = useCallback(

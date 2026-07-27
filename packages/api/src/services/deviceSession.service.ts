@@ -195,9 +195,18 @@ class DeviceSessionService {
     return { ok: true, state: projectState(updated) };
   }
 
-  async resolveActiveToken(state: DeviceSessionState): Promise<{ accessToken: string; expiresAt: string } | null> {
-    if (!state.activeAccountId) return null;
-    const account = state.accounts.find((a) => a.accountId === state.activeAccountId);
+  /**
+   * Mint the access token of ONE account of a device. Returns null when the
+   * account is not registered on the device or its session is no longer live —
+   * the caller must not distinguish the two (see the pinned mint route).
+   *
+   * Strictly READ-ONLY with respect to the device doc: it never touches
+   * `activeAccountId` or `revision`, so an identity-bound client can hold a
+   * session for a non-active account without any other app on the same device
+   * observing a state change.
+   */
+  async resolveTokenForAccount(state: DeviceSessionState, accountId: string): Promise<{ accessToken: string; expiresAt: string } | null> {
+    const account = state.accounts.find((a) => a.accountId === accountId);
     if (!account) return null;
     // Re-validate before minting a token: for a managed-account session this
     // re-checks the operator's act_as membership (ensureManagedSessionAuthorized)
@@ -208,6 +217,11 @@ class DeviceSessionService {
     const token = await sessionService.getAccessToken(account.sessionId);
     if (!token) return null;
     return { accessToken: token.accessToken, expiresAt: token.expiresAt.toISOString() };
+  }
+
+  async resolveActiveToken(state: DeviceSessionState): Promise<{ accessToken: string; expiresAt: string } | null> {
+    if (!state.activeAccountId) return null;
+    return this.resolveTokenForAccount(state, state.activeAccountId);
   }
 
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {

@@ -21,7 +21,7 @@ configureReanimatedLogger({
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { useQueryClient } from '@tanstack/react-query';
-import { OxyProvider, useOxy, useOnlineStatus } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 import { KeyManager, logger } from '@oxyhq/core';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
@@ -32,8 +32,6 @@ import {
   ONBOARDING_IDENTITY_QUERY_KEY,
   ONBOARDING_COMPLETE_QUERY_KEY,
 } from '@/hooks/useOnboardingStatus';
-import { useSyncIdentity } from '@/hooks/identity/useSyncIdentity';
-import { useSessionAutoConnect } from '@/hooks/identity/useSessionAutoConnect';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
@@ -166,7 +164,20 @@ function RootLayoutInner() {
             (this app) owns the BloomThemeProvider and feeds it the resolved
             theme mode from ThemeModeProvider. */}
         <BloomThemeProvider mode={themeMode}>
-          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
+          {/* `sessionMode="identity"` — Commons IS the identity, so its session
+              is PINNED to the owner of this device's PRIMARY identity key for as
+              long as that key exists, not to whichever account the shared
+              `DeviceSession` is currently switched to. The SDK then:
+                - runs `identity-key-signin` at cold boot (getPublicKey →
+                  challenge → sign → verify) instead of the CROSS-APP
+                  shared-keychain lane, which may hold a different identity;
+                - binds every token mint / re-mint to the pinned account;
+                - never fetches the device account graph, rejects
+                  `switchToAccount` / `switchSession`, and keeps the account
+                  dialog inert — the vault has exactly one user, by construction.
+              This replaces the app-local boot auto-connect Commons used to run;
+              do NOT re-add an app-local session-restore path. */}
+          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} sessionMode="identity">
             <LocaleProvider>
               <AppHead />
               <AppStackContent />
@@ -210,32 +221,18 @@ function AppHead() {
 function AppStackContent() {
   // Must be called inside OxyProvider (which wraps BloomThemeProvider)
   const navTheme = useNavigationTheme();
-  const { isStorageReady, isAuthResolved, user } = useOxy();
-  const online = useOnlineStatus();
+  const { isStorageReady } = useOxy();
   const { status, needsAuth, identityPresent } = useOnboardingStatus();
-  // The LEAN sync hook — just the single-flight `syncIdentity`, WITHOUT
-  // `useIdentity`'s network-reconnect poll loop or on-mount integrity effect,
-  // which stay owned by the screens that already mount `useIdentity`.
-  const { syncIdentity } = useSyncIdentity();
   const queryClient = useQueryClient();
 
   const appReady = isStorageReady && status !== 'checking';
 
-  // Zero-tap session auto-connect. Commons IS the identity — it never asks its
-  // owner to "sign in". When a returning user reaches the vault with a healthy
-  // local identity but no live session (the local-first router lands them here
-  // without waiting on the network), connect the session from the device's OWN
-  // primary key. Gated on `!needsAuth` so it never races the onboarding flow's
-  // own register + sign-in for a freshly-made identity; single-flight + backoff
-  // are owned by the hook (see `useSessionAutoConnect`).
-  useSessionAutoConnect({
-    isAuthResolved,
-    hasUser: Boolean(user),
-    onboardingComplete: !needsAuth,
-    identityPresent,
-    online,
-    syncIdentity,
-  });
+  // NOTE: connecting the vault's session from its OWN primary identity key is
+  // the SDK's job, not this app's. `sessionMode="identity"` (see the provider
+  // above) makes `identity-key-signin` a cold-boot step in `@oxyhq/core`, and
+  // the SDK also owns the in-session re-mint, the 401 recovery arm and the
+  // offline→online reconnect heal. The app-local auto-connect driver that used
+  // to live here was deleted — do not reintroduce one.
 
   // Cross-app shared-identity backfill (native only, one-shot per launch).
   //

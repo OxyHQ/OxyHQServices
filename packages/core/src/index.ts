@@ -687,6 +687,32 @@ export type {
     NativeKeyValueStorage,
 } from './session/authStateStore';
 
+// Identity-bound sessions (the identity vault). The pin is the durable
+// `{publicKey, accountId}` binding between this device's PRIMARY identity key
+// and the account it authenticates as; it is what keeps such a client from
+// following the device's mutable `activeAccountId`.
+export {
+    createWebIdentityPinStore,
+    createNativeIdentityPinStore,
+    createMemoryIdentityPinStore,
+    identityPinMatches,
+    IDENTITY_PIN_STORAGE_KEY,
+} from './session/identityPin';
+export type { IdentityPin, IdentityPinStore } from './session/identityPin';
+export {
+    resolveIdentityPin,
+    establishIdentitySession,
+} from './session/identitySession';
+export type {
+    IdentityBinding,
+    IdentityRequestOptions,
+    EstablishedIdentitySession,
+} from './session/identitySession';
+// The typed `401 account_not_on_device` from a PINNED device-secret mint: the
+// pinned account left this device's session set, so the caller re-establishes
+// the identity session instead of dropping a healthy device credential.
+export { AccountNotOnDeviceError } from './mixins/OxyServices.deviceBoot';
+
 export {
     refreshPersistedSession,
     refreshDeviceSecretArm,
@@ -700,6 +726,7 @@ export type { RefreshDeps, TokenRefreshSchedulerHandle, DeviceSecretMintOutcome 
 export { runSessionColdBoot } from './boot/sessionColdBoot';
 export type {
     RunSessionColdBootOptions,
+    SessionMode,
     SignedOutReason,
     DeviceBootSession,
 } from './boot/sessionColdBoot';
