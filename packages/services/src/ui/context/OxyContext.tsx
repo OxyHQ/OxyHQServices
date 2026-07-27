@@ -79,7 +79,7 @@ import type {
   CommitInput,
 } from './oxyContextTypes';
 import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
-import { commitDeviceSetAndResolve } from './commitSessionFlow';
+import { commitDeviceSetAndResolve, maybeSyncHubAfterCommit } from './commitSessionFlow';
 import { runPasskeyLogin, runPasskeyRegister, runPasskeyAdd } from './passkeyFlow';
 import {
   isPasskeySupported,
@@ -688,21 +688,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         markAuthResolved: markAuthResolvedRef.current,
       });
 
-      if (options.activate && options.hubSync && hubSync && isWebBrowser()) {
-        try {
-          await syncHubAfterSignIn(oxyServices, { enabled: hubSync });
-        } catch (hubError) {
-          if (__DEV__) {
-            loggerUtil.debug(
-              'Hub sync after sign-in failed (non-fatal)',
-              { component: 'OxyContext', method: 'commitSession' },
-              hubError as unknown,
-            );
-          }
-        }
-      }
+      // Post-sign-in hub sync — a full-page redirect to auth.oxy.so. Gated HERE,
+      // inside the ONE commit funnel, so NO commit path (QR device flow,
+      // password/2FA through the account dialog, passkey, popup OAuth, cold
+      // boot) can bounce a `webAuthMode: 'popup'` tab to the IdP. See
+      // `maybeSyncHubAfterCommit` for the full gate list.
+      await maybeSyncHubAfterCommit({
+        activate: options.activate,
+        hubSyncRequested: options.hubSync === true,
+        hubSyncEnabled: hubSync,
+        webAuthMode,
+        syncHub: () => syncHubAfterSignIn(oxyServices, { enabled: hubSync }),
+      });
     },
-    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger, hubSync],
+    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger, hubSync, webAuthMode],
   );
   const commitSessionRef = useRef(commitSession);
   commitSessionRef.current = commitSession;
@@ -1047,6 +1046,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       authorizeBaseUrl,
       sessionMode,
       identity: identity?.binding,
+      // Popup mode forbids the boot's automatic full-page `prompt=none` restore:
+      // a domain with no local credential resolves signed out instead of
+      // navigating the tab to the IdP (see `allowsAutomaticIdpRedirect`).
+      webAuthMode,
       sessionClient,
       syncDeviceCredentialToHost,
       commitSession: (input, options) => commitSessionRef.current(input, options),
@@ -1067,6 +1070,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     authorizeBaseUrl,
     sessionMode,
     identity,
+    webAuthMode,
     syncDeviceCredentialToHost,
     sessionClient,
   ]);
