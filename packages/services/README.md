@@ -120,50 +120,31 @@ function UserProfile() {
 
 `OxyProvider` handles iOS, Android, and Expo web. Always use `OxyProvider` in Expo apps.
 
-## Typography - Inter Font
+## Typography
 
-**Inter is the default font for all Oxy ecosystem apps.** This package includes the Inter font family and provides automatic font loading for both web and native platforms.
-
-### Automatic Loading
-
-**If you are using `OxyProvider`, fonts are loaded automatically.** No additional setup needed:
+Typography is owned entirely by `@oxyhq/bloom`. `BloomThemeProvider` ships the
+Inter, BlomusModernus and Geist Mono families — variable `.ttf` files loaded via
+`expo-font` on native, `@font-face` rules injected as data URLs on web — and
+applies the default family to every `<Text>`. This package bundles no fonts and
+loads none, so it adds no font weight to consumer app binaries.
 
 ```typescript
+import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
-      <YourAppContent />
-    </OxyProvider>
+    <BloomThemeProvider>
+      <OxyProvider baseURL="https://api.oxy.so">
+        <YourAppContent />
+      </OxyProvider>
+    </BloomThemeProvider>
   );
 }
 ```
 
-### Using Font Constants
-
-```typescript
-import { fontFamilies, fontStyles } from '@oxyhq/services';
-
-const styles = StyleSheet.create({
-  title: {
-    ...fontStyles.titleLarge,  // Pre-defined style (54px, Bold)
-    color: '#000000',
-  },
-  customText: {
-    fontFamily: fontFamilies.interSemiBold,  // Cross-platform font family
-    fontSize: 18,
-  },
-});
-```
-
-### Available Exports
-
-- **`setupFonts()`** - Function to manually load fonts (called automatically by OxyProvider)
-- **`fontFamilies`** - Object with all Inter weight variants (inter, interLight, interMedium, interSemiBold, interBold, interExtraBold, interBlack)
-- **`fontStyles`** - Pre-defined text styles (titleLarge, titleMedium, titleSmall, buttonText)
-
-See [FONTS.md](./FONTS.md) for the complete typography guide, including detailed usage examples, all available font weights, platform-specific handling, best practices, and migration guide.
+Style text with Bloom's NativeWind font classes (`font-sans`, `font-mono`, …)
+rather than raw `fontFamily` strings.
 
 ## Usage Patterns
 
@@ -448,7 +429,7 @@ Oxy supports **public/private key cryptography** (ECDSA secp256k1) as the primar
 ### How it works (device-first)
 
 - **Cold boot is silent.** On mount, `OxyProvider` restores the ambient device session — the server-side `DeviceSession` records which accounts are signed in on this device and which one is active. No redirects, no browser identity APIs, no UI. See [device sessions](../../docs/auth/device-session.md).
-- **Interactive sign-in is a dialog.** `useAuth().signIn()` or `useOxy().openAccountDialog('signin')` opens the unified account dialog (Bloom Dialog — bottom sheet on phones, centered on desktop): account switcher, Sign in with Oxy via the Oxy app (QR on web, deep link / shared keychain on native), and a collapsed password form.
+- **Interactive sign-in is a dialog.** `useAuth().signIn()` or `useOxy().openAccountDialog('signin')` opens the unified account dialog (Bloom Dialog — bottom sheet on phones, centered on desktop): existing device accounts above ONE primary "Continue with Oxy" action (issue #691, Phase 5) — Oxy automatically picks how the request reaches your Commons identity (same-device deep link → known-install push → QR); there is no password option in this dialog. Scan-QR, passkey-on-this-device, and "Get Commons" sit behind a collapsed "Having trouble?" disclosure.
 - **Cross-app sync.** Adding, switching, or signing out an account bumps the device-session revision and is pushed over the `session_state` socket event to every Oxy app on the device.
 
 ```tsx
@@ -459,17 +440,6 @@ function SignInCTA() {
   if (isAuthenticated) return null;
   return <Button title="Sign in" onPress={() => signIn()} />; // opens the dialog
 }
-```
-
-### Password Authentication
-
-Oxy also supports password sign-in (email/username + password) — shown collapsed inside the account dialog, or callable directly:
-
-```typescript
-import { oxyClient } from '@oxyhq/core';
-
-const session = await oxyClient.signUp('username', 'email@example.com', 'password');
-const session2 = await oxyClient.signIn('username-or-email', 'password');
 ```
 
 ### Cross-App Authentication (Sign in with Oxy)
@@ -485,7 +455,7 @@ function LoginScreen() {
 ```
 
 - **Official Oxy apps** (`isOfficial` / first-party types): opens the in-app account dialog.
-- **Third-party apps** (`type: 'third_party'`): starts the standard OAuth 2.0 Authorization Code + PKCE redirect to `auth.oxy.so` (the SDK generates `state` + PKCE via `@oxyhq/core`). Pass `oauthRedirectUri`; on native handle `onOAuthResult` to complete the token exchange.
+- **Third-party apps** (`type: 'third_party'`): starts the standard OAuth 2.0 Authorization Code + PKCE flow against `auth.oxy.so` (the SDK generates `state` + PKCE via `@oxyhq/core`). On web the transport is `OxyProvider` prop `webAuthMode: 'popup' | 'redirect'` (default `'redirect'`; issue #691 Phase 2) — `'popup'` opens a small window and relays the result via `postMessage` without navigating your app's tab, falling back to a redirect if the browser blocks it. Pass `oauthRedirectUri`; on native handle `onOAuthResult` to complete the token exchange.
 
 See the [integration guide](../../docs/auth/integration-guide.md) for Console registration, OAuth endpoints, and backend verification, and [AUTHENTICATION.md](../../docs/AUTHENTICATION.md) for the full model.
 
