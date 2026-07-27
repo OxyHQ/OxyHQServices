@@ -374,3 +374,20 @@ export type {
     DeviceTransferApproveResponse,
     DeviceTransferDenyResponse,
 } from './devicePairing';
+
+export {
+    // Schemas — transparency log (checkpoints + inclusion proofs)
+    transparencyCheckpointSignatureSchema,
+    transparencyAnchorSchema,
+    transparencyCheckpointSchema,
+    transparencyInclusionProofSchema,
+    transparencyCheckpointListSchema,
+} from './transparency';
+
+export type {
+    TransparencyCheckpointSignature,
+    TransparencyAnchor,
+    TransparencyCheckpoint,
+    TransparencyInclusionProof,
+    TransparencyCheckpointList,
+} from './transparency';
