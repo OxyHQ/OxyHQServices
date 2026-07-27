@@ -12,6 +12,7 @@ import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { Mailbox, type IMailbox } from '../models/Mailbox';
 import { Message, type IMessage, type IEmailAddress, type IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
+import { SYSTEM_LABELS, isSystemLabel, isSystemLabelId } from '../constants/systemLabels';
 import { Bundle } from '../models/Bundle';
 import User, { type IUser } from '../models/User';
 import { getAvatarPathsBatch } from './senderAvatar.service';
@@ -133,43 +134,6 @@ class EmailService {
     { name: 'Updates', icon: 'bell-outline', color: '#607D8B', matchLabels: ['Updates'], order: 2 },
     { name: 'Forums', icon: 'forum-outline', color: '#795548', matchLabels: ['Forums'], order: 3 },
   ];
-
-  private static readonly DEFAULT_LABELS = [
-    { name: 'Personal', color: '#1A73E8', order: 0 },
-    { name: 'Work', color: '#34A853', order: 1 },
-    { name: 'Finance', color: '#FBBC04', order: 2 },
-    { name: 'Shopping', color: '#EA4335', order: 3 },
-    { name: 'Travel', color: '#9334E6', order: 4 },
-    { name: 'Social', color: '#E8710A', order: 5 },
-    { name: 'Updates', color: '#607D8B', order: 6 },
-    { name: 'Forums', color: '#795548', order: 7 },
-  ];
-
-  /**
-   * Seed default labels for a user if they have none.
-   * Uses the same lazy-provisioning pattern as ensureMailboxes().
-   */
-  async ensureDefaultLabels(userId: string): Promise<void> {
-    const count = await Label.countDocuments({ userId });
-    if (count > 0) return;
-
-    const docs = EmailService.DEFAULT_LABELS.map((l) => ({
-      userId: new mongoose.Types.ObjectId(userId),
-      name: l.name,
-      color: l.color,
-      order: l.order,
-    }));
-
-    try {
-      await Label.insertMany(docs, { ordered: false });
-      logger.info('Default labels seeded', { userId });
-    } catch (err: any) {
-      // Ignore duplicate key errors (race condition safe)
-      if (err.code !== 11000 && !err.message?.includes('E11000')) {
-        throw err;
-      }
-    }
-  }
 
   async ensureMailboxes(userId: string): Promise<void> {
     const existing = await Mailbox.find({ userId });
@@ -817,7 +781,6 @@ class EmailService {
 
     const userId = user._id.toString();
     await this.ensureMailboxes(userId);
-    await this.ensureDefaultLabels(userId);
 
     // Check quota
     await this.enforceQuota(userId, params.rawSize);
@@ -1436,10 +1399,18 @@ class EmailService {
   // ─── Labels ──────────────────────────────────────────────────────────
 
   async listLabels(userId: string): Promise<any[]> {
-    return Label.find({ userId }).sort({ order: 1, name: 1 }).lean({ virtuals: true });
+    const custom = await Label.find({ userId }).sort({ order: 1, name: 1 }).lean({ virtuals: true });
+    // A row left over from when the system labels were seeded per user is
+    // shadowed by its constant, so the list never shows the same name twice.
+    const own = custom
+      .filter((l: any) => !isSystemLabel(l.name))
+      .map((l: any) => ({ ...l, system: false }));
+    return [...SYSTEM_LABELS, ...own];
   }
 
   async createLabel(userId: string, name: string, color: string): Promise<any> {
+    if (isSystemLabel(name)) throw new BadRequestError(`Label "${name.trim()}" already exists`);
+
     const existing = await Label.findOne({ userId, name }).collation({ locale: 'en', strength: 2 });
     if (existing) throw new BadRequestError(`Label "${name}" already exists`);
 
@@ -1454,6 +1425,11 @@ class EmailService {
   }
 
   async updateLabel(userId: string, labelId: string, updates: { name?: string; color?: string }): Promise<any> {
+    if (isSystemLabelId(labelId)) throw new BadRequestError('System labels cannot be edited');
+    if (updates.name && isSystemLabel(updates.name)) {
+      throw new BadRequestError(`Label "${updates.name.trim()}" already exists`);
+    }
+
     const label = await Label.findOneAndUpdate(
       { _id: labelId, userId },
       { $set: updates },
@@ -1464,6 +1440,8 @@ class EmailService {
   }
 
   async deleteLabel(userId: string, labelId: string): Promise<void> {
+    if (isSystemLabelId(labelId)) throw new BadRequestError('System labels cannot be deleted');
+
     const label = await Label.findOne({ _id: labelId, userId });
     if (!label) throw new NotFoundError('Label not found');
 
@@ -1913,7 +1891,6 @@ class EmailService {
     if (!user || !user.username) throw new BadRequestError('User must have a username');
 
     await this.ensureMailboxes(userId);
-    await this.ensureDefaultLabels(userId);
     await this.enforceQuota(
       userId,
       files.reduce((total, file) => total + file.buffer.length, 0),
