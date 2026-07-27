@@ -16,7 +16,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { ReactNode } from 'react';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider , useOxy } from '@oxyhq/services';
-import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
+import { useNavigationTheme } from '@oxyhq/bloom/theme';
+import { BloomProvider } from '@oxyhq/bloom/provider';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 
 
@@ -145,12 +146,12 @@ function RootLayoutInner() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
-        {/* OxyProvider does NOT wrap a BloomThemeProvider — by design, to
+        {/* OxyProvider does NOT wrap a BloomProvider — by design, to
             avoid duplicate contexts when an app already ships its own (see
             packages/services/src/ui/components/OxyProvider.tsx). The consumer
-            (this app) owns the BloomThemeProvider and feeds it the resolved
+            (this app) owns the BloomProvider and feeds it the resolved
             theme mode from ThemeModeProvider. */}
-        <BloomThemeProvider mode={themeMode}>
+        <BloomProvider mode={themeMode}>
           <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI}>
             <AppImageResolver>
               <LocaleProvider>
@@ -172,7 +173,7 @@ function RootLayoutInner() {
               </LocaleProvider>
             </AppImageResolver>
           </OxyProvider>
-        </BloomThemeProvider>
+        </BloomProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );
@@ -209,7 +210,7 @@ function AppHead() {
 
 /** Renders the navigation stack once the app is ready. */
 function AppStackContent() {
-  // Must be called inside OxyProvider (which wraps BloomThemeProvider)
+  // Must be called inside OxyProvider (which wraps BloomProvider)
   const navTheme = useNavigationTheme();
   const { isAuthenticated, isAuthResolved } = useOxy();
 

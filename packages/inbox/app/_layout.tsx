@@ -16,7 +16,8 @@ import { toast } from '@oxyhq/bloom';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
 import type { ImageResolver } from '@oxyhq/bloom/image-resolver';
 import { useQueryClient } from '@tanstack/react-query';
-import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
+import { useNavigationTheme } from '@oxyhq/bloom/theme';
+import { BloomProvider } from '@oxyhq/bloom/provider';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
@@ -33,7 +34,7 @@ import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import { OXY_CLIENT_ID, OXY_AUTH_REDIRECT_URI } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Hide the native splash immediately on import. `BloomThemeProvider` configures
+// Hide the native splash immediately on import. `BloomProvider` configures
 // the Inter font synchronously via `Text.defaultProps`, and `OxyProvider`'s
 // internal `FontLoader` loads custom font weights in the background without
 // blocking children (system font is used as fallback). No artificial wait is
@@ -61,9 +62,9 @@ export default function RootLayout() {
 
 /**
  * Reads the persisted theme preferences from `AppThemeProvider` and feeds
- * them into `BloomThemeProvider`, which owns the react-navigation theme
+ * them into `BloomProvider`, which owns the react-navigation theme
  * (via `useNavigationTheme`) AND the resolved colors consumed throughout
- * the tree. `OxyProvider` does NOT mount its own `BloomThemeProvider`
+ * the tree. `OxyProvider` does NOT mount its own `BloomProvider`
  * (see `packages/services/src/ui/components/OxyProvider.tsx`), so this is
  * the single source of truth.
  */
@@ -71,9 +72,9 @@ function ThemedRoot() {
   const { themePreference, colorPreset } = useThemeContext();
   const themeMode = themePreference as ThemeMode;
   return (
-    <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
+    <BloomProvider mode={themeMode} colorPreset={colorPreset}>
       <RootLayoutContent />
-    </BloomThemeProvider>
+    </BloomProvider>
   );
 }
 
