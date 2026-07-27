@@ -130,25 +130,6 @@ const fr: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Pour toi',
-    starred: 'Favoris',
-    unread: 'Non lus',
-    attachments: 'Pièces jointes',
-    empty: {
-      title: 'Tout est à jour',
-      subtitle: "Rien n'est mis en avant pour toi pour l'instant.",
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} et {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} et {{count}} autre',
-      fromManyOther: 'De {{a}}, {{b}} et {{count}} autres',
-      aboutOne: ' — à propos de {{topic}}',
-      aboutTwo: ' — à propos de {{a}}, {{b}}',
-      aboutMore: ' et plus',
-    },
-  },
 
   inbox: {
     title: 'Boîte',

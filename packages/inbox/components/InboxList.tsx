@@ -23,6 +23,7 @@ import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { useTabBarFootprint } from '@oxyhq/bloom/tab-bar';
 
+import { useFloatingHeader } from '@/hooks/useFloatingHeader';
 import { useColors } from '@/constants/theme';
 import { SPACING, RADIUS, CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
@@ -62,8 +63,7 @@ import { useCreateReminder, useUpdateReminder, useDeleteReminder } from '@/hooks
 import type { Message, Bundle, Reminder } from '@/services/emailApi';
 
 type ListItem =
-  | { type: 'header'; title: string; key: string }
-  | { type: 'group'; title: string; key: string; messages: Message[] }
+  | { type: 'header'; title: string; key: string; count?: number }
   | { type: 'message'; data: Message }
   | { type: 'bundle'; bundle: Bundle; messages: Message[]; unreadCount: number }
   | { type: 'reminder'; data: Reminder };
@@ -94,7 +94,13 @@ function getDateCategory(dateStr: string): string {
  */
 function pushGroup(items: ListItem[], title: string, key: string, messages: Message[]): void {
   if (messages.length === 0) return;
-  items.push({ type: 'group', title, key, messages });
+  // One list item per message, not one per bucket. FlashList mounts an item
+  // whole, so a bucket-sized item would mount every message in it — the
+  // "Earlier" bucket spans page boundaries and reaches hundreds of rows. The
+  // section reads as a group through its heading and the per-row spacing; it
+  // never had a surface of its own to hold it together.
+  if (title) items.push({ type: 'header', title, key, count: messages.length });
+  for (const msg of messages) items.push({ type: 'message', data: msg });
 }
 
 /** Splits messages into consecutive date buckets, preserving list order. */
@@ -207,7 +213,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const bulkMove = useBulkMoveMessages();
   const { data: bundles = [] } = useBundles();
 
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const { headerHeight, onHeaderLayout, floatingHeaderStyle } = useFloatingHeader();
   const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
   const [createReminderVisible, setCreateReminderVisible] = useState(false);
   const [editReminderTarget, setEditReminderTarget] = useState<Reminder | null>(null);
@@ -308,7 +314,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         items.push({ type: 'bundle', bundle: b, messages: msgs, unreadCount });
 
         if (expandedBundles.has(b._id)) {
-          items.push({ type: 'group', title: '', key: `bundle-rows-${b._id}`, messages: msgs });
+          for (const msg of msgs) items.push({ type: 'message', data: msg });
         }
       }
     } else {
@@ -563,35 +569,17 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
-      if (item.type === 'group') {
-        return (
-          <View style={styles.group}>
-            {item.title ? (
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
-                  {item.title}
-                </Text>
-                <Text style={[styles.sectionHeaderCount, { color: colors.secondaryText }]}>
-                  {item.messages.length}
-                </Text>
-              </View>
-            ) : null}
-            {/* No surface of its own: each row already carries its background
-                (tinted when unread) and its own rounded corners, so the group
-                only has to space them apart. A card here would sit behind the
-                rows and flatten that distinction. */}
-            <View style={styles.groupRows}>
-              {item.messages.map(renderMessageRow)}
-            </View>
-          </View>
-        );
-      }
       if (item.type === 'header') {
         return (
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
               {item.title}
             </Text>
+            {item.count !== undefined ? (
+              <Text style={[styles.sectionHeaderCount, { color: colors.secondaryText }]}>
+                {item.count}
+              </Text>
+            ) : null}
           </View>
         );
       }
@@ -616,15 +604,20 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           />
         );
       }
-      return renderMessageRow(item.data);
+      return <View style={styles.messageItem}>{renderMessageRow(item.data)}</View>;
     },
+    // Only what this function itself reads. It used to re-list
+    // `renderMessageRow`'s own dependencies by hand while omitting
+    // `renderMessageRow` — so the copy had to be kept in sync manually, and
+    // every row kept whichever callbacks it closed over when the copy last
+    // happened to change.
     [renderMessageRow, expandedBundles, toggleBundle, handleToggleReminderComplete, handleDeleteReminder, handleReminderPress, colors.secondaryText],
   );
 
   const getItemType = useCallback((item: ListItem) => item.type, []);
 
   const keyExtractor = useCallback((item: ListItem) => {
-    if (item.type === 'header' || item.type === 'group') return item.key;
+    if (item.type === 'header') return item.key;
     if (item.type === 'bundle') return `bundle-${item.bundle._id}`;
     if (item.type === 'reminder') return `reminder-${item.data._id}`;
     return item.data._id;
@@ -672,15 +665,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         // Floats above the list so rows scroll behind its gradient. Its
         // measured height becomes the list's top padding, so the first row
         // still starts below it instead of under it.
-        <View
-          style={styles.floatingHeader}
-          onLayout={(e) => {
-            // Only commit a genuinely different height. `onLayout` re-fires
-            // with sub-pixel deltas, and writing state on every one of them
-            // feeds back into the list's padding — a render loop.
-            const next = Math.round(e.nativeEvent.layout.height);
-            setHeaderHeight((prev) => (prev === next ? prev : next));
-          }}
+        <View style={floatingHeaderStyle} onLayout={onHeaderLayout}
         >
           <SearchHeader
             onLeftIcon={handleOpenDrawer}
@@ -702,9 +687,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
-            ListHeaderComponent={
-              isInboxView ? <InboxGreeting messages={messages} /> : null
-            }
+            ListHeaderComponent={<InboxGreeting messages={messages} />}
             ListEmptyComponent={renderEmpty}
             ListFooterComponent={renderFooter}
             onEndReached={handleLoadMore}
@@ -844,13 +827,6 @@ const styles = StyleSheet.create({
     maxWidth: CONTENT_MAX_WIDTH,
     alignSelf: 'center',
   },
-  floatingHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
   listContainer: {
     flex: 1,
     minHeight: 0,
@@ -899,21 +875,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  group: {
+  messageItem: {
     marginHorizontal: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  groupRows: {
-    // Small gap between messages instead of divider lines.
-    gap: SPACING.xs,
+    // Small gap between messages instead of divider lines. A margin rather
+    // than a parent `gap`, now that each row is its own list item.
+    marginBottom: SPACING.xs,
   },
   sectionHeader: {
-    // Sits above its card, outside it — hence no border of its own. The count
+    // Sits above its rows, outside them — hence no border of its own. The count
     // rides here rather than in a global toolbar, so it describes the section
-    // it labels.
+    // it labels. `marginHorizontal` matches `messageItem` so the heading keeps
+    // the same left edge as the rows it labels, which it used to inherit from
+    // the group wrapper.
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: SPACING.xs,
+    marginHorizontal: SPACING.md,
     paddingHorizontal: SPACING.xs,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.sm,

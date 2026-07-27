@@ -96,6 +96,7 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
 
       const prompt = buildPrompt(messages);
       let accumulated = '';
+      let pendingFrame: number | null = null;
 
       for await (const delta of streamAliaChatCompletion(
         oxyServices.httpService,
@@ -108,8 +109,22 @@ export function useDailyBrief(messages: Message[], options: UseDailyBriefOptions
         controller.signal,
       )) {
         accumulated += delta;
-        setBriefText(accumulated);
+        // One commit per frame, not one per token. A 300-token brief would
+        // otherwise be 300 re-renders of a list header, each a candidate
+        // re-measure of the header the list pads itself against.
+        if (pendingFrame === null) {
+          pendingFrame = requestAnimationFrame(() => {
+            pendingFrame = null;
+            setBriefText(accumulated);
+          });
+        }
       }
+
+      if (pendingFrame !== null) {
+        cancelAnimationFrame(pendingFrame);
+        pendingFrame = null;
+      }
+      setBriefText(accumulated);
 
       // An empty completion is a failure, not a result. Caching '' poisons the
       // day's slot — it reads back as a cache miss, so the text never appears,

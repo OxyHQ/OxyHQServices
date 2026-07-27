@@ -136,25 +136,6 @@ const en: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'For You',
-    starred: 'Starred',
-    unread: 'Unread',
-    attachments: 'Attachments',
-    empty: {
-      title: 'All caught up',
-      subtitle: 'Nothing highlighted for you right now.',
-    },
-    summary: {
-      fromOne: 'From {{a}}',
-      fromTwo: 'From {{a}} and {{b}}',
-      fromManyOne: 'From {{a}}, {{b}} and {{count}} other',
-      fromManyOther: 'From {{a}}, {{b}} and {{count}} others',
-      aboutOne: ' — about {{topic}}',
-      aboutTwo: ' — about {{a}}, {{b}}',
-      aboutMore: ' and more',
-    },
-  },
 
   inbox: {
     title: 'Inbox',
