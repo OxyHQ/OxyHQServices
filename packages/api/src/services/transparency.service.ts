@@ -23,6 +23,7 @@
  */
 
 import {
+  buildTransparencyTree,
   buildTransparencyTreeFromHeads,
   checkpointHash,
   inclusionProof,
@@ -30,6 +31,7 @@ import {
   transparencyLeafHash,
   type TransparencyCheckpointFields,
   type TransparencyHeadEntry,
+  type TransparencyTree,
 } from '@oxyhq/protocol';
 import type {
   TransparencyCheckpoint as TransparencyCheckpointDto,
@@ -54,15 +56,18 @@ import { logger } from '../utils/logger';
  */
 export const MAX_CHECKPOINT_SUBJECTS = 50_000;
 
-/** How many checkpoints' derived leaf hashes stay cached in-process. */
-const LEAF_CACHE_LIMIT = 2;
+/** How many checkpoints' derived trees stay cached in-process. */
+const TREE_CACHE_LIMIT = 2;
 
 /**
- * Derived leaf hashes per checkpoint index, so serving repeated proofs for one
- * checkpoint does not re-hash the whole snapshot each time. Bounded, and purely
- * derived from immutable committed data — never a source of truth.
+ * The derived Merkle tree per checkpoint index, so serving repeated proofs for
+ * one checkpoint neither re-hashes the snapshot nor rebuilds the tree. Bounded,
+ * and purely derived from immutable committed data — never a source of truth.
+ *
+ * Caching the whole tree rather than just its leaves is what keeps a proof
+ * O(log n): the interior levels are already there to read siblings from.
  */
-const leafCache = new Map<number, string[]>();
+const treeCache = new Map<number, TransparencyTree>();
 
 /** The five fields every co-signer signs — the checkpoint's immutable body. */
 export function checkpointSignedFields(
@@ -222,9 +227,9 @@ export async function listCheckpoints(
   return docs.map(toDto);
 }
 
-/** Leaf hashes for a checkpoint's committed snapshot, memoized per index. */
-async function leavesFor(doc: ITransparencyCheckpoint): Promise<string[]> {
-  const cached = leafCache.get(doc.index);
+/** The Merkle tree over a checkpoint's committed snapshot, memoized per index. */
+async function treeFor(doc: ITransparencyCheckpoint): Promise<TransparencyTree> {
+  const cached = treeCache.get(doc.index);
   if (cached) {
     return cached;
   }
@@ -237,14 +242,15 @@ async function leavesFor(doc: ITransparencyCheckpoint): Promise<string[]> {
       }),
     ),
   );
-  if (leafCache.size >= LEAF_CACHE_LIMIT) {
-    const oldest = leafCache.keys().next();
+  const tree = await buildTransparencyTree(leaves);
+  if (treeCache.size >= TREE_CACHE_LIMIT) {
+    const oldest = treeCache.keys().next();
     if (!oldest.done) {
-      leafCache.delete(oldest.value);
+      treeCache.delete(oldest.value);
     }
   }
-  leafCache.set(doc.index, leaves);
-  return leaves;
+  treeCache.set(doc.index, tree);
+  return tree;
 }
 
 /**
@@ -270,15 +276,15 @@ export async function getInclusionProof(
   }
 
   const entry = doc.snapshot[leafIndex];
-  const leaves = await leavesFor(doc);
+  const tree = await treeFor(doc);
 
   return {
     checkpoint: toDto(doc),
     subjectDid: entry.subjectDid,
     seq: entry.seq,
     headRecordId: entry.headRecordId,
-    leaf: leaves[leafIndex],
+    leaf: tree.levels[0][leafIndex],
     leafIndex,
-    proof: await inclusionProof(leaves, leafIndex),
+    proof: inclusionProof(tree, leafIndex),
   };
 }
