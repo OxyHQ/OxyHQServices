@@ -231,8 +231,6 @@ export function onConnectivityChange(callback: (online: boolean) => void): () =>
 
   const onOnline = () => {
     callback(true);
-    // Auto-flush queue when coming back online
-    flushQueue().catch(() => {});
   };
   const onOffline = () => callback(false);
 

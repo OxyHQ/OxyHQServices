@@ -278,6 +278,9 @@ export function createOxyRateLimit(
     standardHeaders: true,
     legacyHeaders: false,
     skip,
+    // hashAnonymousIp already buckets IPv6 to /56 before HMAC; disable the v8
+    // static source scan that false-positives on req.ip (ERR_ERL_KEY_GEN_IPV6).
+    validate: { keyGeneratorIpFallback: false },
   });
 
   return (req, res, next) => {

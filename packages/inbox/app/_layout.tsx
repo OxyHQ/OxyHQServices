@@ -29,7 +29,7 @@ import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
 import { useEmailStore } from '@/hooks/useEmail';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
-import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
+import { clearQueue } from '@/utils/offlineQueue';
 import { OXY_CLIENT_ID, OXY_AUTH_REDIRECT_URI } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -228,21 +228,9 @@ function RootEffects() {
       toast.info(t('inbox.toast.newVersionAvailable'));
     });
 
-    // Flush offline queue when connectivity returns
-    const unsubscribe = onConnectivityChange((online) => {
-      if (online) {
-        flushQueue().then((count) => {
-          if (count > 0) {
-            toast.success(t('inbox.toast.offlineSync', { count }));
-          }
-        }).catch(() => {
-          // Sync failure is non-fatal; queued actions will retry on next
-          // connectivity-change event. Surface nothing to the user.
-        });
-      }
-    });
-
-    return unsubscribe;
+    // Drop any legacy raw-fetch queue entries from pre-TanStack builds. Offline
+    // writes now replay through paused TanStack mutations (queryClient.ts).
+    void clearQueue();
   }, [t]);
 
   // Inject Bloom Dialog CSS keyframe animations on web

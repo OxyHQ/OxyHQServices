@@ -42,5 +42,8 @@ export function rateLimit(options: RateLimitOptions) {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: options.keyGenerator ?? hashedIpKey,
+    // hashedIpKey already buckets IPv6 to /56 before HMAC (see ipKey.ts); the v8
+    // static source scan false-positives on req.ip and spams ERR_ERL_KEY_GEN_IPV6.
+    validate: { keyGeneratorIpFallback: false },
   });
 }
