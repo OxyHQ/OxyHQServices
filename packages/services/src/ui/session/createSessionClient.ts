@@ -33,16 +33,29 @@ import { createTokenTransport } from './tokenTransport';
  *
  * The realtime socket uses bearer when authenticated, or deviceId+deviceSecret
  * when signed out (after the one-shot join redirect).
+ *
+ * `getPinnedAccountId` reports the account an IDENTITY-BOUND provider
+ * (`sessionMode: 'identity'`) is pinned to, and `null` for every account-mode
+ * provider — which is exactly the value `SessionClient` and the transport read
+ * when the option is absent, so account mode is unchanged. While it reports an
+ * account, the client tracks device state truthfully but never re-binds its
+ * bearer to the device's mutable active account.
  */
 export function createSessionClient(
   oxyServices: OxyServices,
   onUnauthenticated?: (origin: SessionStateOrigin) => void,
+  getPinnedAccountId?: () => string | null,
 ): {
   client: SessionClient;
   host: ReturnType<typeof createSessionClientHost>;
 } {
   const host = createSessionClientHost(oxyServices);
-  const transport = createTokenTransport(oxyServices);
-  const client = new SessionClient(host, { transport, socketFactory: io, onUnauthenticated });
+  const transport = createTokenTransport(oxyServices, getPinnedAccountId);
+  const client = new SessionClient(host, {
+    transport,
+    socketFactory: io,
+    onUnauthenticated,
+    getPinnedAccountId,
+  });
   return { client, host };
 }

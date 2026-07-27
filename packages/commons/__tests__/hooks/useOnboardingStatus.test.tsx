@@ -225,6 +225,53 @@ describe('useOnboardingStatus', () => {
     expect(result.current.isSessionResolving).toBe(true);
   });
 
+  // Every terminal verdict must be reachable while the SDK cold boot is STILL
+  // unresolved. `sessionMode="identity"` moved session restore entirely into the
+  // SDK (`identity-key-signin`), so nothing in this app connects a session any
+  // more — which makes it doubly important that routing never waits on one.
+  describe('local-first: no terminal verdict waits on the cold boot', () => {
+    it('routes a marker-backed lost identity to recovery while isAuthResolved is false', async () => {
+      getIdentityStatusMock.mockResolvedValue(LOST);
+      __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
+      const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('recovery');
+      });
+      expect(result.current.unavailableReason).toBe('lost');
+      expect(result.current.isSessionResolving).toBe(true);
+    });
+
+    it('routes a genuinely fresh device to "none" while isAuthResolved is false', async () => {
+      getIdentityStatusMock.mockResolvedValue(ABSENT);
+      __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
+      const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(result.current.status).toBe('none');
+      });
+      expect(result.current.isSessionResolving).toBe(true);
+    });
+
+    it('routes an unreadable keystore to "unavailable" while isAuthResolved is false', async () => {
+      jest.useFakeTimers();
+      try {
+        getIdentityStatusMock.mockResolvedValue(unavailable());
+        __setOxyState({ isAuthResolved: false, isAuthenticated: false, user: null });
+        const { result } = renderHook(() => useOnboardingStatus(), { wrapper: createWrapper() });
+
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(1500);
+        });
+
+        expect(result.current.status).toBe('unavailable');
+        expect(result.current.unavailableReason).toBe('locked');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   it('exposes isSessionResolving=false once the cold boot resolves', async () => {
     getIdentityStatusMock.mockResolvedValue(PRESENT);
     mockOnboardingCompleteFlag = true;

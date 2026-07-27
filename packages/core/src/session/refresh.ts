@@ -24,6 +24,8 @@ import type { DeviceTokenMintResponse } from '@oxyhq/contracts';
 import type { OxyServices } from '../OxyServices';
 import type { AuthRefreshHandler, AuthRefreshReason } from '../HttpService';
 import type { AuthStateStore, PersistedAuthState } from './authStateStore';
+import type { IdentityPin } from './identityPin';
+import { establishIdentitySession, resolveIdentityPin, type IdentityBinding } from './identitySession';
 import { isNative } from '../utils/platform';
 import { extractErrorStatus } from '../utils/errorUtils';
 import { logger } from '../logger';
@@ -67,9 +69,19 @@ export interface RefreshDeps {
   /**
    * Whether to fall back to the native shared-keychain re-mint (arm 2) when the
    * persisted secret is absent / rejected. Defaults to `isNative()` — web has no
-   * shared keychain. Exposed for tests.
+   * shared keychain. Exposed for tests. IGNORED when {@link identity} is set: an
+   * identity-bound client must never adopt the CROSS-APP shared slot, which may
+   * hold a different identity than this device's primary key.
    */
   allowSharedKeyFallback?: boolean;
+  /**
+   * Identity-bound (pinned) mode. When present, every re-mint targets the
+   * PINNED account — resolved fresh from the pin store on each call, since a
+   * re-established session can move it — instead of the device's active
+   * account, and arm 2 becomes the PRIMARY-key identity sign-in rather than the
+   * shared-keychain one.
+   */
+  identity?: IdentityBinding;
 }
 
 /**
@@ -82,6 +94,10 @@ export interface RefreshDeps {
  *    diverged (another tab/device rotated it past the grace window).
  *  - `no-session` — 401 `no_active_session`: the device is known but has no live
  *    session (authoritative signed-out).
+ *  - `account-not-on-device` — 401 `account_not_on_device` for a PINNED mint: the
+ *    pinned account is not (or no longer) a live account of this device session.
+ *    The device secret is FINE — it is the identity binding that went stale, so
+ *    the caller must re-establish from the local key, never drop the credential.
  *  - `transient` — network / 5xx; keep the secret, a later attempt can succeed.
  *  - `persist-failed` — the mint succeeded (the SERVER rotated the secret) but
  *    the rotated `nextDeviceSecret` could NOT be durably persisted. The token is
@@ -93,6 +109,7 @@ export type DeviceSecretMintOutcome =
   | { status: 'no-secret' }
   | { status: 'invalid-secret' }
   | { status: 'no-session' }
+  | { status: 'account-not-on-device' }
   | { status: 'transient' }
   | { status: 'persist-failed' };
 
@@ -116,12 +133,21 @@ export type DeviceSecretMintOutcome =
  * planting. This function performs NO store mutation on failure — the caller
  * applies the drop/clear policy (which differs web vs native) from the returned
  * status.
+ *
+ * `pin` makes the mint IDENTITY-BOUND: the request carries the pinned
+ * `accountId` (so the server mints that account's token without touching
+ * `activeAccountId`), and the persisted `sessionId`/`userId` are resolved from
+ * the PINNED account entry — never from `state.activeAccountId`, whose drift is
+ * exactly what the pin exists to stop.
  */
 export async function refreshDeviceSecretArm(deps: {
   oxy: OxyServices;
   store: AuthStateStore;
+  /** The identity pin, when this client is identity-bound. */
+  pin?: IdentityPin | null;
 }): Promise<DeviceSecretMintOutcome> {
   const { oxy, store } = deps;
+  const pin = deps.pin ?? null;
   return oxy.httpService.runSingleFlightDeviceSecretMint(async () => {
     const persisted = await store.load();
     if (!persisted?.deviceId || !persisted?.deviceSecret) {
@@ -130,7 +156,13 @@ export async function refreshDeviceSecretArm(deps: {
 
     let mint: DeviceTokenMintResponse;
     try {
-      mint = await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
+      // Unpinned callers pass NO third argument at all, so the account-mode call
+      // shape (and therefore the request body) is untouched by this feature.
+      mint = pin
+        ? await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret, {
+            accountId: pin.accountId,
+          })
+        : await oxy.mintFromDeviceSecret(persisted.deviceId, persisted.deviceSecret);
     } catch (error) {
       if (extractErrorStatus(error) === 401) {
         // Structural read (not `instanceof Error`): the thrown value can be a
@@ -147,19 +179,26 @@ export async function refreshDeviceSecretArm(deps: {
         // ecosystem-wide.
         if (body.includes('invalid_device_secret')) return { status: 'invalid-secret' };
         if (body.includes('no_active_session')) return { status: 'no-session' };
+        // A pinned mint whose account left the device set. The secret is intact —
+        // never classify this as a bad secret, or the caller would drop a healthy
+        // credential over a stale identity binding.
+        if (body.includes('account_not_on_device')) return { status: 'account-not-on-device' };
         return { status: 'transient' };
       }
       return { status: 'transient' };
     }
 
-    const active = mint.state.accounts.find((a) => a.accountId === mint.state.activeAccountId);
+    // The account this session is BOUND to: the pinned one when identity-bound
+    // (the server already minted for it), else the device's active account.
+    const boundAccountId = pin ? pin.accountId : mint.state.activeAccountId;
+    const bound = mint.state.accounts.find((a) => a.accountId === boundAccountId);
     const next: PersistedAuthState = {
       ...persisted,
       deviceId: mint.state.deviceId,
       deviceSecret: mint.nextDeviceSecret,
       accessToken: mint.accessToken,
       expiresAt: mint.expiresAt,
-      ...(active ? { sessionId: active.sessionId, userId: active.accountId } : {}),
+      ...(bound ? { sessionId: bound.sessionId, userId: bound.accountId } : {}),
     };
     // Rotation-in-use anti-loss: persist the NEXT secret and read-back-VERIFY it
     // landed BEFORE planting the token. A failed durable persist must NOT plant.
@@ -188,12 +227,26 @@ export async function refreshDeviceSecretArm(deps: {
  * recovered `{deviceId, deviceSecret, …}` is PERSISTED so the fast device-secret
  * lane is repopulated (mirrors the cold boot's `shared-key-signin` step) — an
  * in-session shared-key recovery must not leave the fast-lane credential empty.
+ *
+ * IDENTITY-BOUND clients (`deps.identity`) run a different arm 2: the
+ * shared-keychain lane is DISABLED (its cross-app slot may hold a different
+ * identity) and replaced by {@link establishIdentitySession}, which re-signs a
+ * challenge with the PRIMARY local key and rewrites the pin. Arm 1 is pinned.
  */
 export async function refreshPersistedSession(deps: RefreshDeps): Promise<string | null> {
   const { oxy, store } = deps;
-  const allowSharedKeyFallback = deps.allowSharedKeyFallback ?? isNative();
+  const identity = deps.identity ?? null;
+  // The shared keychain is never an identity-bound client's recovery path.
+  const allowSharedKeyFallback = identity ? false : (deps.allowSharedKeyFallback ?? isNative());
+  // Resolved per call: a re-established identity session can move the pin, and a
+  // replaced/removed local key clears it (in which case arm 1 must NOT mint —
+  // an unpinned mint would adopt whatever account the device switched to).
+  const pin = identity ? await resolveIdentityPin(identity) : null;
+  if (identity && !pin) {
+    return recoverIdentitySession(oxy, store, identity);
+  }
 
-  const arm1 = await refreshDeviceSecretArm({ oxy, store });
+  const arm1 = await refreshDeviceSecretArm({ oxy, store, pin });
   switch (arm1.status) {
     case 'ok':
       return arm1.token;
@@ -216,11 +269,12 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
       return null;
     case 'invalid-secret':
     case 'no-session': {
-      // 401: secret diverged or no live session. On a shared-key device drop only
-      // the secret (keep the identity so arm 2 can recover); otherwise (web) the
+      // 401: secret diverged or no live session. When a key-based arm 2 can still
+      // recover (native shared key, or an identity-bound client's own primary
+      // key) drop ONLY the secret and keep the deviceId; otherwise (web) the
       // session is over — clear the store.
       const persisted = await store.load();
-      if (allowSharedKeyFallback) {
+      if (allowSharedKeyFallback || identity) {
         if (persisted) {
           await store.save({ ...persisted, deviceSecret: undefined });
         }
@@ -229,8 +283,20 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
       }
       break;
     }
+    case 'account-not-on-device':
+      // The pinned account left this device's session set. The secret is healthy —
+      // leave the store untouched and let the identity arm re-establish.
+      logger.debug(
+        'Pinned device-secret mint rejected: the pinned account is no longer on this device — re-establishing from the identity key',
+        { component: 'refresh', method: 'refreshPersistedSession' },
+      );
+      break;
     case 'no-secret':
       break;
+  }
+
+  if (identity) {
+    return recoverIdentitySession(oxy, store, identity);
   }
 
   if (allowSharedKeyFallback) {
@@ -260,6 +326,34 @@ export async function refreshPersistedSession(deps: RefreshDeps): Promise<string
   }
 
   return null;
+}
+
+/**
+ * Arm 2 for an IDENTITY-BOUND client: re-establish the session from the PRIMARY
+ * local key and rewrite the pin (`establishIdentitySession` plants the token and
+ * persists the device credential itself).
+ *
+ * Returns `null` — never throws — when there is no local identity, the verify
+ * yielded no token, or the exchange failed: the caller treats that as "could not
+ * refresh", exactly like the shared-key arm. A locked keychain therefore ends
+ * signed out rather than falling back to the device's active account.
+ */
+async function recoverIdentitySession(
+  oxy: OxyServices,
+  store: AuthStateStore,
+  binding: IdentityBinding,
+): Promise<string | null> {
+  try {
+    const established = await establishIdentitySession({ oxy, store, binding });
+    return established?.session.accessToken ?? null;
+  } catch (error) {
+    logger.debug(
+      'Identity-key re-sign-in failed',
+      { component: 'refresh', method: 'recoverIdentitySession' },
+      error,
+    );
+    return null;
+  }
 }
 
 /**

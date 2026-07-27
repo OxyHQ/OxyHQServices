@@ -40,10 +40,19 @@ export type DeviceSessionSync = z.infer<typeof deviceSessionSyncSchema>;
  * possession of the secret IS the proof of device ownership. The server matches
  * `sha256(deviceSecret)` against the device's stored `secretHash` (constant-time)
  * and mints a short access token for the device's active account.
+ *
+ * `accountId` pins the mint to ONE account of that device instead of whichever
+ * account is currently active. It exists for identity-bound clients (Commons),
+ * whose authenticated user is determined by a local cryptographic key and must
+ * never follow an account switch made by another app on the same device. The
+ * account must already be a member of the device session; the mint NEVER
+ * mutates `activeAccountId`, so pinning is read-only with respect to the device
+ * state every other app observes.
  */
 export const deviceTokenMintRequestSchema = z.object({
   deviceId: z.string().min(1),
   deviceSecret: z.string().min(1),
+  accountId: z.string().min(1).optional(),
 });
 
 /**

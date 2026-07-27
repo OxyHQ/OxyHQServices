@@ -39,7 +39,7 @@ describe('key sign-in — silent core vs biometric-gated wrapper', () => {
     getPublicKeyMock.mockClear().mockResolvedValue('resolved-pubkey');
   });
 
-  describe('useSilentKeySignIn (the boot / auto-connect path)', () => {
+  describe('useSilentKeySignIn (the non-gesture register-and-connect path)', () => {
     it('signs in with the given key and NEVER prompts for biometrics', async () => {
       const { result } = renderHook(() => useSilentKeySignIn());
 

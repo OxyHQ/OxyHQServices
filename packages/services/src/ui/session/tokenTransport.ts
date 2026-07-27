@@ -23,10 +23,23 @@ import type { DeviceSessionState } from '@oxyhq/contracts';
  *
  * A failure is logged and swallowed: this method must never throw out (it runs
  * inside the socket state handler).
+ *
+ * `getPinnedAccountId` is the identity-bound escape hatch. Converging the bearer
+ * on `state.activeAccountId` is precisely what an identity-bound client must
+ * never do — its token is minted for the PINNED account by the cold boot /
+ * re-mint lane. `SessionClient` already bypasses the transport entirely while
+ * pinned; this guard is the services-side half of that contract, so no future
+ * wiring can reintroduce the convergence from this end.
  */
-export function createTokenTransport(oxyServices: OxyServices): TokenTransport {
+export function createTokenTransport(
+  oxyServices: OxyServices,
+  getPinnedAccountId?: () => string | null,
+): TokenTransport {
   return {
     async ensureActiveToken(state: DeviceSessionState): Promise<void> {
+      if ((getPinnedAccountId?.() ?? null) !== null) {
+        return;
+      }
       try {
         // Skip the mint ONLY when the planted bearer already identifies the
         // active account. `getCurrentUserId()` decodes the bearer's `userId`/`id`

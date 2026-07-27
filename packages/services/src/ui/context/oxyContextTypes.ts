@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccountInput, ClientSession, AccountDialogController, AccountDialogView, ApiError, SessionClient } from '@oxyhq/core';
+import type { OxyServices, User, SessionLoginResponse, AccountNode, CreateAccountInput, ClientSession, AccountDialogController, AccountDialogView, ApiError, SessionClient, SessionMode } from '@oxyhq/core';
 import type { UseFollowHook } from '../hooks/useFollow.types';
 import type { useLanguageManagement } from '../hooks/useLanguageManagement';
 import type { RouteName } from '../navigation/routes';
@@ -26,6 +26,17 @@ export interface OxyContextState {
    */
   isAuthResolved: boolean;
   isStorageReady: boolean;
+  /**
+   * Who owns this provider's session (see `OxyProviderProps.sessionMode`).
+   *
+   * `'account'` — the device's active account; any app on the device can switch
+   * it and this client follows. `'identity'` — the owner of the local primary
+   * identity key, permanently: a sibling app's account switch never changes this
+   * client's user or bearer, and every account-graph mutation
+   * (`switchToAccount` / `switchSession`) rejects with `IdentityBoundSessionError`
+   * while `accounts` stays empty and the account dialog never opens.
+   */
+  sessionMode: SessionMode;
   error: string | null;
   /** Active UI locale (`language-REGION`): the account's primary locale when signed in, else the guest/device locale. */
   currentLanguage: string;
@@ -133,6 +144,12 @@ export interface OxyContextProviderProps {
   authorizeBaseUrl?: string;
   storageKeyPrefix?: string;
   clientId?: string;
+  /**
+   * Who owns this provider's session. See `OxyProviderProps.sessionMode` for the
+   * full contract.
+   * @default 'account'
+   */
+  sessionMode?: SessionMode;
   /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
   hubSync?: boolean;
   onAuthStateChange?: (user: User | null) => void;

@@ -83,4 +83,30 @@ describe('createSessionClient', () => {
     expect(ioMock).toHaveBeenCalledTimes(1);
     client.stop();
   });
+
+  test('threads the pinned-account resolver through: a pinned registerAndActivate only ADDS', async () => {
+    // `sessionMode: 'identity'`. The pin reaching `SessionClient` is observable
+    // here: a pinned client's own session is minted for the pinned account
+    // explicitly, so registering it must never SWITCH the shared device session
+    // (which would re-elect the active account under every other app on it).
+    const oxy = fakeOxy();
+
+    const { client } = createSessionClient(oxy as never, undefined, () => 'pinned-account');
+    await client.registerAndActivate('pinned-account');
+
+    const paths = oxy.makeRequest.mock.calls.map((call) => call[1]);
+    expect(paths).toContain('/session/device/add');
+    expect(paths).not.toContain('/session/device/switch');
+  });
+
+  test('a resolver reporting no pin (account mode) leaves registerAndActivate switching', async () => {
+    const oxy = fakeOxy();
+
+    const { client } = createSessionClient(oxy as never, undefined, () => null);
+    await client.registerAndActivate('u1');
+
+    const paths = oxy.makeRequest.mock.calls.map((call) => call[1]);
+    expect(paths).toContain('/session/device/add');
+    expect(paths).toContain('/session/device/switch');
+  });
 });

@@ -4,18 +4,21 @@
  * The pure core of key sign-in with NO biometric ceremony: resolve the device's
  * public key, then delegate to the SDK's challenge → sign → verify sign-in
  * (`useOxy().signIn`). This is the exact body of {@link useBiometricSignIn} AFTER
- * its biometric gate — extracted so a non-interactive caller (the vault restoring
- * its OWN session at boot: `useSyncIdentity` → `useSessionAutoConnect`) can reuse
- * it WITHOUT triggering `LocalAuthentication`.
+ * its biometric gate — extracted so a caller that runs OUTSIDE a user gesture
+ * (`useSyncIdentity`, driven from `useNetworkReconnect`'s timer) can reuse it
+ * WITHOUT triggering `LocalAuthentication`.
  *
- * Why this matters: a headless `authenticate()` prompt fired during boot (when
- * `oxy_biometric_enabled === 'true'`) never resolves, hanging the auto-connect
- * "connecting" state forever. This mirrors the SDK cold boot, which already
- * key-signs-in silently via the shared slot in every Oxy app — biometrics in
- * Commons gate INTERACTIVE ops (approving another app's sign-in, revealing the
- * recovery phrase), not the vault restoring its own session. `useBiometricSignIn`
- * composes the gate + this silent core for the interactive callers (create /
- * import), so its behaviour is unchanged.
+ * Why this matters: a headless `authenticate()` prompt fired with no user in
+ * front of it (when `oxy_biometric_enabled === 'true'`) never resolves, hanging
+ * the sync forever. Biometrics in Commons gate INTERACTIVE ops (approving
+ * another app's sign-in, revealing the recovery phrase), not a background
+ * register-and-connect. `useBiometricSignIn` composes the gate + this silent
+ * core for the interactive callers (create / import), so its behaviour is
+ * unchanged.
+ *
+ * This is NOT the vault's cold-boot session restore — that belongs to the SDK's
+ * `identity-key-signin` step (`sessionMode="identity"`) and must never be
+ * re-implemented here.
  */
 
 import { useCallback } from 'react';
@@ -27,7 +30,8 @@ export interface UseSilentKeySignInResult {
   /**
    * Sign in with the device's identity key WITHOUT any biometric prompt. Resolves
    * the public key (the argument, or `KeyManager.getPublicKey()`) and delegates to
-   * the SDK's key sign-in. Every await is HttpService-bounded — it cannot hang.
+   * the SDK's key sign-in, which is identity-pinned in this app. Every await is
+   * HttpService-bounded — it cannot hang.
    */
   signInWithKeySilent: (publicKey?: string, deviceName?: string) => Promise<User>;
 }

@@ -106,6 +106,40 @@ describe('createTokenTransport', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
   });
 
+  test('never mints while identity-bound, even when the device switched to another account', async () => {
+    // `sessionMode: 'identity'`: the bearer belongs to the PINNED account and is
+    // minted for it by the cold boot / re-mint lane. Converging it on
+    // `state.activeAccountId` — here a DIFFERENT account another app switched the
+    // device to — is exactly the drift the mode prevents, so the transport must
+    // short-circuit even though the bearer/active-account check disagrees.
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy('pinned-account', refreshAccessToken);
+    const transport = createTokenTransport(oxy as never, () => 'pinned-account');
+
+    await transport.ensureActiveToken({
+      ...state,
+      accounts: [
+        { accountId: 'pinned-account', sessionId: 'sess-pinned', authuser: 0 },
+        { accountId: 'a1', sessionId: 'sess-a1', authuser: 1 },
+      ],
+      activeAccountId: 'a1',
+    });
+
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(oxy.getCurrentUserId).not.toHaveBeenCalled();
+  });
+
+  test('a resolver reporting no pin (every account-mode provider) behaves exactly as an absent one', async () => {
+    const refreshAccessToken = jest.fn(async () => 'minted-token');
+    const oxy = fakeOxy('previous-account', refreshAccessToken);
+    const transport = createTokenTransport(oxy as never, () => null);
+
+    await transport.ensureActiveToken(state);
+
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(refreshAccessToken).toHaveBeenCalledWith('preflight');
+  });
+
   test('treats a throwing bearer-account check as a mismatch and still mints', async () => {
     const refreshAccessToken = jest.fn(async () => 'minted-token');
     const oxy = fakeOxy(null, refreshAccessToken);

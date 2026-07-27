@@ -8,6 +8,7 @@ const mockAddAccount = jest.fn();
 const mockSwitchActive = jest.fn();
 const mockSignout = jest.fn();
 const mockResolveActiveToken = jest.fn();
+const mockResolveTokenForAccount = jest.fn();
 const mockBroadcast = jest.fn();
 const mockBroadcastAccounts = jest.fn();
 const mockDecodeToken = jest.fn();
@@ -37,6 +38,7 @@ jest.mock('../../services/deviceSession.service', () => ({
     switchActive: (...a: unknown[]) => mockSwitchActive(...a),
     signout: (...a: unknown[]) => mockSignout(...a),
     resolveActiveToken: (...a: unknown[]) => mockResolveActiveToken(...a),
+    resolveTokenForAccount: (...a: unknown[]) => mockResolveTokenForAccount(...a),
     getStateBySecret: (...a: unknown[]) => mockGetStateBySecret(...a),
     issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a),
   },
@@ -261,6 +263,8 @@ describe('POST /session/device/token (phase 2c — public deviceSecret mint)', (
     expect(mockRecordFailure).not.toHaveBeenCalled();
     // Telemetry: the mint is attributed to the secret lane.
     expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'secret', deviceId: 'd1' });
+    // No `accountId` → the active-account resolver, exactly as before.
+    expect(mockResolveTokenForAccount).not.toHaveBeenCalled();
   });
 
   it('401 invalid_device_secret and records a failure on an unknown/mismatched secret', async () => {
@@ -317,5 +321,102 @@ describe('POST /session/device/token (phase 2c — public deviceSecret mint)', (
     expect(res.status).toBe(400);
     expect(mockGetStateBySecret).not.toHaveBeenCalled();
     expect(mockIsLockedOut).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /session/device/token — pinned mint (identity-bound clients)', () => {
+  // Two accounts registered on the device; a1 is the one every other app made
+  // active, a2 is the account whose key the identity-bound client (Commons) holds.
+  const PINNED_STATE = {
+    deviceId: 'd1',
+    accounts: [
+      { accountId: 'a1', sessionId: 's1', authuser: 0 },
+      { accountId: 'a2', sessionId: 's2', authuser: 1 },
+    ],
+    activeAccountId: 'a1',
+    revision: 7,
+    updatedAt: 1720000000000,
+  };
+
+  it('mints the PINNED account token (not the active one) and rotates the secret', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(PINNED_STATE);
+    mockResolveTokenForAccount.mockResolvedValueOnce({ accessToken: 'jwt-a2', expiresAt: '2026-07-07T00:00:00.000Z' });
+    mockIssueDeviceSecret.mockResolvedValueOnce('next-secret-value');
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: 'a2' });
+
+    expect(res.status).toBe(200);
+    expect(mockResolveTokenForAccount).toHaveBeenCalledWith(PINNED_STATE, 'a2');
+    // The active-account resolver is never consulted on the pinned lane.
+    expect(mockResolveActiveToken).not.toHaveBeenCalled();
+    expect(res.body.data.accessToken).toBe('jwt-a2');
+    expect(res.body.data.nextDeviceSecret).toBe('next-secret-value');
+    expect(mockIssueDeviceSecret).toHaveBeenCalledWith('d1');
+    // Telemetry discriminates the pinned lane — and carries no accountId.
+    expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'secret', deviceId: 'd1', pinned: true });
+  });
+
+  it('never mutates the device state: no switch, no add, no revision bump, no broadcast — and reports the TRUE activeAccountId', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(PINNED_STATE);
+    mockResolveTokenForAccount.mockResolvedValueOnce({ accessToken: 'jwt-a2', expiresAt: '2026-07-07T00:00:00.000Z' });
+    mockIssueDeviceSecret.mockResolvedValueOnce('next-secret-value');
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: 'a2' });
+
+    expect(res.status).toBe(200);
+    // Pinning is read-only w.r.t. everything the other apps on this device observe.
+    expect(mockSwitchActive).not.toHaveBeenCalled();
+    expect(mockAddAccount).not.toHaveBeenCalled();
+    expect(mockSignout).not.toHaveBeenCalled();
+    expect(mockBroadcast).not.toHaveBeenCalled();
+    expect(mockBroadcastAccounts).not.toHaveBeenCalled();
+    // The response does NOT pretend the pinned account became active.
+    expect(res.body.data.state).toEqual(PINNED_STATE);
+    expect((res.body.data.state as { activeAccountId: string }).activeAccountId).toBe('a1');
+    expect((res.body.data.state as { revision: number }).revision).toBe(PINNED_STATE.revision);
+  });
+
+  it('401 account_not_on_device for an accountId that is not registered on the device — no rotation, no lockout failure', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(PINNED_STATE);
+    mockResolveTokenForAccount.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: 'ghost' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('account_not_on_device');
+    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
+    // The secret was proven — a bad pin must never count as secret guessing.
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+    expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'device-token', identifier: 'd1' });
+  });
+
+  it('401 account_not_on_device (same generic error, no enumeration oracle) when the pinned member session is dead — and does NOT rotate', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(PINNED_STATE);
+    // a2 IS on the device, but its session no longer validates.
+    mockResolveTokenForAccount.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: 'a2' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('account_not_on_device');
+    expect(mockIssueDeviceSecret).not.toHaveBeenCalled();
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+  });
+
+  it('a bad pin on an INVALID secret is still the plain invalid_device_secret lane (records a failure, never resolves the account)', async () => {
+    mockGetStateBySecret.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'bad', accountId: 'a2' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_device_secret');
+    expect(mockRecordFailure).toHaveBeenCalledWith({ scope: 'device-token', identifier: 'd1' });
+    expect(mockResolveTokenForAccount).not.toHaveBeenCalled();
+  });
+
+  it('400 when accountId is present but empty (schema requires min(1))', async () => {
+    const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: '' });
+    expect(res.status).toBe(400);
+    expect(mockGetStateBySecret).not.toHaveBeenCalled();
   });
 });

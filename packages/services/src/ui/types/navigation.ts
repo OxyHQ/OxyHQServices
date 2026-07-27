@@ -2,7 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { RouteName } from '../navigation/routes';
 import type { User } from '@oxyhq/core';
-import type { ClientSession } from '@oxyhq/core';
+import type { ClientSession, SessionMode } from '@oxyhq/core';
 
 export interface StepController {
     canGoBack: () => boolean;
@@ -80,6 +80,32 @@ export interface OxyProviderProps {
      * so a local/staging deployment targets its own IdP instead of production.
      */
     authorizeBaseUrl?: string;
+    /**
+     * Who owns this app's session.
+     *
+     * - `'account'` (default) — the device's ACTIVE account. Every ordinary Oxy
+     *   app: any app sharing the device's `DeviceSession` can switch the active
+     *   account and this one follows, sign-in surfaces and the account switcher
+     *   are available, and `accounts` lists the account graph.
+     * - `'identity'` — the owner of this device's PRIMARY identity key, for as
+     *   long as that key exists. The provider pins its authenticated user AND
+     *   its bearer to the account that key authenticates as, so an account
+     *   switch made by any sibling app changes the shared device state but never
+     *   this app's user or token. Built for the identity vault (Commons).
+     *
+     * In `'identity'` mode the account-graph surfaces are disabled at the source
+     * rather than hidden in the UI: `accounts` stays empty and is never fetched,
+     * `switchToAccount` / `switchSession` reject with `IdentityBoundSessionError`,
+     * `accountDialogController` is `null` and `openAccountDialog()` does nothing,
+     * and the two web OAuth cold-boot lanes (authorization-code return + silent
+     * cross-origin restore) are skipped — all of them commit whichever account
+     * the IdP resolves, which is not necessarily the local key's owner.
+     *
+     * Read once at mount, like `baseURL` / `oxyServices`: changing it on a
+     * mounted provider does not re-bind the session.
+     * @default 'account'
+     */
+    sessionMode?: SessionMode;
     queryClient?: QueryClient;
     /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
     hubSync?: boolean;
