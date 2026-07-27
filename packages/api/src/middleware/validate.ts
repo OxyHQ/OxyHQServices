@@ -27,7 +27,16 @@ export function validate(schemas: ValidationSchemas) {
         req.params = schemas.params.parse(req.params);
       }
       if (schemas.query) {
-        req.query = schemas.query.parse(req.query);
+        // Express 5 defines `req.query` as a getter with no setter, so a plain
+        // assignment throws at runtime. Redefining the property keeps the
+        // parsed value visible to every downstream `req.query` read, which is
+        // exactly what handlers expect, without touching the raw query parser.
+        Object.defineProperty(req, 'query', {
+          value: schemas.query.parse(req.query),
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
       next();
     } catch (error) {

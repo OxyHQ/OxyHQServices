@@ -125,7 +125,7 @@ describe('general limiter (rl:general) honours the token-gated exemption', () =>
   beforeAll(async () => {
     const app = express();
     app.use(rateLimiter);
-    app.all('*', (_req, res) => res.json({ ok: true }));
+    app.all('/*splat', (_req, res) => res.json({ ok: true }));
     server = await new Promise<http.Server>((resolve) => {
       const s = app.listen(0, () => resolve(s));
     });

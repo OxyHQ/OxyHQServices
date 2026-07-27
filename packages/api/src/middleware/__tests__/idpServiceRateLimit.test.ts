@@ -82,7 +82,7 @@ describe('general limiter (rl:general) exempts IdP service paths', () => {
   beforeAll(async () => {
     const app = express();
     app.use(rateLimiter);
-    app.all('*', (_req, res) => res.json({ ok: true }));
+    app.all('/*splat', (_req, res) => res.json({ ok: true }));
     server = await listen(app);
   });
 
@@ -117,7 +117,7 @@ describe('idpServiceLimiter (rl:idp:service) is the dedicated high-cap limiter',
   beforeAll(async () => {
     const app = express();
     app.use(idpServiceLimiter);
-    app.all('*', (_req, res) => res.json({ ok: true }));
+    app.all('/*splat', (_req, res) => res.json({ ok: true }));
     server = await listen(app);
   });
 
