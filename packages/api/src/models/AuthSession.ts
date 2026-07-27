@@ -24,8 +24,47 @@ import mongoose, { type Document, Schema } from "mongoose";
  *                   `applicationId` at create time) — there is no free-form app
  *                   label. It links the session to authoritative, sanitized app
  *                   metadata (name/icon/badge/scopes) for the consent UI.
+ *
+ * Purpose:
+ *   A session is EITHER a device sign-in (the historical QR/app-to-app handoff,
+ *   claimed for an access token via `POST /auth/session/claim`) OR an OAuth
+ *   authorization request (finalized into a single-use `AuthCode` via
+ *   `POST /auth/session/finalize/:sessionToken`). One request model, one state
+ *   machine, every delivery surface (popup / push / QR / deep link) converging
+ *   on it — never two competing authorization models.
  */
 export type AuthSessionStatus = 'pending' | 'authorized' | 'consumed' | 'expired' | 'cancelled';
+
+/**
+ * What this authorization request is FOR. Delivery progress (push sent, opened
+ * in Commons, …) is never a purpose and never a status — the authoritative
+ * state machine stays `pending -> authorized -> consumed` / `cancelled` /
+ * `expired`.
+ */
+export type AuthSessionPurpose = 'device_sign_in' | 'oauth_authorization';
+
+/**
+ * The MINIMUM OAuth request binding needed to safely finalize an approval into
+ * an authorization code. Deliberately does NOT duplicate anything owned by
+ * `Application` (client identity, registered redirect URIs, app scopes),
+ * `AuthCode` (the code itself, its hash, single-use state) or `DeviceSession`.
+ * The RP-owned `state` stays in the relying party and is validated there.
+ */
+export interface IAuthSessionOAuthContext {
+  /** Exact redirect URI, validated against the Application allowlist at bind time. */
+  redirectUri: string;
+  /** PKCE challenge (S256 only — `plain` is rejected at bind time). */
+  codeChallenge: string;
+  codeChallengeMethod: 'S256';
+  /** Requested scopes, normalized exactly like `POST /auth/oauth/authorize`. */
+  scopes: string[];
+  /**
+   * OPTIONAL delegated subject: the account the app will act AS. The approving
+   * identity must hold `account:act_as` over it — re-verified at approval AND
+   * at finalization, never trusted from the request.
+   */
+  subjectAccountId?: mongoose.Types.ObjectId;
+}
 
 export interface IAuthSession extends Document {
   sessionToken: string;      // Unique token for this auth session (128-bit secret held only by the originating client)
@@ -63,14 +102,42 @@ export interface IAuthSession extends Document {
    */
   deviceId?: string;
   status: AuthSessionStatus;
+  /** What the request authorizes. Legacy rows (no field) read as `device_sign_in`. */
+  purpose: AuthSessionPurpose;
+  /** Present only for `purpose: 'oauth_authorization'`. */
+  oauth?: IAuthSessionOAuthContext;
+  /**
+   * The `_id` RESERVED for this request's one and only `AuthCode`, written by the
+   * same atomic update that spends the session. Its presence is the proof that
+   * finalization already happened: the claim is conditioned on it being null, so
+   * a request can never mint a second authorization code — not on retry, not
+   * under concurrent finalize calls.
+   */
+  finalizedAuthCodeId?: mongoose.Types.ObjectId;
   authorizedBy?: string;     // Public key of the user who authorized
-  authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing user
-  authorizedSessionId?: string; // The actual session ID after authorization
+  authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing IDENTITY
+  authorizedSessionId?: string; // The actual session ID after authorization (device sign-in only)
   consumedAt?: Date;         // Timestamp when the sessionToken was exchanged for a token
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Single-nested OAuth binding. Declared as its own schema (rather than inline
+ * nested paths) so the whole `oauth` path stays UNDEFINED on device-sign-in
+ * rows instead of materialising an empty object that reads as truthy.
+ */
+const AuthSessionOAuthSchema: Schema = new Schema(
+  {
+    redirectUri: { type: String, required: true },
+    codeChallenge: { type: String, required: true },
+    codeChallengeMethod: { type: String, enum: ['S256'], required: true },
+    scopes: { type: [String], default: [] },
+    subjectAccountId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  },
+  { _id: false }
+);
 
 const AuthSessionSchema: Schema = new Schema(
   {
@@ -111,6 +178,22 @@ const AuthSessionSchema: Schema = new Schema(
       type: String,
       enum: ['pending', 'authorized', 'consumed', 'expired', 'cancelled'],
       default: 'pending',
+    },
+    purpose: {
+      type: String,
+      enum: ['device_sign_in', 'oauth_authorization'],
+      default: 'device_sign_in',
+    },
+    oauth: {
+      type: AuthSessionOAuthSchema,
+    },
+    // Never `required`/defaulted to anything but null — the atomic finalization
+    // claim matches on `finalizedAuthCodeId: null` (which also matches a missing
+    // field, so legacy rows behave as un-finalized).
+    finalizedAuthCodeId: {
+      type: Schema.Types.ObjectId,
+      ref: 'AuthCode',
+      default: null,
     },
     authorizedBy: {
       type: String, // Public key

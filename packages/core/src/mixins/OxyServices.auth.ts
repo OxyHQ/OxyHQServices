@@ -59,11 +59,58 @@ export interface PublicKeyCheckResponse {
 // ===========================================================================
 
 /**
+ * How a "Sign in with Oxy" request finalizes once the approver authorizes it.
+ *
+ * ONE request (`AuthSession`) serves every delivery surface — popup, push, QR,
+ * deep link — so the purpose describes the FINALIZATION, never the transport:
+ *
+ * - `device_sign_in` — the classic device flow. The initiator exchanges its
+ *   secret `sessionToken` for the first access token via `claimSessionByToken`.
+ * - `oauth_authorization` — the request additionally carries an OAuth binding
+ *   ({@link CommonsOAuthContext}), so it finalizes into a single-use
+ *   authorization CODE via {@link OxyServicesAuthMixin.finalizeCommonsOAuth}.
+ *   The caller still performs the PKCE token exchange itself.
+ */
+export type CommonsSignInPurpose = 'device_sign_in' | 'oauth_authorization';
+
+/**
+ * OAuth binding attached to a "Sign in with Oxy" request so a single
+ * `AuthSession` can finalize into a standard OAuth authorization code instead of
+ * a device-flow session.
+ *
+ * Only the minimum request binding is carried here — everything else (the app's
+ * name, icon, registered redirect URIs, trust flags) is owned server-side by the
+ * `Application` the `clientId` resolves to and is never client-supplied.
+ *
+ * The PKCE `codeVerifier` NEVER appears here: only its S256 `codeChallenge`
+ * crosses the wire, exactly as in the redirect flow. The RP-owned OAuth `state`
+ * also stays with the relying party, which validates it locally.
+ */
+export interface CommonsOAuthContext {
+  /** Exact registered redirect URI the authorization code will be returned to. */
+  redirectUri: string;
+  /** PKCE `BASE64URL(SHA-256(codeVerifier))` (RFC 7636 §4.2); the verifier stays client-side. */
+  codeChallenge: string;
+  /** PKCE transformation method. Always `S256` — `plain` is not accepted. */
+  codeChallengeMethod: 'S256';
+  /** Space-delimited OAuth scope string; the server normalizes and validates it. */
+  scope?: string;
+  /**
+   * Optional delegated account the application will act AS (an organization or
+   * project the identity is a member of). The identity approving the request
+   * does not change; the server verifies the identity's permission to act as
+   * this account before finalizing.
+   */
+  subjectAccountId?: string;
+}
+
+/**
  * Handle returned by {@link OxyServicesAuthMixin.startCommonsSignIn} for a
  * relying-party app initiating a "Sign in with Oxy" flow.
  *
  * `sessionToken` is the SECRET, high-entropy device-flow credential — it stays
- * on the initiating client, is exchanged once via `claimSessionByToken`, and is
+ * on the initiating client, is exchanged once via `claimSessionByToken` (device
+ * sign-in) or {@link OxyServicesAuthMixin.finalizeCommonsOAuth} (OAuth), and is
  * NEVER placed in the QR/deep-link. `authorizeCode` is the PUBLIC handle carried
  * in `qrPayload`; the approver (Commons) resolves it via
  * {@link OxyServicesAuthMixin.getCommonsApprovalInfo}.
@@ -94,6 +141,24 @@ export interface CommonsSignInStatus {
 }
 
 /**
+ * The account an application will act AS once the request is approved, when the
+ * request delegates to an organization/project rather than the approver's own
+ * personal account. Resolved and sanitized server-side from the request's
+ * `subjectAccountId`, so it is safe to display in the approval UI.
+ *
+ * The identity approving stays the identity: Commons renders this as a distinct
+ * "will act as" line, never as a change of who is signing.
+ */
+export interface CommonsApprovalSubjectAccount {
+  /** The delegated account's id. */
+  id: string;
+  /** The delegated account's handle. */
+  username: string;
+  /** Optional human-readable name; absent when the account has no real name. */
+  displayName?: string;
+}
+
+/**
  * Server-resolved approval context shown by the approver (Commons) before
  * authorizing — the TRUSTED identity of the requesting app, resolved from the
  * `authorizeCode` server-side (never from the QR string).
@@ -113,6 +178,20 @@ export interface CommonsApprovalInfo {
    * "not verified") by {@link OxyServicesAuthMixin.getCommonsApprovalInfo}.
    */
   originVerified: boolean;
+  /**
+   * How this request finalizes. Always present — an unrecognized or missing
+   * server value degrades to `'device_sign_in'`, the behaviour every server has
+   * always had, so an older API never makes the approver believe it is granting
+   * an OAuth authorization.
+   */
+  purpose: CommonsSignInPurpose;
+  /**
+   * The delegated account the application will act as, or `null` when the
+   * request is for the approver's own account. Always present — a missing or
+   * malformed server value degrades to `null` (fail-safe to "no delegation"),
+   * so a partial payload can never imply a broader grant than was requested.
+   */
+  subjectAccount: CommonsApprovalSubjectAccount | null;
   /** Server-authoritative expiry (epoch ms or ISO-8601 string from the API). */
   expiresAt: number | string;
   /** Session lifecycle status. */
@@ -121,22 +200,65 @@ export interface CommonsApprovalInfo {
 
 /**
  * @internal Raw server response of `GET /auth/session/approve-info/:code`.
- * `originVerified` is typed loosely here because older servers may omit it (or
- * send a non-boolean); the SDK coerces it to a strict `boolean` when mapping
- * into {@link CommonsApprovalInfo}.
+ * `originVerified`, `purpose` and `subjectAccount` are typed loosely here
+ * because older servers may omit them (or send an unexpected shape); the SDK
+ * narrows each one fail-safe when mapping into {@link CommonsApprovalInfo}.
  */
 interface CommonsApprovalInfoResponse {
   application: PublicApplication | null;
   scopes: string[];
   boundOrigin?: string;
   originVerified?: unknown;
+  purpose?: unknown;
+  subjectAccount?: unknown;
   expiresAt: number | string;
   status: string;
+}
+
+/**
+ * @internal Narrow an untrusted `subjectAccount` from the approve-info response.
+ *
+ * Returns `null` unless the value is an object carrying a non-empty string `id`
+ * AND `username` — the two fields the approval UI needs to name the delegated
+ * account. A half-populated object is rejected whole rather than rendered with
+ * blanks, and `displayName` is only carried through when it is a string.
+ */
+function parseCommonsSubjectAccount(value: unknown): CommonsApprovalSubjectAccount | null {
+  if (value === null || typeof value !== 'object') {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const { id, username, displayName } = raw;
+  if (typeof id !== 'string' || !id || typeof username !== 'string' || !username) {
+    return null;
+  }
+  return {
+    id,
+    username,
+    ...(typeof displayName === 'string' ? { displayName } : {}),
+  };
 }
 
 /** Result of approving / denying a "Sign in with Oxy" request. */
 export interface CommonsSignInActionResult {
   success: boolean;
+}
+
+/**
+ * Result of finalizing an approved, OAuth-bound "Sign in with Oxy" request.
+ *
+ * This is an authorization CODE, not a session: the caller still performs the
+ * standard PKCE token exchange (`exchangeOAuthCode`) with the `codeVerifier` it
+ * has held all along. No access token, refresh token, or device secret is ever
+ * produced by finalization.
+ */
+export interface CommonsOAuthFinalizeResult {
+  /** Single-use OAuth authorization code. */
+  code: string;
+  /** The exact registered redirect URI the request was bound to. */
+  redirectUri: string;
+  /** Lifetime of the authorization code, in seconds. */
+  expiresIn: number;
 }
 
 /** @internal Response shape of the extended `POST /auth/session/create`. */
@@ -721,11 +843,16 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     //   A. Same-device shared-keychain SSO (`signInWithSharedIdentity`): a
     //      sibling native app silently mints its own session from the shared
     //      identity key. No user interaction.
-    //   B. QR / app-to-app handoff: a relying party (`startCommonsSignIn` +
-    //      `pollCommonsSignIn` + the existing `claimSessionByToken`) and the
-    //      approver / Commons (`getCommonsApprovalInfo` + `approveCommonsSignIn`
-    //      / `denyCommonsSignIn`). The approver signs with its PRIMARY local
-    //      key; the RP never sees the private key.
+    //   B. QR / app-to-app / popup / push handoff: a relying party
+    //      (`startCommonsSignIn` + `pollCommonsSignIn`, finalized with either
+    //      `claimSessionByToken` or `finalizeCommonsOAuth`) and the approver /
+    //      Commons (`getCommonsApprovalInfo` + `approveCommonsSignIn` /
+    //      `denyCommonsSignIn`). The approver signs with its PRIMARY local key;
+    //      the RP never sees the private key.
+    //
+    //      ONE request serves every delivery surface. The delivery surface is
+    //      not part of the model: only the request's purpose is, and it is fixed
+    //      at creation by whether an OAuth binding was attached.
     // =======================================================================
 
     /**
@@ -793,14 +920,28 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * returns the server-issued public `authorizeCode` + ready-to-render
      * `qrPayload`. Render the QR (web) / open the deep-link (same-device); the
      * approver resolves the code and authorizes. Then poll with
-     * {@link pollCommonsSignIn} and, on `authorized`, exchange the
-     * `sessionToken` via the existing `claimSessionByToken`.
+     * {@link pollCommonsSignIn} and finalize.
+     *
+     * ONE request serves every delivery surface, and how it finalizes is decided
+     * here by whether an OAuth binding is attached:
+     *   - no `oauth` (the default): a `device_sign_in` request — on `authorized`,
+     *     exchange the `sessionToken` via the existing `claimSessionByToken`.
+     *   - with `oauth`: an `oauth_authorization` request — on `authorized`, call
+     *     {@link finalizeCommonsOAuth} with the same `sessionToken` to mint the
+     *     single-use authorization code, then exchange it with PKCE.
      *
      * @param params.clientId - The RP's registered OAuth client id
      *   (ApplicationCredential publicKey); required so the server can resolve the
      *   requesting application's identity.
+     * @param params.oauth - Optional OAuth binding ({@link CommonsOAuthContext}).
+     *   Carries only the redirect URI, the PKCE S256 challenge, the requested
+     *   scope, and an optional delegated `subjectAccountId` — never the PKCE
+     *   verifier, the OAuth `state`, or any token.
      */
-    async startCommonsSignIn(params: { clientId: string }): Promise<CommonsSignInHandle> {
+    async startCommonsSignIn(params: {
+      clientId: string;
+      oauth?: CommonsOAuthContext;
+    }): Promise<CommonsSignInHandle> {
       try {
         // High-entropy opaque secret token (256-bit hex). Generated client-side
         // and held only here; the server stores it but never returns it in the
@@ -811,7 +952,15 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         const res = await this.makeRequest<CommonsSessionCreateResponse>(
           'POST',
           '/auth/session/create',
-          { sessionToken, expiresAt, clientId: params.clientId },
+          {
+            sessionToken,
+            expiresAt,
+            clientId: params.clientId,
+            // Omitted entirely when absent so the device-sign-in body stays
+            // exactly what it has always been (the server reads presence, not a
+            // null, to decide the request's purpose).
+            ...(params.oauth ? { oauth: params.oauth } : {}),
+          },
           // Public/pre-session (no bearer): skip the preflight so a stale
           // near-expiry token cannot re-enter refreshAccessToken while the
           // refresh handler is already in flight (self-await hang).
@@ -834,8 +983,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * MECHANISM B (relying party) — poll a device-flow session for approval.
      *
      * Backstop for the auth socket. On `authorized` (with a `sessionId`), the
-     * caller exchanges the secret `sessionToken` via the existing
-     * `claimSessionByToken` to mint the first access token.
+     * caller finalizes: `claimSessionByToken` for a `device_sign_in` request,
+     * {@link finalizeCommonsOAuth} for an `oauth_authorization` one.
      *
      * @param sessionToken - The secret token from {@link startCommonsSignIn}.
      */
@@ -856,12 +1005,74 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * MECHANISM B (relying party) — finalize an APPROVED, OAuth-bound request
+     * into a single-use OAuth authorization code.
+     *
+     * The OAuth counterpart of `claimSessionByToken`: same secret credential,
+     * same single-use semantics, different output. Call it once the request the
+     * RP started with an `oauth` binding reports `authorized`; the server
+     * atomically mints exactly ONE `AuthCode` bound to the redirect URI, PKCE
+     * challenge, scopes, approving identity, and any delegated subject account
+     * the request was created with. A second call cannot mint another code.
+     *
+     * The result is an authorization CODE, never a token — the caller completes
+     * the flow with the ordinary PKCE exchange (`exchangeOAuthCode`) using the
+     * `codeVerifier` it never sent anywhere. Nothing here is exposed to the
+     * popup: the code travels back through the registered callback, and the
+     * main window owns the verifier.
+     *
+     * Like `claimSessionByToken`, this needs no Authorization header — the
+     * high-entropy SECRET `sessionToken` IS the credential. Never pass the
+     * public `authorizeCode` here; it is the approver's handle, not the
+     * initiator's. Every server-side failure (wrong/expired/already-finalized
+     * request, non-OAuth purpose, missing permission for the delegated account)
+     * surfaces as one generic error, so nothing about the request's state can be
+     * probed from outside.
+     *
+     * @param sessionToken - The secret token from {@link startCommonsSignIn}.
+     */
+    async finalizeCommonsOAuth(sessionToken: string): Promise<CommonsOAuthFinalizeResult> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          `/auth/session/finalize/${encodeURIComponent(sessionToken)}`,
+          undefined,
+          // Body-authenticated by the path's secret token (no bearer) — skip the
+          // preflight, exactly like the device-flow claim.
+          { cache: false, skipAuth: true },
+        );
+
+        if (res === null || typeof res !== 'object') {
+          throw new Error('auth/session/finalize returned an unexpected response shape');
+        }
+        const { code, redirectUri, expiresIn } = res as Record<string, unknown>;
+        // All three fields are load-bearing for the exchange that follows, so a
+        // partial payload is rejected outright rather than returned half-parsed.
+        if (
+          typeof code !== 'string' ||
+          !code ||
+          typeof redirectUri !== 'string' ||
+          !redirectUri ||
+          typeof expiresIn !== 'number' ||
+          !Number.isFinite(expiresIn)
+        ) {
+          throw new Error('auth/session/finalize returned an incomplete authorization code');
+        }
+
+        return { code, redirectUri, expiresIn };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * MECHANISM B (approver / Commons) — resolve the TRUSTED identity of a
      * sign-in request from its public `authorizeCode`.
      *
-     * The returned `application` is resolved server-side and is the only safe
-     * thing to display in the approval UI — NEVER trust the app/name/origin
-     * strings carried in the QR payload. Public (no auth required).
+     * The returned `application` and `subjectAccount` are resolved server-side
+     * and are the only safe things to display in the approval UI — NEVER trust
+     * the app/name/origin strings carried in the QR payload. Public (no auth
+     * required).
      *
      * @param authorizeCode - The public code scanned from the QR / deep-link.
      */
@@ -883,6 +1094,13 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           // missing or non-boolean value (older server, malformed response)
           // coerces to `false` so a stale server can never imply trust.
           originVerified: raw.originVerified === true,
+          // Same discipline: only the literal OAuth purpose opts into OAuth
+          // finalization. Anything else — including a server that predates this
+          // field — is the plain device sign-in it has always been.
+          purpose: raw.purpose === 'oauth_authorization' ? 'oauth_authorization' : 'device_sign_in',
+          // A missing/partial delegated account degrades to "no delegation"
+          // rather than a half-rendered "will act as" line.
+          subjectAccount: parseCommonsSubjectAccount(raw.subjectAccount),
           expiresAt: raw.expiresAt,
           status: raw.status,
         };

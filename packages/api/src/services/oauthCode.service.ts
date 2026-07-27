@@ -56,6 +56,7 @@ export function canonicalizeOAuthRedirectUri(redirectUri: string): string {
 }
 
 export interface IssueCodeOptions {
+  /** The SUBJECT of the grant — the account the code authorizes access to. */
   userId: Types.ObjectId | string;
   appId: string;
   redirectUri: string;
@@ -64,6 +65,20 @@ export interface IssueCodeOptions {
   scopes?: string[];
   /** DeviceSession id from the authorizing bearer JWT. */
   deviceId?: string;
+  /**
+   * The OPERATOR identity when `userId` is a DELEGATED account (the identity
+   * approved the app to act as that account). Kept separate from `userId` so the
+   * two are never conflated: the session minted at exchange time is a managed
+   * session bound to this operator's `account:act_as` membership.
+   */
+  operatedByUserId?: Types.ObjectId | string;
+  /**
+   * Pre-allocated `_id` for the code document. Lets a caller RESERVE the code's
+   * identity inside an atomic single-use claim (see the OAuth-bound AuthSession
+   * finalization) before anything is minted, so a spent request can never mint a
+   * second code.
+   */
+  codeId?: Types.ObjectId | string;
   ttlMs?: number;
 }
 
@@ -79,6 +94,7 @@ export async function issueAuthCode(options: IssueCodeOptions): Promise<IssueCod
   const expiresAt = new Date(Date.now() + ttlMs);
 
   await AuthCode.create({
+    ...(options.codeId ? { _id: options.codeId } : {}),
     codeHash,
     userId: options.userId,
     appId: options.appId,
@@ -87,6 +103,7 @@ export async function issueAuthCode(options: IssueCodeOptions): Promise<IssueCod
     codeChallengeMethod: options.codeChallenge ? 'S256' : null,
     scopes: options.scopes ?? [],
     deviceId: options.deviceId ?? null,
+    operatedByUserId: options.operatedByUserId ?? null,
     expiresAt,
   });
 
