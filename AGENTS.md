@@ -466,6 +466,7 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 - `rl:auth:session-approve-info:`, `rl:auth:session-authorize-signed:` — Commons QR handoff endpoints
 - `rl:identity:export:` (5/hr — signed data export), `rl:identity:domainreq:`, `rl:identity:domainverify:` — domain verification
 - `rl:civic:attest:` (real-life QR attestation), `rl:civic:validate:` (jury vote submit), `rl:civic:vouch:` (personhood vouch/withdraw), `rl:civic:credential:` (credential issue/revoke)
+- `rl:transparency:read:` — public transparency-log reads (`GET /transparency/*`, 600 / 15min)
 - `rl:updates:manifest:` (public expo-updates manifest poll), `rl:updates:publish:`, `rl:updates:read:` — Oxy Updates admin surface
 
 ## Oxy Updates — self-hosted OTA (api + ship + console)
