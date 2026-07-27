@@ -1,29 +1,26 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
+import {
+  __EXPO_PUSH_TOKEN as EXPO_TOKEN,
+  __resetNotificationAdapter,
+  __resetOxyState,
+  __setOxyState,
+  getExpoPushToken,
+  hasNotificationPermission,
+  pushTokenPlatform,
+  requestNotificationPermission,
+} from '@/__mocks__/oxyhq-services';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
-
-const mockHasNotificationPermission = jest.fn<Promise<boolean>, []>();
-const mockGetExpoPushToken = jest.fn<Promise<string | null>, []>();
-
-// Replace the native adapter so the REAL orchestration + Commons client-id
-// wiring runs, without loading `expo-notifications`.
-jest.mock('@/lib/notifications/device-notifications', () => ({
-  hasNotificationPermission: () => mockHasNotificationPermission(),
-  getExpoPushToken: () => mockGetExpoPushToken(),
-  pushTokenPlatform: () => 'android',
-  requestNotificationPermission: () => Promise.resolve(false),
-  // The stand-in must expose the WHOLE adapter surface: the orchestration
-  // awaits the Android channel step before it ever asks for a token, so a
-  // missing export here aborts registration and the failure reads as "the
-  // hook stopped registering" rather than "the mock is incomplete".
-  ensureAuthApprovalNotificationChannel: () => Promise.resolve(),
-}));
-
-// Imported AFTER jest.mock so the hook sees the patched adapter.
-// eslint-disable-next-line import/first
 import { usePushRegistration } from '@/hooks/notifications/usePushRegistration';
+import { LocaleProvider } from '@/lib/i18n';
 
-const EXPO_TOKEN = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+/**
+ * The hook localizes the Android channel's user-visible name, so it needs the
+ * locale context the app always provides at the root. Rendering it bare would
+ * only be testing a provider omission that cannot happen in the real tree.
+ */
+function renderPushRegistration(): void {
+  renderHook(() => usePushRegistration(), { wrapper: LocaleProvider });
+}
 
 interface PushMocks {
   registerPushToken: jest.Mock;
@@ -54,18 +51,21 @@ function installSession(
  * the hook's contract is entirely about NOT firing too early: a bearer-authed
  * call before the session resolves is a guaranteed 401, and a registration
  * without the OS permission is one the user never agreed to.
+ *
+ * The device half is the shared `@oxyhq/services` adapter (stubbed here, tested
+ * in that package), so what these tests pin is the Commons orchestration around
+ * it: the gate, the client-id scoping, and the one-attempt-per-identity rule.
  */
 describe('usePushRegistration', () => {
   beforeEach(() => {
     __resetOxyState();
-    mockHasNotificationPermission.mockReset().mockResolvedValue(true);
-    mockGetExpoPushToken.mockReset().mockResolvedValue(EXPO_TOKEN);
+    __resetNotificationAdapter();
   });
 
   it('does not register before a session exists', async () => {
     const services = installSession({ canUsePrivateApi: false });
 
-    renderHook(() => usePushRegistration());
+    renderPushRegistration();
 
     // Give any stray async work a chance to run before asserting the negative.
     await act(async () => {
@@ -77,7 +77,7 @@ describe('usePushRegistration', () => {
   it('registers once the session resolves, scoped to the Commons client id', async () => {
     const services = installSession({ canUsePrivateApi: false });
 
-    renderHook(() => usePushRegistration());
+    renderPushRegistration();
     expect(services.registerPushToken).not.toHaveBeenCalled();
 
     act(() => {
@@ -95,7 +95,7 @@ describe('usePushRegistration', () => {
   it("threads the device session's deviceId when one is available", async () => {
     const services = installSession({ canUsePrivateApi: true, deviceId: 'device-9' });
 
-    renderHook(() => usePushRegistration());
+    renderPushRegistration();
 
     await waitFor(() => expect(services.registerPushToken).toHaveBeenCalledTimes(1));
     expect(services.registerPushToken).toHaveBeenCalledWith(
@@ -104,10 +104,10 @@ describe('usePushRegistration', () => {
   });
 
   it('does not register while the OS permission is not granted', async () => {
-    mockHasNotificationPermission.mockResolvedValue(false);
+    hasNotificationPermission.mockResolvedValue(false);
     const services = installSession({ canUsePrivateApi: true });
 
-    renderHook(() => usePushRegistration());
+    renderPushRegistration();
 
     await act(async () => {
       await Promise.resolve();
@@ -118,17 +118,49 @@ describe('usePushRegistration', () => {
   it('never prompts for the permission — onboarding owns the single dialog', async () => {
     const services = installSession({ canUsePrivateApi: true });
 
-    renderHook(() => usePushRegistration());
+    renderPushRegistration();
 
     await waitFor(() => expect(services.registerPushToken).toHaveBeenCalledTimes(1));
-    // The adapter's request-permission entry point is not part of this path.
-    expect(mockHasNotificationPermission).toHaveBeenCalled();
+    expect(hasNotificationPermission).toHaveBeenCalled();
+    // The prompting entry point is not part of this path, on any cold boot.
+    expect(requestNotificationPermission).not.toHaveBeenCalled();
+  });
+
+  it('registers nothing on a platform Oxy does not deliver push to', async () => {
+    // The shared adapter reports `null` for anything that is not iOS/Android —
+    // web included, since browser push is not wired. Nothing is even asked about
+    // permission in that case.
+    pushTokenPlatform.mockReturnValue(null);
+    const services = installSession({ canUsePrivateApi: true });
+
+    renderPushRegistration();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(services.registerPushToken).not.toHaveBeenCalled();
+    expect(hasNotificationPermission).not.toHaveBeenCalled();
+    expect(getExpoPushToken).not.toHaveBeenCalled();
+  });
+
+  it('registers nothing when no Expo push token can be minted', async () => {
+    // The live shape of this today: the build carries no EAS project id, so the
+    // adapter warns and resolves null rather than minting an unusable token.
+    getExpoPushToken.mockResolvedValue(null);
+    const services = installSession({ canUsePrivateApi: true });
+
+    renderPushRegistration();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(services.registerPushToken).not.toHaveBeenCalled();
   });
 
   it('registers at most once per identity, across re-renders', async () => {
     const services = installSession({ canUsePrivateApi: true });
 
-    const { rerender } = renderHook(() => usePushRegistration());
+    const { rerender } = renderHook(() => usePushRegistration(), { wrapper: LocaleProvider });
     await waitFor(() => expect(services.registerPushToken).toHaveBeenCalledTimes(1));
 
     rerender();
@@ -144,7 +176,7 @@ describe('usePushRegistration', () => {
     const services = installSession({ canUsePrivateApi: true });
     services.registerPushToken.mockRejectedValue(new Error('offline'));
 
-    const { result } = renderHook(() => usePushRegistration());
+    const { result } = renderHook(() => usePushRegistration(), { wrapper: LocaleProvider });
 
     await waitFor(() => expect(services.registerPushToken).toHaveBeenCalledTimes(1));
     expect(result.current).toBeUndefined();

@@ -61,6 +61,17 @@ export type {
 } from './sessionStatus';
 
 export {
+    // Closed set of denial reasons for POST /auth/session/deny/:authorizeCode —
+    // shared by the API request schema, the persisted `AuthSession.deniedReason`
+    // enum, and the SDK's `denyCommonsSignIn`.
+    COMMONS_DENY_REASONS,
+    commonsDenyReasonSchema,
+    IDENTITY_APPROVAL_PUSH_CHANNEL,
+} from './commonsSignIn';
+
+export type { CommonsDenyReason } from './commonsSignIn';
+
+export {
     // Schemas
     recommendationExcludeTypeSchema,
     recommendationBoostSchema,

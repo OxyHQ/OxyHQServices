@@ -5,9 +5,9 @@ import { LogoIcon } from '@oxyhq/services';
 import type {
   CommonsApprovalInfo,
   CommonsApprovalSubjectAccount,
-  CommonsDenyReason,
   PublicApplication,
 } from '@oxyhq/core';
+import type { CommonsDenyReason } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 // Imported from their own modules rather than the `components/ui` barrel: the

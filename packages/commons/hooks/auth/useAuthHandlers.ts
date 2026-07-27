@@ -3,10 +3,9 @@ import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import type { OxyServices, User } from '@oxyhq/core';
 import { KeyManager, logger } from '@oxyhq/core';
-import { useAuthStore, useUpdateProfile } from '@oxyhq/services';
+import { requestNotificationPermission, useAuthStore, useUpdateProfile } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
-import { requestNotificationPermission } from '@/lib/notifications/device-notifications';
 import { registerVaultPushToken } from '@/lib/notifications/push-registration';
 import { STORE_UPDATE_DELAY_MS } from '@/constants/auth';
 import { useTranslation } from '@/lib/i18n';
@@ -243,13 +242,19 @@ export function useAuthHandlers({
     setIsRequestingNotifications(true);
     setAuthError(null);
     try {
-      // Short-circuits when already granted, so a resumed onboarding shows at
-      // most one system dialog.
+      // The SDK adapter shows the system dialog AT MOST once per installation:
+      // an already-granted permission resolves true without a second dialog,
+      // and a denial the OS will no longer let us re-ask about (`canAskAgain:
+      // false`) resolves false without issuing a request the OS would ignore.
+      // Either way a resumed onboarding never re-prompts.
       const granted = await requestNotificationPermission();
       if (granted && oxyServices) {
         // Fire-and-forget: a failed registration costs the user the push
         // convenience, never their onboarding. The QR handoff still works.
-        void registerVaultPushToken(oxyServices).catch((error: unknown) => {
+        void registerVaultPushToken(oxyServices, {
+          name: t('signInApproval.channel.name'),
+          description: t('signInApproval.channel.description'),
+        }).catch((error: unknown) => {
           logger.warn(
             '[commons] onboarding push token registration failed',
             { component: 'useAuthHandlers' },

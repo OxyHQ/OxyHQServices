@@ -25,14 +25,14 @@ import { Application } from '../models/Application';
 import { PushToken } from '../models/PushToken';
 import { pushService } from './push.service';
 import { IDENTITY_APPROVAL_CAPABILITY } from '../utils/applicationCapabilities';
+// The Android channel the approval push is sent on. NOT an iOS `categoryId`:
+// the notification carries no action buttons, so it can only be opened (which
+// routes into the normal in-vault approval screen) or dismissed. It is a wire
+// contract because the vault must create a channel with this exact id before a
+// push can land — Android 8+ drops a notification whose channel it does not
+// know, silently and with no error on either side.
+import { IDENTITY_APPROVAL_PUSH_CHANNEL } from '@oxyhq/contracts';
 import { logger } from '../utils/logger';
-
-/**
- * Notification channel/category for approval requests. NOT an iOS `categoryId`:
- * the notification carries no action buttons, so it can only be opened (which
- * routes into the normal in-vault approval screen) or dismissed.
- */
-export const IDENTITY_APPROVAL_PUSH_CHANNEL = 'auth-approval';
 
 /** Runtime type discriminator of the push payload, mirrored by the vault. */
 export const IDENTITY_APPROVAL_PUSH_TYPE = 'oxy_commons_auth_request';

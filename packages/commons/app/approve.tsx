@@ -2,7 +2,7 @@ import React, { useCallback, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Linking, Platform, BackHandler } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
-import type { CommonsDenyReason } from '@oxyhq/core';
+import type { CommonsDenyReason } from '@oxyhq/contracts';
 import { Dialog, useDialogControl } from '@oxyhq/bloom/dialog';
 import { useColors } from '@/hooks/useColors';
 import { CenteredState } from '@/components/ui/centered-state';

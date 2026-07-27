@@ -55,8 +55,8 @@ import {
   markAuthRequestOpened,
   buildApprovalUrl,
   IDENTITY_APPROVAL_PUSH_TYPE,
-  IDENTITY_APPROVAL_PUSH_CHANNEL,
 } from '../authSessionDelivery.service';
+import { IDENTITY_APPROVAL_PUSH_CHANNEL } from '@oxyhq/contracts';
 import { IDENTITY_APPROVAL_CAPABILITY } from '../../utils/applicationCapabilities';
 
 const IN_AN_HOUR = () => new Date(Date.now() + 3_600_000);
