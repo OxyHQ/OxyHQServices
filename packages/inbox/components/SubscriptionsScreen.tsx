@@ -27,9 +27,7 @@ import {
   ArrowLeft01Icon,
   News01Icon,
 } from '@hugeicons/core-free-icons';
-import { useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { useGoBack } from '@/hooks/useGoBack';
 import { useColors } from '@/constants/theme';
 import { fadeOut } from '@/utils/fadeOut';
@@ -38,13 +36,7 @@ import { useUnsubscribe } from '@/hooks/mutations/useUnsubscribe';
 import { SubscriptionRow } from '@/components/SubscriptionRow';
 import type { Subscription } from '@/services/emailApi';
 
-interface DrawerNavigation {
-  openDrawer?: () => void;
-  dispatch?: (action: unknown) => void;
-}
-
 export function SubscriptionsScreen() {
-  const navigation = useNavigation<DrawerNavigation>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colors = useColors();
@@ -81,16 +73,6 @@ export function SubscriptionsScreen() {
     return merged;
   }, [data]);
 
-  const handleOpenDrawer = useCallback(() => {
-    // Synthesize the DrawerActions.openDrawer payload inline — expo-router v56
-    // rejects direct `@react-navigation/*` imports.
-    if (navigation.openDrawer) {
-      navigation.openDrawer();
-      return;
-    }
-    navigation.dispatch?.({ type: 'OPEN_DRAWER' });
-  }, [navigation]);
-
   const handleBack = useGoBack();
 
   const handleUnsubscribe = useCallback(
@@ -123,6 +105,23 @@ export function SubscriptionsScreen() {
       listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
     },
     [subscriptions],
+  );
+
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      listRef.current?.scrollToOffset({
+        offset: info.averageItemLength * info.index,
+        animated: false,
+      });
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0,
+        });
+      });
+    },
+    [],
   );
 
   const renderItem = useCallback(
@@ -244,6 +243,7 @@ export function SubscriptionsScreen() {
           ref={listRef}
           data={subscriptions}
           renderItem={renderItem}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
           ItemSeparatorComponent={renderSeparator}
           ListHeaderComponent={
             <>

@@ -22,6 +22,7 @@ import { useTabBarClearance } from '@/hooks/useTabBarClearance';
 
 import { useColors } from '@/constants/theme';
 import { CONTENT_MAX_WIDTH } from '@/constants/layout';
+import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
@@ -117,6 +118,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const insets = useSafeAreaInsets();
   const tabBarClearance = useTabBarClearance();
   const colors = useColors();
+  const { density, showAvatars, showPreviews } = useInboxDisplayPrefs();
   const inputRef = useRef<TextInput | null>(null);
   const { registerInput } = useSearchFocus();
   // Fans the input node out to BOTH the local ref (used by `handleClear` to
@@ -346,15 +348,29 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     setFilterInput('');
   }, [editingFilter, filterInput]);
 
+  const listExtraData = useMemo(
+    () => ({
+      selectedMessageId,
+      density,
+      showAvatars,
+      showPreviews,
+      themeKey: `${colors.unread}|${colors.surface}|${colors.secondaryText}|${colors.primary}|${colors.border}`,
+    }),
+    [selectedMessageId, density, showAvatars, showPreviews, colors.unread, colors.surface, colors.secondaryText, colors.primary, colors.border],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
       <MessageRow
         message={item}
         onSelect={handleMessagePress}
         isSelected={item._id === selectedMessageId}
+        density={density}
+        showAvatars={showAvatars}
+        showPreviews={showPreviews}
       />
     ),
-    [handleMessagePress, selectedMessageId],
+    [handleMessagePress, selectedMessageId, density, showAvatars, showPreviews],
   );
 
   const renderEmpty = useCallback(() => {
@@ -527,6 +543,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
           data={results}
           renderItem={renderItem}
           keyExtractor={(item) => item._id}
+          extraData={listExtraData}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={{
             ...(results.length === 0 ? styles.emptyListContent : null),

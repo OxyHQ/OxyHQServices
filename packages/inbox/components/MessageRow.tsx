@@ -46,9 +46,9 @@ import { SentimentIndicator } from './SentimentIndicator';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
-import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
-import { SPACING, AVATAR_SIZE, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
-import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
+import { SPACING, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
+import { DENSITY_STYLES } from '@/constants/densityStyles';
+import type { MessageDensity } from '@/contexts/inbox-prefs-context';
 import { useEmailStore } from '@/hooks/useEmail';
 import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message, Attachment } from '@/services/emailApi';
@@ -157,6 +157,9 @@ interface MessageRowProps {
   onLongPress?: (id: string) => void;
   isPinPending?: boolean;
   showSnoozeTime?: boolean;
+  density?: MessageDensity;
+  showAvatars?: boolean;
+  showPreviews?: boolean;
 }
 
 function MessageRowInner({
@@ -173,9 +176,12 @@ function MessageRowInner({
   onLongPress,
   isPinPending,
   showSnoozeTime,
+  density = 'comfortable',
+  showAvatars = true,
+  showPreviews = true,
 }: MessageRowProps) {
   const colors = useColors();
-  const { showAvatars, showPreviews } = useInboxDisplayPrefs();
+  const densityStyle = DENSITY_STYLES[density];
   const isUnread = !message.flags.seen;
   const [rowHovered, setRowHovered] = useState(false);
   const queryClient = useQueryClient();
@@ -271,7 +277,11 @@ function MessageRowInner({
     <Pressable
       style={({ pressed }) => [
         styles.container,
-        { backgroundColor: rowBg },
+        {
+          backgroundColor: rowBg,
+          paddingVertical: densityStyle.rowPaddingVertical,
+          gap: densityStyle.rowGap,
+        },
         rowHovered && !isMultiSelected && { backgroundColor: colors.surfaceVariant },
         pressed && { opacity: 0.7 },
       ]}
@@ -296,7 +306,7 @@ function MessageRowInner({
         >
           <Avatar
             name={senderName}
-            size={AVATAR_SIZE}
+            size={densityStyle.avatarSize}
             showCheckbox={showCheckbox}
             isChecked={isMultiSelected}
             avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
@@ -309,7 +319,7 @@ function MessageRowInner({
           they share a baseline because they are siblings in the same flex row —
           not because their boxes were sized to match. The second is the
           summary, spanning the full width. */}
-      <View style={styles.main}>
+      <View style={[styles.main, { gap: densityStyle.contentGap }]}>
         <View style={styles.headline}>
           <Text style={[styles.sender, { color: colors.unread }]} numberOfLines={1}>
             {senderName}
@@ -456,7 +466,10 @@ export const MessageRow = React.memo(MessageRowInner, (prev, next) => {
     prev.isMultiSelected !== next.isMultiSelected ||
     prev.isSelectionMode !== next.isSelectionMode ||
     prev.isPinPending !== next.isPinPending ||
-    prev.showSnoozeTime !== next.showSnoozeTime
+    prev.showSnoozeTime !== next.showSnoozeTime ||
+    prev.density !== next.density ||
+    prev.showAvatars !== next.showAvatars ||
+    prev.showPreviews !== next.showPreviews
   ) {
     return false;
   }
@@ -490,17 +503,13 @@ const styles = StyleSheet.create({
     // The avatar centres against the whole two-line block. The sender and the
     // timestamp align to each other inside `headline`, not here.
     alignItems: 'center',
-    // Even inset on all four sides, at the vertical value.
-    padding: SPACING.sm,
-    gap: SPACING.sm,
+    // Horizontal inset is fixed; vertical padding and gap come from density.
+    paddingHorizontal: SPACING.sm,
     borderRadius: RADIUS.row,
   },
   main: {
     flex: 1,
     minWidth: 0,
-    // Bloom's own spacing scale (the `--spacing-space-*` tokens) rather than a
-    // local number, so the rhythm here matches every other Oxy surface.
-    gap: BLOOM_SPACING['space-2'],
   },
   /**
    * First line: sender on the left, trailing control on the right. They are
@@ -600,7 +609,4 @@ const styles = StyleSheet.create({
  * row, and the list re-renders mounted items on each selection toggle
  * (`extraData`). Without this, the row's comparator only halves the work.
  */
-export const MessageRowExtras = React.memo(
-  MessageRowExtrasInner,
-  (prev, next) => prev.message === next.message && prev.sentiment?.type === next.sentiment?.type,
-);
+export const MessageRowExtras = React.memo(MessageRowExtrasInner);

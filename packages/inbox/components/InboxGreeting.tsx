@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
@@ -51,7 +51,7 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
     [messages, today],
   );
 
-  const { briefText, isStreaming, isLoading, error } = useDailyBrief(dayMessages, {
+  const { briefText, isStreaming, isLoading, error, regenerate } = useDailyBrief(dayMessages, {
     enabled: prefs.aiBrief,
   });
 
@@ -82,7 +82,15 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
       <Text style={[styles.greeting, { color: colors.unread }]}>{greetingLine}</Text>
 
       {prefs.aiBrief ? (
-        <Text style={[styles.briefText, { color: colors.secondaryText }]}>{briefLine}</Text>
+        error ? (
+          <Pressable onPress={regenerate} accessibilityRole="button">
+            <Text style={[styles.briefText, { color: colors.secondaryText }]}>
+              {briefLine} Tap to retry.
+            </Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.briefText, { color: colors.secondaryText }]}>{briefLine}</Text>
+        )
       ) : null}
     </View>
   );

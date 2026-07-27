@@ -25,7 +25,7 @@ import { useTabBarFootprint } from '@oxyhq/bloom/tab-bar';
 
 import { useFloatingHeader } from '@/hooks/useFloatingHeader';
 import { useColors } from '@/constants/theme';
-import { SPACING, RADIUS, CONTENT_MAX_WIDTH } from '@/constants/layout';
+import { SPACING, CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useTabBarClearance } from '@/hooks/useTabBarClearance';
@@ -35,9 +35,7 @@ import { useMessageActions } from '@/hooks/useMessageActions';
 import { collapseThreads } from '@/utils/threadGrouping';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
-import { useLabels } from '@/hooks/queries/useLabels';
 import {
-  useToggleStar,
   useToggleRead,
   useTogglePin,
   useSnoozeMessage,
@@ -146,7 +144,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const aliaChatRef = useRef<AliaChatSheetRef>(null);
   const { isAuthenticated } = useOxy();
   const { prefs } = useInboxPrefs();
-  const { conversationView } = useInboxDisplayPrefs();
+  const { conversationView, density, showAvatars, showPreviews } = useInboxDisplayPrefs();
   const messageActions = useMessageActions();
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
@@ -195,17 +193,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     fetchNextPage,
     hasNextPage,
   } = useMessages(messagesOptions);
-  const { data: labels = [] } = useLabels();
-  const labelColorMap = useMemo(() => {
-    const map = new Map<string, string>();
-    labels.forEach((l) => map.set(l.name, l.color));
-    return map;
-  }, [labels]);
   const bundleView = useEmailStore((s) => s.bundleView);
   const expandedBundles = useEmailStore((s) => s.expandedBundles);
   const toggleBundle = useEmailStore((s) => s.toggleBundle);
 
-  const toggleStar = useToggleStar();
   const toggleRead = useToggleRead();
   const togglePin = useTogglePin();
   const snoozeMutation = useSnoozeMessage();
@@ -339,15 +330,6 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     if (isFetchingNextPage || !hasNextPage) return;
     fetchNextPage();
   }, [fetchNextPage, isFetchingNextPage, hasNextPage]);
-
-  const handleStar = useCallback(
-    (messageId: string) => {
-      if (toggleStar.isPending) return;
-      const msg = messages.find((m) => m._id === messageId);
-      if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
-    },
-    [messages, toggleStar],
-  );
 
   const handlePin = useCallback(
     (messageId: string) => {
@@ -537,6 +519,43 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   );
 
   /** One message row, shared by the flat items and the grouped panels. */
+  const pinPendingId =
+    togglePin.isPending && togglePin.variables?.messageId
+      ? togglePin.variables.messageId
+      : null;
+
+  const listExtraData = useMemo(
+    () => ({
+      selectedMessageIds,
+      selectedMessageId,
+      isSelectionMode,
+      pinPendingId,
+      isSnoozedView,
+      expandedBundles,
+      density,
+      showAvatars,
+      showPreviews,
+      themeKey: `${colors.unread}|${colors.surface}|${colors.surfaceVariant}|${colors.secondaryText}|${colors.primary}|${colors.border}`,
+    }),
+    [
+      selectedMessageIds,
+      selectedMessageId,
+      isSelectionMode,
+      pinPendingId,
+      isSnoozedView,
+      expandedBundles,
+      density,
+      showAvatars,
+      showPreviews,
+      colors.unread,
+      colors.surface,
+      colors.surfaceVariant,
+      colors.secondaryText,
+      colors.primary,
+      colors.border,
+    ],
+  );
+
   const renderMessageRow = useCallback(
     (msg: Message) => (
       <SwipeableRow
@@ -558,13 +577,16 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           isMultiSelected={selectedMessageIds.has(msg._id)}
           onToggleSelect={toggleMessageSelection}
           onLongPress={handleLongPress}
-          isPinPending={togglePin.isPending && togglePin.variables?.messageId === msg._id}
+          isPinPending={pinPendingId === msg._id}
           showSnoozeTime={isSnoozedView}
+          density={density}
+          showAvatars={showAvatars}
+          showPreviews={showPreviews}
         />
         <MessageRowExtras message={msg} sentiment={sentimentMap.get(msg._id)} />
       </SwipeableRow>
     ),
-    [prefs.leftSwipeAction, prefs.rightSwipeAction, handleSwipeAction, handlePin, handleMessagePress, messageActions, handleToggleRead, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, sentimentMap],
+    [prefs.leftSwipeAction, prefs.rightSwipeAction, handleSwipeAction, handlePin, handleMessagePress, messageActions, handleToggleRead, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, pinPendingId, isSnoozedView, density, showAvatars, showPreviews, sentimentMap],
   );
 
   const renderItem = useCallback(
@@ -687,12 +709,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             renderItem={renderItem}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
-            ListHeaderComponent={<InboxGreeting messages={messages} />}
+            ListHeaderComponent={<InboxGreeting messages={displayMessages} />}
             ListEmptyComponent={renderEmpty}
             ListFooterComponent={renderFooter}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.3}
-            extraData={selectedMessageIds}
+            extraData={listExtraData}
             refreshControl={
               <RefreshControl
                 refreshing={isRefetching && !isFetchingNextPage}
