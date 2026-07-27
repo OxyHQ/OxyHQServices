@@ -124,7 +124,19 @@
     "commonsNotInstalled": "Kein Commons? Holen Sie sich die App, um sich mit Ihrer Oxy-ID anzumelden.",
     "showQrAnyway": "Ich habe Commons auf einem anderen Gerät",
     "switchWhileSignedInAs": "Konto wechseln, angemeldet als {{name}}",
-    "manageOnDevice": "Konten auf diesem Gerät verwalten"
+    "manageOnDevice": "Konten auf diesem Gerät verwalten",
+    "continueWithOxy": "Mit Oxy fortfahren",
+    "havingTrouble": "Gibt es ein Problem?",
+    "progress": {
+      "preparing": "Anfrage wird vorbereitet",
+      "awaitingApproval": "Warten auf Freigabe",
+      "scanWithCommons": "Scannen Sie mit Commons auf Ihrem Telefon",
+      "continueInCommons": "In Commons fortfahren",
+      "checkCommons": "Prüfen Sie Commons auf Ihrem Telefon",
+      "openedInCommons": "In Commons geöffnet",
+      "confirming": "Identität wird bestätigt",
+      "confirmed": "Identität bestätigt"
+    }
   },
   "common": {
     "actions": {

@@ -27,6 +27,7 @@ const SAMPLE_INFO = {
   scopes: ['profile:read', 'email:read'],
   boundOrigin: 'https://mention.earth',
   originVerified: true,
+  requesterLabel: 'Chrome on Windows',
   purpose: 'device_sign_in',
   subjectAccount: null,
   expiresAt: Date.now() + 300_000,
@@ -71,6 +72,8 @@ describe('useCommonsApproval', () => {
     expect(services.getCommonsApprovalInfo).toHaveBeenCalledWith('code-1');
     expect(result.current.info?.application?.name).toBe('Mention');
     expect(result.current.info?.application?.isOfficial).toBe(true);
+    // The coarse client label is surfaced exactly as the server sent it.
+    expect(result.current.info?.requesterLabel).toBe('Chrome on Windows');
   });
 
   it('surfaces the delegated subject account exactly as the server resolved it', async () => {
@@ -258,7 +261,26 @@ describe('useCommonsApproval', () => {
     expect(services.approveCommonsSignIn).toHaveBeenCalledTimes(1);
   });
 
-  it('denies via denyCommonsSignIn', async () => {
+  it('reports "This wasn\'t me" to the server as a not_me denial', async () => {
+    const services = installServices();
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    await act(async () => {
+      await result.current.deny('not_me');
+    });
+
+    expect(services.denyCommonsSignIn).toHaveBeenCalledWith('code-1', 'not_me');
+    expect(result.current.state).toBe('denied');
+    // Recorded, so the terminal state can say what actually happened.
+    expect(result.current.denialReason).toBe('not_me');
+    // Denying never asks the device to confirm — it is not an authorization.
+    expect(requestLocalConfirmationMock).not.toHaveBeenCalled();
+  });
+
+  it('labels an unspecified rejection as an ordinary decline, never as not_me', async () => {
+    // `not_me` records the denial as suspicious, so it is opt-in: a caller that
+    // does not say the user reported the request gets the neutral value.
     const services = installServices();
     const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
     await waitFor(() => expect(result.current.state).toBe('ready'));
@@ -267,10 +289,28 @@ describe('useCommonsApproval', () => {
       await result.current.deny();
     });
 
-    expect(services.denyCommonsSignIn).toHaveBeenCalledWith('code-1');
-    expect(result.current.state).toBe('denied');
-    // Denying never asks the device to confirm — it is not an authorization.
-    expect(requestLocalConfirmationMock).not.toHaveBeenCalled();
+    expect(services.denyCommonsSignIn).toHaveBeenCalledWith('code-1', 'declined');
+    expect(result.current.denialReason).toBe('declined');
+  });
+
+  it('records no denial reason until a denial actually completes', async () => {
+    installServices({
+      denyCommonsSignIn: jest.fn(async () => {
+        throw new Error('already authorized');
+      }),
+    });
+    const { result } = renderHook(() => useCommonsApproval('code-1', 'reason'));
+    await waitFor(() => expect(result.current.state).toBe('ready'));
+
+    expect(result.current.denialReason).toBeNull();
+
+    await act(async () => {
+      await result.current.deny('not_me');
+    });
+
+    // The server refused the denial, so nothing was recorded to describe.
+    expect(result.current.state).toBe('error');
+    expect(result.current.denialReason).toBeNull();
   });
 
   it('never denies as a side effect of anything else', async () => {

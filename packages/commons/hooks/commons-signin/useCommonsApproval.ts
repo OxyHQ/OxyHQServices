@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOxy } from '@oxyhq/services';
-import { getCommonsApprovalBlockingReason, logger, type CommonsApprovalInfo } from '@oxyhq/core';
+import {
+  getCommonsApprovalBlockingReason,
+  logger,
+  type CommonsApprovalInfo,
+  type CommonsDenyReason,
+} from '@oxyhq/core';
 import {
   requestLocalConfirmation,
   type LocalConfirmationUnavailableReason,
@@ -14,8 +19,8 @@ import {
  *   confirming → the device's own biometric/passcode prompt is up
  *   approving  → confirmation passed; calling `approveCommonsSignIn`
  *   approved   → the RP can now claim its session
- *   denying    → calling `denyCommonsSignIn`
- *   denied     → the request was cancelled
+ *   denying    → calling `denyCommonsSignIn` with the reason the user gave
+ *   denied     → the request was cancelled, and why is recorded
  *   error      → invalid / used / expired code, or a network failure
  *
  * `confirming` is a real state rather than an internal flag: the single primary
@@ -60,9 +65,20 @@ export interface UseCommonsApproval {
   confirmationIssue: ApprovalConfirmationIssue | null;
   /** Optional server/network error message for the `error` state. */
   errorMessage: string | null;
+  /**
+   * The reason the request was denied with, once it has been. `null` until a
+   * denial completes, so the terminal state can tell the user what was actually
+   * recorded instead of describing a denial that hasn't happened.
+   */
+  denialReason: CommonsDenyReason | null;
   /** The single primary action: confirm locally, then sign + approve. */
   approve: () => Promise<void>;
-  deny: () => Promise<void>;
+  /**
+   * Deny the request, recording WHY. Defaults to the ordinary `'declined'`:
+   * `'not_me'` marks the denial as suspicious, so it is opt-in and belongs only
+   * to a user who explicitly said they did not start the request.
+   */
+  deny: (reason?: CommonsDenyReason) => Promise<void>;
   /** Re-fetch the request identity (used by the "try again" affordance). */
   reload: () => void;
 }
@@ -101,6 +117,7 @@ export function useCommonsApproval(
     null,
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [denialReason, setDenialReason] = useState<CommonsDenyReason | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   // Single-flight latch for the primary action. The device prompt is modal, but
   // a queued double-tap can still deliver a second press before the first render
@@ -194,24 +211,28 @@ export function useCommonsApproval(
     }
   }, [code, oxyServices, biometricReason]);
 
-  const deny = useCallback(async () => {
-    if (!code || !oxyServices) return;
-    if (inFlight.current) return;
-    inFlight.current = true;
+  const deny = useCallback(
+    async (reason: CommonsDenyReason = 'declined') => {
+      if (!code || !oxyServices) return;
+      if (inFlight.current) return;
+      inFlight.current = true;
 
-    setState('denying');
-    try {
-      await oxyServices.denyCommonsSignIn(code);
-      setState('denied');
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : null);
-      setState('error');
-    } finally {
-      inFlight.current = false;
-    }
-  }, [code, oxyServices]);
+      setState('denying');
+      try {
+        await oxyServices.denyCommonsSignIn(code, reason);
+        setDenialReason(reason);
+        setState('denied');
+      } catch (error: unknown) {
+        setErrorMessage(error instanceof Error ? error.message : null);
+        setState('error');
+      } finally {
+        inFlight.current = false;
+      }
+    },
+    [code, oxyServices],
+  );
 
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
-  return { state, info, confirmationIssue, errorMessage, approve, deny, reload };
+  return { state, info, confirmationIssue, errorMessage, denialReason, approve, deny, reload };
 }

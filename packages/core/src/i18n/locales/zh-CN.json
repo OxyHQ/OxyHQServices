@@ -124,7 +124,19 @@
     "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
     "showQrAnyway": "我在另一台设备上有 Commons",
     "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}",
-    "manageOnDevice": "管理此设备上的账号"
+    "manageOnDevice": "管理此设备上的账号",
+    "continueWithOxy": "使用 Oxy 继续",
+    "havingTrouble": "遇到问题？",
+    "progress": {
+      "preparing": "正在准备请求",
+      "awaitingApproval": "正在等待批准",
+      "scanWithCommons": "请用手机上的 Commons 扫描",
+      "continueInCommons": "请在 Commons 中继续",
+      "checkCommons": "请查看手机上的 Commons",
+      "openedInCommons": "已在 Commons 中打开",
+      "confirming": "正在确认身份",
+      "confirmed": "身份已确认"
+    }
   },
   "common": {
     "actions": {

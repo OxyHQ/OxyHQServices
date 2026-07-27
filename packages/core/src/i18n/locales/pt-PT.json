@@ -124,7 +124,19 @@
     "commonsNotInstalled": "Não tem o Commons? Obtenha a app para iniciar sessão com o seu Oxy ID.",
     "showQrAnyway": "Tenho o Commons noutro dispositivo",
     "switchWhileSignedInAs": "Mudar de conta, com sessão iniciada como {{name}}",
-    "manageOnDevice": "Gerir contas neste dispositivo"
+    "manageOnDevice": "Gerir contas neste dispositivo",
+    "continueWithOxy": "Continuar com Oxy",
+    "havingTrouble": "Algum problema?",
+    "progress": {
+      "preparing": "A preparar o pedido",
+      "awaitingApproval": "A aguardar aprovação",
+      "scanWithCommons": "Digitalize com o Commons no seu telemóvel",
+      "continueInCommons": "Continue no Commons",
+      "checkCommons": "Verifique o Commons no seu telemóvel",
+      "openedInCommons": "Aberto no Commons",
+      "confirming": "A confirmar a identidade",
+      "confirmed": "Identidade confirmada"
+    }
   },
   "common": {
     "actions": {

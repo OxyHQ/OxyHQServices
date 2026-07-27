@@ -5,6 +5,7 @@ import { LogoIcon } from '@oxyhq/services';
 import type {
   CommonsApprovalInfo,
   CommonsApprovalSubjectAccount,
+  CommonsDenyReason,
   PublicApplication,
 } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
@@ -46,8 +47,14 @@ export interface ApprovalRequestProps {
   rejecting: boolean;
   /** Primary action — opens the device biometric/passcode prompt directly. */
   onConfirm: () => void;
-  /** "This wasn't me" — denies the request. */
-  onReject: () => void;
+  /**
+   * A deliberate rejection, carrying WHICH answer the user gave. The sheet's
+   * only rejection is the explicit "This wasn't me", so it reports `'not_me'` —
+   * the value that records the denial as suspicious. Anything less specific
+   * would have to report `'declined'`; a dismissal reports nothing at all and
+   * goes to {@link ApprovalRequestProps.onClose}.
+   */
+  onReject: (reason: CommonsDenyReason) => void;
   /** Dismiss without answering. A cancel, NOT a denial. */
   onClose: () => void;
   onOpenLink: (url: string) => void;
@@ -80,10 +87,22 @@ function scopeText(line: ScopeLine, t: TranslateFn): string {
  * dismissing the sheet answers nothing at all.
  *
  * Everything shown about the request — the application's name, icon, developer,
- * official standing, bound origin, scopes and delegated subject account — comes
- * from `info`, which the SDK resolved server-side from the authorize code. The
- * scanned/linked payload is never a display source, so a QR that self-asserts
- * "Mention" cannot make this screen say Mention.
+ * official standing, bound origin, requesting client, scopes and delegated
+ * subject account — comes from `info`, which the SDK resolved server-side from
+ * the authorize code. The scanned/linked payload is never a display source, so a
+ * QR that self-asserts "Mention" cannot make this screen say Mention.
+ *
+ * The heading reads as the three lines issue #691 specifies — who is asking,
+ * where from, and on what:
+ *
+ *     Sign in to Mention
+ *     mention.earth
+ *     Chrome on Windows
+ *
+ * The third line is dropped entirely when the server has no client to describe
+ * (a native requester, an unrecognisable User-Agent). It is never guessed at,
+ * because a wrong device line is worse than no device line on the one screen
+ * where "was this me?" is the question being answered.
  *
  * The delegation block appears ONLY for a request that delegates to another
  * account. An ordinary personal sign-in does not grow that chrome, and when it
@@ -163,6 +182,19 @@ export function ApprovalRequest({
         {originHost ? (
           <ThemedText testID="approval-origin" style={[styles.origin, { color: colors.textSecondary }]}>
             {originHost}
+          </ThemedText>
+        ) : null}
+
+        {/* WHAT IS ASKING — the server's coarse client label, verbatim. */}
+        {info.requesterLabel ? (
+          <ThemedText
+            testID="approval-requester"
+            accessibilityLabel={t('signInApproval.approve.requestedFrom', {
+              client: info.requesterLabel,
+            })}
+            style={[styles.requester, { color: colors.textTertiary }]}
+          >
+            {info.requesterLabel}
           </ThemedText>
         ) : null}
 
@@ -270,7 +302,7 @@ export function ApprovalRequest({
                 ? t('signInApproval.approve.rejecting')
                 : t('signInApproval.approve.reject')
             }
-            onPress={onReject}
+            onPress={() => onReject('not_me')}
             disabled={busy}
             tone="danger"
             fullWidth={false}
@@ -347,6 +379,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 4,
+  },
+  requester: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 2,
   },
   provenance: {
     fontSize: 12,

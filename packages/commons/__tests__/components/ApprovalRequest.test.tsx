@@ -28,6 +28,8 @@ function makeInfo(overrides: Partial<CommonsApprovalInfo> = {}): CommonsApproval
     scopes: ['profile:read', 'email:read'],
     boundOrigin: 'https://mention.earth',
     originVerified: true,
+    // The coarse, server-derived client label — the third line of the heading.
+    requesterLabel: 'Chrome on Windows',
     purpose: 'device_sign_in',
     subjectAccount: null,
     expiresAt: Date.now() + 300_000,
@@ -65,16 +67,63 @@ describe('ApprovalRequest', () => {
     __resetOxyState();
   });
 
-  it('renders the request the SERVER resolved: app, origin and scopes', () => {
+  it('renders the request the SERVER resolved: app, origin, client and scopes', () => {
     const { container } = renderRequest();
 
     expect(container.textContent).toContain('Sign in to Mention');
     expect(container.textContent).toContain('mention.earth');
+    expect(container.textContent).toContain('Chrome on Windows');
     // Scope sentences come from the shared consent dictionary.
     expect(container.textContent).toContain('Read your basic profile');
     expect(container.textContent).toContain('Read your email address');
     // The logo is the server-resolved record's, not a payload-supplied URL.
     expect(container.querySelector('img')?.getAttribute('src')).toBe(APPLICATION.icon);
+  });
+
+  it('states who is asking, from where, and on what — in that order', () => {
+    const { container, getByTestId } = renderRequest();
+
+    expect(getByTestId('approval-requester').textContent).toBe('Chrome on Windows');
+
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Sign in to Mention')).toBeLessThan(text.indexOf('mention.earth'));
+    expect(text.indexOf('mention.earth')).toBeLessThan(text.indexOf('Chrome on Windows'));
+  });
+
+  it('gives the bare client label a sentence a screen reader can use', () => {
+    const { getByLabelText } = renderRequest();
+
+    expect(getByLabelText('Requested from Chrome on Windows').textContent).toBe(
+      'Chrome on Windows',
+    );
+  });
+
+  it('renders the client label verbatim, however the server phrased it', () => {
+    const { getByTestId } = renderRequest({
+      info: makeInfo({ requesterLabel: 'Firefox' }),
+    });
+
+    expect(getByTestId('approval-requester').textContent).toBe('Firefox');
+  });
+
+  it('omits the client line entirely when the server has no client to describe', () => {
+    // `null` is what a native requester or an unrecognisable User-Agent yields.
+    const { container, queryByTestId } = renderRequest({
+      info: makeInfo({ requesterLabel: null }),
+    });
+
+    expect(queryByTestId('approval-requester')).toBeNull();
+    // Nothing is invented in its place — the other two lines stand alone.
+    expect(container.textContent).toContain('Sign in to Mention');
+    expect(container.textContent).toContain('mention.earth');
+    expect(container.textContent).not.toContain('Requested from');
+  });
+
+  it('still names the client on a request whose origin could not be verified', () => {
+    // This is exactly the request where "was this me?" matters most.
+    const { getByTestId } = renderRequest({ info: makeInfo({ originVerified: false }) });
+
+    expect(getByTestId('approval-requester').textContent).toBe('Chrome on Windows');
   });
 
   it('offers ONE primary action and one alternative — no intermediate step', () => {
@@ -95,12 +144,13 @@ describe('ApprovalRequest', () => {
     expect(props.onClose).not.toHaveBeenCalled();
   });
 
-  it('denies through "This wasn\'t me"', () => {
+  it('denies through "This wasn\'t me" — reported as not_me, not an ordinary cancel', () => {
     const { props, getByText } = renderRequest();
 
     fireEvent.click(getByText("This wasn't me"));
 
     expect(props.onReject).toHaveBeenCalledTimes(1);
+    expect(props.onReject).toHaveBeenCalledWith('not_me');
     expect(props.onConfirm).not.toHaveBeenCalled();
   });
 
@@ -110,6 +160,7 @@ describe('ApprovalRequest', () => {
     fireEvent.click(getByLabelText('Close'));
 
     expect(props.onClose).toHaveBeenCalledTimes(1);
+    // Nothing is denied, and no reason is reported — a dismissal answers nothing.
     expect(props.onReject).not.toHaveBeenCalled();
     expect(props.onConfirm).not.toHaveBeenCalled();
   });
@@ -175,10 +226,12 @@ describe('ApprovalRequest', () => {
   });
 
   it('renders NOTHING an untrusted payload asserted about itself', () => {
-    // A phishing QR self-asserts an app name and an origin. The parser hands
-    // back only the code, and the screen renders only what the server resolved.
+    // A phishing QR self-asserts an app name, an origin AND a plausible client
+    // label. The parser hands back only the code, and the screen renders only
+    // what the server resolved from it.
     const parsed = parseApprovalLink(
-      'oxycommons://approve?v=1&code=abc123&app=EvilCorp&origin=https%3A%2F%2Fevil.example&nonce=n1',
+      'oxycommons://approve?v=1&code=abc123&app=EvilCorp&origin=https%3A%2F%2Fevil.example' +
+        '&client=Safari%20on%20iPhone&nonce=n1',
     );
     expect(parsed).toEqual({ ok: true, code: 'abc123' });
 
@@ -186,8 +239,10 @@ describe('ApprovalRequest', () => {
 
     expect(container.textContent).not.toContain('EvilCorp');
     expect(container.textContent).not.toContain('evil.example');
+    expect(container.textContent).not.toContain('Safari on iPhone');
     expect(container.textContent).toContain('Sign in to Mention');
     expect(container.textContent).toContain('mention.earth');
+    expect(container.textContent).toContain('Chrome on Windows');
   });
 
   it('warns loudly when the request origin could not be verified', () => {

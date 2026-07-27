@@ -96,6 +96,22 @@ afterEach(() => {
 });
 
 describe('OxySignInButton', () => {
+  // ── Label ─────────────────────────────────────────────────────────────────
+  // The relying party surfaces exactly ONE primary action and it reads
+  // "Continue with Oxy" (issue #691). "Sign in with Oxy" stays the name of the
+  // mechanism everywhere else — only this button's default label changed.
+  describe('label', () => {
+    it('renders the localized "Continue with Oxy" primary action by default', () => {
+      render(<OxySignInButton />);
+      expect(screen.getByRole('button').textContent).toBe('Continue with Oxy');
+    });
+
+    it('lets a caller-supplied text prop win over the default label', () => {
+      render(<OxySignInButton text="Login with Oxy" />);
+      expect(screen.getByRole('button').textContent).toBe('Login with Oxy');
+    });
+  });
+
   it('opens the in-app dialog for a first-party / official application', async () => {
     getPublicApplication.mockResolvedValue(makeApp({ type: 'first_party', isOfficial: true }));
 
