@@ -160,6 +160,87 @@ export async function authenticate(
 }
 
 /**
+ * Why the device could not even ASK for a local confirmation.
+ *
+ * `unsupported_platform` — no local authentication surface at all (web).
+ * `no_hardware`          — the device has no biometric sensor.
+ * `no_enrollment`        — hardware exists but nothing is enrolled (no
+ *                          fingerprint/face, or no device passcode set).
+ */
+export type LocalConfirmationUnavailableReason =
+  | 'unsupported_platform'
+  | 'no_hardware'
+  | 'no_enrollment';
+
+/**
+ * The deterministic outcome of asking the device owner to confirm it is them.
+ *
+ * Every branch is explicit so a caller can never mistake "the device cannot ask"
+ * for "the user said no" — and can never treat either as a confirmation.
+ */
+export type LocalConfirmationResult =
+  | { outcome: 'confirmed' }
+  /** The prompt appeared and the user dismissed it. */
+  | { outcome: 'declined' }
+  /** Too many failed attempts — the device locked the sensor out. */
+  | { outcome: 'lockout' }
+  /** The prompt appeared and the attempt was rejected or errored. */
+  | { outcome: 'failed' }
+  /** Nothing was ever prompted: this device cannot satisfy the gate. */
+  | { outcome: 'unavailable'; reason: LocalConfirmationUnavailableReason };
+
+/**
+ * Ask the device owner to confirm it is them, and report WHY when they can't.
+ *
+ * `authenticate()` returns a flat `{ success: false, error }`, which forces every
+ * caller to re-derive whether the device is incapable, the user cancelled, or
+ * the attempt failed — and tempts a caller into "biometrics unavailable, carry
+ * on anyway". This wrapper resolves capability FIRST (so an unusable device is
+ * reported as such instead of surfacing as a generic failure) and returns a
+ * discriminated outcome. It never succeeds without a real local confirmation.
+ *
+ * @param reason - Localized copy shown inside the system prompt.
+ */
+export async function requestLocalConfirmation(
+  reason: string,
+): Promise<LocalConfirmationResult> {
+  if (Platform.OS === 'web') {
+    return { outcome: 'unavailable', reason: 'unsupported_platform' };
+  }
+
+  if (!(await hasBiometricHardware())) {
+    return { outcome: 'unavailable', reason: 'no_hardware' };
+  }
+  if (!(await isBiometricEnrolled())) {
+    return { outcome: 'unavailable', reason: 'no_enrollment' };
+  }
+
+  const result = await authenticate(reason);
+  if (result.success) {
+    return { outcome: 'confirmed' };
+  }
+
+  switch (result.error) {
+    case 'user_cancel':
+    case 'app_cancel':
+    case 'system_cancel':
+    case 'user_fallback':
+      return { outcome: 'declined' };
+    case 'lockout':
+      return { outcome: 'lockout' };
+    // The capability probes above raced with a settings change (enrollment
+    // removed, passcode cleared) — still an "this device cannot ask" verdict.
+    case 'not_available':
+      return { outcome: 'unavailable', reason: 'no_hardware' };
+    case 'not_enrolled':
+    case 'passcode_not_set':
+      return { outcome: 'unavailable', reason: 'no_enrollment' };
+    default:
+      return { outcome: 'failed' };
+  }
+}
+
+/**
  * Cancel ongoing authentication
  */
 export async function cancelAuthenticate(): Promise<void> {

@@ -118,10 +118,16 @@ function headerCopy(
   t: Translate,
 ): { title: string; subtitle: string | null } {
   switch (view) {
+    // The ACTIVE REQUEST. Its header is deliberately route-AGNOSTIC: Oxy picks
+    // the delivery route (QR here, a push to the user's phone, or opening
+    // Commons on this device — issue #691), so naming one of them in the bar
+    // would contradict the other two. The route-specific status line lives in
+    // the body, derived from `signIn.progress`, and is the only thing that
+    // describes HOW the request is travelling.
     case 'qr':
       return {
-        title: t('accountSwitcher.scanTitle') || 'Sign in with Oxy',
-        subtitle: t('accountSwitcher.scanSubtitle') || 'Scan with Commons on your phone.',
+        title: t('accountSwitcher.signInWithOxy') || 'Sign in with Oxy',
+        subtitle: null,
       };
     case 'signup':
       return {
@@ -148,7 +154,18 @@ const EMPTY_SNAPSHOT: AccountDialogSnapshot = {
   loading: false,
   error: null,
   switchingAccountId: null,
-  signIn: { phase: 'idle', authorizeCode: null, qrPayload: null, expiresAt: null, error: null },
+  signIn: {
+    phase: 'idle',
+    authorizeCode: null,
+    qrPayload: null,
+    expiresAt: null,
+    error: null,
+    route: null,
+    routeFailed: false,
+    pushSentAt: null,
+    openedAt: null,
+    progress: 'idle',
+  },
   commonsAvailability: 'unknown',
 };
 

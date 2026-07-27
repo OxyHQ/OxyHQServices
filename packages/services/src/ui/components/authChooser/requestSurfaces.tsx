@@ -1,0 +1,116 @@
+/**
+ * The PRIMARY visual of an active "Sign in with Oxy" request — one surface per
+ * route, chosen by {@link RequestPrimarySurface} from the controller's own facts.
+ *
+ * Each is a leading visual and nothing else: the status sentence underneath is
+ * owned by `signInProgressLabel`, and the alternatives by `TroubleDisclosure`.
+ * That separation is what keeps exactly one primary action on screen (issue
+ * #691) — a surface here can never grow a competing button.
+ *
+ * Anti-phishing: the QR plate encodes `signIn.qrPayload` and renders NOTHING
+ * derived from it. Application identity, origin, and scopes are resolved
+ * server-side by the approver (Commons), never read out of the payload here.
+ */
+
+import type React from 'react';
+import { View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
+import { Button } from '@oxyhq/bloom/button';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
+import type { SignInFlowState } from '@oxyhq/core';
+import { authChooserStyles as styles } from './styles';
+import type { Theme, Translate } from './types';
+
+/** High-contrast QR colors — intentionally fixed (NOT themed) for scan reliability. */
+const QR_PLATE_BG = '#FFFFFF';
+const QR_FOREGROUND = '#000000';
+const QR_SIZE = 196;
+/** The leading route glyph, sized to sit where the QR plate otherwise would. */
+const ROUTE_GLYPH_SIZE = 44;
+
+/** The indeterminate leading visual: the request exists but has nothing to show yet. */
+export const PreparingSurface: React.FC = () => <Loading variant="spinner" size="large" />;
+
+/** The leading glyph for a route whose surface is elsewhere (the phone, Commons). */
+export const RouteGlyph: React.FC<{
+  name: keyof typeof MaterialCommunityIcons.glyphMap;
+  color: string;
+}> = ({ name, color }) => (
+  <MaterialCommunityIcons name={name} size={ROUTE_GLYPH_SIZE} color={color} />
+);
+
+/** The cross-device handoff: a headline over the fixed-contrast QR plate. */
+export const QrPlate: React.FC<{ payload: string; theme: Theme; t: Translate }> = ({
+  payload,
+  theme,
+  t,
+}) => (
+  <>
+    <Text style={[styles.qrHeadline, { color: theme.colors.text }]}>
+      {t('accountSwitcher.qrHeadline')}
+    </Text>
+    <View style={styles.qrPlate}>
+      <QRCode value={payload} size={QR_SIZE} backgroundColor={QR_PLATE_BG} color={QR_FOREGROUND} />
+    </View>
+  </>
+);
+
+/**
+ * The acquisition surface. For someone with no Commons at all this is the
+ * GENUINE primary route, not a fallback — a same-device QR they would have to
+ * scan with the very screen showing it is a dead end — so it renders as the
+ * surface's one primary action.
+ */
+export const GetCommonsPrompt: React.FC<{
+  theme: Theme;
+  t: Translate;
+  onGetCommons: () => void;
+}> = ({ theme, t, onGetCommons }) => (
+  <>
+    <Text style={[styles.mutedText, { color: theme.colors.textSecondary }]}>
+      {t('accountSwitcher.commonsNotInstalled')}
+    </Text>
+    <Button
+      variant="primary"
+      onPress={onGetCommons}
+      style={styles.primaryButton}
+      testID="get-commons-button"
+    >
+      {t('accountSwitcher.getCommons')}
+    </Button>
+  </>
+);
+
+/**
+ * The one primary visual for the request's current state.
+ *
+ * Ordered most-terminal-first, so a late-arriving route can never pull the
+ * surface back from "confirming" to a QR the user has already scanned. Every
+ * branch reads only controller facts — there is no local timeline.
+ */
+export const RequestPrimarySurface: React.FC<{
+  signIn: SignInFlowState;
+  theme: Theme;
+  t: Translate;
+}> = ({ signIn, theme, t }) => {
+  if (signIn.progress === 'identity-confirmed') {
+    return <RouteGlyph name="check-circle" color={theme.colors.success} />;
+  }
+  if (signIn.progress === 'confirming-identity') {
+    return <PreparingSurface />;
+  }
+  if (signIn.route === 'qr' && signIn.qrPayload) {
+    return <QrPlate payload={signIn.qrPayload} theme={theme} t={t} />;
+  }
+  if (signIn.route === 'await-push') {
+    return <RouteGlyph name="cellphone-message" color={theme.colors.primary} />;
+  }
+  if (signIn.route === 'open-commons') {
+    return <RouteGlyph name="open-in-app" color={theme.colors.primary} />;
+  }
+  // No route resolved yet (or a route with no payload to render): the request is
+  // being prepared. Honest, and the only state that is not route-specific.
+  return <PreparingSurface />;
+};
