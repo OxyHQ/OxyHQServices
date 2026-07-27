@@ -46,8 +46,12 @@ export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 export type {
     CommonsSignInHandle,
     CommonsSignInStatus,
+    CommonsSignInPurpose,
+    CommonsOAuthContext,
     CommonsApprovalInfo,
+    CommonsApprovalSubjectAccount,
     CommonsSignInActionResult,
+    CommonsOAuthFinalizeResult,
 } from './mixins/OxyServices.auth';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type {
