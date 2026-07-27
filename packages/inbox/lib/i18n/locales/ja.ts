@@ -43,16 +43,12 @@ const ja: LocaleDict = {
   },
 
   tabs: {
-    home: 'ホーム',
     inbox: '受信箱',
     search: '検索',
     settings: '設定',
-    forYou: 'あなた向け',
   },
 
   drawer: {
-    home: 'ホーム',
-    forYou: 'あなた向け',
     starred: 'スター付き',
     snoozed: 'スヌーズ中',
     subscriptions: '購読',

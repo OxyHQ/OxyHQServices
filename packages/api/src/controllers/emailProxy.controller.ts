@@ -163,6 +163,12 @@ setInterval(() => {
 
 // ─── Response Helpers ─────────────────────────────────────────────
 
+/** Empty 404 for an unservable font — see `wantsFont`. */
+function sendMissingFont(res: ExpressResponse, cacheTime = 86400): void {
+  res.setHeader('Cache-Control', `public, max-age=${cacheTime}`);
+  res.status(404).end();
+}
+
 function sendTransparentGif(res: ExpressResponse, cacheTime = 86400): void {
   res.setHeader('Content-Type', 'image/gif');
   res.setHeader('Cache-Control', `public, max-age=${cacheTime}`);
@@ -205,10 +211,17 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
   const normalizedUrl = parseProxyUrl(decodedUrl);
   const url = new URL(normalizedUrl);
 
+  // A font request that cannot be served must end with no body at all. The
+  // transparent GIF is a fallback for IMAGES: handed back for a `@font-face`
+  // src, the browser decodes it as a font and reports `OTS parsing error:
+  // invalid sfntVersion` (0x47494638 — the literal bytes "GIF8"). A 404 makes
+  // the browser drop that @font-face and fall back to the next family.
+  const wantsFont = FONT_EXTENSIONS.test(url.pathname);
+
   // Block tracking URLs
   if (isTrackingUrl(url)) {
     logger.debug('Blocked tracking URL', { url: decodedUrl });
-    return sendTransparentGif(res);
+    return wantsFont ? sendMissingFont(res) : sendTransparentGif(res);
   }
 
   // Check cache
@@ -233,7 +246,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
 
     try {
       if (status < 200 || status >= 300) {
-        return sendTransparentGif(res, 3600);
+        return wantsFont ? sendMissingFont(res, 3600) : sendTransparentGif(res, 3600);
       }
 
       const contentTypeHeader = headers['content-type'];
@@ -259,7 +272,7 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
       // Block tracking pixels (very small images)
       if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
         logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
-        return sendTransparentGif(res);
+        return wantsFont ? sendMissingFont(res) : sendTransparentGif(res);
       }
 
       // Use correct MIME when upstream sends generic octet-stream for fonts
@@ -287,6 +300,10 @@ export async function proxyResource(req: Request, res: ExpressResponse): Promise
       logger.error('Proxy request failed', { url: decodedUrl, error });
     }
 
+    if (wantsFont) {
+      sendMissingFont(res);
+      return;
+    }
     sendTransparentGif(res);
   }
 }

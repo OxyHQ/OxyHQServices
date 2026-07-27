@@ -44,16 +44,12 @@ const fr: LocaleDict = {
   },
 
   tabs: {
-    home: 'Accueil',
     inbox: 'Boîte',
     search: 'Recherche',
     settings: 'Paramètres',
-    forYou: 'Pour toi',
   },
 
   drawer: {
-    home: 'Accueil',
-    forYou: 'Pour toi',
     starred: 'Favoris',
     snoozed: 'Reportés',
     subscriptions: 'Abonnements',

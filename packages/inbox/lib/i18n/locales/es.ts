@@ -44,16 +44,12 @@ const es: LocaleDict = {
   },
 
   tabs: {
-    home: 'Inicio',
     inbox: 'Bandeja',
     search: 'Buscar',
     settings: 'Ajustes',
-    forYou: 'Para ti',
   },
 
   drawer: {
-    home: 'Inicio',
-    forYou: 'Para ti',
     starred: 'Destacados',
     snoozed: 'Pospuestos',
     subscriptions: 'Suscripciones',

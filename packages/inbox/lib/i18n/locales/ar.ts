@@ -44,16 +44,12 @@ const ar: LocaleDict = {
   },
 
   tabs: {
-    home: 'الرئيسية',
     inbox: 'البريد الوارد',
     search: 'بحث',
     settings: 'الإعدادات',
-    forYou: 'لك',
   },
 
   drawer: {
-    home: 'الرئيسية',
-    forYou: 'لك',
     starred: 'المميّزة',
     snoozed: 'مؤجَّلة',
     subscriptions: 'الاشتراكات',

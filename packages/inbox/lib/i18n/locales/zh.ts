@@ -41,16 +41,12 @@ const zh: LocaleDict = {
   },
 
   tabs: {
-    home: '首页',
     inbox: '收件箱',
     search: '搜索',
     settings: '设置',
-    forYou: '为你推荐',
   },
 
   drawer: {
-    home: '首页',
-    forYou: '为你推荐',
     starred: '星标',
     snoozed: '已暂停',
     subscriptions: '订阅',
