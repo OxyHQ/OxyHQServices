@@ -75,7 +75,19 @@ const OxyAccountDialogScreen: React.FC<BaseScreenProps> = ({ canGoBack }) => {
   const { view } = snapshot;
   const showBack =
     view === 'qr' || view === 'signup' || (view === 'add' && snapshot.accounts.length > 0);
-  const goToAccounts = useCallback(() => controller?.setView('accounts'), [controller]);
+  const goToAccounts = useCallback(() => {
+    if (!controller) return;
+    const { view: currentView, signIn } = controller.getSnapshot();
+    // Backing out of an active request must withdraw it — otherwise the
+    // authorizeCode stays approvable until expiry (issue #691 phase 5).
+    if (
+      (currentView === 'qr' || currentView === 'add') &&
+      (signIn.phase === 'starting' || signIn.phase === 'waiting')
+    ) {
+      controller.cancelSignIn();
+    }
+    controller.setView('accounts');
+  }, [controller]);
   // An ENTRY view (accounts / signin — no in-dialog back of its own) that is
   // MORPHED into a host surface (ManageAccount → switcher) has a frame beneath it,
   // so its back CLOSES the dialog and reshapes back to the host — routed through

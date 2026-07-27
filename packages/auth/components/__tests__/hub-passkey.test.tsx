@@ -40,7 +40,8 @@ let chooserOnComplete: (() => void) | undefined
 // HubPasskeyPage's `useEffect([code, oxyServices])` see a "new" oxyServices
 // on every render and loop forever re-fetching approval info.
 const stableOxyServices = { getCommonsApprovalInfo, denyCommonsSignIn, getAccessToken }
-const stableController = { setView }
+const cancelSignIn = mock(() => undefined)
+const stableController = { setView, cancelSignIn }
 const stableUser = { id: "u1", username: "nate", name: { displayName: "Nate" } }
 
 // `mock.module` is process-global in bun (last writer wins across files) —
@@ -117,6 +118,7 @@ describe("HubPasskeyPage", () => {
         denyCommonsSignIn.mockClear()
         getAccessToken.mockClear()
         setView.mockClear()
+        cancelSignIn.mockClear()
         chooserOnComplete = undefined
         Object.defineProperty(window, "opener", { value: {}, configurable: true, writable: true })
         globalThis.fetch = mock(async () => new Response(JSON.stringify({ success: true }), { status: 200 })) as unknown as typeof fetch
@@ -247,6 +249,8 @@ describe("HubPasskeyPage", () => {
         await flush()
 
         expect(denyCommonsSignIn).not.toHaveBeenCalled()
+        expect(cancelSignIn).toHaveBeenCalled()
+        expect(setView).toHaveBeenCalledWith("accounts")
         expect(container.textContent).toMatch(/continue to acme widgets/i)
         unmount()
     })

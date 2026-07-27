@@ -113,6 +113,7 @@ export function HubPasskeyPage() {
         setReadyToConfirm(false)
         setAcknowledgedUnverified(false)
         setAuthorizeError(null)
+        accountDialogController?.cancelSignIn()
         accountDialogController?.setView("accounts")
     }, [accountDialogController])
 
@@ -249,7 +250,7 @@ export function HubPasskeyPage() {
     return (
         <AuthFormLayout>
             <AuthFormHeader title={`Continue to ${application.name}`} />
-            <OxyAuthChooser onComplete={handleChooserComplete} />
+            <OxyAuthChooser autoStartSignIn={false} onComplete={handleChooserComplete} />
             <Button variant="ghost" onClick={handleCancel}>
                 Cancel
             </Button>

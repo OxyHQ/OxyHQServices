@@ -70,6 +70,13 @@ const ACCOUNTS_APP_URL = 'https://accounts.oxy.so';
 export interface OxyAuthChooserProps {
   /** Called after a completed switch, sign-in, or sign-up. */
   onComplete?: () => void;
+  /**
+   * When false, the web sign-in entry does not auto-start a device-flow
+   * session on mount. Use for hosts (e.g. the cross-origin passkey hub) that
+   * already have a pending `authorizeCode` and must not spawn a second one.
+   * @default true
+   */
+  autoStartSignIn?: boolean;
 }
 
 /**
@@ -77,7 +84,10 @@ export interface OxyAuthChooserProps {
  * (wrapped in Bloom's `<Dialog>`) today; mountable bare by any future host that
  * supplies its own `onComplete`.
  */
-const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
+const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
+  onComplete,
+  autoStartSignIn: autoStartSignInEnabled = true,
+}) => {
   const {
     accountDialogController: controller,
     showBottomSheet,
@@ -159,11 +169,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({ onComplete }) => {
   // a no-op on native (button-driven). Reads the live snapshot at call time (an
   // event callback, not render), so it is stable across renders.
   const autoStartSignIn = useCallback(() => {
-    if (!controller || !isWebBrowser()) return;
+    if (!autoStartSignInEnabled || !controller || !isWebBrowser()) return;
     const { view: currentView, signIn } = controller.getSnapshot();
     if ((currentView !== 'signin' && currentView !== 'add') || signIn.phase !== 'idle') return;
     void controller.signInWithOxy();
-  }, [controller]);
+  }, [autoStartSignInEnabled, controller]);
 
   // Bind the headless controller. `getSnapshot` returns a stable reference
   // between changes, so it is `useSyncExternalStore`-safe. Guard the no-provider

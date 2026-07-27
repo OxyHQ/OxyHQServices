@@ -482,11 +482,16 @@ export const logoutAllDeviceSessions = async (deviceId: string, excludeSessionId
 
 // Helper functions for parsing user agent
 function parseUserAgentBrowser(userAgent: string): string {
-  if (userAgent.includes('Chrome')) return 'Chrome';
+  // ORDER IS SIGNIFICANT — same rationale as `parseUserAgentOS` below.
+  // Chromium Edge advertises `Edg/`, not `Edge`; Opera uses `OPR/`. All three
+  // also contain `Chrome`, so the generic Chrome bucket must come last.
+  if (userAgent.includes('Edg/')) return 'Edge';
+  if (userAgent.includes('OPR/') || userAgent.includes('Opera')) return 'Opera';
+  if (userAgent.includes('CriOS/')) return 'Chrome';
+  if (userAgent.includes('FxiOS/')) return 'Firefox';
   if (userAgent.includes('Firefox')) return 'Firefox';
-  if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  if (userAgent.includes('Opera')) return 'Opera';
+  if (userAgent.includes('Chrome')) return 'Chrome';
+  if (userAgent.includes('Safari')) return 'Safari';
   return UNKNOWN_USER_AGENT_BUCKET;
 }
 
