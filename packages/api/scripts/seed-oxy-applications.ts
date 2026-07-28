@@ -238,6 +238,24 @@ const SEED_APPS: SeedAppSpec[] = [
       'https://hub.moovo.now',
     ],
   },
+  {
+    name: 'CrowdSource',
+    description:
+      'Official Oxy participatory moderation platform — reviewers are assigned cases by the server and review them blind.',
+    websiteUrl: 'https://crowdsource.oxy.so',
+    type: 'first_party',
+    // The reviewer app ships to the web only today (Cloudflare Pages project
+    // `crowdsource-frontend`). Its Expo `crowdsource://` deep-link scheme is
+    // registered here when a native build actually ships — an unused redirect
+    // surface is authority nobody asked for.
+    redirectUris: ['https://crowdsource.oxy.so'],
+    // Sign-in ONLY, so the default `['user:read']`. CrowdSource must never
+    // carry `reputation:write`: it never moves an Oxy Trust figure itself, it
+    // emits a decision and Oxy Trust's own consequence engine decides the
+    // effect. Granting it here would also widen every device sign-in grant,
+    // because a device sign-in's granted scopes ARE the application's scopes
+    // (`routes/auth.ts` — `scopes = appScopes` when there is no OAuth request).
+  },
 ];
 
 interface MappingRow {
@@ -274,9 +292,51 @@ async function retireLegacyApplication(
   return result.modifiedCount ?? 0;
 }
 
+/**
+ * Restrict a run to named applications.
+ *
+ * A full reconcile touches every application at once, which is more blast
+ * radius than registering a single new one deserves — and `DRY_RUN` cannot
+ * warn about it, because for an existing application the reconcile branch is
+ * skipped entirely and the summary reports `appsUpdated: 0` no matter what
+ * would have changed. Naming the applications to seed bounds the run to
+ * something a reviewer can verify by reading the invocation.
+ *
+ * An unknown name is refused rather than skipped: a run that reconciles
+ * nothing and exits 0 looks exactly like a successful one.
+ */
+function selectSeedApps(): typeof SEED_APPS {
+  const requested = (process.env.SEED_ONLY_APPS || '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+
+  if (requested.length === 0) {
+    return SEED_APPS;
+  }
+
+  const known = new Set(SEED_APPS.map((spec) => spec.name));
+  const unknown = requested.filter((name) => !known.has(name));
+  if (unknown.length > 0) {
+    throw new Error(
+      `SEED_ONLY_APPS names no known application: ${unknown.join(', ')}. ` +
+        `Known applications: ${[...known].join(', ')}.`
+    );
+  }
+
+  return SEED_APPS.filter((spec) => requested.includes(spec.name));
+}
+
 async function seed(): Promise<void> {
   const dryRun = process.env.DRY_RUN === 'true';
   const ownerUsername = process.env.OXY_USERNAME || 'oxy';
+  const seedApps = selectSeedApps();
+
+  if (seedApps.length !== SEED_APPS.length) {
+    logger.info('Restricted to the named applications; every other application is left untouched', {
+      applications: seedApps.map((spec) => spec.name),
+    });
+  }
 
   if (dryRun) {
     logger.info('DRY RUN — no writes will be performed');
@@ -359,7 +419,7 @@ async function seed(): Promise<void> {
   let legacyCredentialsRevoked = 0;
   let credentialsReused = 0;
 
-  for (const spec of SEED_APPS) {
+  for (const spec of seedApps) {
     let createdApplication = false;
     let createdCredential = false;
 
@@ -387,7 +447,6 @@ async function seed(): Promise<void> {
       status: 'active' as const,
       isOfficial: true,
       isInternal: spec.type === 'internal',
-      capabilities: [] as string[],
       redirectUris: spec.redirectUris,
       scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
       ownerAccountId: oxyOrgId,
@@ -399,6 +458,9 @@ async function seed(): Promise<void> {
         application = await Application.create({
           name: spec.name,
           createdByUserId: oxyId,
+          // A brand-new official app holds no platform capabilities. Existing
+          // records are never reconciled on this field — see below.
+          capabilities: [],
           ...desiredAppFields,
         });
       }
@@ -412,7 +474,16 @@ async function seed(): Promise<void> {
       application.status = desiredAppFields.status;
       application.isOfficial = desiredAppFields.isOfficial;
       application.isInternal = desiredAppFields.isInternal;
-      application.capabilities = desiredAppFields.capabilities;
+      // `capabilities` is deliberately NOT reconciled. `SeedAppSpec` has no
+      // capabilities field, so this script declares no intent about them — an
+      // authoritative overwrite here would silently STRIP a staff grant made
+      // elsewhere. Concretely: `scripts/register-commons-clients.ts` unions
+      // `identity:approval` onto "Commons by Oxy", and
+      // `services/authSessionDelivery.service.ts` selects push-delivery targets
+      // by exactly that capability — so a re-run of this seed would leave a
+      // pending sign-in request with zero eligible devices. Removing a
+      // capability is an explicit staff operation, never a side effect of a
+      // rebuild (same reasoning as `unionValidScopes` for scopes).
       application.redirectUris = desiredAppFields.redirectUris;
       // Additive union: keep any valid already-granted scope so a re-run never
       // silently revokes an out-of-band grant (e.g. Mention's signals:write).
@@ -506,6 +577,10 @@ async function main(): Promise<void> {
     logger.error('MONGODB_URI is required');
     process.exit(1);
   }
+
+  // Resolved before connecting: a misspelled name should cost nothing and
+  // should never reach the database.
+  selectSeedApps();
 
   await mongoose.connect(uri);
   logger.info('Connected to MongoDB');
