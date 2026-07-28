@@ -12,6 +12,7 @@ import { logger as loggerUtil } from '@oxyhq/core';
 import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
+import { isNetConnectivityOnline } from '../utils/netConnectivity';
 
 /**
  * Background color shown for the brief window between mount and the
@@ -230,10 +231,10 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     try {
                         const NetInfo = await import('@react-native-community/netinfo');
                         const state = await NetInfo.default.fetch();
-                        onlineManager.setOnline(state.isConnected ?? true);
+                        onlineManager.setOnline(isNetConnectivityOnline(state));
 
-                        const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null }) => {
-                            onlineManager.setOnline(state.isConnected ?? true);
+                        const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null; isInternetReachable?: boolean | null }) => {
+                            onlineManager.setOnline(isNetConnectivityOnline(state));
                         });
 
                         cleanup = () => unsubscribe();

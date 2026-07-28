@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
+import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 const AUTH_REDIRECT_URI = Linking.createURL('/');
@@ -30,6 +31,7 @@ export default function RootLayout() {
     // services UI like OxySignInButton calls bloom's useTheme().
     <SafeAreaProvider>
       <BloomThemeProvider mode="system">
+        <ConnectionStatusToasts />
         <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={AUTH_REDIRECT_URI}>
           <RootNavigator />
         </OxyProvider>

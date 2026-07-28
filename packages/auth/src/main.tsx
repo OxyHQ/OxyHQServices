@@ -40,6 +40,7 @@ function App() {
         <LocaleProvider>
             <LayoutProvider>
                 <BloomThemeProvider mode="system" colorPreset="oxy">
+                <ConnectionStatusToasts />
                 {/* The IdP is a device-first origin like every other Oxy app: it
                     runs the normal SDK cold boot (restore this origin's device
                     session from its own persisted `{deviceId, deviceSecret}`),
@@ -53,7 +54,6 @@ function App() {
                     clientId={OXY_CLIENT_ID}
                     hubSync={false}
                 >
-                    <ConnectionStatusToasts />
                     <BrowserRouter>
                         <Routes>
                             {/* Auth flow routes */}

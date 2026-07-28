@@ -15,6 +15,7 @@ import {
 } from '../utils/crossOriginRestore';
 import { tryCompleteOAuthReturn, consumeHubSyncFailure } from '../utils/oauthReturn';
 import { isWebBrowser } from '../utils/isWebBrowser';
+import { isNetConnectivityExplicitlyOffline } from '../utils/netConnectivity';
 import { allowsAutomaticIdpRedirect } from '../oauth/legacyRedirectLanes';
 import type { WebAuthMode } from '../oauth/types';
 import type { CommitInput } from '../context/oxyContextTypes';
@@ -67,8 +68,8 @@ async function detectOfflineHint(): Promise<boolean> {
       }),
     ]);
     // `null` ⇒ the probe timed out (unknown → assume online). Only an explicit
-    // `isConnected === false` disables the network steps.
-    return state?.isConnected === false;
+    // disconnected / unreachable verdict disables the network steps.
+    return isNetConnectivityExplicitlyOffline(state);
   } catch {
     // NetInfo missing / probe threw — never block sign-in on a probe failure.
     return false;
