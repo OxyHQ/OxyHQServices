@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 
 // Reanimated 4 ships with a strict logger that surfaces `.value` reads during
 // render as runtime warnings. Several deeply nested third-party components in
@@ -216,6 +217,7 @@ function RootLayoutInner() {
                   dialog inert — the vault has exactly one user, by construction.
               This replaces the app-local boot auto-connect Commons used to run;
               do NOT re-add an app-local session-restore path. */}
+          <ConnectionStatusToasts />
           <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} sessionMode="identity">
             <LocaleProvider>
               <AppHead />

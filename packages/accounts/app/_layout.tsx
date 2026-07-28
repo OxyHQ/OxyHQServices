@@ -18,6 +18,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider , useOxy } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
+import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 
 
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -151,6 +152,7 @@ function RootLayoutInner() {
             (this app) owns the BloomThemeProvider and feeds it the resolved
             theme mode from ThemeModeProvider. */}
         <BloomThemeProvider mode={themeMode}>
+          <ConnectionStatusToasts />
           <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} authRedirectUri={OXY_AUTH_REDIRECT_URI}>
             <AppImageResolver>
               <LocaleProvider>

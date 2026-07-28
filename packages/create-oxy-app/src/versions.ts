@@ -11,7 +11,7 @@ export const VERSIONS = {
   // --- Oxy SDK ---
   oxyServices: '^22.0.0', // @oxyhq/services
   oxyCore: '^12.0.0', // @oxyhq/core
-  oxyBloom: '^0.44.1', // @oxyhq/bloom
+  oxyBloom: '^0.65.0', // @oxyhq/bloom
   oxyContracts: '^0.14.1', // @oxyhq/contracts
   oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
 

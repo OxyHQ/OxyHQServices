@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
+import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 
 import { queryClient, clearPersistedInboxCache, restoredInboxCache } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/theme-context';
@@ -101,6 +102,7 @@ function RootLayoutContent() {
               <SafeAreaProvider>
                 <PortalProvider>
                   <ThemeProvider value={navTheme}>
+                    <ConnectionStatusToasts />
                     <RootEffects />
                     {/*
                     The whole app is gated behind the shared SDK signed-out wall

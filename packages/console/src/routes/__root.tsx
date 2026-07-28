@@ -3,6 +3,7 @@ import { Suspense, lazy } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';
+import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { AccountProvider } from '@/hooks/use-account';
@@ -40,6 +41,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <LocaleProvider>
         <BloomThemeProvider mode="system" colorPreset="oxy">
+          <ConnectionStatusToasts />
           <OxyProvider baseURL={config.oxyUrl} clientId={config.clientId} authRedirectUri={config.authRedirectUri} queryClient={queryClient}>
             <AccountProvider>
               <TooltipProvider delayDuration={300}>

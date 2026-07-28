@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
+import { ConnectionStatusToasts } from "@oxyhq/bloom/connection-status"
 import { OxyProvider } from "@oxyhq/services"
 import { Toaster } from "@/components/ui/sonner"
 import { getBloomThemeCSS, setBasePreset } from "@/lib/bloom-css"
@@ -52,6 +53,7 @@ function App() {
                     clientId={OXY_CLIENT_ID}
                     hubSync={false}
                 >
+                    <ConnectionStatusToasts />
                     <BrowserRouter>
                         <Routes>
                             {/* Auth flow routes */}
