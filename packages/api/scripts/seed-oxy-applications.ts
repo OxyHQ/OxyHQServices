@@ -387,7 +387,6 @@ async function seed(): Promise<void> {
       status: 'active' as const,
       isOfficial: true,
       isInternal: spec.type === 'internal',
-      capabilities: [] as string[],
       redirectUris: spec.redirectUris,
       scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
       ownerAccountId: oxyOrgId,
@@ -399,6 +398,9 @@ async function seed(): Promise<void> {
         application = await Application.create({
           name: spec.name,
           createdByUserId: oxyId,
+          // A brand-new official app holds no platform capabilities. Existing
+          // records are never reconciled on this field — see below.
+          capabilities: [],
           ...desiredAppFields,
         });
       }
@@ -412,7 +414,16 @@ async function seed(): Promise<void> {
       application.status = desiredAppFields.status;
       application.isOfficial = desiredAppFields.isOfficial;
       application.isInternal = desiredAppFields.isInternal;
-      application.capabilities = desiredAppFields.capabilities;
+      // `capabilities` is deliberately NOT reconciled. `SeedAppSpec` has no
+      // capabilities field, so this script declares no intent about them — an
+      // authoritative overwrite here would silently STRIP a staff grant made
+      // elsewhere. Concretely: `scripts/register-commons-clients.ts` unions
+      // `identity:approval` onto "Commons by Oxy", and
+      // `services/authSessionDelivery.service.ts` selects push-delivery targets
+      // by exactly that capability — so a re-run of this seed would leave a
+      // pending sign-in request with zero eligible devices. Removing a
+      // capability is an explicit staff operation, never a side effect of a
+      // rebuild (same reasoning as `unionValidScopes` for scopes).
       application.redirectUris = desiredAppFields.redirectUris;
       // Additive union: keep any valid already-granted scope so a re-run never
       // silently revokes an out-of-band grant (e.g. Mention's signals:write).
