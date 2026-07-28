@@ -300,7 +300,8 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     const userObjectId = await resolveUserIdToObjectId(req.params.userId);
     const balance = await reputationService.getBalance(userObjectId);
-    const isSubject = req.user?._id === userObjectId;
+    const callerId = req.user?._id?.toString();
+    const isSubject = callerId === userObjectId;
     const isStaff = req.user?.isStaff === true;
     sendSuccess(
       res,
@@ -434,13 +435,22 @@ router.get(
   })
 );
 
-/** GET /reputation/:userId/influence — capped weight(s) (auth or service). */
+/**
+ * GET /reputation/:userId/influence — capped weight(s) (own or staff).
+ *
+ * Influence weights are internal moderation/ranking signals — same class of
+ * sensitive data as the `influence` block on the full balance view.
+ */
 router.get(
   '/:userId/influence',
   readLimiter,
   validate({ params: reputationUserIdParams, query: reputationInfluenceQuery }),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res) => {
+    const callerId = requireUserId(req);
     const userObjectId = await resolveUserIdToObjectId(req.params.userId);
+    if (userObjectId !== callerId && req.user?.isStaff !== true) {
+      throw new ForbiddenError('You can only view your own influence');
+    }
     const context = (req.query.context as InfluenceContext | undefined) ?? 'default';
     const result = await reputationService.getInfluence(userObjectId, context);
     sendSuccess(res, result);

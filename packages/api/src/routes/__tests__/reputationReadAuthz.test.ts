@@ -21,6 +21,7 @@ const mockAuthMiddleware = jest.fn();
 const mockOptionalAuthMiddleware = jest.fn();
 const mockListTransactions = jest.fn();
 const mockGetBalance = jest.fn();
+const mockGetInfluence = jest.fn();
 const mockResolveUserIdToObjectId = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
@@ -49,12 +50,12 @@ jest.mock('../../services/reputation.service', () => ({
   default: {
     listTransactions: (...args: unknown[]) => mockListTransactions(...args),
     getBalance: (...args: unknown[]) => mockGetBalance(...args),
+    getInfluence: (...args: unknown[]) => mockGetInfluence(...args),
     award: jest.fn(),
     createDispute: jest.fn(),
     upsertRule: jest.fn(),
     listEnabledRules: jest.fn(),
     getLeaderboard: jest.fn(),
-    getInfluence: jest.fn(),
     listDisputesForUser: jest.fn(),
     listOpenDisputes: jest.fn(),
     reverseTransaction: jest.fn(),
@@ -326,5 +327,70 @@ describe('GET /reputation/:userId/balance view split', () => {
     for (const field of PRIVATE_FIELDS) {
       expect(data).toHaveProperty(field);
     }
+  });
+
+  it('recognizes the subject when req.user._id is an ObjectId-like value', async () => {
+    signInAs({ _id: { toString: () => SUBJECT_ID } as unknown as string });
+
+    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as Record<string, unknown>;
+    expect(data).toHaveProperty('reliability');
+  });
+});
+
+describe('GET /reputation/:userId/influence ownership gate', () => {
+  const influenceFixture = {
+    context: 'default',
+    weight: 0.34,
+    influence: {
+      defaultWeight: 0.34,
+      reportWeight: 0.29,
+      moderationWeight: 0.34,
+      rankingFeedbackWeight: 0.34,
+    },
+  };
+
+  beforeEach(() => {
+    mockGetInfluence.mockResolvedValue(influenceFixture);
+  });
+
+  it('refuses an authenticated caller reading someone else\'s influence', async () => {
+    signInAs({ _id: OTHER_ID });
+
+    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/your own influence/i);
+    expect(mockGetInfluence).not.toHaveBeenCalled();
+  });
+
+  it('serves the subject their own influence', async () => {
+    signInAs({ _id: SUBJECT_ID });
+
+    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ weight: 0.34 });
+    expect(mockGetInfluence).toHaveBeenCalledWith(SUBJECT_ID, 'default');
+  });
+
+  it('serves staff another user\'s influence', async () => {
+    signInAs({ _id: STAFF_ID, isStaff: true });
+
+    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetInfluence).toHaveBeenCalledWith(SUBJECT_ID, 'default');
+  });
+
+  it('rejects an anonymous caller', async () => {
+    signInAs(null);
+
+    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+
+    expect(res.status).toBe(401);
+    expect(mockGetInfluence).not.toHaveBeenCalled();
   });
 });

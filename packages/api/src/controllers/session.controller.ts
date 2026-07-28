@@ -14,6 +14,8 @@ import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { formatUserResponse, type UserLike } from '../utils/userTransform';
+import { userService } from '../services/user.service';
+import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
 import securityActivityService from '../services/securityActivityService';
 import { finalizeDeviceLogin } from '../services/deviceLogin.service';
 import type { AuthRequest } from '../middleware/auth';
@@ -853,17 +855,13 @@ export class SessionController {
         return res.status(400).json({ message: 'Invalid public key format' });
       }
 
-      const user = await User.findOne({ publicKey });
+      const user = await User.findOne({ publicKey }).select(PUBLIC_USER_PROFILE_SELECT);
 
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      const userData = formatUserResponse(user);
-      if (!userData) {
-        return res.status(500).json({ message: 'Failed to format user data' });
-      }
-
+      const userData = userService.formatUserResponse(user);
       res.json(userData);
     } catch (error) {
       logger.error('Get user by public key error:', error);
