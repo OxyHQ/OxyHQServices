@@ -7,6 +7,8 @@ import {
   type AuthRequest,
   type ServiceAuthRequest,
 } from '../middleware/auth';
+import type { AuthenticatedRequest } from '../middleware/authUtils';
+import { optionalAuthMiddleware } from '../middleware/optionalAuth';
 import { requireStaff } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -152,7 +154,14 @@ function serializeTransaction(
   };
 }
 
-/** Shape a balance for the HTTP response. */
+/**
+ * Shape a balance for its SUBJECT (or platform staff).
+ *
+ * Carries the platform's internal judgements about the person — the
+ * `reliability` scoring, the `influence` weights that drive ranking and
+ * moderation, and the positive/negative/per-category decomposition of the
+ * total. None of that is public; third parties get {@link serializePublicBalance}.
+ */
 function serializeBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
 ): Record<string, unknown> {
@@ -167,6 +176,40 @@ function serializeBalance(
     reliability: balance.reliability,
     recalculatedAt: balance.recalculatedAt,
     updatedAt: balance.updatedAt,
+  };
+}
+
+/**
+ * Shape a balance for a caller who is NEITHER its subject nor staff — including
+ * an anonymous one.
+ *
+ * Deliberately limited to the fields the already-public `GET
+ * /reputation/leaderboard` publishes per user (`total` + `trustTier`), so an
+ * untokened read of `/:userId/balance` exposes no class of signal that is not
+ * public already. Everything else is withheld:
+ *  - `reliability` — `abuseScore`, `reportAccuracyScore` and the confirmed /
+ *    rejected report counts are the platform's internal abuse verdict on the
+ *    person. `abuseScore >= ABUSE_RESTRICT_THRESHOLD` is a sanction.
+ *  - `influence` — the moderation / report / ranking weights. Publishing them
+ *    hands a manipulator a live readout of what their account is worth and how
+ *    much any countermeasure has cost them.
+ *  - `positive` / `negative` / `breakdown` — split the total into points earned
+ *    versus penalties accrued, exposing sanction history the total alone hides.
+ *  - `recalculatedAt` / `updatedAt` — a timing oracle for when the subject last
+ *    had a reputation event.
+ *
+ * `trustTier` stays public because it is the contribution ladder this system
+ * exists to publish, and the leaderboard already emits it. Note it doubles as
+ * the punitive `restricted` marker, so a sanctioned account remains
+ * publicly identifiable as such by tier.
+ */
+function serializePublicBalance(
+  balance: Awaited<ReturnType<typeof reputationService.getBalance>>
+): Record<string, unknown> {
+  return {
+    userId: balance.userId.toString(),
+    total: balance.total,
+    trustTier: balance.trustTier,
   };
 }
 
@@ -240,15 +283,29 @@ router.get(
   })
 );
 
-/** GET /reputation/:userId/balance — derived totals + tier + influence. */
+/**
+ * GET /reputation/:userId/balance — derived totals + tier.
+ *
+ * Readable without a token so the public trust signal stays public, but the
+ * RESPONSE IS VIEW-SPLIT: the subject themselves and platform staff get the
+ * full balance, everyone else gets {@link serializePublicBalance}. Auth is
+ * therefore optional rather than required — an invalid or absent token simply
+ * resolves to the public view instead of rejecting the request.
+ */
 router.get(
   '/:userId/balance',
   readLimiter,
   validate({ params: reputationUserIdParams }),
-  asyncHandler(async (req, res) => {
+  optionalAuthMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
     const userObjectId = await resolveUserIdToObjectId(req.params.userId);
     const balance = await reputationService.getBalance(userObjectId);
-    sendSuccess(res, serializeBalance(balance));
+    const isSubject = req.user?._id === userObjectId;
+    const isStaff = req.user?.isStaff === true;
+    sendSuccess(
+      res,
+      isSubject || isStaff ? serializeBalance(balance) : serializePublicBalance(balance)
+    );
   })
 );
 
@@ -344,13 +401,24 @@ function requireUserId(req: AuthRequest): string {
   return userId;
 }
 
-/** GET /reputation/:userId/transactions — paginated ledger (auth). */
+/**
+ * GET /reputation/:userId/transactions — paginated ledger (own or staff).
+ *
+ * A transaction's `metadata` names the THIRD PARTIES behind the award — the
+ * attestor who physically met the subject, the voucher who staked on them, the
+ * jury that validated them — so the ledger is readable only by its own subject
+ * and platform staff, never by an arbitrary authenticated caller.
+ */
 router.get(
   '/:userId/transactions',
   readLimiter,
   validate({ params: reputationUserIdParams, query: reputationPaginationQuery }),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res) => {
+    const callerId = requireUserId(req);
     const userObjectId = await resolveUserIdToObjectId(req.params.userId);
+    if (userObjectId !== callerId && req.user?.isStaff !== true) {
+      throw new ForbiddenError('You can only view your own transactions');
+    }
     const { limit, offset } = validatePagination(
       req.query.limit,
       req.query.offset,
