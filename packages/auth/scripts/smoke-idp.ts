@@ -56,6 +56,7 @@ interface FetchOutcome {
   status: number;
   contentType: string;
   body: string;
+  headers: Headers;
   error?: string;
 }
 
@@ -71,9 +72,10 @@ async function probe(url: string, init?: RequestInit): Promise<FetchOutcome> {
       status: res.status,
       contentType: res.headers.get('content-type') || '',
       body,
+      headers: res.headers,
     };
   } catch (err) {
-    return { status: 0, contentType: '', body: '', error: err instanceof Error ? err.message : String(err) };
+    return { status: 0, contentType: '', body: '', headers: new Headers(), error: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -125,6 +127,32 @@ async function checkWebIdentityGone(hostBase: string): Promise<void> {
   record('web-identity removed', true, `no FedCM manifest (status ${out.status}, ${out.contentType || 'no content-type'})`);
 }
 
+/** Shared Oxy Pages security headers must include the Cloudflare beacon on both halves. */
+async function checkSecurityHeaders(hostBase: string): Promise<void> {
+  const out = await probe(`${hostBase}/`, { headers: { Accept: 'text/html' } });
+  if (out.error) {
+    record('security headers', false, `request failed: ${out.error}`);
+    return;
+  }
+  const csp = out.headers.get('content-security-policy') || '';
+  if (!csp) {
+    record('security headers', false, 'missing Content-Security-Policy header');
+    return;
+  }
+  const missing: string[] = [];
+  if (!csp.includes('static.cloudflareinsights.com')) missing.push('static.cloudflareinsights.com (script-src)');
+  if (!csp.includes('cloudflareinsights.com')) missing.push('cloudflareinsights.com (connect-src)');
+  if (!csp.includes("script-src 'self'")) missing.push("'self' in script-src");
+  if (out.headers.get('x-frame-options')?.toUpperCase() !== 'DENY') {
+    missing.push('X-Frame-Options: DENY');
+  }
+  if (missing.length > 0) {
+    record('security headers', false, `missing: ${missing.join('; ')}`);
+    return;
+  }
+  record('security headers', true, 'CSP baseline + X-Frame-Options present');
+}
+
 async function run(): Promise<void> {
   log(`\nauth.oxy.so smoke gate — target: ${PRIMARY_TARGET}\n`);
 
@@ -132,6 +160,7 @@ async function run(): Promise<void> {
   await checkSpaPage(PRIMARY_TARGET, '/signup');
   await checkSpaPage(PRIMARY_TARGET, '/authorize');
   await checkWebIdentityGone(PRIMARY_TARGET);
+  await checkSecurityHeaders(PRIMARY_TARGET);
 
   const failed = results.filter((r) => !r.ok);
   log(`\n${failed.length === 0 ? 'OK' : 'FAILED'}: ${results.length - failed.length}/${results.length} checks passed.`);

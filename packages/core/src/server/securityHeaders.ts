@@ -215,6 +215,48 @@ export function buildOxyCspDirectives(extensions: OxyCspExtensions = {}): Record
   return resolved;
 }
 
+/**
+ * Serialize resolved CSP directives into the single-line header value browsers
+ * and Cloudflare `_headers` expect. Valueless directives (e.g.
+ * `upgrade-insecure-requests`) emit the name alone.
+ */
+export function formatOxyCspPolicy(directives: Record<string, string[]>): string {
+  return Object.entries(directives)
+    .map(([name, sources]) => (sources.length === 0 ? name : `${name} ${sources.join(' ')}`))
+    .join('; ');
+}
+
+export interface OxyPagesHeadersOptions {
+  /** Per-app additions merged into {@link OXY_CSP_BASELINE}. */
+  csp?: OxyCspExtensions;
+  /**
+   * Emit `Strict-Transport-Security` (default `true`). Cloudflare Pages serves
+   * HTTPS only, so static deploys should keep this on.
+   */
+  hsts?: boolean;
+}
+
+/**
+ * Build a Cloudflare Pages `_headers` block for an Oxy HTML origin. Uses the
+ * same CSP resolution as {@link createOxySecurityHeaders} plus the non-CSP
+ * hardening headers Helmet would add on an Express HTML backend.
+ */
+export function buildOxyPagesHeaders(options: OxyPagesHeadersOptions = {}): string {
+  const csp = formatOxyCspPolicy(buildOxyCspDirectives(options.csp));
+  const lines = [
+    '/*',
+    `  Content-Security-Policy: ${csp}`,
+    '  X-Frame-Options: DENY',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+  ];
+  if (options.hsts !== false) {
+    lines.push('  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 export interface OxySecurityHeadersOptions {
   /**
    * Per-app additions to the Oxy CSP baseline. Merged, deduped, never

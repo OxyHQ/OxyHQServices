@@ -1,7 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
   buildOxyCspDirectives,
+  buildOxyPagesHeaders,
   createOxySecurityHeaders,
+  formatOxyCspPolicy,
   OXY_CSP_BASELINE,
   type OxyCspExtensions,
 } from '../securityHeaders';
@@ -143,6 +145,37 @@ describe('@oxyhq/core/server buildOxyCspDirectives', () => {
     buildOxyCspDirectives({ scriptSrc: ['https://other.example.com'] });
     expect([...(OXY_CSP_BASELINE.scriptSrc ?? [])]).toEqual(before);
     expect(buildOxyCspDirectives()['script-src']).toEqual(before);
+  });
+});
+
+describe('@oxyhq/core/server formatOxyCspPolicy', () => {
+  it('serializes directives into a single CSP header value', () => {
+    const policy = formatOxyCspPolicy(buildOxyCspDirectives());
+    expect(policy).toContain("script-src 'self' https://static.cloudflareinsights.com");
+    expect(policy).toContain('upgrade-insecure-requests');
+    expect(policy.endsWith('upgrade-insecure-requests')).toBe(true);
+  });
+});
+
+describe('@oxyhq/core/server buildOxyPagesHeaders', () => {
+  it('emits a Cloudflare Pages _headers block with CSP and hardening headers', () => {
+    const block = buildOxyPagesHeaders();
+    expect(block.startsWith('/*\n')).toBe(true);
+    expect(block).toContain('Content-Security-Policy:');
+    expect(block).toContain(CLOUDFLARE_SCRIPT_HOST);
+    expect(block).toContain(CLOUDFLARE_REPORT_HOST);
+    expect(block).toContain('X-Frame-Options: DENY');
+    expect(block).toContain('Strict-Transport-Security:');
+  });
+
+  it('merges per-app CSP extensions into the deployed header', () => {
+    const block = buildOxyPagesHeaders({
+      csp: { workerSrc: ["'self'"], imgSrc: ['blob:', 'https:'] },
+    });
+    expect(block).toContain("worker-src 'self'");
+    expect(block).toContain('blob:');
+    expect(block).toContain('https:');
+    expect(block).toContain(CLOUDFLARE_SCRIPT_HOST);
   });
 });
 

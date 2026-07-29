@@ -67,12 +67,15 @@ export type { OxyCorsOptions } from './cors';
 // Oxy API/CDN origins) with additive, per-app extensions.
 export {
   buildOxyCspDirectives,
+  buildOxyPagesHeaders,
   createOxySecurityHeaders,
+  formatOxyCspPolicy,
   OXY_CSP_BASELINE,
 } from './securityHeaders';
 export type {
   OxyCspDirective,
   OxyCspExtensions,
+  OxyPagesHeadersOptions,
   OxySecurityHeadersOptions,
 } from './securityHeaders';
 

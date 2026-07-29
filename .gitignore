@@ -10,6 +10,7 @@ yarn-error.log*
 dist/
 lib/
 build/
+**/public/_headers
 *.tgz
 .turbo
 *.tsbuildinfo

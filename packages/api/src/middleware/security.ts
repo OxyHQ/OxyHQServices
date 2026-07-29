@@ -257,18 +257,10 @@ const securityHeaders = helmet({
     preload: true,
   } : false,
 
-  // Content-Security-Policy: Prevent XSS and data injection attacks
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      fontSrc: ["'self'"],
-      connectSrc: ["'self'"],
-      frameAncestors: ["'none'"],
-    },
-  },
+  // No Content-Security-Policy: oxy-api is JSON-only — a source-list CSP governs
+  // no browsing context here. HTML origins use @oxyhq/core/server
+  // buildOxyPagesHeaders / createOxySecurityHeaders instead.
+  contentSecurityPolicy: false,
 
   // X-Frame-Options: Prevent clickjacking attacks
   frameguard: {

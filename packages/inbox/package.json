@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "RCT_METRO_PORT=8103 expo start",
-    "build": "node scripts/export-web.js",
+    "build": "bun ../core/scripts/writePagesHeaders.ts public && node scripts/export-web.js",
     "web": "RCT_METRO_PORT=8103 expo start --web",
     "android": "RCT_METRO_PORT=8103 expo run:android",
     "ios": "RCT_METRO_PORT=8103 expo run:ios",
