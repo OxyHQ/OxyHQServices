@@ -665,8 +665,10 @@
         "expo-crypto": "~56.0.3",
         "expo-secure-store": "~56.0.4",
         "express": "^4.22.2",
+        "jest": "^29.7.0",
         "release-it": "^19.0.6",
         "supertest": "^7.0.0",
+        "ts-jest": "^29.4.11",
         "typescript": "^5.9.2",
       },
       "peerDependencies": {
