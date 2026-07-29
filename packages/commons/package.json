@@ -15,7 +15,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "@oxyhq/app-preset": "workspace:*",
-    "@oxyhq/bloom": "^0.65.0",
+    "@oxyhq/bloom": "^0.67.0",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "*",
     "@oxyhq/expo-splash": "workspace:*",
