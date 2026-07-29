@@ -77,7 +77,7 @@ import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { deriveCoarseClientLabel } from '../utils/deviceUtils';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
-import { formatUserNameResponse } from '../utils/displayName';
+import { composeDisplayName, formatUserNameResponse } from '../utils/displayName';
 import { USERNAME_PATTERN, normalizeUsername } from '../utils/username';
 
 const router = express.Router();
@@ -1989,14 +1989,13 @@ async function resolveDeveloperName(app: IApplication): Promise<string | undefin
   }
   const owner = await User.findById(app.createdByUserId)
     .select('username name')
-    .lean<{ username?: string; name?: { first?: string; last?: string } } | null>();
+    .lean<{ username?: string; name?: { first?: string; last?: string; displayName?: string } } | null>();
   if (!owner) {
     return undefined;
   }
-  const first = typeof owner.name?.first === 'string' ? owner.name.first : '';
-  const last = typeof owner.name?.last === 'string' ? owner.name.last : '';
-  const full = [first, last].filter(Boolean).join(' ').trim();
-  const display = full || (typeof owner.username === 'string' ? owner.username.trim() : '');
+  const display =
+    composeDisplayName({ name: owner.name, username: owner.username }) ??
+    (typeof owner.username === 'string' ? owner.username.trim() : '');
   return display || undefined;
 }
 

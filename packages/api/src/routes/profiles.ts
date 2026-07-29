@@ -461,6 +461,7 @@ router.get(
         { username: searchRegex },
         { 'name.first': searchRegex },
         { 'name.last': searchRegex },
+        { 'name.displayName': searchRegex },
         { description: searchRegex },
       ],
     };

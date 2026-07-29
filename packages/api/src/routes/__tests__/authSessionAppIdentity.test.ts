@@ -259,7 +259,7 @@ beforeEach(() => {
 });
 
 // A chainable User.findById(...).select(...).lean() mock.
-function mockOwner(owner: { username?: string; name?: { first?: string; last?: string } } | null) {
+function mockOwner(owner: { username?: string; name?: { first?: string; last?: string; displayName?: string } } | null) {
   mockUserFindById.mockReturnValue({
     select: () => ({ lean: () => Promise.resolve(owner) }),
   });
@@ -767,6 +767,27 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
     expect(res.body.data).not.toHaveProperty('appId');
     // AUTHORIZED shape (string sessionId/publicKey/userId) MUST conform too.
     expect(safeParseContract(sessionStatusSchema, res.body.data)).not.toBeNull();
+  });
+
+  it('(f2b) prefers explicit displayName over username for third-party developerName', async () => {
+    mockAuthSessionFindOne.mockResolvedValueOnce({
+      sessionToken: 'tok-status-display',
+      applicationId: { toString: () => THIRD_PARTY_APP_ID },
+      status: 'pending',
+      authorizedSessionId: null,
+      authorizedBy: null,
+      authorizedUserId: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      save: jest.fn(),
+    });
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+    mockOwner({ name: { displayName: 'Moonlight Studio' }, username: 'handleonly' });
+
+    const res = await requestJson(server, 'GET', '/auth/session/status/tok-status-display', null);
+
+    expect(res.status).toBe(200);
+    const app = res.body.data?.application as PublicApplicationBody;
+    expect(app.developerName).toBe('Moonlight Studio');
   });
 
   it('(f3) returns application:null when the bound app was later hard-deleted (never appId)', async () => {

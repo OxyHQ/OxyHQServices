@@ -81,7 +81,7 @@ import { errorHandler } from '../../middleware/errorHandler';
 interface PoolUser {
   _id: Types.ObjectId;
   username?: string;
-  name?: { first?: string; last?: string };
+  name?: { first?: string; last?: string; displayName?: string };
   description?: string;
   accountStatus?: string;
   reputationTier?: string;
@@ -151,8 +151,9 @@ function matchesSearchFilter(user: PoolUser, filter: Record<string, unknown>): b
     const value =
       field === 'name.first' ? user.name?.first
         : field === 'name.last' ? user.name?.last
-          : field === 'description' ? user.description
-            : user.username;
+          : field === 'name.displayName' ? user.name?.displayName
+            : field === 'description' ? user.description
+              : user.username;
     return typeof value === 'string' && regex instanceof RegExp && regex.test(value);
   });
 }
@@ -650,6 +651,30 @@ describe('GET /profiles/search leading-@ handling', () => {
     const usernames = (res.body.data ?? []).map((p) => p.username);
     expect(usernames).toContain('user@host.example');
     expect(usernames).not.toContain('userhost.example');
+  });
+});
+
+describe('GET /profiles/search displayName matching', () => {
+  it('matches users by explicit name.displayName when first/last are absent', async () => {
+    const displayOnly = new Types.ObjectId();
+    const pool: PoolUser[] = [
+      {
+        _id: displayOnly,
+        username: 'handleonly',
+        name: { displayName: 'Moonlight Studio' },
+        accountStatus: 'active',
+      },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearch(pool));
+
+    const res = await requestJson(
+      server,
+      `/profiles/search?query=${encodeURIComponent('Moonlight')}`
+    );
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data ?? []).map((p) => String(p.id));
+    expect(ids).toContain(displayOnly.toString());
   });
 });
 
