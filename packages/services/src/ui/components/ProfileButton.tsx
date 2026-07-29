@@ -13,7 +13,7 @@ import { Avatar } from '@oxyhq/bloom/avatar';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import { getAccountDisplayName, getAccountFallbackHandle, getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '../hooks/useAuth';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -201,7 +201,10 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     }
 
     // ── Signed in: avatar + identity + chevron. ─────────────────────────────
-    const displayName = getAccountDisplayName(user, locale);
+    const displayName =
+        user?.name?.displayName ??
+        getNormalizedUserHandle(user) ??
+        getAccountDisplayName(null, locale);
     const handle = getAccountFallbackHandle(user);
     const handleLine = handle ? `@${handle}` : null;
 

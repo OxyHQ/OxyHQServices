@@ -29,6 +29,7 @@ import {
   ArrowOutOfBox_Stroke2_Corner0_Rounded,
   PaperPlane_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useOxy } from '@oxyhq/services';
 
 import { useColors } from '@/constants/theme';
@@ -144,7 +145,7 @@ export function AccountSection() {
 
   const signOutDialog = useDialogControl();
 
-  const fullName = user?.name.displayName ?? 'Account';
+  const fullName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? 'Account';
 
   const emailAddress = user?.email || (user ? `${user.username}@oxy.so` : '');
 

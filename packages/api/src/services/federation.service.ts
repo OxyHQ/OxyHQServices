@@ -1163,6 +1163,7 @@ class FederationService {
 
     if (user) {
       logger.info(`Resolved fediverse user: ${profile.username} (${profile.actorUri})`);
+      userCache.invalidate(user._id.toString());
     }
 
     if (user && profile.avatarUrl) {

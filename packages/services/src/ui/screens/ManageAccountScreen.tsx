@@ -15,6 +15,7 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import {
     getAccountDisplayName,
     getAccountFallbackHandle,
+    getNormalizedUserHandle,
     logger as loggerUtil,
     packageInfo,
 } from '@oxyhq/core';
@@ -120,7 +121,13 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const [signingOutAllDevices, setSigningOutAllDevices] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
 
-    const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
+    const displayName = useMemo(
+        () =>
+            user?.name?.displayName ??
+            getNormalizedUserHandle(user) ??
+            getAccountDisplayName(null, locale),
+        [user, locale],
+    );
     const handle = useMemo(() => getAccountFallbackHandle(user), [user]);
     const avatarUri = useMemo(() => {
         return user?.avatar

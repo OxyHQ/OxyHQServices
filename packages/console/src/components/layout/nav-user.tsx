@@ -7,6 +7,7 @@ import {
   Setting06Icon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
 import { Link } from '@tanstack/react-router';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -54,7 +55,7 @@ export function NavUser() {
   // The API resolves the canonical display string as `name.displayName`; render
   // it directly rather than recomposing from `name.first` / `name.last` /
   // `username`.
-  const displayName = user?.name.displayName ?? 'User';
+  const displayName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? 'User';
 
   if (!user) {
     return null;
