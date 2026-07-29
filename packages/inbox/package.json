@@ -14,7 +14,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@alia.onl/sdk": "3.1.2",
+    "@alia.onl/sdk": "^5.0.0",
     "@expo/vector-icons": "^15.1.1",
     "@hugeicons/core-free-icons": "^3.3.0",
     "@hugeicons/react": "^1.1.9",

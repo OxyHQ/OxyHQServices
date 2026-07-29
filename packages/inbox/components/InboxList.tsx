@@ -53,6 +53,7 @@ import { ReminderRow } from '@/components/ReminderRow';
 import { CreateReminderSheet } from '@/components/CreateReminderSheet';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { AliaChatSheet, type AliaChatSheetRef } from '@alia.onl/sdk';
+import { VoiceSession } from '@alia.onl/sdk/voice';
 import { AliaFace } from '@/components/AliaFace';
 import { useBatchSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { useBundles } from '@/hooks/queries/useBundles';
@@ -802,6 +803,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           <AliaChatSheet
             ref={aliaChatRef}
             apiUrl={ALIA_PROXY_API_URL}
+            voiceSession={VoiceSession}
             clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
             // AliaChatSheet's welcome suggestions are {id, title, description}; per-item icons are no longer supported upstream.
             welcomeSuggestions={[
