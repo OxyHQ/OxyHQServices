@@ -2,6 +2,41 @@
 
 ## 15.0.0
 
+### BREAKING — the reputation types moved to `@oxyhq/contracts`
+
+`@oxyhq/core` no longer exports **any** reputation type, nor
+`isFullReputationBalance`. The whole family now lives in `@oxyhq/contracts`
+(`>= 0.20.0`), which the API's serializers are annotated and validated against —
+so a server-side change to the wire shape fails the build instead of silently
+diverging from the SDK type, which is what produced the view-split bug below.
+
+**Migration:** change the import source, nothing else. The type names and their
+meanings are unchanged.
+
+```diff
+-import type { ReputationBalance, TrustTier } from '@oxyhq/core';
+-import { isFullReputationBalance } from '@oxyhq/core';
++import type { ReputationBalance, TrustTier } from '@oxyhq/contracts';
++import { isFullReputationBalance } from '@oxyhq/contracts';
+```
+
+Affected: `ReputationCategory`, `TrustTier`, `ReputationTransactionStatus`,
+`ReputationTargetEntityType`, `ReputationDisputeStatus`,
+`ReputationInfluenceContext`, `ReputationTransaction`,
+`ReputationBalanceBreakdown`, `ReputationInfluence`, `ReputationReliability`,
+`ReputationBalanceSummary`, `ReputationBalance`, `ReputationBalanceView`,
+`ReputationDispute`, `ReputationRule`, `ReputationLeaderboardEntry`,
+`ReputationInfluenceResult`, `ReverseReputationTransactionResult`,
+`AwardReputationInput`, `CreateReputationDisputeInput`,
+`ResolveReputationDisputeInput`, `UpsertReputationRuleInput`,
+`ReverseReputationTransactionInput`, and `isFullReputationBalance`.
+
+**One shape changed as well.** `ReputationLeaderboardEntry.user` was
+`Pick<User, …> & Partial<User>`; it is now the pinned
+**`ReputationLeaderboardUser`** (`id`, `username`, `name`, `avatar?`,
+`publicKey?`). The API was emitting Mongo's `_id` on that object, so `user.id`
+was `undefined` for every leaderboard row — it now really is the user id.
+
 ### BREAKING — reputation balance view split
 
 `GET /reputation/:userId/balance` has always served two shapes (subject/staff vs
