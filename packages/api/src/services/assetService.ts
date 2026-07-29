@@ -695,10 +695,13 @@ export class AssetService {
         contentType: mimeType
       });
 
+      // Reuses the bytes already in memory, so no S3 round-trip here.
+      await this.persistOriginalImageDimensions(file, fileBuffer);
+
       // Queue variant generation
       this.queueVariantGeneration(file);
 
-      logger.info('File uploaded directly', { 
+      logger.info('File uploaded directly', {
         fileId: file._id, 
         sha256,
         size,
@@ -1038,6 +1041,8 @@ export class AssetService {
       mime: mimeType,
     });
 
+    await this.persistOriginalImageDimensions(file);
+
     this.queueVariantGeneration(file);
 
     return file;
@@ -1129,8 +1134,9 @@ export class AssetService {
       // the non-public prefix; relocate them under `public/` here.
       await this.relocateAllForVisibility(file);
 
-      // Variant generation reads `file.storageKey` (now relocated) and writes
-      // variant keys under the prefix matching `file.visibility`.
+      // Both of these read `file.storageKey` (now relocated); variant keys are
+      // written under the prefix matching `file.visibility`.
+      await this.persistOriginalImageDimensions(file);
       this.queueVariantGeneration(file);
 
       logger.info('Asset upload completed', {
@@ -1885,6 +1891,39 @@ export class AssetService {
     };
 
     return mimeToExt[mime] || '';
+  }
+
+  /**
+   * Persist an image original's intrinsic dimensions, awaited, BEFORE handing
+   * off to the fire-and-forget variant pipeline.
+   *
+   * Dimensions used to be written only as a side effect of variant generation,
+   * which every upload path deliberately does not await. A client that uploads
+   * and then immediately creates a post referencing the new file id — the
+   * normal flow — therefore read the asset back before sharp had finished
+   * encoding and uploading seven resizes, and got no geometry at all. For
+   * images that loss is permanent, because nothing re-reads an image's
+   * dimensions afterwards. Writing them here costs one header parse (plus, on
+   * the streamed paths that do not already hold the bytes, one S3 GET) and
+   * makes the geometry available as soon as the file id is.
+   *
+   * Never throws: geometry is an enhancement, so a failure here degrades to the
+   * old behaviour (the variant pass writes it later) instead of failing an
+   * upload that has already stored its bytes.
+   */
+  private async persistOriginalImageDimensions(file: IFile, originalBuffer?: Buffer): Promise<void> {
+    if (!file.mime.startsWith('image/')) {
+      return;
+    }
+
+    try {
+      await this.variantService.persistOriginalImageDimensions(file, originalBuffer);
+    } catch (error) {
+      logger.warn('Could not persist original image dimensions up front; variant generation will write them', {
+        fileId: file._id.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

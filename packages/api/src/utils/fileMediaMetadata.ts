@@ -84,17 +84,26 @@ export function resolveFileMediaMetadata(file: IFile): ResolvedFileMediaMetadata
   if (durationSec !== undefined) out.durationSec = durationSec;
 
   if (width && height) {
+    // Derived from the SAME pair we are about to emit, so a client that trusts
+    // `aspectRatio` and a client that divides `width`/`height` can never lay the
+    // same asset out differently.
     out.orientation = computeOrientation(width, height);
     out.aspectRatio = computeAspectRatio(width, height);
-  } else if (
-    canonical?.orientation === 'portrait'
-    || canonical?.orientation === 'landscape'
-    || canonical?.orientation === 'square'
-  ) {
-    out.orientation = canonical.orientation;
-  }
-  if (typeof canonical?.aspectRatio === 'number' && Number.isFinite(canonical.aspectRatio)) {
-    out.aspectRatio = canonical.aspectRatio;
+  } else {
+    // No dimensions to derive from: fall back to whatever was persisted. This
+    // branch is deliberately the ONLY way a stored ratio reaches a response —
+    // honouring it alongside a resolved width/height would let a stale value
+    // contradict its own inputs.
+    if (
+      canonical?.orientation === 'portrait'
+      || canonical?.orientation === 'landscape'
+      || canonical?.orientation === 'square'
+    ) {
+      out.orientation = canonical.orientation;
+    }
+    if (typeof canonical?.aspectRatio === 'number' && Number.isFinite(canonical.aspectRatio)) {
+      out.aspectRatio = canonical.aspectRatio;
+    }
   }
 
   return out;

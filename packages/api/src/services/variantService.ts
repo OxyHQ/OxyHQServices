@@ -10,6 +10,32 @@ import { execSync, spawn } from 'child_process';
 import type { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
 import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 
+/**
+ * Intrinsic dimensions of an image as it is DISPLAYED — i.e. after EXIF
+ * auto-orientation has been applied.
+ *
+ * `sharp().metadata()` reports `width`/`height` as the pixels are STORED,
+ * explicitly ignoring the EXIF Orientation header. For a photo tagged
+ * orientation 5-8 (the quarter-turn cases every phone camera emits for a
+ * portrait shot) that pair is TRANSPOSED relative to what any viewer draws —
+ * and relative to every variant this service produces, since all of them are
+ * built through `.rotate()`, which auto-orients. Publishing the stored pair
+ * would therefore hand clients an aspect ratio that is the reciprocal of the
+ * pixels they actually receive: an 800x400 stored / 400x800 rendered image
+ * would advertise 2.0 against a real 0.5.
+ *
+ * `metadata.autoOrient` is sharp's own post-rotation pair, so it agrees with
+ * the variants by construction rather than by a duplicated rotation rule here.
+ */
+function displayDimensions(meta: sharp.Metadata): { width?: number; height?: number } {
+  const width = meta.autoOrient?.width ?? meta.width;
+  const height = meta.autoOrient?.height ?? meta.height;
+  return {
+    width: typeof width === 'number' && width > 0 ? width : undefined,
+    height: typeof height === 'number' && height > 0 ? height : undefined,
+  };
+}
+
 // FFprobe metadata interfaces for type safety
 interface FFprobeStream {
   codec_type?: string;
@@ -412,23 +438,49 @@ export class VariantService {
     }
 
     if (file.mime.startsWith('image/')) {
-      const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
-      const meta = await sharp(originalBuffer, { failOn: 'none' }).metadata();
-      const width = typeof meta.width === 'number' && meta.width > 0 ? meta.width : undefined;
-      const height = typeof meta.height === 'number' && meta.height > 0 ? meta.height : undefined;
-      if (!width || !height) {
-        return false;
-      }
-      file.metadata = {
-        ...(file.metadata ?? {}),
-        image: { width, height },
-      };
-      applyCanonicalMediaMetadata(file, { width, height });
-      await file.save();
-      return true;
+      return this.persistOriginalImageDimensions(file);
     }
 
     return false;
+  }
+
+  /**
+   * Read an image original's intrinsic dimensions and persist them, WITHOUT
+   * generating variants.
+   *
+   * This exists to be awaited on the upload path. Dimensions were previously
+   * only written as a side effect of {@link generateImageVariants}, which every
+   * upload path fires and forgets — so an asset's width/height did not exist
+   * until seven resizes had been encoded and uploaded to S3. A client that
+   * created a post immediately after upload (the normal flow) read the asset
+   * back before that finished and got no geometry, permanently: nothing
+   * re-reads it for images. Persisting here first shrinks that window to a
+   * single header parse, so the dimensions exist as soon as the file id does.
+   *
+   * `sharp().metadata()` parses the header only — it does not decode pixels —
+   * so this is cheap enough to block an upload response on. `failOn: 'none'`
+   * matches the rest of this service: a warning-level defect in an otherwise
+   * readable image must not cost us its dimensions.
+   *
+   * Pass `originalBuffer` when the caller already holds the bytes to skip the
+   * S3 round-trip. Returns whether dimensions were persisted; callers treat a
+   * `false` as "not available", never as a failure.
+   */
+  async persistOriginalImageDimensions(file: IFile, originalBuffer?: Buffer): Promise<boolean> {
+    const buffer = originalBuffer ?? await this.s3Service.downloadBuffer(file.storageKey);
+    const meta = await sharp(buffer, { failOn: 'none' }).metadata();
+    const { width, height } = displayDimensions(meta);
+    if (!width || !height) {
+      return false;
+    }
+
+    file.metadata = {
+      ...(file.metadata ?? {}),
+      image: { width, height },
+    };
+    applyCanonicalMediaMetadata(file, { width, height });
+    await file.save();
+    return true;
   }
 
   /**
@@ -441,12 +493,16 @@ export class VariantService {
       const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
       const base = sharp(originalBuffer, { failOn: 'none' });
       const meta = await base.metadata();
+      // Every pipeline below auto-orients via `.rotate()`, so the source pair
+      // the recorded variant geometry is derived from must be auto-oriented
+      // too — otherwise an EXIF-rotated original yields transposed heights.
+      const source = displayDimensions(meta);
 
       const variants: IFileVariant[] = [];
       for (const config of this.imageVariants) {
         const variantKey = this.generateVariantKey(file.sha256, config.type, config.format || 'webp', file.visibility);
 
-        const width = config.width || meta.width || 1280;
+        const width = config.width || source.width || 1280;
         const height = config.height; // let sharp maintain aspect by only setting width unless both provided
         let pipeline = sharp(originalBuffer, { failOn: 'none' }).rotate();
         pipeline = pipeline.resize({ width, height, fit: 'inside', withoutEnlargement: true });
@@ -466,7 +522,7 @@ export class VariantService {
           type: config.type,
           key: variantKey,
           width,
-          height: height || Math.round((meta.height || width) * (width / (meta.width || width))),
+          height: height || Math.round((source.height || width) * (width / (source.width || width))),
           readyAt: new Date(),
           size: out.length,
           metadata: { format, quality: config.quality }
@@ -475,12 +531,12 @@ export class VariantService {
         logger.debug('Generated image variant', { fileId: file._id, type: config.type, key: variantKey });
       }
 
-      if (meta.width && meta.height) {
+      if (source.width && source.height) {
         file.metadata = {
           ...(file.metadata ?? {}),
-          image: { width: meta.width, height: meta.height },
+          image: { width: source.width, height: source.height },
         };
-        applyCanonicalMediaMetadata(file, { width: meta.width, height: meta.height });
+        applyCanonicalMediaMetadata(file, { width: source.width, height: source.height });
       }
 
   file.variants = variants;
