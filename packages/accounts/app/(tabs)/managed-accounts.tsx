@@ -12,7 +12,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 import type { AccountNode } from '@oxyhq/core';
-import { getAccountDisplayName } from '@oxyhq/core';
+import { getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
 import { useAccountRowBuilder } from '@/components/managed-accounts/account-row';
 import { useManagedAccountGroups } from '@/hooks/managed-accounts/useManagedAccountGroups';
 
@@ -84,7 +84,10 @@ export default function ManagedAccountsScreen() {
   }, [switchToAccount, showBottomSheet]);
 
   const handleArchiveAccount = useCallback((node: AccountNode) => {
-    const name = getAccountDisplayName(node.account ?? null, locale);
+    const name =
+      node.account?.name?.displayName ??
+      getNormalizedUserHandle(node.account) ??
+      getAccountDisplayName(null, locale);
     alert(
       t('managedAccounts.archive.confirmTitle'),
       t('managedAccounts.archive.confirmBody', { name }),

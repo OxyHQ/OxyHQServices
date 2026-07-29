@@ -18,6 +18,7 @@
 
 import type { PublicCard, SignedPublicCard, ExportAttestation, PersonhoodStatus as PersonhoodStatusValue } from '@oxyhq/contracts';
 import { signedPublicCardSchema } from '@oxyhq/contracts';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { canonicalize } from '@oxyhq/protocol';
 import { User } from '../../models/User';
 import { ReputationBalance } from '../../models/ReputationBalance';
@@ -70,9 +71,8 @@ export async function buildSignedPublicCard(userId: string): Promise<SignedPubli
   }
 
   const formatted = formatUserResponse(user);
-  // formatUserResponse composes the canonical `name.displayName`; fall back to
-  // the username only if (impossibly) absent so `name` is always a string.
-  const displayName = formatted?.name?.displayName ?? formatted?.username ?? '';
+  const displayName =
+    formatted?.name?.displayName ?? getNormalizedUserHandle(formatted) ?? '';
   const username = formatted?.username;
   const avatarId = formatted?.avatar;
 

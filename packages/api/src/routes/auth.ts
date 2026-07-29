@@ -615,11 +615,14 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   }
 
   const now = Date.now();
-  const defaultExpiresAt = new Date(now + 5 * 60 * 1000);
+  const SESSION_CREATE_TTL_MS = 5 * 60 * 1000;
+  const defaultExpiresAt = new Date(now + SESSION_CREATE_TTL_MS);
   let expiresAtDate = expiresAt ? new Date(expiresAt) : defaultExpiresAt;
 
   if (Number.isNaN(expiresAtDate.getTime()) || expiresAtDate.getTime() < now + 30 * 1000) {
     expiresAtDate = defaultExpiresAt;
+  } else if (expiresAtDate.getTime() > now + SESSION_CREATE_TTL_MS) {
+    expiresAtDate = new Date(now + SESSION_CREATE_TTL_MS);
   }
 
   // Resolve the canonical Application. Every session is bound to a real,

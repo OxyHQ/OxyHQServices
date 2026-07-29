@@ -26,6 +26,7 @@ import type {
   AccountMember,
 } from '../mixins/OxyServices.accounts';
 import { getAccountDisplayName, getAccountFallbackHandle } from '../utils/accountUtils';
+import { getNormalizedUserHandle } from '../utils/userHandle';
 
 /**
  * The per-account user shape carried by a {@link SwitchableAccount}. The SDK's
@@ -170,7 +171,10 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
       kind: opts.kind,
       parentAccountId: opts.parentAccountId,
       callerMembership: opts.callerMembership,
-      displayName: getAccountDisplayName(accountUser, locale),
+      displayName:
+        accountUser.name?.displayName ??
+        getNormalizedUserHandle(accountUser) ??
+        getAccountDisplayName(null, locale),
       // Real email, or the `@handle` fallback (NEVER synthesized).
       email: accountUser.email ?? secondaryHandle,
       avatarUrl: resolveAvatarUrl(accountUser.avatar),

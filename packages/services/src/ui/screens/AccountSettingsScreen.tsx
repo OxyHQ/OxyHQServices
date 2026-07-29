@@ -12,7 +12,7 @@ import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import type { UpdateAccountInput } from '@oxyhq/core';
+import { getNormalizedUserHandle, type UpdateAccountInput } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
@@ -67,9 +67,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   // Seed the form from the account during render (no useEffect): the first time
   // the query resolves we capture its values into local edit state.
   if (node && !seeded) {
-    const first = node.account?.name?.first ?? '';
-    const last = node.account?.name?.last ?? '';
-    setDisplayName([first, last].filter(Boolean).join(' '));
+    setDisplayName(
+      node.account?.name?.displayName ?? getNormalizedUserHandle(node.account) ?? '',
+    );
     setBio(node.account?.bio ?? '');
     setSeeded(true);
   }

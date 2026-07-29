@@ -39,6 +39,48 @@ export const getAnalytics = async (req: Request, res: Response) => {
   }
 };
 
+import { logger } from '../utils/logger';
+
+const ANALYTICS_INCREMENT_TYPES = new Set([
+  'postViews',
+  'profileViews',
+]);
+
+const ANALYTICS_INCREMENT_DATA_PATHS = new Set([
+  'stats.engagement.likes',
+  'stats.engagement.replies',
+  'stats.engagement.reposts',
+  'stats.engagement.quotes',
+  'stats.engagement.bookmarks',
+  'stats.reach.impressions',
+  'stats.reach.uniqueViewers',
+]);
+
+const buildAnalyticsIncrement = (
+  type: unknown,
+  data: unknown,
+): Record<string, number> | null => {
+  if (typeof type !== 'string' || !ANALYTICS_INCREMENT_TYPES.has(type)) {
+    return null;
+  }
+
+  const increment: Record<string, number> = { [`stats.${type}`]: 1 };
+
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (
+        ANALYTICS_INCREMENT_DATA_PATHS.has(key) &&
+        typeof value === 'number' &&
+        Number.isFinite(value)
+      ) {
+        increment[key] = value;
+      }
+    }
+  }
+
+  return increment;
+};
+
 export const updateAnalytics = async (req: Request, res: Response) => {
   try {
     const userID = getAuthenticatedAnalyticsUserId(req);
@@ -47,6 +89,10 @@ export const updateAnalytics = async (req: Request, res: Response) => {
     }
 
     const { type, data } = req.body;
+    const increment = buildAnalyticsIncrement(type, data);
+    if (!increment) {
+      return res.status(400).json({ message: 'Invalid analytics type' });
+    }
     const date = new Date();
     
     // Update or create analytics record for each period
@@ -54,10 +100,7 @@ export const updateAnalytics = async (req: Request, res: Response) => {
     
     await Promise.all(periods.map(async (period) => {
       const update = {
-        $inc: {
-          [`stats.${type}`]: 1,
-          ...data
-        }
+        $inc: increment,
       };
       
       await Analytics.findOneAndUpdate(

@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 
@@ -126,7 +127,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
     setup();
   }, [api, signatureLoaded, message, mode]);
 
-  const userName = typeof user?.name === 'string' ? user.name : user?.username || 'Me';
+  const userName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? 'Me';
   const sending = sendPending;
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

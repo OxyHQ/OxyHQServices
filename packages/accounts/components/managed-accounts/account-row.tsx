@@ -3,7 +3,7 @@ import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'rea
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import type { AccountNode, AccountRole, OxyServices } from '@oxyhq/core';
-import { getAccountFallbackHandle, getAccountDisplayName } from '@oxyhq/core';
+import { getAccountFallbackHandle, getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
@@ -192,7 +192,10 @@ export function useAccountRowBuilder({
   const { t, locale } = useTranslation();
 
   return useCallback((node: AccountNode): GroupedItem => {
-    const name = getAccountDisplayName(node.account ?? null, locale);
+    const name =
+      node.account?.name?.displayName ??
+      getNormalizedUserHandle(node.account) ??
+      getAccountDisplayName(null, locale);
     const username = node.account?.username;
     // When an account has no username yet (e.g. mid-provisioning) fall back to
     // a truncated `publicKey` handle so the row still reads as identifiable

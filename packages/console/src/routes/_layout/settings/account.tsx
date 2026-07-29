@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -114,7 +115,8 @@ function AccountSettingsPage() {
 
   // The display label for the account: its canonical `name.displayName`, falling
   // back to the handle. Used in the header and delete confirmation.
-  const accountLabel = accountUser?.name?.displayName ?? accountUser?.username ?? '';
+  const accountLabel =
+    accountUser?.name?.displayName ?? getNormalizedUserHandle(accountUser) ?? '';
 
   // Personal accounts show the signed-in user's avatar (read-only — it is
   // managed in the user's Oxy account). Resolved the same way as `nav-user.tsx`.
@@ -125,11 +127,15 @@ function AccountSettingsPage() {
   })();
 
   const userInitials = ((): string => {
-    const name = user?.name as { first?: string; last?: string } | undefined;
-    if (name?.first && name?.last) {
-      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    const label = user?.name?.displayName ?? getNormalizedUserHandle(user);
+    if (label) {
+      const parts = label.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+      return label.slice(0, 2).toUpperCase();
     }
-    return (name?.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
+    return 'U';
   })();
 
   // Members are fetched only for non-personal accounts with permission to read.

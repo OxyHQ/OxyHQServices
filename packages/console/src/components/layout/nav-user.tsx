@@ -49,12 +49,12 @@ export function NavUser() {
       return displayName.slice(0, 2).toUpperCase();
     }
 
-    if (!user.name) return user.username?.[0]?.toUpperCase() || 'U';
-    const name = user.name as { first?: string; last?: string };
-    if (name.first && name.last) {
-      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    const handle = getNormalizedUserHandle(user);
+    if (handle) {
+      return handle.slice(0, 2).toUpperCase();
     }
-    return (name.first?.[0] || user.username?.[0] || 'U').toUpperCase();
+
+    return 'U';
   };
 
   const getAvatarUrl = () => {

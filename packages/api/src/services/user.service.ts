@@ -1660,6 +1660,9 @@ export class UserService {
     blockCache.invalidateUser(userId);
     restrictCache.invalidateUser(userId);
     userCache.invalidate(userId);
+    for (const counterpartyId of [...followedCounterpartyIds, ...followerCounterpartyIds]) {
+      userCache.invalidate(counterpartyId);
+    }
     const graphIdsToInvalidate = new Set<string>([
       userId,
       ...followedCounterpartyIds,

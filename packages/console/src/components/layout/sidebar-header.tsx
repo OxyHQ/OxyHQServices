@@ -9,6 +9,7 @@ import {
   Tick02Icon,
   UserMultiple02Icon,
 } from '@hugeicons/core-free-icons';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
 import { toast } from 'sonner';
 import type {AccountKind, AccountNode, AccountRole} from '@/hooks/use-account';
@@ -64,7 +65,11 @@ const kindSubtitles: Record<AccountKind, string> = {
 
 /** Canonical display label: the account's `name.displayName`, else its handle. */
 function accountLabel(node: AccountNode): string {
-  return node.account.name?.displayName ?? node.account.username ?? 'Account';
+  return (
+    node.account.name?.displayName ??
+    getNormalizedUserHandle(node.account) ??
+    'Account'
+  );
 }
 
 /** First-letter initials for the avatar fallback. */
