@@ -12,6 +12,11 @@
  */
 
 import mongoose, { type ClientSession } from 'mongoose';
+import type {
+  ReputationCategory,
+  ReputationInfluenceContext,
+  ReputationTargetEntityType,
+} from '@oxyhq/contracts';
 
 import {
   ReputationTransaction,
@@ -53,8 +58,7 @@ import {
   CLEAN_MOVEOUT_POINTS,
   LEASE_DEFAULT_ACTION,
   LEASE_DEFAULT_POINTS,
-  type ReputationCategory,
-  type ReputationTargetEntityType,
+
 } from '../utils/reputation.constants';
 import { attestAward } from './civic/attestation.service';
 import {
@@ -100,9 +104,6 @@ export interface ReviewInput {
   reviewedByUserId?: string;
   reason?: string;
 }
-
-/** The influence context selecting which capped weight to return. */
-export type InfluenceContext = 'default' | 'report' | 'moderation' | 'ranking';
 
 /** Input for upserting a reputation rule. */
 export interface UpsertRuleInput {
@@ -589,8 +590,8 @@ class ReputationService {
    */
   async getInfluence(
     userId: string,
-    context: InfluenceContext
-  ): Promise<{ context: InfluenceContext; weight: number; influence: IReputationBalance['influence'] }> {
+    context: ReputationInfluenceContext
+  ): Promise<{ context: ReputationInfluenceContext; weight: number; influence: IReputationBalance['influence'] }> {
     const balance = await this.getBalance(userId);
     const { influence } = balance;
     const weight =

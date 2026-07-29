@@ -13,7 +13,7 @@
 
 import { Types } from 'mongoose';
 import { inferTransactionCategory } from '../../utils/reputationMigrationMapping';
-import type { ReputationCategory } from '../../utils/reputation.constants';
+import type { ReputationCategory } from '@oxyhq/contracts';
 
 interface AnyDoc {
   _id: Types.ObjectId;

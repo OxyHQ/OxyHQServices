@@ -2,7 +2,7 @@ import mongoose, { type Document, Schema } from 'mongoose';
 import {
   REPUTATION_DISPUTE_STATUSES,
   type ReputationDisputeStatus,
-} from '../utils/reputation.constants';
+} from '@oxyhq/contracts';
 
 /**
  * A user-initiated dispute against a specific reputation transaction (#217).

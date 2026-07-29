@@ -6,7 +6,7 @@ import {
   type ReputationCategory,
   type ReputationTransactionStatus,
   type ReputationTargetEntityType,
-} from '../utils/reputation.constants';
+} from '@oxyhq/contracts';
 
 /**
  * A single immutable entry in the reputation ledger (#217).

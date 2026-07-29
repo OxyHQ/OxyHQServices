@@ -15,7 +15,7 @@ import type { ReputationSource, ReputationSourceKey } from '@/lib/civic/reputati
 import type { AppColors } from '@/hooks/useColors';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { mixColors } from '@/utils/color';
-import type { ReputationBalance, TrustTier } from '@oxyhq/core';
+import type { ReputationBalance, TrustTier } from '@oxyhq/contracts';
 import { useTranslation } from '@/lib/i18n';
 
 interface StandingSectionProps {

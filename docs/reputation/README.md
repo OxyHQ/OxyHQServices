@@ -88,6 +88,37 @@ validation).
 
 Enforced by `packages/api/src/routes/__tests__/reputationReadAuthz.test.ts`.
 
+### Types (`@oxyhq/contracts/src/reputation.ts`)
+
+**Every reputation type is owned by `@oxyhq/contracts`** — the closed value sets
+(`REPUTATION_CATEGORIES`, `TRUST_TIERS`, `REPUTATION_TRANSACTION_STATUSES`,
+`REPUTATION_TARGET_ENTITY_TYPES`, `REPUTATION_DISPUTE_STATUSES`,
+`REPUTATION_INFLUENCE_CONTEXTS`), the response entities, the write-endpoint
+request bodies, and the `isFullReputationBalance` narrowing guard. `@oxyhq/core`
+declares none of them and re-exports none of them; import them from
+`@oxyhq/contracts` directly.
+
+That single ownership is load-bearing, not tidiness. Each API serializer in
+`packages/api/src/routes/reputation.routes.ts` builds a `const dto:
+<ContractType>` and then hands it to that type's schema
+(`reputationBalanceSchema.parse(dto)` and friends), so the wire shape is checked
+twice:
+
+| Guard | Catches |
+| --- | --- |
+| `const dto: <ContractType>` | a missing required field, a field the contract does not declare (excess-property checking), a `Date` left where the wire promises an ISO string — all at `tsc` time, naming the field |
+| `schema.parse(dto)` | what the compiler cannot see: a mongoose path typed required that an old document actually lacks |
+
+The same closed-value tuples back the mongoose enums, so a seventh category
+cannot be added on one side only. Before this, the serializers returned
+`Record<string, unknown>` and imported no reputation type from anywhere — the
+[view split below](#read-authorization) shipped server-side while the SDK type
+still promised the old single shape, and a read of
+`balance.reliability.reportAccuracyScore` type-checked with exit 0 against a
+response that no longer carried `reliability`.
+
+Timestamps are ISO 8601 strings and ids are strings everywhere on this surface.
+
 ### SDK (`OxyServices.reputation.ts`)
 
 The view split is in the types, so a caller cannot read a field the server did
@@ -111,10 +142,8 @@ Reads: `getReputationBalance(userId)`, `getReputationTransactions(userId, limit?
 only, sweep the `GET:/reputation/` cache): `awardReputation`,
 `reverseReputationTransaction`, `voidReputationTransaction`,
 `recalculateReputation`, `upsertReputationRule`, `createReputationDispute`,
-`resolveReputationDispute`, `getReputationDisputeQueue`. Exported unions:
-`ReputationCategory`, `TrustTier`, `ReputationTransactionStatus`,
-`ReputationTargetEntityType`, `ReputationDisputeStatus`,
-`ReputationInfluenceContext`, `ReputationBalanceView`.
+`resolveReputationDispute`, `getReputationDisputeQueue`. All of their argument
+and return types come from `@oxyhq/contracts`.
 
 > **Pending:** the karma→reputation migration
 > (`scripts/migrate-karma-to-reputation.ts`) must run as a one-shot ECS task —

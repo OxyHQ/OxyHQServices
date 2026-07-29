@@ -1,5 +1,27 @@
 import express, { type Response, type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import {
+  awardReputationSchema,
+  createReputationDisputeSchema,
+  reputationBalanceSchema,
+  reputationBalanceSummarySchema,
+  reputationDisputeSchema,
+  reputationInfluenceResultSchema,
+  reputationLeaderboardEntrySchema,
+  reputationRuleSchema,
+  reputationTransactionSchema,
+  resolveReputationDisputeSchema,
+  reverseReputationTransactionSchema,
+  upsertReputationRuleSchema,
+  type ReputationBalance,
+  type ReputationBalanceSummary,
+  type ReputationDispute,
+  type ReputationInfluenceContext,
+  type ReputationInfluenceResult,
+  type ReputationLeaderboardEntry,
+  type ReputationRule,
+  type ReputationTransaction,
+} from '@oxyhq/contracts';
 
 import {
   authMiddleware,
@@ -16,7 +38,8 @@ import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler'
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId, validatePagination } from '../utils/validation';
 import { logger } from '../utils/logger';
-import reputationService, { type InfluenceContext } from '../services/reputation.service';
+import { formatUserNameResponse } from '../utils/displayName';
+import reputationService from '../services/reputation.service';
 import {
   DEFAULT_TRANSACTION_LIMIT,
   MAX_TRANSACTION_LIMIT,
@@ -31,11 +54,6 @@ import {
   reputationDisputeIdParams,
   reputationPaginationQuery,
   reputationInfluenceQuery,
-  awardReputationSchema,
-  reviewTransactionSchema,
-  upsertReputationRuleSchema,
-  createDisputeSchema,
-  resolveDisputeSchema,
 } from '../schemas/reputation.schemas';
 
 const router = express.Router();
@@ -124,13 +142,37 @@ function authUserOrService(
   authMiddleware(req, res, next);
 }
 
-/**
- * Shape a transaction for the HTTP response. Ids are emitted as strings.
+/*
+ * SERIALIZERS
+ *
+ * Every one of these returns a type owned by `@oxyhq/contracts` and hands the
+ * DTO to that type's schema before it leaves the process. Two guards, and they
+ * catch different things:
+ *
+ *  - The `const dto: <ContractType>` annotation is the COMPILE-TIME guard.
+ *    Dropping a field the contract requires, adding one it does not declare
+ *    (excess-property checking on the literal), or leaving a `Date` where the
+ *    wire promises an ISO string all fail `tsc` and name the field. This is the
+ *    structural link that was missing when `GET /:userId/balance` was
+ *    view-split without the SDK type moving with it: the serializers returned
+ *    `Record<string, unknown>` and imported no reputation type from anywhere,
+ *    so nothing but human attention connected the two.
+ *  - The `schema.parse(dto)` call is the RUNTIME guard, for what the compiler
+ *    cannot see: a mongoose path typed as required that is actually absent on
+ *    an old document, and any key the type system was told about but the
+ *    document contradicts.
+ *
+ * Mongoose ids and dates are converted HERE, at the boundary — the contract
+ * types every id as a string and every timestamp as an ISO 8601 string.
+ * `Date.prototype.toJSON` already produced exactly `toISOString()`, so the
+ * bytes on the wire are unchanged.
  */
+
+/** Shape a transaction for the HTTP response. */
 function serializeTransaction(
   txn: Awaited<ReturnType<typeof reputationService.listTransactions>>['items'][number]
-): Record<string, unknown> {
-  return {
+): ReputationTransaction {
+  const dto: ReputationTransaction = {
     id: txn._id.toString(),
     userId: txn.userId.toString(),
     points: txn.points,
@@ -148,10 +190,11 @@ function serializeTransaction(
     metadata: txn.metadata,
     createdByUserId: txn.createdByUserId?.toString(),
     reviewedByUserId: txn.reviewedByUserId?.toString(),
-    reviewedAt: txn.reviewedAt,
-    createdAt: txn.createdAt,
-    updatedAt: txn.updatedAt,
+    reviewedAt: txn.reviewedAt?.toISOString(),
+    createdAt: txn.createdAt.toISOString(),
+    updatedAt: txn.updatedAt.toISOString(),
   };
+  return reputationTransactionSchema.parse(dto);
 }
 
 /**
@@ -161,29 +204,40 @@ function serializeTransaction(
  * `reliability` scoring, the `influence` weights that drive ranking and
  * moderation, and the positive/negative/per-category decomposition of the
  * total. None of that is public; third parties get {@link serializePublicBalance}.
- *
- * MIRRORED CLIENT-SIDE as `ReputationBalance` in
- * `packages/core/src/mixins/OxyServices.reputation.ts`. The two serializers are
- * two SDK types (`ReputationBalance` / `ReputationBalanceSummary`) and a union
- * over them, so moving a field between them here without moving it there hands
- * every SDK consumer a type that says a field is present when it is not. Change
- * both, in one commit.
  */
 function serializeBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
-): Record<string, unknown> {
-  return {
+): ReputationBalance {
+  const dto: ReputationBalance = {
     userId: balance.userId.toString(),
     total: balance.total,
     positive: balance.positive,
     negative: balance.negative,
-    breakdown: balance.breakdown,
+    breakdown: {
+      content: balance.breakdown.content,
+      social: balance.breakdown.social,
+      trust: balance.breakdown.trust,
+      moderation: balance.breakdown.moderation,
+      physical: balance.breakdown.physical,
+      penalties: balance.breakdown.penalties,
+    },
     trustTier: balance.trustTier,
-    influence: balance.influence,
-    reliability: balance.reliability,
-    recalculatedAt: balance.recalculatedAt,
-    updatedAt: balance.updatedAt,
+    influence: {
+      defaultWeight: balance.influence.defaultWeight,
+      reportWeight: balance.influence.reportWeight,
+      moderationWeight: balance.influence.moderationWeight,
+      rankingFeedbackWeight: balance.influence.rankingFeedbackWeight,
+    },
+    reliability: {
+      accurateReports: balance.reliability.accurateReports,
+      rejectedReports: balance.reliability.rejectedReports,
+      reportAccuracyScore: balance.reliability.reportAccuracyScore,
+      abuseScore: balance.reliability.abuseScore,
+    },
+    recalculatedAt: balance.recalculatedAt.toISOString(),
+    updatedAt: balance.updatedAt.toISOString(),
   };
+  return reputationBalanceSchema.parse(dto);
 }
 
 /**
@@ -210,42 +264,44 @@ function serializeBalance(
  * the punitive `restricted` marker, so a sanctioned account remains
  * publicly identifiable as such by tier.
  *
- * MIRRORED CLIENT-SIDE as `ReputationBalanceSummary` — see
- * {@link serializeBalance}.
+ * Adding a private field back here does not merely leak it: it fails to
+ * compile, because `ReputationBalanceSummary` does not declare it.
  */
 function serializePublicBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
-): Record<string, unknown> {
-  return {
+): ReputationBalanceSummary {
+  const dto: ReputationBalanceSummary = {
     userId: balance.userId.toString(),
     total: balance.total,
     trustTier: balance.trustTier,
   };
+  return reputationBalanceSummarySchema.parse(dto);
 }
 
 /** Shape a dispute for the HTTP response. */
 function serializeDispute(
   dispute: Awaited<ReturnType<typeof reputationService.createDispute>>
-): Record<string, unknown> {
-  return {
+): ReputationDispute {
+  const dto: ReputationDispute = {
     id: dispute._id.toString(),
     transactionId: dispute.transactionId.toString(),
     userId: dispute.userId.toString(),
     reason: dispute.reason,
     status: dispute.status,
     evidence: dispute.evidence,
-    resolvedAt: dispute.resolvedAt,
+    resolvedAt: dispute.resolvedAt?.toISOString(),
     resolvedByUserId: dispute.resolvedByUserId?.toString(),
-    createdAt: dispute.createdAt,
-    updatedAt: dispute.updatedAt,
+    createdAt: dispute.createdAt.toISOString(),
+    updatedAt: dispute.updatedAt.toISOString(),
   };
+  return reputationDisputeSchema.parse(dto);
 }
 
 /** Shape a rule for the HTTP response. */
 function serializeRule(
   rule: Awaited<ReturnType<typeof reputationService.upsertRule>>
-): Record<string, unknown> {
-  return {
+): ReputationRule {
+  const dto: ReputationRule = {
     id: rule._id.toString(),
     actionType: rule.actionType,
     points: rule.points,
@@ -254,6 +310,59 @@ function serializeRule(
     cooldownInMinutes: rule.cooldownInMinutes,
     isEnabled: rule.isEnabled,
   };
+  return reputationRuleSchema.parse(dto);
+}
+
+/**
+ * Shape one leaderboard row.
+ *
+ * The leaderboard aggregate projects the subject user inline (see
+ * `reputationService.getLeaderboard`), so `balance.userId` is a small user
+ * projection here rather than an id. Its `name` goes through the same
+ * `formatUserNameResponse` composition every other user DTO uses, so
+ * `name.displayName` means the same thing on this surface as everywhere else.
+ */
+function serializeLeaderboardEntry(
+  balance: Awaited<ReturnType<typeof reputationService.getLeaderboard>>['items'][number],
+  rank: number
+): ReputationLeaderboardEntry {
+  const user = balance.userId as unknown as {
+    _id: { toString(): string };
+    username: string;
+    name?: { first?: string; last?: string; full?: string; displayName?: string };
+    avatar?: string;
+    publicKey?: string;
+  };
+  const dto: ReputationLeaderboardEntry = {
+    user: {
+      id: user._id.toString(),
+      username: user.username,
+      name: formatUserNameResponse({ username: user.username, name: user.name }),
+      avatar: user.avatar,
+      publicKey: user.publicKey,
+    },
+    total: balance.total,
+    trustTier: balance.trustTier,
+    rank,
+  };
+  return reputationLeaderboardEntrySchema.parse(dto);
+}
+
+/** Shape the influence read for the HTTP response. */
+function serializeInfluenceResult(
+  result: Awaited<ReturnType<typeof reputationService.getInfluence>>
+): ReputationInfluenceResult {
+  const dto: ReputationInfluenceResult = {
+    context: result.context,
+    weight: result.weight,
+    influence: {
+      defaultWeight: result.influence.defaultWeight,
+      reportWeight: result.influence.reportWeight,
+      moderationWeight: result.influence.moderationWeight,
+      rankingFeedbackWeight: result.influence.rankingFeedbackWeight,
+    },
+  };
+  return reputationInfluenceResultSchema.parse(dto);
 }
 
 // =============================================================================
@@ -273,12 +382,9 @@ router.get(
       DEFAULT_LEADERBOARD_LIMIT
     );
     const { items, total } = await reputationService.getLeaderboard(limit, offset);
-    const formatted = items.map((balance, index) => ({
-      user: balance.userId,
-      total: balance.total,
-      trustTier: balance.trustTier,
-      rank: offset + index + 1,
-    }));
+    const formatted = items.map((balance, index) =>
+      serializeLeaderboardEntry(balance, offset + index + 1)
+    );
     sendPaginated(res, formatted, total, limit, offset);
   })
 );
@@ -461,9 +567,9 @@ router.get(
     if (userObjectId !== callerId && req.user?.isStaff !== true) {
       throw new ForbiddenError('You can only view your own influence');
     }
-    const context = (req.query.context as InfluenceContext | undefined) ?? 'default';
+    const context = (req.query.context as ReputationInfluenceContext | undefined) ?? 'default';
     const result = await reputationService.getInfluence(userObjectId, context);
-    sendSuccess(res, result);
+    sendSuccess(res, serializeInfluenceResult(result));
   })
 );
 
@@ -497,7 +603,7 @@ router.get(
 router.post(
   '/disputes',
   disputeLimiter,
-  validate({ body: createDisputeSchema }),
+  validate({ body: createReputationDisputeSchema }),
   asyncHandler(async (req: AuthRequest, res) => {
     const callerId = requireUserId(req);
     const dispute = await reputationService.createDispute(
@@ -537,7 +643,7 @@ router.post(
   '/transactions/:id/reverse',
   adminLimiter,
   requireStaff,
-  validate({ params: reputationTransactionIdParams, body: reviewTransactionSchema }),
+  validate({ params: reputationTransactionIdParams, body: reverseReputationTransactionSchema }),
   asyncHandler(async (req: AuthRequest, res) => {
     const reviewedByUserId = requireUserId(req);
     const result = await reputationService.reverseTransaction(req.params.id, {
@@ -556,7 +662,7 @@ router.post(
   '/transactions/:id/void',
   adminLimiter,
   requireStaff,
-  validate({ params: reputationTransactionIdParams, body: reviewTransactionSchema }),
+  validate({ params: reputationTransactionIdParams, body: reverseReputationTransactionSchema }),
   asyncHandler(async (req: AuthRequest, res) => {
     const reviewedByUserId = requireUserId(req);
     const txn = await reputationService.voidTransaction(req.params.id, {
@@ -585,7 +691,7 @@ router.post(
   '/disputes/:id/resolve',
   adminLimiter,
   requireStaff,
-  validate({ params: reputationDisputeIdParams, body: resolveDisputeSchema }),
+  validate({ params: reputationDisputeIdParams, body: resolveReputationDisputeSchema }),
   asyncHandler(async (req: AuthRequest, res) => {
     const resolvedByUserId = requireUserId(req);
     const dispute = await reputationService.resolveDispute(req.params.id, {

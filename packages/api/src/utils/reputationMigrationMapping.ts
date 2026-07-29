@@ -5,7 +5,7 @@
  * migration's `main()` (which connects to MongoDB and calls `process.exit`).
  */
 
-import type { ReputationCategory } from './reputation.constants';
+import type { ReputationCategory } from '@oxyhq/contracts';
 
 /**
  * Map a legacy `KarmaRule.category` to the new `ReputationCategory`:

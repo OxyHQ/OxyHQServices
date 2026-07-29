@@ -36,7 +36,8 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import { ReputationBalance } from '../models/ReputationBalance.js';
-import { INFLUENCE_MIN, type TrustTier } from '../utils/reputation.constants.js';
+import { INFLUENCE_MIN } from '../utils/reputation.constants.js';
+import type { TrustTier } from '@oxyhq/contracts';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
 

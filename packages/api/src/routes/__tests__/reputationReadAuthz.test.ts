@@ -139,14 +139,29 @@ function signInAs(caller: TestCaller | null): void {
   });
 }
 
-/** A balance carrying every sensitive field the serializers may expose. */
+/**
+ * A balance carrying every sensitive field the serializers may expose.
+ *
+ * Shaped exactly as the `ReputationBalance` mongoose document is — every
+ * breakdown bucket present, timestamps as `Date`s — because `serializeBalance`
+ * now validates its output against the `@oxyhq/contracts` schema and a fixture
+ * the real model could never produce would fail that check rather than the
+ * authorization behaviour these tests are about.
+ */
 function balanceFixture() {
   return {
     userId: { toString: () => SUBJECT_ID },
     total: 120,
     positive: 200,
     negative: -80,
-    breakdown: { content: 100, penalty: -80, trust: 100 },
+    breakdown: {
+      content: 100,
+      social: 0,
+      trust: 100,
+      moderation: 0,
+      physical: 0,
+      penalties: 80,
+    },
     trustTier: 'trusted',
     influence: {
       defaultWeight: 0.34,
