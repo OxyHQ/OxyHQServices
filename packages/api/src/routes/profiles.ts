@@ -33,6 +33,7 @@ import {
   eligibleUserMatch,
   FEDERATED_RECOMMENDATION_MAX_AGE_MS,
   isPublicGraphTarget,
+  buildPeopleSearchOrClause,
   peopleSearchMongoMatch,
 } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
@@ -457,13 +458,7 @@ router.get(
 
     const searchFilter = {
       ...peopleSearchMongoMatch,
-      $or: [
-        { username: searchRegex },
-        { 'name.first': searchRegex },
-        { 'name.last': searchRegex },
-        { 'name.displayName': searchRegex },
-        { description: searchRegex },
-      ],
+      $or: buildPeopleSearchOrClause(searchRegex),
     };
 
     // Run local DB search and (if query is a fediverse handle) remote resolution in parallel

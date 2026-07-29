@@ -11,8 +11,9 @@ import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
 import { sanitizeSearchQuery } from '../utils/sanitize';
-import { peopleSearchMongoMatch } from '../utils/profileQuery';
+import { buildPeopleSearchOrClause, peopleSearchMongoMatch } from '../utils/profileQuery';
 import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
+import { formatUserResponse } from '../utils/userTransform';
 
 export class UsersController {
   /**
@@ -42,24 +43,25 @@ export class UsersController {
       const sanitizedQuery = sanitizeSearchQuery(strippedQuery);
 
       // Search for users where username or name matches the query.
+      const searchPattern = { $regex: sanitizedQuery, $options: 'i' as const };
+
       const users = await User.find({
         ...peopleSearchMongoMatch,
-        $or: [
-          { username: { $regex: sanitizedQuery, $options: 'i' } },
-          { 'name.first': { $regex: sanitizedQuery, $options: 'i' } },
-          { 'name.last': { $regex: sanitizedQuery, $options: 'i' } },
-        ],
+        $or: buildPeopleSearchOrClause(searchPattern),
       })
         .select(PUBLIC_USER_PROFILE_SELECT)
-        .limit(5)
-        .lean();
+        .limit(5);
+
+      const formattedUsers = users
+        .map((user) => formatUserResponse(user))
+        .filter((user): user is NonNullable<typeof user> => user !== null);
 
       logger.debug('User search performed', {
         query: sanitizedQuery,
-        resultsCount: users.length,
+        resultsCount: formattedUsers.length,
       });
 
-      sendSuccess(res, users);
+      sendSuccess(res, formattedUsers);
     } catch (error) {
       // Re-throw known errors
       if (error instanceof BadRequestError || error instanceof InternalServerError) {

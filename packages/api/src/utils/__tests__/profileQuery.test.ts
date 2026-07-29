@@ -1,4 +1,34 @@
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS, isDiscoverableUser, isFederatableUser, isPublicGraphTarget } from '../profileQuery';
+import {
+  buildPeopleSearchOrClause,
+  eligibleUserMatch,
+  FEDERATED_RECOMMENDATION_MAX_AGE_MS,
+  isDiscoverableUser,
+  isFederatableUser,
+  isPublicGraphTarget,
+} from '../profileQuery';
+
+describe('buildPeopleSearchOrClause', () => {
+  it('matches username, first, last, and description by default', () => {
+    const pattern = { $regex: 'moon', $options: 'i' };
+    expect(buildPeopleSearchOrClause(pattern)).toEqual([
+      { username: pattern },
+      { 'name.first': pattern },
+      { 'name.last': pattern },
+      { description: pattern },
+    ]);
+  });
+
+  it('can include location fields for legacy GET /search', () => {
+    const pattern = { $regex: 'paris', $options: 'i' };
+    expect(buildPeopleSearchOrClause(pattern, { includeLocations: true })).toEqual(
+      expect.arrayContaining([
+        { 'locations.name': pattern },
+        { 'locations.address.city': pattern },
+        { 'locations.address.country': pattern },
+      ]),
+    );
+  });
+});
 
 describe('eligibleUserMatch', () => {
   const minResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);

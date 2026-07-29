@@ -654,14 +654,14 @@ describe('GET /profiles/search leading-@ handling', () => {
   });
 });
 
-describe('GET /profiles/search displayName matching', () => {
-  it('matches users by explicit name.displayName when first/last are absent', async () => {
+describe('GET /profiles/search name matching', () => {
+  it('matches users by persisted name.first (federated display names are stored there)', async () => {
     const displayOnly = new Types.ObjectId();
     const pool: PoolUser[] = [
       {
         _id: displayOnly,
         username: 'handleonly',
-        name: { displayName: 'Moonlight Studio' },
+        name: { first: 'Moonlight Studio' },
         accountStatus: 'active',
       },
     ];

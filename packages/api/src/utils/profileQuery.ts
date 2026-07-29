@@ -29,6 +29,52 @@ export const peopleSearchMongoMatch = {
   'privacySettings.isPrivateAccount': { $ne: true as const },
 };
 
+/** Regex pattern shape accepted by Mongo people-search `$or` clauses. */
+export type PeopleSearchPattern =
+  | RegExp
+  | { $regex: string; $options?: string };
+
+export interface PeopleSearchOrClauseOptions {
+  /** Include `description` (default: true). */
+  includeDescription?: boolean;
+  /** Include `locations.*` fields used by legacy `GET /search`. */
+  includeLocations?: boolean;
+}
+
+/**
+ * Shared `$or` clause for username/name people-search surfaces
+ * (`GET /profiles/search`, `GET /search`, `POST /users/search`).
+ *
+ * Matches persisted fields only — `name.displayName` is a Mongoose virtual
+ * derived from `first`/`last`, not a MongoDB column.
+ */
+export function buildPeopleSearchOrClause(
+  pattern: PeopleSearchPattern,
+  options: PeopleSearchOrClauseOptions = {},
+): Record<string, unknown>[] {
+  const { includeDescription = true, includeLocations = false } = options;
+
+  const clauses: Record<string, unknown>[] = [
+    { username: pattern },
+    { 'name.first': pattern },
+    { 'name.last': pattern },
+  ];
+
+  if (includeDescription) {
+    clauses.push({ description: pattern });
+  }
+
+  if (includeLocations) {
+    clauses.push(
+      { 'locations.name': pattern },
+      { 'locations.address.city': pattern },
+      { 'locations.address.country': pattern },
+    );
+  }
+
+  return clauses;
+}
+
 /**
  * Whether a hydrated user document may appear on people-discovery surfaces
  * (ActivityPub actor lookup, profile shells, etc.).

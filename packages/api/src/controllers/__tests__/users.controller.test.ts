@@ -15,6 +15,14 @@ jest.mock('../../utils/sanitize', () => ({
   sanitizeSearchQuery: jest.fn((q: string) => q),
 }));
 
+jest.mock('../../utils/userTransform', () => ({
+  formatUserResponse: jest.fn((user: { username?: string; name?: { first?: string; last?: string } }) => ({
+    id: 'formatted-id',
+    username: user.username,
+    name: user.name,
+  })),
+}));
+
 jest.mock('../../utils/asyncHandler', () => ({
   sendSuccess: jest.fn((res: Response, data: unknown) => res.status(200).json({ data })),
 }));
@@ -22,7 +30,7 @@ jest.mock('../../utils/asyncHandler', () => ({
 import { UsersController } from '../users.controller';
 import { BadRequestError, InternalServerError } from '../../utils/error';
 import { PUBLIC_USER_PROFILE_SELECT } from '../../utils/publicUserProjection';
-import { peopleSearchMongoMatch } from '../../utils/profileQuery';
+import { buildPeopleSearchOrClause, peopleSearchMongoMatch } from '../../utils/profileQuery';
 
 describe('UsersController', () => {
   let usersController: UsersController;
@@ -68,8 +76,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue(mockUsers),
+        limit: jest.fn().mockResolvedValue(mockUsers),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -81,18 +88,19 @@ describe('UsersController', () => {
 
       expect(mockFind).toHaveBeenCalledWith({
         ...peopleSearchMongoMatch,
-        $or: [
-          { username: { $regex: 'test', $options: 'i' } },
-          { 'name.first': { $regex: 'test', $options: 'i' } },
-          { 'name.last': { $regex: 'test', $options: 'i' } },
-        ],
+        $or: buildPeopleSearchOrClause({ $regex: 'test', $options: 'i' }),
       });
       // Search rows are PUBLIC user rows — same shared projection the
       // follower/following/mutual lists use, asserted against the exported
       // constant so the two cannot drift apart again.
       expect(mockQuery.select).toHaveBeenCalledWith(PUBLIC_USER_PROFILE_SELECT);
       expect(mockQuery.limit).toHaveBeenCalledWith(5);
-      expect(mockQuery.lean).toHaveBeenCalled();
+      expect(mockResponse.json).toHaveBeenCalledWith({
+        data: [
+          { id: 'formatted-id', username: 'testuser', name: { first: 'Test', last: 'User' } },
+          { id: 'formatted-id', username: 'anotheruser', name: { first: 'Another', last: 'User' } },
+        ],
+      });
     });
 
     it('excludes archived accounts from the search filter', async () => {
@@ -100,8 +108,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -124,8 +131,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -146,8 +152,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -182,8 +187,7 @@ describe('UsersController', () => {
       // the untiered user survives.
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockImplementation(() => {
+        limit: jest.fn().mockImplementation(() => {
           const filter = mockFind.mock.calls[0]?.[0] as {
             accountStatus?: { $ne?: string };
             reputationTier?: { $ne?: string };
@@ -221,8 +225,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -245,8 +248,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -267,8 +269,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -288,8 +289,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue([]),
+        limit: jest.fn().mockResolvedValue([]),
       };
       mockFind.mockReturnValue(mockQuery);
 
@@ -309,8 +309,7 @@ describe('UsersController', () => {
 
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockRejectedValue(new Error('Database error')),
+        limit: jest.fn().mockRejectedValue(new Error('Database error')),
       };
       mockFind.mockReturnValue(mockQuery);
 
