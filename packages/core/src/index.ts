@@ -180,7 +180,9 @@ export type {
     ReputationBalanceBreakdown,
     ReputationInfluence,
     ReputationReliability,
+    ReputationBalanceSummary,
     ReputationBalance,
+    ReputationBalanceView,
     ReputationDispute,
     ReputationRule,
     ReputationLeaderboardEntry,
@@ -192,6 +194,8 @@ export type {
     UpsertReputationRuleInput,
     ReverseReputationTransactionInput,
 } from './mixins/OxyServices.reputation';
+
+export { isFullReputationBalance } from './mixins/OxyServices.reputation';
 
 // ---------------------------------------------------------------------------
 // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping,

@@ -43,7 +43,8 @@ Three MongoDB models back the ledger (`packages/api/src/models/`):
   physical | penalty | other`. `sourceActionId` gives idempotency.
 - **`ReputationBalance`** (`reputationbalances`) — a cached per-user snapshot:
   `total`, `positive`, `negative`, `breakdown`, `reliability`, `trustTier`,
-  `influence`; recalculated on demand.
+  `influence`; recalculated on demand. Read back in **two views** — see
+  [Who may read a balance](#who-may-read-a-balance).
 - **`ReputationDispute`** (`reputationdisputes`) — dispute lifecycle.
 
 Reversals never delete: `reverseTransaction` marks the original `reversed` and
@@ -60,7 +61,49 @@ Trust tiers (top-down precedence): `restricted` (`total < 0` OR
 Influence is clamped to `[0.1, 3.0]` (base `= clamp(0.1 + total/500)`), with a
 per-context moderation factor; `restricted` floors all weights to 0.1.
 
+### Who may read a balance
+
+`GET /reputation/:userId/balance` needs no token — the public trust signal stays
+public — but the RESPONSE IS VIEW-SPLIT by caller:
+
+| Caller | Serializer | Fields |
+| --- | --- | --- |
+| The subject, or platform staff | `serializeBalance` | everything |
+| Anyone else, including anonymous | `serializePublicBalance` | `userId`, `total`, `trustTier` |
+
+Withheld from a third party: `reliability` (the platform's internal abuse
+verdict — `abuseScore ≥ 0.5` is a sanction), `influence` (a live readout of what
+an account is worth to ranking / reporting / moderation), `positive` /
+`negative` / `breakdown` (they split the total into points earned versus
+penalties accrued, exposing sanction history the total alone hides), and
+`recalculatedAt` / `updatedAt` (a timing oracle for the subject's last
+reputation event). `trustTier` stays public because it is the contribution
+ladder this system exists to publish, and the leaderboard already emits it.
+
+The neighbouring reads are gated harder — `GET /:userId/transactions` and
+`GET /:userId/influence` are owner-or-staff and answer **403** to a third party,
+because transaction `metadata` names third parties (the attestor who physically
+met the subject, the staking voucher, the juror roster of a resolved
+validation).
+
+Enforced by `packages/api/src/routes/__tests__/reputationReadAuthz.test.ts`.
+
 ### SDK (`OxyServices.reputation.ts`)
+
+The view split is in the types, so a caller cannot read a field the server did
+not send them:
+
+- **`getMyReputationBalance()`** → `ReputationBalance` (the full shape). The
+  common case, and the ergonomic path: no id to pass, no narrowing to do. Throws
+  rather than half-populating if the request was not authenticated as the
+  subject — including when the server answers `200` with the public view because
+  the token was absent or lapsed.
+- **`getReputationBalance(userId)`** → `ReputationBalanceView`, the union
+  `ReputationBalance | ReputationBalanceSummary`. Only `userId` / `total` /
+  `trustTier` are reachable without narrowing; reach the rest (as the subject or
+  as staff) with the `isFullReputationBalance(balance)` type guard.
+- **`recalculateReputation(userId)`** → `ReputationBalance`. Staff-gated, so
+  always the full view.
 
 Reads: `getReputationBalance(userId)`, `getReputationTransactions(userId, limit?, offset?)`,
 `getReputationInfluence(userId, context?)`, `getReputationLeaderboard`,
@@ -71,7 +114,7 @@ only, sweep the `GET:/reputation/` cache): `awardReputation`,
 `resolveReputationDispute`, `getReputationDisputeQueue`. Exported unions:
 `ReputationCategory`, `TrustTier`, `ReputationTransactionStatus`,
 `ReputationTargetEntityType`, `ReputationDisputeStatus`,
-`ReputationInfluenceContext`.
+`ReputationInfluenceContext`, `ReputationBalanceView`.
 
 > **Pending:** the karma→reputation migration
 > (`scripts/migrate-karma-to-reputation.ts`) must run as a one-shot ECS task —
