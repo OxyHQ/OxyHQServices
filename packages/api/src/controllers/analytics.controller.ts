@@ -39,8 +39,6 @@ export const getAnalytics = async (req: Request, res: Response) => {
   }
 };
 
-import { logger } from '../utils/logger';
-
 const ANALYTICS_INCREMENT_TYPES = new Set([
   'postViews',
   'profileViews',
