@@ -161,6 +161,13 @@ function serializeTransaction(
  * `reliability` scoring, the `influence` weights that drive ranking and
  * moderation, and the positive/negative/per-category decomposition of the
  * total. None of that is public; third parties get {@link serializePublicBalance}.
+ *
+ * MIRRORED CLIENT-SIDE as `ReputationBalance` in
+ * `packages/core/src/mixins/OxyServices.reputation.ts`. The two serializers are
+ * two SDK types (`ReputationBalance` / `ReputationBalanceSummary`) and a union
+ * over them, so moving a field between them here without moving it there hands
+ * every SDK consumer a type that says a field is present when it is not. Change
+ * both, in one commit.
  */
 function serializeBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
@@ -202,6 +209,9 @@ function serializeBalance(
  * exists to publish, and the leaderboard already emits it. Note it doubles as
  * the punitive `restricted` marker, so a sanctioned account remains
  * publicly identifiable as such by tier.
+ *
+ * MIRRORED CLIENT-SIDE as `ReputationBalanceSummary` — see
+ * {@link serializeBalance}.
  */
 function serializePublicBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>

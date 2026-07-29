@@ -12,11 +12,17 @@
  * their `active` transactions, augmented with a trust tier, capped influence
  * weights, and reliability signals.
  *
+ * A balance is served in TWO views (see {@link ReputationBalanceView}): the
+ * subject and platform staff get the whole thing, a third party gets the public
+ * trust signal only. The two are distinct types here so a caller cannot read a
+ * field the server did not send them.
+ *
  * Reference users by their Mongo `_id` (or publicKey, which the API resolves),
  * transactions by their `id`, and disputes by their `id`.
  */
 import type { OxyServicesBase } from '../OxyServices.base';
 import type { User } from '../models/interfaces';
+import { OxyAuthenticationError } from '../OxyServices.errors';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // =============================================================================
@@ -165,20 +171,46 @@ export interface ReputationReliability {
 }
 
 /**
- * Cached, recomputable snapshot of a user's reputation. Shape mirrors the
- * `/reputation/:userId/balance` response (which omits internal `lastTransactionId`
- * and `createdAt`).
+ * The PUBLIC view of a user's reputation — everything a caller who is neither
+ * the subject nor platform staff receives from `GET /reputation/:userId/balance`.
+ * Mirrors the API's `serializePublicBalance`.
+ *
+ * Deliberately limited to the two signals the already-public
+ * `GET /reputation/leaderboard` publishes per user, so an untokened read of a
+ * balance exposes no class of signal that is not public already. `trustTier`
+ * stays public because it is the contribution ladder this system exists to
+ * publish — note it doubles as the punitive `restricted` marker.
  */
-export interface ReputationBalance {
+export interface ReputationBalanceSummary {
   userId: string;
   /** Net lifetime total across all active transactions. */
   total: number;
+  trustTier: TrustTier;
+}
+
+/**
+ * The SUBJECT view of a user's reputation — the cached, recomputable snapshot in
+ * full, served only to the subject themselves and to platform staff. Mirrors the
+ * API's `serializeBalance` (which omits the internal `lastTransactionId` and
+ * `createdAt`).
+ *
+ * Everything beyond {@link ReputationBalanceSummary} is the platform's internal
+ * judgement about the person and is withheld from third parties: `reliability`
+ * (the abuse verdict), `influence` (what the account is worth to ranking,
+ * reporting and moderation), the `positive` / `negative` / `breakdown`
+ * decomposition (which exposes sanction history the total alone hides), and the
+ * timestamps (a timing oracle for the subject's last reputation event).
+ *
+ * Reach this type by reading YOUR OWN balance (`getMyReputationBalance`), by
+ * narrowing a {@link ReputationBalanceView} with {@link isFullReputationBalance},
+ * or from the staff-only `recalculateReputation`.
+ */
+export interface ReputationBalance extends ReputationBalanceSummary {
   /** Sum of positive points only. */
   positive: number;
   /** Sum of negative points only (a negative number). */
   negative: number;
   breakdown: ReputationBalanceBreakdown;
-  trustTier: TrustTier;
   influence: ReputationInfluence;
   reliability: ReputationReliability;
   /** ISO timestamp the snapshot was last recomputed at. */
@@ -186,6 +218,93 @@ export interface ReputationBalance {
   /** ISO last-update timestamp. */
   updatedAt: string;
 }
+
+/**
+ * What `GET /reputation/:userId/balance` may return for an ARBITRARY subject:
+ * the full {@link ReputationBalance} when the caller is that subject or staff,
+ * the {@link ReputationBalanceSummary} otherwise.
+ *
+ * The server decides at request time from the caller's token, so a client asking
+ * for someone else's balance cannot know statically which view it will get —
+ * hence the union. Reading anything past `userId` / `total` / `trustTier`
+ * requires narrowing with {@link isFullReputationBalance}.
+ */
+export type ReputationBalanceView = ReputationBalance | ReputationBalanceSummary;
+
+/**
+ * Every field the full {@link ReputationBalance} carries beyond the public
+ * {@link ReputationBalanceSummary}. The runtime discriminant between the two
+ * views — the API sends this set all-or-nothing.
+ */
+const FULL_BALANCE_FIELDS = [
+  'positive',
+  'negative',
+  'breakdown',
+  'influence',
+  'reliability',
+  'recalculatedAt',
+  'updatedAt',
+] as const satisfies readonly (keyof Omit<ReputationBalance, keyof ReputationBalanceSummary>)[];
+
+/**
+ * Whether a balance came back as the SUBJECT view, and so carries the
+ * breakdown / influence / reliability blocks.
+ *
+ * Checks every extra field rather than one representative: the point of the
+ * guard is that the caller then dereferences those blocks, so a partial payload
+ * must not narrow.
+ *
+ * @param balance - A balance from `getReputationBalance`.
+ */
+export function isFullReputationBalance(
+  balance: ReputationBalanceView,
+): balance is ReputationBalance {
+  return FULL_BALANCE_FIELDS.every((field) => field in balance);
+}
+
+/** Compile-time assertion helper: fails to instantiate unless `T` is `true`. */
+type AssertTrue<T extends true> = T;
+
+/**
+ * THE INVARIANT THIS MODULE EXISTS TO HOLD, checked by the compiler.
+ *
+ * `keyof` a union is the keys COMMON to its members, so a private field is only
+ * `keyof ReputationBalanceView` if the PUBLIC view declares it too. Should
+ * anyone widen {@link ReputationBalanceSummary} — or collapse the union back to
+ * a single shape — one of these arms becomes `false` and `tsc` fails, rather
+ * than a consumer silently regaining `balance.reliability.x` on a stranger's
+ * balance and crashing at runtime.
+ *
+ * This lives in the source, NOT in `__tests__`: `ts-jest` runs with
+ * `diagnostics: false` and `tsconfig.json` excludes the test folder, so a
+ * type-level assertion written there could never fail. `bun run typescript` and
+ * `build:types` both check this file.
+ */
+type _PrivateFieldsAreUnreachableOnTheView = AssertTrue<
+  'reliability' extends keyof ReputationBalanceView
+    ? false
+    : 'influence' extends keyof ReputationBalanceView
+      ? false
+      : 'breakdown' extends keyof ReputationBalanceView
+        ? false
+        : 'positive' extends keyof ReputationBalanceView
+          ? false
+          : true
+>;
+
+/**
+ * The other half: the public trust signal must stay reachable with NO
+ * narrowing, so the common "show a tier and a total" render never needs a guard.
+ */
+type _PublicFieldsStayReachableOnTheView = AssertTrue<
+  'userId' extends keyof ReputationBalanceView
+    ? 'total' extends keyof ReputationBalanceView
+      ? 'trustTier' extends keyof ReputationBalanceView
+        ? true
+        : false
+      : false
+    : false
+>;
 
 /**
  * A user-initiated dispute against a specific reputation transaction. Ids are
@@ -350,13 +469,21 @@ export function OxyServicesReputationMixin<T extends typeof OxyServicesBase>(Bas
     }
 
     /**
-     * Get a user's cached reputation balance — derived totals, per-category
-     * breakdown, trust tier, capped influence weights, and reliability signals.
+     * Get ANY user's reputation balance, in whichever view the server serves the
+     * caller.
+     *
+     * A third party gets `userId`, `total` and `trustTier` and nothing else, so
+     * the return type is a {@link ReputationBalanceView} union: narrow it with
+     * {@link isFullReputationBalance} before touching `breakdown`, `influence`
+     * or `reliability`. To read your OWN balance, call
+     * {@link getMyReputationBalance} instead — it returns the full shape with no
+     * narrowing.
+     *
      * @param userId - The subject user's `_id` or publicKey.
      */
-    async getReputationBalance(userId: string): Promise<ReputationBalance> {
+    async getReputationBalance(userId: string): Promise<ReputationBalanceView> {
       try {
-        return await this.makeRequest<ReputationBalance>(
+        return await this.makeRequest<ReputationBalanceView>(
           'GET',
           `/reputation/${encodeURIComponent(userId)}/balance`,
           undefined,
@@ -365,6 +492,48 @@ export function OxyServicesReputationMixin<T extends typeof OxyServicesBase>(Bas
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Get the SIGNED-IN user's own reputation balance, in full.
+     *
+     * The subject view is the only one carrying `breakdown`, `influence` and
+     * `reliability`, and the subject is the common caller, so this is the
+     * ergonomic path: no id to pass, no narrowing to do.
+     *
+     * Throws rather than returning a half-populated object when the request was
+     * not authenticated as the subject — with no signed-in user, and when the
+     * server answered `200` with the public view anyway (which it does for an
+     * absent or lapsed token, since the endpoint's auth is optional). Both mean
+     * the private blocks are simply absent, and a thrown error is the only
+     * honest report of that.
+     */
+    async getMyReputationBalance(): Promise<ReputationBalance> {
+      const userId = this.getCurrentUserId();
+      if (!userId) {
+        throw new OxyAuthenticationError(
+          'Reading your own reputation balance requires a signed-in user',
+        );
+      }
+
+      let balance: ReputationBalanceView;
+      try {
+        balance = await this.makeRequest<ReputationBalanceView>(
+          'GET',
+          `/reputation/${encodeURIComponent(userId)}/balance`,
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+
+      if (!isFullReputationBalance(balance)) {
+        throw new OxyAuthenticationError(
+          'The reputation balance came back as the public view — the request was not authenticated as its subject',
+        );
+      }
+      return balance;
     }
 
     /**
@@ -604,6 +773,10 @@ export function OxyServicesReputationMixin<T extends typeof OxyServicesBase>(Bas
     /**
      * Force a recompute of a user's balance snapshot from their active ledger
      * (staff only). Invalidates cached reputation reads.
+     *
+     * Staff-gated, so the response is always the full subject view — no
+     * narrowing needed.
+     *
      * @param userId - The subject user's `_id` or publicKey.
      */
     async recalculateReputation(userId: string): Promise<ReputationBalance> {
