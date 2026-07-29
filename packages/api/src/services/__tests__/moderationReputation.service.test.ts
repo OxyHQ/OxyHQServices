@@ -1348,6 +1348,75 @@ describe('finalizeModerationDecision', () => {
 });
 
 // ===========================================================================
+// ONLY THE BRIDGE CAN PRODUCE A CONDUCT EFFECT
+// ===========================================================================
+
+describe('conduct action types are bridge-only', () => {
+  /*
+   * "No binding proof, no Oxy Trust effect" is one-way and non-negotiable, so the
+   * question worth asking is not whether the bridge is guarded — it is whether a
+   * conduct penalty can be reached WITHOUT the bridge at all.
+   *
+   * The ordinary award path needs a `ReputationRule` for the action type, and
+   * none is seeded for a conduct action. But that is an absence, not a guard: one
+   * `POST /reputation/rules` would turn `POST /reputation/award` into a way to
+   * mint conduct-stamped penalties on `reputation:write`, which every official
+   * application already holds. These two cases close that by construction.
+   */
+
+  it('award refuses a conduct action type without a policy-derived override', async () => {
+    const reputationService = (await import('../reputation.service')).default;
+    // Seed the rule an operator would have had to create — proving the guard does
+    // not merely rely on the rule being absent.
+    ruleStore.docs.push({
+      _id: new Types.ObjectId(),
+      actionType: 'moderation_violation_high',
+      points: -20,
+      category: 'penalty',
+      description: 'smuggled conduct rule',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
+
+    await expect(
+      reputationService.award({
+        userId: SUBJECT_ID,
+        actionType: 'moderation_violation_high',
+        applicationId: REPORTED_APP_ID,
+        sourceActionId: 'attacker-chosen',
+      })
+    ).rejects.toThrow(/produced only by the moderation reputation bridge/);
+    expect(txnStore.docs).toHaveLength(0);
+  });
+
+  it('upsertRule refuses to create a conduct rule in the first place', async () => {
+    const reputationService = (await import('../reputation.service')).default;
+    await expect(
+      reputationService.upsertRule({
+        actionType: 'report_abuse_confirmed',
+        points: -50,
+        category: 'penalty',
+        description: 'smuggled',
+      })
+    ).rejects.toThrow(/versioned Oxy conduct policy/);
+    expect(ruleStore.docs).toHaveLength(0);
+  });
+
+  it('the bridge itself still works, because it supplies the policy override', async () => {
+    // The guard must not break the one caller that is allowed through it.
+    const result = await moderationReputationService.applyModerationDecision(
+      makeEvent(),
+      CONTEXT
+    );
+    expect(result.applied).toBe(true);
+    expect(txnStore.docs).toHaveLength(1);
+    expect(txnStore.docs[0].actionType).toBe('moderation_violation_medium');
+    // No `ReputationRule` was consulted or required.
+    expect(ruleStore.docs).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
 // THE SERVICE DOES NOT TRUST ITS CALLER
 // ===========================================================================
 
@@ -1529,5 +1598,15 @@ describe('what a conduct transaction is allowed to know', () => {
  *
  *       Tests: 4 failed, 50 passed, 54 total
  *
- * With all three guards in place: 54 passed, 54 total.
+ * (4) THE BRIDGE-ONLY CONDUCT GUARDS — both `CONDUCT_ACTION_TYPES` checks
+ *     (`award`'s override requirement and `upsertRule`'s refusal) deleted:
+ *
+ *       ● conduct action types are bridge-only › award refuses a conduct action
+ *         type without a policy-derived override
+ *       ● conduct action types are bridge-only › upsertRule refuses to create a
+ *         conduct rule in the first place
+ *
+ *       Tests: 2 failed, 55 passed, 57 total
+ *
+ * With all four guards in place: 57 passed, 57 total.
  */

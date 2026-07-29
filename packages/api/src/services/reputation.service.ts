@@ -236,6 +236,25 @@ class ReputationService {
     const sourceActionId =
       input.sourceActionId === undefined ? undefined : String(input.sourceActionId);
 
+    // CONDUCT ACTION TYPES ARE BRIDGE-ONLY, and this is what makes that
+    // structural rather than accidental.
+    //
+    // Without it, the guarantee rests on the fact that no `ReputationRule` for a
+    // conduct action happens to be seeded — so one `POST /reputation/rules` by a
+    // staff account would quietly open `POST /reputation/award` to minting
+    // conduct-stamped penalties for arbitrary users, on `reputation:write`, which
+    // every official application already holds. That transaction would carry no
+    // strike, so no active risk and no standing change, but it would still be a
+    // penalty attributed to moderation that no decision and no identity binding
+    // ever authorised. `ruleOverride` is set only by the bridge and is not
+    // expressible over HTTP, so requiring it here is the same boundary the rest
+    // of the phase enforces.
+    if (!input.ruleOverride && CONDUCT_ACTION_TYPES.has(actionType)) {
+      throw new BadRequestError(
+        'Conduct action types are produced only by the moderation reputation bridge'
+      );
+    }
+
     // The figures come from ONE of two authorities, never from both: a
     // `ReputationRule` row (every ordinary award) or a versioned policy the
     // bridge resolved (a moderation consequence, which must stay recomputable
@@ -1183,6 +1202,17 @@ class ReputationService {
     // Same reasoning as `award`: an operator object here would match an arbitrary
     // existing rule and this upsert would then REWRITE its points and category.
     const actionType = String(input.actionType);
+
+    // And a conduct rule must not exist at all. Its points would be a second,
+    // mutable authority for a figure the versioned `ModerationPolicy` owns, and
+    // creating one is the single step that would make a conduct action awardable
+    // outside the bridge.
+    if (CONDUCT_ACTION_TYPES.has(actionType)) {
+      throw new BadRequestError(
+        'Conduct action types are governed by the versioned Oxy conduct policy, not by a reputation rule'
+      );
+    }
+
     const rule = await ReputationRule.findOneAndUpdate(
       { actionType },
       {
